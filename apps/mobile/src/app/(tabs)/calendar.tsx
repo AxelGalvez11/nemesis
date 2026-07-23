@@ -44,7 +44,7 @@ import {
 } from "@/lib/agenda";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Calendar (cloud-first phone spec §9, 2026-07-20): reads `calendar_events`
 // cloud rows directly (same table + RLS the web calendar writes — see
@@ -120,7 +120,10 @@ const MONTHS_FORWARD = 12;
 const MONTHS_APPEND_STEP = 6;
 
 // Floating view-switcher geometry (lower-left liquid-glass button + its popup).
-const FAB_HEIGHT = 44;
+// One size for every floating action in the app (owner 2026-07-23: "make sure
+// all buttons and liquid glass components have standardize size"). Study's FAB
+// was 52, the Library's 48 and this screen's 44 — three screens, three answers.
+const FAB_HEIGHT = control.xl;
 // Sits just above the home-indicator safe area (owner 2026-07-19: near the bottom).
 const FAB_BOTTOM = space(1);
 const MENU_GAP = space(3);

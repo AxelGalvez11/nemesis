@@ -5,7 +5,7 @@ import { useShell } from "./AppDrawer";
 import { GlassSurface } from "./GlassSurface";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { space, type } from "@/theme/tokens";
+import { control, space, type } from "@/theme/tokens";
 
 // The top chrome — no bar, no border (owner call): ONE floating liquid-glass menu
 // button top-left, and a centered label that appears once the student has asked
@@ -22,7 +22,7 @@ import { space, type } from "@/theme/tokens";
  *  its tallest children. Exported so a screen that publishes a control into the
  *  center slot can work out where that control's bottom edge lands (Study hangs
  *  its dropdown from there) instead of hardcoding a guess. */
-export const TOP_BAR_BUTTON = 44;
+export const TOP_BAR_BUTTON = control.lg;
 
 /** The bar's own top padding below the status-bar inset — the other half of
  *  that same calculation. */

@@ -36,6 +36,7 @@ import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
+import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -56,7 +57,7 @@ import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Chat (cloud-first pivot, P1a): the phone's standalone surface — straight to the
 // metered cloud engine, no Mac in the path. Conversations now PERSIST as separate
@@ -152,6 +153,11 @@ export default function ChatScreen() {
   // resetting per turn: it's a working preference, not a per-message action.
   const [effort, setEffort] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  // How tall the floating composer block is (starter rows / attached-doc chip
+  // included). The transcript reserves exactly this much at its foot so it can
+  // scroll all the way under the composer without the last line hiding behind
+  // it — see composerFloat and BottomFadeBlur.
+  const [composerBlockH, setComposerBlockH] = useState(0);
   // Chat/Record mode pill: which area fills the screen (messages vs. the
   // inline RecordSession) and the three-state UI RecordSession last reported
   // — mirrored here only so the composer can lock the pill mid-recording
@@ -639,7 +645,23 @@ export default function ChatScreen() {
   // How much padding the last turn still needs to be able to reach the top of
   // the list. contentTop is the glass TopBar's clearance — the question should
   // land just under it, not behind it.
-  const footerSpacer = Math.max(0, listHeight - contentTop - space(2) - lastTurnHeight);
+  // What the transcript has to keep clear at its foot: the floating composer,
+  // plus the blur's ramp above it so a settled last line never rests inside the
+  // fade (see BOTTOM_FADE_SPAN).
+  const listBottomInset = composerBlockH + BOTTOM_FADE_SPAN;
+  // listHeight is now the WHOLE screen (the composer floats over it — see
+  // composerFloat), so the readable transcript is that minus the inset above.
+  // Subtracting it here keeps this spacer meaning exactly what it always meant:
+  // enough room for the last turn to reach the top, and not one point more.
+  const footerSpacer = Math.max(0, listHeight - listBottomInset - contentTop - space(2) - lastTurnHeight);
+  // How far the composer row sits off the bottom edge: a small gap once the
+  // keyboard has taken the home-indicator space, otherwise the shell's own
+  // bottom clearance. ONE constant, because the two composer menus anchor
+  // themselves just above the card and have to agree with the padding the card
+  // actually renders with — they used to repeat this sum by hand, twice.
+  const composerBottomPad = keyboardUp ? space(3) : contentBottom - space(1);
+  const composerMenuOffset =
+    composerBottomPad + (composerCompact ? COMPOSER_COMPACT_HEIGHT : COMPOSER_PILL_HEIGHT) + space(2);
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
@@ -651,7 +673,7 @@ export default function ChatScreen() {
           // status-bar inset here, NOT contentTop: record mode is immersive
           // (see the setImmersive effect), so there's no TopBar left to clear
           // and padding for one would just waste a strip of the transcript.
-          <View style={[styles.flex, { paddingTop: insets.top }]} testID="chat-record-workspace">
+          <View style={[styles.flex, { paddingBottom: composerBlockH, paddingTop: insets.top }]} testID="chat-record-workspace">
             <RecordSession
               ref={recordRef}
               userId={uid}
@@ -665,7 +687,7 @@ export default function ChatScreen() {
             ref={listRef}
             data={rows}
             keyExtractor={(row) => row.id}
-            contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2) }]}
+            contentContainerStyle={[styles.listBody, { paddingBottom: listBottomInset, paddingTop: contentTop + space(2) }]}
             keyboardShouldPersistTaps="handled"
             onScrollToIndexFailed={(info) => {
               // A row wasn't measured yet: jump near it by estimate, then retry once settled.
@@ -782,32 +804,6 @@ export default function ChatScreen() {
           reset={upgrade?.reset ?? null}
           onClose={() => setUpgrade(null)}
         />
-        <ComposerPlusMenu
-          visible={plusMenuOpen}
-          onClose={() => setPlusMenuOpen(false)}
-          bottomOffset={
-            (keyboardUp ? space(3) : contentBottom - space(1)) +
-            (composerCompact ? COMPOSER_COMPACT_HEIGHT : COMPOSER_PILL_HEIGHT) +
-            space(2)
-          }
-          onAttach={() => setLibraryPickerOpen(true)}
-          deepResearchOn={deepResearchOn}
-          onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
-        />
-        {/* The intelligence pill's dropdown — anchored above the composer off
-            the same measurements the "+" menu uses, so the two hang at exactly
-            the same height whichever one is open. */}
-        <EffortPopup
-          visible={effortMenuOpen}
-          effort={effort}
-          bottomOffset={
-            (keyboardUp ? space(3) : contentBottom - space(1)) +
-            (composerCompact ? COMPOSER_COMPACT_HEIGHT : COMPOSER_PILL_HEIGHT) +
-            space(2)
-          }
-          onSelect={setEffort}
-          onClose={() => setEffortMenuOpen(false)}
-        />
         <AttachLibrarySheet
           visible={libraryPickerOpen}
           onClose={() => setLibraryPickerOpen(false)}
@@ -819,7 +815,24 @@ export default function ChatScreen() {
         />
         <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
         <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />
-        <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
+        {/* The bottom edge of the transcript, softened (owner 2026-07-23: "in
+            chats, remove the bottom border and replace with a fade to blur").
+            The list runs under the composer now, so text dissolves into a blur
+            on its way down instead of being cut off on a hard line. Sits
+            between the list and the composer in the tree, which is exactly
+            where it belongs visually. Not in record mode — that screen is
+            immersive and has no transcript to fade. */}
+        {composerMode === "chat" ? <BottomFadeBlur height={composerBlockH} /> : null}
+        <View
+          style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}
+          onLayout={(e) => {
+            // Drives the list's bottom padding AND the blur's height, so both
+            // follow the composer as it grows (starter rows, attached chip, a
+            // multi-line draft) rather than guessing at a fixed number.
+            const next = e.nativeEvent.layout.height;
+            setComposerBlockH((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+          }}
+        >
           {/* ChatGPT-style landing (owner 2026-07-20): on an empty chat, quiet starter
               rows sit directly above the composer. They vanish the moment the first
               message exists — and, same as the attached-doc chip below, while the
@@ -865,6 +878,35 @@ export default function ChatScreen() {
             }}
           />
         </View>
+        {/* BOTH composer menus render AFTER the composer row, and that ordering
+            is the fix for a real bug (owner 2026-07-23: the intelligence picker
+            was "stuck at medium in landing page", and the "+" menu "clashed
+            with text behind it"). React Native paints siblings in tree order
+            with no z-index in play here, so while these sat above the row the
+            row painted over them. On a conversation that was invisible — the
+            menus hang over the message list, which is earlier still. On the
+            EMPTY-chat landing it was not: the StarterRows band sits inside the
+            composer row at exactly the height these menus open to, so the
+            starter text drew on top of the opaque panel AND swallowed every tap
+            meant for a menu row. Rendering last puts the menus above both. */}
+        <ComposerPlusMenu
+          visible={plusMenuOpen}
+          onClose={() => setPlusMenuOpen(false)}
+          bottomOffset={composerMenuOffset}
+          onAttach={() => setLibraryPickerOpen(true)}
+          deepResearchOn={deepResearchOn}
+          onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
+        />
+        {/* The intelligence pill's dropdown — anchored above the composer off
+            the same measurements the "+" menu uses, so the two hang at exactly
+            the same height whichever one is open. */}
+        <EffortPopup
+          visible={effortMenuOpen}
+          effort={effort}
+          bottomOffset={composerMenuOffset}
+          onSelect={setEffort}
+          onClose={() => setEffortMenuOpen(false)}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -1070,6 +1112,13 @@ const createStyles = (c: ThemeColors) =>
     chatSkeletonWrap: { gap: space(2) },
     skeletonLine: { marginBottom: space(2) },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
+    // FLOATS over the transcript rather than sitting under it in the flex
+    // column. That's what lets messages scroll all the way to the bottom edge
+    // and fade out under BottomFadeBlur; with the composer in flow there was
+    // nothing below the list to fade INTO, just a hard cut. Deliberately no
+    // zIndex — it renders after the blur, and tree order is what puts it on
+    // top. Adding one would also lift it over this screen's bottom sheets.
+    composerFloat: { position: "absolute", bottom: 0, left: 0, right: 0 },
     // Landing starter rows — plain (no glass, no borders) so they read as quiet
     // suggestions on the page, not controls; generous air between rows like the
     // ChatGPT reference.
@@ -1103,7 +1152,7 @@ const createStyles = (c: ThemeColors) =>
     attachChipText: { ...type.small, color: c.text, flexShrink: 1 },
 
     // "…" chat-actions button (rendered into the TopBar's right slot) + its dropdown.
-    actionsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    actionsBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
     actionsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     actionsMenuWrap: { position: "absolute", right: space(3), minWidth: 168 },
     actionsMenu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },

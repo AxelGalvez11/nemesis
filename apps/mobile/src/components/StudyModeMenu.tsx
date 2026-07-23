@@ -4,7 +4,7 @@ import Svg, { Line, Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 export type StudyModeKey = "cards" | "tests" | "mindmaps";
 
@@ -25,7 +25,7 @@ export const MODE_LABEL: Record<StudyModeKey, string> = {
  *  from when this file anchored a popup above the old Modes FAB; study.tsx
  *  already imports it from this module, so the constant stayed put rather
  *  than churning an unrelated import. */
-export const FAB_SIZE = 52;
+export const FAB_SIZE = control.xl;
 
 /** The trigger pill's height — study.tsx adds it to its own content-top inset
  *  to work out where the dropdown hangs, so the two can't drift apart. */

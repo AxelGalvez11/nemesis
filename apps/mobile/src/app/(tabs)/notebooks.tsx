@@ -12,7 +12,7 @@ import { NotebookIcon, PlusIcon } from "@/components/icons";
 import { createNotebook, deleteNotebookById, listNotebooks, renameNotebookById, type Notebook } from "@/api/notebooks";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Notebooks list (phone port of apps/web/components/workspace/notebooks/notebooks-landing.tsx):
 // a notebook keeps a set of sources, a standing instruction, and its own chats together — the
@@ -417,10 +417,19 @@ const createStyles = (c: ThemeColors) =>
       paddingRight: space(9),
     },
     rowPressed: { backgroundColor: c.surface2 },
-    iconTile: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: c.glass, alignItems: "center", justifyContent: "center" },
+    // Round, like every other glass disc in the app (owner 2026-07-23: no
+    // square buttons) — this was a rounded square holding the notebook glyph.
+    iconTile: {
+      width: control.md,
+      height: control.md,
+      borderRadius: control.md / 2,
+      backgroundColor: c.glass,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     rowTitle: { ...type.bodyStrong, color: c.text, flex: 1, minWidth: 0 },
     rowMeta: { ...type.micro, color: c.text3, fontVariant: ["tabular-nums"] },
-    kebab: { position: "absolute", right: space(2.5), top: 0, bottom: 0, width: 36, alignItems: "center", justifyContent: "center" },
+    kebab: { position: "absolute", right: space(2.5), top: 0, bottom: 0, width: control.md, alignItems: "center", justifyContent: "center" },
 
     // Rename/Delete actions sheet.
     sheetRow: { paddingVertical: space(3.5), paddingHorizontal: space(1) },
@@ -444,6 +453,6 @@ const createStyles = (c: ThemeColors) =>
     promptRow: { flexDirection: "row", gap: space(2.5) },
     promptBtn: { flex: 1 },
 
-    headerBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    headerBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
     headerBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });

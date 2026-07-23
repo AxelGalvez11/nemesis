@@ -50,7 +50,7 @@ import { MessageBody } from "./MessageBody";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The phone library's LIVE-PREVIEW editor (owner 2026-07-21: "editing notes
 // should work like the webapp — markdown syntax is not shown unless cursor
@@ -392,11 +392,14 @@ const createStyles = (c: ThemeColors) =>
       maxWidth: "100%",
     },
     toolbarRow: { alignItems: "center", paddingHorizontal: space(1.5) },
+    // Circle when it holds a single glyph, pill when a wider one needs the
+    // room — never the rounded square this was (owner 2026-07-23: "make sure
+    // there arent any square buttons").
     toolBtn: {
-      minWidth: 40,
-      height: 42,
+      minWidth: control.lg,
+      height: control.lg,
       paddingHorizontal: space(1.5),
-      borderRadius: radius.md,
+      borderRadius: control.lg / 2,
       alignItems: "center",
       justifyContent: "center",
     },
