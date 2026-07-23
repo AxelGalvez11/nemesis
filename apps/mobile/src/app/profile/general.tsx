@@ -186,7 +186,7 @@ const createStyles = (c: ThemeColors) =>
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
     backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1 },
-    title: { fontSize: 28, fontWeight: "700", color: c.text, marginBottom: space(1), marginTop: space(1) },
+    title: { ...type.h1, color: c.text, marginBottom: space(1), marginTop: space(1) },
     subtitle: { fontSize: type.micro.fontSize, lineHeight: 19, color: c.text3, marginBottom: space(4) },
     guest: { fontSize: type.small.fontSize, color: c.text2, marginTop: space(4) },
 

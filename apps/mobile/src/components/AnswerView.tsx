@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   freshnessText: { fontSize: type.micro.fontSize, lineHeight: 19, color: c.warn },
   point: { fontSize: type.small.fontSize, lineHeight: 22, color: c.text2 },
   prose: { fontSize: type.small.fontSize, lineHeight: 23, color: c.text2 },
-  cite: { fontSize: 11, lineHeight: 23, color: c.accentDim, fontWeight: "700" },
+  cite: { ...type.micro, lineHeight: 23, fontWeight: "700", color: c.accentDim },
   followUp: { paddingVertical: space(2), borderBottomWidth: 1, borderBottomColor: c.line },
   followUpText: { fontSize: type.small.fontSize, color: c.accentDim, fontWeight: "600" },
   citeTitle: { fontSize: type.small.fontSize, fontWeight: "600", color: c.text },

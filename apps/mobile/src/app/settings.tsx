@@ -213,7 +213,7 @@ const createStyles = (c: ThemeColors) =>
 
     identity: { alignItems: "center", paddingTop: space(1), paddingBottom: space(5), gap: space(2.5) },
     avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.accentFaint, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.accentLine },
-    avatarText: { color: c.accent, fontSize: 28, fontWeight: "700" },
+    avatarText: { ...type.display, color: c.accent },
     identityEmail: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", maxWidth: "90%" },
 
     sectionLabel: { color: c.text3, fontSize: type.micro.fontSize, fontWeight: "600", marginTop: space(4), marginBottom: space(1.5), marginLeft: space(1) },

@@ -59,9 +59,29 @@ export const space = (n: number): number => n * 4;
 // per-screen, not here, so enlarging them stays a separate pass (kept apart deliberately: bigger
 // controls can re-open the very clipping/edge issues fixed in the same batch). Rounded to 0.5pt;
 // revert to desktop parity by dividing these back by ~1.155.
+// THE TEXT SCALE. Every piece of prose or UI copy in the app takes its size
+// from here (owner 2026-07-23: "make sure all text size is standardized across
+// the app") — a screen should never write its own `fontSize`.
+//
+// Four kinds of thing are deliberately exempt, and a `fontSize` you find in one
+// of them is intentional, not an oversight:
+//  - GLYPHS used as icons — the ‹ › chevrons, the ··· dots, the ✕. They're
+//    sized like icons because that's what they are.
+//  - theme/markdown.ts, which carries its own scale ~1.15x this one (owner
+//    2026-07-19: the app-wide size bump hadn't reached AI answers, which render
+//    through that map rather than these tokens).
+//  - Text inside a drawing — SVG numerals in note-toolbar-icons.tsx, and the
+//    graph's node labels, which live in a canvas that zooms.
+//  - review.tsx's 20pt card body: a flashcard is read at arm's length, and that
+//    screen is a self-contained reading surface.
 export const type = {
   // System font, same as the desktop app (tokens.json font.family = "system").
   family: undefined as string | undefined,
+  /** Big standalone figures — a Study stat, an avatar's initial. Sits between
+   *  h1 and h2 because those numbers read as ornament, not as a page heading;
+   *  it exists so they stop being ad-hoc fontSizes (owner 2026-07-23: "make
+   *  sure all text size is standardized across the app"). */
+  display: { fontSize: 26, lineHeight: 32, fontWeight: "700" as const },
   h1: { fontSize: 30, lineHeight: 37, fontWeight: "700" as const },
   h2: { fontSize: 22, lineHeight: 29, fontWeight: "700" as const },
   title: { fontSize: 18.5, lineHeight: 25, fontWeight: "600" as const },

@@ -298,7 +298,7 @@ const createStyles = (c: ThemeColors) =>
     // anchor, so the two sit at opposite ends instead.
     header: { flexDirection: "row", alignItems: "center", paddingBottom: space(3) },
     headerSpacer: { flex: 1 },
-    clock: { fontSize: 16, fontVariant: ["tabular-nums"], color: c.text2, fontWeight: "600" },
+    clock: { ...type.small, fontWeight: "600", fontVariant: ["tabular-nums"], color: c.text2 },
     // Two segments in one quiet track — the active one lifts onto the page
     // surface rather than taking an accent fill, which would compete with the
     // composer's accent record button directly below it.
@@ -312,14 +312,14 @@ const createStyles = (c: ThemeColors) =>
     transcriptContent: { padding: space(4), gap: space(3), flexGrow: 1 },
     paragraph: { ...type.body, color: c.text },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },
-    emptyText: { ...type.body, color: c.text3, textAlign: "center", fontSize: 15, lineHeight: 22 },
+    emptyText: { ...type.small, color: c.text3, textAlign: "center" },
     // Notes render INSIDE the one box now, reusing `transcript` and
     // `transcriptContent`, so the old panel/header/scroll styles went with the
     // separate panel. Only the bullet line itself is still note-specific — and
     // it grew to body size, since it no longer has to fit a 190pt drawer.
     noteLine: { ...type.body, color: c.text, lineHeight: 22 },
-    statusLine: { color: c.text3, fontSize: 12.5, lineHeight: 18, paddingVertical: space(3), textAlign: "center" },
-    errorLine: { color: c.accent, fontSize: 12.5, lineHeight: 18, paddingBottom: space(2), textAlign: "center" },
+    statusLine: { ...type.micro, color: c.text3, paddingVertical: space(3), textAlign: "center" },
+    errorLine: { ...type.micro, color: c.accent, paddingBottom: space(2), textAlign: "center" },
     controls: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden", padding: space(3) },
     controlRow: { flexDirection: "row", alignItems: "center", gap: space(3) },
     controlSpacer: { flex: 1 },
