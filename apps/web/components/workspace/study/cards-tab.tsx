@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { Input } from "@/components/desktop-ui/input";
 import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
-import { isWithinGroup, normalizeGroupPath, renamedGroupPath } from "@/lib/workspace/study-tree";
+import { isWithinGroup, normalizeGroupPath, pathLeaf, pathParent, renamedGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { AnkiImportDialog } from "./anki-import-dialog";
@@ -18,7 +18,7 @@ import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 import type { StudyReviewSettings } from "./study-chrome";
-import { StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
+import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 const DECK_GROUPS_KEY = "nemesis.web.study-deck-groups";
 
@@ -110,7 +110,7 @@ function loadGroups(): string[] {
 }
 
 export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
-  const { cards, decks, deleteDeck, deleteDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
+  const { cards, decks, deleteDeck, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -157,21 +157,24 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     }
   }
 
-  // Deleting a folder takes its decks (and their cards) with it — there is no
-  // folder row to delete on its own, so spell the cost out before confirming.
+  // Removing a folder keeps everything in it (owner 2026-07-23) — the decks move
+  // up one level instead of being deleted. Nothing is destroyed, so this asks
+  // only where the decks are about to land, and only when there are any.
   async function removeGroup(path: string) {
-    const doomed = decks.filter((deck) => isWithinGroup(deck.name, path));
-    const leaf = path.split("::").pop() ?? path;
-    const tally = doomed.length === 0
-      ? "It has no decks in it."
-      : `It holds ${doomed.length} deck${doomed.length === 1 ? "" : "s"} and ${cards.filter((card) => doomed.some((deck) => deck.id === card.deckId)).length} card${cards.filter((card) => doomed.some((deck) => deck.id === card.deckId)).length === 1 ? "" : "s"}, which are deleted too.`;
-    if (!window.confirm(`Are you sure you want to delete the folder “${leaf}”? ${tally} This can't be undone.`)) return;
+    const inside = decks.filter((deck) => isWithinGroup(deck.name, path));
+    const leaf = pathLeaf(path);
+    const parent = pathParent(path);
+    const destination = parent ? `“${pathLeaf(parent)}”` : "the top level";
+    if (inside.length > 0) {
+      const tally = `${inside.length} deck${inside.length === 1 ? "" : "s"}`;
+      if (!window.confirm(`Remove the folder “${leaf}”? Its ${tally} move to ${destination}. Nothing is deleted.`)) return;
+    }
     setActionError(null);
     try {
-      await deleteDeckGroup(path);
+      await dissolveDeckGroup(path);
       persistGroups(extraGroups.filter((group) => !isWithinGroup(group, path)));
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Couldn't delete the folder.");
+      setActionError(cause instanceof Error ? cause.message : "Couldn't remove the folder.");
     }
   }
 
@@ -500,7 +503,7 @@ function DeckRow(props: DeckRowProps) {
           button inside a button is invalid HTML that browsers silently unnest.
           Clicking opens immediately — there is no double-click gesture to
           disambiguate against, so no grace delay is needed. */}
-      <StudyRowContextMenu onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)}>
+      <StudyRowContextMenu onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined}>
         <div
           aria-label={node.label}
           className={cn(
@@ -537,7 +540,7 @@ function DeckRow(props: DeckRowProps) {
           <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
-          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} />
+          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined} />
         </div>
       </StudyRowContextMenu>
       {!isCollapsed && node.children.map((child) => <DeckRow {...props} depth={depth + 1} key={child.id} node={child} />)}

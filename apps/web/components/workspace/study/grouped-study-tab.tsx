@@ -8,10 +8,14 @@
 // folders across tabs (that read as "decks showing up under Tests").
 //
 // Organizing means the same three gestures the Cards tab has (owner
-// 2026-07-22): a "…" menu on every row, double-click to rename, and dragging an
+// 2026-07-22): a "…" menu on every row, right-click to rename, and dragging an
 // item onto a folder to file it there. Unlike a deck folder — which only exists
 // as a prefix inside the deck's own name — a folder here is the artifact's
 // group_name column, so filing an item is a one-field update.
+//
+// Verified end-to-end on the owner's real data 2026-07-23: dragging a test onto
+// a folder writes group_name and survives a reload. It only LOOKS broken when
+// the tab has no folder yet, because then there is nothing to drop onto.
 
 import { IconFolder, IconFolderPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,7 +28,7 @@ import { normalizeGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
-import { StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
+import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 interface GroupedStudyTabProps {
   kind: "tests" | "mindmaps";
@@ -166,8 +170,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     }
   }
 
-  // A folder here is just a label, but it behaves like the Cards tab's folders:
-  // renaming it relabels everything inside, deleting it takes them with it.
+  // A folder here is just a label, and it behaves like the Cards tab's folders:
+  // renaming it relabels everything inside, removing it keeps them.
   async function renameGroup(group: string, next: string) {
     setRenamingId(null);
     const name = normalizeGroupPath(next);
@@ -183,17 +187,23 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     }
   }
 
+  // Removing a folder keeps its contents (owner 2026-07-23). These folders are
+  // flat labels, not "::" paths, so "one level up" is simply Ungrouped: the
+  // items lose their group_name and stay exactly where they can be found. This
+  // used to delete every test/mindmap inside, which for generated work was
+  // unrecoverable.
   async function removeGroup(group: string) {
     const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === group);
-    const noun = inside.length === 1 ? `${label.toLowerCase().replace(/s$/, "")} inside is` : `${label.toLowerCase()} inside are`;
-    const tally = inside.length === 0 ? "It's empty." : `The ${inside.length} ${noun} deleted too.`;
-    if (!window.confirm(`Are you sure you want to delete the folder “${group}”? ${tally} This can't be undone.`)) return;
+    if (inside.length > 0) {
+      const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
+      if (!window.confirm(`Remove the folder “${group}”? Its ${inside.length} ${noun} move to ${UNGROUPED}. Nothing is deleted.`)) return;
+    }
     setActionError(null);
     try {
-      for (const item of inside) await deleteArtifact(item.id);
+      for (const item of inside) await updateArtifact(item.id, { groupName: "" });
       persistGroups(extraGroups.filter((entry) => entry !== group));
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Couldn't delete that folder.");
+      setActionError(cause instanceof Error ? cause.message : "Couldn't remove that folder.");
     }
   }
 
@@ -325,11 +335,11 @@ function GroupRow({ label, count, grid, renaming, onStartRename, onCommitRename,
       </span>
       <span className="text-center tabular-nums text-(--ui-text-secondary)">{count}</span>
       <span className="text-center tabular-nums text-(--ui-text-quaternary)">—</span>
-      {real ? <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} /> : <span />}
+      {real ? <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER} /> : <span />}
     </div>
   );
   if (!real) return row;
-  return <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>{row}</StudyRowContextMenu>;
+  return <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER}>{row}</StudyRowContextMenu>;
 }
 
 interface ItemRowProps {

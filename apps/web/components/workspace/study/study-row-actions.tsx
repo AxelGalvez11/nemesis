@@ -18,7 +18,7 @@
 // the row never sees it, so it looks like the row was never clicked at all.
 // This applies to BOTH menus.
 
-import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconDots, IconFolderMinus, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -41,11 +41,22 @@ type MenuItemComponent = React.ComponentType<{
   variant?: "default" | "destructive";
 }>;
 
-function RowActionItems({ Item, onRename, onDelete }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void }) {
+/** How a row's removal reads. Folder removal keeps everything inside it, so it
+ *  must not borrow the red "Delete" that really does lose data. */
+export interface RowRemoval {
+  label: string;
+  icon: React.ReactNode;
+  destructive: boolean;
+}
+
+const DELETE_ROW: RowRemoval = { label: "Delete", icon: <IconTrash />, destructive: true };
+export const REMOVE_FOLDER: RowRemoval = { label: "Remove folder", icon: <IconFolderMinus />, destructive: false };
+
+function RowActionItems({ Item, onRename, onDelete, removal }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void; removal: RowRemoval }) {
   return (
     <>
       <Item onSelect={onRename}><IconPencil /> Rename</Item>
-      <Item onSelect={onDelete} variant="destructive"><IconTrash /> Delete</Item>
+      <Item onSelect={onDelete} variant={removal.destructive ? "destructive" : "default"}>{removal.icon} {removal.label}</Item>
     </>
   );
 }
@@ -64,9 +75,11 @@ interface StudyRowMenuProps {
   kindLabel: string;
   onRename: () => void;
   onDelete: () => void;
+  /** Defaults to the red "Delete"; pass REMOVE_FOLDER when nothing is lost. */
+  removal?: RowRemoval;
 }
 
-export function StudyRowMenu({ kindLabel, onRename, onDelete }: StudyRowMenuProps) {
+export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW }: StudyRowMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -84,19 +97,19 @@ export function StudyRowMenu({ kindLabel, onRename, onDelete }: StudyRowMenuProp
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onRename={onRename} />
+        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onRename={onRename} removal={removal} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 /** Wraps a row so right-clicking it offers the same Rename/Delete. */
-export function StudyRowContextMenu({ children, onRename, onDelete }: { children: React.ReactNode; onRename: () => void; onDelete: () => void }) {
+export function StudyRowContextMenu({ children, onRename, onDelete, removal = DELETE_ROW }: { children: React.ReactNode; onRename: () => void; onDelete: () => void; removal?: RowRemoval }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onRename={onRename} />
+        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onRename={onRename} removal={removal} />
       </ContextMenuContent>
     </ContextMenu>
   );

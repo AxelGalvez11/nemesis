@@ -8,8 +8,10 @@ import {
   normalizeGroupPath,
   pathLeaf,
   pathParent,
+  planGroupDissolve,
   renamedGroupPath,
   rewriteGroupPrefix,
+  uniqueDeckName,
 } from "./study-tree";
 
 test("normalize trims segments and drops empty ones", () => {
@@ -60,6 +62,61 @@ test("rewriting a prefix moves a deck with its folder and leaves outsiders alone
   assert.equal(rewriteGroupPrefix("Micro::Unit 1", "Pharm", "Pharmacology"), null);
   // Promoting a folder to the root drops the prefix but keeps the leaf.
   assert.equal(rewriteGroupPrefix("Pharm::Cardio", "Pharm", ""), "Cardio");
+});
+
+test("uniqueDeckName only suffixes when the name is already taken", () => {
+  assert.equal(uniqueDeckName("Cardio", new Set()), "Cardio");
+  assert.equal(uniqueDeckName("Cardio", new Set(["cardio"])), "Cardio 2");
+  assert.equal(uniqueDeckName("Cardio", new Set(["cardio", "cardio 2"])), "Cardio 3");
+  // `taken` is lower-cased BY THE CALLER — planGroupDissolve builds it that way.
+  // A differently-cased deck name still collides, which is what matters.
+  assert.equal(uniqueDeckName("CARDIO", new Set(["cardio"])), "CARDIO 2");
+});
+
+test("dissolving a folder promotes its contents instead of deleting them", () => {
+  const decks = [
+    { id: "a", name: "Pharm::Exam 1::Cardio" },
+    { id: "b", name: "Pharm::Exam 1::Renal::Diuretics" },
+    { id: "c", name: "Pharm::Exam 10::Cardio" },
+    { id: "d", name: "Micro::Unit 1" },
+  ];
+  const plan = planGroupDissolve(decks, "Pharm::Exam 1");
+  assert.deepEqual(plan.map((entry) => [entry.deck.id, entry.name]), [
+    ["a", "Pharm::Cardio"],
+    // A sub-folder inside the dissolved one survives; only ONE level is removed.
+    ["b", "Pharm::Renal::Diuretics"],
+  ]);
+  // Exam 10 is a sibling, not a child — it must be untouched.
+  assert.equal(plan.some((entry) => entry.deck.id === "c"), false);
+});
+
+test("dissolving a root folder moves its decks to the top level", () => {
+  const decks = [{ id: "a", name: "Pharm::Cardio" }, { id: "b", name: "Micro::Unit 1" }];
+  assert.deepEqual(planGroupDissolve(decks, "Pharm").map((entry) => entry.name), ["Cardio"]);
+});
+
+test("dissolve renames around a collision rather than refusing or clobbering", () => {
+  // Promoting "Pharm::Exam 1::Cardio" would land on the existing "Pharm::Cardio".
+  // Refusing would wedge the student on a delete they asked to be safe, and
+  // overwriting would lose a deck — so the promoted one takes the next name.
+  const decks = [
+    { id: "a", name: "Pharm::Exam 1::Cardio" },
+    { id: "b", name: "Pharm::Cardio" },
+  ];
+  assert.deepEqual(planGroupDissolve(decks, "Pharm::Exam 1"), [{ deck: decks[0], name: "Pharm::Cardio 2" }]);
+});
+
+test("a deck named exactly like the folder keeps its name instead of becoming empty", () => {
+  // "Pharm" the deck and "Pharm" the folder can coexist; promoting the deck
+  // would rewrite it to "", which is not a name.
+  const decks = [{ id: "a", name: "Pharm" }, { id: "b", name: "Pharm::Cardio" }];
+  assert.deepEqual(planGroupDissolve(decks, "Pharm"), [{ deck: decks[1], name: "Cardio" }]);
+});
+
+test("dissolve is a no-op for the root and for folders that hold nothing", () => {
+  const decks = [{ id: "a", name: "Pharm::Cardio" }];
+  assert.deepEqual(planGroupDissolve(decks, ""), []);
+  assert.deepEqual(planGroupDissolve(decks, "Nope"), []);
 });
 
 test("decksInGroup collects every deck beneath a folder, nested included", () => {
