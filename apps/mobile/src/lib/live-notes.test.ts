@@ -3,11 +3,15 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildLiveNotesMessages,
+  FINAL_NOTES_MAX_KEPT,
+  FINAL_NOTES_MAX_WINDOWS,
+  FINAL_NOTES_WINDOW_CHARS,
   LIVE_NOTES_INTERVAL_MS,
   LIVE_NOTES_MIN_CHARS,
   liveNotesText,
   mergeLiveNotes,
   parseLiveNotes,
+  planFinalNotesWindows,
   shouldRequestLiveNotes,
 } from "./live-notes.ts";
 
@@ -71,4 +75,60 @@ Deno.test("merge dedupes across passes and keeps only the newest 18", () => {
 Deno.test("saved notes text joins with plain newlines (web parity)", () => {
   assertEquals(liveNotesText(["one", "two"]), "one\ntwo");
   assertEquals(liveNotesText([]), "");
+});
+
+// --- Post-enhance notes rebuild -------------------------------------------
+
+const words = (text: string) => text.split(/\s+/).filter(Boolean);
+
+Deno.test("an empty transcript plans no windows", () => {
+  assertEquals(planFinalNotesWindows(""), []);
+  assertEquals(planFinalNotesWindows("   \n\n  "), []);
+});
+
+Deno.test("a short transcript is one window", () => {
+  assertEquals(planFinalNotesWindows("  the mitochondria is the powerhouse  "), [
+    "the mitochondria is the powerhouse",
+  ]);
+});
+
+Deno.test("a long transcript splits into ordered windows within the size cap", () => {
+  const paragraph = `${"lecture content ".repeat(500)}\n\n`; // 8000 chars
+  const windows = planFinalNotesWindows(paragraph.repeat(6)); // ~48k chars
+  assert(windows.length > 1, "expected more than one window");
+  for (const window of windows) {
+    assert(window.length <= FINAL_NOTES_WINDOW_CHARS, `window of ${window.length} exceeded the cap`);
+  }
+});
+
+Deno.test("windows never cut a word in half and lose no words", () => {
+  const transcript = `${"alpha bravo charlie delta ".repeat(2000)}`; // ~50k chars
+  const windows = planFinalNotesWindows(transcript);
+  assertEquals(words(windows.join(" ")), words(transcript));
+});
+
+Deno.test("a transcript with no breaks at all still advances and terminates", () => {
+  const unbroken = "x".repeat(FINAL_NOTES_WINDOW_CHARS * 3);
+  const windows = planFinalNotesWindows(unbroken);
+  assertEquals(windows.length, 3);
+  assertEquals(windows.join("").length, unbroken.length);
+});
+
+Deno.test("an absurdly long transcript is capped at the window budget", () => {
+  const huge = "word ".repeat(200_000); // 1M chars
+  const windows = planFinalNotesWindows(huge);
+  assertEquals(windows.length, FINAL_NOTES_MAX_WINDOWS);
+});
+
+Deno.test("the rebuild keeps more notes than one live pass, still deduped", () => {
+  const previous = Array.from({ length: 38 }, (_, i) => `note ${i}`);
+  const merged = mergeLiveNotes(previous, ["note 0", "fresh a", "fresh b"], FINAL_NOTES_MAX_KEPT);
+  assertEquals(merged.length, FINAL_NOTES_MAX_KEPT);
+  assertEquals(merged.filter((note) => note === "note 0").length, 1);
+  assertEquals(merged[merged.length - 1], "fresh b");
+});
+
+Deno.test("the live pass ceiling is unchanged when no cap is passed", () => {
+  const previous = Array.from({ length: 30 }, (_, i) => `note ${i}`);
+  assertEquals(mergeLiveNotes(previous, ["fresh"]).length, 18);
 });

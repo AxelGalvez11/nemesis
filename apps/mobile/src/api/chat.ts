@@ -38,7 +38,14 @@ import {
 } from "@/lib/chat-thread";
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
-import { buildLiveNotesMessages, parseLiveNotes } from "@/lib/live-notes";
+import {
+  buildLiveNotesMessages,
+  FINAL_NOTES_MAX_KEPT,
+  liveNotesText,
+  mergeLiveNotes,
+  parseLiveNotes,
+  planFinalNotesWindows,
+} from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
@@ -742,6 +749,25 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
   }
 }
 
+/** Rebuild a finished recording's notes from the ENHANCED transcript (owner
+ *  2026-07-23: "we need live notes to come from enhanced audio for better
+ *  notes"). During the lecture the live pass could only summarize the phone's
+ *  on-device text; once the server returns the sharper transcript, those
+ *  bullets are the best notes we could write from the worse words. Walks the
+ *  finished transcript in order — each window told what's already on the board
+ *  and not to repeat it, the same contract the live pass runs on — and returns
+ *  the joined result, or null when nothing came back so the existing notes
+ *  stand. Never throws: requestLiveNotes already resolves null on failure, and
+ *  a window that comes back empty just contributes nothing. */
+async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
+  let notes: string[] = [];
+  for (const window of planFinalNotesWindows(transcript)) {
+    const fresh = await requestLiveNotes(uid, window, notes);
+    if (fresh) notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
+  }
+  return notes.length ? liveNotesText(notes) : null;
+}
+
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
  *  on-device audio, run it through the server's batch transcription (top-
  *  accuracy engine, metered against the plan's monthly enhance allowance),
@@ -804,7 +830,26 @@ export async function enhanceRecordingArtifact(
       .update({ transcript: enhanced })
       .eq("id", artifact.id)
       .eq("user_id", uid);
-    await writeChipEntry(uid, threadId, { ...artifact, polish: "done", transcript: enhanced });
+    const polished: ChatOutput = { ...artifact, polish: "done", transcript: enhanced };
+    await writeChipEntry(uid, threadId, polished);
+
+    // Sharper transcript, sharper notes. Deliberately AFTER the transcript is
+    // durable and inside its own try: this costs several model calls and can
+    // fail on its own (offline, out of tokens), and losing better notes must
+    // never cost the better transcript — or reset the chip out of "done".
+    try {
+      const notes = await rebuildNotesFromTranscript(uid, enhanced);
+      if (notes) {
+        await supabase
+          .from("chat_recording_artifacts")
+          .update({ notes })
+          .eq("id", artifact.id)
+          .eq("user_id", uid);
+        await writeChipEntry(uid, threadId, { ...polished, notes });
+      }
+    } catch (cause) {
+      console.warn("notes rebuild skipped:", cause instanceof Error ? cause.message : cause);
+    }
   } catch (cause) {
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
     // Clear the "polishing" flag — the on-device transcript is what stands.
