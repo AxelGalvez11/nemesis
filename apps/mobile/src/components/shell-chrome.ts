@@ -49,3 +49,22 @@ export function useKeyboardVisible(): boolean {
   }, []);
   return visible;
 }
+
+/** How many points the keyboard currently covers (0 when down). The
+ *  rename/new-folder dialogs (RowActionSheets.tsx) center themselves in the space
+ *  ABOVE it — they're inline views, not native modals, so nothing else would keep
+ *  the keyboard from sitting on top of the field they're asking you to type in. */
+export function useKeyboardHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, (e) => setHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvent, () => setHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return height;
+}

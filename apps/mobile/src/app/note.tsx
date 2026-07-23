@@ -673,17 +673,21 @@ export default function NoteScreen() {
         // shrinks the editor so the caret can't hide under the keyboard (same
         // pattern as the chat screen).
         <KeyboardAvoidingView
-          // Padded, not scrolled-under: the caret has to stay put while you
-          // type, so edit mode starts BELOW the floating chrome rather than
-          // running beneath it the way reading mode does.
-          style={[styles.flexGrow, { paddingTop: chromeHeight }]}
+          style={styles.flexGrow}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={0}
         >
+          {/* The chrome height goes to the editor's SCROLL CONTENT (topInset),
+              not to this container. Padding the container was what left edit
+              mode with a hard edge under the controls — the "top header" the
+              owner asked to replace with a fade (2026-07-22). Reading mode had
+              already been scrolling under the blur; this makes edit mode match,
+              while the caret still starts clear of the chrome. */}
           <NoteBlockEditor
             content={draft}
             header={<Text style={styles.title}>{doc.title}</Text>}
             onChangeText={onChangeDraft}
+            topInset={chromeHeight}
           />
         </KeyboardAvoidingView>
       ) : (
@@ -902,8 +906,10 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(3),
       paddingBottom: space(2),
     },
-    // 40x40 liquid-glass icon button, radius.md — same shape review.tsx uses.
-    iconGlass: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+    // 40x40 liquid-glass icon button, fully ROUND (owner 2026-07-22: "change the
+    // upper left 'back' button to be round not square") — which also matches the
+    // pill it sits opposite, so the two ends of the row share one shape.
+    iconGlass: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
     topRight: { flexDirection: "row", alignItems: "center", gap: space(2.5) },
     saveHint: { ...type.micro, color: c.text3 },

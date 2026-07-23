@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
   Pressable,
@@ -21,8 +22,21 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
-import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
+import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import {
+  deleteFolder,
+  deleteNote,
+  fetchLibrary,
+  loadCachedLibrary,
+  moveFolder,
+  moveNote,
+  renameFolder,
+  renameNote,
+  type CloudLibraryNote,
+  type CloudLibrarySnapshot,
+} from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
+import { allFolderPaths, folderOf, isAtOrUnder } from "@/lib/library-paths";
 import { fileKindOf, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -108,10 +122,12 @@ function sortNotes<T extends { title: string; updatedAt: string; createdAt: stri
   return [...timed, ...untimed];
 }
 
-function folderOf(path: string): string {
-  const cut = path.lastIndexOf("/");
-  return cut === -1 ? "" : path.slice(0, cut);
-}
+/** Which row a long press opened the actions menu for. Notes and folders get
+ *  the same three actions but reach different cloud calls (a folder rename has
+ *  to carry every note beneath it), so the target keeps them apart. */
+type RowTarget =
+  | { kind: "note"; id: string; title: string; path: string }
+  | { kind: "folder"; path: string; name: string };
 
 export default function LibraryScreen() {
   const { colors: c } = useTheme();
@@ -146,6 +162,13 @@ export default function LibraryScreen() {
   const [hint, setHint] = useState<string | null>(null);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulling = useRef(false);
+  // Long-press row actions (owner 2026-07-22). One target drives all three
+  // sheets; which sheet is up is the separate `rowSheet`, so closing the menu to
+  // open Rename doesn't lose track of the row being renamed.
+  const [rowTarget, setRowTarget] = useState<RowTarget | null>(null);
+  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
 
   // Drive the TopBar's centered label (same slot chat.tsx uses); clear it on unmount
   // so the title never leaks onto another screen.
@@ -216,6 +239,95 @@ export default function LibraryScreen() {
       pulling.current = false;
     }
   }, []);
+
+  // --- long-press row actions (owner 2026-07-22) ----------------------------
+  // Rename / Move / Delete against the same cloud table the web app writes
+  // (api/cloudLibrary.ts). Every one of them ends with a full refresh, because a
+  // folder rename cascades across every note beneath it and re-deriving the tree
+  // from server truth is cheaper to reason about than patching rows by hand.
+
+  const closeRowSheets = useCallback(() => {
+    setRowSheet(null);
+    setRowTarget(null);
+    setRowError(null);
+  }, []);
+
+  /** Run a library write, then re-pull. `inline` keeps a failure inside the open
+   *  prompt (so a rejected name can be corrected without retyping); otherwise it
+   *  closes up and flashes the screen's usual hint line. */
+  const applyRowChange = useCallback(
+    async (work: () => Promise<unknown>, opts?: { inline?: boolean }) => {
+      if (!userId) return;
+      setRowBusy(true);
+      setRowError(null);
+      try {
+        await work();
+        closeRowSheets();
+        await refresh(userId);
+      } catch (e) {
+        const message = (e as Error).message;
+        if (opts?.inline) setRowError(message);
+        else {
+          closeRowSheets();
+          flashHint(message);
+        }
+      } finally {
+        setRowBusy(false);
+      }
+    },
+    [userId, refresh, closeRowSheets, flashHint],
+  );
+
+  // Delete confirms through the OS alert rather than another in-app sheet: it's
+  // the one irreversible-looking action here, and the native dialog is what a
+  // student already recognizes as "this one is serious".
+  const confirmDelete = useCallback(
+    (target: RowTarget) => {
+      const label = target.kind === "note" ? target.title : target.name;
+      setRowSheet(null);
+      Alert.alert(
+        `Delete "${label}"?`,
+        target.kind === "note"
+          ? "It leaves your library on every device. It isn't destroyed — you can still recover it on the web app."
+          : "The folder and everything inside it leave your library on every device. They aren't destroyed — you can still recover them on the web app.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => setRowTarget(null) },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () =>
+              void applyRowChange(() =>
+                target.kind === "note" ? deleteNote(userId ?? "", target.id) : deleteFolder(userId ?? "", snapshot, target.path),
+              ),
+          },
+        ],
+      );
+    },
+    [applyRowChange, userId, snapshot],
+  );
+
+  const onRenameConfirm = useCallback(
+    (value: string) => {
+      const target = rowTarget;
+      if (!target || !userId) return;
+      void applyRowChange(
+        () => (target.kind === "note" ? renameNote(userId, snapshot, target.id, value) : renameFolder(userId, snapshot, target.path, value)),
+        { inline: true },
+      );
+    },
+    [rowTarget, userId, snapshot, applyRowChange],
+  );
+
+  const onMovePick = useCallback(
+    (folder: string) => {
+      const target = rowTarget;
+      if (!target || !userId) return;
+      void applyRowChange(() =>
+        target.kind === "note" ? moveNote(userId, snapshot, target.id, folder) : moveFolder(userId, snapshot, target.path, folder),
+      );
+    },
+    [rowTarget, userId, snapshot, applyRowChange],
+  );
 
   // Every time this screen regains focus: render the cached snapshot instantly
   // (offline-friendly), then refresh from the cloud behind that.
@@ -297,6 +409,21 @@ export default function LibraryScreen() {
   // Context line above the list: match count while searching, else which
   // non-default sort is on (nothing for the everyday A–Z tree).
   const listHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sort !== "az" ? sortLabel(sort) : null;
+
+  // Row-action derivations. Every folder in the tree is a move destination; for
+  // a FOLDER being moved, its own subtree is struck out — dropping a folder
+  // inside itself would orphan everything under it.
+  const folderOptions = allFolderPaths(notes.map((n) => n.path), snapshot.folders);
+  const rowLabel = rowTarget ? (rowTarget.kind === "note" ? rowTarget.title : rowTarget.name) : "";
+  const rowActions: RowAction[] = rowTarget
+    ? [
+        { key: "rename", label: "Rename", onPress: () => setRowSheet("rename") },
+        { key: "move", label: "Move to…", onPress: () => setRowSheet("move") },
+        { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(rowTarget) },
+      ]
+    : [];
+  const moveDisabled =
+    rowTarget?.kind === "folder" ? new Set(folderOptions.filter((f) => isAtOrUnder(f, rowTarget.path))) : undefined;
 
   return (
     <View style={styles.flex} testID="library-screen">
@@ -380,6 +507,11 @@ export default function LibraryScreen() {
                 accessibilityLabel={`${item.name} folder, ${count} item${count === 1 ? "" : "s"}`}
                 accessibilityState={{ expanded: !isCollapsed }}
                 onPress={() => toggleFolder(item.path)}
+                onLongPress={() => {
+                  setRowTarget({ kind: "folder", name: item.name, path: item.path });
+                  setRowSheet("actions");
+                }}
+                delayLongPress={320}
               >
                 {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                 <View style={isCollapsed ? null : styles.chevronOpen}>
@@ -405,6 +537,14 @@ export default function LibraryScreen() {
                 const id = pathToId.get(item.path);
                 if (id) router.push({ pathname: "/note", params: { id } });
               }}
+              onLongPress={() => {
+                const id = pathToId.get(item.path);
+                if (id) {
+                  setRowTarget({ kind: "note", id, path: item.path, title: item.title });
+                  setRowSheet("actions");
+                }
+              }}
+              delayLongPress={320}
             >
               {/* Plain notes carry NO leading icon (owner 2026-07-20, Obsidian-style:
                   text only); pdf/doc attachments keep their identity glyph. */}
@@ -472,6 +612,39 @@ export default function LibraryScreen() {
           setSort(next);
           setSortOpen(false);
         }}
+      />
+
+      {/* Long-press row actions (owner 2026-07-22). One target, three sheets:
+          the menu, then whichever of Rename / Move it hands off to. */}
+      <RowActionsSheet
+        visible={rowSheet === "actions"}
+        title={rowLabel}
+        subtitle={rowTarget?.kind === "folder" ? "Folder" : undefined}
+        actions={rowActions}
+        onClose={closeRowSheets}
+        testID="library-row-actions"
+      />
+      <TextPromptSheet
+        visible={rowSheet === "rename"}
+        title={rowTarget?.kind === "folder" ? "Rename folder" : "Rename note"}
+        placeholder={rowTarget?.kind === "folder" ? "Folder name" : "Note title"}
+        initialValue={rowLabel}
+        busy={rowBusy}
+        error={rowError}
+        onConfirm={onRenameConfirm}
+        onClose={closeRowSheets}
+        testID="library-rename-prompt"
+      />
+      <FolderPickerSheet
+        visible={rowSheet === "move"}
+        title={rowTarget?.kind === "folder" ? "Move folder to" : "Move note to"}
+        folders={folderOptions}
+        currentFolder={rowTarget ? folderOf(rowTarget.path) : ""}
+        disabledPaths={moveDisabled}
+        rootLabel="Library root"
+        onPick={onMovePick}
+        onClose={closeRowSheets}
+        testID="library-move-picker"
       />
     </View>
   );

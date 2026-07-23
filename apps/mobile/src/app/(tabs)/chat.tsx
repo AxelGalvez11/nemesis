@@ -12,7 +12,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import Reanimated, { FadeIn } from "react-native-reanimated";
@@ -102,7 +101,6 @@ export default function ChatScreen() {
   const keyboardUp = useKeyboardVisible();
   const { setHeaderTitle, newChat, setHeaderRight, setImmersive } = useShell();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
 
   // The active thread rides in the route param so the drawer/TopBar can steer it.
   const params = useLocalSearchParams<{ c?: string }>();
@@ -172,6 +170,30 @@ export default function ChatScreen() {
   // thread open. Set during render below, read by the scroll effect (kept out of its
   // deps this way).
   const lastUserRowIndexRef = useRef(-1);
+  // Bottom-spacer measurement (owner 2026-07-22: "chats should not be able to be
+  // scrolled down beyond the answer prompt"). The spacer exists so the newest
+  // question can scroll up to the TOP of the viewport — but it used to be a flat
+  // half-screen, so once an answer was long you could keep dragging into empty
+  // space below it. Now it's only ever the shortfall: measure the list's own
+  // height and the height of the last turn (question + everything after it), and
+  // pad by the difference, which is zero as soon as the turn fills the screen.
+  const rowHeights = useRef(new Map<string, number>());
+  const rowIdsRef = useRef<string[]>([]);
+  const [listHeight, setListHeight] = useState(0);
+  const [lastTurnHeight, setLastTurnHeight] = useState(0);
+
+  const measureLastTurn = useCallback(() => {
+    const from = lastUserRowIndexRef.current;
+    const ids = rowIdsRef.current;
+    if (from < 0) {
+      setLastTurnHeight(0);
+      return;
+    }
+    let total = 0;
+    for (let i = from; i < ids.length; i += 1) total += rowHeights.current.get(ids[i]) ?? 0;
+    // Sub-pixel churn while an answer streams would re-render on every chunk.
+    setLastTurnHeight((prev) => (Math.abs(prev - total) > 1 ? total : prev));
+  }, []);
 
   // Load the active thread: the route's `c` if present, else the most recent
   // thread (resume), else a brand-new empty thread. Re-runs on user/thread change.
@@ -539,16 +561,27 @@ export default function ChatScreen() {
     );
   }
   const hasContent = rows.length > 0;
-  // The tall two-row composer is the empty-chat landing look; once the
-  // conversation has anything in it the composer shrinks to a single row so the
-  // messages own the screen (owner 2026-07-22).
-  const composerCompact = hasContent;
+  // Composer size follows the KEYBOARD, not the conversation (owner 2026-07-22:
+  // "when users have keyboard open, the chat composer should be the big version,
+  // but when keyboard is down the chatcomposer should have the smaller one").
+  // It used to key off hasContent, which meant a long chat gave you the cramped
+  // single row even while you were typing into it. The landing look is
+  // unchanged: focusing the composer on entry (see the useFocusEffect above)
+  // raises the keyboard, so an empty chat still opens on the tall card.
+  const composerCompact = !keyboardUp;
   // The newest user-message row — what the scroll effect pins to the top. Computed here
   // in render and stashed in a ref so that effect needn't depend on `rows`.
   lastUserRowIndexRef.current = rows.reduce(
     (acc, row, i) => (row.kind === "msg" && row.msg?.role === "user" ? i : acc),
     -1,
   );
+  // Row order for the last-turn measurement (see measureLastTurn) — same reason
+  // as the ref above: an onLayout handler shouldn't have to close over `rows`.
+  rowIdsRef.current = rows.map((row) => row.id);
+  // How much padding the last turn still needs to be able to reach the top of
+  // the list. contentTop is the glass TopBar's clearance — the question should
+  // land just under it, not behind it.
+  const footerSpacer = Math.max(0, listHeight - contentTop - space(2) - lastTurnHeight);
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
@@ -587,33 +620,43 @@ export default function ChatScreen() {
                 }
               }, 120);
             }}
-            renderItem={({ item }) =>
-              item.kind === "thinking" ? (
-                <View style={styles.assistantRow} testID="chat-thinking">
-                  <ThinkingLine phase={phase} testID="chat-thinking-line" />
-                </View>
-              ) : item.kind === "error" ? (
-                <View style={styles.errorBubble} testID="chat-error">
-                  <Text style={styles.errorText}>{item.errorText}</Text>
-                </View>
-              ) : item.msg!.role === "user" ? (
-                <View style={[styles.bubble, styles.userBubble]}>
-                  <Text style={styles.userText}>{item.msg!.content}</Text>
-                </View>
-              ) : (
-                // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
-                // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
-                // grounded this turn with a web search) and any deliverable chips this
-                // turn carries render underneath.
-                <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
-                  <MessageBody content={item.msg!.content} styles={markdownStyles} />
-                  {item.msg!.sources?.length ? (
-                    <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
-                  ) : null}
-                  {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
-                </Reanimated.View>
-              )
-            }
+            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+            renderItem={({ item }) => (
+              // The wrapper exists to MEASURE: the bottom spacer below is sized
+              // from the height of the last turn, so every row reports its own.
+              <View
+                onLayout={(e) => {
+                  rowHeights.current.set(item.id, e.nativeEvent.layout.height);
+                  measureLastTurn();
+                }}
+              >
+                {item.kind === "thinking" ? (
+                  <View style={styles.assistantRow} testID="chat-thinking">
+                    <ThinkingLine phase={phase} testID="chat-thinking-line" />
+                  </View>
+                ) : item.kind === "error" ? (
+                  <View style={styles.errorBubble} testID="chat-error">
+                    <Text style={styles.errorText}>{item.errorText}</Text>
+                  </View>
+                ) : item.msg!.role === "user" ? (
+                  <View style={[styles.bubble, styles.userBubble]}>
+                    <Text style={styles.userText}>{item.msg!.content}</Text>
+                  </View>
+                ) : (
+                  // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
+                  // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
+                  // grounded this turn with a web search) and any deliverable chips this
+                  // turn carries render underneath.
+                  <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
+                    <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                    {item.msg!.sources?.length ? (
+                      <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
+                    ) : null}
+                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                  </Reanimated.View>
+                )}
+              </View>
+            )}
             ListHeaderComponent={
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
@@ -640,8 +683,11 @@ export default function ChatScreen() {
             }
             ListFooterComponent={
               // Bottom spacer so the last exchange can scroll up until the question sits at
-              // the top of the viewport (ChatGPT-style). Only when there's content.
-              hasContent ? <View style={{ height: Math.round(windowHeight * 0.5) }} /> : null
+              // the top of the viewport (ChatGPT-style) — and NOT ONE POINT MORE (owner
+              // 2026-07-22). It's the shortfall between the viewport and the last turn, so
+              // a long answer that already fills the screen gets no spacer at all and the
+              // list simply stops at the end of the text.
+              hasContent ? <View style={{ height: footerSpacer }} /> : null
             }
           />
         )}

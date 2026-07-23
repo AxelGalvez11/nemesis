@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,15 +19,23 @@ import {
   TRIGGER_HEIGHT,
   type StudyModeKey,
 } from "@/components/StudyModeMenu";
+import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
 import {
   countsForCards,
   deckGroupInfo,
+  deleteStudyDeck,
+  deleteStudyGroup,
   fetchCloudStudy,
+  moveStudyDeck,
+  moveStudyGroup,
+  renameStudyDeck,
+  renameStudyGroup,
   type CloudStudyCard,
   type CloudStudyDeck,
   type DeckCounts,
 } from "@/api/cloudStudy";
 import { allGroupPaths, buildDeckTree, flattenDeckTree, type DeckTreeRow } from "@/lib/deck-tree";
+import { decksInGroup, isWithinGroup, pathLeaf, pathParent } from "@/lib/study-tree";
 import { deckRetention } from "@/lib/study-progress";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -99,6 +107,11 @@ interface DeckRow {
  *  decks inside it line up on the same left edge. */
 const INDENT_STEP = 14;
 
+/** Which row a long press opened the actions menu for. A folder here is purely a
+ *  "::"-prefix shared by some decks — it has no row of its own server-side — so
+ *  its actions fan out across every deck beneath it (see lib/study-tree.ts). */
+type StudyRowTarget = { kind: "deck"; id: string; name: string } | { kind: "folder"; path: string; label: string };
+
 const COMING_SOON_LABEL: Record<Exclude<StudyModeKey, "cards">, string> = {
   tests: "Tests",
   mindmaps: "Mindmaps",
@@ -144,6 +157,12 @@ export default function StudyScreen() {
 
   // The lower-left Add FAB — New group / New cards / Browse in one sheet.
   const [addSheetOpen, setAddSheetOpen] = useState(false);
+
+  // Long-press row actions (owner 2026-07-22, same ask as the Library's).
+  const [rowTarget, setRowTarget] = useState<StudyRowTarget | null>(null);
+  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
 
   // Stats — moved off its own FAB into the toggle's trailing icon-segment;
   // the sheet's own content is unchanged.
@@ -193,6 +212,105 @@ export default function StudyScreen() {
     }, [load, userId]),
   );
 
+  // --- long-press row actions (owner 2026-07-22) ----------------------------
+  // Rename / Move / Delete on decks and folders. A folder operation rewrites the
+  // "::" prefix on every deck under it, so each one ends with a full reload
+  // rather than trying to patch the tree in place.
+
+  const closeRowSheets = useCallback(() => {
+    setRowSheet(null);
+    setRowTarget(null);
+    setRowError(null);
+  }, []);
+
+  const applyRowChange = useCallback(
+    async (work: () => Promise<unknown>, opts?: { inline?: boolean }) => {
+      if (!userId) return;
+      setRowBusy(true);
+      setRowError(null);
+      try {
+        await work();
+        closeRowSheets();
+        await load(userId);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "That didn't work.";
+        if (opts?.inline) setRowError(message);
+        else {
+          closeRowSheets();
+          Alert.alert("Couldn't do that", message);
+        }
+      } finally {
+        setRowBusy(false);
+      }
+    },
+    [userId, load, closeRowSheets],
+  );
+
+  // Study deletes are PERMANENT — study_cards cascades off study_decks, so the
+  // cards and their review history go with the deck. The library's equivalent is
+  // recoverable; this one isn't, and the wording says so.
+  const confirmDelete = useCallback(
+    (target: StudyRowTarget) => {
+      setRowSheet(null);
+      const doomed = target.kind === "folder" ? decksInGroup(decks, target.path) : [];
+      const cardCount =
+        target.kind === "deck"
+          ? cards.filter((card) => card.deckId === target.id).length
+          : cards.filter((card) => doomed.some((deck) => deck.id === card.deckId)).length;
+      const label = target.kind === "deck" ? pathLeaf(target.name) : target.label;
+      const scope =
+        target.kind === "deck"
+          ? `${cardCount} card${cardCount === 1 ? "" : "s"}`
+          : `${doomed.length} deck${doomed.length === 1 ? "" : "s"} and ${cardCount} card${cardCount === 1 ? "" : "s"}`;
+      Alert.alert(
+        `Delete "${label}"?`,
+        `This permanently removes ${scope}, along with their review history. It can't be undone.`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => setRowTarget(null) },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () =>
+              void applyRowChange(() =>
+                target.kind === "deck"
+                  ? deleteStudyDeck(userId ?? "", target.id)
+                  : deleteStudyGroup(userId ?? "", decks, target.path),
+              ),
+          },
+        ],
+      );
+    },
+    [applyRowChange, userId, decks, cards],
+  );
+
+  const onRenameConfirm = useCallback(
+    (value: string) => {
+      const target = rowTarget;
+      if (!target || !userId) return;
+      void applyRowChange(
+        () =>
+          target.kind === "deck"
+            ? renameStudyDeck(userId, decks, target.id, value)
+            : renameStudyGroup(userId, decks, target.path, value),
+        { inline: true },
+      );
+    },
+    [rowTarget, userId, decks, applyRowChange],
+  );
+
+  const onMovePick = useCallback(
+    (folder: string) => {
+      const target = rowTarget;
+      if (!target || !userId) return;
+      void applyRowChange(() =>
+        target.kind === "deck"
+          ? moveStudyDeck(userId, decks, target.id, folder)
+          : moveStudyGroup(userId, decks, target.path, folder),
+      );
+    },
+    [rowTarget, userId, decks, applyRowChange],
+  );
+
   if (!userId) {
     return (
       <View style={[styles.centerWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="study-signin">
@@ -221,6 +339,21 @@ export default function StudyScreen() {
     const deckCards = cards.filter((card) => card.deckId === deck.id);
     return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
   });
+
+  // Row-action derivations. Every folder is a move destination; for a FOLDER
+  // being moved, its own subtree is struck out (a folder can't go inside itself).
+  const groupOptions = allGroupPaths(decks.map((deck) => deck.name));
+  const rowLabel = rowTarget ? (rowTarget.kind === "deck" ? pathLeaf(rowTarget.name) : rowTarget.label) : "";
+  const rowActions: RowAction[] = rowTarget
+    ? [
+        { key: "rename", label: "Rename", onPress: () => setRowSheet("rename") },
+        { key: "move", label: "Move to…", onPress: () => setRowSheet("move") },
+        { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(rowTarget) },
+      ]
+    : [];
+  const moveDisabled =
+    rowTarget?.kind === "folder" ? new Set(groupOptions.filter((g) => isWithinGroup(g, rowTarget.path))) : undefined;
+  const rowCurrentGroup = rowTarget ? pathParent(rowTarget.kind === "deck" ? rowTarget.name : rowTarget.path) : "";
 
   const totalActionable = deckRows.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0);
   const totalNew = deckRows.reduce((sum, d) => sum + d.counts.newCount, 0);
@@ -285,6 +418,11 @@ export default function StudyScreen() {
                   <Pressable
                     testID={`study-folder-${item.path}`}
                     onPress={() => toggleFolder(item.path)}
+                    onLongPress={() => {
+                      setRowTarget({ kind: "folder", label: item.label, path: item.path });
+                      setRowSheet("actions");
+                    }}
+                    delayLongPress={320}
                     style={({ pressed }) => [
                       styles.folderRow,
                       { marginLeft: item.depth * INDENT_STEP },
@@ -319,6 +457,11 @@ export default function StudyScreen() {
                   <Pressable
                     testID={`deck-${item.deck.deck.id}`}
                     onPress={() => router.push({ pathname: "/review", params: { deckId: item.deck.deck.id } })}
+                    onLongPress={() => {
+                      setRowTarget({ kind: "deck", id: item.deck.deck.id, name: item.deck.deck.name });
+                      setRowSheet("actions");
+                    }}
+                    delayLongPress={320}
                     style={({ pressed }) => [
                       styles.row,
                       { marginLeft: item.depth * INDENT_STEP },
@@ -356,6 +499,39 @@ export default function StudyScreen() {
           />
         </Animated.View>
       )}
+
+      {/* Long-press row actions (owner 2026-07-22) — the same three sheets the
+          Library tree uses, so the two trees behave identically. */}
+      <RowActionsSheet
+        visible={rowSheet === "actions"}
+        title={rowLabel}
+        subtitle={rowTarget?.kind === "folder" ? "Folder" : "Deck"}
+        actions={rowActions}
+        onClose={closeRowSheets}
+        testID="study-row-actions"
+      />
+      <TextPromptSheet
+        visible={rowSheet === "rename"}
+        title={rowTarget?.kind === "folder" ? "Rename folder" : "Rename deck"}
+        placeholder={rowTarget?.kind === "folder" ? "Folder name" : "Deck name"}
+        initialValue={rowLabel}
+        busy={rowBusy}
+        error={rowError}
+        onConfirm={onRenameConfirm}
+        onClose={closeRowSheets}
+        testID="study-rename-prompt"
+      />
+      <FolderPickerSheet
+        visible={rowSheet === "move"}
+        title={rowTarget?.kind === "folder" ? "Move folder to" : "Move deck to"}
+        folders={groupOptions}
+        currentFolder={rowCurrentGroup}
+        disabledPaths={moveDisabled}
+        rootLabel="Top level"
+        onPick={onMovePick}
+        onClose={closeRowSheets}
+        testID="study-move-picker"
+      />
 
       {/* The one lower-left add entry point (owner ask 2) — New group / New
           cards / Browse, all inside StudyAddSheet's own step stack. */}

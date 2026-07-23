@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
   InputAccessoryView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -30,6 +29,23 @@ import {
   type EditSel,
 } from "@/lib/note-edit";
 import { preprocessWikilinks } from "@/lib/wikilinks";
+import type { IconProps } from "./icons";
+import {
+  BoldIcon,
+  BulletListIcon,
+  CodeIcon,
+  DividerIcon,
+  HeadingIcon,
+  HighlightIcon,
+  ItalicIcon,
+  LinkIcon,
+  NumberedListIcon,
+  QuoteIcon,
+  StrikethroughIcon,
+  TableIcon,
+  UnderlineIcon,
+  WikiLinkIcon,
+} from "./note-toolbar-icons";
 import { MessageBody } from "./MessageBody";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -65,45 +81,36 @@ const TOOLBAR_ID = "note-block-toolbar";
 
 interface ToolSpec {
   key: string;
-  glyph: string;
+  /** Drawn glyph, NOT the markdown the action writes — owner 2026-07-22: the row
+   *  used to print the syntax itself ("==", "<>", "[[ ]]"), which read as a
+   *  cheat sheet rather than buttons. See note-toolbar-icons.tsx. */
+  Icon: ComponentType<IconProps>;
   label: string;
-  glyphStyle?: object;
   transform: (s: EditSel) => EditSel;
 }
 
 const TOOLS: ToolSpec[] = [
-  { glyph: "H", key: "heading", label: "Heading", transform: cycleHeading },
-  { glyph: "B", glyphStyle: { fontWeight: "800" as const }, key: "bold", label: "Bold", transform: (s) => wrapInline(s, "**") },
-  { glyph: "I", glyphStyle: { fontStyle: "italic" as const }, key: "italic", label: "Italic", transform: (s) => wrapInline(s, "*") },
-  {
-    glyph: "U",
-    glyphStyle: { textDecorationLine: "underline" as const },
-    key: "underline",
-    label: "Underline",
-    transform: (s) => wrapInline(s, "<u>", "</u>"),
-  },
-  { glyph: "==", key: "highlight", label: "Highlight", transform: (s) => wrapInline(s, "==") },
-  {
-    glyph: "S",
-    glyphStyle: { textDecorationLine: "line-through" as const },
-    key: "strike",
-    label: "Strikethrough",
-    transform: (s) => wrapInline(s, "~~"),
-  },
-  { glyph: "<>", key: "code", label: "Inline code", transform: (s) => wrapInline(s, "`") },
-  { glyph: "•", key: "list", label: "Bullet list", transform: (s) => toggleLinePrefix(s, "- ") },
-  { glyph: "1.", key: "numbered", label: "Numbered list", transform: toggleNumberedList },
-  { glyph: ">", key: "quote", label: "Quote", transform: (s) => toggleLinePrefix(s, "> ") },
-  { glyph: "[[ ]]", key: "wikilink", label: "Wiki link", transform: (s) => wrapInline(s, "[[", "]]") },
-  { glyph: "↗", key: "link", label: "Link", transform: insertLink },
-  { glyph: "—", key: "divider", label: "Divider", transform: insertDivider },
-  { glyph: "▦", key: "table", label: "Table", transform: insertTable },
+  { Icon: HeadingIcon, key: "heading", label: "Heading", transform: cycleHeading },
+  { Icon: BoldIcon, key: "bold", label: "Bold", transform: (s) => wrapInline(s, "**") },
+  { Icon: ItalicIcon, key: "italic", label: "Italic", transform: (s) => wrapInline(s, "*") },
+  { Icon: UnderlineIcon, key: "underline", label: "Underline", transform: (s) => wrapInline(s, "<u>", "</u>") },
+  { Icon: HighlightIcon, key: "highlight", label: "Highlight", transform: (s) => wrapInline(s, "==") },
+  { Icon: StrikethroughIcon, key: "strike", label: "Strikethrough", transform: (s) => wrapInline(s, "~~") },
+  { Icon: CodeIcon, key: "code", label: "Inline code", transform: (s) => wrapInline(s, "`") },
+  { Icon: BulletListIcon, key: "list", label: "Bullet list", transform: (s) => toggleLinePrefix(s, "- ") },
+  { Icon: NumberedListIcon, key: "numbered", label: "Numbered list", transform: toggleNumberedList },
+  { Icon: QuoteIcon, key: "quote", label: "Quote", transform: (s) => toggleLinePrefix(s, "> ") },
+  { Icon: WikiLinkIcon, key: "wikilink", label: "Wiki link", transform: (s) => wrapInline(s, "[[", "]]") },
+  { Icon: LinkIcon, key: "link", label: "Link", transform: insertLink },
+  { Icon: DividerIcon, key: "divider", label: "Divider", transform: insertDivider },
+  { Icon: TableIcon, key: "table", label: "Table", transform: insertTable },
 ];
 
 export function NoteBlockEditor({
   content,
   header,
   onChangeText,
+  topInset = 0,
 }: {
   /** The document as it stood when edit mode opened. Changing it resets the editor. */
   content: string;
@@ -111,6 +118,12 @@ export function NoteBlockEditor({
   header?: ReactNode;
   /** Fires with the FULL joined document on every keystroke/toolbar action. */
   onChangeText: (text: string) => void;
+  /** Height of the floating chrome the text scrolls UP UNDER. Applied to the
+   *  scroll CONTENT, never to the container: padding the container would put a
+   *  hard edge under the chrome — the "top header" the owner asked us to
+   *  replace with a fade (2026-07-22) — while a content inset lets the text
+   *  slide beneath the blur exactly as reading mode does. */
+  topInset?: number;
 }) {
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
@@ -259,7 +272,7 @@ export function NoteBlockEditor({
                 accessibilityLabel={tool.label}
                 testID={`note-tool-${tool.key}`}
               >
-                <Text style={[styles.toolGlyph, tool.glyphStyle]}>{tool.glyph}</Text>
+                <tool.Icon size={21} color={c.text} />
               </Pressable>
             ))}
           </ScrollView>
@@ -272,7 +285,7 @@ export function NoteBlockEditor({
   return (
     <View style={styles.flex}>
       <ScrollView
-        contentContainerStyle={styles.scrollBody}
+        contentContainerStyle={[styles.scrollBody, { paddingTop: topInset }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         testID="note-block-editor"
@@ -295,7 +308,10 @@ export function NoteBlockEditor({
               autoFocus
               scrollEnabled={false}
               textAlignVertical="top"
-              placeholder="Write…"
+              // A hint ONLY on a note with nothing in it yet. On any other block
+              // a placeholder is just a label floating in the middle of your
+              // writing — the "text box" look the owner called out (2026-07-22).
+              placeholder={nb.blocks.length <= 1 && block.body === "" ? "Start writing" : undefined}
               placeholderTextColor={c.text3}
               inputAccessoryViewID={Platform.OS === "ios" ? TOOLBAR_ID : undefined}
               testID="note-block-input"
@@ -304,7 +320,9 @@ export function NoteBlockEditor({
             <Pressable
               key={`block-${i}`}
               onPress={() => activateBlock(i)}
-              style={({ pressed }) => [styles.renderedBlock, pressed && styles.renderedBlockPressed]}
+              // No pressed-state wash: tapping a line of your own writing should
+              // drop a caret, not flash like a table row (owner 2026-07-22).
+              style={styles.renderedBlock}
               testID={`note-block-${i}`}
             >
               {block.body.trim() === "" ? (
@@ -347,25 +365,22 @@ export function NoteBlockEditor({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1 },
-    scrollBody: { paddingHorizontal: space(5), paddingTop: space(2), paddingBottom: space(4) },
-    // The revealed (raw-source) block: same body type as the rendered prose so
-    // swapping in never jolts the layout, plus a thin accent rail as the "this
-    // is source" signal.
-    activeBlock: {
-      ...type.body,
-      color: c.text,
-      padding: 0,
-      paddingLeft: space(2.5),
-      borderLeftWidth: 2,
-      borderLeftColor: c.accentLine,
-      marginVertical: space(1),
-      minHeight: 30,
-    },
+    // flexGrow so the tail below can stretch to the bottom of the screen — see
+    // `tail`. paddingTop comes from the topInset prop, applied inline.
+    scrollBody: { paddingHorizontal: space(5), paddingBottom: space(4), flexGrow: 1 },
+    // The revealed (raw-source) block. Owner 2026-07-22: editing "should work
+    // like any other notetaking app (like a notepad)" — so the block that holds
+    // the caret is styled EXACTLY like the prose around it. It used to carry an
+    // accent rail down its left edge as a "this is source" signal, which is
+    // precisely what made a note look like a text box dropped onto the page.
+    // The caret is the only cue needed, and it's the one a notepad gives you.
+    activeBlock: { ...type.body, color: c.text, padding: 0, marginVertical: space(1), minHeight: 30 },
     renderedBlock: { borderRadius: radius.sm },
-    renderedBlockPressed: { backgroundColor: c.glass },
     emptyBlock: { height: 26 },
-    // Generous tail so "tap below the text to keep writing" always has a target.
-    tail: { minHeight: 180 },
+    // Tapping below the last line puts the caret there, the way a notepad does.
+    // flexGrow (not a fixed height) so on a short note the target is the whole
+    // rest of the page rather than a 180pt strip with dead space under it.
+    tail: { flexGrow: 1, minHeight: 180 },
     // Floating pill above the keyboard (owner's ask verbatim) — centered, not
     // a full-width bar.
     toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
@@ -386,5 +401,4 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: "center",
     },
     toolBtnPressed: { backgroundColor: c.surface2 },
-    toolGlyph: { ...type.title, color: c.text },
   });
