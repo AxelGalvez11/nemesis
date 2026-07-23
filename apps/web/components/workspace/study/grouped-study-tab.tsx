@@ -268,7 +268,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           </div>
         ) : (
           <div className="grid min-h-44 place-items-center px-6 text-center">
-            <div><p className="text-xs font-semibold">No {label.toLowerCase()} yet</p><p className="mt-1 max-w-64 text-[0.75rem] text-muted-foreground">Nemesis builds {label.toLowerCase()} for you — generate them from a notebook or ask in a chat.</p></div>
+            <div><p className="text-xs font-semibold">No {label.toLowerCase()} yet</p><p className="mt-1 max-w-64 text-[0.75rem] text-muted-foreground">Nemesis builds {label.toLowerCase()} for you — attach a note from your Library in a chat and ask.</p></div>
           </div>
         )}
       </section>

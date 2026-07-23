@@ -48,6 +48,8 @@ import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
+import { LibraryPickerDialog } from "./library-picker-dialog";
+
 export type ComposerMode = "chat" | "record";
 
 const COMPOSER_MODE_STORAGE_KEY = "nemesis.web.composer-mode";
@@ -96,6 +98,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [recording, setRecording] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const activeMode = mode ?? composerMode;
 
   useEffect(() => {
@@ -243,8 +246,24 @@ export function Composer({ busy, centered = false, placement = "floating", place
               <div className="flex items-center self-center [grid-area:menu]">
                 {activeMode === "chat" ? (
                   <>
-                    <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} />
+                    {/* APPENDS, like the Library picker below. It used to
+                        replace, which was harmless while it was the only way to
+                        attach anything — now that "+" also opens the Library,
+                        replacing would silently bin the notes just picked. The
+                        input is cleared so re-choosing the same file still
+                        fires a change event. */}
+                    <input
+                      className="sr-only"
+                      multiple
+                      onChange={(event) => {
+                        const picked = Array.from(event.target.files ?? []);
+                        if (picked.length > 0) setFiles((current) => [...current, ...picked]);
+                        event.target.value = "";
+                      }}
+                      ref={fileInputRef}
+                      type="file"
+                    />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -356,6 +375,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
       </div>
       {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
+      {/* Picked notes APPEND — the file input above replaces, but a Library
+          choice is additive to whatever is already attached. */}
+      <LibraryPickerDialog
+        onAttach={(picked) => setFiles((current) => [...current, ...picked])}
+        onOpenChange={setLibraryOpen}
+        open={libraryOpen}
+      />
     </div>
   );
 }
@@ -450,7 +476,11 @@ export function RecordCompanionPanel() {
 
 // Record is deliberately absent here (owner 2026-07-22): it lives on the
 // primary button now, so the menu is attachments-only.
-function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
+//
+// "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
+// Notebooks page is retired. It opens a picker rather than a submenu because
+// the choice is multi-select across a folder tree, which a dropdown cannot hold.
+function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -462,6 +492,10 @@ function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
         <DropdownMenuItem onSelect={onChooseFiles}>
           <Codicon name="file-media" size="0.875rem" />
           Files
+        </DropdownMenuItem>
+        <DropdownMenuItem data-testid="composer-add-library" onSelect={onOpenLibrary}>
+          <Codicon name="book" size="0.875rem" />
+          Library
         </DropdownMenuItem>
         <DropdownMenuItem>
           <Codicon name="search" size="0.875rem" />
