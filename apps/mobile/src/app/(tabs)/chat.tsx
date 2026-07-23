@@ -12,7 +12,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import Reanimated, { FadeIn } from "react-native-reanimated";
@@ -43,6 +42,8 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
 import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
@@ -102,7 +103,6 @@ export default function ChatScreen() {
   const keyboardUp = useKeyboardVisible();
   const { setHeaderTitle, newChat, setHeaderRight, setImmersive } = useShell();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
 
   // The active thread rides in the route param so the drawer/TopBar can steer it.
   const params = useLocalSearchParams<{ c?: string }>();
@@ -142,6 +142,10 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
+  // when the picker actually opens.
+  const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [deepResearchOn, setDeepResearchOn] = useState(false);
   // Instant/Medium/High — the "+" menu's intelligence dial (owner 2026-07-22).
   // Like Deep research it PERSISTS across sends within a thread rather than
@@ -172,6 +176,30 @@ export default function ChatScreen() {
   // thread open. Set during render below, read by the scroll effect (kept out of its
   // deps this way).
   const lastUserRowIndexRef = useRef(-1);
+  // Bottom-spacer measurement (owner 2026-07-22: "chats should not be able to be
+  // scrolled down beyond the answer prompt"). The spacer exists so the newest
+  // question can scroll up to the TOP of the viewport — but it used to be a flat
+  // half-screen, so once an answer was long you could keep dragging into empty
+  // space below it. Now it's only ever the shortfall: measure the list's own
+  // height and the height of the last turn (question + everything after it), and
+  // pad by the difference, which is zero as soon as the turn fills the screen.
+  const rowHeights = useRef(new Map<string, number>());
+  const rowIdsRef = useRef<string[]>([]);
+  const [listHeight, setListHeight] = useState(0);
+  const [lastTurnHeight, setLastTurnHeight] = useState(0);
+
+  const measureLastTurn = useCallback(() => {
+    const from = lastUserRowIndexRef.current;
+    const ids = rowIdsRef.current;
+    if (from < 0) {
+      setLastTurnHeight(0);
+      return;
+    }
+    let total = 0;
+    for (let i = from; i < ids.length; i += 1) total += rowHeights.current.get(ids[i]) ?? 0;
+    // Sub-pixel churn while an answer streams would re-render on every chunk.
+    setLastTurnHeight((prev) => (Math.abs(prev - total) > 1 ? total : prev));
+  }, []);
 
   // Load the active thread: the route's `c` if present, else the most recent
   // thread (resume), else a brand-new empty thread. Re-runs on user/thread change.
@@ -365,6 +393,58 @@ export default function ChatScreen() {
     });
   }, [uid, threadId]);
 
+  // Move to notebook (owner 2026-07-22). The two live in different tables, so
+  // this copies the conversation across and only then deletes the original —
+  // a failure part-way can't lose the chat. Per-message sources and deliverable
+  // chips have no column in notebook_chat_messages and don't come along, which
+  // is what the confirmation says before anything is written.
+  const openNotebookPicker = useCallback(() => {
+    setMenuOpen(false);
+    setNotebookPickerOpen(true);
+    void listNotebooks()
+      .then(setNotebooks)
+      .catch(() => setNotebooks([]));
+  }, []);
+
+  const moveToNotebook = useCallback(
+    (notebookId: string, notebookName: string) => {
+      if (!uid || !threadId) return;
+      const transcript = messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ content: m.content, role: m.role as "user" | "assistant" }));
+      const hasExtras = messages.some((m) => (m.sources?.length ?? 0) > 0 || (m.outputs?.length ?? 0) > 0);
+      Alert.alert(
+        `Move to "${notebookName}"?`,
+        hasExtras
+          ? "The conversation moves into that notebook and leaves your chat list. Its web sources and saved deliverables stay behind — a notebook chat has nowhere to keep them."
+          : "The conversation moves into that notebook and leaves your chat list.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Move",
+            onPress: () => {
+              setNotebookPickerOpen(false);
+              void (async () => {
+                try {
+                  // The chat screen shows no title (owner 2026-07-20 removed it),
+                  // so name the notebook chat after the question that started it.
+                  const opener = transcript.find((m) => m.role === "user")?.content.trim() ?? "";
+                  const title = opener ? opener.replace(/\s+/g, " ").slice(0, 80) : "Chat";
+                  await importChatThreadIntoNotebook({ messages: transcript, notebookId, title });
+                  await deleteThread(uid, threadId);
+                  router.replace("/chat");
+                } catch (e) {
+                  Alert.alert("Couldn't move that chat", e instanceof Error ? e.message : "Try again in a moment.");
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [uid, threadId, messages],
+  );
+
   const handleTogglePin = useCallback(() => {
     if (!uid || !threadId) return;
     const next = !pinned;
@@ -539,16 +619,27 @@ export default function ChatScreen() {
     );
   }
   const hasContent = rows.length > 0;
-  // The tall two-row composer is the empty-chat landing look; once the
-  // conversation has anything in it the composer shrinks to a single row so the
-  // messages own the screen (owner 2026-07-22).
-  const composerCompact = hasContent;
+  // Composer size follows the KEYBOARD, not the conversation (owner 2026-07-22:
+  // "when users have keyboard open, the chat composer should be the big version,
+  // but when keyboard is down the chatcomposer should have the smaller one").
+  // It used to key off hasContent, which meant a long chat gave you the cramped
+  // single row even while you were typing into it. The landing look is
+  // unchanged: focusing the composer on entry (see the useFocusEffect above)
+  // raises the keyboard, so an empty chat still opens on the tall card.
+  const composerCompact = !keyboardUp;
   // The newest user-message row — what the scroll effect pins to the top. Computed here
   // in render and stashed in a ref so that effect needn't depend on `rows`.
   lastUserRowIndexRef.current = rows.reduce(
     (acc, row, i) => (row.kind === "msg" && row.msg?.role === "user" ? i : acc),
     -1,
   );
+  // Row order for the last-turn measurement (see measureLastTurn) — same reason
+  // as the ref above: an onLayout handler shouldn't have to close over `rows`.
+  rowIdsRef.current = rows.map((row) => row.id);
+  // How much padding the last turn still needs to be able to reach the top of
+  // the list. contentTop is the glass TopBar's clearance — the question should
+  // land just under it, not behind it.
+  const footerSpacer = Math.max(0, listHeight - contentTop - space(2) - lastTurnHeight);
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
@@ -587,33 +678,43 @@ export default function ChatScreen() {
                 }
               }, 120);
             }}
-            renderItem={({ item }) =>
-              item.kind === "thinking" ? (
-                <View style={styles.assistantRow} testID="chat-thinking">
-                  <ThinkingLine phase={phase} testID="chat-thinking-line" />
-                </View>
-              ) : item.kind === "error" ? (
-                <View style={styles.errorBubble} testID="chat-error">
-                  <Text style={styles.errorText}>{item.errorText}</Text>
-                </View>
-              ) : item.msg!.role === "user" ? (
-                <View style={[styles.bubble, styles.userBubble]}>
-                  <Text style={styles.userText}>{item.msg!.content}</Text>
-                </View>
-              ) : (
-                // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
-                // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
-                // grounded this turn with a web search) and any deliverable chips this
-                // turn carries render underneath.
-                <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
-                  <MessageBody content={item.msg!.content} styles={markdownStyles} />
-                  {item.msg!.sources?.length ? (
-                    <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
-                  ) : null}
-                  {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
-                </Reanimated.View>
-              )
-            }
+            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+            renderItem={({ item }) => (
+              // The wrapper exists to MEASURE: the bottom spacer below is sized
+              // from the height of the last turn, so every row reports its own.
+              <View
+                onLayout={(e) => {
+                  rowHeights.current.set(item.id, e.nativeEvent.layout.height);
+                  measureLastTurn();
+                }}
+              >
+                {item.kind === "thinking" ? (
+                  <View style={styles.assistantRow} testID="chat-thinking">
+                    <ThinkingLine phase={phase} testID="chat-thinking-line" />
+                  </View>
+                ) : item.kind === "error" ? (
+                  <View style={styles.errorBubble} testID="chat-error">
+                    <Text style={styles.errorText}>{item.errorText}</Text>
+                  </View>
+                ) : item.msg!.role === "user" ? (
+                  <View style={[styles.bubble, styles.userBubble]}>
+                    <Text style={styles.userText}>{item.msg!.content}</Text>
+                  </View>
+                ) : (
+                  // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
+                  // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
+                  // grounded this turn with a web search) and any deliverable chips this
+                  // turn carries render underneath.
+                  <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
+                    <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                    {item.msg!.sources?.length ? (
+                      <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
+                    ) : null}
+                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                  </Reanimated.View>
+                )}
+              </View>
+            )}
             ListHeaderComponent={
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
@@ -640,8 +741,11 @@ export default function ChatScreen() {
             }
             ListFooterComponent={
               // Bottom spacer so the last exchange can scroll up until the question sits at
-              // the top of the viewport (ChatGPT-style). Only when there's content.
-              hasContent ? <View style={{ height: Math.round(windowHeight * 0.5) }} /> : null
+              // the top of the viewport (ChatGPT-style) — and NOT ONE POINT MORE (owner
+              // 2026-07-22). It's the shortfall between the viewport and the last turn, so
+              // a long answer that already fills the screen gets no spacer at all and the
+              // list simply stops at the end of the text.
+              hasContent ? <View style={{ height: footerSpacer }} /> : null
             }
           />
         )}
@@ -650,8 +754,27 @@ export default function ChatScreen() {
           onClose={() => setMenuOpen(false)}
           pinned={pinned}
           onDelete={handleDelete}
+          onMoveToNotebook={openNotebookPicker}
           onTogglePin={handleTogglePin}
           topInset={insets.top}
+        />
+        {/* Destination list for "Move to notebook" — reuses the note picker's
+            sheet, so it inherits the same drag-to-expand and glass. */}
+        <NoteListSheet
+          visible={notebookPickerOpen}
+          title="Move to notebook"
+          rows={notebooks.map<NoteSheetRow>((n) => ({
+            key: n.id,
+            label: n.name,
+            ...(n.description ? { sublabel: n.description } : {}),
+          }))}
+          emptyText="No notebooks yet — create one on the Notebooks tab first."
+          onPick={(id) => {
+            const notebook = notebooks.find((n) => n.id === id);
+            if (notebook) moveToNotebook(notebook.id, notebook.name);
+          }}
+          onClose={() => setNotebookPickerOpen(false)}
+          testID="chat-notebook-picker"
         />
         <UpgradeSheet
           visible={upgrade !== null}
@@ -757,6 +880,7 @@ function ChatActionsPopup({
   onClose,
   pinned,
   onDelete,
+  onMoveToNotebook,
   onTogglePin,
   topInset,
 }: {
@@ -764,6 +888,7 @@ function ChatActionsPopup({
   onClose: () => void;
   pinned: boolean;
   onDelete: () => void;
+  onMoveToNotebook: () => void;
   onTogglePin: () => void;
   topInset: number;
 }) {
@@ -803,6 +928,14 @@ function ChatActionsPopup({
             accessibilityRole="button"
           >
             <Text style={styles.actionsLabel}>{pinned ? "Unpin" : "Pin"}</Text>
+          </Pressable>
+          <Pressable
+            testID="chat-action-move-notebook"
+            onPress={() => pick(onMoveToNotebook)}
+            style={({ pressed }) => [styles.actionsRow, styles.actionsDivider, pressed && styles.actionsRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionsLabel}>Move to notebook</Text>
           </Pressable>
           <Pressable
             testID="chat-action-delete"

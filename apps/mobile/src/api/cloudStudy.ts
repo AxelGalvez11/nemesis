@@ -12,6 +12,15 @@
 // Mac offline grade-queue (review_events + local JSON queue) is retired for
 // cloud Study — a network failure returns a friendly blocking message instead
 // of silently queuing (see gradeStudyCard below).
+import {
+  decksInGroup,
+  isWithinGroup,
+  joinGroupPath,
+  normalizeGroupPath,
+  pathLeaf,
+  renamedGroupPath,
+  rewriteGroupPrefix,
+} from "@/lib/study-tree";
 import { supabase } from "./supabase";
 
 export interface CloudStudyDeck {
@@ -262,4 +271,141 @@ export async function gradeStudyCard(cardId: string, grade: StudyGrade): Promise
   } catch {
     return { ok: false, message: OFFLINE_MESSAGE };
   }
+}
+
+// --- rename / move / delete ------------------------------------------------
+//
+// Deck and folder edits (owner 2026-07-22: long-press a Study row for "rename,
+// delete, or move"), ported from the web store's study-cloud-store.ts.
+//
+// Study has NO folder table — a deck's folder is a "::"-prefix inside its own
+// name — so a folder operation is a fan-out of name rewrites across every deck
+// beneath it. lib/study-tree.ts owns that (segment-aware, so "Exam 1" can never
+// swallow "Exam 10"); these functions are just the writes.
+//
+// UNLIKE the library, a deck delete is PERMANENT: study_cards has
+// `on delete cascade` on its deck foreign key (see the 20260719194556
+// migration), so removing a deck destroys its cards and their review history
+// along with it. The callers confirm accordingly.
+//
+// Like cloudLibrary's writes these are stateless: the caller passes the decks it
+// already has on screen, and re-fetches afterwards.
+
+/** Rename one deck's LEAF, leaving it in its current folder. A "::" typed into
+ *  the field can't reparent the deck (renamedGroupPath keeps the parent). */
+export async function renameStudyDeck(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  deckId: string,
+  nextLeaf: string,
+): Promise<void> {
+  const deck = decks.find((item) => item.id === deckId);
+  if (!deck) throw new Error("That deck is no longer in your account.");
+  const name = renamedGroupPath(deck.name, nextLeaf);
+  if (!name) throw new Error("Enter a name.");
+  if (name === deck.name) return;
+  if (decks.some((item) => item.id !== deckId && item.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error("A deck with that name already exists in this folder.");
+  }
+  const { error } = await supabase.from("study_decks").update({ name }).eq("id", deckId).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Move one deck into `targetGroup` ("" = top level), keeping its leaf name. */
+export async function moveStudyDeck(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  deckId: string,
+  targetGroup: string,
+): Promise<void> {
+  const deck = decks.find((item) => item.id === deckId);
+  if (!deck) throw new Error("That deck is no longer in your account.");
+  const name = joinGroupPath(targetGroup, pathLeaf(deck.name));
+  if (name === deck.name) return;
+  if (decks.some((item) => item.id !== deckId && item.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error("A deck with that name already exists there.");
+  }
+  const { error } = await supabase.from("study_decks").update({ name }).eq("id", deckId).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Delete one deck. PERMANENT — its cards cascade away with it. */
+export async function deleteStudyDeck(userId: string, deckId: string): Promise<void> {
+  const { error } = await supabase.from("study_decks").delete().eq("id", deckId).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Rewrite a folder prefix across every deck beneath it — the shared cascade
+ *  behind renaming and moving a folder. rewriteGroupPrefix returns null for a
+ *  deck that wouldn't change, so those rows are never written at all. */
+async function rewriteStudyGroup(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  source: string,
+  destination: string,
+): Promise<void> {
+  const renamed = decksInGroup(decks, source).flatMap((deck) => {
+    const name = rewriteGroupPrefix(deck.name, source, destination);
+    return name ? [{ deck, name }] : [];
+  });
+  if (renamed.length === 0) return;
+  const taken = new Set(
+    decks.filter((deck) => !isWithinGroup(deck.name, source)).map((deck) => deck.name.toLowerCase()),
+  );
+  if (renamed.some(({ name }) => taken.has(name.toLowerCase()))) {
+    throw new Error("A deck with that name already exists there.");
+  }
+  const results = await Promise.all(
+    renamed.map(({ deck, name }) => supabase.from("study_decks").update({ name }).eq("id", deck.id).eq("user_id", userId)),
+  );
+  const failure = results.find((result) => result.error)?.error;
+  if (failure) throw new Error(failure.message);
+}
+
+/** Rename a folder in place — same parent, new last segment. */
+export async function renameStudyGroup(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  group: string,
+  nextLeaf: string,
+): Promise<void> {
+  const source = normalizeGroupPath(group);
+  const destination = renamedGroupPath(source, nextLeaf);
+  if (!source || !destination) throw new Error("Enter a name.");
+  if (destination === source) return;
+  await rewriteStudyGroup(userId, decks, source, destination);
+}
+
+/** Move a folder (and its whole subtree) into `targetGroup`; "" = top level. */
+export async function moveStudyGroup(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  group: string,
+  targetGroup: string,
+): Promise<void> {
+  const source = normalizeGroupPath(group);
+  const target = normalizeGroupPath(targetGroup);
+  if (!source) throw new Error("That folder can't be moved.");
+  // Reparenting a folder under itself would orphan everything inside it.
+  if (isWithinGroup(target, source)) throw new Error("A folder can't be moved inside itself.");
+  const destination = joinGroupPath(target, pathLeaf(source));
+  if (destination === source) return;
+  await rewriteStudyGroup(userId, decks, source, destination);
+}
+
+/** Delete a folder and every deck inside it. PERMANENT — all their cards
+ *  cascade away too. */
+export async function deleteStudyGroup(
+  userId: string,
+  decks: readonly CloudStudyDeck[],
+  group: string,
+): Promise<void> {
+  const doomed = decksInGroup(decks, group);
+  if (doomed.length === 0) return;
+  const { error } = await supabase
+    .from("study_decks")
+    .delete()
+    .in("id", doomed.map((deck) => deck.id))
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
 }

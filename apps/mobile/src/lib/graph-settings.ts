@@ -41,6 +41,43 @@ export function isSmallGraph(nodeCount: number): boolean {
   return nodeCount <= 40;
 }
 
+/** Node radius, grown by how many notes reference it — Obsidian's defining
+ *  rule ("the more nodes that reference a given node, the bigger it gets").
+ *  Ported from web's graph-canvas-2d.ts nodeRadiusFor (PR #254), where the
+ *  same fix landed: every circle used to draw the same size and a hub was
+ *  marked only by a glow halo, which is the loudest tell that a graph ISN'T
+ *  Obsidian — Obsidian is flat and sizes by degree.
+ *
+ *  sqrt on purpose: linear scaling lets one hub in a big vault swallow the
+ *  screen. `multiplier` is the Node size slider. */
+export function nodeRadiusFor(degree: number, maxDegree: number, multiplier: number): number {
+  const base = 2.6 * multiplier;
+  if (maxDegree <= 0) return base;
+  const share = Math.min(1, Math.max(0, degree) / maxDegree);
+  return base * (0.72 + 1.15 * Math.sqrt(share));
+}
+
+/** The zoom that fits `content` inside `viewport`, with a margin, clamped to
+ *  the screen's pinch range. Returns 1 when either box is unmeasured — the
+ *  phone graph had NO fit at all (scale pinned to 1), so a layout that spread
+ *  past the canvas simply ran off screen with no hint that anything was there.
+ *
+ *  Web hit a neighbouring bug where the first fit ran at a 0x0 host and was
+ *  never retried; guarding on a zero viewport here is what keeps the caller
+ *  from baking in a nonsense scale on the first frame. */
+export function fitScaleFor(
+  content: { width: number; height: number },
+  viewport: { width: number; height: number },
+  minScale: number,
+  maxScale: number,
+  margin = 0.86,
+): number {
+  if (viewport.width <= 0 || viewport.height <= 0) return 1;
+  if (content.width <= 0 || content.height <= 0) return 1;
+  const raw = Math.min(viewport.width / content.width, viewport.height / content.height) * margin;
+  return Math.min(maxScale, Math.max(minScale, raw));
+}
+
 // Phone-sane node cap — see graph.tsx's top-of-file comment. The web Graph
 // has no cap of its own (graph-notes.ts/graph-canvas*.tsx never truncate),
 // so this is a phone-only addition, not a reconciliation to web behavior.

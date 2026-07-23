@@ -60,8 +60,12 @@ export function GraphSettingsPanel({
   const styles = panelStyles(c);
   return (
     <View style={[styles.panel, { top }]} testID="graph-settings-panel">
-      <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={onGravityChange} step={0.1} value={gravity} />
-      <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={onRepulsionChange} step={0.1} value={repulsion} />
+      {/* Obsidian's own control vocabulary (owner 2026-07-23 asked for the
+          graph to read like Obsidian's; web's panel took the same names in
+          PR #254). Same sliders, same ranges — only the words changed, so
+          someone who knows Obsidian's Forces panel recognises these. */}
+      <ForceSlider c={c} label="Center force" max={3} min={0} onChange={onGravityChange} step={0.1} value={gravity} />
+      <ForceSlider c={c} label="Repel force" max={4} min={0.2} onChange={onRepulsionChange} step={0.1} value={repulsion} />
       <ForceSlider c={c} label="Node size" max={2} min={0.5} onChange={onNodeSizeChange} step={0.1} value={nodeSize} />
       <ForceSlider c={c} label="Link distance" max={2} min={0.5} onChange={onLinkDistanceChange} step={0.1} value={linkDistance} />
 

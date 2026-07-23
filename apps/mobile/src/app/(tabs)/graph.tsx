@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import Svg, { Line } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
@@ -13,7 +13,7 @@ import { GraphSettingsPanel } from "@/components/GraphSettingsPanel";
 import { SettingsIcon } from "@/components/icons";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
-import { capGraphNotes, DEFAULT_FORCES, isSmallGraph, type LabelMode, shouldShowLabel } from "@/lib/graph-settings";
+import { capGraphNotes, DEFAULT_FORCES, fitScaleFor, isSmallGraph, type LabelMode, shouldShowLabel } from "@/lib/graph-settings";
 import { buildNoteGraph, createLayoutSim, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
 import type { GraphNode } from "@/lib/note-graph";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -114,6 +114,10 @@ export default function GraphScreen() {
   // when a background refresh confirms nothing changed.
   const lastSignatureRef = useRef<string>("");
   const canvasSizeRef = useRef({ height: 0, width: 0 });
+  // True between a (re)seed and the zoom-to-fit that follows it settling — see
+  // fitToContent. Not a state: reading it inside the rAF loop must never
+  // re-render, and setting it must never restart the loop.
+  const pendingFitRef = useRef(true);
   // The seeding effect below reads this once per (re)seed instead of depending
   // on gravity/repulsion/linkDistance state directly — depending on them would
   // reseed the spiral (and jump every node's position) on every slider drag.
@@ -148,19 +152,76 @@ export default function GraphScreen() {
     }
   }, []);
 
+  // ZOOM TO FIT once the layout stops moving (owner 2026-07-23: "the graph
+  // page sucks"). The screen had NO fit at all — scale was pinned to 1 and the
+  // transform to identity — so on any graph whose repulsion pushed it past the
+  // canvas, most of it simply sat off-screen with nothing to say so. The seed
+  // spiral is bounded by the canvas, so this only ever matters once the sim has
+  // spread things out, which is why it runs on settle rather than per frame.
+  //
+  // The transform container is exactly the canvas and React Native scales about
+  // an element's centre, so centring the content is just "how far the content's
+  // centre is from the canvas centre", scaled.
+  const fitToContent = useCallback(
+    (snap: NoteGraph) => {
+      const { width: vw, height: vh } = canvasSizeRef.current;
+      if (vw <= 0 || vh <= 0 || snap.nodes.length === 0) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const node of snap.nodes) {
+        if (node.x < minX) minX = node.x;
+        if (node.x > maxX) maxX = node.x;
+        if (node.y < minY) minY = node.y;
+        if (node.y > maxY) maxY = node.y;
+      }
+      // Room for the dot itself and the label hanging under it, so an outermost
+      // node isn't half off the edge at the fitted zoom.
+      const pad = 36;
+      const next = fitScaleFor(
+        { height: maxY - minY + pad * 2, width: maxX - minX + pad * 2 },
+        { height: vh, width: vw },
+        MIN_SCALE,
+        MAX_SCALE,
+      );
+      const nextX = -((minX + maxX) / 2 - vw / 2) * next;
+      const nextY = -((minY + maxY) / 2 - vh / 2) * next;
+      scale.value = withTiming(next, { duration: 280 });
+      translateX.value = withTiming(nextX, { duration: 280 });
+      translateY.value = withTiming(nextY, { duration: 280 });
+      // The gesture handlers read these on the next pinch/pan, so they have to
+      // agree with where the view actually ended up.
+      savedScale.value = next;
+      savedTranslateX.value = nextX;
+      savedTranslateY.value = nextY;
+    },
+    [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY],
+  );
+
   // The one animation loop — see the top-of-file comment for why one rAF
   // driver replaces the old setInterval and how it decides to keep
-  // rescheduling itself. Empty deps (reads only refs) so its identity never
-  // changes, which is what lets ensureTicking below stay stable too.
+  // rescheduling itself. Deps are shared values and stable callbacks only, so
+  // its identity never changes — which is what lets ensureTicking stay stable.
   const tick = useCallback(() => {
     rafRef.current = null;
     if (!focusedRef.current) return;
     const sim = sim2DRef.current;
     if (!sim) return;
     for (let i = 0; i < STEPS_PER_FRAME && !sim.settled; i++) sim.step();
-    setGraph(sim.snapshot());
-    if (!sim.settled) rafRef.current = requestAnimationFrame(tick);
-  }, []);
+    const snap = sim.snapshot();
+    setGraph(snap);
+    if (!sim.settled) {
+      rafRef.current = requestAnimationFrame(tick);
+      return;
+    }
+    // Settled. Fit ONCE per seed/reset — refitting after every slider nudge
+    // would yank the view out from under someone who had panned deliberately.
+    if (pendingFitRef.current) {
+      pendingFitRef.current = false;
+      fitToContent(snap);
+    }
+  }, [fitToContent]);
 
   const ensureTicking = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -382,6 +443,8 @@ export default function GraphScreen() {
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
+    // A fresh layout earns a fresh zoom-to-fit once it settles.
+    pendingFitRef.current = true;
     if (!builtGraph || builtGraph.nodes.length === 0) {
       sim2DRef.current = null;
       setGraph(null);

@@ -19,6 +19,16 @@
 // still renders offline next time. The filename is keyed by uid, so a stale cache from a
 // previous account can never leak into a new one on the same device.
 import * as FileSystem from "expo-file-system/legacy";
+import {
+  folderOf,
+  isAtOrUnder,
+  movedFolderPath,
+  normalizeLibraryFolder,
+  remapUnder,
+  renamedFolderPath,
+  safeLibraryTitle,
+  uniqueNotePath,
+} from "@/lib/library-paths";
 import { supabase } from "./supabase";
 
 /** One library document as the phone consumes it — same shape as the web's
@@ -270,4 +280,214 @@ export async function updateNoteContent(uid: string, noteId: string, content: st
   const cache = await readDiskCache(uid);
   await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
   return note;
+}
+
+// --- rename / move / delete ------------------------------------------------
+//
+// The phone's structural library writes (owner 2026-07-22: long-press a row for
+// "rename, delete, or move"). Ported from the web store's useCloudLibrary so the
+// two clients agree on naming and cascade rules — see lib/library-paths.ts for
+// the pure half.
+//
+// Two things worth knowing about the shape of these:
+//  - They take the CURRENT SNAPSHOT rather than owning state. The web store is a
+//    hook holding the library in memory; on the phone the screens hold it, and
+//    api/ modules stay stateless. A caller passes what it already has on screen.
+//  - Deletes are SOFT (deleted: true), exactly as on the web — the row keeps its
+//    path, which is why createNote's unique-suffix retry exists. Nothing here
+//    destroys data; a deleted note can still be recovered on the web app.
+//
+// After any of these the caller should re-fetch (fetchLibrary), which rewrites
+// the whole disk cache. Each one still patches the cache itself so the list is
+// right even if that refresh can't reach the network.
+
+/** Apply `remap` to every cached note's path, so an offline-only client doesn't
+ *  keep showing the pre-rename tree until its next successful pull. */
+async function remapCachedPaths(uid: string, remap: (path: string) => string): Promise<void> {
+  const cache = await readDiskCache(uid);
+  const notes: Record<string, CloudLibraryNote> = {};
+  for (const [id, note] of Object.entries(cache.notes)) notes[id] = { ...note, path: remap(note.path) };
+  await writeDiskCache(uid, { ...cache, folders: cache.folders.map(remap), notes });
+}
+
+/** Drop notes from the cache by id (used after a soft delete). */
+async function forgetCachedNotes(uid: string, ids: ReadonlySet<string>): Promise<void> {
+  const cache = await readDiskCache(uid);
+  const notes: Record<string, CloudLibraryNote> = {};
+  for (const [id, note] of Object.entries(cache.notes)) if (!ids.has(id)) notes[id] = note;
+  await writeDiskCache(uid, { ...cache, notes });
+}
+
+/** Whether some OTHER folder already occupies `candidate`. Checks note paths as
+ *  well as folder rows, since the phone's tree is derived from note paths and a
+ *  folder can exist on screen without a row of its own. */
+function folderExists(snapshot: CloudLibrarySnapshot, candidate: string, excludeSource: string): boolean {
+  const needle = candidate.toLowerCase();
+  if (needle === excludeSource.toLowerCase()) return false;
+  if (snapshot.folders.some((folder) => folder.toLowerCase() === needle)) return true;
+  return snapshot.notes.some((note) => isAtOrUnder(folderOf(note.path).toLowerCase(), needle));
+}
+
+/** Rename one note. The title is BOTH the `title` column and the filename in
+ *  `path` (the web store does the same), staying in its current folder and
+ *  stepping a "2"/"3" suffix if that name is already taken there. Returns the
+ *  note's new path. */
+export async function renameNote(
+  uid: string,
+  snapshot: CloudLibrarySnapshot,
+  noteId: string,
+  rawTitle: string,
+): Promise<string> {
+  const existing = snapshot.notes.find((note) => note.id === noteId);
+  if (!existing) throw new Error("That note is no longer in your library.");
+  const title = safeLibraryTitle(rawTitle);
+  const path = uniqueNotePath(title, folderOf(existing.path), snapshot.notes, noteId);
+  const { error } = await supabase
+    .from("readable_library_documents")
+    .update({ title, path, updated_at: new Date().toISOString() })
+    .eq("id", noteId)
+    .eq("user_id", uid);
+  if (error) throw new Error(error.message);
+
+  const cache = await readDiskCache(uid);
+  const cached = cache.notes[noteId];
+  if (cached) await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [noteId]: { ...cached, path, title } } });
+  return path;
+}
+
+/** Move one note into `targetFolder` ("" = the library root), keeping its title
+ *  and suffixing only if that name is taken at the destination. */
+export async function moveNote(
+  uid: string,
+  snapshot: CloudLibrarySnapshot,
+  noteId: string,
+  targetFolder: string,
+): Promise<string> {
+  const existing = snapshot.notes.find((note) => note.id === noteId);
+  if (!existing) throw new Error("That note is no longer in your library.");
+  const path = uniqueNotePath(existing.title, normalizeLibraryFolder(targetFolder), snapshot.notes, noteId);
+  if (path === existing.path) return path;
+  const { error } = await supabase
+    .from("readable_library_documents")
+    .update({ path, updated_at: new Date().toISOString() })
+    .eq("id", noteId)
+    .eq("user_id", uid);
+  if (error) throw new Error(error.message);
+
+  const cache = await readDiskCache(uid);
+  const cached = cache.notes[noteId];
+  if (cached) await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [noteId]: { ...cached, path } } });
+  return path;
+}
+
+/** Soft-delete one note — same `deleted: true` flag the web app sets, so the
+ *  note leaves both clients' lists but its content is still recoverable. */
+export async function deleteNote(uid: string, noteId: string): Promise<void> {
+  const { error } = await supabase
+    .from("readable_library_documents")
+    .update({ deleted: true, updated_at: new Date().toISOString() })
+    .eq("id", noteId)
+    .eq("user_id", uid);
+  if (error) throw new Error(error.message);
+  await forgetCachedNotes(uid, new Set([noteId]));
+}
+
+/** Rewrite one folder prefix to another across every note and explicit folder
+ *  row beneath it — the single cascade behind both renameFolder and moveFolder,
+ *  which differ only in how they compute the destination.
+ *
+ *  Note the phone derives its folder TREE from note paths (lib/library-sync.ts),
+ *  so a folder on screen may have no `kind:"folder"` row at all; updating the
+ *  notes is what actually moves it, and the folder-row update is for parity with
+ *  the web app, which does keep those rows. */
+async function rewriteFolderPrefix(
+  uid: string,
+  snapshot: CloudLibrarySnapshot,
+  source: string,
+  destination: string,
+): Promise<void> {
+  const remap = (path: string) => remapUnder(path, source, destination);
+  const movedNotes = snapshot.notes.filter((note) => note.path.startsWith(`${source}/`));
+  const movedFolders = snapshot.folders.filter((folder) => isAtOrUnder(folder, source));
+  const updatedAt = new Date().toISOString();
+  const results = await Promise.all([
+    ...movedNotes.map((note) =>
+      supabase
+        .from("readable_library_documents")
+        .update({ path: remap(note.path), updated_at: updatedAt })
+        .eq("id", note.id)
+        .eq("user_id", uid),
+    ),
+    ...movedFolders.map((folder) =>
+      supabase
+        .from("readable_library_documents")
+        .update({ path: remap(folder), title: remap(folder).split("/").pop(), updated_at: updatedAt })
+        .eq("path", folder)
+        .eq("kind", "folder")
+        .eq("user_id", uid),
+    ),
+  ]);
+  const failure = results.find((result) => result.error)?.error;
+  if (failure) throw new Error(failure.message);
+  await remapCachedPaths(uid, remap);
+}
+
+/** Rename a folder in place — same parent, new last segment. A slash typed into
+ *  the name can't reparent the folder (renamedFolderPath keeps only the leaf). */
+export async function renameFolder(
+  uid: string,
+  snapshot: CloudLibrarySnapshot,
+  folderPath: string,
+  nextLeaf: string,
+): Promise<void> {
+  const source = normalizeLibraryFolder(folderPath);
+  const destination = renamedFolderPath(source, nextLeaf);
+  if (!source || !destination) throw new Error("That folder name can't be used.");
+  if (destination === source) return;
+  if (folderExists(snapshot, destination, source)) throw new Error("A folder with that name already exists there.");
+  await rewriteFolderPrefix(uid, snapshot, source, destination);
+}
+
+/** Move a folder (and everything under it) into `targetFolder`; "" = the root. */
+export async function moveFolder(
+  uid: string,
+  snapshot: CloudLibrarySnapshot,
+  folderPath: string,
+  targetFolder: string,
+): Promise<void> {
+  const source = normalizeLibraryFolder(folderPath);
+  const target = normalizeLibraryFolder(targetFolder);
+  if (!source) throw new Error("That folder can't be moved.");
+  // Reparenting a folder under itself would orphan the whole subtree.
+  if (isAtOrUnder(target, source)) throw new Error("A folder can't be moved inside itself.");
+  const destination = movedFolderPath(source, target);
+  if (destination === source) return;
+  if (folderExists(snapshot, destination, source)) throw new Error("A folder with that name already exists there.");
+  await rewriteFolderPrefix(uid, snapshot, source, destination);
+}
+
+/** Soft-delete a folder: every note beneath it, plus any explicit folder rows.
+ *  Same cascade the web app runs, and same recoverable `deleted: true`. */
+export async function deleteFolder(uid: string, snapshot: CloudLibrarySnapshot, folderPath: string): Promise<void> {
+  const path = normalizeLibraryFolder(folderPath);
+  if (!path) return;
+  const doomedNotes = snapshot.notes.filter((note) => note.path.startsWith(`${path}/`));
+  const doomedFolders = snapshot.folders.filter((folder) => isAtOrUnder(folder, path));
+  const updatedAt = new Date().toISOString();
+  const results = await Promise.all([
+    ...doomedNotes.map((note) =>
+      supabase.from("readable_library_documents").update({ deleted: true, updated_at: updatedAt }).eq("id", note.id).eq("user_id", uid),
+    ),
+    ...doomedFolders.map((folder) =>
+      supabase
+        .from("readable_library_documents")
+        .update({ deleted: true, updated_at: updatedAt })
+        .eq("path", folder)
+        .eq("kind", "folder")
+        .eq("user_id", uid),
+    ),
+  ]);
+  const failure = results.find((result) => result.error)?.error;
+  if (failure) throw new Error(failure.message);
+  await forgetCachedNotes(uid, new Set(doomedNotes.map((note) => note.id)));
 }

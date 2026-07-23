@@ -1,0 +1,185 @@
+import { useCallback, useRef, useState } from "react";
+import type { View } from "react-native";
+import { Gesture } from "react-native-gesture-handler";
+import { useSharedValue, type SharedValue } from "react-native-reanimated";
+
+// Hold-then-drag a row onto a folder (owner 2026-07-23: "allow users to hold
+// down on items to drag or drop, or long hold to open up minimenu"). Shared by
+// the Library tree and the Study deck tree, which asked for identical behaviour.
+//
+// ONE gesture serves both halves of that sentence, because they start the same
+// way. A Pan with `activateAfterLongPress` engages after the hold; what happens
+// next depends on whether the finger moved:
+//
+//   hold, then move            -> drag; releasing over a folder moves the item
+//   hold, then release in place-> the actions menu (onHold)
+//   quick tap                  -> never reaches this gesture at all
+//
+// That last line is why the rows keep their ordinary <Pressable> underneath
+// rather than racing a Tap gesture here. `activateAfterLongPress` leaves the
+// Pan inactive for a quick tap, so the Pressable handles it — including its
+// pressed-state styling, which a Tap gesture has no equivalent for. When the
+// hold does elapse, the Pan activates and RNGH cancels the Pressable's touch,
+// so `onPress` cannot also fire. The row's own `onLongPress` must be REMOVED
+// when adopting this, or the menu would open twice.
+//
+// HIT-TESTING USES WINDOW COORDINATES, measured once when the drag starts.
+// Row `onLayout` reports a position relative to whatever the parent happens to
+// be — which is a FlatList cell in the Library and the scroll content in Study —
+// so it can't be compared against a finger position across both screens.
+// `measureInWindow` gives one coordinate space that is true on either. Measuring
+// once at drag start is enough because the drag gesture owns the touch for its
+// duration, so the list underneath cannot scroll and move the rows.
+//
+// Not included, deliberately: auto-scrolling when you drag near the top or
+// bottom edge. You can only drop on a row you can see.
+
+/** How long to hold before the row is "picked up". Long enough not to fire
+ *  while scrolling, short enough not to feel stuck. */
+const HOLD_MS = 300;
+/** Movement under this (points) counts as "released in place" -> menu. */
+const MOVE_SLOP = 10;
+
+interface RowRect {
+  y: number;
+  height: number;
+}
+
+interface RegisteredRow {
+  node: View | null;
+  /** Whether a dragged row may be dropped ONTO this one (folders only). */
+  droppable: boolean;
+}
+
+export interface RowDrag {
+  /** Ref callback for a row's outermost View. `droppable` marks folders. */
+  registerRow: (key: string, droppable: boolean) => (node: View | null) => void;
+  /** The gesture for one row. `draggable` false still gives hold-for-menu. */
+  gestureFor: (
+    key: string,
+    opts: {
+      draggable: boolean;
+      /** Reject illegal destinations (a folder into itself, the row's own
+       *  current parent) so nothing highlights that couldn't accept the drop. */
+      canDropOn: (targetKey: string) => boolean;
+    },
+  ) => ReturnType<typeof Gesture.Pan>;
+  /** The row currently being dragged, or null. */
+  activeKey: string | null;
+  /** The droppable row under the finger, or null. */
+  overKey: string | null;
+  /** Finger position in window coordinates — drives the floating drag chip. */
+  fingerX: SharedValue<number>;
+  fingerY: SharedValue<number>;
+}
+
+export function useRowDrag({
+  onDrop,
+  onHold,
+}: {
+  /** Fired when a dragged row is released over a valid folder. */
+  onDrop: (sourceKey: string, targetKey: string) => void;
+  /** Fired when a row is held and released without moving. */
+  onHold: (key: string) => void;
+}): RowDrag {
+  const rows = useRef(new Map<string, RegisteredRow>());
+  const rects = useRef(new Map<string, RowRect>());
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+  // Read inside gesture callbacks, which close over the value at construction
+  // time — the gesture is rebuilt on every render, but a drag in flight keeps
+  // the closure it started with, so the live value has to come from a ref.
+  const overKeyRef = useRef<string | null>(null);
+  const fingerX = useSharedValue(0);
+  const fingerY = useSharedValue(0);
+
+  // Ref callbacks are CACHED PER KEY, and this matters more than it looks: a
+  // fresh closure every render makes React detach (call with null) and
+  // re-attach every row's ref on every render. Picking a row up calls
+  // setActiveKey, so the re-render that follows would tear down every ref the
+  // drag had just measured — every drop target would vanish the instant you
+  // lifted a row. A stable callback per key means React leaves them alone.
+  const refCallbacks = useRef(new Map<string, (node: View | null) => void>());
+
+  const registerRow = useCallback((key: string, droppable: boolean) => {
+    const existing = refCallbacks.current.get(key);
+    if (existing) {
+      // Keep `droppable` current without changing the callback's identity — a
+      // row can change kind between renders (search flattens the tree).
+      const row = rows.current.get(key);
+      if (row) row.droppable = droppable;
+      return existing;
+    }
+    const callback = (node: View | null) => {
+      if (node) rows.current.set(key, { droppable, node });
+      else {
+        rows.current.delete(key);
+        refCallbacks.current.delete(key);
+      }
+    };
+    refCallbacks.current.set(key, callback);
+    return callback;
+  }, []);
+
+  /** Snapshot every registered droppable row's window rect. Fire-and-forget:
+   *  measureInWindow answers on a later frame, which lands well before a
+   *  finger has travelled anywhere meaningful. */
+  const measureRows = useCallback(() => {
+    rects.current.clear();
+    for (const [key, row] of rows.current) {
+      if (!row.droppable || !row.node) continue;
+      row.node.measureInWindow((_x, y, _width, height) => {
+        rects.current.set(key, { height, y });
+      });
+    }
+  }, []);
+
+  const hitTest = useCallback((windowY: number, canDropOn: (key: string) => boolean): string | null => {
+    for (const [key, rect] of rects.current) {
+      if (windowY >= rect.y && windowY < rect.y + rect.height && canDropOn(key)) return key;
+    }
+    return null;
+  }, []);
+
+  const gestureFor = useCallback(
+    (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean }) => {
+      return Gesture.Pan()
+        .runOnJS(true)
+        .activateAfterLongPress(HOLD_MS)
+        .onStart((event) => {
+          fingerX.value = event.absoluteX;
+          fingerY.value = event.absoluteY;
+          if (!opts.draggable) return;
+          measureRows();
+          setActiveKey(key);
+        })
+        .onUpdate((event) => {
+          fingerX.value = event.absoluteX;
+          fingerY.value = event.absoluteY;
+          if (!opts.draggable) return;
+          const next = hitTest(event.absoluteY, opts.canDropOn);
+          if (next !== overKeyRef.current) {
+            overKeyRef.current = next;
+            setOverKey(next);
+          }
+        })
+        .onEnd((event) => {
+          const moved = Math.hypot(event.translationX, event.translationY) > MOVE_SLOP;
+          const target = overKeyRef.current;
+          if (opts.draggable && moved && target) onDrop(key, target);
+          // Held and let go without going anywhere: that's the menu.
+          else if (!moved) onHold(key);
+        })
+        // Finalize, not End: it runs whether the gesture ended, was cancelled,
+        // or lost the race, so the lifted-row styling can never get stuck on.
+        .onFinalize(() => {
+          overKeyRef.current = null;
+          setActiveKey(null);
+          setOverKey(null);
+        });
+    },
+    [measureRows, hitTest, onDrop, onHold, fingerX, fingerY],
+  );
+
+  return { activeKey, fingerX, fingerY, gestureFor, overKey, registerRow };
+}

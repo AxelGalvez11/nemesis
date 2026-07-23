@@ -371,3 +371,40 @@ export async function sendNotebookMessage(opts: SendNotebookMessageOpts): Promis
   });
   return postNotebookCompletion(opts.uid, wire, decision.model, decision.reasoningEffort, opts.onDelta);
 }
+
+/** Move a chat thread's conversation into a notebook as a notebook chat (owner
+ *  2026-07-22: a "Move to notebook" action in the chat "…" menu).
+ *
+ *  Chat threads and notebook chats are separate tables — chat_threads /
+ *  chat_messages versus notebook_chats / notebook_chat_messages — so this is a
+ *  real copy, not a re-parenting. Only role + content travel, because that is
+ *  all a notebook_chat_messages row holds: per-message web sources and
+ *  deliverable chips have nowhere to land and do NOT come along.
+ *
+ *  The caller deletes the source thread only AFTER this resolves, so a failure
+ *  part-way through can never lose the conversation. */
+export async function importChatThreadIntoNotebook(input: {
+  notebookId: string;
+  title: string;
+  messages: readonly { role: NotebookChatRole; content: string }[];
+}): Promise<NotebookChat | null> {
+  const userId = await currentUserId();
+  if (!userId) throw new Error("Sign in to move this chat.");
+  const chat = await createNotebookChat(input.notebookId, input.title);
+  if (!chat) throw new Error("Couldn't create the chat in that notebook.");
+  const rows = input.messages
+    .filter((message) => message.content.trim().length > 0)
+    .map((message) => ({
+      chat_id: chat.id,
+      content: message.content,
+      notebook_id: input.notebookId,
+      role: message.role,
+      user_id: userId,
+    }));
+  if (rows.length > 0) {
+    // One insert, so the transcript can't land half-written across many calls.
+    const { error } = await supabase.from("notebook_chat_messages").insert(rows);
+    if (error) throw new Error(`Couldn't copy the messages: ${error.message}`);
+  }
+  return chat;
+}
