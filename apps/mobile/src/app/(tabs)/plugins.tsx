@@ -52,7 +52,7 @@ const PLUGINS: PluginEntry[] = [
   {
     id: "files",
     name: "Files and images",
-    description: "Attach study material directly to a session or notebook.",
+    description: "Attach study material directly to a chat, from your files or your Library.",
     icon: "files",
     status: "Connected",
   },
