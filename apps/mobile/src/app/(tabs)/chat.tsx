@@ -54,7 +54,8 @@ import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
-import type { ThinkingPhase } from "@/lib/thinking-phase";
+import { reasoningGlimpse } from "@/lib/reasoning-preview";
+import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -89,6 +90,11 @@ import { control, radius, space, type } from "@/theme/tokens";
 
 const THINKING_ID = "__thinking__";
 
+/** How often the buffered reasoning is promoted to the screen. Fast enough to
+ *  read as live, slow enough that the transcript isn't re-rendered hundreds of
+ *  times in the seconds before the answer starts. */
+const REASONING_FLUSH_MS = 220;
+
 // Where the remembered intelligence dial lives, per signed-in account. Same
 // SecureStore idiom as the General settings screen (app/profile/general.tsx),
 // so the choice survives app launches and chat switches.
@@ -99,6 +105,11 @@ interface Row {
   kind: "error" | "msg" | "thinking";
   msg?: ChatMsg;
   errorText?: string;
+  /** Set only on the row that is streaming RIGHT NOW: how long this turn spent
+   *  working before its first word, shown as a small "Thought for Xs" note. It
+   *  is deliberately not part of ChatMsg — nothing is written to the saved
+   *  conversation for it, so the note belongs to the live turn only. */
+  thoughtMs?: number;
 }
 
 export default function ChatScreen() {
@@ -132,6 +143,17 @@ export default function ChatScreen() {
   // "msg" row shape as a finished answer (owner: streaming §6), so it gets the
   // exact same FadeIn + markdown treatment with no separate render path.
   const [streamingText, setStreamingText] = useState("");
+  // The live thinking preview: the model's own working-out, which streams for
+  // seconds before the first written word. It arrives FAR too fast to render as
+  // it comes (hundreds of chunks in a few seconds), so the raw text lands in a
+  // ref — free, no re-render — and a timer below promotes a readable line of it
+  // into state a few times a second. See lib/reasoning-preview.ts.
+  const reasoningRef = useRef("");
+  const [reasoningLine, setReasoningLine] = useState("");
+  // When the current turn was sent, and how long it spent working before its
+  // first word landed — the "Thought for Xs" note above a streaming answer.
+  const turnStartedAtRef = useRef(0);
+  const [thoughtMs, setThoughtMs] = useState(0);
   // Pinned state of the active thread (drives the "…" menu's Pin/Unpin label) and
   // whether that menu is open.
   const [pinned, setPinned] = useState(false);
@@ -228,6 +250,13 @@ export default function ChatScreen() {
     sendingRef.current = false;
     setSending(false);
     setStreamingText("");
+    // The thinking preview belongs to the turn that was in flight, so it dies
+    // with it — an in-flight reply whose thread was switched away keeps writing
+    // into reasoningRef until its epoch check fails, and none of that belongs to
+    // whatever thread is on screen now.
+    reasoningRef.current = "";
+    setReasoningLine("");
+    setThoughtMs(0);
     setMessages([]);
     // Uncertain until the load below resolves one way or the other. Starting
     // true (not false) means a thread switch never has a frame where messages
@@ -388,6 +417,12 @@ export default function ChatScreen() {
     setSending(true);
     setStreamingText("");
     setPhase({ kind: "routing" });
+    // Clear the last turn's thinking preview, or the new question would open on
+    // the previous answer's leftover reasoning.
+    reasoningRef.current = "";
+    setReasoningLine("");
+    setThoughtMs(0);
+    turnStartedAtRef.current = Date.now();
     // Persist the user turn immediately so the thread shows in the sidebar even
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
@@ -398,10 +433,19 @@ export default function ChatScreen() {
       onDelta: (_delta, accumulated) => {
         // Renders live into the assistant row as chunks arrive; stale turns
         // (thread/user switched mid-stream) are dropped by the epoch guard.
-        if (epochRef.current === epoch) setStreamingText(accumulated);
+        if (epochRef.current !== epoch) return;
+        // The first word ends the thinking preview and fixes how long the
+        // working-out took. Guarded so later chunks don't keep moving it.
+        setThoughtMs((prev) => (prev > 0 ? prev : Date.now() - turnStartedAtRef.current));
+        setStreamingText(accumulated);
       },
       onPhase: (next) => {
         if (epochRef.current === epoch) setPhase(next);
+      },
+      onReasoning: (_delta, accumulated) => {
+        // Ref only — this fires ~80 times a second on a deep turn. The flush
+        // effect below is what actually reaches the screen.
+        if (epochRef.current === epoch) reasoningRef.current = accumulated;
       },
     })
       .then((reply) => {
@@ -436,6 +480,20 @@ export default function ChatScreen() {
         }
       });
   }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
+
+  // Promote the buffered reasoning onto the screen a few times a second while a
+  // turn is in flight. Rendering every chunk would mean hundreds of re-renders
+  // of the whole transcript in the seconds before the answer starts; this holds
+  // the update rate at something a reader can follow anyway. Setting the same
+  // string is a no-op for React, so a pause in the stream costs nothing.
+  useEffect(() => {
+    if (!sending) return;
+    const timer = setInterval(() => {
+      const next = reasoningGlimpse(reasoningRef.current);
+      setReasoningLine((prev) => (prev === next ? prev : next));
+    }, REASONING_FLUSH_MS);
+    return () => clearInterval(timer);
+  }, [sending]);
 
   // "…" menu actions.
   const handleDelete = useCallback(() => {
@@ -693,7 +751,7 @@ export default function ChatScreen() {
     // transition) rather than replaying per chunk as the text grows.
     rows.push(
       streamingText
-        ? { id: THINKING_ID, kind: "msg", msg: { at: "", content: streamingText, role: "assistant" } }
+        ? { id: THINKING_ID, kind: "msg", msg: { at: "", content: streamingText, role: "assistant" }, thoughtMs }
         : { id: THINKING_ID, kind: "thinking" },
     );
   }
@@ -785,7 +843,7 @@ export default function ChatScreen() {
               >
                 {item.kind === "thinking" ? (
                   <View style={styles.assistantRow} testID="chat-thinking">
-                    <ThinkingLine phase={phase} testID="chat-thinking-line" />
+                    <ThinkingLine phase={phase} reasoning={reasoningLine} testID="chat-thinking-line" />
                   </View>
                 ) : item.kind === "error" ? (
                   <View style={styles.errorBubble} testID="chat-error">
@@ -801,6 +859,14 @@ export default function ChatScreen() {
                   // grounded this turn with a web search) and any deliverable chips this
                   // turn carries render underneath.
                   <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
+                    {/* Only the live turn carries thoughtMs, so this note rides
+                        above the answer while it streams and is gone once the
+                        finished message re-renders from history. */}
+                    {item.thoughtMs && settledLabel(item.thoughtMs) ? (
+                      <Text style={styles.thoughtNote} testID="chat-thought-note">
+                        {settledLabel(item.thoughtMs)}
+                      </Text>
+                    ) : null}
                     <MessageBody content={item.msg!.content} styles={markdownStyles} />
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
@@ -1179,6 +1245,9 @@ const createStyles = (c: ThemeColors) =>
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },
     errorText: { ...type.small, color: c.text2 },
+    // "Thought for 12s" above a streaming answer — a quiet footnote, deliberately
+    // the dimmest text on the row so it never reads as part of the answer.
+    thoughtNote: { ...type.micro, color: c.text3, marginBottom: space(1) },
     // No flex:1 — the greeting sizes to its content so it sits at the top of the
     // scroll area (paddingTop places it just below the glass TopBar). Owner
     // 2026-07-20: ONE short line only, muted (text2) — no explainer sentence.
