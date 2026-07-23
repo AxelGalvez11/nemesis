@@ -13,6 +13,15 @@ public actor NemesisAsrEngine {
         case idle, loading, ready, running, finished
     }
 
+    public enum EngineError: Error {
+        /// start() was called before prepare() succeeded. Deliberate: prepare()
+        /// is the only thing that may download the model, so making start()
+        /// auto-prepare would let a few hundred megabytes leave over cellular
+        /// behind the caller's back. The wifi gate lives in JS and can only
+        /// work if this is the one door.
+        case notPrepared
+    }
+
     private let manager: any StreamingAsrManager
     private var state: State = .idle
     private var engine: AVAudioEngine?
@@ -57,9 +66,11 @@ public actor NemesisAsrEngine {
     }
 
     /// Start capturing the microphone and feeding the engine.
+    ///
+    /// Requires a successful prepare(). It does NOT prepare on your behalf —
+    /// see EngineError.notPrepared.
     public func start() async throws {
-        try await prepare()
-        guard state == .ready else { return }
+        guard state == .ready else { throw EngineError.notPrepared }
         try await manager.reset()
 
         let audioEngine = AVAudioEngine()

@@ -16,6 +16,8 @@ realtime, $0 per minute, audio never leaves the phone.
 | `src/hooks/useParakeetTranscription.ts` | **Typechecks** |
 | `normalizeRmsLevel` | **3 tests pass** |
 | `src/lib/asr-engine.ts` selector | **10 tests pass** |
+| `src/lib/asr-model.ts` download gate | **11 tests pass** |
+| `src/hooks/useAsrModel.ts`, `useRecorderTranscription.ts` | **Written**; typecheck blocked only by `expo-network` not being installed in the authoring checkout (API verified against the published 56.0.5 types) |
 | `index.ts` | **Typechecks** |
 | `ios/NemesisAsrModule.swift` | **Written, not compiled** — needs `ExpoModulesCore`, which only resolves inside a prebuilt iOS project |
 | Transcription quality, latency, battery | **Not measured** — needs a physical device |
@@ -80,18 +82,16 @@ diagnostic**, test on hardware.
 
 ## Remaining work
 
-1. ~~`useParakeetTranscription` hook~~ — done, same shape as
-   `useLiveTranscription`.
-2. A selector hook that calls `selectAsrEngine()` and returns one of the two,
-   then swapping it into `RecordSession`. Blocked on (3), because wiring it
-   today would leave `shouldDownloadAsrModel()` dead.
-3. Explicit wifi-gated model download with progress. **Needs a new dependency**
-   — the project has no `expo-network` / netinfo, so there is currently no way
-   to tell wifi from cellular. Owner's call. Model-ready state can persist in
-   `expo-secure-store`, which is already here.
-3. ~~Persist audio alongside Parakeet~~ — done, `RecordingFileWriter` writes
+1. ~~`useParakeetTranscription` hook~~ — done.
+2. ~~Selector hook, wired into `RecordSession`~~ — done,
+   `useRecorderTranscription`. The recorder holds the seam, not an engine.
+3. ~~Wifi-gated model download~~ — done. `expo-network@~56.0.5` added.
+4. ~~Persist audio alongside Parakeet~~ — done, `RecordingFileWriter` writes
    16 kHz mono 16-bit (~115 MB/hour, vs ~690 MB/hour for raw float32 48 kHz).
-4. Device measurement: accuracy against the current transcript, latency,
+5. Download PROGRESS is not surfaced. `planAsrModel` returns `wait` while one
+   is in flight and `asrEngineReason()` has the line for it, but no UI shows it
+   yet — a first-run student sees the Apple engine with no explanation.
+6. Device measurement: accuracy against the current transcript, latency,
    battery, thermals over a 90-minute lecture.
-5. Once accuracy is confirmed on device, decide whether the server enhance pass
+7. Once accuracy is confirmed on device, decide whether the server enhance pass
    is still worth its cost at all.

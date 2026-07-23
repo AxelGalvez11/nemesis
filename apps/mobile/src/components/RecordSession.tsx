@@ -7,7 +7,7 @@ import { MissionButton } from "@/components/mission-ui";
 import { liveNotesText } from "@/lib/live-notes";
 import { buildRecordingDraft, formatRecordingClock, fullTranscript, hasTranscript } from "@/lib/recording";
 import { useLiveNotes } from "@/hooks/useLiveNotes";
-import { useLiveTranscription } from "@/hooks/useLiveTranscription";
+import { useRecorderTranscription } from "@/hooks/useRecorderTranscription";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -91,7 +91,10 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
 
-  const live = useLiveTranscription();
+  // Picks the on-device Parakeet engine when this build can run it and the
+  // model is downloaded, and Apple's recognizer otherwise. See
+  // hooks/useRecorderTranscription.ts — the recorder never chooses.
+  const live = useRecorderTranscription();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
