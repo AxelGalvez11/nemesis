@@ -26,6 +26,7 @@ import { useEffect, useRef } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { toggleInlineFormat, type ToggleFormat } from "@/lib/workspace/library-inline-format";
 
+import { liveProperties } from "./library-properties-widget";
 import { livePreview, liveTables } from "./library-preview-decorations";
 
 /** Imperative surface the parent uses to drive the editor (TOC clicks). */
@@ -142,6 +143,64 @@ const editorTheme = EditorView.theme({
     width: "100%",
   },
   ".cm-list-marker": { color: "var(--ui-text-secondary)", display: "inline-block", minWidth: "0.85rem" },
+  // Properties sit above the note like Obsidian's: quiet key column, values
+  // that read as plain text until focused, and a bottom rule separating them
+  // from the body. Deliberately NOT a card — it is metadata, not content.
+  ".cm-note-properties": {
+    borderBottom: "1px solid hsl(var(--border))",
+    margin: "0 0 0.85rem",
+    paddingBottom: "0.5rem",
+  },
+  ".cm-note-property, .cm-note-property-add": {
+    alignItems: "center",
+    display: "grid",
+    gap: "0.5rem",
+    gridTemplateColumns: "minmax(6rem, 11rem) minmax(0, 1fr) 1.25rem",
+    minHeight: "1.75rem",
+  },
+  ".cm-note-property-add": { gridTemplateColumns: "minmax(6rem, 11rem) minmax(0, 1fr)" },
+  ".cm-note-property-key": {
+    color: "hsl(var(--muted-foreground))",
+    fontSize: "0.8125rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  ".cm-note-property-value": { alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.25rem", minWidth: "0" },
+  ".cm-note-property input[type='text'], .cm-note-property-add input": {
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: "0.25rem",
+    color: "inherit",
+    font: "inherit",
+    fontSize: "0.8125rem",
+    outline: "none",
+    padding: "0.125rem 0.25rem",
+    width: "100%",
+  },
+  ".cm-note-property input[type='text']:focus, .cm-note-property-add input:focus": {
+    background: "hsl(var(--background))",
+    borderColor: "var(--theme-primary)",
+  },
+  ".cm-note-property-chip": {
+    background: "color-mix(in srgb, var(--ui-base) 8%, transparent)",
+    borderRadius: "0.25rem",
+    fontSize: "0.75rem",
+    padding: "0.0625rem 0.375rem",
+  },
+  ".cm-note-property-remove": {
+    background: "none",
+    border: "none",
+    color: "hsl(var(--muted-foreground))",
+    cursor: "pointer",
+    fontSize: "0.875rem",
+    lineHeight: "1",
+    opacity: "0",
+    padding: "0",
+    transition: "opacity 120ms",
+  },
+  ".cm-note-property:hover .cm-note-property-remove, .cm-note-property-remove:focus-visible": { opacity: "1" },
+
   // Table skin copied from read mode: bordered rounded wrapper, header wash,
   // horizontal row separators only — no vertical cell grid.
   ".cm-md-table": {
@@ -345,6 +404,7 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
         ]),
         livePreview,
         liveTables,
+        liveProperties,
         editorTheme,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString());
