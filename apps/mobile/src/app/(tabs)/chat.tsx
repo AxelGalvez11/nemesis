@@ -54,6 +54,7 @@ import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
+import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { reasoningGlimpse } from "@/lib/reasoning-preview";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -423,6 +424,8 @@ export default function ChatScreen() {
     setReasoningLine("");
     setThoughtMs(0);
     turnStartedAtRef.current = Date.now();
+    // The question is away and the model is working — the send's own receipt.
+    hapticThinkingStarted();
     // Persist the user turn immediately so the thread shows in the sidebar even
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
@@ -449,8 +452,11 @@ export default function ChatScreen() {
       },
     })
       .then((reply) => {
+        // The epoch guard above is what keeps this quiet when the student has
+        // moved to another thread — no buzz for an answer they can't see.
         if (epochRef.current !== epoch) return;
         if (reply.text) {
+          hapticAnswerReady();
           const next: ChatMsg[] = [
             ...base,
             {

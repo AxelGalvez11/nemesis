@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
+import { hapticDrawerOpened, hapticHoldRegistered } from "@/lib/haptics";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
 import { RowActionsSheet, TextPromptSheet, type RowAction } from "./RowActionSheets";
@@ -110,6 +111,9 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const openDrawer = useCallback(() => {
     const finishOpen = () => {
       Keyboard.dismiss();
+      // Inside finishOpen, not above it: a recording-guard prompt can decline the
+      // open, and a tap for a drawer that never appeared would be a lie.
+      hapticDrawerOpened();
       setOpen(true);
     };
     const guard = drawerOpenGuard.current;
@@ -437,7 +441,10 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
       testID={`drawer-chat-${chat.id}`}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={() => go(`/chat?c=${chat.id}`)}
-      onLongPress={() => setActionTarget(chat)}
+      onLongPress={() => {
+        hapticHoldRegistered();
+        setActionTarget(chat);
+      }}
       delayLongPress={300}
       accessibilityHint="Touch and hold to rename, pin, or delete this chat."
     >
