@@ -13,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
@@ -23,6 +22,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
@@ -723,7 +723,13 @@ export default function NoteScreen() {
                   sectionYs.current[i] = e.nativeEvent.layout.y;
                 }}
               >
-                <Markdown style={markdownStyles} onLinkPress={onLinkPress}>{preprocessWikilinks(section.body)}</Markdown>
+                {/* MessageBody, not a bare <Markdown> (owner 2026-07-22: the
+                    note screen "does feel like a notepad"). Going through the
+                    shared renderer is what gives a note the SAME text the web
+                    editor draws: ==highlight==, #tag and <u>underline</u> via
+                    lib/markdown-obsidian.ts, plus real pictures for ![](url),
+                    which a bare <Markdown> rendered at zero height. */}
+                <MessageBody content={preprocessWikilinks(section.body)} styles={markdownStyles} onLinkPress={onLinkPress} />
               </View>
             ))
           )}

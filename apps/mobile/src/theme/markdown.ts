@@ -1,4 +1,5 @@
 import { radius } from "./tokens";
+import { rgba } from "./palette";
 import type { ThemeColors } from "./palette";
 
 // react-native-markdown-display style map, themed. Shared by the chat answers, the note
@@ -63,4 +64,14 @@ export const createMarkdownStyles = (c: ThemeColors) =>
     bullet_list_icon: { color: c.text2 },
     ordered_list_icon: { color: c.text2 },
     hr: { backgroundColor: c.line, height: 1 },
+    // The three Obsidian-flavoured marks the web note editor draws and the
+    // phone used to print as raw syntax (lib/markdown-obsidian.ts). Tuned to
+    // web's own decorations in library-live-editor.tsx: highlight is a stronger
+    // accent wash, a tag is a soft accent pill, underline is just underlined.
+    // Web washes a highlight at 24% accent and a tag at 13%; accentFaint is
+    // 12%, so the tag uses it directly and the highlight needs its own,
+    // stronger mix or it reads as a smudge on the true-black page.
+    mark: { backgroundColor: rgba(c.accent, 0.24), color: c.text, borderRadius: 4 },
+    tag: { backgroundColor: c.accentFaint, color: c.accent, fontWeight: "600" as const, borderRadius: 4 },
+    u: { textDecorationLine: "underline" as const },
   }) as const;
