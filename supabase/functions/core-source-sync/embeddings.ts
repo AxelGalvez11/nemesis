@@ -24,6 +24,7 @@ const OPENAI_BATCH_LIMIT = 100;
 export async function embedCoreTexts(
   texts: string[],
   inputType: "document" | "query" = "document",
+  opts: { strict?: boolean } = {},
 ): Promise<number[][]> {
   if (!texts.length) return [];
 
@@ -32,11 +33,18 @@ export async function embedCoreTexts(
     try {
       return await embedWithVoyage(voyageKey, texts, inputType);
     } catch (e) {
+      // strict: callers whose vectors must stay in ONE space (the per-user
+      // library index) fail here rather than silently mixing providers. Equal
+      // dimensions are not the same space — a Cohere 1024-vector and a Voyage
+      // 1024-vector are not comparable, so a fallback would poison the index.
+      if (opts.strict) throw e;
       console.warn(
         "Voyage 3-large embed failed, falling back to Cohere:",
         (e as Error).message,
       );
     }
+  } else if (opts.strict) {
+    throw new Error("strict embed requested but VOYAGE_API_KEY is unset");
   }
 
   const cohereKey = Deno.env.get("COHERE_API_KEY");
