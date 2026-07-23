@@ -144,6 +144,12 @@ export function LibraryPickerDialog({ open, onOpenChange, onAttach }: LibraryPic
             <div className="grid gap-1 p-1">
               {[0, 1, 2, 3].map((index) => <Skeleton className="h-7 w-full" key={index} />)}
             </div>
+          ) : status === "error" ? (
+            // A Library that FAILED to load must never read as an empty one —
+            // that would tell a student their notes are gone.
+            <p className="px-2 py-6 text-center text-xs text-destructive" role="alert">
+              Couldn’t load your Library. Check your connection and try again.
+            </p>
           ) : rows.length === 0 ? (
             <p className="px-2 py-6 text-center text-xs text-(--ui-text-tertiary)">
               {trimmedQuery ? `Nothing in your Library matches “${trimmedQuery}”.` : "Your Library is empty."}

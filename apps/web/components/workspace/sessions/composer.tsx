@@ -246,7 +246,23 @@ export function Composer({ busy, centered = false, placement = "floating", place
               <div className="flex items-center self-center [grid-area:menu]">
                 {activeMode === "chat" ? (
                   <>
-                    <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
+                    {/* APPENDS, like the Library picker below. It used to
+                        replace, which was harmless while it was the only way to
+                        attach anything — now that "+" also opens the Library,
+                        replacing would silently bin the notes just picked. The
+                        input is cleared so re-choosing the same file still
+                        fires a change event. */}
+                    <input
+                      className="sr-only"
+                      multiple
+                      onChange={(event) => {
+                        const picked = Array.from(event.target.files ?? []);
+                        if (picked.length > 0) setFiles((current) => [...current, ...picked]);
+                        event.target.value = "";
+                      }}
+                      ref={fileInputRef}
+                      type="file"
+                    />
                     <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
