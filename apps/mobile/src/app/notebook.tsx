@@ -49,7 +49,7 @@ import { titleFromPrompt } from "@/lib/notebook-model";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Notebook detail (phone port of the web Notebooks feature — apps/web/components/workspace/
 // notebooks/notebook-home.tsx + notebook-chat-view.tsx): a notebook's own grounded chat,
@@ -956,7 +956,17 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     topRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3), paddingBottom: space(2) },
-    iconGlass: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+    // Round, and the same size as note.tsx's back button (owner 2026-07-23:
+    // "make sure there arent any square buttons"). This one was a 40pt rounded
+    // SQUARE — the only glass icon button in the app that wasn't a circle.
+    iconGlass: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
     topTitle: { ...type.bodyStrong, color: c.text, flex: 1, minWidth: 0, textAlign: "center" },
 
@@ -986,7 +996,7 @@ const createStyles = (c: ThemeColors) =>
     sourceRowMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: space(2.5), borderRadius: radius.md, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, paddingVertical: space(3), paddingHorizontal: space(3.5) },
     sourceTextCol: { flex: 1, minWidth: 0, gap: 2 },
     sourceSubtitle: { ...type.micro, color: c.text3 },
-    sourceRemove: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+    sourceRemove: { width: control.sm, height: control.sm, borderRadius: control.sm / 2, alignItems: "center", justifyContent: "center" },
     removeGlyph: { fontSize: 20, lineHeight: 22, color: c.text3 },
 
     chatBody: { padding: space(4), gap: space(2), flexGrow: 1 },

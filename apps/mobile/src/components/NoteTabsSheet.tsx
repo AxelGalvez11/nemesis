@@ -7,7 +7,7 @@ import { CloseIcon, PlusIcon } from "./icons";
 import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The note screen's TAB VIEWER (owner 2026-07-21, matching their Obsidian
 // mobile reference crop): the pill bar's numbered square opens this instead of
@@ -196,9 +196,9 @@ const createStyles = (c: ThemeColors) =>
       position: "absolute",
       top: space(1.5),
       right: space(1.5),
-      width: 26,
-      height: 26,
-      borderRadius: 13,
+      width: control.sm,
+      height: control.sm,
+      borderRadius: control.sm / 2,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: c.surface2,
@@ -215,7 +215,7 @@ const createStyles = (c: ThemeColors) =>
       borderTopWidth: 1,
       borderTopColor: c.line,
     },
-    footerBtn: { minWidth: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: space(2) },
+    footerBtn: { minWidth: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center", paddingHorizontal: space(2) },
     footerBtnPressed: { backgroundColor: c.surface },
     footerCount: { ...type.body, color: c.text, fontWeight: "600", fontVariant: ["tabular-nums"] },
     footerDone: { ...type.body, color: c.accent, fontWeight: "700" },

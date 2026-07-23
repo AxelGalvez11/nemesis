@@ -5,7 +5,7 @@ import { GlassSurface } from "./GlassSurface";
 import { CHAT_EFFORT_LABEL, CHAT_EFFORTS, type ChatEffort } from "@/lib/chat-effort";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The composer's INTELLIGENCE dial — Instant / Medium / High (owner
 // 2026-07-22). It briefly lived as three rows inside the "+" mini menu and the
@@ -25,10 +25,10 @@ import { radius, space, type } from "@/theme/tokens";
 // carry a one-line hint per level; lib/chat-effort.ts deliberately ships no
 // HINT map on the phone so there's nothing here to render.
 
-/** The pill's height — the composer's round buttons are 36, and matching that
- *  keeps the control row on one optical baseline. Exported so a caller doing
- *  its own layout maths reads it from here rather than guessing. */
-export const EFFORT_PILL_HEIGHT = 36;
+/** The pill's height — the same as the composer's round buttons (control.md),
+ *  which keeps the control row on one optical baseline. Exported so a caller
+ *  doing its own layout maths reads it from here rather than guessing. */
+export const EFFORT_PILL_HEIGHT = control.md;
 
 export function EffortLabel({
   effort,
@@ -95,7 +95,7 @@ export function EffortPopup({
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="composer-effort-menu">
+    <View style={[StyleSheet.absoluteFill, styles.host]} pointerEvents={visible ? "auto" : "none"} testID="composer-effort-menu">
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       <Animated.View style={[styles.menuWrap, { bottom: bottomOffset, opacity: progress, transform: [{ translateY }] }]}>
         <GlassSurface style={styles.menu} fallbackColor={c.glassPanel} opaque>
@@ -148,6 +148,13 @@ const createStyles = (c: ThemeColors) =>
     label: { flexShrink: 0, justifyContent: "center", height: EFFORT_PILL_HEIGHT, paddingHorizontal: space(1) },
     labelText: { ...type.small, fontWeight: "500", color: c.text2 },
     labelTextOpen: { color: c.accent, fontWeight: "600" },
+    // Above the page, explicitly. On iOS, `position: absolute` does NOT lift a
+    // view over its later siblings the way it does in a browser — native paints
+    // strictly in tree order, and only zIndex changes that. Without this the
+    // menu drew UNDER whatever chat.tsx renders after it (owner 2026-07-23:
+    // "stuck at medium in landing page"). chat.tsx also renders it last now;
+    // this is the belt to that braces, so re-ordering can't silently break it.
+    host: { zIndex: 30 },
     // Hangs under the RIGHT end of the composer now that the label lives there
     // — a left-anchored menu would point at the "+" instead.
     menuWrap: { position: "absolute", right: space(3), minWidth: 176 },

@@ -19,7 +19,7 @@ import {
 } from "@/components/icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Notifications/Usage need glyphs the shared icon set doesn't have yet. Kept
 // local to this file (not added to components/icons.tsx) to stay inside this
@@ -202,7 +202,7 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: c.bg },
     modalTop: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: space(4), paddingBottom: space(1) },
-    closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
+    closeBtn: { width: control.sm, height: control.sm, borderRadius: control.sm / 2, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
 
     guest: { flex: 1, alignItems: "center", justifyContent: "center", gap: space(4), padding: space(6) },
     guestText: { color: c.text2, fontSize: type.small.fontSize + 1 },

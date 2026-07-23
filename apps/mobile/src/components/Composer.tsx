@@ -10,7 +10,7 @@ import type { ChatEffort } from "@/lib/chat-effort";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The one composer — a ChatGPT-style card (owner 2026-07-21, "exactly like
 // ChatGPT"). Opaque surface card (not glass): ChatGPT's composer is a plain
@@ -413,7 +413,7 @@ const createStyles = (c: ThemeColors) =>
     // this row, which would degenerate to flex-start if the row ever held a
     // single child again.
     controls: { flexDirection: "row", alignItems: "center" },
-    round: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+    round: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
     sendOn: { backgroundColor: c.accent },
     micOn: { backgroundColor: c.accent },
     // The record circle — ACCENT-filled, so it is whatever color Appearance

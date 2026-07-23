@@ -10,7 +10,7 @@ import Svg, { Path } from "react-native-svg";
 import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
@@ -513,7 +513,7 @@ const createStyles = (c: ThemeColors) =>
 
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
     brand: { ...type.h2, color: c.text, letterSpacing: -0.3 },
-    searchBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+    searchBtn: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
     // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.
     searchField: {
@@ -571,7 +571,7 @@ const createStyles = (c: ThemeColors) =>
     // gear floating beside the pill — supersedes the 2026-07-20 plain-icon
     // call; the shadow makes the disc deliberate instead of a stray blob).
     gearFloat: {
-      width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center",
+      width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center",
       backgroundColor: c.raised, borderWidth: 1, borderColor: c.line,
       shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 10,
       shadowOffset: { height: 5, width: 0 }, elevation: 8,
