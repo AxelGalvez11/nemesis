@@ -179,6 +179,7 @@ async function postChatCompletion(
   wireMessages: WireMsg[],
   decision: ChatRouteDecision,
   onDelta?: CompletionDeltaHandler,
+  onReasoning?: CompletionDeltaHandler,
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
   if (!key) return { budgetReset: null, errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
@@ -217,7 +218,7 @@ async function postChatCompletion(
         text: null,
       };
     }
-    const text = await readCompletionStream(res.body, onDelta);
+    const text = await readCompletionStream(res.body, onDelta, onReasoning);
     return text
       ? { budgetReset: null, errorKind: null, errorText: null, sources: [], text }
       : { budgetReset: null, errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
@@ -238,6 +239,12 @@ export interface SendChatOptions {
    *  thinking line instead of anonymous dots. Every phase corresponds to a
    *  real step below — no phase is emitted for work that isn't happening. */
   onPhase?: (phase: ThinkingPhase) => void;
+  /** The model's own working-out as it streams, for the live thinking preview.
+   *  Fires many times a second on a deep turn, so the caller is expected to
+   *  buffer rather than render every call. NEVER fires on an Instant turn (it
+   *  runs with thinking disabled) — an empty preview is a normal outcome, not a
+   *  failure, and the phase line covers it. */
+  onReasoning?: CompletionDeltaHandler;
   /** Set when the composer's "Deep research" toggle was on for this turn —
    *  forces forcedResearchDecision() instead of classifyChatRequest's
    *  text-based inference. See that function's doc for why. */
@@ -267,7 +274,7 @@ export async function sendChat(
   userText: string,
   options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase } = options;
+  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning } = options;
   onPhase?.({ kind: "routing" });
   // Route first (what KIND of question is this), then let the student's own
   // dial override how hard to think about it — never the other way round.
@@ -302,7 +309,7 @@ export async function sendChat(
           onDelta?.(delta, accumulated);
         }
       : undefined;
-  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, relayDelta);
+  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, relayDelta, onReasoning);
   return { ...reply, sources };
 }
 
