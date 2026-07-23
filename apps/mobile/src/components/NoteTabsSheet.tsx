@@ -190,7 +190,7 @@ const createStyles = (c: ThemeColors) =>
     cardActive: { borderColor: c.accent, borderWidth: 2 },
     cardPressed: { opacity: 0.7 },
     cardTitle: { ...type.small, fontWeight: "700", color: c.text, marginBottom: space(1.5), paddingRight: space(5) },
-    cardPreview: { fontSize: 10, lineHeight: 14, color: c.text3 },
+    cardPreview: { ...type.micro, color: c.text3 },
     // The little ✕ disc floating in the card's top-right corner.
     closeBtn: {
       position: "absolute",

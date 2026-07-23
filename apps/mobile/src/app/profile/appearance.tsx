@@ -79,7 +79,7 @@ const createStyles = (c: ThemeColors) =>
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
     backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1 },
-    title: { fontSize: 28, fontWeight: "700", color: c.text, marginBottom: space(4), marginTop: space(1) },
+    title: { ...type.h1, color: c.text, marginBottom: space(4), marginTop: space(1) },
 
     label: { fontSize: type.micro.fontSize, fontWeight: "600", color: c.text3, marginTop: space(4), marginBottom: space(2) },
     segment: { flexDirection: "row", backgroundColor: c.surface2, borderRadius: radius.sm, padding: 3, gap: 3 },
@@ -92,6 +92,6 @@ const createStyles = (c: ThemeColors) =>
     swatchCell: { width: "20%", alignItems: "center", paddingVertical: space(2.5), gap: space(1.5) },
     swatch: { width: 34, height: 34, borderRadius: 999, borderWidth: 2, borderColor: "transparent" },
     swatchActive: { borderColor: c.text },
-    swatchLabel: { fontSize: 10.5, color: c.text3 },
+    swatchLabel: { ...type.micro, color: c.text3 },
     swatchLabelActive: { color: c.text2, fontWeight: "600" },
   });

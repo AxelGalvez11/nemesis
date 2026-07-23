@@ -22,6 +22,7 @@ import {
 } from "@/components/StudyModeMenu";
 import { DragChip } from "@/components/DragChip";
 import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
   countsForCards,
@@ -566,6 +567,17 @@ export default function StudyScreen() {
         </Animated.View>
       )}
 
+      {/* Drop here to pull a deck or folder out to the top level. The key's
+          suffix is "" — the empty group moveStudyDeck/moveStudyGroup already
+          read as top level — so it needs no special case in onRowDrop. */}
+      <RootDropZone
+        ref={rowDrag.registerRow("root:", true)}
+        label="Move to top level"
+        active={rowDrag.activeKey !== null}
+        over={rowDrag.overKey === "root:"}
+        top={contentTop}
+      />
+
       {/* Rides the finger during a drag; the row itself stays put and dims. */}
       <DragChip
         visible={rowDrag.activeKey !== null}
@@ -719,7 +731,7 @@ const createStyles = (c: ThemeColors) =>
     // Stats sheet content (unchanged; only its trigger moved into the toggle).
     statGrid: { flexDirection: "row", flexWrap: "wrap", gap: space(3) },
     statTile: { width: "47%", backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, borderRadius: radius.md, paddingVertical: space(3.5), paddingHorizontal: space(3), gap: space(0.5) },
-    statValue: { fontSize: 26, fontWeight: "700", fontVariant: ["tabular-nums"] },
+    statValue: { ...type.display, fontVariant: ["tabular-nums"] },
     statLabel: { ...type.small, color: c.text2 },
     streakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space(4), paddingTop: space(3), borderTopWidth: 1, borderTopColor: c.line },
     streakLabel: { ...type.body, color: c.text2 },

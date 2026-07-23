@@ -13,7 +13,7 @@ export const createCommonStyles = (c: ThemeColors) =>
     center: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(3), backgroundColor: c.bg },
     h1: { ...type.h1, color: c.text },
     sub: { ...type.small, color: c.text2 },
-    body: { fontSize: 15, lineHeight: 22, color: c.text2 },
+    body: { ...type.small, color: c.text2 },
     input: {
       width: "100%",
       maxWidth: 360,
@@ -22,7 +22,7 @@ export const createCommonStyles = (c: ThemeColors) =>
       borderRadius: radius.sm,
       paddingHorizontal: space(3),
       paddingVertical: space(2.75),
-      fontSize: 16,
+      ...type.body,
       color: c.text,
       backgroundColor: c.surface,
     },
@@ -33,8 +33,8 @@ export const createCommonStyles = (c: ThemeColors) =>
       borderRadius: radius.sm,
       alignSelf: "flex-start",
     },
-    btnText: { color: c.onAccent, fontWeight: "600", fontSize: 16 },
-    link: { color: c.accentDim, fontSize: 15 },
+    btnText: { ...type.body, fontWeight: "600", color: c.onAccent },
+    link: { ...type.small, color: c.accentDim },
     linkBtn: { paddingVertical: space(2) },
     err: { color: c.danger },
   });
