@@ -42,6 +42,8 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
 import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
@@ -140,6 +142,10 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
+  // when the picker actually opens.
+  const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [deepResearchOn, setDeepResearchOn] = useState(false);
   // Instant/Medium/High — the "+" menu's intelligence dial (owner 2026-07-22).
   // Like Deep research it PERSISTS across sends within a thread rather than
@@ -386,6 +392,58 @@ export default function ChatScreen() {
       router.replace("/chat");
     });
   }, [uid, threadId]);
+
+  // Move to notebook (owner 2026-07-22). The two live in different tables, so
+  // this copies the conversation across and only then deletes the original —
+  // a failure part-way can't lose the chat. Per-message sources and deliverable
+  // chips have no column in notebook_chat_messages and don't come along, which
+  // is what the confirmation says before anything is written.
+  const openNotebookPicker = useCallback(() => {
+    setMenuOpen(false);
+    setNotebookPickerOpen(true);
+    void listNotebooks()
+      .then(setNotebooks)
+      .catch(() => setNotebooks([]));
+  }, []);
+
+  const moveToNotebook = useCallback(
+    (notebookId: string, notebookName: string) => {
+      if (!uid || !threadId) return;
+      const transcript = messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ content: m.content, role: m.role as "user" | "assistant" }));
+      const hasExtras = messages.some((m) => (m.sources?.length ?? 0) > 0 || (m.outputs?.length ?? 0) > 0);
+      Alert.alert(
+        `Move to "${notebookName}"?`,
+        hasExtras
+          ? "The conversation moves into that notebook and leaves your chat list. Its web sources and saved deliverables stay behind — a notebook chat has nowhere to keep them."
+          : "The conversation moves into that notebook and leaves your chat list.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Move",
+            onPress: () => {
+              setNotebookPickerOpen(false);
+              void (async () => {
+                try {
+                  // The chat screen shows no title (owner 2026-07-20 removed it),
+                  // so name the notebook chat after the question that started it.
+                  const opener = transcript.find((m) => m.role === "user")?.content.trim() ?? "";
+                  const title = opener ? opener.replace(/\s+/g, " ").slice(0, 80) : "Chat";
+                  await importChatThreadIntoNotebook({ messages: transcript, notebookId, title });
+                  await deleteThread(uid, threadId);
+                  router.replace("/chat");
+                } catch (e) {
+                  Alert.alert("Couldn't move that chat", e instanceof Error ? e.message : "Try again in a moment.");
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [uid, threadId, messages],
+  );
 
   const handleTogglePin = useCallback(() => {
     if (!uid || !threadId) return;
@@ -696,8 +754,27 @@ export default function ChatScreen() {
           onClose={() => setMenuOpen(false)}
           pinned={pinned}
           onDelete={handleDelete}
+          onMoveToNotebook={openNotebookPicker}
           onTogglePin={handleTogglePin}
           topInset={insets.top}
+        />
+        {/* Destination list for "Move to notebook" — reuses the note picker's
+            sheet, so it inherits the same drag-to-expand and glass. */}
+        <NoteListSheet
+          visible={notebookPickerOpen}
+          title="Move to notebook"
+          rows={notebooks.map<NoteSheetRow>((n) => ({
+            key: n.id,
+            label: n.name,
+            ...(n.description ? { sublabel: n.description } : {}),
+          }))}
+          emptyText="No notebooks yet — create one on the Notebooks tab first."
+          onPick={(id) => {
+            const notebook = notebooks.find((n) => n.id === id);
+            if (notebook) moveToNotebook(notebook.id, notebook.name);
+          }}
+          onClose={() => setNotebookPickerOpen(false)}
+          testID="chat-notebook-picker"
         />
         <UpgradeSheet
           visible={upgrade !== null}
@@ -803,6 +880,7 @@ function ChatActionsPopup({
   onClose,
   pinned,
   onDelete,
+  onMoveToNotebook,
   onTogglePin,
   topInset,
 }: {
@@ -810,6 +888,7 @@ function ChatActionsPopup({
   onClose: () => void;
   pinned: boolean;
   onDelete: () => void;
+  onMoveToNotebook: () => void;
   onTogglePin: () => void;
   topInset: number;
 }) {
@@ -849,6 +928,14 @@ function ChatActionsPopup({
             accessibilityRole="button"
           >
             <Text style={styles.actionsLabel}>{pinned ? "Unpin" : "Pin"}</Text>
+          </Pressable>
+          <Pressable
+            testID="chat-action-move-notebook"
+            onPress={() => pick(onMoveToNotebook)}
+            style={({ pressed }) => [styles.actionsRow, styles.actionsDivider, pressed && styles.actionsRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionsLabel}>Move to notebook</Text>
           </Pressable>
           <Pressable
             testID="chat-action-delete"

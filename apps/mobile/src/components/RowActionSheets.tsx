@@ -264,13 +264,16 @@ const createStyles = (c: ThemeColors) =>
       paddingBottom: space(2),
     },
     promptTitle: { ...type.title, color: c.text, marginBottom: space(3) },
+    // line2, not line: in light mode the panel is white and c.surface is very
+    // nearly white, so a 10%-alpha hairline left the field with no visible edge
+    // at all — it read as loose text rather than something you can type in.
     promptInput: {
       ...type.body,
       color: c.text,
-      backgroundColor: c.surface,
+      backgroundColor: c.bg2,
       borderRadius: radius.md,
       borderWidth: 1,
-      borderColor: c.line,
+      borderColor: c.line2,
       paddingHorizontal: space(3),
       paddingVertical: space(2.5),
     },

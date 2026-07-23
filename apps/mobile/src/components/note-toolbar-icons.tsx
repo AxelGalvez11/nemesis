@@ -107,21 +107,20 @@ export function BulletListIcon({ size = 22, color, strokeWidth = 1.8 }: IconProp
 /** Numbered list — real numerals beside their lines. SvgText (not RN <Text>)
  *  so the digits are part of the drawing and scale with the icon. */
 export function NumberedListIcon({ size = 22, color, strokeWidth = 1.8 }: IconProps) {
-  const digit = { fill: color, fontSize: 7, fontWeight: "600" as const, textAnchor: "middle" as const };
+  // Two rows, not three: at toolbar size a third numeral turns the column into
+  // an illegible smudge (caught on screenshot), and "1 / 2" already says
+  // "ordered" against the round dots of the bullet icon beside it.
+  const digit = { fill: color, fontSize: 10, fontWeight: "700" as const, textAnchor: "middle" as const };
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <SvgText x="4.6" y="9" {...digit}>
+      <SvgText x="5" y="11.4" {...digit}>
         1
       </SvgText>
-      <SvgText x="4.6" y="14.5" {...digit}>
+      <SvgText x="5" y="20.4" {...digit}>
         2
       </SvgText>
-      <SvgText x="4.6" y="20" {...digit}>
-        3
-      </SvgText>
-      <Line x1="9.8" y1="6.5" x2="20" y2="6.5" stroke={color} strokeWidth={strokeWidth} {...base} />
-      <Line x1="9.8" y1="12" x2="20" y2="12" stroke={color} strokeWidth={strokeWidth} {...base} />
-      <Line x1="9.8" y1="17.5" x2="20" y2="17.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="11" y1="8" x2="20.4" y2="8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="11" y1="17" x2="20.4" y2="17" stroke={color} strokeWidth={strokeWidth} {...base} />
     </Svg>
   );
 }
