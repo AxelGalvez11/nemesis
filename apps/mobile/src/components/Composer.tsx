@@ -347,31 +347,41 @@ export function Composer({
     />
   );
 
-  if (compact) {
-    return (
-      <View style={[styles.card, styles.cardCompact]}>
-        <View style={styles.compactRow}>
-          {plusButton}
-          {field}
-          {effortLabel}
-          {micButton}
-          {sendOrRecordButton}
-        </View>
-      </View>
-    );
-  }
-
+  // ONE TREE FOR BOTH LAYOUTS, and the field always sits at the same position
+  // in it. This looks like a roundabout way to write two layouts, and the
+  // reason is a real bug it caused (owner 2026-07-23: "the chat page doesnt
+  // allow keyboard to go up"): `compact` follows the KEYBOARD now, so the
+  // layout flips at the exact moment focus arrives. When these were two
+  // separate return trees, React unmounted the focused TextInput and mounted a
+  // fresh one — focus was lost, and the keyboard dropped as fast as it rose.
+  //
+  // The null slots below are load-bearing: React reconciles unkeyed children by
+  // INDEX, so a null still holds its place and `field` stays child 1 either
+  // way, which is what keeps it mounted (and focused) across the switch. The
+  // buttons remounting is harmless, so the tall layout renders its own copies
+  // rather than contorting the tree to move them.
   return (
-    <View style={styles.card}>
-      {field}
-      <View style={styles.controls}>
-        {plusButton}
-        <View style={styles.trailing}>
-          {effortLabel}
-          {micButton}
-          {sendOrRecordButton}
-        </View>
+    <View style={[styles.card, compact && styles.cardCompact]}>
+      <View style={compact ? styles.compactRow : undefined}>
+        {compact ? plusButton : null}
+        {field}
+        {/* Siblings, not wrapped in `trailing` — the compact row's own gap is
+            what the shipped spacing was verified at, and `trailing` carries a
+            wider one meant for the tall layout. */}
+        {compact ? effortLabel : null}
+        {compact ? micButton : null}
+        {compact ? sendOrRecordButton : null}
       </View>
+      {compact ? null : (
+        <View style={styles.controls}>
+          {plusButton}
+          <View style={styles.trailing}>
+            {effortLabel}
+            {micButton}
+            {sendOrRecordButton}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
