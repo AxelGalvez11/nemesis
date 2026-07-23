@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronIcon, FolderIcon, PlusIcon } from "@/components/icons";
@@ -19,7 +20,9 @@ import {
   TRIGGER_HEIGHT,
   type StudyModeKey,
 } from "@/components/StudyModeMenu";
+import { DragChip } from "@/components/DragChip";
 import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { useRowDrag } from "@/components/useRowDrag";
 import {
   countsForCards,
   deckGroupInfo,
@@ -311,6 +314,41 @@ export default function StudyScreen() {
     [rowTarget, userId, decks, applyRowChange],
   );
 
+  // --- hold-to-drag (owner 2026-07-23) --------------------------------------
+  // Row keys are "deck:<id>" / "folder:<group path>". Dropping onto a folder
+  // runs the same move the menu's "Move to…" does.
+  const openRowMenu = useCallback(
+    (rowKey: string) => {
+      const rest = rowKey.slice(rowKey.indexOf(":") + 1);
+      if (rowKey.startsWith("folder:")) {
+        setRowTarget({ kind: "folder", label: pathLeaf(rest), path: rest });
+        setRowSheet("actions");
+        return;
+      }
+      const deck = decks.find((d) => d.id === rest);
+      if (!deck) return;
+      setRowTarget({ kind: "deck", id: deck.id, name: deck.name });
+      setRowSheet("actions");
+    },
+    [decks],
+  );
+
+  const onRowDrop = useCallback(
+    (sourceKey: string, targetKey: string) => {
+      if (!userId) return;
+      const source = sourceKey.slice(sourceKey.indexOf(":") + 1);
+      const destination = targetKey.slice(targetKey.indexOf(":") + 1);
+      if (sourceKey.startsWith("folder:")) {
+        void applyRowChange(() => moveStudyGroup(userId, decks, source, destination));
+        return;
+      }
+      void applyRowChange(() => moveStudyDeck(userId, decks, source, destination));
+    },
+    [userId, decks, applyRowChange],
+  );
+
+  const rowDrag = useRowDrag({ onDrop: onRowDrop, onHold: openRowMenu });
+
   if (!userId) {
     return (
       <View style={[styles.centerWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="study-signin">
@@ -354,6 +392,15 @@ export default function StudyScreen() {
   const moveDisabled =
     rowTarget?.kind === "folder" ? new Set(groupOptions.filter((g) => isWithinGroup(g, rowTarget.path))) : undefined;
   const rowCurrentGroup = rowTarget ? pathParent(rowTarget.kind === "deck" ? rowTarget.name : rowTarget.path) : "";
+  // What the drag chip reads while a row is in flight — a deck's leaf name, or
+  // a folder's own segment, never the full "::" path.
+  const dragLabel = (() => {
+    const key = rowDrag.activeKey;
+    if (!key) return "";
+    const rest = key.slice(key.indexOf(":") + 1);
+    if (key.startsWith("folder:")) return pathLeaf(rest);
+    return pathLeaf(decks.find((d) => d.id === rest)?.name ?? "");
+  })();
 
   const totalActionable = deckRows.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0);
   const totalNew = deckRows.reduce((sum, d) => sum + d.counts.newCount, 0);
@@ -415,18 +462,27 @@ export default function StudyScreen() {
             rows.map((item) =>
               item.type === "folder" ? (
                 <Animated.View key={`folder:${item.path}`} layout={LinearTransition.duration(220)}>
+                  <GestureDetector
+                    gesture={rowDrag.gestureFor(`folder:${item.path}`, {
+                      // A folder can't be dropped inside itself, and moving it
+                      // back into its own parent would be a no-op.
+                      canDropOn: (targetKey) => {
+                        const destination = targetKey.slice(targetKey.indexOf(":") + 1);
+                        return !isWithinGroup(destination, item.path) && destination !== pathParent(item.path);
+                      },
+                      draggable: true,
+                    })}
+                  >
                   <Pressable
+                    ref={rowDrag.registerRow(`folder:${item.path}`, true)}
                     testID={`study-folder-${item.path}`}
                     onPress={() => toggleFolder(item.path)}
-                    onLongPress={() => {
-                      setRowTarget({ kind: "folder", label: item.label, path: item.path });
-                      setRowSheet("actions");
-                    }}
-                    delayLongPress={320}
                     style={({ pressed }) => [
                       styles.folderRow,
                       { marginLeft: item.depth * INDENT_STEP },
                       pressed && styles.rowPressed,
+                      rowDrag.overKey === `folder:${item.path}` && styles.rowDropTarget,
+                      rowDrag.activeKey === `folder:${item.path}` && styles.rowDragging,
                     ]}
                   >
                     {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
@@ -446,6 +502,7 @@ export default function StudyScreen() {
                       {item.actionable > 0 ? <Text style={styles.folderDue}>{item.actionable}</Text> : null}
                     </View>
                   </Pressable>
+                  </GestureDetector>
                 </Animated.View>
               ) : (
                 <Animated.View
@@ -454,18 +511,26 @@ export default function StudyScreen() {
                   exiting={FadeOut.duration(140)}
                   layout={LinearTransition.duration(220)}
                 >
+                  <GestureDetector
+                    gesture={rowDrag.gestureFor(`deck:${item.deck.deck.id}`, {
+                      // Dropping a deck back into the folder it already sits in
+                      // would do nothing, so that target never lights up.
+                      canDropOn: (targetKey) =>
+                        targetKey.slice(targetKey.indexOf(":") + 1) !== pathParent(item.deck.deck.name),
+                      draggable: true,
+                    })}
+                  >
                   <Pressable
+                    // A deck is never a drop TARGET — decks aren't containers —
+                    // but it registers so the drag can pick it up.
+                    ref={rowDrag.registerRow(`deck:${item.deck.deck.id}`, false)}
                     testID={`deck-${item.deck.deck.id}`}
                     onPress={() => router.push({ pathname: "/review", params: { deckId: item.deck.deck.id } })}
-                    onLongPress={() => {
-                      setRowTarget({ kind: "deck", id: item.deck.deck.id, name: item.deck.deck.name });
-                      setRowSheet("actions");
-                    }}
-                    delayLongPress={320}
                     style={({ pressed }) => [
                       styles.row,
                       { marginLeft: item.depth * INDENT_STEP },
                       pressed && styles.rowPressed,
+                      rowDrag.activeKey === `deck:${item.deck.deck.id}` && styles.rowDragging,
                     ]}
                   >
                     <View style={styles.deckText}>
@@ -486,6 +551,7 @@ export default function StudyScreen() {
                       <Text style={styles.deckChevron}>›</Text>
                     </View>
                   </Pressable>
+                  </GestureDetector>
                 </Animated.View>
               ),
             )
@@ -499,6 +565,14 @@ export default function StudyScreen() {
           />
         </Animated.View>
       )}
+
+      {/* Rides the finger during a drag; the row itself stays put and dims. */}
+      <DragChip
+        visible={rowDrag.activeKey !== null}
+        label={dragLabel}
+        fingerX={rowDrag.fingerX}
+        fingerY={rowDrag.fingerY}
+      />
 
       {/* Long-press row actions (owner 2026-07-22) — the same three sheets the
           Library tree uses, so the two trees behave identically. */}
@@ -602,6 +676,10 @@ const createStyles = (c: ThemeColors) =>
     // as a style, since it varies with how deep the folder nests.
     // Cards dim as a whole when pressed (a bg swap would erase the card fill).
     rowPressed: { opacity: 0.65 },
+    // Drag-and-drop feedback (owner 2026-07-23): the folder under your finger
+    // lights up, and the row you picked up fades so it's clear it's in flight.
+    rowDropTarget: { backgroundColor: c.accentFaint, borderWidth: 1, borderColor: c.accentLine },
+    rowDragging: { opacity: 0.4 },
     deckText: { flex: 1, minWidth: 0, gap: 2 },
     deckName: { ...type.body, color: c.text },
     deckRetention: { ...type.micro, color: c.text2 },

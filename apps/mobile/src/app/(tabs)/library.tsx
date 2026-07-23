@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import Reanimated, { LinearTransition } from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
@@ -22,7 +23,9 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
+import { DragChip } from "@/components/DragChip";
 import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { useRowDrag } from "@/components/useRowDrag";
 import {
   deleteFolder,
   deleteNote,
@@ -329,6 +332,43 @@ export default function LibraryScreen() {
     [rowTarget, userId, snapshot, applyRowChange],
   );
 
+  // --- hold-to-drag (owner 2026-07-23) --------------------------------------
+  // Row keys are "note:<path>" / "folder:<path>" — the same shape the list's
+  // keyExtractor already produces, so one string identifies a row AND says what
+  // it is. Dropping runs the very same move the menu's "Move to…" does.
+  const openRowMenu = useCallback(
+    (rowKey: string) => {
+      const path = rowKey.slice(rowKey.indexOf(":") + 1);
+      if (rowKey.startsWith("folder:")) {
+        setRowTarget({ kind: "folder", name: path.split("/").pop() ?? path, path });
+        setRowSheet("actions");
+        return;
+      }
+      const note = snapshot.notes.find((n) => n.path === path);
+      if (!note) return;
+      setRowTarget({ kind: "note", id: note.id, path: note.path, title: note.title });
+      setRowSheet("actions");
+    },
+    [snapshot],
+  );
+
+  const onRowDrop = useCallback(
+    (sourceKey: string, targetKey: string) => {
+      if (!userId) return;
+      const sourcePath = sourceKey.slice(sourceKey.indexOf(":") + 1);
+      const destination = targetKey.slice(targetKey.indexOf(":") + 1);
+      if (sourceKey.startsWith("folder:")) {
+        void applyRowChange(() => moveFolder(userId, snapshot, sourcePath, destination));
+        return;
+      }
+      const note = snapshot.notes.find((n) => n.path === sourcePath);
+      if (note) void applyRowChange(() => moveNote(userId, snapshot, note.id, destination));
+    },
+    [userId, snapshot, applyRowChange],
+  );
+
+  const rowDrag = useRowDrag({ onDrop: onRowDrop, onHold: openRowMenu });
+
   // Every time this screen regains focus: render the cached snapshot instantly
   // (offline-friendly), then refresh from the cloud behind that.
   useFocusEffect(
@@ -496,22 +536,35 @@ export default function LibraryScreen() {
         }
         renderItem={({ item }) => {
           const indent = item.depth > 0 ? { paddingLeft: space(2) + item.depth * space(4) } : null;
+          const rowKey = `${item.type}:${item.path}`;
+          const isOver = rowDrag.overKey === rowKey;
+          const isDragging = rowDrag.activeKey === rowKey;
+          // A folder can't go inside itself, and dropping something back where
+          // it already is would be a no-op — neither should highlight.
+          const canDropOn = (targetKey: string) => {
+            const destination = targetKey.slice(targetKey.indexOf(":") + 1);
+            if (destination === folderOf(item.path)) return false;
+            return item.type === "folder" ? !isAtOrUnder(destination, item.path) : true;
+          };
           if (item.type === "folder") {
             const isCollapsed = collapsed.has(item.path);
             const count = folderCounts.get(item.path) ?? 0;
             return (
+              <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: true })}>
               <Pressable
-                style={({ pressed }) => [styles.folderRow, indent, pressed && styles.rowPressed]}
+                ref={rowDrag.registerRow(rowKey, true)}
+                style={({ pressed }) => [
+                  styles.folderRow,
+                  indent,
+                  pressed && styles.rowPressed,
+                  isOver && styles.rowDropTarget,
+                  isDragging && styles.rowDragging,
+                ]}
                 testID={`folder-${item.path}`}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.name} folder, ${count} item${count === 1 ? "" : "s"}`}
                 accessibilityState={{ expanded: !isCollapsed }}
                 onPress={() => toggleFolder(item.path)}
-                onLongPress={() => {
-                  setRowTarget({ kind: "folder", name: item.name, path: item.path });
-                  setRowSheet("actions");
-                }}
-                delayLongPress={320}
               >
                 {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                 <View style={isCollapsed ? null : styles.chevronOpen}>
@@ -521,6 +574,7 @@ export default function LibraryScreen() {
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.folderCount}>{count}</Text>
               </Pressable>
+              </GestureDetector>
             );
           }
           // Note row: title only (owner 2026-07-21). The parent-path breadcrumb
@@ -530,21 +584,17 @@ export default function LibraryScreen() {
           const note = notesByPath.get(item.path);
           const kind: FileKind = note ? fileKindOf(note.path) : "note";
           return (
+            <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: true })}>
             <Pressable
-              style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed]}
+              // A note is never a drop TARGET — you drop onto folders — but it
+              // still registers so the drag can pick it up.
+              ref={rowDrag.registerRow(rowKey, false)}
+              style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed, isDragging && styles.rowDragging]}
               testID={`note-${item.path}`}
               onPress={() => {
                 const id = pathToId.get(item.path);
                 if (id) router.push({ pathname: "/note", params: { id } });
               }}
-              onLongPress={() => {
-                const id = pathToId.get(item.path);
-                if (id) {
-                  setRowTarget({ kind: "note", id, path: item.path, title: item.title });
-                  setRowSheet("actions");
-                }
-              }}
-              delayLongPress={320}
             >
               {/* Plain notes carry NO leading icon (owner 2026-07-20, Obsidian-style:
                   text only); pdf/doc attachments keep their identity glyph. */}
@@ -558,6 +608,7 @@ export default function LibraryScreen() {
                 {parent ? <Text style={styles.rowMeta} numberOfLines={1}>{parent}</Text> : null}
               </View>
             </Pressable>
+            </GestureDetector>
           );
         }}
         // rows.length === 0 iff no notes match: a top-level folder's own row (and every
@@ -635,6 +686,14 @@ export default function LibraryScreen() {
         onClose={closeRowSheets}
         testID="library-rename-prompt"
       />
+      {/* Rides the finger during a drag; the row itself stays put and dims. */}
+      <DragChip
+        visible={rowDrag.activeKey !== null}
+        label={rowDrag.activeKey ? (rowDrag.activeKey.slice(rowDrag.activeKey.indexOf(":") + 1).split("/").pop() ?? "") : ""}
+        fingerX={rowDrag.fingerX}
+        fingerY={rowDrag.fingerY}
+      />
+
       <FolderPickerSheet
         visible={rowSheet === "move"}
         title={rowTarget?.kind === "folder" ? "Move folder to" : "Move note to"}
@@ -979,6 +1038,10 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: radius.sm,
     },
     rowPressed: { backgroundColor: c.surface },
+    // Drag-and-drop feedback (owner 2026-07-23): the folder under your finger
+    // lights up, and the row you picked up fades so it's clear it's in flight.
+    rowDropTarget: { backgroundColor: c.accentFaint, borderWidth: 1, borderColor: c.accentLine },
+    rowDragging: { opacity: 0.4 },
     // Nudges the glyph down from the row's top edge to sit level with the title's
     // cap-height rather than the row's full (possibly 2-line) height.
     rowIcon: { marginTop: 3 },
