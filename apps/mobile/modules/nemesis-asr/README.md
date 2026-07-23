@@ -12,6 +12,9 @@ realtime, $0 per minute, audio never leaves the phone.
 | Piece | Status |
 |---|---|
 | `ios/NemesisAsrEngine.swift` | **Compiles clean** against FluidAudio exactly `0.15.5` under Swift 6 strict concurrency (standalone SPM package) |
+| `ios/RecordingFileWriter.swift` | **Compiles clean**, same package |
+| `src/hooks/useParakeetTranscription.ts` | **Typechecks** |
+| `normalizeRmsLevel` | **3 tests pass** |
 | `src/lib/asr-engine.ts` selector | **10 tests pass** |
 | `index.ts` | **Typechecks** |
 | `ios/NemesisAsrModule.swift` | **Written, not compiled** — needs `ExpoModulesCore`, which only resolves inside a prebuilt iOS project |
@@ -77,12 +80,17 @@ diagnostic**, test on hardware.
 
 ## Remaining work
 
-1. `useParakeetTranscription` hook mirroring `useLiveTranscription`'s shape,
-   selected by `selectAsrEngine()`.
-2. Explicit wifi-gated model download with progress.
-3. Persist audio alongside Parakeet so the existing enhance pass still has a
-   file to upload — Apple's recognizer wrote that file for free via
-   `recordingOptions.persist`, and the `AVAudioEngine` tap here does not.
+1. ~~`useParakeetTranscription` hook~~ — done, same shape as
+   `useLiveTranscription`.
+2. A selector hook that calls `selectAsrEngine()` and returns one of the two,
+   then swapping it into `RecordSession`. Blocked on (3), because wiring it
+   today would leave `shouldDownloadAsrModel()` dead.
+3. Explicit wifi-gated model download with progress. **Needs a new dependency**
+   — the project has no `expo-network` / netinfo, so there is currently no way
+   to tell wifi from cellular. Owner's call. Model-ready state can persist in
+   `expo-secure-store`, which is already here.
+3. ~~Persist audio alongside Parakeet~~ — done, `RecordingFileWriter` writes
+   16 kHz mono 16-bit (~115 MB/hour, vs ~690 MB/hour for raw float32 48 kHz).
 4. Device measurement: accuracy against the current transcript, latency,
    battery, thermals over a 90-minute lecture.
 5. Once accuracy is confirmed on device, decide whether the server enhance pass

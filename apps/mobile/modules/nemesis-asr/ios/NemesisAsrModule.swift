@@ -18,7 +18,7 @@ public class NemesisAsrModule: Module {
         // The growing transcript, pushed as the engine decodes. Mirrors the
         // shape of expo-speech-recognition's "result" event so the two engines
         // can sit behind one hook.
-        Events("onPartialTranscript")
+        Events("onPartialTranscript", "onAudioLevel")
 
         /// The JS side treats a missing module as "not available" already; this
         /// exists so a build that HAS the module can still report an OS too old
@@ -36,11 +36,20 @@ public class NemesisAsrModule: Module {
             await self.engine.onPartialTranscript { [weak self] text in
                 self?.sendEvent("onPartialTranscript", ["transcript": text])
             }
+            // Feeds the recorder waveform. Apple's recognizer emitted this as
+            // `volumechange`; without it the waveform goes flat.
+            await self.engine.onAudioLevel { [weak self] level in
+                self?.sendEvent("onAudioLevel", ["level": Double(level)])
+            }
             try await self.engine.start()
         }
 
-        AsyncFunction("stop") { () async throws -> String in
-            try await self.engine.stop()
+        /// Returns BOTH halves: the transcript, and the audio file the server
+        /// enhance pass uploads. Apple's recognizer wrote that file for free;
+        /// an AVAudioEngine tap does not, so RecordingFileWriter does it here.
+        AsyncFunction("stop") { () async throws -> [String: Any?] in
+            let recording = try await self.engine.stop()
+            return ["transcript": recording.transcript, "audioPath": recording.audioPath]
         }
 
         AsyncFunction("partialTranscript") { () async -> String in

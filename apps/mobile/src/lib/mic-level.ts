@@ -46,3 +46,21 @@ export function currentMicLevel(): number {
 export function resetMicLevel(): void {
   publishMicLevel(0);
 }
+
+// An AVAudioEngine tap (the on-device Parakeet path) yields a raw RMS
+// amplitude instead of the speech library's 0..10 scale, so it needs its own
+// mapping. Running RMS through normalizeMicLevel would draw a flat line:
+// conversational speech sits around 0.01..0.2 linear, which that scale reads
+// as silence.
+const RMS_FLOOR_DB = -50;
+const RMS_CEILING_DB = -6;
+
+/** Map a raw RMS amplitude (0..1) onto 0..1, by loudness rather than by
+ *  amplitude — decibels are how the ear (and a waveform) actually read it. */
+export function normalizeRmsLevel(rms: number): number {
+  if (!Number.isFinite(rms) || rms <= 0) return 0;
+  const db = 20 * Math.log10(rms);
+  if (db <= RMS_FLOOR_DB) return 0;
+  if (db >= RMS_CEILING_DB) return 1;
+  return (db - RMS_FLOOR_DB) / (RMS_CEILING_DB - RMS_FLOOR_DB);
+}

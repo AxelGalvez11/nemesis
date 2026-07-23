@@ -16,6 +16,8 @@ public actor NemesisAsrEngine {
     private let manager: any StreamingAsrManager
     private var state: State = .idle
     private var engine: AVAudioEngine?
+    private var writer: RecordingFileWriter?
+    private var onLevel: (@Sendable (Float) -> Void)?
 
     /// 160ms chunks — the lowest-latency variant, which is what a live caption
     /// under a growing transcript wants. 320/1600ms trade latency for throughput.
@@ -47,6 +49,13 @@ public actor NemesisAsrEngine {
         await manager.setPartialTranscriptCallback(callback)
     }
 
+    /// Input loudness, 0...1, for the recorder's waveform. Apple's recognizer
+    /// emitted this as `volumechange`; an AVAudioEngine tap does not, and
+    /// without it the waveform is a canned animation again.
+    public func onAudioLevel(_ callback: @escaping @Sendable (Float) -> Void) {
+        onLevel = callback
+    }
+
     /// Start capturing the microphone and feeding the engine.
     public func start() async throws {
         try await prepare()
@@ -56,6 +65,13 @@ public actor NemesisAsrEngine {
         let audioEngine = AVAudioEngine()
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
+        // Keep the audio too: the server enhance pass (and the notes rebuild
+        // riding on it) reads this file. Failing to open it must not stop the
+        // recording — a lecture transcribed with no enhance pass beats no
+        // lecture at all.
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nemesis-\(UUID().uuidString).wav")
+        writer = try? RecordingFileWriter(url: target, inputFormat: format)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             guard let self else { return }
             // AVAudioPCMBuffer is NOT Sendable and this closure runs on a
@@ -65,7 +81,8 @@ public actor NemesisAsrEngine {
             // reject — and a realtime thread is the worst place to find one.
             guard let samples = Self.copySamples(from: buffer) else { return }
             let rate = buffer.format.sampleRate
-            Task { await self.consume(samples: samples, sampleRate: rate) }
+            let level = Self.rms(of: samples)
+            Task { await self.consume(samples: samples, sampleRate: rate, level: level) }
         }
         audioEngine.prepare()
         try audioEngine.start()
@@ -81,7 +98,17 @@ public actor NemesisAsrEngine {
         return Array(UnsafeBufferPointer(start: channel, count: count))
     }
 
-    private func consume(samples: [Float], sampleRate: Double) async {
+    /// Root-mean-square loudness of one chunk. Computed on the audio thread so
+    /// the actor hop carries a single Float instead of the samples twice over.
+    private nonisolated static func rms(of samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        var sum: Float = 0
+        for sample in samples { sum += sample * sample }
+        return (sum / Float(samples.count)).squareRoot()
+    }
+
+    private func consume(samples: [Float], sampleRate: Double, level: Float) async {
+        onLevel?(level)
         guard state == .running,
             let format = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
@@ -93,6 +120,7 @@ public actor NemesisAsrEngine {
             guard let base = source.baseAddress else { return }
             destination.update(from: base, count: samples.count)
         }
+        writer?.append(samples: samples, sampleRate: sampleRate)
         do {
             try await manager.appendAudio(buffer)
             try await manager.processBufferedAudio()
@@ -101,16 +129,28 @@ public actor NemesisAsrEngine {
         }
     }
 
-    /// Stop the microphone and return the final transcript.
-    public func stop() async throws -> String {
+    /// What one recording produced: the final text, and the audio the enhance
+    /// pass can still upload. `audioPath` is nil when the file could not be
+    /// opened — the transcript is the load-bearing half.
+    public struct Recording: Sendable {
+        public let transcript: String
+        public let audioPath: String?
+    }
+
+    /// Stop the microphone and return the final transcript plus the audio file.
+    public func stop() async throws -> Recording {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
-        guard state == .running else { return await manager.getPartialTranscript() }
+        let audioPath = writer?.url.path
+        writer = nil
+        guard state == .running else {
+            return Recording(transcript: await manager.getPartialTranscript(), audioPath: audioPath)
+        }
         state = .finished
         let text = try await manager.finish()
         state = .ready
-        return text
+        return Recording(transcript: text, audioPath: audioPath)
     }
 
     /// The transcript so far, without ending the session.

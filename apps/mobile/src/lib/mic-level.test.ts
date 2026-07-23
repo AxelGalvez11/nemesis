@@ -1,9 +1,10 @@
 // Deno unit tests (repo convention) for the live microphone-level channel.
 // Run: deno test --no-check apps/mobile/src/lib/mic-level.test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   currentMicLevel,
   normalizeMicLevel,
+  normalizeRmsLevel,
   publishMicLevel,
   resetMicLevel,
   subscribeMicLevel,
@@ -62,4 +63,34 @@ Deno.test("multiple subscribers all hear the same level", () => {
   assertEquals(a, [0.6]);
   assertEquals(b, [0.6]);
   resetMicLevel();
+});
+
+Deno.test("RMS silence and garbage read as zero", () => {
+  assertEquals(normalizeRmsLevel(0), 0);
+  assertEquals(normalizeRmsLevel(-1), 0);
+  assertEquals(normalizeRmsLevel(Number.NaN), 0);
+  // Non-finite is garbage off a native event stream, not "infinitely loud" —
+  // it reads as silence, same as normalizeMicLevel treats it.
+  assertEquals(normalizeRmsLevel(Number.POSITIVE_INFINITY), 0);
+});
+
+Deno.test("RMS is mapped by loudness, not amplitude", () => {
+  // The bug this exists to prevent: conversational speech RMS is ~0.01..0.2
+  // linear, so a linear map would draw an almost flat waveform. In decibels
+  // the same range spans most of the dial.
+  const quiet = normalizeRmsLevel(0.01);
+  const talking = normalizeRmsLevel(0.05);
+  const loud = normalizeRmsLevel(0.4);
+  assert(quiet > 0.05, `quiet speech read as ${quiet}`);
+  assert(talking > quiet && loud > talking, `not monotonic: ${quiet}/${talking}/${loud}`);
+  assert(loud > 0.8, `loud speech read as ${loud}`);
+  // A linear reading of the same value would be indistinguishable from silence.
+  assert(talking - 0.05 > 0.3, "decibel mapping is not pulling the range apart");
+});
+
+Deno.test("RMS output never leaves 0..1", () => {
+  for (const rms of [1e-9, 0.0001, 0.5, 1, 12]) {
+    const level = normalizeRmsLevel(rms);
+    assert(level >= 0 && level <= 1, `${rms} -> ${level}`);
+  }
 });
