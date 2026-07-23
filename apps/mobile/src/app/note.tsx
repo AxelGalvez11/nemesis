@@ -34,7 +34,7 @@ import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalH
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Note view + editor (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md
 // §7): renders one note straight from your account's library, and — owner 2026-07-20
@@ -906,25 +906,35 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(3),
       paddingBottom: space(2),
     },
-    // 40x40 liquid-glass icon button, fully ROUND (owner 2026-07-22: "change the
+    // Liquid-glass icon button, fully ROUND (owner 2026-07-22: "change the
     // upper left 'back' button to be round not square") — which also matches the
-    // pill it sits opposite, so the two ends of the row share one shape.
-    iconGlass: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+    // pill it sits opposite, so the two ends of the row share one shape. Both
+    // are on control.lg now (44, was 40): floating chrome with nothing around
+    // it to aim at gets the app's largest control size.
+    iconGlass: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
     topRight: { flexDirection: "row", alignItems: "center", gap: space(2.5) },
     saveHint: { ...type.micro, color: c.text3 },
     // The upper-right glass pill: [pencil|book mode toggle][… menu] — the
-    // owner's reference crop. Two 44pt targets sharing one 40pt-tall pill.
+    // owner's reference crop. Two 44pt-wide targets sharing one pill, whose
+    // height and end-caps track the round back button opposite it.
     modePill: {
       flexDirection: "row",
       alignItems: "center",
-      height: 40,
-      borderRadius: 20,
+      height: control.lg,
+      borderRadius: control.lg / 2,
       borderWidth: 1,
       borderColor: c.line,
       overflow: "hidden",
     },
-    modePillBtn: { width: 44, height: 40, alignItems: "center", justifyContent: "center" },
+    modePillBtn: { width: control.lg, height: control.lg, alignItems: "center", justifyContent: "center" },
     modePillBtnPressed: { backgroundColor: c.surface },
 
     body: { paddingHorizontal: space(5), paddingTop: space(2) },

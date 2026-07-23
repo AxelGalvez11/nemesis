@@ -49,6 +49,36 @@ export const c = {
 // Matches tokens.json radius seeds (card 8 / input 10) at radiusScalar 1.0.
 export const radius = { sm: 8, md: 10, lg: 14, xl: 18, pill: 999 } as const;
 
+// THE CONTROL SCALE — the same idea as the text scale below, for the round
+// icon buttons (owner 2026-07-23: "make sure all buttons and liquid glass
+// components have standardize size. make sure there arent any square
+// buttons"). Before this the app shipped 28 · 32 · 34 · 36 · 38 · 40 · 44 · 46
+// across nine files, each tuned in isolation, and two of them were rounded
+// SQUARES rather than circles.
+//
+// TWO RULES, and they're the whole standard:
+//  1. A square-aspect control takes width AND height from here.
+//  2. Its borderRadius is exactly half that, so it is a circle — never a
+//     rounded square.
+//
+// Deliberately NOT in this ladder, because they aren't icon buttons: calendar
+// day cells, colour swatches, the delete-account checkbox (a checkbox is square
+// by convention), sheet grab handles, and status dots.
+export const control = {
+  /** Primary floating actions — the Study modes FAB, the note toolbar's row of
+   *  six. Deliberately larger than a header button (owner 2026-07-22: "make the
+   *  buttons bigger in the notes library, because they look a bit small"). */
+  xl: 52,
+  /** Floating chrome and screen headers — 44pt, iOS's comfortable minimum.
+   *  These buttons sit alone over content, with no neighbours to aim by. */
+  lg: 44,
+  /** Inline in a card or a composer row, where the row itself guides the thumb. */
+  md: 36,
+  /** Dismissing a sheet, clearing a chip — the surface behind it is the real
+   *  target, so the control can sit back. */
+  sm: 32,
+} as const;
+
 // 4pt spacing grid.
 export const space = (n: number): number => n * 4;
 

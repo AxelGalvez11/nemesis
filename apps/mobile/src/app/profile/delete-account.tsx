@@ -8,7 +8,7 @@ import { ErrorState } from "@/components/states";
 import { useCommon } from "@/theme/common";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
-import { space, type } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Account deletion (AC10 / §11 "deletion must work") — REAL and irreversible. A confirm
 // gate, then the account-delete edge fn service-role-deletes auth.users(uid); every owned
@@ -63,7 +63,7 @@ const createStyles = (c: ThemeColors) =>
     checkboxOn: { backgroundColor: c.danger },
     check: { color: "#fff", fontSize: type.small.fontSize, fontWeight: "900" }, // white on danger fill
     confirmLabel: { flex: 1, fontSize: type.small.fontSize, lineHeight: 20, color: c.text2 },
-    dangerBtn: { backgroundColor: c.danger, paddingVertical: space(3.5), borderRadius: 10, alignItems: "center" },
+    dangerBtn: { backgroundColor: c.danger, paddingVertical: space(3.5), borderRadius: radius.md, alignItems: "center" },
     dangerText: { color: "#fff", fontSize: type.small.fontSize + 1, fontWeight: "700" }, // white on danger fill
     disabled: { opacity: 0.5 },
   });

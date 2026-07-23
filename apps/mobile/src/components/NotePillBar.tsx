@@ -5,7 +5,7 @@ import { GlassSurface } from "./GlassSurface";
 import { PlusIcon, SearchIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { control, radius, space } from "@/theme/tokens";
 
 // The note screen's floating bottom pill bar (owner 2026-07-21, matching their
 // Safari-style reference crop): back · forward · search · new note · recents ·
@@ -23,7 +23,7 @@ import { radius, space } from "@/theme/tokens";
 // inside it were smaller still, so the bar read as a row of hints rather than
 // buttons. 52 across six buttons plus the bar's padding is 324pt — comfortably
 // inside the narrowest phone this ships to, so nothing has to wrap or shrink.
-const BUTTON = 52;
+const BUTTON = control.xl;
 /** The bar's own height, exported so note.tsx's bottom scroll spacer clears
  *  the real control rather than a number that drifts from it. */
 export const NOTE_PILL_BAR_HEIGHT = 62;

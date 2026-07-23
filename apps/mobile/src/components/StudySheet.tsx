@@ -7,7 +7,7 @@ import { CloseIcon } from "./icons";
 import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // A liquid-glass panel that slides up from the bottom edge — the Study screen's
 // Stats sheet, the chat screen's Sources/Deliverable/Upgrade/Attach sheets, and
@@ -97,6 +97,6 @@ const createStyles = (c: ThemeColors) =>
       paddingBottom: space(2),
     },
     title: { ...type.title, color: c.text },
-    closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
+    closeBtn: { width: control.sm, height: control.sm, borderRadius: control.sm / 2, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
     body: { paddingHorizontal: space(4) },
   });

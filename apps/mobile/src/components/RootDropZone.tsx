@@ -38,16 +38,21 @@ export const RootDropZone = forwardRef<View, { label: string; active: boolean; o
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    // Deliberately a BAND, not a hairline chip (owner 2026-07-23: the box should
+    // "highlight the out of folders space"). It was a 46pt strip in the app's
+    // quietest colors, which read as a caption rather than a place to let go of
+    // something; at 62pt with the accent on it, it reads as the destination it
+    // is, and it is a far easier thing to hit with a finger mid-drag.
     zone: {
       position: "absolute",
-      left: space(4),
-      right: space(4),
-      height: 46,
-      borderRadius: radius.md,
-      borderWidth: 1,
+      left: space(3),
+      right: space(3),
+      height: 62,
+      borderRadius: radius.lg,
+      borderWidth: 2,
       borderStyle: "dashed",
-      borderColor: c.line2,
-      backgroundColor: c.surface,
+      borderColor: c.accentLine,
+      backgroundColor: c.accentFaint,
       alignItems: "center",
       justifyContent: "center",
       zIndex: 20,
@@ -55,7 +60,9 @@ const createStyles = (c: ThemeColors) =>
     // Measurable but invisible when nothing is being dragged — see the note above.
     zoneIdle: { opacity: 0 },
     zoneActive: { opacity: 1 },
-    zoneOver: { backgroundColor: c.accentFaint, borderColor: c.accentLine, borderStyle: "solid" },
-    label: { ...type.small, color: c.text3 },
-    labelOver: { color: c.accent, fontWeight: "600" },
+    // Over: the outline goes solid and the fill deepens, so "let go here" is
+    // unmistakable next to the merely-available state above.
+    zoneOver: { backgroundColor: c.accent, borderColor: c.accent, borderStyle: "solid" },
+    label: { ...type.small, color: c.accent, fontWeight: "600" },
+    labelOver: { color: c.onAccent, fontWeight: "700" },
   });

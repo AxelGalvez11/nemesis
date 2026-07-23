@@ -74,7 +74,7 @@ export function ComposerPlusMenu({
   };
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="composer-plus-menu">
+    <View style={[StyleSheet.absoluteFill, styles.host]} pointerEvents={visible ? "auto" : "none"} testID="composer-plus-menu">
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the
           page (owner: confine blur to the component), same as every other menu here. */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
@@ -120,6 +120,12 @@ function CheckIcon({ size = 16, color }: { size?: number; color: string }) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    // See ComposerEffortMenu's `host` — iOS paints siblings in tree order and
+    // ignores `position: absolute` for stacking, so this menu needs to say out
+    // loud that it belongs on top (owner 2026-07-23: the "+" menu "clashed with
+    // text behind it", which was the landing page's starter rows drawing over
+    // the panel).
+    host: { zIndex: 30 },
     menuWrap: { position: "absolute", left: space(3), minWidth: 224 },
     menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(4) },

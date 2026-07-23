@@ -44,7 +44,7 @@ import { allFolderPaths, folderOf, isAtOrUnder } from "@/lib/library-paths";
 import { fileKindOf, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // Library (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md §7):
 // the same notes the web app's Library reads and writes, on your phone. Shows the
@@ -751,7 +751,9 @@ function LibrarySkeleton({ contentTop }: { contentTop: number }) {
 // StudyModeMenu, so it feels like one family. Picking an item closes the menu and
 // runs its action; the page behind is NOT blurred — the menu's own glass is the
 // only blur.
-const FAB_SIZE = 48;
+// control.xl — the app's one floating-action size, shared with Study's FAB, the
+// Calendar's pair and the note bar (owner 2026-07-23). This was 48.
+const FAB_SIZE = control.xl;
 
 function ActionsFab({
   searchActive,
