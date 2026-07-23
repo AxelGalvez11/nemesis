@@ -48,6 +48,25 @@ const SCOPES: { key: StudyBrowseScope; label: string }[] = [
   { key: "leeches", label: "Leeches" },
 ];
 
+// ONE filter group on screen at a time (owner 2026-07-23: "browse popup should
+// only show one column at a time"). Web's browser can afford a permanent
+// sidebar listing Status, Decks and Tags side by side; stacking those three as
+// separate chip rows on a phone ate most of the sheet before a single card
+// showed, and the rows clipped each other into half-visible pills.
+//
+// So: a segmented picker chooses which group you're filtering by, and only that
+// group's chips are drawn. Nothing is lost — the summary line under the picker
+// names every filter that is currently on, including ones from a group you
+// can't see, so a hidden filter can never quietly narrow the list.
+type FilterGroup = "status" | "decks" | "tags";
+
+/** A chip is one line of `type.small` (22) plus 5pt of air top and bottom plus
+ *  its hairline border; the row adds a couple of points so the border isn't
+ *  flush against the scroller's edge. Written out rather than left to intrinsic
+ *  sizing — see the note on `chipScroll`. */
+const CHIP_HEIGHT = 34;
+const CHIP_ROW_HEIGHT = 36;
+
 export function StudyBrowseSheet({
   visible,
   onClose,
@@ -69,6 +88,7 @@ export function StudyBrowseSheet({
   const { colors: c } = useTheme();
 
   const [filter, setFilter] = useState<StudyBrowseFilter>(EMPTY_BROWSE_FILTER);
+  const [group, setGroup] = useState<FilterGroup>("status");
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editFront, setEditFront] = useState("");
@@ -82,6 +102,7 @@ export function StudyBrowseSheet({
   useEffect(() => {
     if (!visible) return;
     setFilter(EMPTY_BROWSE_FILTER);
+    setGroup("status");
     setOpenId(null);
     setEditing(false);
     setError(null);
@@ -92,6 +113,32 @@ export function StudyBrowseSheet({
   const filtered = useMemo(() => applyBrowseFilter(rows, filter), [rows, filter]);
 
   const patch = (next: Partial<StudyBrowseFilter>) => setFilter((prev) => ({ ...prev, ...next }));
+
+  // A deck with no tags left offers no Tags group, so a filter sitting on it
+  // would strand the picker on an empty row.
+  const groups: { key: FilterGroup; label: string }[] = [
+    { key: "status", label: "Status" },
+    { key: "decks", label: "Decks" },
+    ...(tags.length > 0 ? [{ key: "tags" as const, label: "Tags" }] : []),
+  ];
+  const shownGroup: FilterGroup = group === "tags" && tags.length === 0 ? "status" : group;
+
+  // Every filter currently narrowing the list, named — including ones set in a
+  // group that isn't on screen. This is what makes showing one group at a time
+  // safe rather than confusing.
+  const activeFilters: string[] = [];
+  if (filter.scope !== "all") {
+    activeFilters.push(SCOPES.find((scope) => scope.key === filter.scope)?.label ?? filter.scope);
+  }
+  if (filter.flag !== null) {
+    activeFilters.push(STUDY_FLAG_COLORS.find((flag) => flag.value === filter.flag)?.name ?? "Flag");
+  }
+  if (filter.deckId !== null) {
+    const deck = decks.find((item) => item.id === filter.deckId);
+    if (deck) activeFilters.push(pathLeaf(deck.name));
+  }
+  if (filter.tag !== null) activeFilters.push(`#${filter.tag}`);
+  if (filter.query.trim()) activeFilters.push(`"${filter.query.trim()}"`);
 
   function startEdit(card: CloudStudyCard) {
     setEditing(true);
@@ -172,71 +219,107 @@ export function StudyBrowseSheet({
         ) : null}
       </View>
 
-      {/* Scope: All / Flagged / Suspended / Leeches */}
-      <View style={styles.scopeRow}>
-        {SCOPES.map((scope) => (
-          <Chip
-            key={scope.key}
-            label={scope.label}
-            active={filter.scope === scope.key}
-            onPress={() => patch({ scope: scope.key, flag: null })}
-            testID={`study-browse-scope-${scope.key}`}
-          />
+      {/* Which group you're filtering by — one on screen at a time. */}
+      <View style={styles.groupRow}>
+        {groups.map((item) => (
+          <Pressable
+            key={item.key}
+            onPress={() => setGroup(item.key)}
+            style={[styles.groupTab, shownGroup === item.key && styles.groupTabActive]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: shownGroup === item.key }}
+            testID={`study-browse-group-${item.key}`}
+          >
+            <Text style={[styles.groupTabLabel, shownGroup === item.key && styles.groupTabLabelActive]}>{item.label}</Text>
+          </Pressable>
         ))}
       </View>
 
-      {/* Flag colors — only meaningful inside the Flagged scope */}
-      {filter.scope === "flagged" ? (
-        <View style={styles.flagRow}>
-          <Chip label="Any" active={filter.flag === null} onPress={() => patch({ flag: null })} testID="study-browse-flag-any" />
-          {STUDY_FLAG_COLORS.map((flag) => (
-            <Pressable
-              key={flag.value}
-              onPress={() => patch({ flag: filter.flag === flag.value ? null : flag.value })}
-              hitSlop={6}
-              accessibilityLabel={`${flag.name} flag`}
-              accessibilityRole="button"
-              testID={`study-browse-flag-${flag.value}`}
-              style={[styles.flagDotWrap, filter.flag === flag.value && styles.flagDotWrapActive]}
-            >
-              <View style={[styles.flagDot, { backgroundColor: flag.hex }]} />
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
+      {/* The chosen group's chips. One row, fixed height — a horizontal scroller
+          with no height of its own gets squeezed by the sheet's animated body
+          cap and clips its own pills in half (owner screenshot, 2026-07-23). */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipScroll}
+        contentContainerStyle={styles.chipScrollInner}
+        keyboardShouldPersistTaps="handled"
+        testID={`study-browse-chips-${shownGroup}`}
+      >
+        {shownGroup === "status" ? (
+          <>
+            {SCOPES.map((scope) => (
+              <Chip
+                key={scope.key}
+                label={scope.label}
+                active={filter.scope === scope.key}
+                onPress={() => patch({ scope: scope.key, flag: null })}
+                testID={`study-browse-scope-${scope.key}`}
+              />
+            ))}
+            {/* Flag colours live inside Status, and only once you're looking at
+                flagged cards — a colour picker means nothing otherwise. */}
+            {filter.scope === "flagged"
+              ? STUDY_FLAG_COLORS.map((flag) => (
+                  <Pressable
+                    key={flag.value}
+                    onPress={() => patch({ flag: filter.flag === flag.value ? null : flag.value })}
+                    hitSlop={6}
+                    accessibilityLabel={`${flag.name} flag`}
+                    accessibilityRole="button"
+                    testID={`study-browse-flag-${flag.value}`}
+                    style={[styles.flagDotWrap, filter.flag === flag.value && styles.flagDotWrapActive]}
+                  >
+                    <View style={[styles.flagDot, { backgroundColor: flag.hex }]} />
+                  </Pressable>
+                ))
+              : null}
+          </>
+        ) : null}
 
-      {/* Deck filter */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chipScrollInner}>
-        <Chip label="All decks" active={filter.deckId === null} onPress={() => patch({ deckId: null })} testID="study-browse-deck-all" />
-        {decks.map((deck) => (
-          <Chip
-            key={deck.id}
-            label={pathLeaf(deck.name)}
-            active={filter.deckId === deck.id}
-            onPress={() => patch({ deckId: filter.deckId === deck.id ? null : deck.id })}
-            testID={`study-browse-deck-${deck.id}`}
-          />
-        ))}
+        {shownGroup === "decks" ? (
+          <>
+            <Chip label="All decks" active={filter.deckId === null} onPress={() => patch({ deckId: null })} testID="study-browse-deck-all" />
+            {decks.map((deck) => (
+              <Chip
+                key={deck.id}
+                label={pathLeaf(deck.name)}
+                active={filter.deckId === deck.id}
+                onPress={() => patch({ deckId: filter.deckId === deck.id ? null : deck.id })}
+                testID={`study-browse-deck-${deck.id}`}
+              />
+            ))}
+          </>
+        ) : null}
+
+        {shownGroup === "tags" ? (
+          <>
+            <Chip label="All tags" active={filter.tag === null} onPress={() => patch({ tag: null })} testID="study-browse-tag-all" />
+            {tags.map((tag) => (
+              <Chip
+                key={tag}
+                label={`#${tag}`}
+                active={filter.tag === tag}
+                onPress={() => patch({ tag: filter.tag === tag ? null : tag })}
+                testID={`study-browse-tag-${tag}`}
+              />
+            ))}
+          </>
+        ) : null}
       </ScrollView>
 
-      {/* Tag filter — only when there are tags */}
-      {tags.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chipScrollInner}>
-          <Chip label="All tags" active={filter.tag === null} onPress={() => patch({ tag: null })} testID="study-browse-tag-all" />
-          {tags.map((tag) => (
-            <Chip
-              key={tag}
-              label={`#${tag}`}
-              active={filter.tag === tag}
-              onPress={() => patch({ tag: filter.tag === tag ? null : tag })}
-              testID={`study-browse-tag-${tag}`}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
-
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Text style={styles.count}>{filtered.length} {filtered.length === 1 ? "card" : "cards"}</Text>
+      <View style={styles.countRow}>
+        <Text style={styles.count} numberOfLines={1} testID="study-browse-count">
+          {filtered.length} {filtered.length === 1 ? "card" : "cards"}
+          {activeFilters.length > 0 ? `  ·  ${activeFilters.join("  ·  ")}` : ""}
+        </Text>
+        {activeFilters.length > 0 ? (
+          <Pressable onPress={() => setFilter(EMPTY_BROWSE_FILTER)} hitSlop={8} testID="study-browse-clear">
+            <Text style={styles.clearLabel}>Clear</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {/* The list — flexShrink:1 so SlideUpSheet's drag-to-expand grows it. */}
       <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-list">
@@ -377,24 +460,43 @@ const createStyles = (c: ThemeColors) =>
     },
     searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
 
-    scopeRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5), marginBottom: space(2) },
+    // Segmented picker for which filter group is on screen.
+    groupRow: { flexDirection: "row", backgroundColor: c.surface, borderRadius: radius.pill, padding: 3, marginBottom: space(2) },
+    groupTab: { flex: 1, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
+    groupTabActive: { backgroundColor: c.bg },
+    groupTabLabel: { ...type.small, color: c.text3 },
+    groupTabLabelActive: { color: c.text, fontWeight: "600" },
+
     flagRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space(1.5), marginBottom: space(2) },
-    flagDotWrap: { padding: 3, borderRadius: 999, borderWidth: 2, borderColor: "transparent" },
+    flagDotWrap: { padding: 3, borderRadius: 999, borderWidth: 2, borderColor: "transparent", alignSelf: "center" },
     flagDotWrapActive: { borderColor: c.text2 },
     flagDot: { width: 16, height: 16, borderRadius: 8 },
     flagNone: { paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: c.line },
     flagNoneActive: { borderColor: c.accent, backgroundColor: c.accentFaint },
     flagNoneText: { ...type.micro, color: c.text2 },
 
-    chipScroll: { marginBottom: space(2) },
-    chipScrollInner: { gap: space(1.5), paddingRight: space(4) },
-    chip: { paddingVertical: space(1.25), paddingHorizontal: space(3), borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface },
+    // Explicit heights, not padding-derived ones: a horizontal ScrollView has no
+    // intrinsic height of its own, so inside the sheet's animated maxHeight body
+    // it was being squeezed and cutting its pills off mid-letter.
+    chipScroll: { height: CHIP_ROW_HEIGHT, flexGrow: 0, flexShrink: 0, marginBottom: space(2) },
+    chipScrollInner: { alignItems: "center", gap: space(1.5), paddingRight: space(4) },
+    chip: {
+      height: CHIP_HEIGHT,
+      justifyContent: "center",
+      paddingHorizontal: space(3),
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.surface,
+    },
     chipActive: { backgroundColor: c.accent, borderColor: c.accent },
     chipLabel: { ...type.small, color: c.text2, maxWidth: 180 },
     chipLabelActive: { color: c.onAccent, fontWeight: "600" },
 
     error: { ...type.small, color: c.danger, marginBottom: space(1.5) },
-    count: { ...type.micro, color: c.text3, marginBottom: space(1.5) },
+    countRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(3), marginBottom: space(1.5) },
+    count: { ...type.micro, color: c.text3, flexShrink: 1 },
+    clearLabel: { ...type.micro, color: c.accent, fontWeight: "600" },
 
     // flexShrink:1 (NOT a fixed height) so SlideUpSheet's drag-to-expand grows
     // the list — the app-wide contract for a sheet's scroll body.

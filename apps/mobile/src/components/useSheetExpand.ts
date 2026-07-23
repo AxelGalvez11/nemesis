@@ -37,6 +37,8 @@ export function useSheetExpand({
   onClose,
   collapsedRatio = 0.55,
   collapsedCap = 500,
+  startExpanded = false,
+  bottomInset = 0,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -44,23 +46,33 @@ export function useSheetExpand({
   collapsedRatio?: number;
   /** Hard ceiling on the collapsed height, for tall phones. */
   collapsedCap?: number;
+  /** Open already expanded. For a sheet whose whole job is a full-screen form
+   *  (owner 2026-07-23: "the add new card should be full screen") — the drag
+   *  still works, so it can be pulled back down. */
+  startExpanded?: boolean;
+  /** Space the sheet has been lifted by (the keyboard). Subtracted from both
+   *  height budgets, since a lifted sheet's ceiling is that much lower — without
+   *  this, raising the keyboard would push the sheet's top off the screen. */
+  bottomInset?: number;
 }): SheetExpand {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const initial = startExpanded ? 1 : 0;
   // 0 = collapsed, 1 = expanded.
-  const expand = useRef(new Animated.Value(0)).current;
+  const expand = useRef(new Animated.Value(initial)).current;
   // JS-side mirrors for the gesture maths (Animated.Value has no sync read).
-  const expandNowRef = useRef(0);
-  const dragStartRef = useRef(0);
+  const expandNowRef = useRef(initial);
+  const dragStartRef = useRef(initial);
 
-  // Reopening always starts collapsed — a sheet that remembered "expanded"
-  // would come back full-screen for an unrelated, possibly tiny, list.
+  // Reopening always starts from the sheet's OWN resting state — a sheet that
+  // remembered "expanded" would come back full-screen for an unrelated,
+  // possibly tiny, list, and a full-screen sheet must not come back collapsed.
   useEffect(() => {
     if (visible) return;
     expand.stopAnimation();
-    expand.setValue(0);
-    expandNowRef.current = 0;
-  }, [visible, expand]);
+    expand.setValue(initial);
+    expandNowRef.current = initial;
+  }, [visible, expand, initial]);
 
   const settleExpand = (to: 0 | 1) => {
     expandNowRef.current = to;
@@ -71,6 +83,18 @@ export function useSheetExpand({
       useNativeDriver: false,
     }).start();
   };
+
+  // A sheet that becomes full-screen while it is already open — the add sheet's
+  // little menu stepping into the card form — grows into it instead of jumping,
+  // and a sheet that steps back to the menu settles back down.
+  const restingRef = useRef(initial);
+  useEffect(() => {
+    if (!visible || restingRef.current === initial) return;
+    restingRef.current = initial;
+    settleExpand(initial);
+    // settleExpand closes over refs and a stable Animated.Value only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial, visible]);
 
   // runOnJS because it drives RN Animated values (JS-side), the same pattern
   // GraphNodeView's drag uses.
@@ -107,8 +131,9 @@ export function useSheetExpand({
   // Collapsed keeps the familiar part-screen sheet; expanded runs to just under
   // the status bar. Math.max guards the case where a short window makes the
   // "expanded" ceiling land below the collapsed one.
-  const collapsedMax = Math.min(Math.round(height * collapsedRatio), collapsedCap);
-  const expandedMax = Math.max(collapsedMax, height - insets.top - space(14));
+  const usable = height - bottomInset;
+  const collapsedMax = Math.min(Math.round(usable * collapsedRatio), collapsedCap);
+  const expandedMax = Math.max(collapsedMax, usable - insets.top - space(14));
   const bodyMaxHeight = expand.interpolate({
     inputRange: [0, 1],
     outputRange: [collapsedMax, expandedMax],

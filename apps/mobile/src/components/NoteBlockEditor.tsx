@@ -47,6 +47,8 @@ import {
   WikiLinkIcon,
 } from "./note-toolbar-icons";
 import { MessageBody } from "./MessageBody";
+import { NoteTableEditor } from "./NoteTableEditor";
+import { isTableBlock } from "@/lib/markdown-table";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -243,6 +245,20 @@ export function NoteBlockEditor({
     selRef.current = { end: 0, start: 0 };
   }, [normalized]);
 
+  // "The student is still working in this block." The table grid calls it as
+  // focus moves from cell to cell: each hop blurs a TextInput, and without a
+  // fresh epoch onBlockBlur would read that as leaving the block and fold the
+  // grid back into rendered markdown between one cell and the next.
+  const keepActive = useCallback(() => {
+    focusEpochRef.current += 1;
+  }, []);
+
+  // A table gets the grid editor instead of a raw-source field, so its markdown
+  // is never on screen. Anything that doesn't parse as a table falls through to
+  // the ordinary field — see markdown-table.ts's parse contract.
+  const activeBody = activeIdx === null ? "" : nb.blocks[activeIdx]?.body ?? "";
+  const activeIsTable = activeIdx !== null && isTableBlock(activeBody);
+
   // In edit mode a link tap should EDIT the block, never navigate.
   const linkPressToActivate = useCallback(
     (index: number) => () => {
@@ -292,7 +308,17 @@ export function NoteBlockEditor({
       >
         {header}
         {nb.blocks.map((block, i) =>
-          i === activeIdx ? (
+          i === activeIdx && activeIsTable ? (
+            <NoteTableEditor
+              // Keyed by BLOCK, not by focus epoch: the epoch changes on every
+              // cell hop, and remounting the grid mid-edit would throw away both
+              // its state and the caret.
+              key={`table-${i}`}
+              body={block.body}
+              onChange={onEditActive}
+              onInteract={keepActive}
+            />
+          ) : i === activeIdx ? (
             <TextInput
               key={`active-${focusEpochRef.current}`}
               style={styles.activeBlock}
@@ -351,11 +377,16 @@ export function NoteBlockEditor({
 
       {/* The formatting pill: rides the keyboard on iOS; Android pins it at the
           editor's bottom edge (no accessory-view equivalent there). */}
+      {/* Not over a table: the toolbar writes markdown into the block's raw
+          source, which for a table would mean dropping `**` into the middle of
+          the pipes the grid is hiding. The grid's own +/− controls are its
+          toolbar. (On iOS this is automatic — the grid's cells don't claim the
+          accessory view, so it simply doesn't appear.) */}
       {Platform.OS === "ios" ? (
         <InputAccessoryView nativeID={TOOLBAR_ID} backgroundColor="transparent">
           {toolbar}
         </InputAccessoryView>
-      ) : activeIdx !== null ? (
+      ) : activeIdx !== null && !activeIsTable ? (
         toolbar
       ) : null}
     </View>

@@ -9,7 +9,8 @@ import type { ThreadSummary } from "@/lib/chat-threads";
 import { hapticDrawerOpened, hapticHoldRegistered } from "@/lib/haptics";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
-import { RowActionsSheet, TextPromptSheet, type RowAction } from "./RowActionSheets";
+import { MiniMenu, type MenuAnchor } from "./MiniMenu";
+import { TextPromptSheet, type RowAction } from "./RowActionSheets";
 import { CalendarIcon, ChevronIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -315,10 +316,16 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   // 2026-07-23). Expanded by default; the chevron rotates open exactly like the
   // folder rows on the Library/Study trees.
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  // …and so does the main Chats list (owner 2026-07-23: "chats should also have
+  // that downward arrow for collapse like pin does").
+  const [chatsCollapsed, setChatsCollapsed] = useState(false);
   // Long-press a chat row → a mini menu (owner 2026-07-23: "hold down on chats
-  // in the side bar to open up minimenu for delete chat, rename, pin"). Reuses
-  // the SAME RowActionsSheet + TextPromptSheet the Library and Study trees use.
+  // in the side bar to open up minimenu for delete chat, rename, pin", then
+  // "should bring out a minimenu not a popup from the bottom"). The first pass
+  // reused the Library/Study bottom sheet; this now opens at the touch point.
+  // `actionAt` is where the press landed, in window coordinates.
   const [actionTarget, setActionTarget] = useState<ThreadSummary | null>(null);
+  const [actionAt, setActionAt] = useState<MenuAnchor | null>(null);
   const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
 
   // Count of in-flight local mutations (pin/rename/delete). A refresh while one
@@ -441,8 +448,12 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
       testID={`drawer-chat-${chat.id}`}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={() => go(`/chat?c=${chat.id}`)}
-      onLongPress={() => {
+      onLongPress={(event) => {
         hapticHoldRegistered();
+        // pageX/pageY are window coordinates, which is what MiniMenu wants — the
+        // drawer panel is only ~330pt wide and its own coordinate space would
+        // put the menu in the wrong place once it escapes into the Modal.
+        setActionAt({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
         setActionTarget(chat);
       }}
       delayLongPress={300}
@@ -524,8 +535,22 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           </>
         ) : null}
 
-        <Text style={styles.sectionLabel}>Chats</Text>
-        {otherChats.length === 0 ? (
+        {/* Same collapsible header as Pinned, chevron and all. */}
+        <Pressable
+          style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
+          onPress={() => setChatsCollapsed((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel="Chats"
+          accessibilityState={{ expanded: !chatsCollapsed }}
+          testID="drawer-chats-header"
+        >
+          <View style={chatsCollapsed ? undefined : styles.chevronOpen}>
+            <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
+          </View>
+          <Text style={styles.sectionHeaderLabel}>Chats</Text>
+          <Text style={styles.sectionCount}>{otherChats.length}</Text>
+        </Pressable>
+        {chatsCollapsed ? null : otherChats.length === 0 ? (
           <Text style={styles.emptyRows}>
             {trimmed ? "No matches" : pinnedChats.length ? "No other chats" : "No chats yet"}
           </Text>
@@ -573,11 +598,11 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
 
       {/* Long-press chat menu + rename dialog (owner 2026-07-23). Wrapped in a
           Modal so they present FULL-SCREEN above the app: the drawer panel is
-          only ~330pt wide with its overflow clipped, and SlideUpSheet positions
-          itself relative to its parent — inline, these would be a cramped
-          sidebar-width strip. The Modal escapes that; GestureHandlerRootView
-          keeps SlideUpSheet's drag-to-expand working inside it. Same reusable
-          pieces the Library and Study row menus use. */}
+          only ~330pt wide with its overflow clipped, so inline the menu would be
+          both cut off and stuck inside a sidebar-width strip. The Modal escapes
+          that — and it is why MiniMenu is positioned from window coordinates.
+          GestureHandlerRootView keeps the rename dialog's gestures working
+          inside it. */}
       <Modal
         transparent
         animationType="none"
@@ -588,9 +613,9 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         }}
       >
         <GestureHandlerRootView style={StyleSheet.absoluteFill}>
-          <RowActionsSheet
+          <MiniMenu
             visible={actionTarget !== null}
-            title={actionTarget?.title ?? ""}
+            anchor={actionAt}
             actions={rowActions}
             onClose={() => setActionTarget(null)}
             testID="drawer-chat-actions"
@@ -697,7 +722,6 @@ const createStyles = (c: ThemeColors) =>
     // Sidebar text rides the shared type ramp (owner 2026-07-20: bigger + standardized).
     navLabel: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "500", flex: 1 },
 
-    sectionLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
 
     // Collapsible "Pinned" header — a tappable row with a chevron that rotates
     // open (owner 2026-07-23). Same chevron idiom as the Library/Study folder rows.
