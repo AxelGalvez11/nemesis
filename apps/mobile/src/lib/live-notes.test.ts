@@ -265,3 +265,18 @@ Deno.test("a rebuild replaces when there were no saved notes at all", () => {
   assertEquals(shouldReplaceNotes(["sharp 1"], undefined), true);
   assertEquals(shouldReplaceNotes(["sharp 1"], ""), true);
 });
+
+Deno.test("a window never starts on an orphaned separator", () => {
+  // The sentence break is the case that matters: trim() quietly hides a
+  // newline that lands at the head of a window, but a stray "." would sit
+  // there in plain sight and read as a broken note. This is what catches an
+  // off-by-one in windowEnd's `at + mark.length`.
+  const windows = planFinalNotesWindows(`${"x".repeat(200)}. `.repeat(200));
+  assert(windows.length > 1, "expected several windows");
+  for (const window of windows) {
+    assert(
+      /^[\p{L}\p{N}]/u.test(window),
+      `window began on a separator: ${JSON.stringify(window.slice(0, 12))}`,
+    );
+  }
+});
