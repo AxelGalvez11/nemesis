@@ -591,7 +591,11 @@ export async function saveThreadMessages(uid: string, id: string, messages: Chat
 
 export async function deleteThread(uid: string, id: string): Promise<void> {
   await writeStore(uid, removeThread(await readStore(uid), id));
-  void withOneRetry(() => supabase.from("chat_threads").delete().eq("id", id).eq("user_id", uid));
+  // Awaited (not fire-and-forget) so a caller can know the cloud write finished
+  // before it refreshes a thread list — otherwise a refresh landing first would
+  // re-merge the still-present cloud row (drawer revert bug). Callers that don't
+  // care still `void` it, unaffected.
+  await withOneRetry(() => supabase.from("chat_threads").delete().eq("id", id).eq("user_id", uid));
 }
 
 /** Whether a thread is currently pinned (drives the "…" menu's Pin/Unpin label). */
@@ -602,7 +606,8 @@ export async function isThreadPinned(uid: string, id: string): Promise<boolean> 
 /** Pin (or unpin) a thread so it sorts above the rest in the sidebar. */
 export async function pinThread(uid: string, id: string, pinned: boolean): Promise<void> {
   await writeStore(uid, setThreadPinned(await readStore(uid), id, pinned));
-  void withOneRetry(() =>
+  // Awaited so the drawer's refresh-guard can hold until it lands (see deleteThread).
+  await withOneRetry(() =>
     supabase.from("chat_threads").update({ pinned, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", uid),
   );
 }
@@ -616,7 +621,8 @@ export async function renameThread(uid: string, id: string, title: string): Prom
   const clean = title.trim().slice(0, 80);
   if (!clean) return;
   await writeStore(uid, renameThreadTitle(await readStore(uid), id, clean));
-  void withOneRetry(() => supabase.from("chat_threads").update({ title: clean }).eq("id", id).eq("user_id", uid));
+  // Awaited so the drawer's refresh-guard can hold until it lands (see deleteThread).
+  await withOneRetry(() => supabase.from("chat_threads").update({ title: clean }).eq("id", id).eq("user_id", uid));
 }
 
 /** Session-level deliverables (e.g. recordings) attached to a thread's own

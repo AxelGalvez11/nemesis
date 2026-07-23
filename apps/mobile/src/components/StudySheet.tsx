@@ -50,6 +50,25 @@ export function SlideUpSheet({
   const progress = useRef(new Animated.Value(0)).current;
   const { bodyMaxHeight, headerPan } = useSheetExpand({ visible, onClose });
 
+  // Slide in on open / out on close. This driver was accidentally dropped when
+  // useSheetExpand was extracted (PR #250) — the effect that ran
+  // `Animated.timing(progress, …)` went with the extraction, but `progress`,
+  // its interpolation, and the `useEffect`/`Keyboard`/`Easing` imports stayed,
+  // so `progress` was stuck at 0 and every SlideUpSheet rendered fully
+  // off-screen (translateY = full window height). react-native-web previews
+  // don't surface it, which is how it shipped. Restored 2026-07-23. Also drops
+  // the keyboard on open, since this is an inline view (not a native modal) the
+  // keyboard would otherwise cover.
+  useEffect(() => {
+    if (visible) Keyboard.dismiss();
+    Animated.timing(progress, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 260 : 200,
+      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, progress]);
+
   // Slides off the bottom of the window, not just its own height, so it starts
   // fully offscreen regardless of how tall the content ends up being.
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });

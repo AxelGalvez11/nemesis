@@ -207,7 +207,9 @@ export default function StudyScreen() {
   // unmount.
   useEffect(() => {
     setHeaderRight(
-      activeMode === "cards" ? (
+      // Hidden in select mode: opening a sheet over the selection bar would let
+      // the bar (zIndex:30) cover and steal touches from it (review finding).
+      activeMode === "cards" && !selectMode ? (
         <GlassSurface style={styles.kebabBtn} fallbackColor={c.glassPanel} tint={actionsOpen ? c.accentFaint : undefined} shadow>
           <Pressable
             style={styles.kebabInner}
@@ -224,7 +226,7 @@ export default function StudyScreen() {
       ) : null,
     );
     return () => setHeaderRight(null);
-  }, [activeMode, actionsOpen, c, styles, setHeaderRight]);
+  }, [activeMode, selectMode, actionsOpen, c, styles, setHeaderRight]);
 
   const toggleSelect = useCallback((key: string) => {
     setSelectedKeys((prev) => {
@@ -432,7 +434,17 @@ export default function StudyScreen() {
   const moveSelected = useCallback(
     (folder: string) => {
       if (!userId) return;
-      const keys = [...selectedKeys];
+      // Drop any deck/subfolder already covered by a selected ANCESTOR folder:
+      // moving "Pharm" already carries "Pharm::Cardio::X", and re-moving that
+      // child off the stale `decks` snapshot would corrupt its path or undo the
+      // group move (review finding — the outcome depended on tap order).
+      const folders = [...selectedKeys].filter((k) => k.startsWith("folder:")).map((k) => k.slice("folder:".length));
+      const keys = [...selectedKeys].filter((key) => {
+        const rest = key.slice(key.indexOf(":") + 1);
+        if (key.startsWith("folder:")) return !folders.some((f) => f !== rest && isWithinGroup(rest, f));
+        const deck = decks.find((d) => d.id === rest);
+        return deck ? !folders.some((f) => isWithinGroup(deck.name, f)) : false;
+      });
       runSelected(async () => {
         for (const key of keys) {
           const rest = key.slice(key.indexOf(":") + 1);
@@ -590,8 +602,10 @@ export default function StudyScreen() {
                         const destination = targetKey.slice(targetKey.indexOf(":") + 1);
                         return !isWithinGroup(destination, item.path) && destination !== pathParent(item.path);
                       },
-                      // No dragging while ticking rows in select mode.
+                      // No dragging OR hold-for-menu while ticking rows in select
+                      // mode — a slightly-slow tap must toggle, not pop the menu.
                       draggable: !selectMode,
+                      holdForMenu: !selectMode,
                     })}
                   >
                   <Pressable
@@ -641,6 +655,7 @@ export default function StudyScreen() {
                       canDropOn: (targetKey) =>
                         targetKey.slice(targetKey.indexOf(":") + 1) !== pathParent(item.deck.deck.name),
                       draggable: !selectMode,
+                      holdForMenu: !selectMode,
                     })}
                   >
                   <Pressable
@@ -786,8 +801,10 @@ export default function StudyScreen() {
         }}
       />
 
-      {/* Multi-select action bar — the selection's Move to / Delete, plus Cancel. */}
-      {selectMode ? (
+      {/* Multi-select action bar — the selection's Move to / Delete, plus Cancel.
+          Hidden while the move sheet is open so its zIndex:30 can't cover the
+          sheet's bottom edge (review finding). */}
+      {selectMode && !selectMoveOpen ? (
         <View style={[styles.selectBar, { paddingBottom: insets.bottom + space(2) }]} testID="study-select-bar">
           <Text style={styles.selectCount}>{selectedKeys.size} selected</Text>
           <View style={styles.selectActions}>

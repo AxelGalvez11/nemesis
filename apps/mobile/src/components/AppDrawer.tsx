@@ -317,14 +317,29 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const [actionTarget, setActionTarget] = useState<ThreadSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
 
+  // Count of in-flight local mutations (pin/rename/delete). A refresh while one
+  // is still writing to the cloud would re-read the STALE row and
+  // mergeCloudThreadList (cloud-wins) would revert the optimistic change — the
+  // just-deleted chat reappears, or a rename/pin snaps back (review finding). So
+  // every refresh path skips while this is non-zero.
+  const pendingRef = useRef(0);
+  const withPending = useCallback(async (work: () => Promise<unknown>) => {
+    pendingRef.current += 1;
+    try {
+      await work();
+    } finally {
+      pendingRef.current -= 1;
+    }
+  }, []);
   const refresh = useCallback(() => {
-    if (!uid) return;
+    if (!uid || pendingRef.current > 0) return;
     void listThreads(uid).then(setChats).catch(() => {});
   }, [uid]);
 
-  // Refresh chats each time the drawer opens (cheap; keeps it current).
+  // Refresh chats each time the drawer opens (cheap; keeps it current) — unless
+  // a local write is still in flight (see pendingRef).
   useEffect(() => {
-    if (!open || !uid) return;
+    if (!open || !uid || pendingRef.current > 0) return;
     let alive = true;
     void listThreads(uid).then((rows) => alive && setChats(rows)).catch(() => {});
     return () => {
@@ -365,9 +380,10 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     setActionTarget(null);
     const next = !chat.pinned;
     // Optimistic — the row jumps between the Pinned block and the main list at
-    // once; the cloud write is best-effort and reconciles on the next open.
+    // once; the cloud write is best-effort. withPending blocks a refresh from
+    // reverting it before the write lands.
     setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, pinned: next } : row)));
-    if (uid) void pinThread(uid, chat.id, next);
+    if (uid) void withPending(() => pinThread(uid, chat.id, next));
   };
 
   const confirmDelete = (chat: ThreadSummary) => {
@@ -377,7 +393,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
       {
         onPress: () => {
           setChats((rows) => rows.filter((row) => row.id !== chat.id));
-          if (uid) void deleteThread(uid, chat.id);
+          if (uid) void withPending(() => deleteThread(uid, chat.id));
         },
         style: "destructive",
         text: "Delete",
@@ -391,7 +407,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     const clean = value.trim();
     if (!chat || !uid || !clean) return;
     setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, title: clean } : row)));
-    void renameThread(uid, chat.id, clean);
+    void withPending(() => renameThread(uid, chat.id, clean));
   };
 
   const rowActions: RowAction[] = actionTarget

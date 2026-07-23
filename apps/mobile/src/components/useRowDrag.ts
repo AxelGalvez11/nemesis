@@ -54,7 +54,8 @@ interface RegisteredRow {
 export interface RowDrag {
   /** Ref callback for a row's outermost View. `droppable` marks folders. */
   registerRow: (key: string, droppable: boolean) => (node: View | null) => void;
-  /** The gesture for one row. `draggable` false still gives hold-for-menu. */
+  /** The gesture for one row. `draggable` false still gives hold-for-menu unless
+   *  `holdForMenu` is also false. */
   gestureFor: (
     key: string,
     opts: {
@@ -62,6 +63,10 @@ export interface RowDrag {
       /** Reject illegal destinations (a folder into itself, the row's own
        *  current parent) so nothing highlights that couldn't accept the drop. */
       canDropOn: (targetKey: string) => boolean;
+      /** Hold-in-place opens the row menu (onHold). Default true; pass false to
+       *  suppress it while another mode owns taps — e.g. Study's multi-select,
+       *  where a slightly-slow tap must toggle selection, not pop the menu. */
+      holdForMenu?: boolean;
     },
   ) => ReturnType<typeof Gesture.Pan>;
   /** The row currently being dragged, or null. */
@@ -142,7 +147,7 @@ export function useRowDrag({
   }, []);
 
   const gestureFor = useCallback(
-    (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean }) => {
+    (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean; holdForMenu?: boolean }) => {
       return Gesture.Pan()
         .runOnJS(true)
         .activateAfterLongPress(HOLD_MS)
@@ -167,8 +172,9 @@ export function useRowDrag({
           const moved = Math.hypot(event.translationX, event.translationY) > MOVE_SLOP;
           const target = overKeyRef.current;
           if (opts.draggable && moved && target) onDrop(key, target);
-          // Held and let go without going anywhere: that's the menu.
-          else if (!moved) onHold(key);
+          // Held and let go without going anywhere: that's the menu — unless the
+          // caller suppressed it (multi-select owns taps there).
+          else if (!moved && (opts.holdForMenu ?? true)) onHold(key);
         })
         // Finalize, not End: it runs whether the gesture ended, was cancelled,
         // or lost the race, so the lifted-row styling can never get stuck on.
