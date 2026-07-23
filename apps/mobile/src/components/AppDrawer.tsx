@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Alert, Animated, AppState, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Animated, AppState, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from "@/api/chat";
@@ -346,6 +346,16 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     return () => sub.remove();
   }, [open, uid, refresh]);
 
+  // The long-press menu / rename dialog must not survive the drawer closing:
+  // dismissing via the dimmed page taps the drawer's OWN close-catcher, not the
+  // sheet's, so without this the menu would silently reappear on the next open.
+  useEffect(() => {
+    if (!open) {
+      setActionTarget(null);
+      setRenameTarget(null);
+    }
+  }, [open]);
+
   const go = (path: string) => {
     onClose();
     router.push(path as never);
@@ -538,25 +548,41 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         </Pressable>
       </View>
 
-      {/* Long-press chat menu + rename dialog (owner 2026-07-23). Rendered at the
-          panel root so they overlay the sidebar; the same reusable pieces the
-          Library and Study row menus use, so they look and behave identically. */}
-      <RowActionsSheet
-        visible={actionTarget !== null}
-        title={actionTarget?.title ?? ""}
-        actions={rowActions}
-        onClose={() => setActionTarget(null)}
-        testID="drawer-chat-actions"
-      />
-      <TextPromptSheet
-        visible={renameTarget !== null}
-        title="Rename chat"
-        placeholder="Chat name"
-        initialValue={renameTarget?.title ?? ""}
-        onConfirm={confirmRename}
-        onClose={() => setRenameTarget(null)}
-        testID="drawer-chat-rename"
-      />
+      {/* Long-press chat menu + rename dialog (owner 2026-07-23). Wrapped in a
+          Modal so they present FULL-SCREEN above the app: the drawer panel is
+          only ~330pt wide with its overflow clipped, and SlideUpSheet positions
+          itself relative to its parent — inline, these would be a cramped
+          sidebar-width strip. The Modal escapes that; GestureHandlerRootView
+          keeps SlideUpSheet's drag-to-expand working inside it. Same reusable
+          pieces the Library and Study row menus use. */}
+      <Modal
+        transparent
+        animationType="none"
+        visible={actionTarget !== null || renameTarget !== null}
+        onRequestClose={() => {
+          setActionTarget(null);
+          setRenameTarget(null);
+        }}
+      >
+        <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+          <RowActionsSheet
+            visible={actionTarget !== null}
+            title={actionTarget?.title ?? ""}
+            actions={rowActions}
+            onClose={() => setActionTarget(null)}
+            testID="drawer-chat-actions"
+          />
+          <TextPromptSheet
+            visible={renameTarget !== null}
+            title="Rename chat"
+            placeholder="Chat name"
+            initialValue={renameTarget?.title ?? ""}
+            onConfirm={confirmRename}
+            onClose={() => setRenameTarget(null)}
+            testID="drawer-chat-rename"
+          />
+        </GestureHandlerRootView>
+      </Modal>
     </View>
   );
 }
