@@ -67,3 +67,46 @@ export function decksInGroup<T extends { name: string }>(decks: readonly T[], gr
   if (!root) return [];
   return decks.filter((deck) => isWithinGroup(deck.name, root));
 }
+
+/** First free name in the "Cardio", "Cardio 2", "Cardio 3" series. Comparison is
+ *  case-insensitive because Study treats deck names that way everywhere else. */
+export function uniqueDeckName(desired: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(desired.toLowerCase())) return desired;
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${desired} ${suffix}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return desired;
+}
+
+/** Plan the rename of every deck inside `group` one level up, which is how a
+ *  folder is removed WITHOUT deleting anything (owner 2026-07-23: "make folder
+ *  delete keep the contents"). The folder stops existing because nothing spells
+ *  its prefix any more.
+ *
+ *  Two edges the naive version gets wrong:
+ *  - A promoted deck can collide with one already sitting in the destination.
+ *    Refusing would wedge the student on the delete they asked to be the safe
+ *    one, and overwriting would lose a deck, so the promoted deck takes the next
+ *    free name.
+ *  - A deck named exactly like the folder ("Pharm" the deck beside "Pharm" the
+ *    folder) promotes to "", which is not a name. It keeps what it has. */
+export function planGroupDissolve<T extends { name: string }>(decks: readonly T[], group: string): { deck: T; name: string }[] {
+  const source = normalizeGroupPath(group);
+  if (!source) return [];
+  const destination = pathParent(source);
+  const taken = new Set(decks.filter((deck) => !isWithinGroup(deck.name, source)).map((deck) => normalizeGroupPath(deck.name).toLowerCase()));
+  const plan: { deck: T; name: string }[] = [];
+  for (const deck of decksInGroup(decks, source)) {
+    const promoted = rewriteGroupPrefix(deck.name, source, destination);
+    if (!promoted) {
+      // Stays put, but still owns its name for the collision check below.
+      taken.add(normalizeGroupPath(deck.name).toLowerCase());
+      continue;
+    }
+    const name = uniqueDeckName(promoted, taken);
+    taken.add(name.toLowerCase());
+    plan.push({ deck, name });
+  }
+  return plan;
+}

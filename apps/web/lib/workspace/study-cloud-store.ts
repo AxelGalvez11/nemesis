@@ -16,7 +16,7 @@ import {
   type OcclusionShape,
 } from "./study-occlusion";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
-import { decksInGroup, isWithinGroup, normalizeGroupPath, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";
+import { decksInGroup, isWithinGroup, normalizeGroupPath, planGroupDissolve, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";
 
 export interface StudyDeck {
   id: string;
@@ -540,7 +540,8 @@ export interface UseCloudStudyApi extends StoreState {
   /** Rename a folder in place, rewriting every deck name beneath it. */
   renameDeckGroup: (group: string, nextLeaf: string) => Promise<void>;
   /** Delete a folder AND every deck (and card) beneath it. */
-  deleteDeckGroup: (group: string) => Promise<void>;
+  /** Removes the folder and KEEPS its decks, promoting them one level up. */
+  dissolveDeckGroup: (group: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
   /** Signed-in user id (null in preview / signed-out) — the AI card helpers
    *  need it for the metered completion call. */
@@ -1103,23 +1104,24 @@ export function useCloudStudy(): UseCloudStudyApi {
     setState({ ...state, decks: state.decks.map((deck) => names.has(deck.id) ? { ...deck, name: names.get(deck.id)!, updatedAt: new Date().toISOString() } : deck) });
   }, [preview, userId]);
 
-  const deleteDeckGroup = useCallback(async (rawGroup: string) => {
+  // Removing a folder must NOT remove what is in it (owner 2026-07-23: "make
+  // folder delete keep the contents"). Every deck inside moves up one level, so
+  // the folder stops existing because nothing spells its prefix any more — no
+  // deck row and no card is deleted. This replaced deleteDeckGroup, which took
+  // the whole subtree with it.
+  const dissolveDeckGroup = useCallback(async (rawGroup: string) => {
     const group = normalizeGroupPath(rawGroup);
     if (!group) return;
-    const doomed = decksInGroup(state.decks, group);
-    if (!preview && doomed.length > 0) {
-      if (!userId) throw new Error("Sign in to delete a folder.");
-      const { error } = await supabase.from("study_decks").delete().in("id", doomed.map((deck) => deck.id)).eq("user_id", userId);
-      if (error) throw new Error(error.message);
+    const plan = planGroupDissolve(state.decks, group);
+    if (plan.length === 0) return;
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to remove a folder.");
+      const results = await Promise.all(plan.map(({ deck, name }) => supabase.from("study_decks").update({ name }).eq("id", deck.id).eq("user_id", userId)));
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
     }
-    const removed = new Set(doomed.map((deck) => deck.id));
-    const decks = state.decks.filter((deck) => !removed.has(deck.id));
-    setState({
-      ...state,
-      decks,
-      cards: state.cards.filter((card) => !removed.has(card.deckId)),
-      selectedDeckId: state.selectedDeckId && removed.has(state.selectedDeckId) ? (decks[0]?.id ?? null) : state.selectedDeckId,
-    });
+    const names = new Map(plan.map(({ deck, name }) => [deck.id, name]));
+    setState({ ...state, decks: state.decks.map((deck) => names.has(deck.id) ? { ...deck, name: names.get(deck.id)!, updatedAt: new Date().toISOString() } : deck) });
   }, [preview, userId]);
 
   const deleteDeck = useCallback(async (deckId: string) => {
@@ -1158,7 +1160,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     moveDeck,
     renameDeck,
     renameDeckGroup,
-    deleteDeckGroup,
+    dissolveDeckGroup,
     moveDeckGroup,
     deleteDeck,
   };
