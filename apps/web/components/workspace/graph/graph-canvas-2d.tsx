@@ -10,10 +10,9 @@ import {
   colorForNode,
   type EngineLink,
   type EngineNode,
-  widthForLink,
 } from "./graph-engine-helpers";
 import type { GraphIndex } from "./graph-notes";
-import { graphNodeColor, readGraphPalette, type GraphPalette } from "./graph-palette";
+import { readGraphPalette, type GraphPalette } from "./graph-palette";
 import type { GraphControlsState } from "./graph-settings";
 
 interface GraphCanvas2DProps {
@@ -28,6 +27,69 @@ type FlatLink = { source: FlatNode; target: FlatNode };
 type ViewTransform = { x: number; y: number; scale: number };
 
 const TWO_PI = Math.PI * 2;
+/** linkForce 0.5 → 0.045, the pull this canvas shipped with. */
+const LINK_FORCE_SCALE = 0.09;
+
+/** Node radius grows with how many notes reference it — Obsidian's defining
+ *  rule ("the more nodes that reference a given node, the bigger it gets").
+ *  sqrt keeps a hub from dwarfing everything at high degree. */
+export function nodeRadiusFor(degree: number, maxDegree: number, nodeSize: number): number {
+  const base = 2.2 + nodeSize * 0.95;
+  if (maxDegree <= 0) return base;
+  const share = Math.min(1, Math.max(0, degree) / maxDegree);
+  return base * (0.72 + 1.15 * Math.sqrt(share));
+}
+
+/** Note names fade out as you zoom away, per Obsidian's "text fade threshold".
+ *  Threshold 0 means never fade. Returns 0-1 alpha.
+ *
+ *  `zoom` is measured RELATIVE to the fit-to-screen view (1 = the zoom you land
+ *  on when the graph opens), not as a raw canvas scale. A raw scale would make
+ *  the same threshold behave completely differently on a 5-note vault than on a
+ *  500-note one, since fitting a bigger graph means starting further out. */
+export function labelAlphaFor(zoom: number, threshold: number): number {
+  if (threshold <= 0) return 1;
+  const span = Math.max(0.35, threshold * 0.6);
+  return Math.min(1, Math.max(0, (zoom - threshold) / span));
+}
+
+/** Orphans are notes with no links at all — Obsidian can hide them. */
+export function visibleGraph(index: GraphIndex, showOrphans: boolean): GraphIndex {
+  if (showOrphans) return index;
+  const linked = new Set<string>();
+  for (const link of index.links) {
+    linked.add(link.source);
+    linked.add(link.target);
+  }
+  return { ...index, nodes: index.nodes.filter((node) => linked.has(node.id)) };
+}
+
+/** Small filled triangle just short of the target node, showing link direction. */
+function drawArrowhead(
+  context: CanvasRenderingContext2D,
+  link: FlatLink,
+  targetRadius: number,
+  /** World units per fitted-view pixel. */
+  unitScale: number,
+  thickness: number,
+) {
+  const dx = link.target.x - link.source.x;
+  const dy = link.target.y - link.source.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) return;
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const size = (2.4 + thickness * 1.5) * unitScale;
+  // Sit on the node's edge, not its center, or the head hides under the circle.
+  const tipX = link.target.x - ux * targetRadius;
+  const tipY = link.target.y - uy * targetRadius;
+  context.beginPath();
+  context.moveTo(tipX, tipY);
+  context.lineTo(tipX - ux * size - uy * size * 0.55, tipY - uy * size + ux * size * 0.55);
+  context.lineTo(tipX - ux * size + uy * size * 0.55, tipY - uy * size - ux * size * 0.55);
+  context.closePath();
+  context.fill();
+}
 
 function seedNodes(index: GraphIndex): { nodes: FlatNode[]; links: FlatLink[] } {
   const count = Math.max(1, index.nodes.length);
@@ -77,7 +139,8 @@ function settleLayout(nodes: FlatNode[], links: FlatLink[], controls: GraphContr
       const dx = link.target.x - link.source.x;
       const dy = link.target.y - link.source.y;
       const distance = Math.max(1, Math.hypot(dx, dy));
-      const force = ((distance - desiredDistance) / distance) * 0.045 * alpha;
+      const pull = Math.max(0, controls.linkForce) * LINK_FORCE_SCALE;
+      const force = ((distance - desiredDistance) / distance) * pull * alpha;
       link.source.vx += dx * force;
       link.source.vy += dy * force;
       link.target.vx -= dx * force;
@@ -141,13 +204,25 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
     const context = context2d;
 
     const palette: GraphPalette = readGraphPalette(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
-    const graph = seedNodes(index);
+    // Orphans are dropped before layout so hiding them actually reclaims the
+    // space they were holding open, rather than leaving a gap.
+    const shown = visibleGraph(index, controlsRef.current.showOrphans);
+    const graph = seedNodes(shown);
     settleLayout(graph.nodes, graph.links, controlsRef.current);
     nodesRef.current = graph.nodes;
     linksRef.current = graph.links;
-    const adjacency = buildAdjacency(index);
+    const adjacency = buildAdjacency(shown);
     const maxDegree = Math.max(1, ...graph.nodes.map((node) => node.degree));
 
+    // The first resize can land before layout gives the host a size. Fitting to
+    // 0x0 leaves the whole graph jammed in the top-left corner, and because the
+    // ResizeObserver only ever asked to redraw — never to re-fit — it stayed
+    // there. Remember whether a fit has actually succeeded and retry until one
+    // does.
+    let fitted = false;
+    // Zoom at which the whole graph just fits — the label fade threshold is
+    // measured against this, so it behaves the same on any size vault.
+    let fitScale = 1;
     function resize(fit = false) {
       const width = host.clientWidth;
       const height = host.clientHeight;
@@ -156,7 +231,13 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
       canvas.height = Math.max(1, Math.round(height * dpr));
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      if (fit) transformRef.current = fittedTransform(graph.nodes, width, height);
+      const usable = width > 0 && height > 0;
+      if ((fit || !fitted) && usable) {
+        const next = fittedTransform(graph.nodes, width, height);
+        transformRef.current = next;
+        fitScale = next.scale || 1;
+        fitted = true;
+      }
       draw();
     }
 
@@ -174,52 +255,68 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
       context.translate(view.x, view.y);
       context.scale(view.scale, view.scale);
 
+      // Links are hairlines that only light up around the hovered note — the
+      // reference graph reads as mostly-empty space, not a web of visible wire.
+      const settings = controlsRef.current;
+      // The force layout settles into thousands of world units for even a small
+      // vault, so a "radius 4" circle would render as one pixel at the fitted
+      // zoom. Express every drawn size at the FITTED view and convert to world
+      // units once: the graph opens looking right, and zooming in scales nodes,
+      // text, and links together the way Obsidian does — rather than pinning
+      // text to a constant screen size while the circles shrink away from it.
+      const unit = 1 / (fitScale || 1);
+      const radiusOf = (node: FlatNode) => nodeRadiusFor(node.degree, maxDegree, settings.nodeSize) * unit;
       for (const link of graph.links) {
         const asEngineLink = link as unknown as EngineLink;
+        const active = activeId !== null && (link.source.id === activeId || link.target.id === activeId);
+        const linkColor = colorForLink(asEngineLink, activeId, palette);
         context.beginPath();
         context.moveTo(link.source.x, link.source.y);
         context.lineTo(link.target.x, link.target.y);
-        context.strokeStyle = colorForLink(asEngineLink, activeId, palette);
-        context.lineWidth = widthForLink(asEngineLink, activeId) / view.scale;
+        context.strokeStyle = linkColor;
+        context.lineWidth = settings.linkThickness * (active ? 2.2 : 1) * unit;
+        context.globalAlpha = active ? 0.95 : 0.42;
         context.stroke();
+        if (settings.showArrows) {
+          context.fillStyle = linkColor;
+          drawArrowhead(context, link, radiusOf(link.target), unit, settings.linkThickness);
+        }
+        context.globalAlpha = 1;
       }
 
-      const nodeRadius = 2.7 + controlsRef.current.nodeSize * 0.9;
       for (const node of graph.nodes) {
-        const density = maxDegree > 1 ? Math.min(1, node.degree / maxDegree) : node.degree > 0 ? 1 : 0;
+        // Flat filled circle, no halo: the glow was the loudest tell that this
+        // wasn't Obsidian. Size carries connectivity instead.
+        const nodeRadius = radiusOf(node);
         const color = colorForNode(node, activeId, adjacency, palette, maxDegree);
-        if (!node.ghost && density > 0.15) {
-          context.save();
-          context.beginPath();
-          context.arc(node.x, node.y, nodeRadius * (1.65 + density * 0.75), 0, TWO_PI);
-          context.fillStyle = graphNodeColor(node, palette, maxDegree);
-          context.globalAlpha = 0.08 + density * 0.2;
-          context.shadowBlur = 14 + density * 20;
-          context.shadowColor = graphNodeColor(node, palette, maxDegree);
-          context.fill();
-          context.restore();
-        }
         context.beginPath();
         context.arc(node.x, node.y, nodeRadius, 0, TWO_PI);
         context.fillStyle = color;
-        context.globalAlpha = node.ghost ? 0.3 : 0.94;
+        context.globalAlpha = node.ghost ? 0.35 : 1;
         context.fill();
         if (node.ghost) {
-          context.setLineDash([2.5 / view.scale, 2.5 / view.scale]);
+          context.setLineDash([2.5 * unit, 2.5 * unit]);
           context.strokeStyle = palette.label;
-          context.lineWidth = 0.8 / view.scale;
+          context.lineWidth = 0.8 * unit;
           context.stroke();
           context.setLineDash([]);
         }
         context.globalAlpha = 1;
-        if (controlsRef.current.showNames) {
-          const fontSize = Math.max(8, 8 + controlsRef.current.labelSize * 1.8) / view.scale;
+        const labelAlpha = settings.showNames ? labelAlphaFor(view.scale / fitScale, settings.textFadeThreshold) : 0;
+        if (labelAlpha > 0.01) {
+          // World-space, like the node circles: names grow and shrink WITH the
+          // graph instead of staying a fixed screen size. Screen-fixed text
+          // swamped the nodes when zoomed out — the fade threshold is what
+          // handles "too small to read", not a constant font size.
+          const fontSize = Math.max(8, 8 + settings.labelSize * 1.8) * unit;
           context.font = `500 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
           context.textAlign = "center";
           context.textBaseline = "top";
           context.fillStyle = activeId && activeId !== node.id && !adjacency.get(activeId)?.has(node.id) ? color : palette.label;
+          context.globalAlpha = labelAlpha;
           const label = node.title.length > 28 ? `${node.title.slice(0, 27)}…` : node.title;
-          context.fillText(label, node.x, node.y + nodeRadius + 5 / view.scale);
+          context.fillText(label, node.x, node.y + nodeRadius + fontSize * 0.35);
+          context.globalAlpha = 1;
         }
       }
       context.restore();
@@ -230,10 +327,14 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
       const view = transformRef.current;
       const x = (clientX - bounds.left - view.x) / view.scale;
       const y = (clientY - bounds.top - view.y) / view.scale;
-      const hitRadius = (7 + controlsRef.current.nodeSize) / view.scale;
       let hit: FlatNode | null = null;
       let best = Number.POSITIVE_INFINITY;
       for (const node of graph.nodes) {
+        // Follow each node's own drawn size — circles differ by degree now —
+        // with a small floor so tiny leaf nodes stay clickable.
+        // Same world units the circle is drawn in, or clicks miss the target.
+        const drawn = nodeRadiusFor(node.degree, maxDegree, controlsRef.current.nodeSize) / (fitScale || 1);
+        const hitRadius = Math.max(6 / view.scale, drawn * 1.6);
         const distance = Math.hypot(node.x - x, node.y - y);
         if (distance <= hitRadius && distance < best) {
           hit = node;
@@ -311,9 +412,19 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
       canvas.removeEventListener("wheel", onWheel);
       drawRef.current = () => undefined;
     };
-  }, [index, controls.gravity, controls.repulsion, controls.spread]);
+    // Anything that changes where nodes END UP has to re-run the layout.
+  }, [index, controls.gravity, controls.repulsion, controls.spread, controls.linkForce, controls.showOrphans]);
 
-  useEffect(() => drawRef.current(), [controls.labelSize, controls.neighborGlow, controls.nodeSize, controls.showNames]);
+  // Anything that only changes how they LOOK just repaints.
+  useEffect(() => drawRef.current(), [
+    controls.labelSize,
+    controls.linkThickness,
+    controls.neighborGlow,
+    controls.nodeSize,
+    controls.showArrows,
+    controls.showNames,
+    controls.textFadeThreshold,
+  ]);
 
   return (
     <div
