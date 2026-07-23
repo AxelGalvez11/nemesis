@@ -484,6 +484,15 @@
 
     --noise-opacity-mul: calc(0.04 / 0.21);
     --dock-glow-scale: 1;
+
+    /* Owner 2026-07-22: "add a slight grayer border to the box component".
+       Dark inherited :root's 8% white, which on the pure-black canvas is
+       almost no edge — boxes and pills bled into the page. 14% still reads as
+       a hairline, just a visible one. Light mode keeps 8%; it sits on white
+       and never had the problem. Kept as the plain base mix, NOT the accent
+       mix used a few blocks down for the sidebar: folding --ui-accent
+       (#ff2740) in here tints every box edge pink. */
+    --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 14%, transparent);
   }
 }
 

@@ -115,7 +115,7 @@ export function ensureContrast(color: string, bg: string, min: number): string {
   return best;
 }
 
-function rgba(hex: string, alpha: number): string {
+export function rgba(hex: string, alpha: number): string {
   const rgb = hexToRgb(hex) ?? [0, 0, 0];
   return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
 }

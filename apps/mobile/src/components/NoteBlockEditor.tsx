@@ -9,7 +9,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Markdown from "react-native-markdown-display";
 import { GlassSurface } from "./GlassSurface";
 import {
   appendEmptyBlock,
@@ -31,6 +30,7 @@ import {
   type EditSel,
 } from "@/lib/note-edit";
 import { preprocessWikilinks } from "@/lib/wikilinks";
+import { MessageBody } from "./MessageBody";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -311,9 +311,17 @@ export function NoteBlockEditor({
                 <View style={styles.emptyBlock} />
               ) : (
                 <View pointerEvents="box-only">
-                  <Markdown style={markdownStyles} onLinkPress={linkPressToActivate(i)}>
-                    {preprocessWikilinks(block.body)}
-                  </Markdown>
+                  {/* MessageBody, not a bare <Markdown>: an inactive block has
+                      to render the SAME text the reader does — including the
+                      ==highlight== and <u>underline</u> this very toolbar
+                      writes (owner 2026-07-22). Through a bare <Markdown> the
+                      formatting you just applied stayed raw syntax until you
+                      left edit mode. */}
+                  <MessageBody
+                    content={preprocessWikilinks(block.body)}
+                    styles={markdownStyles}
+                    onLinkPress={linkPressToActivate(i)}
+                  />
                 </View>
               )}
             </Pressable>

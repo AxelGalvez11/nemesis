@@ -1,10 +1,12 @@
-import { useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { useMemo, type ReactNode } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
+import MarkdownIt from "markdown-it";
 import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
 import { MarkdownImage } from "./MarkdownImage";
+import { obsidianInline } from "@/lib/markdown-obsidian";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
 
@@ -38,6 +40,13 @@ const MATH_FONT_SIZE = 15.5;
 // picture never appears. MarkdownImage measures first, then draws. Shared by
 // both <Markdown> call sites below so chat answers and flashcards behave the
 // same way.
+// One parser for every surface, carrying the Obsidian-flavoured inline rules
+// the web note editor renders — ==highlight==, #tag, <u>underline</u>. `html`
+// stays FALSE: note text syncs from the cloud, so enabling raw HTML would let
+// a note inject arbitrary markup. markdown-obsidian.ts handles the single tag
+// we actually author instead of opening that door.
+const MARKDOWN_PARSER = MarkdownIt({ typographer: false, linkify: true, html: false }).use(obsidianInline);
+
 const MARKDOWN_RULES = {
   image: (node: ASTNode) => (
     <MarkdownImage
@@ -45,6 +54,17 @@ const MARKDOWN_RULES = {
       src={String(node.attributes?.src ?? "")}
       alt={typeof node.attributes?.alt === "string" ? node.attributes.alt : undefined}
     />
+  ),
+  // Inline marks: return <Text> so they nest inside a paragraph's textgroup
+  // rather than breaking it into blocks.
+  mark: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
+    <Text key={node.key} style={styles.mark}>{children}</Text>
+  ),
+  tag: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
+    <Text key={node.key} style={styles.tag}>{children}</Text>
+  ),
+  u: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
+    <Text key={node.key} style={styles.u}>{children}</Text>
   ),
 };
 
@@ -56,16 +76,19 @@ type Segment =
 interface MessageBodyProps {
   content: string;
   styles: MarkdownStyles;
+  /** The note reader routes [[wikilinks]] and external URLs through its own
+   *  handler; chat and review leave this off and get default link handling. */
+  onLinkPress?: (url: string) => boolean;
 }
 
-export function MessageBody({ content, styles }: MessageBodyProps) {
+export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) {
   const { colors: c } = useTheme();
   const segments = useMemo(() => buildSegments(content), [content]);
 
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
   if (!segments) {
-    return <Markdown style={styles} rules={MARKDOWN_RULES}>{content}</Markdown>;
+    return <Markdown style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{content}</Markdown>;
   }
 
   return (
@@ -73,7 +96,7 @@ export function MessageBody({ content, styles }: MessageBodyProps) {
       {segments.map((seg, index) => {
         if (seg.type === "markdown") {
           return (
-            <Markdown key={index} style={styles} rules={MARKDOWN_RULES}>
+            <Markdown key={index} style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>
               {seg.text}
             </Markdown>
           );
