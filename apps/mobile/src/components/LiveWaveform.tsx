@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Animated, type LayoutChangeEvent, StyleSheet, View } from "react-native";
 import { subscribeMicLevel } from "@/lib/mic-level";
 import { useTheme } from "@/theme/ThemeProvider";
 
@@ -12,8 +12,23 @@ import { useTheme } from "@/theme/ThemeProvider";
 // seconds rather than a row of bars pulsing in unison. Bars are driven with
 // setValue on Animated values — no React state, so a live meter costs the
 // screen around it exactly zero re-renders.
+//
+// Width (owner 2026-07-23: "the waveform analyzer should be the full width of
+// the chat composer but not clash with other icons"): the strip fills whatever
+// horizontal space its parent gives it. The composer already hands it a
+// flex:1 middle slot between the two round buttons, so "full width" = fill that
+// slot edge-to-edge. Rather than a fixed 24 bars that topped out ~165pt and
+// left dead space on the right, we MEASURE the slot on layout and render
+// exactly as many 3pt bars as fit — denser on a big phone, fewer on a small
+// one, always flush.
 
-const BAR_COUNT = 24;
+/** Fallback bar count for the first frame, before onLayout has measured the
+ *  real width. Replaced immediately once the slot's width is known. */
+const INITIAL_BARS = 24;
+const BAR_WIDTH = 3;
+const BAR_GAP = 3;
+/** Never collapse to a sliver of bars even in a very narrow slot. */
+const MIN_BARS = 8;
 /** Floor so a silent room still shows a thin line of bars rather than an
  *  empty gap that reads as "broken". */
 const MIN_SCALE = 0.12;
@@ -31,8 +46,16 @@ export function LiveWaveform({
   testID?: string;
 }) {
   const { colors: c } = useTheme();
-  const scales = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(MIN_SCALE))).current;
-  const history = useRef<number[]>(Array.from({ length: BAR_COUNT }, () => MIN_SCALE)).current;
+  const [barCount, setBarCount] = useState(INITIAL_BARS);
+
+  // Re-allocated whenever the measured bar count changes (i.e. once per real
+  // layout). Animated values live here rather than in state so metering never
+  // re-renders the tree.
+  const scales = useMemo(
+    () => Array.from({ length: barCount }, () => new Animated.Value(MIN_SCALE)),
+    [barCount],
+  );
+  const history = useMemo(() => Array.from({ length: barCount }, () => MIN_SCALE), [barCount]);
 
   useEffect(() => {
     if (!active) {
@@ -47,8 +70,16 @@ export function LiveWaveform({
     });
   }, [active, history, scales]);
 
+  const onLayout = (event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    if (width <= 0) return;
+    // How many (bar + gap) units fit; the trailing bar needs no gap after it.
+    const next = Math.max(MIN_BARS, Math.floor((width + BAR_GAP) / (BAR_WIDTH + BAR_GAP)));
+    setBarCount((prev) => (prev === next ? prev : next));
+  };
+
   return (
-    <View style={[styles.row, { height }]} testID={testID}>
+    <View style={[styles.row, { height }]} onLayout={onLayout} testID={testID}>
       {scales.map((scale, index) => (
         <Animated.View
           key={index}
@@ -68,6 +99,9 @@ export function LiveWaveform({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 3 },
-  bar: { flex: 1, borderRadius: 2, maxWidth: 4 },
+  row: { flexDirection: "row", alignItems: "center", gap: BAR_GAP },
+  // flex:1 with no maxWidth: the derived bar count already targets ~BAR_WIDTH
+  // per bar, and flex absorbs any rounding remainder so the strip lands exactly
+  // flush to both edges of its slot.
+  bar: { flex: 1, borderRadius: 2 },
 });

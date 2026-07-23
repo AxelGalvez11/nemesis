@@ -22,15 +22,17 @@ import { useTheme } from "@/theme/ThemeProvider";
 // easing to solid over `FADE_SPAN`, then solid the rest of the way down so the
 // band behind the composer is evenly backed.
 
-/** Points over which the blur eases in above the composer. Matches the top
- *  blur's own fade span, so the two edges read as a pair.
+/** Points over which the blur eases in above the composer. Shorter than the top
+ *  blur's span on purpose (owner 2026-07-23: "the bottom fade to blur should be
+ *  lower") — a smaller ramp keeps the fade hugging the composer near the very
+ *  bottom edge and leaves more of the transcript crisp above it.
  *
  *  EXPORTED because a scroll view under this has to reserve it: text that came
  *  to rest inside the ramp would sit there permanently washed out. Callers pad
  *  their content by the composer's height PLUS this, so at the end of a scroll
  *  the last line stops just clear of the fade and only passes through it while
  *  the list is actually moving. */
-export const BOTTOM_FADE_SPAN = 46;
+export const BOTTOM_FADE_SPAN = 28;
 
 export function BottomFadeBlur({ height, intensity = 52 }: { height: number; intensity?: number }) {
   const { resolvedMode } = useTheme();

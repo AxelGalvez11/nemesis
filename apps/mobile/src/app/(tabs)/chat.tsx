@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import Reanimated, { FadeIn } from "react-native-reanimated";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
@@ -52,7 +53,7 @@ import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
-import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
+import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -87,6 +88,11 @@ import { control, radius, space, type } from "@/theme/tokens";
 // into a thread the user isn't even looking at anymore.
 
 const THINKING_ID = "__thinking__";
+
+// Where the remembered intelligence dial lives, per signed-in account. Same
+// SecureStore idiom as the General settings screen (app/profile/general.tsx),
+// so the choice survives app launches and chat switches.
+const effortStoreKey = (uid: string) => `nemesis_chat_effort_v1_${uid}`;
 
 interface Row {
   id: string;
@@ -149,10 +155,17 @@ export default function ChatScreen() {
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [deepResearchOn, setDeepResearchOn] = useState(false);
-  // Instant/Medium/High — the "+" menu's intelligence dial (owner 2026-07-22).
-  // Like Deep research it PERSISTS across sends within a thread rather than
-  // resetting per turn: it's a working preference, not a per-message action.
+  // Instant/Medium/High — the composer's intelligence dial. A per-USER working
+  // preference (owner 2026-07-23: "the chat should remember which intelligence
+  // mode has been picked because it always defaults to medium"): remembered
+  // across chats AND app launches in SecureStore, hydrated by the effect below,
+  // and deliberately NOT reset by the thread-load effect. DEFAULT_CHAT_EFFORT is
+  // only the fallback before the stored value loads / for a signed-out user.
   const [effort, setEffort] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
+  // The uid whose stored effort has finished loading — guards the write-through
+  // so switching accounts can't persist one user's dial under another's key
+  // before the new user's value has been read.
+  const effortHydratedFor = useRef<string | null>(null);
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
   // How tall the floating composer block is (starter rows / attached-doc chip
   // included). The transcript reserves exactly this much at its foot so it can
@@ -230,7 +243,9 @@ export default function ChatScreen() {
     setLibraryPickerOpen(false);
     setAttachedDoc(null);
     setDeepResearchOn(false);
-    setEffort(DEFAULT_CHAT_EFFORT);
+    // NB: effort is intentionally NOT reset here — it's a per-user preference
+    // remembered across chats (see the hydrate/persist effects below), unlike
+    // deep research, which is a per-thread toggle that starts off each thread.
     setEffortMenuOpen(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
@@ -304,6 +319,40 @@ export default function ChatScreen() {
     });
     return () => sub.remove();
   }, [uid, threadId]);
+
+  // Remember the intelligence dial across chats and app launches (owner
+  // 2026-07-23). Hydrate the stored value once per signed-in account; a bad or
+  // missing value falls back to DEFAULT_CHAT_EFFORT. effortHydratedFor gates the
+  // write-through below so this initial load never races the persist effect.
+  useEffect(() => {
+    effortHydratedFor.current = null;
+    if (!uid) {
+      setEffort(DEFAULT_CHAT_EFFORT);
+      return;
+    }
+    let alive = true;
+    void SecureStore.getItemAsync(effortStoreKey(uid))
+      .then((raw) => {
+        if (alive) setEffort(isChatEffort(raw) ? raw : DEFAULT_CHAT_EFFORT);
+      })
+      .catch(() => {
+        if (alive) setEffort(DEFAULT_CHAT_EFFORT);
+      })
+      .finally(() => {
+        if (alive) effortHydratedFor.current = uid;
+      });
+    return () => {
+      alive = false;
+    };
+  }, [uid]);
+
+  // Write the dial through on change — but only once the current user's stored
+  // value has loaded, so a fresh mount / account switch can't clobber storage
+  // with the in-memory default before the read resolves.
+  useEffect(() => {
+    if (!uid || effortHydratedFor.current !== uid) return;
+    void SecureStore.setItemAsync(effortStoreKey(uid), effort).catch(() => {});
+  }, [effort, uid]);
 
   // TopBar: no centered chat/session title in a chat (owner 2026-07-20 — "remove
   // the centered top chat/session title in a chat"). Always blank; only the "…"
