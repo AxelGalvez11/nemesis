@@ -4,6 +4,7 @@ import { GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon } from "./icons";
+import { useKeyboardHeight } from "./shell-chrome";
 import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -35,12 +36,17 @@ export function SlideUpSheet({
   onClose,
   title,
   children,
+  fullScreen = false,
   testID,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** Open at full height instead of the usual part-screen rest position. For
+   *  sheets that are really a whole form (owner 2026-07-23: "the add new card
+   *  should be full screen"). The grabber still drags it back down. */
+  fullScreen?: boolean;
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -48,7 +54,17 @@ export function SlideUpSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
-  const { bodyMaxHeight, headerPan } = useSheetExpand({ visible, onClose });
+  // Sheets are inline views, not native modals, so the OS gives them no
+  // guarantee of sitting above the keyboard — a sheet with fields in it (the
+  // add-card form) had its inputs covered the moment you tapped one. Riding the
+  // keyboard's height keeps the whole sheet in the space that's left.
+  const keyboardHeight = useKeyboardHeight();
+  const { bodyMaxHeight, headerPan } = useSheetExpand({
+    visible,
+    onClose,
+    startExpanded: fullScreen,
+    bottomInset: keyboardHeight,
+  });
 
   // Slide in on open / out on close. This driver was accidentally dropped when
   // useSheetExpand was extracted (PR #250) — the effect that ran
@@ -73,11 +89,11 @@ export function SlideUpSheet({
   // fully offscreen regardless of how tall the content ends up being.
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
+    <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
           The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
-      <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
+      <Animated.View style={[styles.sheetWrap, { bottom: keyboardHeight, transform: [{ translateY }] }]}>
         <GlassSurface style={styles.sheet} fallbackColor={c.glassPanel}>
           <GestureDetector gesture={headerPan}>
             <View>
@@ -92,7 +108,14 @@ export function SlideUpSheet({
               </View>
             </View>
           </GestureDetector>
-          <Animated.View style={[styles.body, { maxHeight: bodyMaxHeight, paddingBottom: insets.bottom + space(5) }]}>
+          {/* The home-indicator gap belongs UNDER the sheet, not inside it, once
+              the keyboard has lifted the sheet clear of the bottom edge. */}
+          <Animated.View
+            style={[
+              styles.body,
+              { maxHeight: bodyMaxHeight, paddingBottom: (keyboardHeight > 0 ? 0 : insets.bottom) + space(5) },
+            ]}
+          >
             {children}
           </Animated.View>
         </GlassSurface>
@@ -103,6 +126,19 @@ export function SlideUpSheet({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    // Above every other overlay in the app (owner 2026-07-23: "attaching from
+    // library clashes with the chat composer suggestions" — the sheet was
+    // opening UNDERNEATH the chat starter rows and the composer, which are
+    // absolutely positioned and rendered later in the tree).
+    //
+    // Tree order is what decides paint order on iOS, and only zIndex overrides
+    // it. Every chat sheet is declared BEFORE the composer block, so all of them
+    // were losing, not just the Attach picker — it's simply the one with a busy
+    // landing screen behind it. Fixing it here fixes all of them at once, and
+    // clears the app's other overlays too: RootDropZone 20, the Study select
+    // bar 30, the Study "…" menu 40. A hidden sheet takes no touches
+    // (pointerEvents above), so a high layer costs nothing when closed.
+    layer: { zIndex: 60 },
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
     sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: c.line, borderBottomWidth: 0 },
     grabberRow: { alignItems: "center", paddingTop: space(2) },

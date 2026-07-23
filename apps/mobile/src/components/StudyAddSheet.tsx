@@ -144,7 +144,17 @@ export function StudyAddSheet({
   }
 
   return (
-    <SlideUpSheet visible={visible} onClose={onClose} title={titleForStep(step)} testID="study-add-sheet">
+    // Full screen on the FORM steps (owner 2026-07-23: "the add new card should
+    // be full screen") — the part-screen sheet left the Front and Back fields
+    // under the keyboard the moment you tapped one. The little two-row menu
+    // stays small; a half-empty full-screen sheet for two rows would be worse.
+    <SlideUpSheet
+      visible={visible}
+      onClose={onClose}
+      title={titleForStep(step)}
+      fullScreen={step !== "menu"}
+      testID="study-add-sheet"
+    >
       {step === "menu" ? (
         <View testID="study-add-menu">
           <AddMenuRow
@@ -200,7 +210,15 @@ export function StudyAddSheet({
             <MissionButton label="New group" onPress={() => setStep("new-group")} testID="study-add-new-cards-go-group" />
           </View>
         ) : (
-          <View testID="study-add-new-cards">
+          // The form now has the whole screen, so it scrolls within it — with
+          // the keyboard up there is still less room than the fields need.
+          <ScrollView
+            style={styles.formScroll}
+            contentContainerStyle={styles.formScrollInner}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            testID="study-add-new-cards"
+          >
             <BackRow onPress={() => setStep("menu")} />
             {cardError ? <Text style={styles.sheetError}>{cardError}</Text> : null}
             <Text style={styles.fieldLabel}>Deck</Text>
@@ -257,7 +275,7 @@ export function StudyAddSheet({
                 testID="study-add-card-submit"
               />
             </View>
-          </View>
+          </ScrollView>
         )
       ) : null}
     </SlideUpSheet>
@@ -317,6 +335,11 @@ const createStyles = (c: ThemeColors) =>
     backLabel: { ...type.small, color: c.text2, fontWeight: "600" },
 
     stepHint: { ...type.small, color: c.text3, marginBottom: space(3) },
+
+    // flexShrink (not a fixed height) so the sheet body stays the one owner of
+    // "how tall" — the app-wide contract for a sheet's scroll area.
+    formScroll: { flexShrink: 1 },
+    formScrollInner: { paddingBottom: space(2) },
 
     // Shared form-field look — mirrors calendar.tsx's EventSheet fields.
     sheetError: { ...type.small, color: c.danger, backgroundColor: c.surface2, borderRadius: radius.sm, padding: space(2.5), marginBottom: space(2) },
