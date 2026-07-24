@@ -158,7 +158,7 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
   try {
     const res = await fetch(SEARCH_URL, {
       body: JSON.stringify({ limit: 5, query }),
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { reportVoiceCost } from "@/lib/cost-report";
 import { assemblyAiApiKey, groqApiKey } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 
@@ -99,6 +100,13 @@ export async function POST(request: Request) {
         p_actual_seconds: groq.seconds || seconds,
         p_job_id: jobId,
         p_status: "done",
+      });
+      // What those minutes cost us, on the web app's ledger.
+      await reportVoiceCost({
+        lane: "recording",
+        provider: "groq_whisper_turbo",
+        seconds: groq.seconds || seconds,
+        userId: user.id,
       });
       await admin.storage.from("recordings").remove([storagePath]);
       return json({ jobId, usage });
