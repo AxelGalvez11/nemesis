@@ -528,7 +528,26 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
     step() {
       if (n === 0) return;
       if (dragging) {
-        if (dragStepsRun >= dragStepCeiling) return;
+        // Budget spent — END the drag rather than idling inside it.
+        //
+        // This is load-bearing for PERFORMANCE, not just tidiness (owner
+        // 2026-07-23: "the graph is super slow"). `settled` is false for as long
+        // as `dragging` is true, and graph.tsx's rAF loop reschedules itself
+        // until the sim settles, calling snapshot() + setGraph() every frame.
+        // So a drag that never ends leaves the screen re-rendering every node at
+        // 60fps FOREVER, with nothing moving. Returning early here used to leave
+        // exactly that state: budget exhausted, dragging still true, alphaTarget
+        // still warm, nothing to show for it.
+        //
+        // endDrag() may simply never arrive — a cancelled gesture, a finger lost
+        // off the edge, a component unmounted mid-drag — so the sim has to be
+        // able to reach rest on its own. Measured: the physics is ~1ms/frame at
+        // 200 nodes, so the cost was never the simulation; it was React
+        // re-rendering every node forever because nothing ever said "done".
+        if (dragStepsRun >= dragStepCeiling) {
+          sim.endDrag();
+          return;
+        }
         dragStepsRun++;
       } else if (simulation.alpha() < ALPHA_MIN) {
         return;

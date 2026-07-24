@@ -158,6 +158,12 @@ export interface ThemeColors {
   line2: string;
   /** tokens.json `mutedBorder` twin. */
   lineMuted: string;
+  /** Skeleton-placeholder fill. A SOLID tone, deliberately not one of the line
+   *  colours: those are 16-22% alpha, and a loading pulse that multiplies that
+   *  by 0.45 lands around 7% against the card — running, but invisible (owner
+   *  2026-07-23: "the skeleton previews are there but they are not animating").
+   *  Sits a clear step off surface2 in both modes. */
+  skeleton: string;
   // text — since 2026-07-21 all three tiers resolve to pure #000 (light) /
   // #fff (dark) (owner: no gray text anywhere). The 3-token split survives
   // so the 200+ existing call sites didn't have to churn, and so a future
@@ -212,6 +218,8 @@ const DARK_BASE = {
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
+  // A clear step up from surface2 (#101010) so the pulse actually reads.
+  skeleton: "#262626",
   text: "#ffffff",
   text2: "#ffffff",
   text3: "#ffffff",
@@ -239,6 +247,8 @@ const LIGHT_BASE = {
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",
+  // A clear step DOWN from surface2 (#f2f2f3) — light mode inverts.
+  skeleton: "#dcdcde",
   text: "#000000",
   text2: "#000000",
   text3: "#000000",

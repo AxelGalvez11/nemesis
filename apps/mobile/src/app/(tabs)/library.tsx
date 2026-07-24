@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -24,7 +24,8 @@ import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { DragChip } from "@/components/DragChip";
-import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { FolderPickerSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
 import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
@@ -40,7 +41,13 @@ import {
   type CloudLibrarySnapshot,
 } from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
-import { allFolderPaths, folderOf, isAtOrUnder } from "@/lib/library-paths";
+import {
+  allFolderPaths,
+  folderOf,
+  isAtOrUnder,
+  type LibrarySelectionItem,
+  pruneCoveredSelection,
+} from "@/lib/library-paths";
 import { fileKindOf, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -138,7 +145,7 @@ export default function LibraryScreen() {
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const insets = useSafeAreaInsets();
-  const { setHeaderTitle } = useShell();
+  const { setHeaderTitle, setHeaderRight } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const [dataReady, setDataReady] = useState(false);
@@ -170,9 +177,23 @@ export default function LibraryScreen() {
   // sheets; which sheet is up is the separate `rowSheet`, so closing the menu to
   // open Rename doesn't lose track of the row being renamed.
   const [rowTarget, setRowTarget] = useState<RowTarget | null>(null);
-  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | null>(null);
+  // "actions" is gone — a held row now opens a MiniMenu at the touch point
+  // (owner 2026-07-23) instead of a bottom sheet. rowSheet only tracks the two
+  // follow-on sheets the menu hands off to.
+  const [rowSheet, setRowSheet] = useState<"rename" | "move" | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
+  // The held-row MiniMenu: where it opens, anchored to the finger. Null = closed.
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
+  // The top-right "…" actions dropdown (owner 2026-07-23: the "…" moved off the
+  // bottom-left FAB and into the header, matching Study).
+  const [actionsOpen, setActionsOpen] = useState(false);
+  // Multi-select (owner 2026-07-23). Keys are the SAME "note:<path>" /
+  // "folder:<path>" strings the list and the drag hook already use, so one set
+  // covers both kinds. `selectMoveOpen` is the bulk Move picker.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [selectMoveOpen, setSelectMoveOpen] = useState(false);
 
   // Drive the TopBar's centered label (same slot chat.tsx uses); clear it on unmount
   // so the title never leaks onto another screen.
@@ -180,6 +201,31 @@ export default function LibraryScreen() {
     setHeaderTitle("Library");
     return () => setHeaderTitle(null);
   }, [setHeaderTitle]);
+
+  // The "…" actions button, TOP-RIGHT (owner 2026-07-23) — this is where the
+  // old bottom-left FAB's menu moved to, matching Study's kebab. Hidden in
+  // select mode: the selection bar owns the bottom of the screen then, and its
+  // Move/Delete are the only actions that make sense while rows are checked.
+  useEffect(() => {
+    setHeaderRight(
+      !selectMode ? (
+        <GlassSurface style={styles.kebabBtn} fallbackColor={c.glassPanel} tint={actionsOpen ? c.accentFaint : undefined} shadow>
+          <Pressable
+            style={styles.kebabInner}
+            onPress={() => setActionsOpen((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Library actions"
+            accessibilityState={{ expanded: actionsOpen }}
+            testID="library-actions-btn"
+          >
+            <DotsIcon size={20} color={actionsOpen ? c.accent : c.text2} />
+          </Pressable>
+        </GlassSurface>
+      ) : null,
+    );
+    return () => setHeaderRight(null);
+  }, [selectMode, actionsOpen, c, styles, setHeaderRight]);
 
   useEffect(
     () => () => {
@@ -254,6 +300,7 @@ export default function LibraryScreen() {
     setRowSheet(null);
     setRowTarget(null);
     setRowError(null);
+    setMenuAnchor(null);
   }, []);
 
   /** Run a library write, then re-pull. `inline` keeps a failure inside the open
@@ -289,6 +336,7 @@ export default function LibraryScreen() {
     (target: RowTarget) => {
       const label = target.kind === "note" ? target.title : target.name;
       setRowSheet(null);
+      setMenuAnchor(null);
       Alert.alert(
         `Delete "${label}"?`,
         target.kind === "note"
@@ -338,20 +386,119 @@ export default function LibraryScreen() {
   // keyExtractor already produces, so one string identifies a row AND says what
   // it is. Dropping runs the very same move the menu's "Move to…" does.
   const openRowMenu = useCallback(
-    (rowKey: string) => {
+    (rowKey: string, x: number, y: number) => {
       const path = rowKey.slice(rowKey.indexOf(":") + 1);
       if (rowKey.startsWith("folder:")) {
         setRowTarget({ kind: "folder", name: path.split("/").pop() ?? path, path });
-        setRowSheet("actions");
-        return;
+      } else {
+        const note = snapshot.notes.find((n) => n.path === path);
+        if (!note) return;
+        setRowTarget({ kind: "note", id: note.id, path: note.path, title: note.title });
       }
-      const note = snapshot.notes.find((n) => n.path === path);
-      if (!note) return;
-      setRowTarget({ kind: "note", id: note.id, path: note.path, title: note.title });
-      setRowSheet("actions");
+      // The MiniMenu opens at the finger (owner 2026-07-23) instead of a bottom
+      // sheet — the same touch-anchored menu the sidebar uses.
+      setMenuAnchor({ x, y });
     },
     [snapshot],
   );
+
+  // --- multi-select (owner 2026-07-23) --------------------------------------
+  const toggleSelect = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelectedKeys(new Set());
+    setSelectMoveOpen(false);
+  }, []);
+
+  // Enter select mode, optionally pre-checking the row the MiniMenu opened over
+  // (its "Select" action). Closing the menu first keeps the two overlays from
+  // fighting for the same tap.
+  const enterSelectMode = useCallback((prekey?: string) => {
+    setMenuAnchor(null);
+    setActionsOpen(false);
+    setSelectedKeys(prekey ? new Set([prekey]) : new Set());
+    setSelectMode(true);
+  }, []);
+
+  // Selected rows as delete/move items, with anything already carried by a
+  // selected ANCESTOR folder removed — so a bulk op touches each thing exactly
+  // once (see pruneCoveredSelection). Sorted deepest-path first so a note is
+  // always deleted before the folder it sits in, which keeps the running
+  // snapshot the ops read consistent.
+  const selectedItems = useMemo(() => {
+    const items: LibrarySelectionItem[] = [...selectedKeys].map((key) => {
+      const path = key.slice(key.indexOf(":") + 1);
+      if (key.startsWith("folder:")) return { kind: "folder", path };
+      const note = snapshot.notes.find((n) => n.path === path);
+      return { kind: "note", id: note?.id ?? "", path };
+    });
+    return pruneCoveredSelection(items.filter((it) => it.kind === "folder" || it.id !== ""))
+      .sort((a, b) => b.path.length - a.path.length);
+  }, [selectedKeys, snapshot]);
+
+  const runSelected = useCallback(
+    (work: () => Promise<unknown>) => {
+      if (!userId) return;
+      setRowBusy(true);
+      void (async () => {
+        try {
+          await work();
+          await refresh(userId);
+          exitSelect();
+        } catch (e) {
+          flashHint((e as Error).message);
+        } finally {
+          setRowBusy(false);
+        }
+      })();
+    },
+    [userId, refresh, exitSelect, flashHint],
+  );
+
+  const moveSelected = useCallback(
+    (folder: string) => {
+      if (!userId) return;
+      const items = selectedItems;
+      runSelected(async () => {
+        for (const item of items) {
+          if (item.kind === "folder") await moveFolder(userId, snapshot, item.path, folder);
+          else await moveNote(userId, snapshot, item.id, folder);
+        }
+      });
+    },
+    [userId, selectedItems, snapshot, runSelected],
+  );
+
+  const deleteSelected = useCallback(() => {
+    if (!userId || selectedItems.length === 0) return;
+    const items = selectedItems;
+    Alert.alert(
+      `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
+      "They leave your library on every device. They aren't destroyed — you can still recover them on the web app.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () =>
+            runSelected(async () => {
+              for (const item of items) {
+                if (item.kind === "folder") await deleteFolder(userId, snapshot, item.path);
+                else await deleteNote(userId, item.id);
+              }
+            }),
+        },
+      ],
+    );
+  }, [userId, selectedItems, snapshot, runSelected]);
 
   const onRowDrop = useCallback(
     (sourceKey: string, targetKey: string) => {
@@ -456,15 +603,31 @@ export default function LibraryScreen() {
   // inside itself would orphan everything under it.
   const folderOptions = allFolderPaths(notes.map((n) => n.path), snapshot.folders);
   const rowLabel = rowTarget ? (rowTarget.kind === "note" ? rowTarget.title : rowTarget.name) : "";
+  // MiniMenu doesn't dismiss itself when an action is tapped (only its backdrop
+  // does), so each action clears the anchor as it hands off — otherwise the menu
+  // would still be up behind the sheet it opened. Rename/Move keep rowTarget for
+  // the follow-on sheet; the others don't need it.
   const rowActions: RowAction[] = rowTarget
     ? [
-        { key: "rename", label: "Rename", onPress: () => setRowSheet("rename") },
-        { key: "move", label: "Move to…", onPress: () => setRowSheet("move") },
+        { key: "rename", label: "Rename", onPress: () => { setMenuAnchor(null); setRowSheet("rename"); } },
+        { key: "move", label: "Move to…", onPress: () => { setMenuAnchor(null); setRowSheet("move"); } },
+        {
+          key: "select",
+          label: "Select",
+          onPress: () => enterSelectMode(rowTarget.kind === "note" ? `note:${rowTarget.path}` : `folder:${rowTarget.path}`),
+        },
         { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(rowTarget) },
       ]
     : [];
   const moveDisabled =
     rowTarget?.kind === "folder" ? new Set(folderOptions.filter((f) => isAtOrUnder(f, rowTarget.path))) : undefined;
+  // Bulk move: strike out every selected folder's own subtree as a destination —
+  // the union of what the single-row move disables, over all selected folders.
+  // Without this the picker would offer a folder its own inside as a target;
+  // moveFolder throws on that (into-self), so this turns a confusing error into
+  // an un-tappable row. Notes-only selection → empty set → everywhere allowed.
+  const selectFolderPaths = selectedItems.filter((it) => it.kind === "folder").map((it) => it.path);
+  const bulkMoveDisabled = new Set(folderOptions.filter((f) => selectFolderPaths.some((p) => isAtOrUnder(f, p))));
 
   return (
     <View style={styles.flex} testID="library-screen">
@@ -517,7 +680,7 @@ export default function LibraryScreen() {
         keyExtractor={(item: LibraryRow) => `${item.type}:${item.path}`}
         keyboardShouldPersistTaps="handled"
         itemLayoutAnimation={LinearTransition.duration(200)}
-        contentContainerStyle={[styles.listBody, { paddingTop: space(1), paddingBottom: contentBottom }]}
+        contentContainerStyle={[styles.listBody, { paddingTop: space(1), paddingBottom: contentBottom + (selectMode ? 72 : 0) }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -547,11 +710,14 @@ export default function LibraryScreen() {
             if (destination === folderOf(item.path)) return false;
             return item.type === "folder" ? !isAtOrUnder(destination, item.path) : true;
           };
+          const isSelected = selectedKeys.has(rowKey);
           if (item.type === "folder") {
             const isCollapsed = collapsed.has(item.path);
             const count = folderCounts.get(item.path) ?? 0;
             return (
-              <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: true })}>
+              // In select mode the row can't be dragged or held for a menu — a
+              // tap toggles its checkbox instead (matches Study).
+              <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: !selectMode, holdForMenu: !selectMode })}>
               <Pressable
                 ref={rowDrag.registerRow(rowKey, true)}
                 style={({ pressed }) => [
@@ -560,13 +726,15 @@ export default function LibraryScreen() {
                   pressed && styles.rowPressed,
                   isOver && styles.rowDropTarget,
                   isDragging && styles.rowDragging,
+                  selectMode && isSelected && styles.rowSelected,
                 ]}
                 testID={`folder-${item.path}`}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.name} folder, ${count} item${count === 1 ? "" : "s"}`}
-                accessibilityState={{ expanded: !isCollapsed }}
-                onPress={() => toggleFolder(item.path)}
+                accessibilityState={{ expanded: !isCollapsed, selected: selectMode ? isSelected : undefined }}
+                onPress={() => (selectMode ? toggleSelect(rowKey) : toggleFolder(item.path))}
               >
+                {selectMode ? <SelectDot on={isSelected} /> : null}
                 {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                 <View style={isCollapsed ? null : styles.chevronOpen}>
                   <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
@@ -585,18 +753,30 @@ export default function LibraryScreen() {
           const note = notesByPath.get(item.path);
           const kind: FileKind = note ? fileKindOf(note.path) : "note";
           return (
-            <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: true })}>
+            <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: !selectMode, holdForMenu: !selectMode })}>
             <Pressable
               // A note is never a drop TARGET — you drop onto folders — but it
               // still registers so the drag can pick it up.
               ref={rowDrag.registerRow(rowKey, false)}
-              style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed, isDragging && styles.rowDragging]}
+              style={({ pressed }) => [
+                styles.row,
+                indent,
+                pressed && styles.rowPressed,
+                isDragging && styles.rowDragging,
+                selectMode && isSelected && styles.rowSelected,
+              ]}
               testID={`note-${item.path}`}
+              accessibilityState={{ selected: selectMode ? isSelected : undefined }}
               onPress={() => {
+                if (selectMode) {
+                  toggleSelect(rowKey);
+                  return;
+                }
                 const id = pathToId.get(item.path);
                 if (id) router.push({ pathname: "/note", params: { id } });
               }}
             >
+              {selectMode ? <SelectDot on={isSelected} /> : null}
               {/* Plain notes carry NO leading icon (owner 2026-07-20, Obsidian-style:
                   text only); pdf/doc attachments keep their identity glyph. */}
               {kind === "note" ? null : (
@@ -645,15 +825,19 @@ export default function LibraryScreen() {
         }
       />
 
-      {/* Lower-left "…" glass button → the Search / New note / New folder / Sort menu
-          (owner 2026-07-18: those four combined into one three-dots control). */}
-      <ActionsFab
+      {/* The top-right "…" dropdown (owner 2026-07-23): Search / New note / New
+          folder / Sort — the four the bottom-left FAB used to hold — plus
+          Select. The FAB is gone; this is the one "…" now, in the header. */}
+      <LibraryActionsMenu
+        open={actionsOpen}
+        onClose={() => setActionsOpen(false)}
         searchActive={searchOpen}
         onSearch={toggleSearch}
         onNewNote={() => flashHint(NEW_NOTE_HINT)}
         onNewFolder={() => flashHint(NEW_FOLDER_HINT)}
         onSort={() => setSortOpen(true)}
-        insetBottom={insets.bottom + space(1)}
+        onSelect={() => enterSelectMode()}
+        top={contentTop}
       />
 
       <SortSheet
@@ -666,15 +850,15 @@ export default function LibraryScreen() {
         }}
       />
 
-      {/* Long-press row actions (owner 2026-07-22). One target, three sheets:
-          the menu, then whichever of Rename / Move it hands off to. */}
-      <RowActionsSheet
-        visible={rowSheet === "actions"}
-        title={rowLabel}
-        subtitle={rowTarget?.kind === "folder" ? "Folder" : undefined}
+      {/* Held-row actions (owner 2026-07-23): a MiniMenu at the finger, not a
+          bottom sheet. Rename / Move hand off to the sheets below; Select drops
+          into multi-select with this row already checked. */}
+      <MiniMenu
+        visible={menuAnchor !== null}
+        anchor={menuAnchor}
         actions={rowActions}
         onClose={closeRowSheets}
-        testID="library-row-actions"
+        testID="library-row-menu"
       />
       <TextPromptSheet
         visible={rowSheet === "rename"}
@@ -716,6 +900,57 @@ export default function LibraryScreen() {
         onClose={closeRowSheets}
         testID="library-move-picker"
       />
+
+      {/* Bulk Move picker (select mode). Reuses the same sheet as the single-row
+          move; the destination is applied to every pruned selection. */}
+      <FolderPickerSheet
+        visible={selectMoveOpen}
+        title={`Move ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"} to`}
+        folders={folderOptions}
+        currentFolder=""
+        disabledPaths={bulkMoveDisabled}
+        rootLabel="Library root"
+        onPick={moveSelected}
+        onClose={() => setSelectMoveOpen(false)}
+        testID="library-select-move"
+      />
+
+      {/* The selection bar (owner 2026-07-23), pinned to the bottom while select
+          mode is on. Same shape as Study's. Hidden while the bulk Move picker is
+          up so the two don't stack. */}
+      {selectMode && !selectMoveOpen ? (
+        <View style={[styles.selectBar, { paddingBottom: insets.bottom + space(2) }]} testID="library-select-bar">
+          {/* The PRUNED count, so this agrees with the delete dialog: checking a
+              folder and a note inside it is one thing to act on, not two, because
+              the folder carries the note. */}
+          <Text style={styles.selectCount}>{selectedItems.length} selected</Text>
+          <View style={styles.selectActions}>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
+              disabled={selectedItems.length === 0 || rowBusy}
+              hitSlop={6}
+              style={styles.selectBtn}
+              testID="library-select-move-btn"
+            >
+              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
+            </Pressable>
+            <Pressable
+              onPress={deleteSelected}
+              disabled={selectedItems.length === 0 || rowBusy}
+              hitSlop={6}
+              style={styles.selectBtn}
+              testID="library-select-delete"
+            >
+              <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedItems.length === 0 && styles.selectBtnDisabled]}>
+                Delete
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -750,28 +985,48 @@ function LibrarySkeleton({ contentTop }: { contentTop: number }) {
 // StudyModeMenu, so it feels like one family. Picking an item closes the menu and
 // runs its action; the page behind is NOT blurred — the menu's own glass is the
 // only blur.
-// control.xl — the app's one floating-action size, shared with Study's FAB, the
-// Calendar's pair and the note bar (owner 2026-07-23). This was 48.
-const FAB_SIZE = control.xl;
 
-function ActionsFab({
+/** One checkbox dot on a row in select mode (owner 2026-07-23). Same shape as
+ *  Study's — a ring that fills accent with a check when on. */
+function SelectDot({ on }: { on: boolean }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={[styles.selectDot, on && styles.selectDotOn]}>
+      {on ? <Text style={styles.selectDotCheck}>✓</Text> : null}
+    </View>
+  );
+}
+
+/** The top-right "…" actions dropdown (owner 2026-07-23). This is the old
+ *  bottom-left FAB's menu, relocated into the header and made a CONTROLLED
+ *  overlay (the trigger now lives in the TopBar via setHeaderRight, so open
+ *  state is owned by the screen). Search / New note / New folder / Sort are the
+ *  four the FAB carried — none dropped — plus Select for multi-select. Hangs
+ *  from just under the header on the right; a full-screen tap-catcher closes it,
+ *  and only the menu's own glass is blurred. */
+function LibraryActionsMenu({
+  open,
+  onClose,
   searchActive,
   onSearch,
   onNewNote,
   onNewFolder,
   onSort,
-  insetBottom,
+  onSelect,
+  top,
 }: {
+  open: boolean;
+  onClose: () => void;
   searchActive: boolean;
   onSearch: () => void;
   onNewNote: () => void;
   onNewFolder: () => void;
   onSort: () => void;
-  insetBottom: number;
+  onSelect: () => void;
+  top: number;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const [open, setOpen] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -783,9 +1038,9 @@ function ActionsFab({
     }).start();
   }, [open, progress]);
 
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] });
   const pick = (fn: () => void) => {
-    setOpen(false);
+    onClose();
     fn();
   };
 
@@ -794,23 +1049,21 @@ function ActionsFab({
     { key: "new-note", label: "New note", icon: <PlusIcon size={17} color={c.text2} />, onPress: onNewNote },
     { key: "new-folder", label: "New folder", icon: <FolderPlusIcon size={17} color={c.text2} />, onPress: onNewFolder },
     { key: "sort", label: "Sort", icon: <SortIcon size={17} color={c.text2} />, onPress: onSort },
+    { key: "select", label: "Select", icon: <SelectIcon size={17} color={c.text2} />, onPress: onSelect },
   ];
 
   return (
     <>
       {open ? (
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} accessibilityLabel="Close menu" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       ) : null}
 
       <Animated.View
-        style={[
-          styles.actionsMenuWrap,
-          { bottom: insetBottom + FAB_SIZE + space(3), opacity: progress, transform: [{ translateY }] },
-        ]}
+        style={[styles.actionsMenuWrap, { top: top + space(1), opacity: progress, transform: [{ translateY }] }]}
         pointerEvents={open ? "auto" : "none"}
         testID="library-actions-menu"
       >
-        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel} opaque>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel} opaque shadow>
           {items.map((item, i) => (
             <Pressable
               key={item.key}
@@ -828,22 +1081,6 @@ function ActionsFab({
           ))}
         </GlassSurface>
       </Animated.View>
-
-      <View style={[styles.actionsFabWrap, { bottom: insetBottom }]} pointerEvents="box-none">
-        <GlassSurface style={styles.actionsFab} fallbackColor={c.glassPanel} tint={open ? c.accentFaint : undefined} shadow>
-          <Pressable
-            style={styles.actionsFabInner}
-            onPress={() => setOpen((v) => !v)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Library actions"
-            accessibilityState={{ expanded: open }}
-            testID="library-actions-fab"
-          >
-            <DotsIcon size={20} color={open ? c.accent : c.text2} />
-          </Pressable>
-        </GlassSurface>
-      </View>
     </>
   );
 }
@@ -928,6 +1165,17 @@ function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
       <Circle cx="5.6" cy="12" r="1.7" fill={color} />
       <Circle cx="12" cy="12" r="1.7" fill={color} />
       <Circle cx="18.4" cy="12" r="1.7" fill={color} />
+    </Svg>
+  );
+}
+
+/** A checkmark-in-a-ring — the Select action's glyph, echoing the row checkboxes
+ *  select mode draws. */
+function SelectIcon({ size = 17, color, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={strokeWidth} />
+      <Path d="M8.2 12.2l2.6 2.6 5-5.4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -1112,13 +1360,42 @@ const createStyles = (c: ThemeColors) =>
     sortCheck: { color: c.accent, fontSize: type.small.fontSize + 1, fontWeight: "700" },
 
     // Lower-left "…" actions button + its popup menu (Search / New note / New folder / Sort).
-    actionsFabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },
-    actionsFab: { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2, borderWidth: 1, borderColor: c.line },
-    actionsFabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
-    actionsMenuWrap: { position: "absolute", left: space(4), minWidth: 188 },
+    // The top-right "…" header button (owner 2026-07-23) — same control.lg glass
+    // circle Study uses, so the two tabs' kebabs match.
+    kebabBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
+    kebabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+    // The actions dropdown now hangs from the top-right, under the header, rather
+    // than up from a bottom-left FAB.
+    actionsMenuWrap: { position: "absolute", right: space(4), minWidth: 200, zIndex: 40 },
     actionsMenu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     actionsRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(4) },
     actionsDivider: { borderTopWidth: 1, borderTopColor: c.line },
     actionsLabel: { ...type.body, color: c.text },
     actionsLabelActive: { color: c.accent, fontWeight: "600" },
+    // Select mode (owner 2026-07-23), ported from Study so the two feel identical.
+    rowSelected: { borderWidth: 1, borderColor: c.accent, backgroundColor: c.accentFaint },
+    selectDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: c.line2, alignItems: "center", justifyContent: "center", marginRight: space(1) },
+    selectDotOn: { backgroundColor: c.accent, borderColor: c.accent },
+    selectDotCheck: { color: c.onAccent, fontSize: 13, fontWeight: "800", lineHeight: 15 },
+    selectBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 30,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: space(4),
+      paddingTop: space(3),
+      backgroundColor: c.raised,
+      borderTopWidth: 1,
+      borderTopColor: c.line,
+    },
+    selectCount: { ...type.small, color: c.text2, fontWeight: "600" },
+    selectActions: { flexDirection: "row", alignItems: "center", gap: space(4) },
+    selectBtn: { paddingVertical: space(1.5) },
+    selectBtnText: { ...type.body, color: c.accent, fontWeight: "600" },
+    selectBtnDanger: { color: c.danger },
+    selectBtnDisabled: { opacity: 0.4 },
   });

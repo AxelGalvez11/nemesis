@@ -991,8 +991,15 @@ export default function ChatScreen() {
               rows sit directly above the composer. They vanish the moment the first
               message exists — and, same as the attached-doc chip below, while the
               record workspace has replaced the message area (nothing to prefill
-              into a composer that isn't showing its text field right now). */}
-          {composerMode === "chat" && !hasContent && !messagesLoading ? (
+              into a composer that isn't showing its text field right now).
+
+              They also vanish as soon as you START TYPING (owner 2026-07-23).
+              They are prefills: tapping one REPLACES whatever is in the composer,
+              so once there are words in there the rows have stopped being a
+              shortcut and become a way to lose what you wrote. Keyed off the
+              typed text rather than focus — tapping in to reposition the caret,
+              or the keyboard opening on its own, shouldn't clear the landing. */}
+          {composerMode === "chat" && !hasContent && !messagesLoading && input.trim().length === 0 ? (
             <StarterRows
               onPick={(text) => {
                 setInput(text);
