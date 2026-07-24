@@ -63,6 +63,14 @@
           "microphonePermission": "Nemesis uses the microphone only when you tap the mic to dictate a message.",
           "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
       ]
     ],
     "experiments": {
