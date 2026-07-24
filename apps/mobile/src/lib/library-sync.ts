@@ -274,8 +274,35 @@ function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<s
  * Deno-testable like the rest of this module; the screen owns the `collapsed`
  * Set as React state and re-derives this list on every toggle. Additive
  * alongside `buildSections` (unchanged above) rather than replacing it. */
-export function buildLibraryRows(docs: LibraryTreeDoc[], collapsed: ReadonlySet<string>, sort: LibrarySortKey = "az"): LibraryRow[] {
+export function buildLibraryRows(
+  docs: LibraryTreeDoc[],
+  collapsed: ReadonlySet<string>,
+  sort: LibrarySortKey = "az",
+  folders: readonly string[] = [],
+): LibraryRow[] {
   const root = folderNode("", "");
+  // EMPTY FOLDERS FIRST. The tree used to be invented purely by splitting note
+  // paths, which meant a folder existed only for as long as something was
+  // inside it — so a brand-new folder was written to the cloud and then simply
+  // did not appear, which reads as "create folder is broken" (owner 2026-07-24:
+  // "useres cannot create new note or folder from the library sidebar"). Seed
+  // the explicit folder rows the server already sends before the notes go in,
+  // and the note loop below happily reuses whatever node it finds.
+  //
+  // Optional and last in the signature so no existing caller has to change.
+  for (const folder of folders) {
+    let node = root;
+    let pathSoFar = "";
+    for (const segment of folder.split("/").filter(Boolean)) {
+      pathSoFar = pathSoFar === "" ? segment : `${pathSoFar}/${segment}`;
+      let child = node.subfolders.get(segment);
+      if (!child) {
+        child = folderNode(segment, pathSoFar);
+        node.subfolders.set(segment, child);
+      }
+      node = child;
+    }
+  }
   for (const doc of docs) {
     const segments = doc.path.split("/").filter(Boolean);
     const fileName = segments.pop();

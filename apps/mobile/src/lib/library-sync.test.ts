@@ -271,3 +271,28 @@ Deno.test("buildLibraryRows: time sorts still respect collapse, and unstamped no
     "Unstamped",
   ]);
 });
+
+// A folder the student just made holds nothing yet. Before this the tree was
+// derived purely from note paths, so it was written to the cloud and never
+// drawn (owner 2026-07-24).
+Deno.test("buildLibraryRows: an explicitly-created empty folder still gets a row", () => {
+  const rows = buildLibraryRows([], new Set(), "az", ["PHCY 1205/Unit 3"]);
+  assertEquals(rows.filter((r) => r.type === "folder").map((r) => r.path), ["PHCY 1205", "PHCY 1205/Unit 3"]);
+});
+
+Deno.test("buildLibraryRows: an empty folder sits alongside its siblings, not instead of them", () => {
+  const rows = buildLibraryRows(
+    [{ path: "PHCY 1205/Unit 1/Cardio.md", title: "Cardio" }],
+    new Set(),
+    "az",
+    ["PHCY 1205/Unit 2"],
+  );
+  const folders = rows.filter((r) => r.type === "folder").map((r) => r.path);
+  assertEquals(folders, ["PHCY 1205", "PHCY 1205/Unit 1", "PHCY 1205/Unit 2"]);
+  assertEquals(rows.some((r) => r.type === "note" && r.path === "PHCY 1205/Unit 1/Cardio.md"), true);
+});
+
+Deno.test("buildLibraryRows: a collapsed empty folder hides nothing but is still listed", () => {
+  const rows = buildLibraryRows([], new Set(["PHCY 1205"]), "az", ["PHCY 1205/Unit 3"]);
+  assertEquals(rows.map((r) => r.path), ["PHCY 1205"]);
+});
