@@ -4,6 +4,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   appendEmptyBlock,
+  mergeBlockIntoPrevious,
   blockIndexAtOffset,
   blockStartOffset,
   joinBlocks,
@@ -27,9 +28,12 @@ Deno.test("split/join is lossless across shapes", () => {
   roundtrips("   \n\t\n  mixed blank leading\n");
 });
 
-Deno.test("blank lines separate blocks; block bodies hold contiguous lines", () => {
+Deno.test("blank lines separate blocks; PROSE bodies hold contiguous lines", () => {
+  // Prose keeps its contiguous lines. The list does NOT: as of 2026-07-24 each
+  // item is its own reveal unit, so tapping one shows only that item's dash
+  // (see the per-line tests at the foot of this file).
   const nb = splitBlocks("# Head\n\npara one\npara one line two\n\n- a\n- b\n");
-  assertEquals(nb.blocks.map((b) => b.body), ["# Head\n", "para one\npara one line two\n", "- a\n- b\n"]);
+  assertEquals(nb.blocks.map((b) => b.body), ["# Head\n", "para one\npara one line two\n", "- a\n", "- b\n"]);
   assertEquals(nb.leading, "");
 });
 
@@ -162,4 +166,80 @@ Deno.test("a table inside a fenced code block is left alone", () => {
   const nb = splitBlocks(md);
   assertEquals(nb.blocks.length, 1);
   assertEquals(joinBlocks(nb), md);
+});
+
+// --- one reveal unit per line, where a line stands alone (owner 2026-07-24) ---
+
+Deno.test("a list becomes one block per item, so only the tapped item shows its dash", () => {
+  const md = "- alpha\n- beta\n- gamma\n";
+  const nb = splitBlocks(md);
+  assertEquals(nb.blocks.map((b) => b.body), ["- alpha\n", "- beta\n", "- gamma\n"]);
+  assertEquals(joinBlocks(nb), md);
+});
+
+Deno.test("numbered lists, tasks, quotes and stacked headings split the same way", () => {
+  assertEquals(splitBlocks("1. one\n2. two\n").blocks.length, 2);
+  assertEquals(splitBlocks("- [ ] todo\n- [x] done\n").blocks.length, 2);
+  assertEquals(splitBlocks("> quoted\n> lines\n").blocks.length, 2);
+  assertEquals(splitBlocks("# Title\n## Subtitle\n").blocks.length, 2);
+});
+
+Deno.test("a WRAPPED list item is not torn from its continuation line", () => {
+  // The continuation line carries no marker, so on its own it would render as
+  // a stray paragraph and lose the item it belongs to. Every line has to stand
+  // alone or the block stays whole — this is the guard for that.
+  const md = "- a long item that\n  wraps onto another line\n- second\n";
+  const nb = splitBlocks(md);
+  assertEquals(nb.blocks.length, 1);
+  assertEquals(joinBlocks(nb), md);
+});
+
+Deno.test("prose is left whole — only line-oriented markdown splits", () => {
+  const md = "First sentence here.\nSecond sentence here.\n";
+  const nb = splitBlocks(md);
+  assertEquals(nb.blocks.length, 1);
+  assertEquals(joinBlocks(nb), md);
+});
+
+Deno.test("per-line splitting stays byte-for-byte lossless, gaps included", () => {
+  for (
+    const md of [
+      "- alpha\n- beta\n\n\nnext paragraph\n",
+      "# H1\n- a\n- b\n\ntail",
+      "> q\n> r\n",
+      "- only one\n",
+      "- alpha\r\n- beta\r\n",
+      "\n\n- a\n- b\n\n",
+    ]
+  ) {
+    assertEquals(joinBlocks(splitBlocks(md)), md, `lossless for ${JSON.stringify(md)}`);
+  }
+});
+
+Deno.test("a list inside a fenced code block is still left whole", () => {
+  const md = "```\n- not a list\n- still not\n```\n";
+  assertEquals(splitBlocks(md).blocks.length, 1);
+  assertEquals(joinBlocks(splitBlocks(md)), md);
+});
+
+Deno.test("mergeBlockIntoPrevious joins two list items and reports the join point", () => {
+  // Backspace at the very start of an item. With a list as one block per item
+  // this is the ordinary way to join two bullets, so it must actually do
+  // something — the caret lands exactly where the two now meet.
+  const nb = splitBlocks("- alpha\n- beta\n");
+  const merged = mergeBlockIntoPrevious(nb, 1);
+  assertEquals(merged?.nb.blocks.map((b) => b.body), ["- alpha- beta\n"]);
+  assertEquals(merged?.caret, "- alpha".length);
+  assertEquals(joinBlocks(merged!.nb), "- alpha- beta\n");
+});
+
+Deno.test("mergeBlockIntoPrevious refuses across a blank line, and at the edges", () => {
+  // A blank line between two blocks is a separation the student made on
+  // purpose; backspace should eat that blank line first (which the text field
+  // does on its own), not silently weld two paragraphs together.
+  const spaced = splitBlocks("alpha\n\nbeta\n");
+  assertEquals(mergeBlockIntoPrevious(spaced, 1), null);
+  // Nothing before the first block, and nothing at an out-of-range index.
+  assertEquals(mergeBlockIntoPrevious(spaced, 0), null);
+  assertEquals(mergeBlockIntoPrevious(spaced, 99), null);
 });

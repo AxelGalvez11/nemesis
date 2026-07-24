@@ -53,6 +53,50 @@ function isTableStart(lines: readonly string[], index: number): boolean {
   return isTableRow(first) && isTableRow(second) && DELIMITER_ROW.test(second);
 }
 
+/** A line that is a COMPLETE markdown construct on its own: a heading, a list
+ *  item, a task, a blockquote line. Each renders correctly in isolation, which
+ *  is what makes it safe to reveal one without the others. */
+const LINE_ORIENTED = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?)/;
+
+/**
+ * Split a finished block into ONE BLOCK PER LINE when every line stands alone.
+ *
+ * This is how far "markdown syntax should only be present when the cursor is
+ * next to it" (owner 2026-07-24) can honestly be taken on a phone. React Native
+ * has no way to render a text field whose displayed text differs from its
+ * value — nested <Text> children can style characters but never omit them — so
+ * hiding the `**` around one word while the caret sits three words away is not
+ * possible without a WebView, which would orphan over-the-air updates. The only
+ * real lever is how SMALL the revealed unit is.
+ *
+ * Block granularity made that unit far bigger than it needed to be: tapping one
+ * item of a six-item list revealed all six items' dashes at once. A list is six
+ * independent lines, so it becomes six units and only the tapped one shows its
+ * marker.
+ *
+ * The guard is deliberately strict — EVERY line must stand alone. A list whose
+ * items wrap onto continuation lines (which carry no marker of their own) stays
+ * whole, because a continuation line rendered by itself would lose the item it
+ * belongs to. Prose stays whole for the same reason.
+ */
+function splitLineOriented(block: NoteBlock): NoteBlock[] {
+  const lines: string[] = [];
+  for (let at = 0; at < block.body.length; ) {
+    const nl = block.body.indexOf("\n", at);
+    if (nl === -1) {
+      lines.push(block.body.slice(at));
+      break;
+    }
+    lines.push(block.body.slice(at, nl + 1));
+    at = nl + 1;
+  }
+  if (lines.length < 2) return [block];
+  if (!lines.every((line) => LINE_ORIENTED.test(bareLine(line)))) return [block];
+  // The last line keeps the block's gap; the rest butt straight up against the
+  // next, so joining still reproduces the document byte for byte.
+  return lines.map((line, i) => ({ body: line, gap: i === lines.length - 1 ? block.gap : "" }));
+}
+
 /** Split markdown into blocks. Blank lines separate blocks; a fenced code
  * block (``` or ~~~) and a leading YAML frontmatter block (--- ... ---) are
  * each kept whole even though they may contain blank lines. */
@@ -172,12 +216,42 @@ export function splitBlocks(md: string): NoteBlocks {
   }
   flush();
 
-  return { blocks, leading };
+  // Headings, list items and quotes each become their own block — see
+  // splitLineOriented for why, and for why prose does not.
+  return { blocks: blocks.flatMap(splitLineOriented), leading };
 }
 
 /** Exact inverse of splitBlocks. */
 export function joinBlocks(nb: NoteBlocks): string {
   return nb.leading + nb.blocks.map((b) => b.body + b.gap).join("");
+}
+
+/**
+ * Merge block `index` into the one before it, returning the new document and
+ * the caret offset (within the merged block) where the join happened.
+ *
+ * Backspace at the very start of a block is what needs this. With whole
+ * paragraphs as blocks it was a rare thing to press; now that a list is one
+ * block per item (see splitLineOriented) it is the ordinary way to join two
+ * bullets, and doing nothing would read as a broken keyboard. The previous
+ * block's own trailing newline is what gets eaten — that is the character the
+ * caret is actually sitting behind.
+ */
+export function mergeBlockIntoPrevious(nb: NoteBlocks, index: number): { nb: NoteBlocks; caret: number } | null {
+  if (index <= 0 || index >= nb.blocks.length) return null;
+  const previous = nb.blocks[index - 1];
+  const current = nb.blocks[index];
+  // Only a gapless join is a real "these two lines are adjacent" merge. With a
+  // blank line between them, backspace should delete that blank line first —
+  // which the ordinary text field already does — not silently weld two
+  // paragraphs the student deliberately separated.
+  if (previous.gap !== "") return null;
+  const head = previous.body.replace(/\r?\n$/, "");
+  const merged = { body: head + current.body, gap: current.gap };
+  return {
+    caret: head.length,
+    nb: { leading: nb.leading, blocks: [...nb.blocks.slice(0, index - 1), merged, ...nb.blocks.slice(index + 1)] },
+  };
 }
 
 /** New NoteBlocks with block `index`'s body replaced (gap kept). Immutable. */

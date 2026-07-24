@@ -14,6 +14,7 @@ import {
   blockIndexAtOffset,
   blockStartOffset,
   joinBlocks,
+  mergeBlockIntoPrevious,
   replaceBlockBody,
   splitBlocks,
   type NoteBlocks,
@@ -58,12 +59,27 @@ import { control, radius, space, type } from "@/theme/tokens";
 // should work like the webapp — markdown syntax is not shown unless cursor
 // reveals it"). The web editor is CodeMirror, a browser engine the phone
 // can't run without a WebView (a native addition that would orphan OTA
-// updates — see docs in the PR), so the phone reveals syntax at BLOCK
-// granularity: lib/note-blocks.ts splits the note into blocks, every block
-// renders as real markdown, and ONLY the block you tap swaps into a raw-
-// source TextInput. Tapping any other block (or the tail of the page) moves
-// the reveal there; the document re-normalizes at each switch so typing a
-// blank line mid-block splits it into real blocks.
+// updates — see docs in the PR), so the phone reveals syntax one UNIT at a
+// time: lib/note-blocks.ts splits the note into blocks, every block renders as
+// real markdown, and ONLY the block you tap swaps into a raw-source TextInput.
+// Tapping any other block (or the tail of the page) moves the reveal there; the
+// document re-normalizes at each switch so typing a blank line mid-block splits
+// it into real blocks.
+//
+// THE UNIT IS AS SMALL AS IT CAN HONESTLY BE (owner 2026-07-24: "markdown
+// syntax should only be present when cursor is next to it"). Character-level
+// hiding — the `**` disappearing while the caret is three words away — is not
+// reachable in React Native at all: there is no way to render a text field
+// whose displayed text differs from its value, and nested <Text> children can
+// style characters but never omit them. What IS reachable is shrinking the
+// unit, so a heading, a list item and a quote line are each their own block
+// (splitLineOriented) and tapping one item of a six-item list no longer reveals
+// all six items' dashes. Prose and wrapped list items stay whole, because a
+// continuation line rendered alone would lose the item it belongs to.
+//
+// Smaller units mean more boundaries, which is why Backspace at offset 0 now
+// merges with the block above (onActiveKeyPress) — joining two bullets is an
+// everyday edit and must not read as a stuck keyboard.
 //
 // The formatting toolbar is the floating PILL riding above the keyboard
 // (owner: "show a pill component above keyboard with editing toolbar") — an
@@ -223,6 +239,38 @@ export function NoteBlockEditor({
     [report],
   );
 
+  /**
+   * Backspace pressed with the caret at the very start of a block: join it to
+   * the one above.
+   *
+   * This became necessary the moment a list turned into one block per item
+   * (lib/note-blocks.ts's splitLineOriented): joining two bullets is an
+   * everyday edit, and with each item in its own field the key would otherwise
+   * do nothing at all — which reads as a stuck keyboard, not as a boundary.
+   * Refused across a blank line, where the ordinary field behaviour (delete the
+   * blank line) is the right one.
+   */
+  const onActiveKeyPress = useCallback(
+    (key: string) => {
+      if (key !== "Backspace") return;
+      const idx = activeRef.current;
+      if (idx === null) return;
+      const { start, end } = selRef.current;
+      if (start !== 0 || end !== 0) return;
+      const merged = mergeBlockIntoPrevious(nbRef.current, idx);
+      if (!merged) return;
+      focusEpochRef.current += 1;
+      setNb(merged.nb);
+      onChangeText(joinBlocks(merged.nb));
+      setActiveIdx(idx - 1);
+      // Caret exactly where the two lines now meet, so the next keystroke
+      // continues from the join rather than from the end of the merged line.
+      selRef.current = { end: merged.caret, start: merged.caret };
+      setForcedSel({ end: merged.caret, start: merged.caret });
+    },
+    [onChangeText],
+  );
+
   const applyTool = useCallback(
     (transform: (s: EditSel) => EditSel) => {
       const idx = activeRef.current;
@@ -333,6 +381,7 @@ export function NoteBlockEditor({
                 if (forcedSel) setForcedSel(null);
               }}
               onBlur={onBlockBlur}
+              onKeyPress={(e) => onActiveKeyPress(e.nativeEvent.key)}
               selection={forcedSel ?? undefined}
               multiline
               autoFocus
