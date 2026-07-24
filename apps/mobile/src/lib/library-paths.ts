@@ -80,6 +80,34 @@ export function isAtOrUnder(path: string, folder: string): boolean {
   return path === folder || path.startsWith(`${folder}/`);
 }
 
+/** A selected library row, as select mode keys them: a note by id + path, a
+ *  folder by path. */
+export type LibrarySelectionItem =
+  | { kind: "note"; id: string; path: string }
+  | { kind: "folder"; path: string };
+
+/** Drop any selected row already carried by a selected ANCESTOR folder, so a
+ *  bulk delete or move acts on each thing exactly once.
+ *
+ *  In select mode a student can tap a folder AND something inside it. A plain
+ *  loop then double-acts: deleteFolder("Anatomy") takes the whole subtree, then
+ *  deleteNote(heart) hits an already-gone row; a move moves the note twice, or
+ *  lands it wrong off a stale snapshot — the outcome depending on tap order.
+ *  A folder operation already cascades to its whole subtree (see remapUnder /
+ *  isAtOrUnder), so the covered children must be removed BEFORE the loop, not
+ *  left to error mid-batch. Pure and order-independent, which is exactly why
+ *  it's here and unit-tested rather than inline in the screen. */
+export function pruneCoveredSelection<T extends LibrarySelectionItem>(items: readonly T[]): T[] {
+  const selectedFolders = items.filter((it) => it.kind === "folder").map((it) => it.path);
+  return items.filter((it) => {
+    // A folder is dropped only if a DIFFERENT selected folder contains it — an
+    // ancestor, never itself.
+    if (it.kind === "folder") return !selectedFolders.some((f) => f !== it.path && isAtOrUnder(it.path, f));
+    // A note is dropped if any selected folder contains it.
+    return !selectedFolders.some((f) => isAtOrUnder(it.path, f));
+  });
+}
+
 /** Rewrite `path`'s `source` prefix to `destination`, leaving unrelated paths
  *  alone. This is what makes a folder rename/move cascade: every note and
  *  subfolder beneath it comes along, keeping its position within the subtree. */

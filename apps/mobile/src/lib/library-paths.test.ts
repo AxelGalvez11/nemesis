@@ -9,9 +9,11 @@ import {
   folderLeaf,
   folderOf,
   isAtOrUnder,
+  type LibrarySelectionItem,
   movedFolderPath,
   normalizeLibraryFolder,
   notePathFor,
+  pruneCoveredSelection,
   remapUnder,
   renamedFolderPath,
   safeLibraryTitle,
@@ -97,4 +99,52 @@ Deno.test("allFolderPaths derives every ancestor from note paths", () => {
 
 Deno.test("allFolderPaths folds in explicit folder rows and dedupes", () => {
   assertEquals(allFolderPaths(["A/x.md"], ["A", "B/C"]), ["A", "B/C"]);
+});
+
+Deno.test("pruneCoveredSelection: a note under a selected folder is dropped (folder carries it)", () => {
+  const kept = pruneCoveredSelection([
+    { kind: "folder", path: "Anatomy" },
+    { kind: "note", id: "n1", path: "Anatomy/heart.md" },
+    { kind: "note", id: "n2", path: "todo.md" },
+  ]);
+  assertEquals(kept, [
+    { kind: "folder", path: "Anatomy" },
+    { kind: "note", id: "n2", path: "todo.md" },
+  ]);
+});
+
+Deno.test("pruneCoveredSelection: a subfolder under a selected ancestor folder is dropped", () => {
+  const kept = pruneCoveredSelection([
+    { kind: "folder", path: "Anatomy" },
+    { kind: "folder", path: "Anatomy/Unit 1" },
+    { kind: "note", id: "n1", path: "Anatomy/Unit 1/notes.md" },
+  ]);
+  assertEquals(kept, [{ kind: "folder", path: "Anatomy" }]);
+});
+
+Deno.test("pruneCoveredSelection: siblings and unrelated rows all survive", () => {
+  const items: LibrarySelectionItem[] = [
+    { kind: "folder", path: "Anatomy" },
+    { kind: "folder", path: "PHCY 1205" },
+    { kind: "note", id: "n1", path: "todo.md" },
+  ];
+  assertEquals(pruneCoveredSelection(items), items);
+});
+
+Deno.test("pruneCoveredSelection: a folder is never dropped by itself (prefix isn't ancestry)", () => {
+  // "Anat" is a string prefix of "Anatomy" but NOT its parent folder — the
+  // slash boundary in isAtOrUnder is what keeps them independent.
+  const items: LibrarySelectionItem[] = [
+    { kind: "folder", path: "Anat" },
+    { kind: "folder", path: "Anatomy" },
+  ];
+  assertEquals(pruneCoveredSelection(items), items);
+});
+
+Deno.test("pruneCoveredSelection: order-independent — a child listed before its folder is still dropped", () => {
+  const kept = pruneCoveredSelection([
+    { kind: "note", id: "n1", path: "Anatomy/heart.md" },
+    { kind: "folder", path: "Anatomy" },
+  ]);
+  assertEquals(kept, [{ kind: "folder", path: "Anatomy" }]);
 });

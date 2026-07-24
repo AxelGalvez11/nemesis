@@ -85,8 +85,11 @@ export function useRowDrag({
 }: {
   /** Fired when a dragged row is released over a valid folder. */
   onDrop: (sourceKey: string, targetKey: string) => void;
-  /** Fired when a row is held and released without moving. */
-  onHold: (key: string) => void;
+  /** Fired when a row is held and released without moving. `x`/`y` are the
+   *  release point in WINDOW coordinates (gesture absoluteX/absoluteY) — what a
+   *  touch-anchored MiniMenu positions from. Callers that open a fixed sheet
+   *  (Study) just ignore them. */
+  onHold: (key: string, x: number, y: number) => void;
 }): RowDrag {
   const rows = useRef(new Map<string, RegisteredRow>());
   const rects = useRef(new Map<string, RowRect>());
@@ -179,8 +182,10 @@ export function useRowDrag({
           const target = overKeyRef.current;
           if (opts.draggable && moved && target) onDrop(key, target);
           // Held and let go without going anywhere: that's the menu — unless the
-          // caller suppressed it (multi-select owns taps there).
-          else if (!moved && (opts.holdForMenu ?? true)) onHold(key);
+          // caller suppressed it (multi-select owns taps there). The release
+          // point (window coords) rides along so a MiniMenu can open right where
+          // the finger is.
+          else if (!moved && (opts.holdForMenu ?? true)) onHold(key, event.absoluteX, event.absoluteY);
         })
         // Finalize, not End: it runs whether the gesture ended, was cancelled,
         // or lost the race, so the lifted-row styling can never get stuck on.
