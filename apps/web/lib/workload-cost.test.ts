@@ -135,10 +135,19 @@ test("80 hours of streaming web audio alone eats most of a month's revenue", () 
 
 // ── The cap, and the lever that moves it ─────────────────────────────────────
 
-test("the heavy month blows through the Pro token cap as the pipeline stands", () => {
+// The cap was raised to 25M on 2026-07-24 so 5,000 minutes of lecture would be
+// usable. It bought exactly enough and no more: the heavy month lands at ~96% of
+// the allowance, so any growth in the notes pipeline puts students back at the
+// wall. The headroom is the number to watch here, not the pass/fail.
+test("the heavy month now fits under the raised cap — with almost nothing spare", () => {
   const report = modelStudentMonth(HEAVY_STUDENT);
-  assert.ok(report.capRatio > 1, `expected to exceed the cap, got ${report.capRatio}x`);
   assert.equal(report.tokenCap, PRO_MONTHLY_TOKEN_CAP);
+  assert.ok(report.capRatio <= 1, `should fit, got ${report.capRatio}x`);
+  assert.ok(report.capRatio > 0.9, `headroom should still be thin, got ${report.capRatio}x`);
+});
+
+test("the same month would have blown the old 12M cap twice over", () => {
+  assert.ok(modelStudentMonth(HEAVY_STUDENT).meteredTokens > 20_000_000, "raising the cap was not optional");
 });
 
 test("live notes are the line that overruns the cap, not chat or decks", () => {
@@ -252,9 +261,12 @@ test("the notes fixes alone are not enough on any metered lane", () => {
   // both changes are required, neither is sufficient.
   const notesFixedOnly = modelStudentMonth({ ...HEAVY_STUDENT, notesCacheHitRate: 0.9, notesIntervalMs: 120_000 });
   assert.equal(notesFixedOnly.meetsHouseMargin, false);
+  // And fixing only the lane leaves the token spend untouched — it is the RAISED
+  // CAP absorbing that, not the pipeline having got any cheaper.
   const laneFixedOnly = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "ios-parakeet" });
   assert.equal(laneFixedOnly.meetsHouseMargin, false);
-  assert.ok(laneFixedOnly.capRatio > 1, "and the cap is still blown");
+  assert.equal(laneFixedOnly.meteredTokens, modelStudentMonth(HEAVY_STUDENT).meteredTokens);
+  assert.ok(laneFixedOnly.capRatio > 0.9, "still pressed against the ceiling");
 });
 
 test("a light student comfortably meets the house margin", () => {
@@ -272,8 +284,9 @@ test("a light student comfortably meets the house margin", () => {
   assert.ok(report.capRatio < 1);
 });
 
-test("the transcription cap is reported against what the month actually needs", () => {
+test("the transcription cap now covers the month it was raised for", () => {
   const report = modelStudentMonth(HEAVY_STUDENT);
   assert.equal(report.transcriptionMinutes, 4_800);
-  assert.ok(report.transcriptionMinutes > report.transcriptionCap, "4,800 min needed vs a 1,500 min plan limit");
+  assert.equal(report.transcriptionCap, 5_000);
+  assert.ok(report.transcriptionMinutes <= report.transcriptionCap, "4,800 needed against a 5,000 allowance");
 });

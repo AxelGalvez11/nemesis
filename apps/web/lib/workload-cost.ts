@@ -59,14 +59,21 @@ export function netRevenueUsd(priceUsd: number = PLAN_PRICE_USD): number {
   return round(priceUsd - (priceUsd * STRIPE_PERCENT + STRIPE_FLAT_USD), 2);
 }
 
-// ── Live plan limits (read from plan_entitlements, plan_code='pro', 2026-07-24) ──
+// ── Live plan limits ─────────────────────────────────────────────────────────
+// Read from plan_entitlements, plan_code='pro'. Unlike the prices and pipeline
+// shapes above, these mirror a DATABASE row, so no test can read the source of
+// truth off disk — they go stale silently. They already did once: raised in the
+// database on 2026-07-24 while these constants still said 12M, which made the
+// model quietly understate a student's headroom. Re-check against
+// plan_entitlements before trusting any cap figure this module reports.
+export const PLAN_LIMITS_CHECKED = "2026-07-24";
 
-export const PRO_MONTHLY_TOKEN_CAP = 12_000_000;
+export const PRO_MONTHLY_TOKEN_CAP = 25_000_000;
 export const PRO_DAILY_TOKEN_CAP = 4_000_000;
-/** transcription_seconds_month_limit 90,000s. */
-export const PRO_TRANSCRIPTION_MINUTES = 1_500;
-/** live_audio_seconds_month_limit 10,800s. */
-export const PRO_LIVE_AUDIO_MINUTES = 180;
+/** transcription_seconds_month_limit 300,000s. */
+export const PRO_TRANSCRIPTION_MINUTES = 5_000;
+/** live_audio_seconds_month_limit 300,000s. */
+export const PRO_LIVE_AUDIO_MINUTES = 5_000;
 
 /** How much a cached prompt token counts against the student's cap.
  *  Mirrors CACHE_HIT_WEIGHT in supabase/functions/nemesis-llm/index.ts. */
