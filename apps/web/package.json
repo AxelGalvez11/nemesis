@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "smoke:export": "tsx scripts/smoke-export.mts",
-    "test": "tsx --test components/workspace/graph/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
+    "test": "tsx --test components/workspace/*/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
     "lint": "next lint"
   },
   "dependencies": {

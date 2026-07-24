@@ -27,7 +27,7 @@ export const VIEW_UNIT_LABEL: Record<CalendarViewMode, string> = {
 
 export const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const MAX_CHIPS_PER_DAY = 3;
+export const MAX_CHIPS_PER_DAY = 4;
 export const AGENDA_WINDOW_DAYS = 30;
 
 export const CALENDAR_VIEW_STORAGE_KEY = "nemesis.calendar.view";

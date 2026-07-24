@@ -17,7 +17,7 @@ import {
   addWeeks,
   addYears,
   type CalendarEvent,
-  dayEvents,
+  dateKey,
   deleteCalendarEvent,
   eventsByDate,
   loadCalendarEvents,
@@ -29,12 +29,11 @@ import {
 
 import { Agenda } from "./agenda";
 import { CalendarHeader } from "./calendar-header";
-import { DayPanel } from "./day-panel";
 import { EventFormDialog, EventViewDialog } from "./event-dialogs";
 import { AGENDA_WINDOW_DAYS, CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
 import { SyllabusDialog } from "./syllabus-dialog";
-import { WeekGrid } from "./week-grid";
+import { TimeGridView } from "./time-grid-view";
 import { YearGrid } from "./year-grid";
 
 type DialogState =
@@ -94,6 +93,11 @@ export function CalendarWorkspace() {
   const upcoming = useMemo(() => upcomingEvents(events, today, AGENDA_WINDOW_DAYS), [events, today]);
   const monthDays = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth(), today), [cursor, today]);
   const weekDays = useMemo(() => weekGrid(cursor, today), [cursor, today]);
+  // Day view is the same grid with one column, so it takes the same shape.
+  const dayColumn = useMemo(
+    () => [{ date: cursor, inMonth: true, isToday: dateKey(cursor) === dateKey(today), key: dateKey(cursor) }],
+    [cursor, today],
+  );
 
   function goStep(delta: 1 | -1) {
     setCursor((prev) => {
@@ -176,17 +180,20 @@ export function CalendarWorkspace() {
           view={view}
         />
         <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 max-sm:px-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          {/* Day and Week are the same time grid with a different column count
+              — they were near-duplicate components before, so every fix had to
+              be made twice. */}
           {view === "day" && (
-            <DayPanel
-              date={cursor}
-              events={dayEvents(events, cursor)}
+            <TimeGridView
+              days={dayColumn}
+              eventsByDay={byDate}
               onAddOnDate={openAdd}
               onOpenEvent={openEvent}
-              today={today}
+              showWeekdayNames={false}
             />
           )}
           {view === "week" && (
-            <WeekGrid days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
+            <TimeGridView days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
           )}
           {view === "month" && (
             <MonthGrid days={monthDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />

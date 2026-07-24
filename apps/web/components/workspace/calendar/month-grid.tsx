@@ -6,7 +6,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
-import { formatEventDate, MAX_CHIPS_PER_DAY, WEEKDAY_LABELS } from "./format";
+import { formatEventDate, formatEventTime, MAX_CHIPS_PER_DAY, WEEKDAY_LABELS } from "./format";
 import { KIND_META } from "./kind-meta";
 
 interface MonthGridProps {
@@ -46,17 +46,23 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
   const visible = events.slice(0, MAX_CHIPS_PER_DAY);
   const overflow = events.length - visible.length;
 
+  // Weekends get a quieter ground than weekdays, and days outside the month a
+  // quieter one again — three steps rather than the old two, which is what
+  // gives the grid a readable rhythm instead of one flat sheet of cells.
+  const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
+
   return (
     <div
       className={cn(
-        "group flex min-h-20 flex-col gap-1 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0",
-        !day.inMonth && "bg-(--ui-bg-quaternary)/40",
+        "group flex min-h-28 flex-col gap-1 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0",
+        day.inMonth && isWeekend && "bg-(--ui-bg-quaternary)/25",
+        !day.inMonth && "bg-(--ui-bg-quaternary)/50",
       )}
     >
       <div className="flex shrink-0 items-center justify-between">
         <span
           className={cn(
-            "grid size-5 place-items-center rounded-full text-[0.6875rem] font-medium tabular-nums",
+            "grid size-6 place-items-center rounded-full text-[0.75rem] font-medium tabular-nums",
             day.isToday ? "bg-(--theme-primary) text-primary-foreground" : !day.inMonth && "text-(--ui-text-quaternary)",
           )}
         >
@@ -76,7 +82,7 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
         {visible.map((event) => (
           <button
             className={cn(
-              "truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium leading-tight",
+              "flex items-baseline gap-1 truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
               KIND_META[event.kind].chip,
             )}
             key={event.id}
@@ -84,7 +90,10 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
             title={event.title}
             type="button"
           >
-            {event.title}
+            {/* Timed events lead with the time, the way a real calendar does —
+                it is the thing you scan a month grid for. */}
+            {event.time && <span className="shrink-0 tabular-nums opacity-70">{formatEventTime(event.time)}</span>}
+            <span className="truncate">{event.title}</span>
           </button>
         ))}
         {overflow > 0 && (
