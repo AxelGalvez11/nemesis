@@ -38,7 +38,16 @@ import {
 } from "@/lib/chat-thread";
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
-import { buildLiveNotesMessages, parseLiveNotes } from "@/lib/live-notes";
+import {
+  buildLiveNotesMessages,
+  FINAL_NOTES_MAX_KEPT,
+  FINAL_NOTES_MAX_WINDOWS,
+  liveNotesText,
+  mergeLiveNotes,
+  parseLiveNotes,
+  planFinalNotesWindows,
+  shouldReplaceNotes,
+} from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
@@ -713,13 +722,18 @@ const LIVE_NOTES_DECISION: ChatRouteDecision = { model: "deepseek-chat", route: 
 
 /** One notes pass for the Record screen: the growing transcript (plus what's
  *  already on the board) in, up to six fresh bullets out. Metered like any
- *  chat turn through the same valve. Returns null on any failure — the
- *  recorder just tries again next interval. */
+ *  chat turn through the same valve.
+ *
+ *  null means the CALL FAILED (offline, out of tokens, unparseable reply) —
+ *  the recorder just tries again next interval. An empty array means the call
+ *  succeeded and the model had nothing new to add, which is an ordinary
+ *  outcome over a quiet stretch. The rebuild below depends on telling those
+ *  two apart: a failure means it never saw that slice of the lecture, an empty
+ *  pass means it saw it and there was nothing worth writing down. */
 export async function requestLiveNotes(uid: string, transcript: string, previousNotes: string[]): Promise<string[] | null> {
   const reply = await postChatCompletion(uid, buildLiveNotesMessages(transcript, previousNotes), LIVE_NOTES_DECISION);
   if (!reply.text) return null;
-  const notes = parseLiveNotes(reply.text);
-  return notes.length ? notes : null;
+  return parseLiveNotes(reply.text);
 }
 
 const APP_API_BASE = "https://app.enternemesis.com";
@@ -740,6 +754,40 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
   } catch {
     // best-effort — a missed state write only affects the indicator
   }
+}
+
+/** Rebuild a finished recording's notes from the ENHANCED transcript (owner
+ *  2026-07-23: "we need live notes to come from enhanced audio for better
+ *  notes"). During the lecture the live pass could only summarize the phone's
+ *  on-device text; once the server returns the sharper transcript, those
+ *  bullets are the best notes we could write from the worse words. Walks the
+ *  finished transcript in order — each window told what's already on the board
+ *  and not to repeat it, the same contract the live pass runs on — and returns
+ *  the joined result, or null when nothing came back so the existing notes
+ *  stand. Never throws: requestLiveNotes already resolves null on failure, and
+ *  a window that comes back empty just contributes nothing. */
+async function rebuildNotesFromTranscript(
+  uid: string,
+  transcript: string,
+  existingNotes: string | undefined,
+): Promise<string | null> {
+  const windows = planFinalNotesWindows(transcript);
+  if (windows.length === 0) return null;
+  if (windows.length === FINAL_NOTES_MAX_WINDOWS) {
+    console.warn(`notes rebuild hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
+  }
+  let notes: string[] = [];
+  for (const window of windows) {
+    const fresh = await requestLiveNotes(uid, window, notes);
+    // ALL OR NOTHING. A failed window means this pass never saw that slice of
+    // the lecture, so finishing would hand back bullets covering only part of
+    // it — strictly worse than the live pass's notes, which at least span the
+    // whole recording. Bail and let the existing notes stand. (An empty-but-
+    // successful window is fine and contributes nothing; see requestLiveNotes.)
+    if (!fresh) return null;
+    notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
+  }
+  return shouldReplaceNotes(notes, existingNotes) ? liveNotesText(notes) : null;
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -804,18 +852,53 @@ export async function enhanceRecordingArtifact(
       .update({ transcript: enhanced })
       .eq("id", artifact.id)
       .eq("user_id", uid);
-    await writeChipEntry(uid, threadId, { ...artifact, polish: "done", transcript: enhanced });
+    const polished: ChatOutput = { ...artifact, polish: "done", transcript: enhanced };
+    await writeChipEntry(uid, threadId, polished);
+
+    // The recording is fully in the cloud now, so free the phone's copy before
+    // the rebuild rather than after it — a lecture is 100MB+ and the rebuild
+    // below can run for minutes. The finally block still sweeps, idempotently.
+    await deleteLocalAudio(uris);
+
+    // Sharper transcript, sharper notes. Deliberately AFTER the transcript is
+    // durable and inside its own try: this costs several model calls and can
+    // fail on its own (offline, out of tokens), and losing better notes must
+    // never cost the better transcript — or reset the chip out of "done".
+    try {
+      const notes = await rebuildNotesFromTranscript(uid, enhanced, artifact.notes);
+      if (notes) {
+        const { error: notesError } = await supabase
+          .from("chat_recording_artifacts")
+          .update({ notes })
+          .eq("id", artifact.id)
+          .eq("user_id", uid);
+        // The artifact row is the source of truth web's rail reads. If it did
+        // not take, do NOT publish the new notes to the chip — a chip showing
+        // bullets the row does not have is a divergence that never resolves.
+        if (notesError) throw new Error(notesError.message);
+        await writeChipEntry(uid, threadId, { ...polished, notes });
+      }
+    } catch (cause) {
+      console.warn("notes rebuild skipped:", cause instanceof Error ? cause.message : cause);
+    }
   } catch (cause) {
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
     // Clear the "polishing" flag — the on-device transcript is what stands.
     await writeChipEntry(uid, threadId, { ...artifact });
   } finally {
-    for (const uri of uris) {
-      try {
-        await FileSystem.deleteAsync(uri, { idempotent: true });
-      } catch {
-        // best effort — a stray temp file is harmless
-      }
+    await deleteLocalAudio(uris);
+  }
+}
+
+/** Drop the phone's copies of a recording's audio. Idempotent and never
+ *  throws, so it is safe to call the moment the audio stops being needed AND
+ *  again from the enhance pass's finally block. */
+async function deleteLocalAudio(uris: string[]): Promise<void> {
+  for (const uri of uris) {
+    try {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+    } catch {
+      // best effort — a stray temp file is harmless
     }
   }
 }

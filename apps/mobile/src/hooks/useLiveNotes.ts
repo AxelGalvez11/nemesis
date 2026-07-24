@@ -55,7 +55,9 @@ export function useLiveNotes(uid: string | null, transcript: string, active: boo
       lastLengthRef.current = text.length;
       requestLiveNotes(uid, text, notesRef.current)
         .then((fresh) => {
-          if (fresh) setNotes((current) => mergeLiveNotes(current, fresh));
+          // `fresh` is [] when the pass succeeded with nothing new to say —
+          // skip the state write rather than re-rendering with the same board.
+          if (fresh?.length) setNotes((current) => mergeLiveNotes(current, fresh));
         })
         .catch(() => {
           // requestLiveNotes never throws by contract; belt and suspenders
