@@ -8,6 +8,7 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { MessageBody } from "@/components/MessageBody";
 import { ChevronIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
+import { OcclusionCardView } from "@/components/OcclusionCardView";
 import {
   fetchCloudStudy,
   gradeStudyCard,
@@ -478,13 +479,23 @@ export default function ReviewScreen() {
                 testID="review-card"
                 style={styles.cardPressable}
               >
-                {current.cardType === "image_occlusion" ? (
-                  // Graceful fallback — image occlusion cards don't render on the
-                  // phone in v1 (do NOT attempt image rendering). Still gradable:
-                  // the student can recall-and-grade from memory, or skip to web.
+                {current.cardType === "image_occlusion" && current.occlusion ? (
+                  // Image cloze now RENDERS on the phone (owner 2026-07-24).
+                  // This used to be a text-only fallback saying "open on web",
+                  // because the phone had no way to make or show these; it can
+                  // do both now. The card's own prompt sits under the picture —
+                  // it is the box's label, which is a hint, not the answer.
+                  <View testID="review-occlusion-card">
+                    <OcclusionCardView payload={current.occlusion} revealed={revealed} />
+                    {front ? <Text style={styles.occlusionPrompt}>{front}</Text> : null}
+                  </View>
+                ) : current.cardType === "image_occlusion" ? (
+                  // Reached only when the payload failed validation — a card
+                  // written by an older client, or a corrupt row. Still gradable
+                  // from memory rather than becoming a dead end mid-session.
                   <View testID="review-image-fallback">
                     <Text style={promptStyles.body as object}>{front || "Image card"}</Text>
-                    <Text style={styles.imageFallbackNote}>Open on web for image cards.</Text>
+                    <Text style={styles.imageFallbackNote}>This image card is missing its picture.</Text>
                   </View>
                 ) : clozeSplit ? (
                   <>
@@ -628,6 +639,9 @@ const createStyles = (c: ThemeColors) =>
     backChevron: { transform: [{ rotate: "180deg" }] },
     answerBlock: { marginTop: space(2) },
     imageFallbackNote: { ...type.small, color: c.text2, textAlign: "center", marginTop: space(3) },
+    // The box's own label, under the picture. Muted because it is a hint about
+    // WHICH box is being asked about, not the answer.
+    occlusionPrompt: { ...type.small, color: c.textHint, textAlign: "center", marginTop: space(3) },
     // Cloze sentence: same size/centering as the prompt markdown, one sentence
     // throughout. `clozeHit` does double duty — accent/bold on the blank
     // marker pre-reveal, then the same accent/bold treatment on the revealed

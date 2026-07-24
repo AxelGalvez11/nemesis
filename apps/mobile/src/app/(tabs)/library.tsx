@@ -29,6 +29,8 @@ import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
 import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
+  createFolder,
+  createNote,
   deleteFolder,
   deleteNote,
   fetchLibrary,
@@ -99,8 +101,6 @@ const SORT_OPTIONS = [
   { key: "created-desc", label: "Created (new → old)" },
 ] as const;
 
-const NEW_NOTE_HINT = "New notes are created on the web app — this phone shows a read-only copy.";
-const NEW_FOLDER_HINT = "New folders are created on the web app — this phone shows a read-only copy.";
 
 function sortLabel(key: SortKey): string {
   switch (key) {
@@ -180,7 +180,7 @@ export default function LibraryScreen() {
   // "actions" is gone — a held row now opens a MiniMenu at the touch point
   // (owner 2026-07-23) instead of a bottom sheet. rowSheet only tracks the two
   // follow-on sheets the menu hands off to.
-  const [rowSheet, setRowSheet] = useState<"rename" | "move" | null>(null);
+  const [rowSheet, setRowSheet] = useState<"rename" | "move" | "new-folder" | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   // The held-row MiniMenu: where it opens, anchored to the finger. Null = closed.
@@ -262,7 +262,7 @@ export default function LibraryScreen() {
       // real Set from the SAME fully-collapsed baseline the render below is
       // already showing — only the tapped folder then flips, nothing else jumps.
       setCollapsedOverride((prev) => {
-        const base = prev ?? new Set(folderNoteCounts(snapshot.notes.map((n) => n.path)).keys());
+        const base = prev ?? new Set(folderNoteCounts(snapshot.notes.map((n) => n.path), snapshot.folders).keys());
         const next = new Set(base);
         if (next.has(path)) next.delete(path);
         else next.add(path);
@@ -327,6 +327,41 @@ export default function LibraryScreen() {
       }
     },
     [userId, refresh, closeRowSheets, flashHint],
+  );
+
+  /** Make a new note and open it (owner 2026-07-24: "useres cannot create new
+   *  note or folder from the library sidebar"). The Library's "…" menu carried
+   *  both rows already, but each one only printed "new notes are created on the
+   *  web app" — which had stopped being true: createNote is a real, working
+   *  insert, wired up to the note screen's "+" and nowhere else.
+   *
+   *  The ref is a SYNCHRONOUS lock. State would not do: two taps in the same
+   *  frame both read the old value and you get two "Untitled note" rows. */
+  const creatingNote = useRef(false);
+  const onNewNote = useCallback(async () => {
+    if (!userId || creatingNote.current) return;
+    creatingNote.current = true;
+    try {
+      const note = await createNote(userId);
+      await refresh(userId);
+      router.push({ params: { id: note.id }, pathname: "/note" });
+    } catch (e) {
+      flashHint((e as Error).message);
+    } finally {
+      creatingNote.current = false;
+    }
+  }, [userId, refresh, flashHint]);
+
+  /** Make an empty folder at the library root. Root rather than "the folder
+   *  you're looking at" because this screen has no notion of a current folder —
+   *  the tree shows every level at once — so there is nothing to infer from.
+   *  Putting it somewhere afterwards is a drag or a Move, same as any other row. */
+  const onNewFolderConfirm = useCallback(
+    (name: string) => {
+      if (!userId) return;
+      void applyRowChange(() => createFolder(userId, snapshot, name), { inline: true });
+    },
+    [userId, snapshot, applyRowChange],
   );
 
   // Delete confirms through the OS alert rather than another in-app sheet: it's
@@ -572,7 +607,11 @@ export default function LibraryScreen() {
   // Recursive per-folder note counts — also doubles as "every folder path known
   // right now," which is the fully-collapsed default whenever the reader hasn't
   // manually toggled anything yet this mount (see collapsedOverride above).
-  const folderCounts = folderNoteCounts(notes.map((n) => n.path));
+  // snapshot.folders is passed too, or a folder you just made — which by
+  // definition holds no notes yet — has no key here and is therefore both
+  // uncounted and, since these keys are the start-collapsed seed, missing from
+  // the tree entirely (owner 2026-07-24).
+  const folderCounts = folderNoteCounts(notes.map((n) => n.path), snapshot.folders);
   const collapsed = collapsedOverride ?? new Set(folderCounts.keys());
 
   const trimmed = query.trim();
@@ -592,6 +631,7 @@ export default function LibraryScreen() {
         notes.map((d) => ({ path: d.path, title: d.title, updatedAt: d.updatedAt, createdAt: d.createdAt })),
         collapsed,
         sort,
+        snapshot.folders,
       );
 
   // Context line above the list: match count while searching, else which
@@ -833,8 +873,8 @@ export default function LibraryScreen() {
         onClose={() => setActionsOpen(false)}
         searchActive={searchOpen}
         onSearch={toggleSearch}
-        onNewNote={() => flashHint(NEW_NOTE_HINT)}
-        onNewFolder={() => flashHint(NEW_FOLDER_HINT)}
+        onNewNote={() => void onNewNote()}
+        onNewFolder={() => setRowSheet("new-folder")}
         onSort={() => setSortOpen(true)}
         onSelect={() => enterSelectMode()}
         top={contentTop}
@@ -870,6 +910,20 @@ export default function LibraryScreen() {
         onConfirm={onRenameConfirm}
         onClose={closeRowSheets}
         testID="library-rename-prompt"
+      />
+      <TextPromptSheet
+        visible={rowSheet === "new-folder"}
+        title="New folder"
+        placeholder="Folder name"
+        initialValue=""
+        confirmLabel="Create"
+        busy={rowBusy}
+        // inline, so a name that's already taken can be corrected in place
+        // rather than closing the sheet and losing what was typed.
+        error={rowError}
+        onConfirm={onNewFolderConfirm}
+        onClose={closeRowSheets}
+        testID="library-new-folder-prompt"
       />
       {/* Drop here to pull something out of every folder. The key's suffix is
           "" — the empty destination moveNote/moveFolder already read as the
@@ -929,19 +983,11 @@ export default function LibraryScreen() {
               folder and a note inside it is one thing to act on, not two, because
               the folder carries the note. */}
           <Text style={styles.selectCount}>{selectedItems.length} selected</Text>
+          {/* Delete, Move, Cancel — the owner's order (2026-07-24), and the same
+              one Study uses. Cancel sits last because it's the way out, not the
+              first thing to reach for; it is also the only button with no
+              `disabled`, since backing out has to work with nothing ticked. */}
           <View style={styles.selectActions}>
-            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
-              <Text style={styles.selectBtnText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
-              disabled={selectedItems.length === 0 || rowBusy}
-              hitSlop={6}
-              style={styles.selectBtn}
-              testID="library-select-move-btn"
-            >
-              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
-            </Pressable>
             <Pressable
               onPress={deleteSelected}
               disabled={selectedItems.length === 0 || rowBusy}
@@ -952,6 +998,18 @@ export default function LibraryScreen() {
               <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedItems.length === 0 && styles.selectBtnDisabled]}>
                 Delete
               </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
+              disabled={selectedItems.length === 0 || rowBusy}
+              hitSlop={6}
+              style={styles.selectBtn}
+              testID="library-select-move-btn"
+            >
+              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
+            </Pressable>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
             </Pressable>
           </View>
         </View>

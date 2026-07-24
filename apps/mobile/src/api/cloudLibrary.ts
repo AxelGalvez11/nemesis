@@ -259,6 +259,47 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
 }
 
 /**
+ * Create an empty folder (owner 2026-07-24: "useres cannot create new note or
+ * folder from the library sidebar" — before this the phone had rename, move and
+ * delete for folders, but no way to make one).
+ *
+ * A folder is its own row (`kind: "folder"`) rather than something implied by a
+ * note's path, which is the only way an EMPTY one can exist at all. The phone's
+ * tree used to be built purely by splitting note paths, so such a row was
+ * invisible until something was filed into it — `buildLibraryRows` and
+ * `folderNoteCounts` now take the explicit folder list for exactly this reason.
+ *
+ * Ported from the web store's createFolder so both clients agree on the path
+ * shape: normalise, refuse a duplicate outright rather than silently making a
+ * second one, and step a "2"/"3" suffix if the unique constraint objects anyway
+ * (which also covers a soft-deleted row still holding the path).
+ */
+export async function createFolder(uid: string, snapshot: CloudLibrarySnapshot, rawPath: string): Promise<string> {
+  const wanted = normalizeLibraryFolder(rawPath);
+  if (!wanted) throw new Error("Enter a folder name.");
+  // "" as the exclude, because nothing is being moved out of the way here.
+  if (folderExists(snapshot, wanted, "")) throw new Error("A folder with that name already exists there.");
+
+  const now = new Date().toISOString();
+  const parent = folderOf(wanted);
+  const leaf = wanted.slice(parent ? parent.length + 1 : 0);
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const title = suffix === 1 ? leaf : `${leaf} ${suffix}`;
+    const candidate = parent ? `${parent}/${title}` : title;
+    const { error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path: candidate, kind: "folder", title, content: null, deleted: false, updated_at: now });
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const cache = await readDiskCache(uid);
+    // Offline copy too, or the folder vanishes on the next cache-first open.
+    await writeDiskCache(uid, { ...cache, folders: [...cache.folders, candidate] });
+    return candidate;
+  }
+  throw new Error("Couldn't find an available name for a new folder.");
+}
+
+/**
  * Create a note that already HAS a title and a body — what "save this to my
  * library" needs (owner 2026-07-24: a photographed page becomes a note).
  *

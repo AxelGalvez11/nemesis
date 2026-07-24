@@ -11,7 +11,8 @@ import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor } from "./MiniMenu";
 import { TextPromptSheet, type RowAction } from "./RowActionSheets";
-import { CalendarIcon, ChevronIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, ChevronIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { createNote } from "@/api/cloudLibrary";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -382,6 +383,24 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     }
   }, [open]);
 
+  // Same shape as the drawer's own newChat (a create, then navigate to it), and
+  // the same synchronous ref lock the note screen's "+" uses — two taps in one
+  // frame would otherwise both pass a state-based guard and make two notes.
+  const creatingNote = useRef(false);
+  const onNewNote = async () => {
+    if (!uid || creatingNote.current) return;
+    creatingNote.current = true;
+    try {
+      const note = await createNote(uid);
+      onClose();
+      router.push({ params: { id: note.id }, pathname: "/note" } as never);
+    } catch (cause) {
+      Alert.alert("Couldn't make a new note", cause instanceof Error ? cause.message : "Try again in a moment.");
+    } finally {
+      creatingNote.current = false;
+    }
+  };
+
   const go = (path: string) => {
     onClose();
     router.push(path as never);
@@ -468,6 +487,22 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
       <View style={styles.brandRow}>
         <Text style={styles.brand}>Nemesis</Text>
+        {/* Start a new note from the sidebar (owner 2026-07-24: "useres cannot
+            create new note or folder from the library sidebar"). The drawer had
+            no create control of any kind — only navigation, chat rows and the
+            Chat pill in the footer. Straight to a blank note rather than a menu:
+            "new folder" belongs on the Library screen, where you can see where
+            it lands, and this row only has space for one. */}
+        <Pressable
+          style={({ pressed }) => [styles.searchBtn, pressed && styles.searchBtnActive]}
+          onPress={() => void onNewNote()}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="New note"
+          testID="drawer-new-note"
+        >
+          <PlusIcon size={19} color={c.text2} />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [styles.searchBtn, (pressed || searchOpen) && styles.searchBtnActive]}
           onPress={() => setSearchOpen((v) => !v)}
@@ -699,8 +734,10 @@ const createStyles = (c: ThemeColors) =>
     // below them) instead of floating up beneath short content.
     scroll: { flex: 1 },
 
-    brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
-    brand: { ...type.h2, color: c.text, letterSpacing: -0.3 },
+    // gap + marginRight:auto on the wordmark so the two buttons sit together on
+    // the right rather than space-between pushing them apart.
+    brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(4), paddingBottom: space(3) },
+    brand: { ...type.h2, color: c.text, letterSpacing: -0.3, marginRight: "auto" },
     searchBtn: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
     // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.

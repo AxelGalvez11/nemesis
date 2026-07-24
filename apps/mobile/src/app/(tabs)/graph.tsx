@@ -140,6 +140,19 @@ export default function GraphScreen() {
   // fitToContent. Not a state: reading it inside the rAF loop must never
   // re-render, and setting it must never restart the loop.
   const pendingFitRef = useRef(true);
+  // Has the student moved the camera themselves since this layout was seeded?
+  //
+  // A big graph takes a couple of seconds to settle, and the fit fires when it
+  // does. If you spent those seconds pinching into a corner, the fit arrives
+  // late and hauls you back out — which is exactly what the owner reported as
+  // "zooms out after 3 seconds, annoying" (2026-07-24). A deliberate camera
+  // move outranks an automatic one, so the first pinch/pan/node-drag cancels
+  // the pending fit for good.
+  //
+  // A shared value rather than a ref because the gesture callbacks that set it
+  // are worklets on the UI thread; `.value` still reads correctly from the JS
+  // thread, which is where the rAF loop checks it.
+  const userAdjusted = useSharedValue(false);
   // The seeding effect below reads this once per (re)seed instead of depending
   // on gravity/repulsion/linkDistance state directly — depending on them would
   // reseed the spiral (and jump every node's position) on every slider drag.
@@ -247,11 +260,15 @@ export default function GraphScreen() {
     // Settled. Fit ONCE per seed/reset — refitting after every slider nudge
     // would yank the view out from under someone who had panned deliberately.
     // snapshot() is fine HERE (once, at rest) where it was ruinous per frame.
+    //
+    // …and not at all if the student already framed the graph themselves while
+    // it was settling. Clearing the flag either way means a cancelled fit stays
+    // cancelled rather than firing on the next reheat.
     if (pendingFitRef.current) {
       pendingFitRef.current = false;
-      fitToContent(sim.snapshot());
+      if (!userAdjusted.value) fitToContent(sim.snapshot());
     }
-  }, [fitToContent, positions]);
+  }, [fitToContent, positions, userAdjusted]);
 
   const ensureTicking = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -341,10 +358,13 @@ export default function GraphScreen() {
     (index: number) => {
       const sim = sim2DRef.current;
       if (!sim) return;
+      // Moving a node is as deliberate as moving the camera: whatever you drag
+      // into view stays there instead of being reframed when the sim settles.
+      userAdjusted.value = true;
       sim.startDrag(index);
       ensureTicking();
     },
-    [ensureTicking],
+    [ensureTicking, userAdjusted],
   );
 
   const handleNodeDragTo = useCallback(
@@ -474,8 +494,11 @@ export default function GraphScreen() {
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
-    // A fresh layout earns a fresh zoom-to-fit once it settles.
+    // A fresh layout earns a fresh zoom-to-fit once it settles — and a clean
+    // slate on whether the student has framed it themselves, since the camera
+    // just went back to identity above.
     pendingFitRef.current = true;
+    userAdjusted.value = false;
     if (!builtGraph || builtGraph.nodes.length === 0) {
       sim2DRef.current = null;
       positions.value = [];
@@ -529,6 +552,8 @@ export default function GraphScreen() {
       Gesture.Pinch()
         .onStart(() => {
           savedScale.value = scale.value;
+          // You framed it yourself — no automatic fit is going to override that.
+          userAdjusted.value = true;
         })
         .onUpdate((event) => {
           scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedScale.value * event.scale));
@@ -547,6 +572,7 @@ export default function GraphScreen() {
         .onStart(() => {
           savedTranslateX.value = translateX.value;
           savedTranslateY.value = translateY.value;
+          userAdjusted.value = true;
         })
         .onUpdate((event) => {
           translateX.value = savedTranslateX.value + event.translationX;
@@ -679,7 +705,14 @@ export default function GraphScreen() {
           <GestureDetector gesture={canvasGesture}>
             <Animated.View style={[{ width: canvasW, height: canvasH }, canvasAnimatedStyle]}>
               <Svg width={canvasW} height={canvasH}>
-                <AnimatedPath animatedProps={edgeProps} stroke={c.lineMuted} strokeWidth={1} fill="none" />
+                {/* Edges sit UNDER the nodes, not beside them (owner 2026-07-24:
+                    "node connections need to be fainter"). Opacity rather than a
+                    paler token: every edge shares this one Path, so the lines
+                    cross each other constantly, and a pale solid stroke still
+                    reads as a dense web wherever they pile up. At 0.4 a single
+                    edge is a hint and a bundle of them is a soft shadow, which
+                    is the Obsidian look. */}
+                <AnimatedPath animatedProps={edgeProps} stroke={c.lineMuted} strokeOpacity={0.4} strokeWidth={1} fill="none" />
               </Svg>
               {builtGraph.nodes.map((node, i) => (
                 <GraphNodeView
