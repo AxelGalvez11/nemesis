@@ -142,7 +142,7 @@ Deno.test("buildSections: groups by top folder, root bucket first, sorted titles
   assertEquals(sections[2].notes.map((n) => n.title), ["Antibiotics", "Exam 2"]);
 });
 
-Deno.test("buildLibraryRows: nests arbitrarily deep, notes before folders, alphabetical, depth-tagged", () => {
+Deno.test("buildLibraryRows: nests arbitrarily deep, FOLDERS before notes, alphabetical, depth-tagged", () => {
   const rows = buildLibraryRows(
     [
       { path: "todo.md", title: "Todo" },
@@ -152,14 +152,17 @@ Deno.test("buildLibraryRows: nests arbitrarily deep, notes before folders, alpha
     ],
     new Set(),
   );
+  // Folders first at EVERY level (owner 2026-07-23), sort applying within each
+  // group: both top-level folders precede the root note, and inside PHCY 1205
+  // the "Unit 1" subfolder precedes that folder's own note.
   assertEquals(rows, [
-    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
     { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
     { type: "note", path: "Anatomy/heart.md", title: "Heart", depth: 1 },
     { type: "folder", path: "PHCY 1205", name: "PHCY 1205", depth: 0 },
-    { type: "note", path: "PHCY 1205/exam-2.md", title: "Exam 2", depth: 1 },
     { type: "folder", path: "PHCY 1205/Unit 1", name: "Unit 1", depth: 1 },
     { type: "note", path: "PHCY 1205/Unit 1/antibiotics.md", title: "Antibiotics", depth: 2 },
+    { type: "note", path: "PHCY 1205/exam-2.md", title: "Exam 2", depth: 1 },
+    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
   ]);
 });
 
@@ -198,8 +201,8 @@ Deno.test("buildLibraryRows: root notes aren't inside any folder, so they're una
     new Set(["Anatomy"]),
   );
   assertEquals(rows, [
-    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
     { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
+    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
   ]);
 });
 
@@ -215,12 +218,12 @@ const SORT_DOCS = [
 Deno.test("buildLibraryRows: Z–A keeps folders, reversing notes and sibling folders", () => {
   const rows = buildLibraryRows(SORT_DOCS, new Set(), "za");
   assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
-    "Zebra",
-    "Apple",
     "[PHCY 1205]",
     "Exam 2",
     "[Anatomy]",
     "Heart",
+    "Zebra",
+    "Apple",
   ]);
 });
 
@@ -229,24 +232,24 @@ Deno.test("buildLibraryRows: Modified (new → old) ranks a folder by its newest
   // Anatomy (07-10) — and the root notes order newest-first too.
   const rows = buildLibraryRows(SORT_DOCS, new Set(), "mod-desc");
   assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
-    "Apple",
-    "Zebra",
     "[PHCY 1205]",
     "Exam 2",
     "[Anatomy]",
     "Heart",
+    "Apple",
+    "Zebra",
   ]);
 });
 
 Deno.test("buildLibraryRows: Created (old → new) ranks a folder by its oldest note", () => {
   const rows = buildLibraryRows(SORT_DOCS, new Set(), "created-asc");
   assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
-    "Zebra",
-    "Apple",
     "[Anatomy]",
     "Heart",
     "[PHCY 1205]",
     "Exam 2",
+    "Zebra",
+    "Apple",
   ]);
 });
 
@@ -262,9 +265,9 @@ Deno.test("buildLibraryRows: time sorts still respect collapse, and unstamped no
     "mod-desc",
   );
   assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
+    "[Anatomy]",
     "New",
     "Old",
     "Unstamped",
-    "[Anatomy]",
   ]);
 });

@@ -234,32 +234,40 @@ function compareFolders(a: FolderNode, b: FolderNode, sort: LibrarySortKey): num
   return (ascending ? av.localeCompare(bv) : bv.localeCompare(av)) || a.name.localeCompare(b.name);
 }
 
-/** Flatten `node`'s own notes + subfolders (notes before folders — the same
- * convention the root bucket already used — each ordered by `sort`) into
- * `depth`-tagged rows. A folder's subtree is omitted entirely when ITS
- * path is in `collapsed` — that's what makes nested folders collapse
- * independently: hiding a parent's children never touches the children's own
- * collapsed state, so re-expanding the parent reveals whatever state its
- * descendants were already in. */
+/** Flatten `node`'s own subfolders + notes into `depth`-tagged rows, each group
+ * ordered by `sort`.
+ *
+ * FOLDERS COME FIRST at every level (owner 2026-07-23: "i need folders to be
+ * above the notes by default in library"). This used to emit notes first, which
+ * meant a folder with a few loose notes beside it pushed its subfolders below
+ * the fold — the containers you navigate by ended up underneath the things they
+ * contain. Finder, Obsidian and the web sidebar all group folders first, and
+ * this now matches. `sort` still applies WITHIN each group, so A–Z or
+ * Modified still does what it says; it just never interleaves the two kinds.
+ *
+ * A folder's subtree is omitted entirely when ITS path is in `collapsed` —
+ * that's what makes nested folders collapse independently: hiding a parent's
+ * children never touches the children's own collapsed state, so re-expanding
+ * the parent reveals whatever state its descendants were already in. */
 function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<string>, sort: LibrarySortKey): LibraryRow[] {
   const rows: LibraryRow[] = [];
-  for (const note of [...node.notes].sort((a, b) => compareNotes(a, b, sort))) {
-    rows.push({ type: "note", path: note.path, title: note.title, depth });
-  }
   const subfolders = [...node.subfolders.values()].sort((a, b) => compareFolders(a, b, sort));
   for (const sub of subfolders) {
     rows.push({ type: "folder", path: sub.path, name: sub.name, depth });
     if (!collapsed.has(sub.path)) rows.push(...flattenFolder(sub, depth + 1, collapsed, sort));
+  }
+  for (const note of [...node.notes].sort((a, b) => compareNotes(a, b, sort))) {
+    rows.push({ type: "note", path: note.path, title: note.title, depth });
   }
   return rows;
 }
 
 /** Build the phone library's full nested-folder row list from flat doc paths
  * ("/"-separated, arbitrary depth) plus the set of currently-collapsed folder
- * paths (full path per folder, e.g. "PHCY 1205/Unit 1"). Root-level notes (no
- * "/" in their path) come first at depth 0 — the bucket the screen has always
- * labeled "Library" — followed by top-level folders, each one's subtree
- * flattened in place. `sort` (default A–Z, the historical order) applies at
+ * paths (full path per folder, e.g. "PHCY 1205/Unit 1"). Top-level FOLDERS come first at
+ * depth 0, each one's subtree flattened in place, followed by root-level notes
+ * (no "/" in their path) — the bucket the screen has always labeled "Library".
+ * Folders-before-notes holds at every level (owner 2026-07-23). `sort` (default A–Z, the historical order) applies at
  * EVERY level — notes within their folder, folders among their siblings (time
  * orders rank a folder by the newest/oldest note anywhere inside it) — so
  * picking a sort reorders the tree instead of flattening it. Pure and

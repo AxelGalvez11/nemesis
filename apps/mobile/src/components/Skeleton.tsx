@@ -24,19 +24,24 @@ export function Skeleton({
   style?: ViewStyle;
 }) {
   const { colors: c } = useTheme();
-  const opacity = useRef(new Animated.Value(0.6)).current;
+  // Pulse range is WIDE on purpose. It used to run 0.45->1 over `line2`, whose
+  // own alpha is only 0.16 — so the visible result swung between roughly 7% and
+  // 16% opacity on a near-black card, which reads as a static bar however
+  // correctly the animation is running (owner 2026-07-23). The fill is a solid
+  // `skeleton` tone now, so this range is what the eye actually sees.
+  const opacity = useRef(new Animated.Value(0.55)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 750, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.45, duration: 750, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true }),
       ]),
     );
     loop.start();
     return () => loop.stop();
   }, [opacity]);
 
-  return <Animated.View style={[{ width, height, borderRadius: r, backgroundColor: c.line2, opacity }, style]} />;
+  return <Animated.View style={[{ width, height, borderRadius: r, backgroundColor: c.skeleton, opacity }, style]} />;
 }
 
 /** A Card-shaped skeleton: mirrors ui.tsx <Card> (border, radius.md, surface2) with a few text bars. */

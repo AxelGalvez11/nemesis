@@ -553,3 +553,28 @@ Deno.test("createLayoutSim.startDrag/.endDrag: many cumulative drags never exhau
   const neighborMoved = before.nodes[1].x !== after.nodes[1].x || before.nodes[1].y !== after.nodes[1].y;
   assert(neighborMoved, "neighbor should still respond to dragging after the slider lifetime ceiling was exhausted");
 });
+
+Deno.test("createLayoutSim: a drag that never ends still reaches settled, so the render loop can stop", () => {
+  // PERFORMANCE regression guard (owner 2026-07-23: "the graph is super slow").
+  // graph.tsx reschedules its rAF loop until the sim reports settled, and
+  // re-renders every node on each pass. `settled` is false while dragging, so a
+  // drag whose endDrag() never arrives — a cancelled gesture, a finger lost off
+  // the screen edge, an unmount mid-drag — used to pin the whole screen at 60fps
+  // forever with nothing actually moving. The drag's own step budget must expire
+  // it rather than idle inside it.
+  const graph = buildNoteGraph(
+    Array.from({ length: 30 }, (_, i) => doc(`n${i}.md`, `N${i}`, `[[N${(i + 1) % 30}]]`)),
+  );
+  const sim = createLayoutSim(graph, { height: 700, width: 390 });
+  while (!sim.settled) sim.step();
+
+  sim.startDrag(0);
+  sim.pin(0, 300, 300);
+  // Deliberately NO endDrag().
+  let steps = 0;
+  while (!sim.settled && steps < 200_000) {
+    sim.step();
+    steps += 1;
+  }
+  assert(sim.settled, `a drag with no endDrag must still settle; gave up after ${steps} steps`);
+});
