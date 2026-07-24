@@ -79,14 +79,12 @@ Deno.test("buildBrowseSections: a deck row counts only its own cards", () => {
   assertEquals(decks?.rows.map((r) => [r.label, r.count]), [["Cardiovascular", 2], ["Anatomy", 1]]);
 });
 
-Deno.test("buildBrowseSections: a deck row shows its leaf, its depth, and its parent folder", () => {
+Deno.test("buildBrowseSections: a deck row shows its leaf plus its parent folder, never the raw path", () => {
   const rows = buildBrowseRows(CARDS, DECKS);
   const nested = buildBrowseSections(rows, DECKS)[0]?.rows[0];
-  // "Pharmacology::Cardiovascular" reads as an indented "Cardiovascular" under
-  // "Pharmacology" — the raw path never reaches the screen.
-  assertEquals([nested?.label, nested?.depth, nested?.parent], ["Cardiovascular", 1, "Pharmacology"]);
+  assertEquals([nested?.label, nested?.parent], ["Cardiovascular", "Pharmacology"]);
   const flat = buildBrowseSections(rows, DECKS)[0]?.rows[1];
-  assertEquals([flat?.label, flat?.depth, flat?.parent], ["Anatomy", 0, ""]);
+  assertEquals([flat?.label, flat?.parent], ["Anatomy", ""]);
 });
 
 Deno.test("buildBrowseSections: an empty deck still gets a row, at 0", () => {
@@ -127,18 +125,42 @@ Deno.test("buildBrowseSections: a card-state row with nothing in it is left out"
 });
 
 Deno.test("buildBrowseSections: every row's filter selects exactly what its count promised", () => {
-  // The contract that makes the two pages agree: whatever number page 1 prints
+  // THE contract that makes the two pages agree: whatever number page 1 prints
   // on a row, page 2 must list that many cards when you tap it.
+  //
+  // Checked with the search box empty AND set, because the box lives above the
+  // page toggle and so survives navigating back to page 1. Counting without the
+  // query let a deck row read 2 and open onto 1.
   const rows = buildBrowseRows(CARDS, DECKS);
-  for (const section of buildBrowseSections(rows, DECKS)) {
-    for (const row of section.rows) {
-      assertEquals(
-        applyBrowseFilter(rows, { ...row.filter, query: "" }).length,
-        row.count,
-        `${row.id} promised ${row.count}`,
-      );
+  for (const query of ["", "ACE", "mechanisms", "zzz-no-matches"]) {
+    for (const section of buildBrowseSections(rows, DECKS, query)) {
+      for (const row of section.rows) {
+        assertEquals(
+          applyBrowseFilter(rows, { ...row.filter, query }).length,
+          row.count,
+          `${row.id} promised ${row.count} for query "${query}"`,
+        );
+      }
     }
   }
+});
+
+Deno.test("buildBrowseSections: a search narrows the counts, and empties the rows it excludes", () => {
+  const rows = buildBrowseRows(CARDS, DECKS);
+  // "ACE" is only on c1, in the Cardiovascular deck.
+  const decks = buildBrowseSections(rows, DECKS, "ACE")[0];
+  assertEquals(decks?.rows.map((r) => [r.label, r.count]), [["Cardiovascular", 1], ["Anatomy", 0]]);
+  // A tag whose cards are all excluded loses its row entirely, since a tag row
+  // can only come from a card that survived.
+  assertEquals(buildBrowseSections(rows, DECKS, "ACE")[1]?.rows.map((r) => r.label), ["#mechanisms"]);
+});
+
+Deno.test("buildBrowseSections: a whitespace-only search is treated as no search", () => {
+  const rows = buildBrowseRows(CARDS, DECKS);
+  assertEquals(
+    buildBrowseSections(rows, DECKS, "   ")[0]?.rows.map((r) => r.count),
+    buildBrowseSections(rows, DECKS)[0]?.rows.map((r) => r.count),
+  );
 });
 
 Deno.test("buildBrowseSections: counts ignore cards whose deck was deleted", () => {

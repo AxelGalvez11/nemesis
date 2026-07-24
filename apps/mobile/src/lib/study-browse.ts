@@ -110,15 +110,14 @@ export interface BrowseSectionRow {
    *  come from" id, so page 2 can name where it is. */
   id: string;
   label: string;
-  /** Cards this row would show, ignoring the search box. */
+  /** Cards this row would show if you tapped it — the SEARCH INCLUDED. */
   count: number;
   /** Colour swatch for a flag row; null on every other kind. */
   hex: string | null;
-  /** How deep under a folder a deck sits, so the list can indent instead of
-   *  printing "Pharm::Cardio::Beta blockers". 0 for every non-deck row. */
-  depth: number;
-  /** Its own parent folder path, shown as a subline when there is one — two
-   *  decks called "Week 1" in different courses are otherwise identical. */
+  /** The deck's parent folder path, shown as a subline so the leaf can stand
+   *  alone: "Pharm::Cardio::Week 1" reads as "Week 1" under "Pharm::Cardio"
+   *  rather than printing its whole path, and two decks called "Week 1" in
+   *  different courses stay tellable apart. "" for a top-level or non-deck row. */
   parent: string;
   filter: BrowseRowFilter;
 }
@@ -131,13 +130,14 @@ export interface BrowseSection {
 
 const NO_FILTER: BrowseRowFilter = { scope: "all", deckId: null, tag: null, flag: null };
 
-/** Depth of a `::`-separated deck path — "Pharm::Cardio::Week 1" is 2. */
-function pathDepth(name: string): number {
-  const parent = pathParent(name);
-  return parent === "" ? 0 : parent.split("::").length;
-}
-
 /** The three sections of Browse's first page, with a card count on every row.
+ *
+ *  `query` IS PART OF THE COUNT, and it has to be. The search box sits above the
+ *  page toggle, so it stays set while you tap back to this page — and page 2
+ *  filters by the row's filter AND the query. Counting without the query meant a
+ *  row could read 12, and open onto 3, with the reason sitting in a box you
+ *  stopped looking at three taps ago. Whatever number a row prints is now the
+ *  number of cards tapping it produces.
  *
  *  ONE PASS over the cards, deliberately. Counting each row by re-running
  *  applyBrowseFilter would be decks x cards work every render — the same shape
@@ -145,17 +145,27 @@ function pathDepth(name: string): number {
  *  study.tsx's cardsByDeck). Deck rows keep `decks` order (already sorted by the
  *  caller); tags and flags sort themselves.
  *
- *  Rows with no cards are kept, not hidden: a deck you just made is empty by
- *  definition, and it has to be visible for you to believe it exists. Tag and
- *  flag rows can only come from a card that has them, so they are never 0. */
-export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly BrowseDeck[]): BrowseSection[] {
+ *  Deck rows with no cards are kept, not hidden: a deck you just made is empty by
+ *  definition, and it has to be visible for you to believe it exists — and under
+ *  a search, a deck at 0 is the answer "nothing in here matches". Tag and flag
+ *  rows can only come from a card that has them, so they are never 0. */
+export function buildBrowseSections(
+  rows: readonly BrowseRow[],
+  decks: readonly BrowseDeck[],
+  query = "",
+): BrowseSection[] {
   const byDeck = new Map<string, number>();
   const byTag = new Map<string, number>();
   const byFlag = new Map<number, number>();
   let suspended = 0;
   let leeches = 0;
 
-  for (const row of rows) {
+  // Scope once, then group. applyBrowseFilter ANDs its criteria together, so
+  // counting deck/tag/flag membership within the query's survivors gives exactly
+  // what applyBrowseFilter(rows, {...row.filter, query}) would return.
+  const scoped = query.trim() ? applyBrowseFilter(rows, { ...NO_FILTER, query }) : rows;
+
+  for (const row of scoped) {
     const card = row.card;
     byDeck.set(card.deckId, (byDeck.get(card.deckId) ?? 0) + 1);
     for (const tag of card.tags) byTag.set(tag, (byTag.get(tag) ?? 0) + 1);
@@ -169,7 +179,6 @@ export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly 
     label: pathLeaf(deck.name),
     count: byDeck.get(deck.id) ?? 0,
     hex: null,
-    depth: pathDepth(deck.name),
     parent: pathParent(deck.name),
     filter: { ...NO_FILTER, deckId: deck.id },
   }));
@@ -181,7 +190,6 @@ export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly 
       label: `#${tag}`,
       count: byTag.get(tag) ?? 0,
       hex: null,
-      depth: 0,
       parent: "",
       filter: { ...NO_FILTER, tag },
     }));
@@ -193,7 +201,6 @@ export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly 
     label: flag.name,
     count: byFlag.get(flag.value) ?? 0,
     hex: flag.hex,
-    depth: 0,
     parent: "",
     filter: { ...NO_FILTER, scope: "flagged", flag: flag.value },
   }));
@@ -204,7 +211,6 @@ export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly 
       label: "Suspended",
       count: suspended,
       hex: null,
-      depth: 0,
       parent: "",
       filter: { ...NO_FILTER, scope: "suspended" },
     });
@@ -215,7 +221,6 @@ export function buildBrowseSections(rows: readonly BrowseRow[], decks: readonly 
       label: "Leeches",
       count: leeches,
       hex: null,
-      depth: 0,
       parent: "",
       filter: { ...NO_FILTER, scope: "leeches" },
     });

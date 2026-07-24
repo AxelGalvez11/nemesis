@@ -133,7 +133,11 @@ export function StudyBrowseSheet({
   }, [visible]);
 
   const rows = useMemo(() => buildBrowseRows(cards, decks), [cards, decks]);
-  const sections = useMemo(() => buildBrowseSections(rows, decks), [rows, decks]);
+  // The query goes IN, so a row's number is the number of cards tapping it
+  // produces. The search box lives above the toggle and therefore stays set when
+  // you come back to this page — counting without it let a row read 12 and open
+  // onto 3, with the cause sitting in a field you stopped looking at.
+  const sections = useMemo(() => buildBrowseSections(rows, decks, query), [rows, decks, query]);
   const filtered = useMemo(() => applyBrowseFilter(rows, { ...rowFilter, query }), [rows, rowFilter, query]);
   const cardById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
   const deckLeafById = useMemo(() => new Map(decks.map((deck) => [deck.id, pathLeaf(deck.name)])), [decks]);
@@ -358,11 +362,14 @@ export function StudyBrowseSheet({
                             accessibilityRole="button"
                             testID={`study-browse-row-${row.id}`}
                           >
-                            {/* Nesting is drawn, never spelled: a deck named
-                                "Pharm::Cardio::Week 1" indents under its folder
-                                and reads "Week 1". */}
-                            <View style={{ width: row.depth * space(3) }} />
                             {row.hex ? <View style={[styles.rowFlagDot, { backgroundColor: row.hex }]} /> : null}
+                            {/* A deck path is carried by the SUBLINE, not by an
+                                indent. A Study folder has no row of its own — it
+                                exists only as a prefix on a deck's name — so
+                                indenting "Cardiovascular" would indent it under
+                                nothing, which reads as a layout bug rather than a
+                                hierarchy. "Pharmacology" underneath it says the
+                                same thing and is always true. */}
                             <View style={styles.rowText}>
                               <Text style={styles.rowLabel} numberOfLines={1}>{row.label}</Text>
                               {row.parent ? <Text style={styles.rowParent} numberOfLines={1}>{row.parent}</Text> : null}
