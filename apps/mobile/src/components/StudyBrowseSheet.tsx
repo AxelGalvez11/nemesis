@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SlideUpSheet } from "./StudySheet";
 import { MessageBody } from "./MessageBody";
@@ -13,6 +13,7 @@ import {
   type CloudStudyDeck,
 } from "@/api/cloudStudy";
 import { pathLeaf } from "@/lib/study-tree";
+import { fromEditText, toEditText } from "@/lib/card-image-tokens";
 import { normalizeCardText } from "@/lib/card-text";
 import { previewOf } from "@/lib/note-tabs";
 import {
@@ -96,6 +97,11 @@ export function StudyBrowseSheet({
   const [editFlag, setEditFlag] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The images lifted out of the card being edited, so save can put them back
+  // exactly as they were. Refs, not state: nothing renders from them, and a
+  // re-render between opening the editor and saving must not lose them.
+  const frontImages = useRef<string[]>([]);
+  const backImages = useRef<string[]>([]);
 
   // Reset every time the sheet opens so a stale filter / open card from last
   // time doesn't linger.
@@ -143,8 +149,20 @@ export function StudyBrowseSheet({
   function startEdit(card: CloudStudyCard) {
     setEditing(true);
     setError(null);
-    setEditFront(card.front);
-    setEditBack(card.back);
+    // A picture on a card is TEXT — a markdown image or an <img> tag whose src
+    // is a ~130-character storage URL. Every other surface launders that before
+    // you see it; the edit fields used to bind the raw string, so opening a
+    // card with images gave you a wall of URL with your own sentence lost in it
+    // (owner 2026-07-24: "users can see supabase url when editing cards"). Swap
+    // each one for "[image 1]" here and swap it back on save — see
+    // lib/card-image-tokens.ts, which is reversible by construction because
+    // this text is what gets written back to the database.
+    const frontEdit = toEditText(card.front);
+    const backEdit = toEditText(card.back);
+    setEditFront(frontEdit.text);
+    setEditBack(backEdit.text);
+    frontImages.current = frontEdit.images;
+    backImages.current = backEdit.images;
     setEditFlag(card.flag);
   }
 
@@ -168,8 +186,11 @@ export function StudyBrowseSheet({
   }
 
   function saveEdit(card: CloudStudyCard) {
-    const front = editFront.trim();
-    const back = editBack.trim();
+    // Put the real images back BEFORE the empty check: a card that is nothing
+    // but a picture reads as "[image 1]" in the field, and testing the token
+    // text would be testing the wrong string.
+    const front = fromEditText(editFront, frontImages.current).trim();
+    const back = fromEditText(editBack, backImages.current).trim();
     if (!front || !back) {
       setError("Add both a front and a back.");
       return;
@@ -201,13 +222,17 @@ export function StudyBrowseSheet({
     <SlideUpSheet visible={visible} onClose={onClose} title="Browse cards" testID="study-browse-sheet">
       {/* Search */}
       <View style={styles.searchField}>
-        <SearchIcon size={16} color={c.text3} />
+        <SearchIcon size={16} color={c.textHint} />
         <TextInput
           style={styles.searchInput}
           value={filter.query}
           onChangeText={(query) => patch({ query })}
-          placeholder="Search cards, decks, tags"
-          placeholderTextColor={c.text3}
+          // Short enough to read whole in the field (owner 2026-07-24: "search
+          // bar should not have text cutoff"), and in textHint, the app's one
+          // genuinely faint tone — text3 was flattened to be identical to body
+          // text, so the old placeholder looked like something already typed.
+          placeholder="Search cards"
+          placeholderTextColor={c.textHint}
           autoCorrect={false}
           autoCapitalize="none"
           testID="study-browse-search"
@@ -451,14 +476,30 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
       gap: space(2),
       paddingHorizontal: space(3),
-      height: 40,
+      // minHeight, not height: the sheet's animated body cap could squeeze a
+      // fixed 40 and clip the field along with it. flexShrink:0 for the same
+      // reason.
+      minHeight: 40,
+      flexShrink: 0,
       backgroundColor: c.surface,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: c.line,
       marginBottom: space(2.5),
     },
-    searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
+    // The cutoff (owner 2026-07-24): a bare fontSize with `padding: 0` and no
+    // lineHeight left RN measuring the line box at about the font size, so
+    // descenders — the tails on g, y, p — were shaved off inside the 40pt row.
+    // Spelling out lineHeight and zeroing only the paddings is the shape the
+    // chat composer already uses.
+    searchInput: {
+      flex: 1,
+      color: c.text,
+      fontSize: type.small.fontSize,
+      lineHeight: type.small.lineHeight,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+    },
 
     // Segmented picker for which filter group is on screen.
     groupRow: { flexDirection: "row", backgroundColor: c.surface, borderRadius: radius.pill, padding: 3, marginBottom: space(2) },

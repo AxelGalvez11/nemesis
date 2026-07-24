@@ -43,7 +43,6 @@ import {
 } from "@/api/cloudStudy";
 import { allGroupPaths, buildDeckTree, flattenDeckTree, type DeckSort, type DeckTreeRow } from "@/lib/deck-tree";
 import { decksInGroup, isWithinGroup, pathLeaf, pathParent } from "@/lib/study-tree";
-import { deckRetention } from "@/lib/study-progress";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -105,8 +104,6 @@ interface DeckRow {
   deck: CloudStudyDeck;
   leaf: string;
   counts: DeckCounts;
-  /** Percent of reviews answered correctly (0..1), null before any review. */
-  retention: number | null;
   cardCount: number;
 }
 
@@ -556,10 +553,23 @@ export default function StudyScreen() {
   // Unsorted on purpose: buildDeckTree owns ordering now (folders alphabetical,
   // decks due-first within their own level), so sorting here would just be
   // thrown away a line later.
+  //
+  // Bucket the cards by deck ONCE. This used to be `cards.filter(...)` inside
+  // the map, i.e. a full scan of every card for every deck — on the Captain
+  // Hook starter deck that is 6,487 cards read once per deck, tens of thousands
+  // of comparisons on every single render of this screen, which is a large part
+  // of why the list felt slow to arrive (owner 2026-07-24: "loading time is
+  // still slow everytime"). One grouping pass is O(cards + decks) instead.
+  const cardsByDeck = new Map<string, typeof cards>();
+  for (const card of cards) {
+    const bucket = cardsByDeck.get(card.deckId);
+    if (bucket) bucket.push(card);
+    else cardsByDeck.set(card.deckId, [card]);
+  }
   const deckRows: DeckRow[] = decks.map((deck) => {
     const { leaf } = deckGroupInfo(deck.name);
-    const deckCards = cards.filter((card) => card.deckId === deck.id);
-    return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
+    const deckCards = cardsByDeck.get(deck.id) ?? [];
+    return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf };
   });
 
   // Row-action derivations. Every folder is a move destination; for a FOLDER
@@ -730,13 +740,15 @@ export default function StudyScreen() {
                     ]}
                   >
                     {selectMode ? <SelectDot on={selectedKeys.has(`deck:${item.deck.deck.id}`)} /> : null}
+                    {/* Just the name (owner 2026-07-24: "make the deck cards
+                        slight smaller (remove 'no reviews' text)"). The second
+                        line used to carry retention, which on a deck you have
+                        not studied yet is the words "No reviews yet" — a whole
+                        row of card height spent saying nothing happened. The
+                        due/new counts to the right are the numbers that actually
+                        decide what you tap. */}
                     <View style={styles.deckText}>
                       <Text style={styles.deckName} numberOfLines={1}>{item.deck.leaf}</Text>
-                      {/* Real retention (deckRetention: correct reviews / total reviews),
-                          or an honest "No reviews yet" — never a fake 0%. */}
-                      <Text style={styles.deckRetention} numberOfLines={1}>
-                        {item.deck.retention === null ? "No reviews yet" : `${Math.round(item.deck.retention * 100)}% retention`}
-                      </Text>
                     </View>
                     {/* Anki's own color language (owner picked it over brand colors):
                         due stacked over new, green over blue, zeros included. */}
@@ -1059,10 +1071,13 @@ const createStyles = (c: ThemeColors) =>
     listBody: { padding: space(4), flexGrow: 1 },
     // Anki-style deck CARD (owner 2026-07-21): a soft rounded surface holding
     // title + retention on the left, stacked due/new counts on the right.
+    // Tightened with the retention line's removal (owner 2026-07-24) — a
+    // one-line card does not need two-line padding, and more decks fit on
+    // screen without the list feeling cramped.
     row: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2),
-      paddingVertical: space(3), paddingHorizontal: space(3.5),
-      borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(2),
+      paddingVertical: space(2.5), paddingHorizontal: space(3.5),
+      borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(1.5),
     },
     // Tree indent is applied inline per row (depth * INDENT_STEP) rather than
     // as a style, since it varies with how deep the folder nests.
@@ -1074,7 +1089,6 @@ const createStyles = (c: ThemeColors) =>
     rowDragging: { opacity: 0.4 },
     deckText: { flex: 1, minWidth: 0, gap: 2 },
     deckName: { ...type.body, color: c.text },
-    deckRetention: { ...type.micro, color: c.text2 },
     // The trailing cluster: the due-over-new stack, then the '›' affordance.
     // Anki's colors on purpose (owner 2026-07-21): green due, blue new — the
     // palette's contrast-guarded good/info, so both read on either mode.
