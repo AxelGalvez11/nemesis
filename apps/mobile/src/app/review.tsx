@@ -301,15 +301,29 @@ export default function ReviewScreen() {
     return () => clearTimeout(timer);
   }, [backShown]);
 
+  /**
+   * Pull-to-reveal is the rule only while there is a CARD to pull. Every state
+   * without one shows the button outright.
+   *
+   * This is load-bearing now that gestureEnabled is false. "Deck unavailable"
+   * renders an EmptyBlock and nothing else — no Done button, and no ScrollView,
+   * so there is no bounce to pull and backShown could never become true. Before
+   * this batch iOS's edge swipe was the escape; without it that screen would be
+   * a dead end reachable by exactly the two things its own copy names, a deleted
+   * deck and an expired session. Same for `deck === undefined` if the fetch
+   * hangs. `current` is null in all three, so one condition covers them.
+   */
+  const backVisible = backShown || !current;
+
   const backFade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(backFade, {
-      toValue: backShown ? 1 : 0,
-      duration: backShown ? 160 : 260,
+      toValue: backVisible ? 1 : 0,
+      duration: backVisible ? 160 : 260,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [backShown, backFade]);
+  }, [backVisible, backFade]);
 
   // Swipe RIGHT anywhere on the card to undo (owner 2026-07-23 — it was leftward
   // when this shipped hours earlier). activeOffsetX means it only takes over once
@@ -360,7 +374,7 @@ export default function ReviewScreen() {
 
       <Animated.View
         style={[styles.backFloat, { opacity: backFade, top: insets.top + space(1) }]}
-        pointerEvents={backShown ? "auto" : "none"}
+        pointerEvents={backVisible ? "auto" : "none"}
       >
         <Pressable
           onPress={() => router.back()}
