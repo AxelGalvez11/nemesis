@@ -249,7 +249,21 @@ test("the import is capped so a parsing failure cannot flood the calendar", () =
     datedItem({ title: `Item ${i}`, date: "2026-09-11" }),
   );
   const result = verify({ dated: many, meetings: [] });
-  assert.ok(result.events.length <= MAX_IMPORT_EVENTS);
+  assert.equal(result.events.length, MAX_IMPORT_EVENTS);
+});
+
+// Duplicates must not consume the budget: a syllabus that restates its
+// deadlines in both a table and prose would otherwise spend the whole cap on
+// copies and report genuine items at the end as "over the limit".
+test("repeated items do not eat the import cap", () => {
+  const unique = Array.from({ length: MAX_IMPORT_EVENTS }, (_, i) =>
+    datedItem({ title: `Item ${i}`, date: "2026-09-11" }),
+  );
+  // Every item stated a second time, interleaved as a syllabus would.
+  const withRepeats = unique.flatMap((item) => [item, { ...item }]);
+  const result = verify({ dated: withRepeats, meetings: [] });
+  assert.equal(result.events.length, MAX_IMPORT_EVENTS, "duplicates displaced real items");
+  assert.equal(result.dropped.length, 0, "nothing should be reported as over the limit here");
 });
 
 // ── Prompt ───────────────────────────────────────────────────────────────────

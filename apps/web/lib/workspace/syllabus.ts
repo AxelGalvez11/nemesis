@@ -264,10 +264,6 @@ export function verifySyllabus(raw: SyllabusExtraction | null, options: VerifyOp
       dropped.push({ title: "(untitled)", reason: "No title" });
       continue;
     }
-    if (events.length >= MAX_IMPORT_EVENTS) {
-      dropped.push({ title, reason: `Over the ${MAX_IMPORT_EVENTS}-event import limit` });
-      continue;
-    }
     if (typeof item.date !== "string" || !isRealDate(item.date)) {
       dropped.push({ title, reason: "The date could not be read as a real date" });
       continue;
@@ -284,9 +280,15 @@ export function verifySyllabus(raw: SyllabusExtraction | null, options: VerifyOp
       continue;
     }
     // A syllabus repeats its due dates in a table AND in prose; without this
-    // the same deadline lands twice.
+    // the same deadline lands twice. Deduping BEFORE the cap matters: a
+    // syllabus that restates 30 deadlines would otherwise burn 30 slots on
+    // copies and report real items at the end as "over the limit".
     const key = `${title.toLowerCase()}|${item.date}`;
     if (seen.has(key)) continue;
+    if (events.length >= MAX_IMPORT_EVENTS) {
+      dropped.push({ title, reason: `Over the ${MAX_IMPORT_EVENTS}-event import limit` });
+      continue;
+    }
     seen.add(key);
 
     const event: CalendarEvent = { id: newId(), title, date: item.date, kind: toValidKind(item.kind), source: "manual" };

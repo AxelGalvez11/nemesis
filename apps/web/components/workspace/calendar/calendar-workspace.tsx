@@ -137,6 +137,13 @@ export function CalendarWorkspace() {
   // UI routes to a read-only dialog with no way out (see event-dialogs.tsx).
   // Written one at a time so a single bad row cannot lose the whole import.
   async function handleImport(imported: CalendarEvent[]) {
+    // Refuse here rather than trusting the disabled button in SyllabusDialog.
+    // In preview, saveCalendarEvent writes to the UNSCOPED legacy localStorage
+    // key — the one migrateLocalCalendarToCloud claims and uploads for the
+    // first account that later signs in on this browser. A guard two
+    // components away is not where that should be prevented.
+    if (preview || !userId) throw new Error("Sign in to import a syllabus.");
+
     const saved: CalendarEvent[] = [];
     const failures: string[] = [];
     for (const event of imported) {
