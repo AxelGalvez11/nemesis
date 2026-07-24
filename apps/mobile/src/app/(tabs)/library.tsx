@@ -875,10 +875,15 @@ export default function LibraryScreen() {
           "" — the empty destination moveNote/moveFolder already read as the
           library root — so it needs no special case in onRowDrop. */}
       <RootDropZone
-        ref={rowDrag.registerRow("root:", true)}
+        // `true` twice: droppable, and a FALLBACK target. The zone spans the
+        // whole list now, so it contains every folder row — without the
+        // fallback flag a first-match hit test would send nearly every drop to
+        // the top level. See useRowDrag's RegisteredRow.fallback.
+        ref={rowDrag.registerRow("root:", true, true)}
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
         top={contentTop}
+        bottom={contentBottom}
       />
 
       {/* Rides the finger during a drag; the row itself stays put and dims. */}

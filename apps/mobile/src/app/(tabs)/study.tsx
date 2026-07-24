@@ -32,6 +32,7 @@ import {
   deleteStudyDeck,
   deleteStudyGroup,
   fetchCloudStudy,
+  loadCachedStudy,
   moveStudyDeck,
   moveStudyGroup,
   renameStudyDeck,
@@ -243,11 +244,37 @@ export default function StudyScreen() {
     setSelectedKeys(new Set());
   }, []);
 
+  /** True once a real fetch has landed this session — the guard that stops a
+   *  slow cache read from painting stale decks over fresh ones. A ref, not
+   *  state: the check has to be synchronous at the moment the read resolves,
+   *  and it must never itself cause a render. */
+  const fetchLandedRef = useRef(false);
+  useEffect(() => {
+    // A different account has a different cache; let it seed again.
+    fetchLandedRef.current = false;
+  }, [userId]);
+
+  /** Seed from the disk cache — the whole reason Study stops showing skeletons
+   *  on every open (owner 2026-07-24: "why does study page take long to load
+   *  always"). It only ever fills a screen the network hasn't answered for yet. */
+  const seedFromCache = useCallback(async (uid: string) => {
+    const cached = await loadCachedStudy(uid);
+    if (fetchLandedRef.current || cached.decks.length === 0) return;
+    setDecks(cached.decks);
+    setCards(cached.cards);
+    setStatus("loaded");
+    if (!appliedDefaultCollapseRef.current) {
+      appliedDefaultCollapseRef.current = true;
+      setCollapsedFolders(new Set(allGroupPaths(cached.decks.map((deck) => deck.name))));
+    }
+  }, []);
+
   const load = useCallback(async (uid: string) => {
     setStatus((prev) => (prev === "loaded" ? prev : "loading"));
     setLoadError(null);
     try {
       const { decks: nextDecks, cards: nextCards } = await fetchCloudStudy(uid);
+      fetchLandedRef.current = true;
       setDecks(nextDecks);
       setCards(nextCards);
       setStatus("loaded");
@@ -267,10 +294,17 @@ export default function StudyScreen() {
     }
   }, []);
 
+  // Cache first (instant), then the cloud refresh behind it — the same
+  // "paint what we know, then reconcile" policy the Library and Graph tabs
+  // already use. Both start together: the cache read is local and wins the
+  // race in practice, and seedFromCache no-ops if the fetch somehow lands
+  // first.
   useFocusEffect(
     useCallback(() => {
-      if (userId) void load(userId);
-    }, [load, userId]),
+      if (!userId) return;
+      void seedFromCache(userId);
+      void load(userId);
+    }, [load, seedFromCache, userId]),
   );
 
   // --- long-press row actions (owner 2026-07-22) ----------------------------
@@ -733,10 +767,15 @@ export default function StudyScreen() {
           suffix is "" — the empty group moveStudyDeck/moveStudyGroup already
           read as top level — so it needs no special case in onRowDrop. */}
       <RootDropZone
-        ref={rowDrag.registerRow("root:", true)}
+        // `true` twice: droppable, and a FALLBACK target. The zone spans the
+        // whole list now, so it contains every folder row — without the
+        // fallback flag a first-match hit test would send nearly every drop to
+        // the top level. See useRowDrag's RegisteredRow.fallback.
+        ref={rowDrag.registerRow("root:", true, true)}
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
         top={contentTop}
+        bottom={contentBottom}
       />
 
       {/* Rides the finger during a drag; the row itself stays put and dims. */}

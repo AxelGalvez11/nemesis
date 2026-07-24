@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
@@ -157,7 +158,10 @@ export default function NoteScreen() {
   const [searchSheetOpen, setSearchSheetOpen] = useState(false);
   const [searchSheetQuery, setSearchSheetQuery] = useState("");
   const [tabsOpen, setTabsOpen] = useState(false);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  // The outline is a MINI MENU now (owner 2026-07-24: "outline should be a mini
+  // menu not a popup from the bottom"), anchored where the pill bar's outline
+  // button was pressed — so null here means closed.
+  const [outlineAnchor, setOutlineAnchor] = useState<MenuAnchor | null>(null);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   // The note id that was just created here, so its title can take the caret
@@ -214,7 +218,7 @@ export default function NoteScreen() {
     setEditing(false);
     setSearchSheetOpen(false);
     setTabsOpen(false);
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     sectionYs.current = [];
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     // History bookkeeping now lives in lib/note-tabs.ts (pure + tested):
@@ -567,7 +571,7 @@ export default function NoteScreen() {
   ) : null;
 
   const jumpToSection = useCallback((sectionIndex: number) => {
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     const y = sectionYs.current[sectionIndex];
     if (typeof y === "number") scrollRef.current?.scrollTo({ animated: true, y: Math.max(0, y - space(2)) });
   }, []);
@@ -598,9 +602,15 @@ export default function NoteScreen() {
     });
   }, [nav.tabIds, notesIndex, doc]);
 
-  const outlineRows = useMemo<NoteSheetRow[]>(
-    () => outline.map((h) => ({ indent: Math.min(h.level - 1, 4), key: String(h.sectionIndex), label: h.text })),
-    [outline],
+  const outlineRows = useMemo<MenuRow[]>(
+    () =>
+      outline.map((h) => ({
+        indent: Math.min(h.level - 1, 4),
+        key: String(h.sectionIndex),
+        label: h.text,
+        onPress: () => jumpToSection(h.sectionIndex),
+      })),
+    [outline, jumpToSection],
   );
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
@@ -880,10 +890,10 @@ export default function NoteScreen() {
             }}
             onNew={() => void newNote()}
             onRecents={() => setTabsOpen(true)}
-            onOutline={() => {
+            onOutline={(x, y) => {
               // Sections only render (and measure) outside Find mode.
               if (findOpen) closeFind();
-              setOutlineOpen(true);
+              setOutlineAnchor({ x, y });
             }}
           />
         </View>
@@ -917,14 +927,18 @@ export default function NoteScreen() {
         }}
         onClose={() => setTabsOpen(false)}
       />
-      <NoteListSheet
-        visible={outlineOpen}
-        title="Outline"
-        rows={outlineRows}
+      {/* The heading outline, opening at the button rather than sliding up from
+          the bottom of the screen (owner 2026-07-24). MiniMenu flips itself
+          above the finger when there is no room below — which is always, since
+          the pill bar sits at the bottom edge — and scrolls when a note has
+          more headings than fit. */}
+      <MiniMenu
+        visible={outlineAnchor !== null}
+        anchor={outlineAnchor}
+        actions={outlineRows}
         emptyText="No headings in this note yet."
-        onPick={(key) => jumpToSection(Number(key))}
-        onClose={() => setOutlineOpen(false)}
-        testID="note-outline-sheet"
+        onClose={() => setOutlineAnchor(null)}
+        testID="note-outline-menu"
       />
     </View>
   );

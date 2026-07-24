@@ -50,11 +50,20 @@ interface RegisteredRow {
   node: View | null;
   /** Whether a dragged row may be dropped ONTO this one (folders only). */
   droppable: boolean;
+  /** A LAST-RESORT target, only used when no ordinary one is under the finger.
+   *  The "out of every folder" zone is one: it now covers the whole list area
+   *  rather than a strip (owner 2026-07-24), so it overlaps every folder row on
+   *  screen and would win a first-match hit test outright — which registration
+   *  order alone happens to decide. Every drop would silently become "move to
+   *  top level". Fallbacks are checked in a second pass instead. */
+  fallback: boolean;
 }
 
 export interface RowDrag {
-  /** Ref callback for a row's outermost View. `droppable` marks folders. */
-  registerRow: (key: string, droppable: boolean) => (node: View | null) => void;
+  /** Ref callback for a row's outermost View. `droppable` marks folders;
+   *  `fallback` marks a catch-all zone that only wins when nothing else is
+   *  under the finger (see RegisteredRow.fallback). */
+  registerRow: (key: string, droppable: boolean, fallback?: boolean) => (node: View | null) => void;
   /** The gesture for one row. `draggable` false still gives hold-for-menu unless
    *  `holdForMenu` is also false. */
   gestureFor: (
@@ -93,6 +102,8 @@ export function useRowDrag({
 }): RowDrag {
   const rows = useRef(new Map<string, RegisteredRow>());
   const rects = useRef(new Map<string, RowRect>());
+  // Catch-all zones, kept apart so they can be tested after everything else.
+  const fallbackRects = useRef(new Map<string, RowRect>());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
   // Read inside gesture callbacks, which close over the value at construction
@@ -110,17 +121,20 @@ export function useRowDrag({
   // lifted a row. A stable callback per key means React leaves them alone.
   const refCallbacks = useRef(new Map<string, (node: View | null) => void>());
 
-  const registerRow = useCallback((key: string, droppable: boolean) => {
+  const registerRow = useCallback((key: string, droppable: boolean, fallback = false) => {
     const existing = refCallbacks.current.get(key);
     if (existing) {
       // Keep `droppable` current without changing the callback's identity — a
       // row can change kind between renders (search flattens the tree).
       const row = rows.current.get(key);
-      if (row) row.droppable = droppable;
+      if (row) {
+        row.droppable = droppable;
+        row.fallback = fallback;
+      }
       return existing;
     }
     const callback = (node: View | null) => {
-      if (node) rows.current.set(key, { droppable, node });
+      if (node) rows.current.set(key, { droppable, fallback, node });
       else {
         rows.current.delete(key);
         refCallbacks.current.delete(key);
@@ -135,16 +149,28 @@ export function useRowDrag({
    *  finger has travelled anywhere meaningful. */
   const measureRows = useCallback(() => {
     rects.current.clear();
+    fallbackRects.current.clear();
     for (const [key, row] of rows.current) {
       if (!row.droppable || !row.node) continue;
+      const into = row.fallback ? fallbackRects.current : rects.current;
       row.node.measureInWindow((_x, y, _width, height) => {
-        rects.current.set(key, { height, y });
+        into.set(key, { height, y });
       });
     }
   }, []);
 
+  /** Ordinary targets first, catch-all zones only if none of them matched.
+   *
+   *  TWO PASSES, not one, and that is load-bearing rather than tidy: the
+   *  out-of-folders zone spans the whole list now, so it contains every folder
+   *  row's rectangle. A single first-match loop over one Map would resolve
+   *  essentially every drop to it — and which one won would come down to
+   *  registration order, so it would look like folders "sometimes" worked. */
   const hitTest = useCallback((windowY: number, canDropOn: (key: string) => boolean): string | null => {
     for (const [key, rect] of rects.current) {
+      if (windowY >= rect.y && windowY < rect.y + rect.height && canDropOn(key)) return key;
+    }
+    for (const [key, rect] of fallbackRects.current) {
       if (windowY >= rect.y && windowY < rect.y + rect.height && canDropOn(key)) return key;
     }
     return null;

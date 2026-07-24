@@ -12,6 +12,7 @@
 // Mac offline grade-queue (review_events + local JSON queue) is retired for
 // cloud Study — a network failure returns a friendly blocking message instead
 // of silently queuing (see gradeStudyCard below).
+import * as FileSystem from "expo-file-system/legacy";
 import {
   decksInGroup,
   isWithinGroup,
@@ -120,9 +121,64 @@ function toCard(raw: unknown): CloudStudyCard | null {
   };
 }
 
+// --- disk cache ---------------------------------------------------------------
+//
+// WHY STUDY OPENS INSTANTLY NOW (owner 2026-07-24: "why does study page take
+// long to load always"). It was fetching every deck AND every card in the
+// account on each focus, and rendering nothing but skeletons until both
+// queries came back — every single time, including when nothing had changed.
+// A student with a semester of decks waits on the network for a list they
+// already saw a minute ago.
+//
+// So Study caches to disk exactly the way the Library already does
+// (cloudLibrary.ts's readDiskCache/writeDiskCache — same expo-file-system
+// legacy API, same best-effort try/catch): the last known decks and cards
+// paint immediately, and the fetch refreshes behind them. Same JSON shape as
+// the fetch returns, so no translation layer.
+
+interface StudyDiskCache {
+  v: 1;
+  decks: CloudStudyDeck[];
+  cards: CloudStudyCard[];
+}
+
+const EMPTY_STUDY_CACHE: StudyDiskCache = { v: 1, cards: [], decks: [] };
+
+const studyCachePathFor = (uid: string) => `${FileSystem.documentDirectory ?? ""}cloud-study-cache-v1-${uid}.json`;
+
+/** Cache-only read — never throws, never touches the network. Powers the
+ *  instant paint and keeps a signed-in student's decks readable offline. */
+export async function loadCachedStudy(uid: string): Promise<{ decks: CloudStudyDeck[]; cards: CloudStudyCard[] }> {
+  if (!uid) return { cards: [], decks: [] };
+  try {
+    const path = studyCachePathFor(uid);
+    const info = await FileSystem.getInfoAsync(path);
+    if (!info.exists) return { cards: [], decks: [] };
+    const parsed = JSON.parse(await FileSystem.readAsStringAsync(path)) as Partial<StudyDiskCache> | null;
+    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.decks) || !Array.isArray(parsed.cards)) {
+      return { cards: [], decks: [] };
+    }
+    return { cards: parsed.cards, decks: parsed.decks };
+  } catch {
+    return { cards: [], decks: [] };
+  }
+}
+
+async function writeStudyCache(uid: string, value: { decks: CloudStudyDeck[]; cards: CloudStudyCard[] }): Promise<void> {
+  try {
+    await FileSystem.writeAsStringAsync(
+      studyCachePathFor(uid),
+      JSON.stringify({ v: 1, cards: value.cards, decks: value.decks } satisfies StudyDiskCache),
+    );
+  } catch {
+    // best-effort: worst case the next open waits on the network, as it used to
+  }
+}
+
 /** Every deck + card the signed-in user owns. Throws a friendly-message Error
  *  on failure — callers (the Study screens) catch it into their own
- *  loading/error state, the same shape as the web workspace's loadStudy(). */
+ *  loading/error state, the same shape as the web workspace's loadStudy().
+ *  Writes the disk cache on the way out, so the NEXT open paints instantly. */
 export async function fetchCloudStudy(userId: string): Promise<{ decks: CloudStudyDeck[]; cards: CloudStudyCard[] }> {
   const [deckResult, cardResult] = await Promise.all([
     supabase
@@ -147,6 +203,9 @@ export async function fetchCloudStudy(userId: string): Promise<{ decks: CloudStu
     const card = toCard(row);
     return card ? [card] : [];
   });
+  // Fire-and-forget: the caller already has the fresh data, and a slow write
+  // must never hold up the render it was fetched for.
+  void writeStudyCache(userId, { cards, decks });
   return { decks, cards };
 }
 
