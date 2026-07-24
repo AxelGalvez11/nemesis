@@ -5,7 +5,7 @@
 // parsing, and content shapes live in study-artifact-content.ts.
 
 import { postChatCompletion } from "@/lib/workspace/chat-api";
-import { apportion, chunkMaterial, interleave, mergeOutlines } from "@/lib/workspace/material-chunks";
+import { apportion, chunkMaterial, interleave, mergeOutlines, questionKey } from "@/lib/workspace/material-chunks";
 import {
   buildMindmapGenMessages,
   buildTestGenMessages,
@@ -15,9 +15,11 @@ import {
 } from "@/lib/workspace/study-artifact-content";
 import type { CreateArtifactInput, StudyArtifact } from "@/lib/workspace/study-cloud-store";
 
-/** How many chunk calls run at once. Small: these are metered completions against
- *  the student's own allowance, and a burst is what a rate limit is for. */
-const GENERATION_CONCURRENCY = 2;
+/** How many chunk calls run at once. A long lecture is several calls now where it
+ *  used to be one, and the student is watching a spinner for all of them — so this is
+ *  the latency dial. Kept modest because these are metered completions against that
+ *  student's own allowance, and a burst is what a rate limit is for. */
+const GENERATION_CONCURRENCY = 3;
 
 export interface GenerateStudyArtifactOpts {
   uid: string;
@@ -77,7 +79,7 @@ export async function generateStudyArtifact(opts: GenerateStudyArtifactOpts): Pr
 
     if (opts.kind === "test") {
       const perChunk = replies.map((reply) => (reply ? parseGeneratedTest(reply) : []));
-      const questions = interleave(perChunk, wanted);
+      const questions = interleave(perChunk, wanted, questionKey);
       if (questions.length === 0) throw new Error("The engine's reply wasn't a usable test. Try again.");
       await opts.updateArtifact(row.id, { content: { attempts: [], questions }, status: "ready" });
     } else {

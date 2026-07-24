@@ -9,6 +9,7 @@ import {
   MAX_CHUNKS,
   mergeOutlines,
   MIN_PER_CHUNK,
+  questionKey,
 } from "./material-chunks";
 
 const paragraphs = (count: number, size: number) =>
@@ -108,6 +109,40 @@ test("a chunk that returned nothing does not leave a hole", () => {
 
 test("asking for more than exists returns everything, not padding", () => {
   assert.deepEqual(interleave([["a"], ["b"]], 99), ["a", "b"]);
+});
+
+// Two chunks of one lecture cover the same ground, so they write the same question.
+// A test that asks about half-life twice looks broken in a way a merely incomplete
+// test never did — which is a new failure mode created by reading the whole source.
+
+test("the same question written by two chunks appears once", () => {
+  const perChunk = [
+    [{ q: "What is the half-life of digoxin?" }, { q: "Which enzyme clears it?" }],
+    [{ q: "what is the half-life of digoxin" }, { q: "What is the loading dose?" }],
+  ];
+  const picked = interleave(perChunk, 4, questionKey);
+  assert.deepEqual(picked.map((item) => item.q), [
+    "What is the half-life of digoxin?",
+    "Which enzyme clears it?",
+    "What is the loading dose?",
+  ]);
+});
+
+test("dropping a repeat tops the count up instead of coming back short", () => {
+  const perChunk = [
+    [{ q: "A" }, { q: "B" }, { q: "C" }],
+    [{ q: "a" }, { q: "D" }],
+  ];
+  const picked = interleave(perChunk, 4, questionKey);
+  assert.equal(picked.length, 4);
+  // Round-robin by position: the skipped repeat does not pull chunk two's next
+  // item forward into the same round, it simply waits for the round it is in.
+  assert.deepEqual(picked.map((item) => item.q), ["A", "B", "D", "C"]);
+});
+
+test("questionKey ignores spacing, case and trailing punctuation only", () => {
+  assert.equal(questionKey({ q: "  Which  receptor?  " }), questionKey({ q: "which receptor" }));
+  assert.notEqual(questionKey({ q: "Which receptor?" }), questionKey({ q: "Which enzyme?" }));
 });
 
 // ── One mind map out of several ──────────────────────────────────────────────

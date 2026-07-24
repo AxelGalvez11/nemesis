@@ -83,19 +83,44 @@ export function apportion(wanted: number, chunkLengths: readonly number[]): numb
 
 /**
  * Take one item from each chunk in turn until `wanted` are collected, so a trimmed
- * result still spans the whole source. Order within a chunk is preserved. PURE.
+ * result still spans the whole source. Order within a chunk is preserved.
+ *
+ * `keyOf` drops repeats. Each chunk is written blind to the others, and consecutive
+ * chunks of one lecture cover the same ground — half-life, first-pass metabolism —
+ * so two of them will produce the same question. Reading only part of a source
+ * produced a test that was quietly incomplete; reading all of it would produce one
+ * that is visibly repetitive, which a student reads as a broken feature. When a
+ * repeat is dropped the round continues, so the count is topped up from what is
+ * left rather than coming back short. PURE.
  */
-export function interleave<T>(perChunk: ReadonlyArray<readonly T[]>, wanted: number): T[] {
+export function interleave<T>(
+  perChunk: ReadonlyArray<readonly T[]>,
+  wanted: number,
+  keyOf?: (item: T) => string,
+): T[] {
   const out: T[] = [];
+  const seen = new Set<string>();
   const deepest = Math.max(0, ...perChunk.map((chunk) => chunk.length));
   for (let round = 0; round < deepest && out.length < wanted; round += 1) {
     for (const chunk of perChunk) {
       if (out.length >= wanted) break;
       const item = chunk[round];
-      if (item !== undefined) out.push(item);
+      if (item === undefined) continue;
+      if (keyOf) {
+        const key = keyOf(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      out.push(item);
     }
   }
   return out;
+}
+
+/** Two questions are the same question when their wording matches once spacing,
+ *  case and trailing punctuation are set aside. PURE. */
+export function questionKey(question: { q: string }): string {
+  return question.q.toLowerCase().replace(/\s+/g, " ").replace(/[\s?.:;!]+$/, "").trim();
 }
 
 /**
