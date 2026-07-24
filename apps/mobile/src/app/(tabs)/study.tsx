@@ -166,7 +166,7 @@ export default function StudyScreen() {
   // opens these. StudyAddSheet now opens straight to a step (Create folder /
   // New card); Browse is its own full sheet.
   const [addSheetOpen, setAddSheetOpen] = useState(false);
-  const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("menu");
+  const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("new-cards");
   const [browseOpen, setBrowseOpen] = useState(false);
   // The header "…" actions dropdown.
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -640,7 +640,7 @@ export default function StudyScreen() {
             <View style={styles.emptyWrap}>
               <EmptyBlock
                 title="No decks yet"
-                body="Use the … menu in the top right to start a new group or add cards — or create decks on the Nemesis web app and they'll show up here automatically."
+                body="Use the … menu in the top right to start a new folder or add cards — or create decks on the Nemesis web app and they'll show up here automatically."
               />
             </View>
           ) : (
@@ -814,6 +814,11 @@ export default function StudyScreen() {
         currentFolder={rowCurrentGroup}
         disabledPaths={moveDisabled}
         rootLabel="Top level"
+        // Move can invent its destination (owner 2026-07-24). A Study folder is
+        // only ever a prefix on a deck's name, so moving something into a folder
+        // that doesn't exist yet is what CREATES it — onMovePick already does
+        // the rename either way.
+        allowCreate
         onPick={onMovePick}
         onClose={closeRowSheets}
         testID="study-move-picker"
@@ -829,7 +834,7 @@ export default function StudyScreen() {
         topOffset={insets.top + TOP_BAR_PAD_TOP + TOP_BAR_BUTTON + space(1.5)}
         onCreateFolder={() => {
           setActionsOpen(false);
-          setAddSheetStep("new-group");
+          setAddSheetStep("new-folder");
           setAddSheetOpen(true);
         }}
         onNewCard={() => {
@@ -865,9 +870,12 @@ export default function StudyScreen() {
       {selectMode && !selectMoveOpen ? (
         <View style={[styles.selectBar, { paddingBottom: insets.bottom + space(2) }]} testID="study-select-bar">
           <Text style={styles.selectCount}>{selectedKeys.size} selected</Text>
+          {/* Delete, Move, Cancel — the owner's order (2026-07-24), matching the
+              Library's strip. Cancel keeps no `disabled`: leaving select mode has
+              to work even with nothing ticked. */}
           <View style={styles.selectActions}>
-            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="study-select-cancel">
-              <Text style={styles.selectBtnText}>Cancel</Text>
+            <Pressable onPress={deleteSelected} disabled={selectedKeys.size === 0} hitSlop={6} style={styles.selectBtn} testID="study-select-delete">
+              <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Delete</Text>
             </Pressable>
             <Pressable
               onPress={() => selectedKeys.size > 0 && setSelectMoveOpen(true)}
@@ -878,8 +886,8 @@ export default function StudyScreen() {
             >
               <Text style={[styles.selectBtnText, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Move to…</Text>
             </Pressable>
-            <Pressable onPress={deleteSelected} disabled={selectedKeys.size === 0} hitSlop={6} style={styles.selectBtn} testID="study-select-delete">
-              <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Delete</Text>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="study-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
             </Pressable>
           </View>
         </View>
@@ -939,6 +947,7 @@ export default function StudyScreen() {
         folders={groupOptions}
         currentFolder={" __multi__"}
         rootLabel="Top level"
+        allowCreate
         onPick={moveSelected}
         onClose={() => setSelectMoveOpen(false)}
         testID="study-select-move-picker"

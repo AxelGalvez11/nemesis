@@ -13,7 +13,29 @@ import {
   pathParent,
   renamedGroupPath,
   rewriteGroupPrefix,
+  safeLeafName,
 } from "./study-tree.ts";
+
+// The student never types "::" any more — the parent comes from a dropdown, so
+// a separator that reaches a name field is always an accident. Folding it to a
+// space keeps both words; stripping it would glue them together.
+Deno.test("safeLeafName keeps a plain name and refuses to nest", () => {
+  assertEquals(safeLeafName("Cardio"), "Cardio");
+  assertEquals(safeLeafName("  Cardio  "), "Cardio");
+  assertEquals(safeLeafName("Pharm::Cardio"), "Pharm Cardio");
+  assertEquals(safeLeafName("Pharm :: Exam 1 :: Cardio"), "Pharm Exam 1 Cardio");
+  assertEquals(safeLeafName("::Cardio"), "Cardio", "a leading separator is not an empty first word");
+  assertEquals(safeLeafName("Cardio::"), "Cardio");
+  assertEquals(safeLeafName("::"), "");
+  assertEquals(safeLeafName("   "), "");
+});
+
+// The pairing that replaces the old "type Folder::Deck yourself" field: a leaf
+// from the text box, a parent from the dropdown.
+Deno.test("safeLeafName feeds joinGroupPath without re-introducing nesting", () => {
+  assertEquals(joinGroupPath("Pharm", safeLeafName("Exam 1::Cardio")), "Pharm::Exam 1 Cardio");
+  assertEquals(joinGroupPath("", safeLeafName("Cardio")), "Cardio");
+});
 
 Deno.test("normalizeGroupPath trims segments and drops empty ones", () => {
   assertEquals(normalizeGroupPath("Pharm :: Exam 1 :: Cardio"), "Pharm::Exam 1::Cardio");

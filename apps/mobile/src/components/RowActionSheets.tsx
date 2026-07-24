@@ -3,8 +3,9 @@ import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, V
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { SlideUpSheet } from "./StudySheet";
-import { FolderIcon } from "./icons";
+import { FolderIcon, PlusIcon } from "./icons";
 import { useKeyboardHeight } from "./shell-chrome";
+import { pathLeaf, pathParent, safeLeafName } from "@/lib/study-tree";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -188,6 +189,7 @@ export function FolderPickerSheet({
   currentFolder,
   disabledPaths,
   rootLabel = "Top level",
+  allowCreate = false,
   onPick,
   onClose,
   testID,
@@ -199,6 +201,10 @@ export function FolderPickerSheet({
   currentFolder: string;
   disabledPaths?: ReadonlySet<string>;
   rootLabel?: string;
+  /** Offer a "New folder…" row. Study only — a Study folder is just a name
+   *  prefix, so picking a name that doesn't exist yet CREATES it (see below).
+   *  Library folders are real directories and need their own call. */
+  allowCreate?: boolean;
   onPick: (folder: string) => void;
   onClose: () => void;
   testID?: string;
@@ -207,6 +213,27 @@ export function FolderPickerSheet({
   const { colors: c } = useTheme();
   const insets = useSafeAreaInsets();
   const rows = ["", ...folders];
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  // Nothing to create, in the end. A Study folder has no row of its own — it
+  // exists precisely because some deck's name carries it as a prefix — so
+  // "move this into a folder called Pharm" and "make a folder called Pharm" are
+  // the same act: hand the caller the new path and its existing move does it.
+  function submitNewFolder() {
+    const leaf = safeLeafName(newName);
+    if (!leaf) return;
+    onPick(leaf);
+  }
+
+  // A fresh picker every time: a half-typed folder name from the last item
+  // shouldn't be sitting there when this opens against a different one.
+  useEffect(() => {
+    if (!visible) {
+      setCreating(false);
+      setNewName("");
+    }
+  }, [visible]);
 
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title={title} testID={testID ?? "folder-picker-sheet"}>
@@ -216,24 +243,85 @@ export function FolderPickerSheet({
         {rows.map((folder) => {
           const isCurrent = folder === currentFolder;
           const disabled = isCurrent || (disabledPaths?.has(folder) ?? false);
+          // Its own name, indented by how deep it sits — not the stored
+          // "Pharm::Exam 1::Cardio" path (owner 2026-07-24: folders are not a
+          // syntax the student should ever have to read). The indent carries the
+          // nesting that the "::" used to spell out, and the parent's name goes
+          // underneath for the case where two units share a leaf name.
+          const parent = pathParent(folder);
+          const depth = folder ? folder.split("::").length - 1 : 0;
           return (
             <Pressable
               key={folder || "__root__"}
               onPress={() => !disabled && onPick(folder)}
               disabled={disabled}
-              style={({ pressed }) => [styles.folderRow, pressed && !disabled && styles.rowPressed]}
+              style={({ pressed }) => [
+                styles.folderRow,
+                { paddingLeft: space(2) + depth * space(4) },
+                pressed && !disabled && styles.rowPressed,
+              ]}
               accessibilityRole="button"
               accessibilityState={{ disabled, selected: isCurrent }}
               testID={`folder-pick-${folder || "root"}`}
             >
               <FolderIcon size={16} color={disabled ? c.text3 : c.text2} strokeWidth={1.9} />
-              <Text style={[styles.folderLabel, disabled && styles.folderLabelDisabled]} numberOfLines={1}>
-                {folder || rootLabel}
-              </Text>
+              <View style={styles.folderText}>
+                <Text style={[styles.folderLabel, disabled && styles.folderLabelDisabled]} numberOfLines={1}>
+                  {folder ? pathLeaf(folder) : rootLabel}
+                </Text>
+                {parent ? (
+                  <Text style={styles.folderParent} numberOfLines={1}>
+                    in {pathLeaf(parent)}
+                  </Text>
+                ) : null}
+              </View>
               {isCurrent ? <Text style={styles.folderHere}>Here now</Text> : null}
             </Pressable>
           );
         })}
+
+        {/* Making the destination you actually want, from the picker itself
+            (owner 2026-07-24: "users should just drag and drop, or add a drop
+            down or use the 'move' function"). Without this, Move could only ever
+            offer folders that already existed — and since a folder only exists
+            because some deck was named with a "::" in it, the one way to get a
+            new one was to type that syntax, which is what this batch removes. */}
+        {allowCreate ? (
+          creating ? (
+            <View style={styles.newFolderRow}>
+              <TextInput
+                style={styles.newFolderInput}
+                value={newName}
+                onChangeText={setNewName}
+                placeholder="Folder name"
+                placeholderTextColor={c.textHint}
+                autoFocus
+                onSubmitEditing={submitNewFolder}
+                returnKeyType="done"
+                testID="folder-pick-new-name"
+              />
+              <Pressable
+                onPress={submitNewFolder}
+                disabled={!safeLeafName(newName)}
+                hitSlop={6}
+                style={styles.newFolderGo}
+                testID="folder-pick-new-submit"
+              >
+                <Text style={[styles.newFolderGoLabel, !safeLeafName(newName) && styles.folderLabelDisabled]}>Create</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setCreating(true)}
+              style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
+              accessibilityRole="button"
+              testID="folder-pick-new"
+            >
+              <PlusIcon size={16} color={c.text2} strokeWidth={1.9} />
+              <Text style={styles.folderLabel}>New folder…</Text>
+            </Pressable>
+          )
+        ) : null}
       </ScrollView>
     </SlideUpSheet>
   );
@@ -285,8 +373,29 @@ const createStyles = (c: ThemeColors) =>
     promptBtnDisabled: { color: c.text3, fontWeight: "400" },
 
     // Move destination list.
-    folderRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(2), borderRadius: radius.sm },
+    // paddingLeft is applied inline per row (nesting depth), so it is left out
+    // of the base style rather than being overridden by it.
+    folderRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingRight: space(2), borderRadius: radius.sm },
+    folderText: { flex: 1, minWidth: 0, gap: 1 },
     folderLabel: { ...type.body, color: c.text, flex: 1 },
     folderLabelDisabled: { color: c.text3 },
+    folderParent: { ...type.micro, color: c.textHint },
     folderHere: { ...type.micro, color: c.text3 },
+
+    // The inline "New folder…" field, sharing the row's rhythm so it doesn't
+    // read as a different kind of control once it opens.
+    newFolderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2), paddingHorizontal: space(2) },
+    newFolderInput: {
+      ...type.body,
+      flex: 1,
+      color: c.text,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2),
+    },
+    newFolderGo: { paddingHorizontal: space(2), paddingVertical: space(1.5) },
+    newFolderGoLabel: { ...type.small, color: c.accent, fontWeight: "600" },
   });

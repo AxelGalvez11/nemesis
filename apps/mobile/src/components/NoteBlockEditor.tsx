@@ -327,6 +327,10 @@ export function NoteBlockEditor({
             horizontal
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="always"
+            // See styles.toolbarScroll: without a fixed height this scroller
+            // collapses to nothing inside the keyboard accessory view, which is
+            // what made the whole toolbar invisible.
+            style={styles.toolbarScroll}
             contentContainerStyle={styles.toolbarRow}
           >
             {TOOLS.map((tool) => (
@@ -475,6 +479,15 @@ const createStyles = (c: ThemeColors) =>
       overflow: "hidden",
       maxWidth: "100%",
     },
+    // WHY THE EXPLICIT HEIGHT (owner 2026-07-24: "editing toolbar is still
+    // missing"). The bar was built and correctly wired, and it still drew
+    // nothing, because these 14 buttons scroll horizontally while the cloze
+    // toolbar's four sit in a plain row. A ScrollView has no intrinsic height —
+    // it expects a parent to give it one — and InputAccessoryView sizes itself
+    // to its content, so the two of them agreed on zero and the pill rendered
+    // 0pt tall above the keyboard. Pinning the scroller to exactly one button's
+    // height breaks the cycle; `toolbarRow` then centres the buttons in it.
+    toolbarScroll: { height: control.lg },
     toolbarRow: { alignItems: "center", paddingHorizontal: space(1.5) },
     // Circle when it holds a single glyph, pill when a wider one needs the
     // room — never the rounded square this was (owner 2026-07-23: "make sure

@@ -929,19 +929,11 @@ export default function LibraryScreen() {
               folder and a note inside it is one thing to act on, not two, because
               the folder carries the note. */}
           <Text style={styles.selectCount}>{selectedItems.length} selected</Text>
+          {/* Delete, Move, Cancel — the owner's order (2026-07-24), and the same
+              one Study uses. Cancel sits last because it's the way out, not the
+              first thing to reach for; it is also the only button with no
+              `disabled`, since backing out has to work with nothing ticked. */}
           <View style={styles.selectActions}>
-            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
-              <Text style={styles.selectBtnText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
-              disabled={selectedItems.length === 0 || rowBusy}
-              hitSlop={6}
-              style={styles.selectBtn}
-              testID="library-select-move-btn"
-            >
-              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
-            </Pressable>
             <Pressable
               onPress={deleteSelected}
               disabled={selectedItems.length === 0 || rowBusy}
@@ -952,6 +944,18 @@ export default function LibraryScreen() {
               <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedItems.length === 0 && styles.selectBtnDisabled]}>
                 Delete
               </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
+              disabled={selectedItems.length === 0 || rowBusy}
+              hitSlop={6}
+              style={styles.selectBtn}
+              testID="library-select-move-btn"
+            >
+              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
+            </Pressable>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
             </Pressable>
           </View>
         </View>

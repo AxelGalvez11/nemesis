@@ -302,7 +302,7 @@ export async function createStudyDeck(userId: string, name: string): Promise<Clo
     .single();
   if (error) throw new Error(error.message);
   const deck = toDeck(data);
-  if (!deck) throw new Error("The group was saved but returned an invalid response.");
+  if (!deck) throw new Error("The folder was saved but returned an invalid response.");
   return deck;
 }
 
