@@ -26,7 +26,7 @@ import { SearchField } from "@/components/desktop-ui/search-field";
 import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib/workspace/library-tree";
-import { extractDocument, isDocument } from "@/lib/workspace/chat-attachments";
+import { extractFile, isExtractable, isImage } from "@/lib/workspace/chat-attachments";
 import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
@@ -109,10 +109,13 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
     let lastPath: string | null = null;
     for (const file of files) {
       try {
-        if (isDocument(file)) {
-          const text = await extractDocument(file, uid);
+        if (isExtractable(file)) {
+          const { text, title } = await extractFile(file, uid);
           const note = await createNote({
-            title: importedTitleFrom(file.name),
+            // A camera filename ("IMG_4821.HEIC") makes a useless note title, so for a picture the
+            // server's title — read out of the picture itself — wins. Documents keep the filename,
+            // which is what a student named them and expects to see.
+            title: isImage(file) ? (title ?? importedTitleFrom(file.name)) : importedTitleFrom(file.name),
             folder: "Imported",
             content: composeImportedNote(text, findRelatedTitles(text, notes)),
           });
@@ -162,7 +165,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
           </div>
           <div className="flex gap-0.5">
             <input
-              accept=".md,.markdown,.txt,.pdf,.docx,.pptx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+              accept=".md,.markdown,.txt,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.heic,.heif,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/webp,image/heic,image/heif"
               className="hidden"
               multiple
               onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
