@@ -7,10 +7,13 @@
 // phone camera, which is exactly why images are read HERE rather than through a route of their own:
 // one endpoint learns to read a picture and all four lanes can.
 //
-// Secrets: none required for documents. GEMINI_API_KEY is read only to turn a picture into text
-// (see lib/vision/gemini.ts); with no key an image upload is refused with a plain message and every
+// Secrets: GEMINI_API_KEY is read only to turn a picture into text (see lib/vision/gemini.ts), and
+// the service role key only to VERIFY the caller's device key (lib/device-key.ts). Neither ever
+// leaves the server; with no Gemini key an image upload is refused with a plain message and every
 // document path behaves exactly as before.
 import { NextResponse } from "next/server";
+
+import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 
 import { extractDocxText, extractPptxText } from "@/lib/notebooks/office";
 import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
@@ -35,11 +38,20 @@ function kindFor(name: string, type: string): FileKind | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  // Require the student's device key — same gate as the URL route, so this parse endpoint can't be
-  // hit anonymously to burn CPU on arbitrary uploads.
-  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!bearer.startsWith("nmk_")) {
-    return NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
+  // VERIFY the student's device key against device_keys — do not merely look at how it starts.
+  //
+  // This used to be `bearer.startsWith("nmk_")` and nothing else, which meant the string "nmk_x"
+  // opened the door. That was tolerable while an impostor could only spend CPU on a PDF parse.
+  // It is not tolerable now that the same route calls a paid multimodal model: an unauthenticated
+  // public URL that converts an upload into a billed API call is an open proxy on the owner's
+  // account. See lib/device-key.ts — it fails closed on every branch.
+  const check = await verifyDeviceKey(bearerFrom(req.headers.get("authorization")));
+  if (!check.ok) {
+    // An outage is separated from a rejection so a database blip doesn't tell a student their
+    // device is broken and send them off re-pairing something that was never wrong.
+    return check.reason === "unavailable"
+      ? NextResponse.json({ error: "Couldn't verify this device right now. Try again in a moment." }, { status: 503 })
+      : NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
   }
 
   let form: FormData;
