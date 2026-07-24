@@ -1,7 +1,7 @@
 // Deno unit tests (repo convention) for the note-graph pure helpers.
 // Run: deno test --no-check apps/mobile/src/lib/note-graph.test.ts
 //
-// Imports ONLY note-graph.ts, which is dependency-free by design (like
+// Imports ONLY note-graph.ts, which carries no platform dependency (like
 // library-sync.ts) so this file loads clean under Deno.
 import { assert, assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
@@ -401,39 +401,110 @@ Deno.test("createLayoutSim.endDrag without a prior startDrag is a harmless no-op
   assertEquals(sim.settled, true, "should settle right back down, never throw or hang");
 });
 
-Deno.test("createLayoutSim.startDrag: the dragged node's own edges pull its neighbor noticeably harder than the old pin()+reheat() path", () => {
+Deno.test("createLayoutSim.startDrag: a dragged node pulls its neighbor along instead of moving alone", () => {
+  // This guards the original owner bug, "dragging only moves that node". It used
+  // to compare startDrag against a pin()+reheat() baseline, because the old
+  // hand-rolled sim's springs were far too soft for reheat alone to drag a
+  // neighbor and startDrag added a 5x spring boost on top. On d3-force
+  // forceLink does that work in BOTH paths, so the two are now within ~2px of
+  // each other and the old comparison no longer says anything.
+  //
+  // The honest baseline is pinning with NO heat at all: a settled sim is below
+  // alphaMin, step() is a no-op, and the neighbor genuinely cannot move. That is
+  // the bug. What matters is that startDrag makes it move.
   const graph = buildNoteGraph([
     doc("a.md", "A", "[[B]]"),
     doc("b.md", "B", "[[C]]"),
     doc("c.md", "C", ""),
   ]);
   const opts = { height: 400, width: 400 };
-
-  // Old path: pin far away, reheat() once (a single bounded kick), step —
-  // this is exactly what the phone Graph screen did before startDrag/endDrag
-  // existed, and is the direct cause of "dragging only moves that node".
-  const baseline = createLayoutSim(graph, opts);
-  while (!baseline.settled) baseline.step();
-  baseline.pin(0, 350, 350);
-  baseline.reheat();
-  for (let i = 0; i < 30; i++) baseline.step();
-  const baselineNeighbor = baseline.snapshot().nodes[1];
-
-  // New path: same drag target, same step count, through startDrag instead.
-  const dragged = createLayoutSim(graph, opts);
-  while (!dragged.settled) dragged.step();
-  dragged.startDrag(0);
-  dragged.pin(0, 350, 350);
-  for (let i = 0; i < 30; i++) dragged.step();
-  const draggedNeighbor = dragged.snapshot().nodes[1];
-
   const target = { x: 350, y: 350 };
-  const baselineGap = Math.hypot(target.x - baselineNeighbor.x, target.y - baselineNeighbor.y);
-  const draggedGap = Math.hypot(target.x - draggedNeighbor.x, target.y - draggedNeighbor.y);
+  const gapToTarget = (node: { x: number; y: number }) => Math.hypot(target.x - node.x, target.y - node.y);
+
+  const settled = () => {
+    const s = createLayoutSim(graph, opts);
+    while (!s.settled) s.step();
+    return s;
+  };
+
+  const startGap = gapToTarget(settled().snapshot().nodes[1]);
+
+  // No heat: the neighbor is stranded exactly where it was.
+  const cold = settled();
+  cold.pin(0, target.x, target.y);
+  for (let i = 0; i < 60; i++) cold.step();
+  assertEquals(gapToTarget(cold.snapshot().nodes[1]), startGap);
+
+  // Dragging: the neighbor closes a real part of the distance.
+  const dragged = settled();
+  dragged.startDrag(0);
+  dragged.pin(0, target.x, target.y);
+  for (let i = 0; i < 60; i++) dragged.step();
+  const draggedGap = gapToTarget(dragged.snapshot().nodes[1]);
   assert(
-    draggedGap < baselineGap - 5,
-    `startDrag should close the gap to the dragged node meaningfully more than reheat() alone: baseline gap ${baselineGap}, startDrag gap ${draggedGap}`,
+    draggedGap < startGap - 40,
+    `startDrag should pull the neighbor meaningfully closer: was ${startGap}, now ${draggedGap}`,
   );
+});
+
+Deno.test("createLayoutSim: a dragged node's neighbor follows to the link rest length, not all the way", () => {
+  // The neighbor should NOT end up on top of the dragged node — forceLink pulls
+  // it to its rest distance and forceCollide keeps it off. Getting this wrong in
+  // the obvious direction (a stiff enough spring) collapses linked nodes into
+  // each other, which is the opposite of the Obsidian look.
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 400, width: 400 });
+  while (!sim.settled) sim.step();
+  sim.startDrag(0);
+  sim.pin(0, 340, 340);
+  for (let i = 0; i < 200; i++) sim.step();
+  const [a, b] = sim.snapshot().nodes;
+  const separation = Math.hypot(a.x - b.x, a.y - b.y);
+  assert(separation > 20, `linked nodes should not collapse onto each other, got ${separation}`);
+});
+
+Deno.test("createLayoutSim: snapshot() does not rescale, so a settled graph stops moving entirely", () => {
+  // The regression this locks down: snapshotPositions used to fit the extent to
+  // the canvas on EVERY call, and graph.tsx calls snapshot() once per frame — so
+  // the whole constellation breathed and slid while it settled. Repeated
+  // snapshots of a settled sim must now be identical.
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", "[[A]]"),
+    doc("d.md", "D", ""),
+  ]);
+  const sim = createLayoutSim(graph, { height: 400, width: 400 });
+  while (!sim.settled) sim.step();
+  const first = sim.snapshot();
+  sim.step();
+  sim.step();
+  const second = sim.snapshot();
+  assertEquals(
+    second.nodes.map((n) => [n.x, n.y]),
+    first.nodes.map((n) => [n.x, n.y]),
+  );
+});
+
+Deno.test("createLayoutSim: forceCollide keeps unlinked nodes off each other", () => {
+  // Nothing in the old sim prevented overlap; even spacing is a defining part of
+  // the Obsidian look. Four unconnected notes should spread, not pile up.
+  const graph = buildNoteGraph([
+    doc("a.md", "A", ""),
+    doc("b.md", "B", ""),
+    doc("c.md", "C", ""),
+    doc("d.md", "D", ""),
+  ]);
+  const sim = createLayoutSim(graph, { height: 400, width: 400 });
+  while (!sim.settled) sim.step();
+  const nodes = sim.snapshot().nodes;
+  let closest = Infinity;
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      closest = Math.min(closest, Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y));
+    }
+  }
+  assert(closest > 16, `nodes should be visibly separated, closest pair was ${closest}`);
 });
 
 Deno.test("createLayoutSim.startDrag/.endDrag: many cumulative drags never exhaust reheat()'s lifetime step ceiling", () => {

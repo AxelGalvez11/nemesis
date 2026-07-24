@@ -25,8 +25,17 @@ import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
+import { safeLibraryTitle } from "@/lib/library-paths";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
-import { createNote, fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
+import {
+  createNote,
+  fetchNote,
+  findCachedNote,
+  loadCachedLibrary,
+  renameNote,
+  updateNoteContent,
+  type CloudLibraryNote,
+} from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { outlineOf, splitSections } from "@/lib/note-outline";
 import { arriveAt, closeTab, noteNavHolder, openTabIds, previewOf, selectTab } from "@/lib/note-tabs";
@@ -151,6 +160,14 @@ export default function NoteScreen() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
+  // The note id that was just created here, so its title can take the caret
+  // exactly once. Cleared as soon as it's been honoured — see titleField.
+  const justCreatedIdRef = useRef<string | null>(null);
+  // Local title text while it's being edited. Null = not editing, show the
+  // saved title. A separate draft (rather than writing doc.title directly) is
+  // what lets the field be cleared to empty mid-edit without the rename firing
+  // on every keystroke.
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
   // Browser-style note history (owner picked "browser-style" for the pill
   // bar), now held in lib/note-tabs.ts's MODULE-scoped noteNavHolder (owner
   // 2026-07-21: the numbered square opens a real tab viewer, so open tabs
@@ -469,6 +486,11 @@ export default function NoteScreen() {
         { id: note.id, path: note.path, preview: previewOf(note.content), title: note.title },
         ...prev.filter((n) => n.id !== note.id),
       ]);
+      // Owner 2026-07-23: a brand new note should be ready to type into, with
+      // the caret already in the title. Recording the id (rather than a bare
+      // boolean) means only THIS note autofocuses — coming back to it later, or
+      // opening any other note, must not pop the keyboard unasked.
+      justCreatedIdRef.current = note.id;
       router.setParams({ id: note.id });
     } catch (err) {
       flashNotice(err instanceof Error && err.message ? err.message : "Couldn't create a note — check your connection.");
@@ -477,6 +499,72 @@ export default function NoteScreen() {
       setCreating(false);
     }
   }, [userId, flashNotice]);
+
+  /**
+   * Commit a title edit. Fires on blur and on the keyboard's Done — never per
+   * keystroke, since renameNote also rewrites the note's PATH and would step a
+   * "2" suffix on every letter typed.
+   *
+   * An empty or whitespace-only title is not an error: safeLibraryTitle turns it
+   * back into "Untitled note", which is the honest outcome of clearing the field
+   * and walking away.
+   */
+  const commitTitle = useCallback(
+    async (next: string) => {
+      setTitleDraft(null);
+      const docId = doc?.id;
+      if (!userId || !docId) return;
+      const trimmed = next.trim();
+      if (!trimmed || trimmed === doc?.title) return;
+      try {
+        const snapshot = await loadCachedLibrary(userId);
+        const path = await renameNote(userId, snapshot, docId, trimmed);
+        const title = safeLibraryTitle(trimmed);
+        setDoc((prev) => (prev && prev.id === docId ? { ...prev, path, title } : prev));
+        setNotesIndex((prev) => prev.map((n) => (n.id === docId ? { ...n, path, title } : n)));
+      } catch (err) {
+        flashNotice(err instanceof Error && err.message ? err.message : "Couldn't rename the note.");
+      }
+    },
+    [userId, flashNotice, doc],
+  );
+
+  /**
+   * The note's title, as an editable line (owner 2026-07-23). It was a static
+   * <Text>, and a freshly created note printed "Untitled note" here AND as a
+   * `# Untitled note` first line in the body — the same words twice, both of
+   * which the student had to deal with before writing anything. The starter
+   * content is empty now (api/cloudLibrary.ts createNote), and this is where the
+   * caret lands.
+   *
+   * selectTextOnFocus is what makes it "ready to use": the caret arrives with
+   * "Untitled note" selected, so the first keystroke replaces it rather than
+   * appending to it.
+   *
+   * Rendered in both reading and edit mode from this one definition, so the
+   * title cannot drift between them.
+   */
+  const autoFocusTitle = !!doc && justCreatedIdRef.current === doc.id;
+  if (autoFocusTitle) justCreatedIdRef.current = null;
+  const titleField = doc ? (
+    <TextInput
+      style={styles.title}
+      value={titleDraft ?? doc.title}
+      onChangeText={setTitleDraft}
+      onBlur={() => void commitTitle(titleDraft ?? doc.title)}
+      onSubmitEditing={(e) => void commitTitle(e.nativeEvent.text)}
+      autoFocus={autoFocusTitle}
+      selectTextOnFocus
+      returnKeyType="done"
+      blurOnSubmit
+      multiline
+      scrollEnabled={false}
+      placeholder="Untitled note"
+      placeholderTextColor={c.text3}
+      testID="note-title-input"
+      accessibilityLabel="Note title"
+    />
+  ) : null;
 
   const jumpToSection = useCallback((sectionIndex: number) => {
     setOutlineOpen(false);
@@ -685,7 +773,7 @@ export default function NoteScreen() {
               while the caret still starts clear of the chrome. */}
           <NoteBlockEditor
             content={draft}
-            header={<Text style={styles.title}>{doc.title}</Text>}
+            header={titleField}
             onChangeText={onChangeDraft}
             topInset={chromeHeight}
           />
@@ -702,7 +790,7 @@ export default function NoteScreen() {
         >
           {/* Obsidian-style page (owner 2026-07-20): big bold inline title, then the
               content straight away — no path/updated metadata line between them. */}
-          <Text style={styles.title}>{doc.title}</Text>
+          {titleField}
           {findActive && segments ? (
             // Find mode: render the note's own text so matches can actually be
             // highlighted (the markdown renderer builds its own nodes and can't be).
@@ -940,7 +1028,11 @@ const createStyles = (c: ThemeColors) =>
     body: { paddingHorizontal: space(5), paddingTop: space(2) },
     // Obsidian-style inline title: the h1 alone at the top of the page, a full
     // breath of air before the content starts (no metadata line in between).
-    title: { ...type.h1, color: c.text, marginBottom: space(4) },
+    // Now a TextInput rather than a Text (owner 2026-07-23 — the caret lands
+    // here on a new note). padding/includeFontPadding are zeroed because a
+    // multiline TextInput carries platform padding a Text does not, which would
+    // otherwise nudge the title down and out of line with the body below it.
+    title: { ...type.h1, color: c.text, marginBottom: space(4), padding: 0, includeFontPadding: false },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6) },
     // Loading skeleton — same body padding as the real title/content above, so
     // it settles into place without a layout jump once doc resolves.

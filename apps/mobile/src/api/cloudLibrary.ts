@@ -225,19 +225,26 @@ function isUniquePathViolation(error: { code?: string; message?: string } | null
 
 /** Create a fresh "Untitled note" at the library root — the phone's second
  *  library write (owner 2026-07-21: the note screen's pill bar grows a "+").
- *  Mirrors the web store's createNote exactly: same `Title.md` path
- *  convention (library-links.ts notePathFor), same `# Title` starter content,
- *  and the same suffix retry ("Untitled note 2", 3, …) when the (user_id,
- *  path) constraint objects — which also covers soft-deleted rows still
- *  holding a path. Returns the server row and upserts it into the offline
- *  cache like every other write here. */
+ *  Same `Title.md` path convention as the web store (library-links.ts
+ *  notePathFor) and the same suffix retry ("Untitled note 2", 3, …) when the
+ *  (user_id, path) constraint objects — which also covers soft-deleted rows
+ *  still holding a path. Returns the server row and upserts it into the offline
+ *  cache like every other write here.
+ *
+ *  DELIBERATE DIVERGENCE FROM WEB (owner 2026-07-23: "creating new notes should
+ *  not print 'untitled note' twice"): the starter content is EMPTY, where web
+ *  writes `# Title`. The phone renders the note's title as its own heading above
+ *  the body (note.tsx), so a `# Untitled note` first line put the same words on
+ *  screen a second time, and the student had to delete one of them before they
+ *  could start writing. Web has a single editor pane with no separate title
+ *  line, so the same starter content isn't duplicated there. */
 export async function createNote(uid: string): Promise<CloudLibraryNote> {
   const now = new Date().toISOString();
   for (let suffix = 1; suffix <= 999; suffix += 1) {
     const title = suffix === 1 ? "Untitled note" : `Untitled note ${suffix}`;
     const { data, error } = await supabase
       .from("readable_library_documents")
-      .insert({ user_id: uid, path: `${title}.md`, kind: "note", title, content: `# ${title}\n\n`, deleted: false, updated_at: now })
+      .insert({ user_id: uid, path: `${title}.md`, kind: "note", title, content: "", deleted: false, updated_at: now })
       .select("id,path,kind,title,content,created_at,updated_at")
       .single();
     if (isUniquePathViolation(error)) continue;
