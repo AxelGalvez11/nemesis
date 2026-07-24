@@ -165,6 +165,18 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
     }
   }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, liveNotes.notes, onDone]);
 
+  // First run downloads the on-device speech model. Recording still works
+  // while it does — the Apple engine covers it — so the line explains rather
+  // than blocks. Progress is deliberately indeterminate: FluidAudio exposes a
+  // progress handler but no public models directory, so driving it ourselves
+  // would mean downloading to the wrong place and fetching twice.
+  const modelLine =
+    live.modelState === "downloading"
+      ? "Downloading the high-accuracy speech model — one time, about 120 MB. You can record now; it just gets sharper once this finishes."
+      : live.modelState === "failed"
+        ? "The speech model didn't finish downloading. Tap to try again — recording works either way."
+        : null;
+
   const statusLine =
     live.status === "denied"
       ? "Microphone or speech recognition is turned off for Nemesis. Enable both in iOS Settings, then try again."
@@ -176,7 +188,7 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
             ? "Nothing was transcribed. Start again and speak close to the phone."
             : reviewable
               ? "Saving keeps this transcript and runs a high-accuracy pass that sharpens it moments later."
-              : "Transcribes on this phone as you record, then saves the transcript into this chat.";
+              : (modelLine ?? "Transcribes on this phone as you record, then saves the transcript into this chat.");
 
   return (
     <View style={styles.session}>
@@ -270,7 +282,13 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         </ScrollView>
       )}
 
-      <Text style={styles.statusLine}>{statusLine}</Text>
+      {live.modelState === "failed" && !recording ? (
+        <Pressable onPress={live.retryModel} accessibilityRole="button" accessibilityLabel="Retry downloading the speech model">
+          <Text style={styles.statusLine}>{statusLine}</Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.statusLine}>{statusLine}</Text>
+      )}
       {saveError ? <Text style={styles.errorLine}>{saveError}</Text> : null}
 
       {/* ONE bar left, and only once there's something to decide about. Start,

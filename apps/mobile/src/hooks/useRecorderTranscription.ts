@@ -37,6 +37,9 @@ export function useRecorderTranscription() {
     ...active,
     engine,
     engineReason: asrEngineReason(capability),
+    /** Surfaced so the recorder can explain a first-run download. */
+    modelState: model.state,
+    modelSupported: model.supported,
     retryModel: model.retry,
   };
 }

@@ -88,9 +88,17 @@ diagnostic**, test on hardware.
 3. ~~Wifi-gated model download~~ — done. `expo-network@~56.0.5` added.
 4. ~~Persist audio alongside Parakeet~~ — done, `RecordingFileWriter` writes
    16 kHz mono 16-bit (~115 MB/hour, vs ~690 MB/hour for raw float32 48 kHz).
-5. Download PROGRESS is not surfaced. `planAsrModel` returns `wait` while one
-   is in flight and `asrEngineReason()` has the line for it, but no UI shows it
-   yet — a first-run student sees the Apple engine with no explanation.
+5. ~~Download progress is not surfaced~~ — the recorder now explains the
+   first-run download and offers a tap-to-retry on failure.
+
+   It is deliberately **indeterminate, not a percentage.** FluidAudio does
+   expose `ProgressHandler` on the public `ModelHub.download` / `loadModels`,
+   and `StreamingModelVariant.repo` is public too — but there is **no public
+   default models directory**. Driving the download ourselves would mean
+   choosing a directory the manager does not read, so the model would be
+   fetched twice: exactly the cost the wifi gate exists to prevent. A real
+   percentage needs FluidAudio to expose its directory (worth an upstream
+   issue), not a guess on our side.
 6. Device measurement: accuracy against the current transcript, latency,
    battery, thermals over a 90-minute lecture.
 7. Once accuracy is confirmed on device, decide whether the server enhance pass
