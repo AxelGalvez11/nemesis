@@ -22,14 +22,18 @@ Pod::Spec.new do |s|
     'SWIFT_COMPILATION_MODE' => 'wholemodule'
   }
 
-  # Pulled over SPM, NOT from the CocoaPods trunk: the published FluidAudio pod
-  # lags its git tags (trunk was still on 0.12.2 when this landed), and 0.15.5
-  # is the version NemesisAsrEngine.swift was compiled and verified against.
-  spm_dependency(s,
-    url: 'https://github.com/FluidInference/FluidAudio.git',
-    requirement: { kind: 'exactVersion', version: '0.15.5' },
-    products: ['FluidAudio']
-  )
+  # FluidAudio arrives as a plain CocoaPods dependency. It is pinned to the
+  # v0.15.5 git tag by withFluidAudioPod.js, because the version published to
+  # the CocoaPods trunk (0.7.8) predates the streaming Parakeet API entirely.
+  #
+  # It used to be an spm_dependency, which is why build 20 failed: a Swift
+  # Package inside a statically-linked CocoaPods project breaks the target
+  # dependency graph for the WHOLE workspace — the app target compiled before
+  # any pod did and every module map went missing, Expo's included. CocoaPods
+  # warns about exactly this ("using swift package(s) FluidAudio with static
+  # linking"). The documented alternative is dynamic frameworks, which would
+  # relink all 123 pods; sourcing the pod from git instead touches only this one.
+  s.dependency 'FluidAudio'
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
 end
