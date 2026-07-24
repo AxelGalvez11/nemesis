@@ -1,8 +1,24 @@
+import {
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  forceX,
+  forceY,
+  type Simulation,
+  type SimulationLinkDatum,
+  type SimulationNodeDatum,
+} from "d3-force";
 // Pure logic for the phone's Graph page: build a knowledge graph from the synced
 // library notes ([[wikilink]] mentions become edges) and lay it out with a small
-// deterministic force simulation. Dependency-free by design — no react-native, no
-// supabase — so note-graph.test.ts loads clean under Deno (repo convention, same
-// split as library-sync.ts / missions-helpers.ts).
+// deterministic force simulation. No platform dependencies by design — no
+// react-native, no supabase — so note-graph.test.ts loads clean under Deno (repo
+// convention, same split as library-sync.ts / missions-helpers.ts).
+//
+// The one exception is d3-force (owner ask 2026-07-23, see createLayoutSim),
+// which is pure JS with no DOM and resolves fine under both Deno and Hermes. It
+// is a layout engine, not a platform dependency, so the Deno-testable split
+// still holds.
 //
 // Everything here is deterministic on its inputs (seeded by content hashes, never
 // Math.random), so the same library always draws the same map and tests can assert
@@ -292,76 +308,122 @@ export interface LayoutSim {
 
 const GOLDEN_ANGLE = 2.399963229728653;
 
-/** Normalize simulated positions into the canvas: scale the extent to fit
- * (never upscale), then clamp. Shared by createLayoutSim's snapshot() and
- * layoutNoteGraph's return so both paths produce byte-identical output.
+/** Read simulated positions out into a fresh NoteGraph, clamped into the canvas.
  *
- * Pinned indices (see LayoutSim.pin) are excluded from the extent the fit
- * scale is computed over, and skip the scale/offset transform entirely —
- * their stored (x, y) is clamped into the canvas and used as-is. With an
- * empty `pinned` map this is exactly the original unpinned behavior (every
- * node goes through the transform, extent covers every node). */
+ * NOTE: this deliberately does NOT rescale. It used to fit the whole extent to
+ * the canvas on EVERY call — and graph.tsx calls snapshot() once per frame — so
+ * every tick re-normalized the layout and the constellation visibly breathed and
+ * slid the entire time it settled. That is one of the loudest tells that a graph
+ * isn't Obsidian: there, nodes settle where the physics puts them and the VIEW is
+ * what moves. graph.tsx already owns pan/zoom as a reanimated transform and
+ * already fits ONCE on settle (pendingFitRef), so the per-frame fit here was a
+ * second transform fighting the camera. Positions are now seeded and simulated
+ * directly in canvas coordinates, so this just reads them out.
+ *
+ * A clamp survives, but to the LAYOUT bounds (see layoutBounds), not to the
+ * viewport. It is a runaway guard, nothing more: clamping a real layout to the
+ * viewport is what the rescale used to hide, and measured on a 390x700 phone
+ * canvas it would strand 48% of a 120-note graph and 58% of a 200-note one flat
+ * against the border.
+ *
+ * Pinned nodes need no special case any more: d3 writes a fixed node's fx/fy
+ * through to its x/y, so they read out here like every other node. The old
+ * version had to exclude them from the extent by hand precisely BECAUSE of the
+ * rescale it was doing. */
 function snapshotPositions(
   graph: NoteGraph,
-  xs: Float64Array,
-  ys: Float64Array,
-  width: number,
-  height: number,
-  padding: number,
-  pinned: Map<number, { x: number; y: number }>,
+  nodes: readonly SimNode[],
+  bounds: LayoutBounds,
 ): NoteGraph {
-  const n = xs.length;
-  if (n === 0) return { edges: [...graph.edges], nodes: [] };
-
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let unpinnedCount = 0;
-  for (let i = 0; i < n; i++) {
-    if (pinned.has(i)) continue;
-    unpinnedCount++;
-    if (xs[i] < minX) minX = xs[i];
-    if (xs[i] > maxX) maxX = xs[i];
-    if (ys[i] < minY) minY = ys[i];
-    if (ys[i] > maxY) maxY = ys[i];
-  }
-
-  // Fit scale/offset is only meaningful relative to the unpinned extent; if
-  // every node is pinned there's nothing left to fit (pinned nodes below
-  // bypass this entirely), so the identity transform is a safe default.
-  let scale = 1;
-  let offX = 0;
-  let offY = 0;
-  if (unpinnedCount > 0) {
-    const spanX = Math.max(1, maxX - minX);
-    const spanY = Math.max(1, maxY - minY);
-    scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY, 1);
-    const cx = width / 2;
-    const cy = height / 2;
-    offX = cx - ((minX + maxX) / 2) * scale;
-    offY = cy - ((minY + maxY) / 2) * scale;
-  }
-
-  const nodes = graph.nodes.map((node, i) => {
-    const p = pinned.get(i);
-    if (p) {
-      return {
-        ...node,
-        x: Math.min(width - padding, Math.max(padding, p.x)),
-        y: Math.min(height - padding, Math.max(padding, p.y)),
-      };
-    }
-    return {
+  return {
+    edges: [...graph.edges],
+    nodes: graph.nodes.map((node, i) => ({
       ...node,
-      x: Math.min(width - padding, Math.max(padding, xs[i] * scale + offX)),
-      y: Math.min(height - padding, Math.max(padding, ys[i] * scale + offY)),
-    };
-  });
-  return { edges: [...graph.edges], nodes };
+      x: clampToBounds(nodes[i]?.x ?? bounds.cx, bounds.cx, bounds.halfWidth),
+      y: clampToBounds(nodes[i]?.y ?? bounds.cy, bounds.cy, bounds.halfHeight),
+    })),
+  };
 }
 
-/** Create a steppable force simulation for graph — see LayoutSim. Used
- * directly by the animated phone Graph screen; layoutNoteGraph (below) is a
- * thin run-to-completion wrapper over the same engine for callers (and
- * tests) that just want the final, settled positions. */
+/** The box positions are allowed to occupy, centred on the canvas. */
+interface LayoutBounds {
+  cx: number;
+  cy: number;
+  halfWidth: number;
+  halfHeight: number;
+}
+
+const clampToBounds = (v: number, centre: number, half: number) =>
+  Math.min(centre + half, Math.max(centre - half, v));
+
+/** How much room the LAYOUT gets, which is not the same thing as the viewport.
+ *
+ * Obsidian's graph is free to be larger than the window; the camera is what
+ * shows it. That is the model here too — graph.tsx fits the view once on settle
+ * and owns pan/zoom — so this is only a runaway guard and should be generous
+ * enough never to bite a real layout.
+ *
+ * It grows with sqrt(node count) because that is how a force layout's own extent
+ * grows. It has to: `rest` is floored at 34px, so past roughly 40 notes the
+ * spacing stops shrinking with density and the constellation genuinely needs
+ * more room than the phone screen. At 1x (up to ~12 notes) this is exactly the
+ * old canvas-sized box. */
+function layoutBounds(width: number, height: number, padding: number, n: number): LayoutBounds {
+  const spread = Math.max(1, Math.sqrt(n / 12));
+  return {
+    cx: width / 2,
+    cy: height / 2,
+    halfHeight: Math.max(1, (height / 2 - padding) * spread),
+    halfWidth: Math.max(1, (width / 2 - padding) * spread),
+  };
+}
+
+/** One simulated node. `index` is its position in graph.nodes, and doubles as
+ * the id forceLink resolves numeric edge endpoints against. */
+interface SimNode extends SimulationNodeDatum {
+  index: number;
+}
+
+/** d3 stops ticking here (alphaMin). Kept explicit — `settled` compares to it. */
+const ALPHA_MIN = 0.001;
+/** Alpha a reheat (slider nudge, drag release) restarts from. Enough to be
+ * visibly felt, well short of the 1.0 of a fresh sim, which would look like the
+ * graph had been reseeded. Mirrors d3's own alpha-reheat convention. */
+const REHEAT_ALPHA = 0.35;
+/** Alpha the sim is held at while a finger is down — d3's alphaTarget-while-
+ * dragging pattern. Deliberately modest: it keeps the sim warm enough that
+ * neighbours follow the finger, without reheating the whole graph into a
+ * re-layout every time you touch a node. */
+const DRAG_ALPHA_TARGET = 0.3;
+
+/** Create a steppable force simulation for graph — see LayoutSim.
+ *
+ * Runs on d3-force (owner ask 2026-07-23: "the one in the app is still not like
+ * obsidian"). The hand-rolled sim this replaces — git history has it — differed
+ * from Obsidian in four ways that all lived in the physics rather than the
+ * drawing:
+ *
+ *  1. It applied force straight to POSITION (damped gradient descent) with no
+ *     velocity carried between ticks. d3 integrates velocity with friction
+ *     (velocityDecay), which is where the momentum and the settling feel come
+ *     from — the single biggest difference.
+ *  2. Repulsion compared every node to every other node, O(n²). forceManyBody
+ *     approximates distant clusters through a quadtree, O(n log n).
+ *  3. There was no collision force at all. forceCollide is what produces
+ *     Obsidian's evenly spaced, non-overlapping constellation.
+ *  4. Positions were refit to the canvas every frame — see snapshotPositions.
+ *
+ * d3-force is pure JS (its only deps are d3-dispatch/d3-quadtree/d3-timer, and
+ * d3-timer typeof-guards `window`/`performance` with a setTimeout fallback), so
+ * this runs in Hermes and ships over the air — no native module, no new build.
+ *
+ * The sim is created stopped and ticked by hand from graph.tsx's rAF loop;
+ * d3's internal timer is never started.
+ *
+ * DETERMINISTIC: positions are seeded here from the same golden-angle spiral and
+ * content-hash jitter as before (never d3's own phyllotaxis init, which we
+ * bypass by supplying x/y), and d3's internal jiggle PRNG is a fixed-seed LCG.
+ * Same input, same output, every run. */
 export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSim {
   const { width, height } = opts;
   const padding = opts.padding ?? 28;
@@ -374,222 +436,154 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
   const cx = width / 2;
   const cy = height / 2;
   const span = Math.max(40, Math.min(width, height) / 2 - padding);
+  const bounds = layoutBounds(width, height, padding, n);
 
-  const xs = new Float64Array(n);
-  const ys = new Float64Array(n);
-  graph.nodes.forEach((node, i) => {
+  // Seeded in CANVAS coordinates — the same space snapshot() reads and pin()
+  // writes. The old sim ran in its own space and normalized on the way out,
+  // which is what made pin() have to translate between the two.
+  const nodes: SimNode[] = graph.nodes.map((node, i) => {
     const jitter = (hashString(node.pathHash) % 997) / 997 - 0.5;
-    const r = span * Math.sqrt((i + 0.6) / n);
+    const r = span * Math.sqrt((i + 0.6) / Math.max(1, n));
     const theta = i * GOLDEN_ANGLE + jitter * 0.9;
-    xs[i] = cx + r * Math.cos(theta);
-    ys[i] = cy + r * Math.sin(theta);
+    return { index: i, vx: 0, vy: 0, x: cx + r * Math.cos(theta), y: cy + r * Math.sin(theta) };
   });
+  const links: SimulationLinkDatum<SimNode>[] = graph.edges.map((edge) => ({ source: edge.a, target: edge.b }));
 
   // Rest length scales with density so sparse graphs spread and dense ones pack.
   const rest = Math.max(34, (Math.min(width, height) / Math.sqrt(n + 1)) * 0.9);
-  const baseRepulsion = rest * rest;
 
-  // Cooling-schedule position/ceiling — reheat() can rewind/extend these.
-  let it = 0;
-  let iterationsBudget = totalIterations;
+  const charge = forceManyBody<SimNode>().strength(-rest * 2.2 * Math.max(0, opts.repulsion ?? 1));
+  const link = forceLink<SimNode, SimulationLinkDatum<SimNode>>(links)
+    .id((d) => d.index)
+    .distance(rest * Math.max(0, opts.linkDistance ?? 1));
+  // Link strength is left at d3's default, 1/min(deg(a), deg(b)). That is a
+  // real part of the Obsidian look: it stops a hub with thirty edges from being
+  // yanked around by every one of them. The old sim used a flat spring constant.
+  const collide = forceCollide<SimNode>(Math.max(8, rest * 0.3));
+  const gravityStrength = (g: number) => 0.045 * Math.max(0, g);
+  const pullX = forceX<SimNode>(cx).strength(gravityStrength(opts.gravity ?? 1));
+  const pullY = forceY<SimNode>(cy).strength(gravityStrength(opts.gravity ?? 1));
+
+  const simulation: Simulation<SimNode, SimulationLinkDatum<SimNode>> = forceSimulation(nodes)
+    .force("charge", charge)
+    .force("link", link)
+    .force("collide", collide)
+    .force("x", pullX)
+    .force("y", pullY)
+    .alphaMin(ALPHA_MIN)
+    // `iterations` keeps its old meaning — how many steps a full cool takes —
+    // expressed as the decay that reaches alphaMin in that many ticks.
+    .alphaDecay(1 - Math.pow(ALPHA_MIN, 1 / Math.max(1, totalIterations)))
+    .stop();
+
   // Monotonic lifetime step counter — the true runaway guard; reheat() never
   // moves this backwards, only step() advances it.
   let totalStepsRun = 0;
-
-  // Dragged nodes — see LayoutSim.pin. Keyed by node index, in the same
-  // canvas-pixel coordinate space snapshot() renders.
-  const pinned = new Map<number, { x: number; y: number }>();
-
-  // Active-drag state — see LayoutSim.startDrag/endDrag. `dragging` is
-  // distinct from `pinned` above: a node stays in `pinned` forever once
-  // dragged (no opposite), but `dragging` is only true for the ONE node
-  // currently under a live finger, for the duration of that one gesture.
+  // Active-drag state. A node stays FIXED forever once dragged (pin() has no
+  // opposite), but `dragging` is only true for the one node under a live finger.
   let dragging = false;
-  let dragIndex = -1;
-  // Per-GESTURE step budget, deliberately separate from totalStepsRun/
-  // hardStepCeiling below (which guards reheat()'s lifetime, across every
-  // slider nudge plus the initial settle). A drag ticks continuously — at
-  // the phone Graph screen's TICK_MS/STEPS_PER_TICK that's roughly 100
-  // step()s per second — for as long as a finger is down. If dragging spent
-  // from the same lifetime budget, a few long drags in one session would
-  // exhaust hardStepCeiling and silently revert to the exact "only the
-  // dragged node moves" bug this exists to fix, for the rest of the sim's
-  // lifetime. dragStepsRun resets every startDrag(), so it only ever bounds
-  // a single gesture (tens of seconds at that tick rate) — never the sim's
-  // cumulative lifetime.
   let dragStepsRun = 0;
+  // Per-GESTURE budget, deliberately separate from hardStepCeiling: a drag ticks
+  // continuously for as long as a finger is down, and if it spent from the
+  // lifetime budget a few long drags would exhaust what sliders rely on.
   const dragStepCeiling = Math.max(2000, totalIterations * 30);
-  // Shared kick magnitude for both reheat() (sliders) and endDrag()'s settle
-  // tail below — same fixed burst either way.
-  const kick = Math.max(1, Math.round(totalIterations * 0.35));
-  // Edges touching the actively-dragged node get this multiplier on their
-  // spring pull (see the edge-force loop below). The base 0.06 spring
-  // constant is tuned for gently relaxing the initial jittered spiral, where
-  // nodes already start close to their rest length — far too soft to notice
-  // against the hundred-plus-pixel gaps a real finger drag opens up.
-  // Empirically, ~5x is close to the ceiling of what helps: repulsion from
-  // every other node in the graph pushes back on the same neighbor, so
-  // returns diminish well before the multiplier gets large enough to risk
-  // overshoot/oscillation against the step-size cap below.
-  const DRAG_SPRING_BOOST = 5;
+
+  let gravityValue = opts.gravity ?? 1;
+  let repulsionValue = opts.repulsion ?? 1;
+  let linkDistanceValue = opts.linkDistance ?? 1;
 
   const sim: LayoutSim = {
-    gravity: opts.gravity ?? 1,
-    repulsion: opts.repulsion ?? 1,
-    linkDistance: opts.linkDistance ?? 1,
+    // Accessors rather than plain fields so the documented "mutate directly to
+    // steer the sim" contract keeps working: the setters push the new value into
+    // the force objects, which d3 reads on the next tick.
+    get gravity() {
+      return gravityValue;
+    },
+    set gravity(v: number) {
+      gravityValue = v;
+      pullX.strength(gravityStrength(v));
+      pullY.strength(gravityStrength(v));
+    },
+    get repulsion() {
+      return repulsionValue;
+    },
+    set repulsion(v: number) {
+      repulsionValue = v;
+      charge.strength(-rest * 2.2 * Math.max(0, v));
+    },
+    get linkDistance() {
+      return linkDistanceValue;
+    },
+    set linkDistance(v: number) {
+      linkDistanceValue = v;
+      link.distance(rest * Math.max(0, v));
+      // forceLink caches per-link bias/strength at initialize() time; distance is
+      // read per tick, so no re-init is needed here.
+    },
 
     get settled(): boolean {
-      return n === 0 || (!dragging && it >= iterationsBudget);
-    },
-
-    startDrag(index: number) {
-      if (index < 0 || index >= n) return;
-      dragging = true;
-      dragIndex = index;
-      dragStepsRun = 0;
-    },
-
-    endDrag() {
-      dragging = false;
-      dragIndex = -1;
-      // Fixed, duration-independent settle tail (cool starts at the same
-      // ~0.35 a slider's reheat() gives, decaying to 0 over `kick` steps)
-      // regardless of how long the drag itself ran. `it` is left untouched
-      // by step() while dragging (see below), so — unlike reusing reheat()'s
-      // relative rewind, which would only make sense right after a slider
-      // nudge from an already-settled state — resetting to a fixed point
-      // here is what keeps the release feel consistent instead of drifting
-      // colder the longer a drag lasted. Still bounded by the same lifetime
-      // hardStepCeiling as reheat(), since this tail runs through the normal
-      // (non-dragging) step() path below.
-      if (totalStepsRun < hardStepCeiling) {
-        it = Math.max(0, totalIterations - kick);
-        iterationsBudget = totalIterations;
-      }
+      return n === 0 || (!dragging && simulation.alpha() < ALPHA_MIN);
     },
 
     step() {
       if (n === 0) return;
       if (dragging) {
         if (dragStepsRun >= dragStepCeiling) return;
-      } else if (it >= iterationsBudget) {
+        dragStepsRun++;
+      } else if (simulation.alpha() < ALPHA_MIN) {
         return;
       }
-      const cool = dragging ? 1 : 1 - it / iterationsBudget;
-      const step = 0.085 * cool + 0.01;
-
-      // Force pinned nodes to their dragged spot before this iteration's
-      // force pass. They still push/pull neighbors below (the repulsion and
-      // spring loops don't know or care which indices are pinned) — only the
-      // position-update loop skips them, so they never fight the finger.
-      for (const [i, p] of pinned) {
-        xs[i] = p.x;
-        ys[i] = p.y;
-      }
-
-      const fx = new Float64Array(n);
-      const fy = new Float64Array(n);
-      const repulsion = baseRepulsion * Math.max(0, sim.repulsion);
-
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          let dx = xs[i] - xs[j];
-          let dy = ys[i] - ys[j];
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 0.01) {
-            // Coincident points get a deterministic nudge so forces can separate them.
-            dx = ((i * 7919 + j) % 13) - 6;
-            dy = ((j * 104729 + i) % 11) - 5;
-            d2 = dx * dx + dy * dy;
-          }
-          const f = repulsion / d2;
-          const d = Math.sqrt(d2);
-          const ux = dx / d;
-          const uy = dy / d;
-          fx[i] += ux * f;
-          fy[i] += uy * f;
-          fx[j] -= ux * f;
-          fy[j] -= uy * f;
-        }
-      }
-
-      // Recomputed fresh every step() (not cached across calls), same as the
-      // repulsion/gravity locals above — so a live linkDistance change (e.g.
-      // mid-drag on the slider) is felt on the very next step(), matching
-      // gravity/repulsion's live-mutable contract.
-      const restLen = rest * Math.max(0, sim.linkDistance);
-      for (const { a, b } of graph.edges) {
-        const dx = xs[b] - xs[a];
-        const dy = ys[b] - ys[a];
-        const d = Math.max(0.1, Math.sqrt(dx * dx + dy * dy));
-        // See DRAG_SPRING_BOOST above: only the actively-dragged node's own
-        // edges get the stiffer pull, so its direct neighbors visibly follow
-        // while the rest of the graph keeps relaxing at the normal gentle
-        // rate — not a global stiffening just because some node, somewhere,
-        // is being dragged.
-        const boost = dragging && (a === dragIndex || b === dragIndex) ? DRAG_SPRING_BOOST : 1;
-        const f = (d - restLen) * 0.06 * boost;
-        const ux = dx / d;
-        const uy = dy / d;
-        fx[a] += ux * f;
-        fy[a] += uy * f;
-        fx[b] -= ux * f;
-        fy[b] -= uy * f;
-      }
-
-      const gravity = Math.max(0, sim.gravity) * 0.02;
-      for (let i = 0; i < n; i++) {
-        // Pinned: forced above, and skipped here — no gravity, no integrated
-        // motion. It was still a full participant in the repulsion/spring
-        // loops above, so unpinned neighbors already feel it.
-        if (pinned.has(i)) continue;
-        // Gentle gravity keeps disconnected clusters from drifting off-canvas.
-        fx[i] += (cx - xs[i]) * gravity;
-        fy[i] += (cy - ys[i]) * gravity;
-        // Cap each step's movement: forces stay bounded, positions can never
-        // overflow to Infinity/NaN however dense the graph gets.
-        let mx = fx[i] * step;
-        let my = fy[i] * step;
-        const mag = Math.sqrt(mx * mx + my * my);
-        const cap = 24 * cool + 1.5;
-        if (mag > cap) {
-          mx = (mx / mag) * cap;
-          my = (my / mag) * cap;
-        }
-        xs[i] += mx;
-        ys[i] += my;
-      }
-
-      // Dragging advances its own per-gesture counter only — `it`/
-      // totalStepsRun stay exactly where they were when startDrag() fired,
-      // so reheat()'s lifetime budget (sliders) is never spent by dragging,
-      // and endDrag()'s fixed tail reset above has a well-defined "before"
-      // state to reset from.
-      if (dragging) {
-        dragStepsRun++;
-      } else {
-        it++;
-        totalStepsRun++;
-      }
+      totalStepsRun++;
+      simulation.tick();
     },
 
-    snapshot(): NoteGraph {
-      return snapshotPositions(graph, xs, ys, width, height, padding, pinned);
+    snapshot() {
+      return snapshotPositions(graph, nodes, bounds);
     },
 
     reheat() {
-      if (totalStepsRun >= hardStepCeiling) return; // guard against runaway
-      it = Math.max(0, it - kick);
-      iterationsBudget = it + kick;
+      if (n === 0 || totalStepsRun >= hardStepCeiling) return;
+      if (simulation.alpha() < REHEAT_ALPHA) simulation.alpha(REHEAT_ALPHA);
     },
 
     pin(index: number, x: number, y: number) {
       if (index < 0 || index >= n) return;
-      pinned.set(index, { x, y });
-      xs[index] = x;
-      ys[index] = y;
+      const node = nodes[index];
+      // Clamped on the way in to the same layout bounds snapshot() clamps on the
+      // way out, so a drag can't park a node somewhere nothing will ever show it.
+      const px = clampToBounds(x, bounds.cx, bounds.halfWidth);
+      const py = clampToBounds(y, bounds.cy, bounds.halfHeight);
+      node.fx = px;
+      node.fy = py;
+      node.x = px;
+      node.y = py;
+    },
+
+    startDrag(index: number) {
+      if (index < 0 || index >= n) return;
+      dragging = true;
+      dragStepsRun = 0;
+      simulation.alphaTarget(DRAG_ALPHA_TARGET);
+      if (simulation.alpha() < DRAG_ALPHA_TARGET) simulation.alpha(DRAG_ALPHA_TARGET);
+    },
+
+    endDrag() {
+      dragging = false;
+      simulation.alphaTarget(0);
+      // The same bounded settle tail a slider's reheat() gives, so the graph
+      // always eases back to rest instead of stopping dead. The node itself stays
+      // fixed (see pin()) — only the drag-specific heat ends.
+      //
+      // No spring boost to unwind: the old sim needed one because its flat
+      // springs were far too soft to drag a neighbour along. forceLink's
+      // degree-weighted strength plus the modest alphaTarget above do that job,
+      // which is also why a drag no longer re-lays-out the whole graph.
+      if (totalStepsRun < hardStepCeiling && simulation.alpha() < REHEAT_ALPHA) {
+        simulation.alpha(REHEAT_ALPHA);
+      }
     },
   };
+
   return sim;
 }
 
