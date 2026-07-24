@@ -621,6 +621,13 @@ export default function LibraryScreen() {
     : [];
   const moveDisabled =
     rowTarget?.kind === "folder" ? new Set(folderOptions.filter((f) => isAtOrUnder(f, rowTarget.path))) : undefined;
+  // Bulk move: strike out every selected folder's own subtree as a destination —
+  // the union of what the single-row move disables, over all selected folders.
+  // Without this the picker would offer a folder its own inside as a target;
+  // moveFolder throws on that (into-self), so this turns a confusing error into
+  // an un-tappable row. Notes-only selection → empty set → everywhere allowed.
+  const selectFolderPaths = selectedItems.filter((it) => it.kind === "folder").map((it) => it.path);
+  const bulkMoveDisabled = new Set(folderOptions.filter((f) => selectFolderPaths.some((p) => isAtOrUnder(f, p))));
 
   return (
     <View style={styles.flex} testID="library-screen">
@@ -901,6 +908,7 @@ export default function LibraryScreen() {
         title={`Move ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"} to`}
         folders={folderOptions}
         currentFolder=""
+        disabledPaths={bulkMoveDisabled}
         rootLabel="Library root"
         onPick={moveSelected}
         onClose={() => setSelectMoveOpen(false)}
@@ -912,7 +920,10 @@ export default function LibraryScreen() {
           up so the two don't stack. */}
       {selectMode && !selectMoveOpen ? (
         <View style={[styles.selectBar, { paddingBottom: insets.bottom + space(2) }]} testID="library-select-bar">
-          <Text style={styles.selectCount}>{selectedKeys.size} selected</Text>
+          {/* The PRUNED count, so this agrees with the delete dialog: checking a
+              folder and a note inside it is one thing to act on, not two, because
+              the folder carries the note. */}
+          <Text style={styles.selectCount}>{selectedItems.length} selected</Text>
           <View style={styles.selectActions}>
             <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
               <Text style={styles.selectBtnText}>Cancel</Text>
