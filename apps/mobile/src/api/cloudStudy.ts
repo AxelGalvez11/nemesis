@@ -23,6 +23,14 @@ import {
   rewriteGroupPrefix,
 } from "@/lib/study-tree";
 import { normalizeStudyFlag } from "@/lib/study-flags";
+import {
+  occlusionCardFront,
+  parseOcclusionPayload,
+  type OcclusionMode,
+  type OcclusionPayload,
+  type OcclusionShape,
+} from "@/lib/study-occlusion";
+import { generateUuidV4 } from "@/lib/chat-threads";
 import { supabase } from "./supabase";
 
 /** Trim, drop blanks, lowercase, de-duplicate a card's tag list — mirrors web's
@@ -66,6 +74,11 @@ export interface CloudStudyCard {
   /** Anki color flag, 0 = none, 1-7 per STUDY_FLAG_COLORS (owner 2026-07-23 Browse). */
   flag: number;
   tags: string[];
+  /** Image-occlusion geometry — the picture, every box on it, and which box
+   *  THIS card tests. Null on every other card type. Validated through
+   *  parseOcclusionPayload, so a corrupt row arrives as null rather than
+   *  crashing review. */
+  occlusion: OcclusionPayload | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -116,6 +129,7 @@ function toCard(raw: unknown): CloudStudyCard | null {
     suspended: raw.suspended === true,
     flag: normalizeStudyFlag(raw.flag),
     tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === "string") : [],
+    occlusion: parseOcclusionPayload(raw.payload),
     createdAt: text(raw.created_at),
     updatedAt: text(raw.updated_at),
   };
@@ -188,7 +202,9 @@ export async function fetchCloudStudy(userId: string): Promise<{ decks: CloudStu
       .order("updated_at", { ascending: false }),
     supabase
       .from("study_cards")
-      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,created_at,updated_at")
+      // `payload` rides along so image-occlusion cards arrive ready to review —
+      // without it the phone would have to re-fetch per card at review time.
+      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at")
       .eq("user_id", userId)
       .order("due_at", { ascending: true }),
   ]);
@@ -339,6 +355,94 @@ export async function createStudyCard(
   const card = toCard(data);
   if (!card) throw new Error("The card was saved but returned an invalid response.");
   return card;
+}
+
+/** The bucket occlusion pictures live in. Private, per-user, and the SAME one
+ *  the web app writes to — an image cloze made on the phone has to open on the
+ *  web and the other way round. */
+export const STUDY_IMAGE_BUCKET = "study-images";
+
+/** Matches the bucket's own file_size_limit, so an oversized picture is refused
+ *  before a multi-megabyte upload starts rather than after. */
+export const STUDY_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Make a set of image-occlusion ("image cloze") cards from ONE picture: upload
+ * the image, then insert one card per box (owner 2026-07-24: "add image cloze
+ * option").
+ *
+ * Every card carries the whole mask list and differs only in `targetId` — the
+ * box IT asks about. That is Anki's model and the web app's, and it is why
+ * hide-all mode can keep the other boxes covered while you answer.
+ *
+ * Upload first, insert second. If the insert fails the picture is an orphan in
+ * a private bucket, which costs a few megabytes; the reverse order would leave
+ * cards pointing at an image that was never stored, and those are unreviewable
+ * forever.
+ */
+export async function createOcclusionCards(
+  userId: string,
+  deckId: string,
+  input: { uri: string; width: number; height: number; mode: OcclusionMode; shapes: OcclusionShape[]; notes?: string },
+): Promise<CloudStudyCard[]> {
+  if (!deckId) throw new Error("Choose a deck first.");
+  if (input.shapes.length === 0) throw new Error("Draw at least one box over the part you want to test.");
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  if (!session || session.user.id !== userId) throw new Error("Sign in again to add cards.");
+
+  const info = await FileSystem.getInfoAsync(input.uri);
+  if (!info.exists) throw new Error("That picture is no longer on this phone.");
+  if (info.size > STUDY_IMAGE_MAX_BYTES) throw new Error("That picture is too large (10 MB max).");
+
+  // `userId/uuid.jpg` — the path shape both clients' storage policies are
+  // written against, so the row's own owner is the first path segment.
+  const storagePath = `${userId}/${generateUuidV4()}.jpg`;
+  const base = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  // Streams from disk rather than reading the file into a base64 string first,
+  // same as the camera upload in api/photos.ts.
+  const upload = await FileSystem.uploadAsync(`${base}/storage/v1/object/${STUDY_IMAGE_BUCKET}/${storagePath}`, input.uri, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${session.access_token}`, "Content-Type": "image/jpeg" },
+    httpMethod: "POST",
+  });
+  if (upload.status !== 200) {
+    throw new Error(
+      upload.status === 413 ? "That picture is too large (10 MB max)." : "Couldn't save that picture. Check your connection and try again.",
+    );
+  }
+
+  const shared = { kind: "occlusion" as const, image: storagePath, width: input.width, height: input.height, mode: input.mode, shapes: input.shapes };
+  const rows = input.shapes.map((shape, index) => ({
+    user_id: userId,
+    deck_id: deckId,
+    front: occlusionCardFront(shape.label, index),
+    back: (input.notes ?? "").trim(),
+    card_type: "image_occlusion",
+    source_path: null,
+    payload: { ...shared, targetId: shape.id },
+  }));
+  const { data, error } = await supabase
+    .from("study_cards")
+    .insert(rows)
+    .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at");
+  if (error) throw new Error(error.message);
+  const cards = (data ?? []).flatMap((row) => {
+    const card = toCard(row);
+    return card ? [card] : [];
+  });
+  if (cards.length === 0) throw new Error("The cards were saved but returned an invalid response.");
+  return cards;
+}
+
+/** A viewable URL for an occlusion payload's image. The stored value is an
+ *  object PATH in a private bucket, so it has to be signed; a payload that
+ *  already holds a full URL (an older or imported card) is handed back as-is. */
+export async function signOcclusionImage(image: string): Promise<string | null> {
+  if (/^(https?:|data:)/i.test(image)) return image;
+  const signed = await supabase.storage.from(STUDY_IMAGE_BUCKET).createSignedUrl(image, 60 * 60);
+  return signed.data?.signedUrl ?? null;
 }
 
 /** Grades one card via the shared server RPC (server computes the next
