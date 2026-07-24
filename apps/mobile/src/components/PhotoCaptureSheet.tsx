@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
@@ -47,6 +47,8 @@ export function PhotoCaptureSheet({
   const [shot, setShot] = useState<string | null>(null);
   const [taking, setTaking] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
+  // Before the first ask, `permission` is null — treat that as askable.
+  const askable = permission?.canAskAgain ?? true;
 
   const close = () => {
     setShot(null);
@@ -79,10 +81,21 @@ export function PhotoCaptureSheet({
           <View style={[styles.permission, { paddingTop: insets.top + space(6) }]}>
             <Text style={styles.permissionTitle}>Let Nemesis use the camera</Text>
             <Text style={styles.permissionBody}>
-              Photograph a slide, a page, or a whiteboard and Nemesis will read it into your chat.
+              {askable
+                ? "Photograph a slide, a page, or a whiteboard and Nemesis will read it into your chat."
+                : "Camera access is switched off for Nemesis. Turn it on in Settings and come back."}
             </Text>
-            <Pressable style={styles.primaryButton} onPress={() => void requestPermission()} accessibilityRole="button">
-              <Text style={styles.primaryButtonText}>Allow camera</Text>
+            {/* iOS asks ONCE. After a refusal, requestPermission resolves
+                immediately with the same answer, so a button that only calls it
+                is a button that does nothing — the screen becomes a dead end
+                with "Not now" as its only exit. Settings is the real way back. */}
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() => void (askable ? requestPermission() : Linking.openSettings())}
+              accessibilityRole="button"
+              testID="photo-permission-action"
+            >
+              <Text style={styles.primaryButtonText}>{askable ? "Allow camera" : "Open Settings"}</Text>
             </Pressable>
             <Pressable onPress={close} accessibilityRole="button" hitSlop={8}>
               <Text style={styles.secondaryText}>Not now</Text>

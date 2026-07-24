@@ -87,10 +87,32 @@ export function photoNoteTitle(raw: string | null | undefined): string {
  * original. Keeping the image is also the whole reason the storage bucket
  * exists; a note that dropped it would make the upload pointless.
  */
-export function photoNoteBody(text: string, imageUrl: string): string {
+export function photoNoteBody(text: string, imageUrl: string, storagePath = ""): string {
   const body = text.trim();
-  const image = imageUrl.trim() ? `![Photo](${imageUrl.trim()})` : "";
+  const url = imageUrl.trim();
+  const path = storagePath.trim();
+  // The object path rides in the image's TITLE, which is the one place markdown
+  // has for a caption that no renderer draws: markdown-it puts it on the <img>
+  // as an attribute, and react-native-markdown-display ignores it entirely. An
+  // HTML comment would have been the obvious hiding place and is the wrong one —
+  // the phone's parser runs with `html: false`, so `<!-- … -->` would print on
+  // screen as literal text.
+  //
+  // It is here because the URL above it has an EXPIRY. A signed URL is the only
+  // way a private bucket can be read by a plain markdown renderer, and one that
+  // lasts a year still ends. Without the path recorded, a URL that stops
+  // resolving is unrecoverable — nothing would say which object it pointed at,
+  // and the note would be permanently holding a broken image with no way back.
+  // With it, re-signing is a lookup.
+  const image = url ? `![Photo](${url}${path ? ` "${path.replace(/"/g, "")}"` : ""})` : "";
   return [image, body].filter(Boolean).join("\n\n") + "\n";
+}
+
+/** The bucket object path recorded by photoNoteBody, if this note has one.
+ *  The inverse of the title trick above — what a re-signer would call. */
+export function photoPathInNote(body: string): string | null {
+  const match = /^!\[Photo\]\([^)\s]+\s+"([^"]+)"\)/m.exec(body);
+  return match ? match[1] : null;
 }
 
 /** What the chat turn carries: the same transcript, under a title that says

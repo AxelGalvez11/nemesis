@@ -444,7 +444,7 @@ export default function ChatScreen() {
     if (!uid || !photo || photoSaved !== "idle") return;
     setPhotoSaved("saving");
     try {
-      await createNoteWithContent(uid, photo.title, photoNoteBody(photo.text, photo.imageUrl));
+      await createNoteWithContent(uid, photo.title, photoNoteBody(photo.text, photo.imageUrl, photo.storagePath));
       setPhotoSaved("saved");
     } catch (cause) {
       setPhotoSaved("idle");

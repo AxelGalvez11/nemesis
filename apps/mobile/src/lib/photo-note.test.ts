@@ -1,6 +1,7 @@
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   PHOTO_BUCKET,
+  photoPathInNote,
   PHOTO_MAX_BYTES,
   PHOTO_URL_TTL_SECONDS,
   photoAttachmentTitle,
@@ -96,4 +97,30 @@ Deno.test("upload failures read as sentences, never as HTTP numbers", () => {
   for (const status of [400, 401, 403, 413, 415, 500, 503]) {
     assertEquals(/\d/.test(photoUploadError(status)), false, `status ${status} leaked a number`);
   }
+});
+
+Deno.test("the note records WHICH object its picture is, so the URL can be re-signed", () => {
+  // The URL above it expires. Without the path there would be no way to mint a
+  // fresh one — a note holding a broken image with nothing to say what it was.
+  const body = photoNoteBody("Words.", "https://example.test/pic.jpg?token=abc", "user-1/uuid.jpg");
+  assertEquals(photoPathInNote(body), "user-1/uuid.jpg");
+});
+
+Deno.test("the recorded path is invisible — a title, never an HTML comment", () => {
+  // The phone's markdown parser runs with html:false, so `<!-- ... -->` would
+  // print on screen as literal text.
+  const body = photoNoteBody("Words.", "https://example.test/pic.jpg", "user-1/uuid.jpg");
+  assertEquals(body.includes("<!--"), false);
+  assertEquals(body.startsWith('![Photo](https://example.test/pic.jpg "user-1/uuid.jpg")'), true);
+});
+
+Deno.test("a quote in a path can't break out of the title", () => {
+  const body = photoNoteBody("Words.", "https://example.test/p.jpg", 'user/we"ird.jpg');
+  assertEquals(photoPathInNote(body), "user/weird.jpg");
+});
+
+Deno.test("a note with no recorded path reads back as none, not as a crash", () => {
+  assertEquals(photoPathInNote(photoNoteBody("Words.", "https://example.test/p.jpg")), null);
+  assertEquals(photoPathInNote("Just some prose.\n"), null);
+  assertEquals(photoPathInNote(""), null);
 });
