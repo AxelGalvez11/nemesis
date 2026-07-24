@@ -1,8 +1,8 @@
 import type { ReactNode, RefObject } from "react";
 import { useRef } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
-import Svg, { Circle, Line, Rect } from "react-native-svg";
+import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "./icons";
 import { EffortLabel } from "./ComposerEffortMenu";
 import { LiveWaveform } from "./LiveWaveform";
@@ -141,6 +141,16 @@ function WaveGlyph({ size = 20, color }: { size?: number; color: string }) {
 /** Filled dot — "start recording", the universal record glyph. Sized to fill
  *  most of its circle: a smaller dot on the quiet surface button read as a
  *  disabled control rather than an invitation. */
+/** The accept tick on the dictation bar — a plain check, drawn here rather
+ *  than pulled from icons.tsx for the same reason the record glyphs are. */
+function CheckGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24">
+      <Path d="m5 12.5 4.5 4.5L19 7" stroke={color} strokeWidth={2.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 function RecordDotGlyph({ size = 22, color }: { size?: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -226,9 +236,9 @@ export function Composer({
   // the mic was tapped (captured in dictationBase), so speaking adds to your draft
   // rather than clobbering it.
   const dictationBase = useRef("");
-  const { listening, start, stop } = useSpeechInput((transcript) => {
+  const { listening, start, stop, transcript } = useSpeechInput((heard) => {
     const base = dictationBase.current;
-    onChangeText(base ? `${base} ${transcript}` : transcript);
+    onChangeText(base ? `${base} ${heard}` : heard);
   });
   const onMic = () => {
     if (listening) {
@@ -237,6 +247,13 @@ export function Composer({
     }
     dictationBase.current = value.trim();
     void start();
+  };
+  /** Throw away what was dictated and put the draft back as it was. The
+   *  cancel half of the listening bar — without it, the only way out of
+   *  dictation was to accept whatever it had heard and delete it by hand. */
+  const cancelDictation = () => {
+    stop();
+    onChangeText(dictationBase.current);
   };
 
   // Record mode's own control bar: start/stop on the left, what the microphone
@@ -275,6 +292,51 @@ export function Composer({
             testID="composer-record-exit"
           >
             <CloseIcon size={18} color={c.onAccent} strokeWidth={2.4} />
+          </Bounce>
+        </View>
+      </View>
+    );
+  }
+
+  // DICTATION IS ITS OWN STATE (owner 2026-07-24: "dictation should show like
+  // ChatGPT or whisper flow"). It used to be a mic button that turned accent
+  // while words appeared in the text field — so there was no live answer that
+  // the phone was hearing you, and no way to abandon a mis-heard sentence
+  // except to accept it and delete it by hand. Both of those apps replace the
+  // composer with a listening bar; this does the same, in the shape record mode
+  // already established: cancel on the left, what it is hearing across the
+  // middle, accept on the right.
+  if (listening) {
+    return (
+      <View style={[styles.card, styles.cardCompact]}>
+        <View style={styles.recordRow}>
+          <Bounce
+            style={styles.round}
+            onPress={cancelDictation}
+            hitSlop={6}
+            accessibilityLabel="Cancel dictation"
+            testID="composer-dictate-cancel"
+          >
+            <CloseIcon size={18} color={c.text} strokeWidth={2.4} />
+          </Bounce>
+          <View style={styles.dictateMiddle}>
+            {/* Real levels, from the speech engine's own volumechange events
+                (see useSpeechInput) — the same waveform the recorder draws. */}
+            <LiveWaveform active height={20} testID="composer-dictate-waveform" />
+            {/* The words so far, so a mis-hear is visible before you accept it.
+                One line: this is a glance, not a transcript viewer. */}
+            <Text style={styles.dictateText} numberOfLines={1}>
+              {transcript || "Listening…"}
+            </Text>
+          </View>
+          <Bounce
+            style={[styles.round, styles.sendOn]}
+            onPress={stop}
+            hitSlop={6}
+            accessibilityLabel="Done dictating"
+            testID="composer-dictate-done"
+          >
+            <CheckGlyph color={c.onAccent} />
           </Bounce>
         </View>
       </View>
@@ -444,4 +506,7 @@ const createStyles = (c: ThemeColors) =>
     // The waveform takes the field's slot — it is what you watch while
     // recording, so it gets all the room the two buttons don't.
     recordWave: { flex: 1 },
+    // The dictation bar's middle: waveform over the words it has heard.
+    dictateMiddle: { flex: 1, justifyContent: "center", gap: 2 },
+    dictateText: { ...type.micro, color: c.text3 },
   });
