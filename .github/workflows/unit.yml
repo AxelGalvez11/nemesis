@@ -31,5 +31,7 @@ jobs:
           deno-version: v2.x
       - name: Deno unit tests (ask edge function)
         run: deno test --allow-env supabase/functions/ask/
+      - name: Deno unit tests (shared cost attribution)
+        run: deno test --allow-env supabase/functions/_shared/
       - name: Deno unit tests (mobile app — incl. the analytics privacy core)
         run: deno test --no-check --allow-env apps/mobile/src/
