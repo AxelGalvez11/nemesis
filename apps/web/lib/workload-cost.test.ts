@@ -110,6 +110,23 @@ test("the same month costs several times more on the web live lane than on the p
   assert.ok(lineOf(live) / lineOf(phone) > 3, "naming the lane is not optional");
 });
 
+// The reason HEAVY_STUDENT defaults to the expensive lane: the web recorder has no
+// other one. The cheap batch route exists and is proven, but only the phone calls it.
+// If someone wires it into the web app, this test fails and the default should change.
+test("the web app has no batch transcription lane wired — only the phone uses the cheap route", () => {
+  const webRecorder = repoFile("apps/web/components/workspace/sessions/record-workspace.tsx");
+  assert.match(webRecorder, /live-audio/, "the web recorder drives the streaming lane");
+  assert.doesNotMatch(webRecorder, /transcription\/submit/, "web gained a batch lane — revisit the default recorder");
+  const phone = repoFile("apps/mobile/src/api/chat.ts");
+  assert.match(phone, /transcription\/submit/, "the cheap route is real and in production on the phone");
+});
+
+test("moving web recording to the existing batch route would save most of its audio bill", () => {
+  const streaming = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-live" });
+  const batch = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-upload" });
+  assert.ok(batch.headroomUsd - streaming.headroomUsd > 8, "worth more than $8/student/month");
+});
+
 test("80 hours of streaming web audio alone eats most of a month's revenue", () => {
   const report = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-live" });
   const transcription = report.lines.find((line) => line.name.startsWith("Transcription"))!.usd!;
@@ -204,6 +221,21 @@ test("the heavy month clears break-even but misses the 80% house margin", () => 
   const report = modelStudentMonth(HEAVY_STUDENT);
   assert.equal(report.profitable, true);
   assert.equal(report.meetsHouseMargin, false);
+});
+
+// meetsHouseMargin is a target, not break-even. Two months can both report false and
+// be nothing alike — always quote headroom alongside it.
+test("the house-margin boolean hides a large difference in actual headroom", () => {
+  const worst = modelStudentMonth(HEAVY_STUDENT);
+  const better = modelStudentMonth({
+    ...HEAVY_STUDENT,
+    notesCacheHitRate: 0.9,
+    notesIntervalMs: 120_000,
+    recorder: "ios-ondevice",
+  });
+  assert.equal(worst.meetsHouseMargin, better.meetsHouseMargin);
+  assert.ok(better.headroomUsd > worst.headroomUsd * 5, "same verdict, wildly different month");
+  assert.ok(better.headroomUsd > 13);
 });
 
 // The whole reason PR #273 (on-device Parakeet) is an economics change and not just a

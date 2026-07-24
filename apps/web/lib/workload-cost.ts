@@ -136,7 +136,11 @@ export function tokensFromChars(chars: number): number {
  *  • ios-ondevice — Apple speech on the phone is free, but the enhance pass fires
  *    automatically on save (RecordSession) and that is Groq batch.
  *  • web-upload   — /api/transcription/submit tries Groq first, AssemblyAI on failure.
- *  • web-live     — /api/live-audio streams to AssemblyAI. Nearly 4x the others.
+ *    The ROUTE exists and is proven in production, but NOTHING IN THE WEB APP CALLS IT:
+ *    its only caller is apps/mobile/src/api/chat.ts. Pointing the web recorder at it is
+ *    the cheapest money lever in the product — see the test that guards this.
+ *  • web-live     — /api/live-audio streams to AssemblyAI. The web recorder's ONLY
+ *    lane today, and nearly 4x the others.
  */
 export type RecorderLane = "ios-parakeet" | "ios-ondevice" | "web-live" | "web-upload";
 
@@ -228,6 +232,10 @@ export interface WorkloadReport {
   netRevenueUsd: number;
   /** (net revenue - all COGS) / net revenue. */
   grossMarginPct: number;
+  /** Dollars left over per subscriber per month. Report this next to
+   *  meetsHouseMargin — on its own the boolean flattens a 73%-margin month and an
+   *  11%-margin month into the same word, which reads as "it doesn't work". */
+  headroomUsd: number;
   meetsHouseMargin: boolean;
   profitable: boolean;
 }
@@ -251,6 +259,7 @@ export function modelStudentMonth(input: StudentMonth): WorkloadReport {
   return {
     capRatio: round(metered / PRO_MONTHLY_TOKEN_CAP, 2),
     grossMarginPct: round(((net - cogs) / net) * 100, 1),
+    headroomUsd: round(net - cogs, 2),
     lines,
     meetsHouseMargin: cogs <= net * (1 - HOUSE_MARGIN),
     meteredTokens: metered,
