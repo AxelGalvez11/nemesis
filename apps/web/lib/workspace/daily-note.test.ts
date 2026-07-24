@@ -203,3 +203,26 @@ test("the note has no runs of blank lines", () => {
 test("one note per day, so re-running updates instead of piling up", () => {
   assert.equal(dailyNotePath(DAY), "Daily/2026-07-24.md");
 });
+
+// ── Checked against real production rows ─────────────────────────────────────
+// A real study day from the owner's account (2026-07-22, America/Chicago): SQL
+// says 45 reviews, 45 distinct cards, 0 "again". 28 of those 45 carry a UTC
+// timestamp of 2026-07-23 — evening study — so a UTC-day filter reports 17 and
+// silently loses 62% of the day. This shape is why summarizeDay filters locally.
+test("an evening study session that crosses UTC midnight is counted as one local day", () => {
+  const evening = [
+    "2026-07-22T05:38:39Z", "2026-07-22T17:09:50Z", "2026-07-22T21:12:44Z",
+    "2026-07-23T01:09:24Z", "2026-07-23T03:11:49Z", "2026-07-23T03:12:45Z",
+  ];
+  const summary = summarizeDay(input({
+    cards: evening.map((_, i) => ({ deck_id: "d1", id: `c${i}` })),
+    day: "2026-07-22",
+    reviews: evening.map((reviewed_at, i) => ({ card_id: `c${i}`, grade: "good", reviewed_at })),
+  }));
+  const naiveUtc = evening.filter((t) => t.startsWith("2026-07-22")).length;
+  assert.equal(naiveUtc, 3, "half these timestamps are the next day in UTC");
+  // Only meaningful where the runtime is behind UTC, which is where the bug bites.
+  if (new Date("2026-07-23T03:12:45Z").getDate() === 22) {
+    assert.equal(summary.cardsReviewed, evening.length, "every review belongs to the one local day");
+  }
+});
