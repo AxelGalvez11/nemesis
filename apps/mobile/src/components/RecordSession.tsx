@@ -147,14 +147,16 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
     setSaving(true);
     setSaveError(null);
     try {
-      const entry = await saveRecordingArtifact(
+      const { entry, libraryNoteId } = await saveRecordingArtifact(
         userId,
         threadId,
         buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date(), liveNotesText(liveNotes.notes)),
       );
       // Enhance pass runs detached: the saved on-device transcript is already
-      // safe, and the sharper server transcript swaps in when it lands.
-      void enhanceRecordingArtifact(userId, threadId, entry, live.audioUris, live.elapsedSeconds);
+      // safe, and the sharper server transcript swaps in when it lands. The
+      // note id rides along so the pass can rename the Library note once it has
+      // a real title — the note itself is already saved either way.
+      void enhanceRecordingArtifact(userId, threadId, entry, live.audioUris, live.elapsedSeconds, libraryNoteId);
       onDone();
     } catch (cause) {
       setSaveError(cause instanceof Error ? cause.message : "Couldn't save the recording — check your connection and try again.");

@@ -57,7 +57,7 @@ import {
   type RecordingDraft,
 } from "@/lib/recording";
 import { DEFAULT_GENERAL_PREFS, generalPrefsStoreKey, parseGeneralPrefs } from "@/lib/general-prefs";
-import { saveRecordingNote } from "./cloudLibrary";
+import { renameRecordingNote, saveRecordingNote } from "./cloudLibrary";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
@@ -719,7 +719,22 @@ export async function loadRecordingArtifact(uid: string, id: string): Promise<Ch
  *  load-bearing write and throws on failure; the meta mirror AND the Library
  *  note are best-effort — if either fails, the recording still exists
  *  server-side and web's rail shows it. */
-export async function saveRecordingArtifact(uid: string, threadId: string, draft: RecordingDraft): Promise<ChatOutput> {
+/** What a save hands back: the chip entry, plus the id of the Library note it
+ *  mirrored (null when that best-effort write didn't happen).
+ *
+ *  The note id is returned SEPARATELY rather than carried on ChatOutput on
+ *  purpose. ChatOutput is written into `chat_threads.meta.outputs`, which web
+ *  reads too, and an internal Library row id has no business in a shared
+ *  structure — a field that has to be stripped before one of two writes is a
+ *  rule a later edit will quietly break. Nothing needs to persist it anyway:
+ *  RecordSession hands this straight to enhanceRecordingArtifact in the same
+ *  breath (components/RecordSession.tsx). */
+export interface SavedRecording {
+  entry: ChatOutput;
+  libraryNoteId: string | null;
+}
+
+export async function saveRecordingArtifact(uid: string, threadId: string, draft: RecordingDraft): Promise<SavedRecording> {
   const id = generateUuidV4();
   const title = draft.title.slice(0, 200);
   const entry: ChatOutput = {
@@ -757,11 +772,14 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
   // isn't back yet — it degrades cleanly, "use it when available"), and the
   // transcript rides along only when the student turned the setting on. The
   // "Recordings" folder needs no row — the tree is derived from note paths
-  // (lib/library-sync.ts).
+  // (lib/library-sync.ts). Its id is carried back so the enhance pass can move
+  // the note onto the AI's name once there is one.
+  let libraryNoteId: string | null = null;
   try {
     const includeTranscript = await shouldSaveTranscriptToLibrary(uid);
     const content = buildRecordingNoteMarkdown({ includeTranscript, notes: draft.notes, transcript: draft.transcript });
-    await saveRecordingNote(uid, { content, createdAt: draft.createdAt, title });
+    const note = await saveRecordingNote(uid, { content, createdAt: draft.createdAt, title });
+    libraryNoteId = note.id;
   } catch (cause) {
     console.warn("recording Library note skipped:", cause instanceof Error ? cause.message : cause);
   }
@@ -788,7 +806,7 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
   } catch {
     // best-effort mirror — see the doc comment
   }
-  return entry;
+  return { entry, libraryNoteId };
 }
 
 // Live notes ride the cheap conversational slot — never search, never the
@@ -903,6 +921,10 @@ export async function enhanceRecordingArtifact(
   artifact: ChatOutput,
   audioUris: string[],
   elapsedSeconds: number,
+  /** The Library note saveRecordingArtifact mirrored, so the title pass below
+   *  can move it onto the AI's name. Optional: a save whose Library write failed
+   *  has nothing to rename, and the enhance pass must still run. */
+  libraryNoteId?: string | null,
 ): Promise<void> {
   const uris = audioUris.slice(0, 8);
   if (uris.length === 0) return;
@@ -983,6 +1005,13 @@ export async function enhanceRecordingArtifact(
         if (titleError) throw new Error(titleError.message);
         published = { ...published, title };
         await writeChipEntry(uid, threadId, published);
+        // The Library note was written at save time under the on-device
+        // timestamp, because that is the only moment guaranteed to run. Now that
+        // there IS a real name, move the note onto it — otherwise the Library
+        // shows a wall of identical timestamps for recordings the chat has
+        // already named, i.e. the same recording under two different names.
+        // AFTER the artifact row took the title, same ordering rule as the chip.
+        if (libraryNoteId) await renameRecordingNote(uid, libraryNoteId, title);
       }
     } catch (cause) {
       console.warn("recording title pass skipped:", cause instanceof Error ? cause.message : cause);

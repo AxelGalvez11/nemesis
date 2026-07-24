@@ -261,10 +261,15 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
 }
 
 /** Mirror a finished recording's notes into the Library as a note at
- *  "Recordings/<title>.md" (owner item 4). Called from api/chat.ts's enhance
- *  pass once the transcript, title, and notes are durable — this is a
- *  best-effort secondary write, so it throws on failure and the caller swallows
- *  it. The Recordings/ folder needs no row of its own: the phone's tree is
+ *  "Recordings/<title>.md" (owner item 4). Called from api/chat.ts's
+ *  saveRecordingArtifact at SAVE time, not from the enhance pass — enhance is
+ *  detached and usually doesn't survive the student leaving the screen, so a
+ *  note written only there would never appear (see the long note at its call
+ *  site). This is a best-effort secondary write, so it throws on failure and
+ *  the caller swallows it. Because it runs before the AI has named the
+ *  recording, the title here is the on-device timestamp; renameRecordingNote
+ *  below moves it once the enhance pass produces a real name.
+ *  The Recordings/ folder needs no row of its own: the phone's tree is
  *  derived from note paths (lib/library-sync.ts), so writing this path is all it
  *  takes for the folder to appear on both surfaces.
  *
@@ -301,6 +306,50 @@ export async function saveRecordingNote(
     return note;
   }
   throw new Error("Couldn't find an available name for the recording note.");
+}
+
+/** Move a recording's Library note onto the name the AI gave it.
+ *
+ *  The note is written at save time under the on-device timestamp ("Recording ·
+ *  Jul 24, 3:14 PM") because that is the only moment guaranteed to run; the
+ *  enhance pass names the recording minutes later. Without this the Library
+ *  keeps a wall of identical-looking timestamps while the chat chip shows the
+ *  real name — the same recording under two names.
+ *
+ *  Keyed by note ID, never by path: saveRecordingNote's suffix retry means the
+ *  note may have landed at "… 2", so recomputing the old path would rename the
+ *  wrong row (or nothing). The NEW name gets the same suffix retry for the same
+ *  reason — an AI title can collide with an existing note, including a
+ *  soft-deleted one that still owns its path.
+ *
+ *  Best-effort, like the write that created it: throws on failure for the caller
+ *  to swallow, so a failed rename leaves a correctly-named recording with a
+ *  timestamped note rather than costing anything. */
+export async function renameRecordingNote(uid: string, noteId: string, title: string): Promise<CloudLibraryNote | null> {
+  const wanted = title.trim();
+  if (!noteId || !wanted) return null;
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    // path and title step together, exactly as in saveRecordingNote.
+    const path = recordingLibraryPath(wanted, suffix);
+    const nextTitle = recordingNoteBaseName(wanted, suffix);
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .update({ path, title: nextTitle })
+      .eq("id", noteId)
+      .eq("user_id", uid)
+      .select("id,path,kind,title,content,created_at,updated_at")
+      .maybeSingle();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    // No row came back: the note was deleted between save and enhance. Nothing
+    // to rename and nothing wrong — the recording itself is untouched.
+    if (!note) return null;
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for the renamed recording note.");
 }
 
 /** Save one note's edited content — the phone's first library WRITE (owner
