@@ -83,15 +83,17 @@ test("missed questions become recall-style flashcards", () => {
 });
 
 // ── Learning objectives reach the generators ─────────────────────────────────
-// A lecture's objectives slide is what the exam is written from. These assert it
-// survives the MATERIAL_CHAR_LIMIT clip, which is the whole reason objectives are
-// carried separately from the material text.
+// A lecture's objectives slide is what the exam is written from, and it sits on the
+// first slide. Carrying it separately is what puts it at the head of EVERY chunk
+// rather than only the first one (lib/workspace/material-chunks.ts).
 
-test("noteMaterial pulls objectives out of a lecture before clipping it", () => {
+test("noteMaterial pulls the objectives out of a lecture and keeps the lecture whole", () => {
   const lecture = `Learning Objectives\n• Describe the renin-angiotensin system\n• Explain ACE inhibition\n\n${"Filler slide text about pharmacology. ".repeat(400)}`;
   const material = noteMaterial("Antihypertensives", lecture);
   assert.deepEqual(material.objectives, ["Describe the renin-angiotensin system", "Explain ACE inhibition"]);
-  assert.ok(material.text.length <= 9_000, "the body is still clipped");
+  // Not clipped here any more: a clipped source is a source read in part, and the
+  // generator now reads every chunk of it.
+  assert.equal(material.text, lecture.trim());
 });
 
 test("a note with no objectives slide carries none rather than an empty array", () => {

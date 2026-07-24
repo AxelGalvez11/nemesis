@@ -32,6 +32,28 @@ function kindFor(name: string, type: string): FileKind | null {
   return null;
 }
 
+/**
+ * What a file IS, when its name no longer says.
+ *
+ * A real course folder had two lecture PDFs whose long filenames had been truncated
+ * past the ".pdf" — the app refused both, and the student would have had no idea why
+ * a file that opens fine everywhere else could not be added. The contents are
+ * unambiguous, so read them: a PDF opens with "%PDF", and the Office formats are zips
+ * whose first entry names say which one they are. PURE.
+ */
+export function sniffKind(bytes: Uint8Array): FileKind | null {
+  if (bytes.length < 4) return null;
+  if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (!isZip) return null;
+  // Only the entry names are needed, and they are plain ASCII in the headers, so a
+  // scan beats unpacking a 25 MB archive to answer one question.
+  const window = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 512 * 1024))).toString("latin1");
+  if (window.includes("ppt/slides/")) return "pptx";
+  if (window.includes("word/document.xml")) return "docx";
+  return null;
+}
+
 export async function POST(req: Request): Promise<Response> {
   // Require the student's device key — same gate as the URL route, so this parse endpoint can't be
   // hit anonymously to burn CPU on arbitrary uploads.
@@ -55,7 +77,10 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "That file is too large (25 MB max)." }, { status: 413 });
   }
 
-  const kind = kindFor(file.name, file.type);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Name first (cheap and right almost always), contents second (right when a name
+  // has lost its extension). Refusing only after both have failed.
+  const kind = kindFor(file.name, file.type) ?? sniffKind(bytes);
   if (!kind) {
     return NextResponse.json(
       { error: "Unsupported file. Add a PDF, Word (.docx), or PowerPoint (.pptx)." },
@@ -63,11 +88,11 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
   try {
     let result: { title: string | null; text: string };
     let readBy: string | undefined;
     let skippedFigures = 0;
+    let coverage: Record<string, number> | undefined;
     if (kind === "pdf") {
       const r = await extractPdfText(bytes);
       result = { title: r.meta.title, text: r.text };
@@ -79,7 +104,8 @@ export async function POST(req: Request): Promise<Response> {
       // slide-media plan judges to be content, then fold their descriptions in under
       // the slides they came from. When vision is unconfigured or fails,
       // describeFiguresWithVision returns an empty map and this is exactly the old
-      // text-only extraction.
+      // text-only extraction. readPptxSlides also brings the deck's speaker notes,
+      // SmartArt and chart labels, which live outside ppt/slides/ entirely.
       const deck = readPptxSlides(bytes);
       const figures = deck.media.images.length
         ? await describeFiguresWithVision(
@@ -91,9 +117,12 @@ export async function POST(req: Request): Promise<Response> {
         : new Map<string, string>();
       result = pptxTextWithFigures(deck, figures);
       if (figures.size > 0) readBy = "figures";
-      // Reading only some of a deck's figures must never look like reading all of
-      // them, so say what was left out.
+      // Reading only some of a deck is allowed; presenting it as a full read is not.
+      // The whole tally travels with the text: how many slides, notes pages, charts
+      // and diagrams were read, how many pictures were found, and for each picture
+      // that was NOT described, which reason applied.
       if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
+      coverage = { ...deck.coverage, imagesDescribed: figures.size };
     }
 
     let text = result.text.trim();
@@ -138,6 +167,8 @@ export async function POST(req: Request): Promise<Response> {
       // Present only when a deck had more figures than the per-deck cap, so a
       // partial read is never presented as a complete one.
       ...(skippedFigures > 0 ? { skippedFigures } : {}),
+      // PowerPoint only: the full account of what was read and what was not.
+      ...(coverage ? { coverage } : {}),
     });
   } catch (err) {
     return NextResponse.json(

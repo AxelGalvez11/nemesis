@@ -62,6 +62,9 @@ export const FIGURE_PROMPT =
 /** How many figures to put in one request. Gemini handles more, but a smaller batch
  *  keeps any single failure from costing the whole deck's descriptions. */
 export const FIGURE_BATCH_SIZE = 8;
+/** How many figure batches are in flight at once. Small on purpose: each request
+ *  carries megabytes of image data, and the provider rate-limits per key. */
+export const FIGURE_CONCURRENCY = 3;
 
 export interface VisionResult {
   text: string;
@@ -191,21 +194,38 @@ export async function describeFiguresWithVision(
   if (!key || images.length === 0) return out;
 
   const usable = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  const batches: VisionImage[][] = [];
   for (let start = 0; start < usable.length; start += FIGURE_BATCH_SIZE) {
-    const batch = usable.slice(start, start + FIGURE_BATCH_SIZE);
+    batches.push(usable.slice(start, start + FIGURE_BATCH_SIZE));
+  }
+
+  // A slide-heavy lecture can hold two dozen figures, which is four or five calls.
+  // Run a few at once so importing a real deck is a wait, not a coffee break —
+  // but only a few, because each request carries megabytes of image data and the
+  // provider rate-limits per key.
+  const describeBatch = async (batch: VisionImage[]) => {
     const body = buildFigureRequest(
       batch.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
     );
     const reply = await callGemini(body, key, env, options.signal);
     // One failed batch loses its own descriptions and nothing else.
-    if (!reply) continue;
+    if (!reply) return;
     const parsed = parseFigureDescriptions(reply, batch.length);
-    if (!parsed) continue;
+    if (!parsed) return;
     parsed.forEach((description, index) => {
       const image = batch[index];
       if (image && description) out.set(image.name, description);
     });
-  }
+  };
+
+  let next = 0;
+  const workers = Array.from({ length: Math.min(FIGURE_CONCURRENCY, batches.length) }, async () => {
+    while (next < batches.length) {
+      const batch = batches[next++];
+      if (batch) await describeBatch(batch);
+    }
+  });
+  await Promise.all(workers);
   return out;
 }
 
