@@ -45,9 +45,35 @@ export const VISION_PROMPT =
   "Do not summarise, do not add commentary, and do not invent text that is not visible. " +
   "If a page is genuinely blank, write nothing for it.";
 
+/**
+ * Reading FIGURES, which is a different job from reading pages of text and needs a
+ * different instruction. A diagram's value to a student is what it asserts — what
+ * causes what, which line is higher, what the labels are — so this asks for the
+ * content of the figure rather than a caption of it. One numbered answer per image,
+ * because a single batched call is far cheaper than one call per picture.
+ */
+export const FIGURE_PROMPT =
+  "These are figures taken from a lecture slide deck, in order. For EACH image, in one to three sentences, " +
+  "say what it shows and state the relationships or values it conveys — labels, axes, directions, groupings, " +
+  "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
+  "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
+  "Answer as a numbered list with one entry per image and nothing else.";
+
+/** How many figures to put in one request. Gemini handles more, but a smaller batch
+ *  keeps any single failure from costing the whole deck's descriptions. */
+export const FIGURE_BATCH_SIZE = 8;
+
 export interface VisionResult {
   text: string;
   model: string;
+}
+
+export interface VisionImage {
+  /** Caller's own key — the zip entry name — returned untouched so descriptions can
+   *  be matched back without relying on array position. */
+  name: string;
+  mime: string;
+  bytes: Uint8Array;
 }
 
 /** The environment this module reads, as a plain string bag rather than
@@ -105,6 +131,110 @@ export function buildVisionRequest(base64: string): string {
     // Transcription must not drift; temperature 0 keeps it literal.
     generationConfig: { temperature: 0 },
   });
+}
+
+/** The generateContent body for a batch of figures. PURE. */
+export function buildFigureRequest(images: readonly { mime: string; base64: string }[]): string {
+  return JSON.stringify({
+    contents: [
+      {
+        parts: [
+          ...images.map((image) => ({ inline_data: { data: image.base64, mime_type: image.mime } })),
+          { text: FIGURE_PROMPT },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0 },
+  });
+}
+
+/**
+ * Split a numbered reply back into one description per image.
+ *
+ * Order is the only link between a batched reply and its inputs, so a reply with
+ * the wrong NUMBER of entries is discarded entirely rather than matched up
+ * optimistically — a description attached to the wrong figure is worse than none,
+ * because it becomes a confident caption on an unrelated diagram. "none" answers
+ * are dropped, which is how a logo that slipped through the size filter stops here.
+ * PURE.
+ */
+export function parseFigureDescriptions(reply: string, expected: number): string[] | null {
+  if (expected <= 0) return [];
+  const entries: string[] = [];
+  let current: string[] = [];
+  for (const line of reply.split(/\r?\n/)) {
+    const started = /^\s*(\d{1,3})[.)]\s+(.*)$/.exec(line);
+    if (started) {
+      if (current.length > 0) entries.push(current.join(" ").trim());
+      current = [started[2] ?? ""];
+      continue;
+    }
+    if (current.length > 0 && line.trim()) current.push(line.trim());
+  }
+  if (current.length > 0) entries.push(current.join(" ").trim());
+  if (entries.length !== expected) return null;
+  return entries.map((entry) => (/^none\b/i.test(entry.trim()) ? "" : entry.trim()));
+}
+
+/**
+ * Describe slide figures with Gemini, keyed by the caller's own names. Returns an
+ * empty map — never throws — when vision is unconfigured or the provider fails, so
+ * a deck still imports with its text exactly as before.
+ */
+export async function describeFiguresWithVision(
+  images: readonly VisionImage[],
+  options: { env?: VisionEnv; signal?: AbortSignal } = {},
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const env = options.env ?? process.env;
+  const key = (env.GEMINI_API_KEY ?? "").trim();
+  if (!key || images.length === 0) return out;
+
+  const usable = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  for (let start = 0; start < usable.length; start += FIGURE_BATCH_SIZE) {
+    const batch = usable.slice(start, start + FIGURE_BATCH_SIZE);
+    const body = buildFigureRequest(
+      batch.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
+    );
+    const reply = await callGemini(body, key, env, options.signal);
+    // One failed batch loses its own descriptions and nothing else.
+    if (!reply) continue;
+    const parsed = parseFigureDescriptions(reply, batch.length);
+    if (!parsed) continue;
+    parsed.forEach((description, index) => {
+      const image = batch[index];
+      if (image && description) out.set(image.name, description);
+    });
+  }
+  return out;
+}
+
+/** One generateContent call, walking the model ladder. Returns null on any failure. */
+async function callGemini(body: string, key: string, env: VisionEnv, signal?: AbortSignal): Promise<string | null> {
+  for (const model of visionModels(env)) {
+    let response: Response;
+    try {
+      response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+        body,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        method: "POST",
+        signal,
+      });
+    } catch {
+      continue;
+    }
+    if (response.status === 404) {
+      await response.body?.cancel();
+      continue;
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const payload = (await response.json().catch(() => null)) as unknown;
+    return parseVisionText(payload) || null;
+  }
+  return null;
 }
 
 /**

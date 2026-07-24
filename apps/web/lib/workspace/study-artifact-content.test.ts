@@ -7,6 +7,7 @@ import {
   buildTestGenMessages,
   deckMaterial,
   missedQuestionCards,
+  noteMaterial,
   outlineToMermaidMindmap,
   parseGeneratedMindmap,
   parseGeneratedTest,
@@ -79,4 +80,38 @@ test("missed questions become recall-style flashcards", () => {
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.front, "Which receptor?");
   assert.equal(cards[0]?.back, "Beta\n\nBeta-1 drives rate.");
+});
+
+// ── Learning objectives reach the generators ─────────────────────────────────
+// A lecture's objectives slide is what the exam is written from. These assert it
+// survives the MATERIAL_CHAR_LIMIT clip, which is the whole reason objectives are
+// carried separately from the material text.
+
+test("noteMaterial pulls objectives out of a lecture before clipping it", () => {
+  const lecture = `Learning Objectives\n• Describe the renin-angiotensin system\n• Explain ACE inhibition\n\n${"Filler slide text about pharmacology. ".repeat(400)}`;
+  const material = noteMaterial("Antihypertensives", lecture);
+  assert.deepEqual(material.objectives, ["Describe the renin-angiotensin system", "Explain ACE inhibition"]);
+  assert.ok(material.text.length <= 9_000, "the body is still clipped");
+});
+
+test("a note with no objectives slide carries none rather than an empty array", () => {
+  const material = noteMaterial("Scratch", "Penicillins bind PBPs.");
+  assert.equal(material.objectives, undefined);
+});
+
+test("the test generator is told the objectives, ahead of the material", () => {
+  const material = noteMaterial("Antihypertensives", "Objectives\n• Describe the renin-angiotensin system\n\nBody text here.");
+  const prompt = buildTestGenMessages(material, 10)[1]!.content;
+  assert.match(prompt, /Describe the renin-angiotensin system/);
+  assert.ok(prompt.indexOf("renin-angiotensin") < prompt.indexOf("Material:"), "objectives must precede the material");
+});
+
+test("the mind-map generator gets the same objectives", () => {
+  const material = noteMaterial("Antihypertensives", "Objectives\n• Describe the renin-angiotensin system\n\nBody.");
+  assert.match(buildMindmapGenMessages(material)[1]!.content, /Describe the renin-angiotensin system/);
+});
+
+test("a deck with no objectives produces a prompt with no objectives preamble", () => {
+  const material = deckMaterial("Antibiotics", [{ back: "bactericidal", front: "penicillin" }]);
+  assert.doesNotMatch(buildTestGenMessages(material, 5)[1]!.content, /learning objectives/i);
 });

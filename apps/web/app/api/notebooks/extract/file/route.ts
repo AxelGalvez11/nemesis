@@ -11,9 +11,9 @@
 // with no key the route behaves exactly as it did before (see lib/pdf/vision.ts).
 import { NextResponse } from "next/server";
 
-import { extractDocxText, extractPptxText } from "@/lib/notebooks/office";
+import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
-import { readPdfWithVision } from "@/lib/pdf/vision";
+import { describeFiguresWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 
 export const runtime = "nodejs";
 
@@ -66,13 +66,34 @@ export async function POST(req: Request): Promise<Response> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   try {
     let result: { title: string | null; text: string };
+    let readBy: string | undefined;
+    let skippedFigures = 0;
     if (kind === "pdf") {
       const r = await extractPdfText(bytes);
       result = { title: r.meta.title, text: r.text };
     } else if (kind === "docx") {
       result = extractDocxText(bytes);
     } else {
-      result = extractPptxText(bytes);
+      // A lecture deck's content is often a picture — a pathway, a curve, a labelled
+      // figure — and the text extractor cannot see any of it. Read the figures the
+      // slide-media plan judges to be content, then fold their descriptions in under
+      // the slides they came from. When vision is unconfigured or fails,
+      // describeFiguresWithVision returns an empty map and this is exactly the old
+      // text-only extraction.
+      const deck = readPptxSlides(bytes);
+      const figures = deck.media.images.length
+        ? await describeFiguresWithVision(
+            deck.media.images.flatMap((image) => {
+              const data = deck.imageBytes.get(image.name);
+              return data ? [{ bytes: data, mime: image.mime, name: image.name }] : [];
+            }),
+          )
+        : new Map<string, string>();
+      result = pptxTextWithFigures(deck, figures);
+      if (figures.size > 0) readBy = "figures";
+      // Reading only some of a deck's figures must never look like reading all of
+      // them, so say what was left out.
+      if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
     }
 
     let text = result.text.trim();
@@ -81,7 +102,6 @@ export async function POST(req: Request): Promise<Response> {
     // configured we read the pages instead; when it is not, or the file is too
     // big, or the provider fails, readPdfWithVision returns null and the original
     // 422 stands unchanged. See lib/pdf/vision.ts.
-    let readBy: string | undefined;
     if (!text && kind === "pdf") {
       const seen = await readPdfWithVision(bytes);
       if (seen) {
@@ -115,6 +135,9 @@ export async function POST(req: Request): Promise<Response> {
       // Present only when the pages had to be read as images, so a caller (and
       // the student) can tell a transcription apart from an exact text layer.
       ...(readBy ? { readBy } : {}),
+      // Present only when a deck had more figures than the per-deck cap, so a
+      // partial read is never presented as a complete one.
+      ...(skippedFigures > 0 ? { skippedFigures } : {}),
     });
   } catch (err) {
     return NextResponse.json(
