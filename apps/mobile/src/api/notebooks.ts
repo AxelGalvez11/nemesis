@@ -52,6 +52,10 @@ export type {
 
 const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-llm`;
 
+// Cost attribution tag for the metering valve. Duplicated from api/chat.ts on purpose —
+// this file deliberately keeps its own copy of the transport (see the header comment).
+const CLIENT_HEADER = { "X-Nemesis-Client": "ios" } as const;
+
 /** PostgREST "relation does not exist" — lets reads degrade to empty instead of throwing
  *  (mirrors apps/web/lib/notebooks/api.ts's isMissingRelation guard). */
 function isMissingRelation(error: { code?: string } | null): boolean {
@@ -322,7 +326,7 @@ async function postNotebookCompletion(
   const call = (bearer: string) =>
     expoFetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
-      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
 

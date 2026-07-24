@@ -69,6 +69,79 @@ const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
+// ── Cost attribution (PostHog LLM analytics) ────────────────────────────────
+// Every completion also reports what it COST US and WHICH app spent it. This is a
+// different ledger from the student meter below: the meter counts discounted tokens
+// against a plan cap, this counts dollars against our provider bill.
+// The project token is PUBLISHABLE (it already ships inside the web bundle) and is
+// write-only — it is not a secret. Override per-environment with POSTHOG_KEY.
+const POSTHOG_KEY = Deno.env.get('POSTHOG_KEY') ?? 'phc_xcEjfTB3a2ftyzsw7oEAkpiBXRThWWjA3D5BcPBj36ht'
+const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
+
+/** MIRROR of supabase/functions/_shared/llm-cost.ts (this function deploys as ONE
+ *  self-contained file). That copy is canonical and carries the tests — change both.
+ *  Prices in USD per 1M tokens, read off the providers' own pages on PRICE_REV. */
+const PRICE_REV = '2026-07-24'
+const PRICES: Record<string, { inputPerM: number; cachedInputPerM: number; outputPerM: number }> = {
+  'deepseek-v4-flash': { cachedInputPerM: 0.0028, inputPerM: 0.14, outputPerM: 0.28 },
+  'deepseek-v4-pro': { cachedInputPerM: 0.003625, inputPerM: 0.435, outputPerM: 0.87 },
+  'glm-5.2': { cachedInputPerM: 0.26, inputPerM: 1.4, outputPerM: 4.4 }
+}
+
+/** Dollar cost of one completion, or null when the model isn't priced — an unlisted
+ *  model must report as UNPRICED, never as $0.00, or it silently reads as free. */
+function costUsd(
+  model: string,
+  split: { promptTokens: number; completionTokens: number; cacheHitTokens: number }
+): number | null {
+  const price = PRICES[model.toLowerCase()]
+  if (!price) return null
+
+  const prompt = Math.max(0, split.promptTokens)
+  const cached = Math.min(Math.max(0, split.cacheHitTokens), prompt)
+  const missed = prompt - cached
+  const output = Math.max(0, split.completionTokens)
+  const usd =
+    (missed * price.inputPerM + cached * price.cachedInputPerM + output * price.outputPerM) / 1_000_000
+
+  return Math.round(usd * 1e9) / 1e9
+}
+
+/** Which app is calling. The explicit header wins; the device-key label is the
+ *  fallback that makes existing installs attributable with no client update. */
+function resolveClient(header: string | null, keyLabel: string | null): string {
+  const declared = (header ?? '').trim().toLowerCase()
+  if (declared === 'web' || declared === 'ios' || declared === 'desktop') return declared
+
+  const label = keyLabel ?? ''
+  if (/iphone|ipad|ios/i.test(label)) return 'ios'
+  if (/web/i.test(label)) return 'web'
+  if (/desktop|mac/i.test(label)) return 'desktop'
+
+  return 'unknown'
+}
+
+/** Fire one $ai_generation into PostHog's LLM analytics. Never throws and never
+ *  blocks the student's answer — a cost report going missing must not break chat. */
+async function reportCost(props: Record<string, unknown>, distinctId: string): Promise<void> {
+  if (!POSTHOG_KEY) return
+
+  try {
+    await fetch(`${POSTHOG_HOST}/i/v0/e/`, {
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        event: '$ai_generation',
+        // No prompt or completion TEXT is ever sent — token counts and money only.
+        properties: { distinct_id: distinctId, ...props }
+      }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST'
+    })
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
 /**
  * DeepSeek retires the 'deepseek-chat'/'deepseek-reasoner' aliases on 2026-07-24.
  * Mirror of resolveDeepSeekModel in supabase/functions/ask/llm.ts — map to the durable
@@ -96,9 +169,24 @@ function resolveModel(model: string): { model: string; thinking?: { type: 'disab
   return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
 }
 
+// CORS — the web app (browser) calls this function cross-origin; without these
+// headers the browser blocks the device-key mint and chat before they run (native
+// Mac/phone clients aren't subject to CORS, which is why only the web broke). Auth
+// rides the Authorization header (not cookies), so a wildcard origin is safe here.
+// This block was hot-deployed straight to production and lived only in the running
+// function until 2026-07-24 — deploying any build without it takes the web app down.
+const CORS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  // x-nemesis-client carries the cost-attribution tag; leave it out of this list and
+  // the browser rejects the whole chat request at preflight.
+  'Access-Control-Allow-Headers': 'authorization, content-type, x-nemesis-client',
+  'Access-Control-Max-Age': '86400'
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
     status
   })
 }
@@ -147,6 +235,9 @@ interface KeyContext {
   monthlyLimit: number
   monthlyUsed: number
   monthStart: string
+  /** The label the client minted this key with ("Nemesis Web" / "Nemesis iPhone" /
+   *  "Nemesis desktop") — the fallback signal for cost attribution. */
+  label: string | null
 }
 
 /** Resolve a device key to its user + plan + today's usage. */
@@ -158,7 +249,7 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
   const keyHash = await sha256Hex(deviceKey)
   const { data: keyRow } = await admin
     .from('device_keys')
-    .select('user_id,revoked')
+    .select('user_id,revoked,label')
     .eq('key_hash', keyHash)
     .maybeSingle()
 
@@ -212,6 +303,7 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
 
   return {
     dailyLimit,
+    label: typeof keyRow.label === 'string' ? keyRow.label : null,
     monthStart,
     monthlyLimit,
     monthlyUsed: usedFor(MONTHLY_COUNTER_KEY, monthStart),
@@ -229,14 +321,40 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
  *  chats (owner call 2026-07-16: meter cache hits at a fraction, like we're billed). */
 const CACHE_HIT_WEIGHT = 0.1
 
-/** Record spent tokens against today's counter + the event ledger. `cacheHitTokens`
- *  is the provider-reported prompt_cache_hit_tokens (0 when the provider doesn't
- *  report it — GLM failover, missing usage chunk — which bills at full weight). */
-async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: number, model: string): Promise<void> {
-  const raw = Math.max(1, Math.round(tokens))
-  const cacheHit = Math.min(Math.max(0, Math.round(cacheHitTokens)), raw)
+/** One completion's provider-reported token counts. `total` is what the student meter
+ *  charges against; `prompt`/`completion` are what the PROVIDER BILL is computed from
+ *  (output tokens cost 2-3x input, so a total alone can't produce a dollar figure).
+ *  Any field the provider didn't report arrives as 0. */
+interface UsageSplit {
+  total: number
+  prompt: number
+  completion: number
+  cacheHit: number
+}
+
+/** Record spent tokens against today's counter + the event ledger, and report what the
+ *  call cost us. `cacheHit` is the provider-reported prompt_cache_hit_tokens (0 when
+ *  the provider doesn't report it — GLM failover, missing usage chunk — which bills at
+ *  full weight). `client` is which app spent it; `latencyMs` is wall-clock for the call. */
+async function recordUsage(
+  ctx: KeyContext,
+  usage: UsageSplit,
+  model: string,
+  client: string,
+  latencyMs: number
+): Promise<void> {
+  const raw = Math.max(1, Math.round(usage.total))
+  const cacheHit = Math.min(Math.max(0, Math.round(usage.cacheHit)), raw)
   const spent = Math.max(1, raw - cacheHit + Math.ceil(cacheHit * CACHE_HIT_WEIGHT))
   const nowIso = new Date().toISOString()
+
+  // The provider bill. When the usage chunk was missing entirely we only have an
+  // estimated total, so the split is unknown — attribute it all to input rather than
+  // invent an output share, and mark it estimated so the report can exclude it.
+  const estimated = usage.prompt <= 0 && usage.completion <= 0
+  const promptTokens = estimated ? raw - cacheHit : Math.max(0, Math.round(usage.prompt))
+  const completionTokens = estimated ? 0 : Math.max(0, Math.round(usage.completion))
+  const usd = costUsd(model, { cacheHitTokens: cacheHit, completionTokens, promptTokens })
 
   await admin.from('usage_counters').upsert(
     {
@@ -271,10 +389,48 @@ async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: numb
     event_type: 'nemesis_llm_completion',
     // tokens = what the meter charged; tokens_raw/cache_hit_tokens keep the full
     // picture auditable (and let us re-tune CACHE_HIT_WEIGHT from real data).
-    metadata: { cache_hit_tokens: cacheHit, model, tokens: spent, tokens_raw: raw },
+    // client/cost_usd are the OTHER ledger: which app, and what we actually paid.
+    // cost_usd is stamped at write time with the price revision that produced it —
+    // a later price change must never silently rewrite what last month cost.
+    metadata: {
+      cache_hit_tokens: cacheHit,
+      client,
+      cost_estimated: estimated,
+      cost_usd: usd,
+      model,
+      price_rev: PRICE_REV,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      tokens: spent,
+      tokens_raw: raw
+    },
     period_start: ctx.periodStart,
     user_id: ctx.userId
   })
+
+  // The same facts to PostHog, where they land in LLM analytics as a generation and
+  // can be sliced by app without anyone writing SQL. usd is OURS (computed from the
+  // provider's published prices), so PostHog doesn't guess it from a model name.
+  await reportCost(
+    {
+      $ai_cache_read_input_tokens: cacheHit,
+      $ai_input_tokens: promptTokens,
+      $ai_latency: Math.round(latencyMs) / 1000,
+      $ai_model: model,
+      $ai_output_tokens: completionTokens,
+      $ai_provider: model.toLowerCase().startsWith('glm') ? 'z.ai' : 'deepseek',
+      $ai_total_cost_usd: usd ?? undefined,
+      $ai_trace_id: crypto.randomUUID(),
+      client,
+      cost_estimated: estimated,
+      // Unpriced = a model missing from the price list. Counted, never treated as $0.
+      cost_unpriced: usd === null,
+      metered_tokens: spent,
+      plan: ctx.plan,
+      price_rev: PRICE_REV
+    },
+    ctx.userId
+  )
 
   // Fire a single early-warning event the first time this spend pushes the user
   // past CAP_WARN_FRACTION of the daily or monthly cap (crossed = below before,
@@ -366,6 +522,11 @@ async function chatCompletions(req: Request): Promise<Response> {
   if (ctx instanceof Response) {
     return ctx
   }
+
+  // Which app is spending. Header first, key label as the fallback; neither → 'unknown'
+  // (never 'web' — a default would quietly inflate one app with everyone else's spend).
+  const client = resolveClient(req.headers.get('x-nemesis-client'), ctx.label)
+  const startedAt = Date.now()
 
   if (ctx.used >= ctx.dailyLimit) {
     return json(
@@ -494,17 +655,31 @@ async function chatCompletions(req: Request): Promise<Response> {
 
   if (!streaming) {
     const data = await upstream.json().catch(() => null)
-    const tokens = (data?.usage?.total_tokens as number | undefined) ?? 1000
-    const cacheHit = (data?.usage?.prompt_cache_hit_tokens as number | undefined) ?? 0
-    void recordUsage(ctx, tokens, cacheHit, model)
+    const num = (field: string): number => (data?.usage?.[field] as number | undefined) ?? 0
+    void recordUsage(
+      ctx,
+      {
+        cacheHit: num('prompt_cache_hit_tokens'),
+        completion: num('completion_tokens'),
+        prompt: num('prompt_tokens'),
+        total: num('total_tokens') || 1000
+      },
+      model,
+      client,
+      Date.now() - startedAt
+    )
 
     return json(data ?? { error: 'upstream returned no body' }, upstream.status)
   }
 
   // Streaming: pass bytes through untouched while scanning for the final usage chunk.
+  // prompt/completion are scanned alongside the total because the provider BILL needs
+  // the split (output tokens cost 2-3x input) even though the meter only needs a total.
   let tail = ''
   let usageTokens = 0
   let cacheHitTokens = 0
+  let promptTokens = 0
+  let completionTokens = 0
   const decoder = new TextDecoder()
 
   const lastNumber = (haystack: string, re: RegExp): number | null => {
@@ -522,27 +697,47 @@ async function chatCompletions(req: Request): Promise<Response> {
   const meter = new TransformStream<Uint8Array, Uint8Array>({
     flush() {
       // The length/4 fallback has no usage chunk to read cache data from — bill it
-      // at full weight rather than guessing a discount.
-      void recordUsage(ctx, usageTokens || Math.max(500, Math.round(tail.length / 4)), usageTokens ? cacheHitTokens : 0, model)
+      // at full weight rather than guessing a discount, and with no prompt/completion
+      // split, which recordUsage marks as an ESTIMATED cost rather than a measured one.
+      void recordUsage(
+        ctx,
+        {
+          cacheHit: usageTokens ? cacheHitTokens : 0,
+          completion: usageTokens ? completionTokens : 0,
+          prompt: usageTokens ? promptTokens : 0,
+          total: usageTokens || Math.max(500, Math.round(tail.length / 4))
+        },
+        model,
+        client,
+        Date.now() - startedAt
+      )
     },
     transform(chunk, controller) {
       controller.enqueue(chunk)
       tail = (tail + decoder.decode(chunk, { stream: true })).slice(-8000)
       usageTokens = lastNumber(tail, /"total_tokens"\s*:\s*(\d+)/g) ?? usageTokens
       cacheHitTokens = lastNumber(tail, /"prompt_cache_hit_tokens"\s*:\s*(\d+)/g) ?? cacheHitTokens
+      promptTokens = lastNumber(tail, /"prompt_tokens"\s*:\s*(\d+)/g) ?? promptTokens
+      completionTokens = lastNumber(tail, /"completion_tokens"\s*:\s*(\d+)/g) ?? completionTokens
     }
   })
 
   return new Response(upstream.body?.pipeThrough(meter) ?? null, {
     headers: {
       'Cache-Control': 'no-cache',
-      'Content-Type': upstream.headers.get('Content-Type') ?? 'text/event-stream'
+      'Content-Type': upstream.headers.get('Content-Type') ?? 'text/event-stream',
+      ...CORS
     },
     status: upstream.status
   })
 }
 
 Deno.serve(async (req: Request) => {
+  // CORS preflight — the browser fires an OPTIONS before the real POST/GET.
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS })
+  }
+
   const path = new URL(req.url).pathname
 
   if (req.method === 'POST' && path.endsWith('/device-key')) {
