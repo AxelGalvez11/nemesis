@@ -7,6 +7,7 @@ import {
   MAX_ACTIVE_SKILLS,
   selectChatSkills,
   SKILL_CHAR_BUDGET,
+  SKILL_CHAR_SHARE,
   type ChatSkill,
 } from "./chat-skills";
 
@@ -58,6 +59,66 @@ test("every catalog skill fits the budget on its own and is well formed", () => 
     assert.ok(skill.name.length > 0);
     assert.ok(!skill.match.global, `${skill.id} uses a global regex — .test() would be stateful`);
   }
+});
+
+// The budget check in selectChatSkills is a silent `continue`, so a packet
+// written past its share does not error — it just stops appearing whenever
+// another skill matched first, which reads as "the model ignored it".
+test("no skill is big enough to be silently dropped when paired with another", () => {
+  for (const skill of CHAT_SKILLS) {
+    assert.ok(
+      skill.instructions.length <= SKILL_CHAR_SHARE,
+      `${skill.id} is ${skill.instructions.length} chars — over the ${SKILL_CHAR_SHARE} share, so it would vanish when paired`,
+    );
+  }
+  // Prove it with the worst real pair rather than trusting the arithmetic.
+  const widest = [...CHAT_SKILLS].sort((a, b) => b.instructions.length - a.instructions.length).slice(0, MAX_ACTIVE_SKILLS);
+  const total = widest.reduce((sum, skill) => sum + skill.instructions.length, 0);
+  assert.ok(total <= SKILL_CHAR_BUDGET, `the two widest skills total ${total}, over the ${SKILL_CHAR_BUDGET} budget`);
+});
+
+test("test requests get the test-writing skill", () => {
+  assert.deepEqual(idsFor("make me a practice test on the renal unit"), ["test-craft"]);
+  assert.deepEqual(idsFor("quiz me on antibiotics"), ["test-craft"]);
+  assert.deepEqual(idsFor("write some practice questions for my exam"), ["test-craft"]);
+  assert.deepEqual(idsFor("can I get board-style mcqs on this"), ["test-craft"]);
+});
+
+test("teaching requests get the teaching skill", () => {
+  assert.deepEqual(idsFor("explain beta blockers"), ["teaching"]);
+  assert.deepEqual(idsFor("teach me the coagulation cascade"), ["teaching"]);
+  assert.deepEqual(idsFor("i don't understand first-pass metabolism"), ["teaching"]);
+  assert.deepEqual(idsFor("what's the difference between heparin and warfarin"), ["teaching"]);
+  assert.deepEqual(idsFor("why does this cause hyperkalemia"), ["teaching"]);
+  assert.deepEqual(idsFor("i'm confused about the sodium channel"), ["teaching"]);
+});
+
+// A teaching request about a quantitative topic should get BOTH — the method
+// for explaining it and the discipline for the arithmetic in it.
+test("teaching pairs with the quantitative skill on a numeric topic", () => {
+  assert.deepEqual(idsFor("i'm confused about renal clearance"), ["teaching", "quantitative-check"]);
+});
+
+// The reason TEST_CRAFT and TEACHING sit ahead of EVIDENCE_HONESTY in the
+// catalog: `study`/`studies` is near-universal vocabulary in a studying app,
+// so from behind these two would lose their slot on their own core phrasings.
+test("the greedy evidence matcher cannot starve the new skills", () => {
+  assert.equal(idsFor("quiz me on what I need to study")[0], "test-craft");
+  assert.equal(idsFor("explain what this study found")[0], "teaching");
+  // ...and evidence-honesty still rides along in the second slot.
+  assert.ok(idsFor("explain what this study found").includes("evidence-honesty"));
+});
+
+test("teaching and calculation pair up on a worked-example request", () => {
+  assert.deepEqual(idsFor("teach me how to calculate creatinine clearance"), ["teaching", "quantitative-check"]);
+});
+
+// Ordinary phrasings that must NOT burn a slot — `explain`-adjacent wording is
+// common, and a false match displaces a skill the turn genuinely needed.
+test("the new matchers stay off unrelated messages", () => {
+  assert.deepEqual(idsFor("thanks, that explanation helped"), []);
+  assert.deepEqual(idsFor("what time is my next class"), []);
+  assert.deepEqual(idsFor("rename this note"), []);
 });
 
 test("skills join into one message in catalog order", () => {

@@ -6,6 +6,7 @@
 // builders, mermaid conversion, and attempt scoring all live here for tests.
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 
 export interface TestQuestion {
   q: string;
@@ -163,7 +164,9 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
     {
       content:
         `Write a practice test of exactly ${count} multiple-choice questions from the student's ${material.label}. ` +
-        "Probe understanding (mechanisms, contrasts, applications, likely exam traps), not recall alone. " +
+        // The item-writing rules are shared with the chat "test-craft" skill so
+        // the two test-producing lanes cannot drift apart — see item-writing.ts.
+        `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +
         'Return JSON shaped {"questions":[{"q":"…","options":["…","…","…","…"],"answer":0,"why":"…"}]} — ' +
         "4 options per question, answer is the 0-based index of the correct option, why is a one-sentence explanation " +
         "grounded in the material. If the material is too thin for that many questions, write fewer.\n\n" +

@@ -11,6 +11,8 @@
 // per turn and bounded by SKILL_CHAR_BUDGET, so a matched turn adds roughly a
 // thousand tokens — never an open-ended prompt.
 
+import { EXAM_ITEM_RULES } from "./item-writing";
+
 export interface ChatSkill {
   id: string;
   /** Short label — what this skill teaches the model to do well. */
@@ -25,6 +27,11 @@ export interface ChatSkill {
 export const MAX_ACTIVE_SKILLS = 2;
 /** Hard ceiling on injected characters, whatever matched. */
 export const SKILL_CHAR_BUDGET = 4_000;
+/** The share one packet may occupy. selectChatSkills SKIPS an oversized packet
+ *  silently (`continue`, not a throw), so a skill written past this ceiling
+ *  would vanish whenever it matched alongside another one — a bug that looks
+ *  like "the model ignored the instruction". Held by a test over the catalog. */
+export const SKILL_CHAR_SHARE = SKILL_CHAR_BUDGET / MAX_ACTIVE_SKILLS;
 
 const FLASHCARD_CRAFT: ChatSkill = {
   id: "flashcard-craft",
@@ -74,8 +81,40 @@ const EVIDENCE_HONESTY: ChatSkill = {
   name: "Evidence honesty",
 };
 
-/** Order matters: earlier skills win the budget when several match. */
-export const CHAT_SKILLS: ChatSkill[] = [FLASHCARD_CRAFT, QUANTITATIVE_CHECK, EVIDENCE_HONESTY];
+const TEST_CRAFT: ChatSkill = {
+  id: "test-craft",
+  instructions: ["SKILL — writing exam questions that measure understanding:", EXAM_ITEM_RULES].join("\n"),
+  match:
+    /\b(practice (?:test|exam|quiz|questions?)|quiz(?:zes)?|quiz me|test me|mcqs?|multiple[- ]choice|exam questions?|question bank|board[- ]style|write (?:me )?(?:some )?(?:practice )?questions?|make (?:me )?a (?:practice )?(?:test|exam))\b/i,
+  name: "Test craft",
+};
+
+const TEACHING: ChatSkill = {
+  id: "teaching",
+  instructions: [
+    "SKILL — teaching, not lecturing:",
+    "Find out what they already have before you explain. Ask one diagnostic question, or use what their own notes and past answers show. Explaining what they already know wastes the turn; explaining over their head wastes it too.",
+    "Teach the smallest piece that unblocks them, then stop and check. One idea landed beats a complete lecture they abandon halfway.",
+    "Lead with a concrete case, then name the principle. An abstract-first explanation reads as clear and disappears the moment it is tested.",
+    "Say WHY, not just what. A fact with its mechanism attached can be reconstructed; a bare fact has to be memorised and will be forgotten.",
+    "When two things are being confused, put them side by side and name the ONE feature that separates them. Most wrong answers are a mix-up between neighbours, not a blank — so find the neighbour.",
+    "Make them retrieve. End with a question they answer from memory, not a summary they read. Attempting and missing, then being corrected, builds more durable memory than being told correctly the first time.",
+    "When they get something wrong, do not just supply the right answer. Say what their answer implies they believe, correct that belief, and only then give the answer.",
+    "Push back on re-reading and highlighting — both feel productive and do very little. Tell them to space the topic over days and to practise it shuffled with related material rather than in one block.",
+    "Never manufacture confidence to keep the explanation tidy. If something is genuinely contested, or you do not know it, say so plainly. A fluent wrong explanation is the most expensive thing you can hand a student, because they will build on it.",
+  ].join("\n"),
+  match:
+    /\b(teach me|explain|help me understand|walk me through|talk me through|i (?:don'?t|do not) (?:understand|get)|i'?m (?:confused|lost)|confused about|makes? no sense|break (?:this|it) down|what(?:'s| is) the difference between|why (?:does|is|are|do)|how (?:does|do|is) .{0,40}\bwork|eli5|simpler terms|dumb it down)\b/i,
+  name: "Teaching",
+};
+
+/** Order matters: earlier skills win the budget when several match, and only
+ *  MAX_ACTIVE_SKILLS get a slot. TEST_CRAFT and TEACHING sit ahead of
+ *  EVIDENCE_HONESTY deliberately — EVIDENCE_HONESTY matches bare `study` and
+ *  `studies`, which in a studying app fires on a large share of messages, so
+ *  from behind it would starve the two skills a "quiz me" or "explain this"
+ *  turn is actually about. It still takes the second slot on those turns. */
+export const CHAT_SKILLS: ChatSkill[] = [FLASHCARD_CRAFT, TEST_CRAFT, TEACHING, QUANTITATIVE_CHECK, EVIDENCE_HONESTY];
 
 /** Which skills apply to one message. Pure and deterministic — no model call,
  *  so routing a turn through a skill costs nothing but the injected text. */

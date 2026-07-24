@@ -33,6 +33,7 @@ import { DayPanel } from "./day-panel";
 import { EventFormDialog, EventViewDialog } from "./event-dialogs";
 import { AGENDA_WINDOW_DAYS, CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
+import { SyllabusDialog } from "./syllabus-dialog";
 import { WeekGrid } from "./week-grid";
 import { YearGrid } from "./year-grid";
 
@@ -59,6 +60,7 @@ export function CalendarWorkspace() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [syllabusOpen, setSyllabusOpen] = useState(false);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   useEffect(() => {
@@ -129,6 +131,31 @@ export function CalendarWorkspace() {
     setDialog(null);
   }
 
+  // Syllabus import goes through the SAME per-event save path as a hand-made
+  // event, so imported rows get identical validation and land as source:
+  // 'manual' — editable and deletable, unlike agent-written events which the
+  // UI routes to a read-only dialog with no way out (see event-dialogs.tsx).
+  // Written one at a time so a single bad row cannot lose the whole import.
+  async function handleImport(imported: CalendarEvent[]) {
+    const saved: CalendarEvent[] = [];
+    const failures: string[] = [];
+    for (const event of imported) {
+      try {
+        saved.push(await saveCalendarEvent(event, { userId, preview }));
+      } catch {
+        failures.push(event.title);
+      }
+    }
+    if (saved.length > 0) {
+      setEvents((prev) => [...prev.filter((e) => !saved.some((row) => row.id === e.id)), ...saved]);
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `Added ${saved.length}, but couldn't add: ${failures.slice(0, 3).join(", ")}${failures.length > 3 ? "…" : ""}`,
+      );
+    }
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) pt-(--titlebar-height)">
       <div className="flex h-full min-h-0 flex-col overflow-y-auto">
@@ -136,6 +163,7 @@ export function CalendarWorkspace() {
           cursor={cursor}
           onAddEvent={openAdd}
           onChangeView={setView}
+          onImportSyllabus={() => setSyllabusOpen(true)}
           onStep={goStep}
           today={today}
           view={view}
@@ -162,6 +190,10 @@ export function CalendarWorkspace() {
           <Agenda events={upcoming} hasAnyEvents={events.length > 0} loaded={loaded} onOpenEvent={openEvent} />
         </div>
       </div>
+
+      {syllabusOpen && (
+        <SyllabusDialog onClose={() => setSyllabusOpen(false)} onImport={handleImport} uid={preview ? null : userId} />
+      )}
 
       {dialog?.mode === "view" && <EventViewDialog event={dialog.event} onClose={() => setDialog(null)} />}
       {dialog?.mode === "add" && (
