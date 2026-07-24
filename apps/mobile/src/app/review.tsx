@@ -21,6 +21,7 @@ import {
   EMPTY_PROGRESS,
   sessionCounts,
   sessionQueue,
+  shouldEmitGrade,
   type SessionProgress,
 } from "@/lib/review-queue";
 import { confirmHoldRemaining, gradeButtonState } from "@/lib/grade-confirm";
@@ -239,13 +240,22 @@ export default function ReviewScreen() {
     const before = current;
     const beforeProgress = progressRef.current;
     const startedAt = Date.now();
-    const result = await gradeStudyCard(current.id, value);
+
+    // ONLY THE FIRST PRESS OF A CARD REACHES THE SERVER (owner 2026-07-24 — a
+    // new card now takes two "Good"s to graduate and comes back in between).
+    // grade_study_card applies every call as an independent review, so sending
+    // each rung of the learning ladder would advance one card's real interval
+    // two or three times for a single sitting and push it weeks out. The later
+    // presses are a second LOOK, not a second review — they stay on the phone.
+    // See review-queue.ts's SessionProgress.gradedIds.
+    const emit = shouldEmitGrade(beforeProgress, before.id);
+    const result = emit ? await gradeStudyCard(before.id, value) : null;
     const remaining = confirmHoldRemaining(Date.now() - startedAt, CONFIRM_HOLD_MS);
     if (remaining > 0) await wait(remaining);
     gradingRef.current = false;
     setGrading(false);
     setFlashGrade(null);
-    if (!result.ok) {
+    if (result && !result.ok) {
       // Stay put — revealed, ungraded — so the student can retry once online.
       setGradeError(result.message);
       return;
@@ -253,21 +263,23 @@ export default function ReviewScreen() {
     // Write the server's answer back into the local card. It used to be
     // discarded, which meant the footer was tallying stale scheduling fields
     // for the rest of the sitting.
-    setCards((rows) =>
-      rows.map((row) =>
-        row.id === before.id
-          ? {
-              ...row,
-              dueAt: result.dueAt,
-              intervalDays: result.intervalDays,
-              lapses: result.lapses,
-              repetitions: result.repetitions,
-            }
-          : row,
-      ),
-    );
+    if (result?.ok) {
+      setCards((rows) =>
+        rows.map((row) =>
+          row.id === before.id
+            ? {
+                ...row,
+                dueAt: result.dueAt,
+                intervalDays: result.intervalDays,
+                lapses: result.lapses,
+                repetitions: result.repetitions,
+              }
+            : row,
+        ),
+      );
+    }
     undoRef.current = [...undoRef.current, { card: before, progress: beforeProgress }];
-    setProgress(applyGrade(beforeProgress, before.id, value === "again"));
+    setProgress(applyGrade(beforeProgress, before, value));
     setRevealed(false);
   }
 
@@ -288,9 +300,14 @@ export default function ReviewScreen() {
     setCards((rows) => rows.map((row) => (row.id === last.card.id ? last.card : row)));
     setProgress(last.progress);
     setGradeError(null);
-    // Revealed, because you have just seen this card's answer — hiding it again
-    // would make undo feel like a fresh card rather than a correction.
-    setRevealed(true);
+    // Back to the FRONT of the card, not the answer (owner 2026-07-24). This
+    // shipped the other way round on the reasoning that you had just seen the
+    // answer, so undo should feel like a correction rather than a fresh card.
+    // The owner wants the question — which is the more useful of the two: the
+    // reason to undo is usually that you graded before you had really answered,
+    // and landing on the answer denies you the second attempt you took the card
+    // back for.
+    setRevealed(false);
     hapticHoldRegistered();
   }, []);
 

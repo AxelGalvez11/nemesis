@@ -1,7 +1,7 @@
-import { memo, useRef } from "react";
+import { memo, useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector, type PanGesture } from "react-native-gesture-handler";
-import type { SharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { graphNodeColor } from "@/lib/graph-palette";
 import { nodeRadiusFor } from "@/lib/graph-settings";
 import type { GraphNode } from "@/lib/note-graph";
@@ -42,6 +42,19 @@ import type { ThemeColors } from "@/theme/palette";
 // node would both move the node AND pan the canvas underneath it, since
 // nested gesture handlers don't exclude each other by default in RNGH.
 //
+// POSITION DOES NOT COME THROUGH PROPS. `node` carries only the things that
+// change when the LIBRARY changes — title, degree, ghost — while x/y ride a
+// reanimated shared array (`positions`, flat [x0,y0,x1,y1,…]) that the
+// simulation writes once per frame. That split is the whole performance story
+// (owner 2026-07-24: the graph was "still slow" after the previous fix):
+// positions used to arrive as a new `node` object every frame, which defeated
+// the memo() below, re-rendered all 200 nodes, and — because the gestures were
+// constructed in the render body — rebuilt and re-attached three gesture
+// objects PER NODE PER FRAME. A single node drag holds the sim warm for ~1,400
+// frames, so one drag meant on the order of 840,000 gesture allocations.
+// Now the component re-renders only when the graph itself changes, and motion
+// is a transform on the UI thread.
+//
 // onDragStart/onDragEnd bracket the gesture so graph.tsx can call the sim's
 // startDrag()/endDrag() (note-graph.ts) — keeping the force simulation fully
 // energized, with a temporarily stiffer pull on this node's own edges, for
@@ -54,8 +67,15 @@ import type { ThemeColors } from "@/theme/palette";
 const LABEL_W = 100;
 
 export interface GraphNodeViewProps {
+  /** Structure only — title, degree, ghost. Its x/y are IGNORED here; live
+   * position comes from `positions` (see the top-of-file note). */
   node: GraphNode;
   index: number;
+  /** Every node's live position, flat: `[x0, y0, x1, y1, …]`. This node reads
+   * slots `index * 2` and `index * 2 + 1`. Written once per frame by graph.tsx's
+   * animation loop; consumed here on the UI thread, so a moving graph costs no
+   * React renders at all. */
+  positions: SharedValue<number[]>;
   /** Current whole-canvas zoom level (graph.tsx's pinch), so a drag's
    * on-screen finger movement can be converted to graph-space movement —
    * the node lives inside the same scaled container the finger's raw
@@ -99,6 +119,7 @@ export interface GraphNodeViewProps {
 export const GraphNodeView = memo(function GraphNodeView({
   node,
   index,
+  positions,
   scale,
   canvasPanGesture,
   showLabel,
@@ -110,15 +131,13 @@ export const GraphNodeView = memo(function GraphNodeView({
   onDragEnd,
   onOpen,
 }: GraphNodeViewProps) {
-  // Captured at the drag's real start and read from onUpdate. onStart fires
-  // once per physical touch-down, but this component can re-render *during*
-  // an active drag (dragging keeps the sim energized — see graph.tsx — so
-  // the tick loop keeps calling setGraph while a finger is still down),
-  // which rebuilds this Gesture.Pan() with a fresh closure mid-gesture. A
-  // ref survives that rebuild; a plain variable captured at construction
-  // time would not, since onStart — which would reassign it — doesn't fire
-  // again for the same physical touch.
-  const dragOrigin = useRef({ x: node.x, y: node.y });
+  // Captured at the drag's real start and read from onUpdate, because a pan
+  // reports translation from where the finger began, not absolute position.
+  // Read out of the shared array rather than off a prop: position no longer
+  // arrives through props at all, and the array is the only thing that knows
+  // where this node actually is at touch-down (it may have drifted since the
+  // last render — during a settle it certainly has).
+  const dragOrigin = useRef({ x: 0, y: 0 });
   // Set in onStart, cleared in onFinalize — lets onFinalize (which fires for
   // a losing-the-Race tap too, see the top-of-file comment) tell "a drag
   // really was active" apart from "this was just a tap", so onDragEnd only
@@ -139,44 +158,68 @@ export const GraphNodeView = memo(function GraphNodeView({
   const hitR = Math.max(16, r + 8);
   const size = hitR * 2;
 
-  const tapGesture = Gesture.Tap()
-    .runOnJS(true)
-    .maxDistance(10)
-    .onEnd((_event, success) => {
-      if (success) onOpen(node);
-    });
+  // MEMOIZED, and that matters as much as the shared position array: these
+  // used to be rebuilt in the render body, so every frame of a settle or a drag
+  // threw away and re-attached three gesture handlers for every node on screen.
+  // The deps are all stable — index and the callbacks are, `positions`/`scale`
+  // are shared values whose identity never changes, and `node` only changes
+  // when the library does.
+  const nodeGesture = useMemo(() => {
+    const tapGesture = Gesture.Tap()
+      .runOnJS(true)
+      .maxDistance(10)
+      .onEnd((_event, success) => {
+        if (success) onOpen(node);
+      });
 
-  const panGesture = Gesture.Pan()
-    .runOnJS(true)
-    .minDistance(6)
-    .blocksExternalGesture(canvasPanGesture)
-    .onStart(() => {
-      dragOrigin.current = { x: node.x, y: node.y };
-      didStartDrag.current = true;
-      onDragStart(index);
-    })
-    .onUpdate((event) => {
-      const s = scale.value || 1;
-      onDragTo(index, dragOrigin.current.x + event.translationX / s, dragOrigin.current.y + event.translationY / s);
-    })
-    .onFinalize(() => {
-      if (!didStartDrag.current) return;
-      didStartDrag.current = false;
-      onDragEnd(index);
-    });
+    const panGesture = Gesture.Pan()
+      .runOnJS(true)
+      .minDistance(6)
+      .blocksExternalGesture(canvasPanGesture)
+      .onStart(() => {
+        const p = positions.value;
+        dragOrigin.current = { x: p[index * 2] ?? 0, y: p[index * 2 + 1] ?? 0 };
+        didStartDrag.current = true;
+        onDragStart(index);
+      })
+      .onUpdate((event) => {
+        const s = scale.value || 1;
+        onDragTo(index, dragOrigin.current.x + event.translationX / s, dragOrigin.current.y + event.translationY / s);
+      })
+      .onFinalize(() => {
+        if (!didStartDrag.current) return;
+        didStartDrag.current = false;
+        onDragEnd(index);
+      });
 
-  const nodeGesture = Gesture.Race(panGesture, tapGesture);
+    return Gesture.Race(panGesture, tapGesture);
+  }, [node, index, positions, scale, canvasPanGesture, onOpen, onDragStart, onDragTo, onDragEnd]);
+
+  // The node's whole position, on the UI thread. translate (not left/top) so
+  // the layout never has to be recomputed as it moves.
+  const positionStyle = useAnimatedStyle(() => {
+    const p = positions.value;
+    return {
+      transform: [
+        { translateX: (p[index * 2] ?? 0) - hitR },
+        { translateY: (p[index * 2 + 1] ?? 0) - hitR },
+      ],
+    };
+  }, [index, hitR]);
 
   return (
     <GestureDetector gesture={nodeGesture}>
-      <View
-        style={{
-          position: "absolute",
-          left: node.x - hitR,
-          top: node.y - hitR,
-          width: size,
-          height: size,
-        }}
+      <Animated.View
+        style={[
+          {
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: size,
+            height: size,
+          },
+          positionStyle,
+        ]}
       >
         <View
           pointerEvents="none"
@@ -210,7 +253,7 @@ export const GraphNodeView = memo(function GraphNodeView({
             {label}
           </Text>
         ) : null}
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 });
