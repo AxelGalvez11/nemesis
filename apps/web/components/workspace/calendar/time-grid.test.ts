@@ -53,16 +53,18 @@ test("minutesOf accepts real times and rejects everything else", () => {
 });
 
 // ── Overlap packing ──────────────────────────────────────────────────────────
+// These check COLUMN ASSIGNMENT only. Width is blockGeometry's job, and it
+// deliberately does NOT split evenly — see the block-geometry tests below.
 
-test("events that do not overlap each keep the full width", () => {
+test("events that do not overlap each get a single column", () => {
   assert.deepEqual(widthsById([event("a", "09:00"), event("b", "14:00")]), { a: "0/1", b: "0/1" });
 });
 
-test("two overlapping events split the column in half", () => {
+test("two overlapping events are assigned two columns", () => {
   assert.deepEqual(widthsById([event("a", "09:00"), event("b", "09:15")]), { a: "0/2", b: "1/2" });
 });
 
-test("three overlapping events split into thirds", () => {
+test("three overlapping events are assigned three columns", () => {
   const widths = widthsById([event("a", "09:00"), event("b", "09:10"), event("c", "09:20")]);
   assert.deepEqual(widths, { a: "0/3", b: "1/3", c: "2/3" });
 });

@@ -221,16 +221,15 @@ function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) 
         const height = offsetFor(item.endMinute, window) - top;
         const geometry = blockGeometry(item.column, item.columns);
         return (
-          <button
-            className={cn(
-              // A ring and an opaque background matter here: staggered blocks
-              // sit ON TOP of each other, so a translucent one would show the
-              // block beneath through it and read as a colour, not a stack.
-              "absolute overflow-hidden rounded-md border border-border/70 bg-card px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight shadow-sm transition-shadow hover:z-20 hover:shadow-md",
-              KIND_META[item.event.kind].chip,
-            )}
+          // The opaque backing MUST be its own element. Putting `bg-card` in
+          // the button's own class list alongside KIND_META's `bg-…/15` puts
+          // two backgrounds in one tailwind-merge group, and tailwind-merge
+          // keeps the LAST one — so `bg-card` was silently dropped and the
+          // blocks stayed 15% translucent. Staggered blocks sit ON TOP of each
+          // other, so a see-through one reads as a muddy colour, not a stack.
+          <div
+            className="absolute overflow-hidden rounded-md bg-card shadow-sm"
             key={item.event.id}
-            onClick={() => onOpenEvent(item.event)}
             style={{
               height: Math.max(height - 2, 14),
               left: `calc(${geometry.leftPct}% + 1px)`,
@@ -238,18 +237,26 @@ function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) 
               width: `calc(${geometry.widthPct}% - 3px)`,
               zIndex: geometry.zIndex,
             }}
-            title={item.event.title}
-            type="button"
           >
-            <span className="block truncate">{item.event.title}</span>
-            {/* The time only earns its line when the block is tall enough AND
-                not squeezed by a stack — otherwise it renders as "9:…". */}
-            {height > 26 && geometry.widthPct > 55 && item.event.time && (
-              <span className="block truncate text-[0.625rem] tabular-nums opacity-70">
-                {formatEventTime(item.event.time)}
-              </span>
-            )}
-          </button>
+            <button
+              className={cn(
+                "flex size-full flex-col overflow-hidden rounded-md border border-border/70 px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight transition-shadow hover:shadow-md",
+                KIND_META[item.event.kind].chip,
+              )}
+              onClick={() => onOpenEvent(item.event)}
+              title={item.event.title}
+              type="button"
+            >
+              <span className="block w-full truncate">{item.event.title}</span>
+              {/* The time only earns its line when the block is tall enough AND
+                  not squeezed by a stack — otherwise it renders as "9:…". */}
+              {height > 26 && geometry.widthPct > 55 && item.event.time && (
+                <span className="block w-full truncate text-[0.625rem] tabular-nums opacity-70">
+                  {formatEventTime(item.event.time)}
+                </span>
+              )}
+            </button>
+          </div>
         );
       })}
     </div>
