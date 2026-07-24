@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SlideUpSheet } from "./StudySheet";
 import { MessageBody } from "./MessageBody";
 import { MissionButton } from "./mission-ui";
-import { CloseIcon, SearchIcon } from "./icons";
+import { ChevronIcon, CloseIcon, SearchIcon } from "./icons";
 import {
   deleteStudyCard,
   setStudyCardFlag,
@@ -13,60 +13,68 @@ import {
   type CloudStudyDeck,
 } from "@/api/cloudStudy";
 import { pathLeaf } from "@/lib/study-tree";
-import { fromEditText, toEditText } from "@/lib/card-image-tokens";
+import { fromEditText, hasCardImage, toEditText } from "@/lib/card-image-tokens";
 import { normalizeCardText } from "@/lib/card-text";
 import { previewOf } from "@/lib/note-tabs";
 import {
   applyBrowseFilter,
-  browseTags,
   buildBrowseRows,
-  EMPTY_BROWSE_FILTER,
-  type StudyBrowseFilter,
-  type StudyBrowseScope,
+  buildBrowseSections,
+  type BrowseRowFilter,
+  type BrowseSectionKey,
 } from "@/lib/study-browse";
 import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/study-flags";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
-// The Study "Browse" sheet (owner 2026-07-23: the "…" menu's Browse "should
-// bring up a popup from the bottom … expanded to full screen … the same pages
-// as in browse in the web app"). Rides SlideUpSheet, so it swipes up toward full
-// screen like every other sheet; the card list uses flexShrink:1 (not a fixed
-// maxHeight) so it actually grows into the space the drag reveals.
+// The Study "Browse" sheet — THREE PAGES, not one filtered list (owner
+// 2026-07-24: "screen should have 3 pages: decks, cards, the specific card …
+// need a toggle for this centered up top below the search bar … users are
+// brought to the page with decks, tags, and flags, these sections should all
+// have collapsable ability, then when users click on a deck, the next page shows
+// all the cards in the selected section").
 //
-// Mirrors web's study-browser.tsx sections on a phone: a search box, the Filters
-// (All / Flagged [+ each color] / Suspended / Leeches), a per-deck filter, a
-// Tags filter, and — tapping a card — a view/edit panel (front/back text, flag
-// color, suspend, delete). Web's heavier extras (Anki .apkg export, AI auto-tag,
-// card-type change, image-occlusion editing) are a deliberate follow-up.
+// WHAT THIS REPLACES, and why it isn't a tweak. The old sheet was one flat list
+// of every card with a segmented picker above it choosing whether you were
+// filtering by Status, Decks or Tags — one group visible at a time, because all
+// three at once ate the whole sheet before a card appeared. That worked but it
+// inverted the shape of the job: you had to already know which deck you wanted
+// before the screen would help you. Now Decks / Tags / Flags are the CONTENT of
+// the page you land on, each collapsible, each row carrying its card count, and
+// tapping one is navigation rather than filtering.
+//
+// Consequences worth naming:
+//  - The filter-group picker is GONE. It occupied the exact slot the owner wants
+//    the page toggle in, and keeping both would stack two segmented controls.
+//  - The "active filters" summary line is gone with it. It existed only because
+//    a filter could be set in a group you couldn't see; once the sections are
+//    the page, page 2's header says where you are instead.
+//  - Editing moved from expand-in-place to page 3. The [image 1] token handling
+//    that keeps storage URLs off the screen came with it unchanged — see
+//    saveEdit, which also refuses to save rather than silently dropping images
+//    if the captured originals ever went missing.
+//
+// Still deliberately out of scope, as before: web's Anki .apkg export, AI
+// auto-tag, card-type change, and image-occlusion editing.
 
-const SCOPES: { key: StudyBrowseScope; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "flagged", label: "Flagged" },
-  { key: "suspended", label: "Suspended" },
-  { key: "leeches", label: "Leeches" },
+/** Which of the three pages is on screen. */
+type BrowsePage = "sections" | "cards" | "card";
+
+const PAGES: { key: BrowsePage; label: string }[] = [
+  { key: "sections", label: "Decks" },
+  { key: "cards", label: "Cards" },
+  { key: "card", label: "Card" },
 ];
 
-// ONE filter group on screen at a time (owner 2026-07-23: "browse popup should
-// only show one column at a time"). Web's browser can afford a permanent
-// sidebar listing Status, Decks and Tags side by side; stacking those three as
-// separate chip rows on a phone ate most of the sheet before a single card
-// showed, and the rows clipped each other into half-visible pills.
-//
-// So: a segmented picker chooses which group you're filtering by, and only that
-// group's chips are drawn. Nothing is lost — the summary line under the picker
-// names every filter that is currently on, including ones from a group you
-// can't see, so a hidden filter can never quietly narrow the list.
-type FilterGroup = "status" | "decks" | "tags";
+/** No row selected — page 2 then lists everything. */
+const ALL_CARDS: BrowseRowFilter = { scope: "all", deckId: null, tag: null, flag: null };
 
-/** A chip is one line of `type.small` (22) plus 5pt of air top and bottom plus
- *  its hairline border; the row adds a couple of points so the border isn't
- *  flush against the scroller's edge. Written out rather than left to intrinsic
- *  sizing — see the note on `chipScroll`. */
-const CHIP_HEIGHT = 34;
-const CHIP_ROW_HEIGHT = 36;
+/** Tags and Flags start folded so all three section headers are visible at once
+ *  — the whole point of a section list. Decks is the landing content and stays
+ *  open. */
+const INITIAL_COLLAPSED: BrowseSectionKey[] = ["tags", "flags"];
 
 export function StudyBrowseSheet({
   visible,
@@ -88,8 +96,13 @@ export function StudyBrowseSheet({
   const cardStyles = useThemedStyles(createMarkdownStyles);
   const { colors: c } = useTheme();
 
-  const [filter, setFilter] = useState<StudyBrowseFilter>(EMPTY_BROWSE_FILTER);
-  const [group, setGroup] = useState<FilterGroup>("status");
+  const [page, setPage] = useState<BrowsePage>("sections");
+  const [query, setQuery] = useState("");
+  const [rowFilter, setRowFilter] = useState<BrowseRowFilter>(ALL_CARDS);
+  /** The label of the row page 2 came from, so its header can say so. Empty
+   *  when nothing is selected. */
+  const [fromLabel, setFromLabel] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<BrowseSectionKey>>(() => new Set(INITIAL_COLLAPSED));
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editFront, setEditFront] = useState("");
@@ -99,7 +112,9 @@ export function StudyBrowseSheet({
   const [error, setError] = useState<string | null>(null);
   // The images lifted out of the card being edited, so save can put them back
   // exactly as they were. Refs, not state: nothing renders from them, and a
-  // re-render between opening the editor and saving must not lose them.
+  // re-render between opening the editor and saving must not lose them. They
+  // survive moving between pages because all three pages live in THIS
+  // component — nothing unmounts underneath them.
   const frontImages = useRef<string[]>([]);
   const backImages = useRef<string[]>([]);
 
@@ -107,44 +122,68 @@ export function StudyBrowseSheet({
   // time doesn't linger.
   useEffect(() => {
     if (!visible) return;
-    setFilter(EMPTY_BROWSE_FILTER);
-    setGroup("status");
+    setPage("sections");
+    setQuery("");
+    setRowFilter(ALL_CARDS);
+    setFromLabel("");
+    setCollapsed(new Set(INITIAL_COLLAPSED));
     setOpenId(null);
     setEditing(false);
     setError(null);
   }, [visible]);
 
   const rows = useMemo(() => buildBrowseRows(cards, decks), [cards, decks]);
-  const tags = useMemo(() => browseTags(rows), [rows]);
-  const filtered = useMemo(() => applyBrowseFilter(rows, filter), [rows, filter]);
+  const sections = useMemo(() => buildBrowseSections(rows, decks), [rows, decks]);
+  const filtered = useMemo(() => applyBrowseFilter(rows, { ...rowFilter, query }), [rows, rowFilter, query]);
+  const cardById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+  const deckLeafById = useMemo(() => new Map(decks.map((deck) => [deck.id, pathLeaf(deck.name)])), [decks]);
+  const open = openId ? cardById.get(openId) ?? null : null;
 
-  const patch = (next: Partial<StudyBrowseFilter>) => setFilter((prev) => ({ ...prev, ...next }));
+  // The card page can outlive its card — a refetch after an edit somewhere else,
+  // or the same card deleted from the web app — and page 3 with nothing to draw
+  // is a blank sheet whose toggle has just greyed out the way back. Fall to the
+  // list instead.
+  useEffect(() => {
+    if (page === "card" && !open) {
+      setPage("cards");
+      setEditing(false);
+    }
+  }, [page, open]);
 
-  // A deck with no tags left offers no Tags group, so a filter sitting on it
-  // would strand the picker on an empty row.
-  const groups: { key: FilterGroup; label: string }[] = [
-    { key: "status", label: "Status" },
-    { key: "decks", label: "Decks" },
-    ...(tags.length > 0 ? [{ key: "tags" as const, label: "Tags" }] : []),
-  ];
-  const shownGroup: FilterGroup = group === "tags" && tags.length === 0 ? "status" : group;
+  function toggleSection(key: BrowseSectionKey) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
-  // Every filter currently narrowing the list, named — including ones set in a
-  // group that isn't on screen. This is what makes showing one group at a time
-  // safe rather than confusing.
-  const activeFilters: string[] = [];
-  if (filter.scope !== "all") {
-    activeFilters.push(SCOPES.find((scope) => scope.key === filter.scope)?.label ?? filter.scope);
+  /** Tapping a Decks / Tags / Flags row: page 2, showing exactly that row's
+   *  cards. The search box is left alone on purpose — narrowing inside a deck
+   *  you just picked is the normal next move. */
+  function openRow(filter: BrowseRowFilter, label: string) {
+    setRowFilter(filter);
+    setFromLabel(label);
+    setError(null);
+    setPage("cards");
   }
-  if (filter.flag !== null) {
-    activeFilters.push(STUDY_FLAG_COLORS.find((flag) => flag.value === filter.flag)?.name ?? "Flag");
+
+  function openCard(card: CloudStudyCard) {
+    setOpenId(card.id);
+    setEditing(false);
+    setError(null);
+    setPage("card");
   }
-  if (filter.deckId !== null) {
-    const deck = decks.find((item) => item.id === filter.deckId);
-    if (deck) activeFilters.push(pathLeaf(deck.name));
+
+  /** Typing jumps to the Cards page. The box sits above the toggle, so it reads
+   *  as searching the whole collection — and it does: a search is over cards,
+   *  and the section list has nothing to show for one. Clearing the text leaves
+   *  you on Cards rather than yanking you back mid-thought. */
+  function onQueryChange(next: string) {
+    setQuery(next);
+    if (next.trim() && page === "sections") setPage("cards");
   }
-  if (filter.tag !== null) activeFilters.push(`#${filter.tag}`);
-  if (filter.query.trim()) activeFilters.push(`"${filter.query.trim()}"`);
 
   function startEdit(card: CloudStudyCard) {
     setEditing(true);
@@ -175,6 +214,7 @@ export function StudyBrowseSheet({
       if (opts?.closeAfter) {
         setEditing(false);
         setOpenId(null);
+        setPage("cards");
       }
       return true;
     } catch (cause) {
@@ -186,6 +226,18 @@ export function StudyBrowseSheet({
   }
 
   function saveEdit(card: CloudStudyCard) {
+    // REFUSE rather than strip. A card whose text holds pictures was shown to
+    // you as "[image 1]"; the real URLs live only in the refs above. If those
+    // ever came back empty while the stored card still has an image, writing
+    // this text would delete the picture and there would be nothing to undo it
+    // with — so stop, and say so, instead.
+    if (
+      (frontImages.current.length === 0 && hasCardImage(card.front)) ||
+      (backImages.current.length === 0 && hasCardImage(card.back))
+    ) {
+      setError("Reopen this card before saving — its pictures weren't loaded.");
+      return;
+    }
     // Put the real images back BEFORE the empty check: a card that is nothing
     // but a picture reads as "[image 1]" in the field, and testing the token
     // text would be testing the wrong string.
@@ -216,8 +268,6 @@ export function StudyBrowseSheet({
     ]);
   }
 
-  const cardById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
-
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title="Browse cards" testID="study-browse-sheet">
       {/* Search */}
@@ -225,8 +275,8 @@ export function StudyBrowseSheet({
         <SearchIcon size={16} color={c.textHint} />
         <TextInput
           style={styles.searchInput}
-          value={filter.query}
-          onChangeText={(query) => patch({ query })}
+          value={query}
+          onChangeText={onQueryChange}
           // Short enough to read whole in the field (owner 2026-07-24: "search
           // bar should not have text cutoff"), and in textHint, the app's one
           // genuinely faint tone — text3 was flattened to be identical to body
@@ -237,226 +287,224 @@ export function StudyBrowseSheet({
           autoCapitalize="none"
           testID="study-browse-search"
         />
-        {filter.query ? (
-          <Pressable onPress={() => patch({ query: "" })} hitSlop={8} accessibilityLabel="Clear search">
+        {query ? (
+          <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityLabel="Clear search">
             <CloseIcon size={13} color={c.text3} />
           </Pressable>
         ) : null}
       </View>
 
-      {/* Which group you're filtering by — one on screen at a time. */}
-      <View style={styles.groupRow}>
-        {groups.map((item) => (
-          <Pressable
-            key={item.key}
-            onPress={() => setGroup(item.key)}
-            style={[styles.groupTab, shownGroup === item.key && styles.groupTabActive]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: shownGroup === item.key }}
-            testID={`study-browse-group-${item.key}`}
-          >
-            <Text style={[styles.groupTabLabel, shownGroup === item.key && styles.groupTabLabelActive]}>{item.label}</Text>
-          </Pressable>
-        ))}
+      {/* The page toggle, centred under the search box. Card is unreachable
+          until you've opened one — a third of the control would otherwise lead
+          to a blank page. */}
+      <View style={styles.pageRow}>
+        {PAGES.map((item) => {
+          const disabled = item.key === "card" && !open;
+          const active = page === item.key;
+          return (
+            <Pressable
+              key={item.key}
+              onPress={() => setPage(item.key)}
+              disabled={disabled}
+              style={[styles.pageTab, active && styles.pageTabActive]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled, selected: active }}
+              testID={`study-browse-page-${item.key}`}
+            >
+              <Text style={[styles.pageTabLabel, active && styles.pageTabLabelActive, disabled && styles.pageTabLabelOff]}>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-
-      {/* The chosen group's chips. One row, fixed height — a horizontal scroller
-          with no height of its own gets squeezed by the sheet's animated body
-          cap and clips its own pills in half (owner screenshot, 2026-07-23). */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipScroll}
-        contentContainerStyle={styles.chipScrollInner}
-        keyboardShouldPersistTaps="handled"
-        testID={`study-browse-chips-${shownGroup}`}
-      >
-        {shownGroup === "status" ? (
-          <>
-            {SCOPES.map((scope) => (
-              <Chip
-                key={scope.key}
-                label={scope.label}
-                active={filter.scope === scope.key}
-                onPress={() => patch({ scope: scope.key, flag: null })}
-                testID={`study-browse-scope-${scope.key}`}
-              />
-            ))}
-            {/* Flag colours live inside Status, and only once you're looking at
-                flagged cards — a colour picker means nothing otherwise. */}
-            {filter.scope === "flagged"
-              ? STUDY_FLAG_COLORS.map((flag) => (
-                  <Pressable
-                    key={flag.value}
-                    onPress={() => patch({ flag: filter.flag === flag.value ? null : flag.value })}
-                    hitSlop={6}
-                    accessibilityLabel={`${flag.name} flag`}
-                    accessibilityRole="button"
-                    testID={`study-browse-flag-${flag.value}`}
-                    style={[styles.flagDotWrap, filter.flag === flag.value && styles.flagDotWrapActive]}
-                  >
-                    <View style={[styles.flagDot, { backgroundColor: flag.hex }]} />
-                  </Pressable>
-                ))
-              : null}
-          </>
-        ) : null}
-
-        {shownGroup === "decks" ? (
-          <>
-            <Chip label="All decks" active={filter.deckId === null} onPress={() => patch({ deckId: null })} testID="study-browse-deck-all" />
-            {decks.map((deck) => (
-              <Chip
-                key={deck.id}
-                label={pathLeaf(deck.name)}
-                active={filter.deckId === deck.id}
-                onPress={() => patch({ deckId: filter.deckId === deck.id ? null : deck.id })}
-                testID={`study-browse-deck-${deck.id}`}
-              />
-            ))}
-          </>
-        ) : null}
-
-        {shownGroup === "tags" ? (
-          <>
-            <Chip label="All tags" active={filter.tag === null} onPress={() => patch({ tag: null })} testID="study-browse-tag-all" />
-            {tags.map((tag) => (
-              <Chip
-                key={tag}
-                label={`#${tag}`}
-                active={filter.tag === tag}
-                onPress={() => patch({ tag: filter.tag === tag ? null : tag })}
-                testID={`study-browse-tag-${tag}`}
-              />
-            ))}
-          </>
-        ) : null}
-      </ScrollView>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.countRow}>
-        <Text style={styles.count} numberOfLines={1} testID="study-browse-count">
-          {filtered.length} {filtered.length === 1 ? "card" : "cards"}
-          {activeFilters.length > 0 ? `  ·  ${activeFilters.join("  ·  ")}` : ""}
-        </Text>
-        {activeFilters.length > 0 ? (
-          <Pressable onPress={() => setFilter(EMPTY_BROWSE_FILTER)} hitSlop={8} testID="study-browse-clear">
-            <Text style={styles.clearLabel}>Clear</Text>
-          </Pressable>
-        ) : null}
-      </View>
 
-      {/* The list — flexShrink:1 so SlideUpSheet's drag-to-expand grows it. */}
-      <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-list">
-        {filtered.length === 0 ? (
-          <Text style={styles.empty}>{cards.length === 0 ? "No cards yet." : "No cards match these filters."}</Text>
-        ) : (
-          filtered.map((row) => {
-            // The full card (with scheduling fields the edit ops need) — the
-            // filter rows carry only the browse subset. Every filtered id came
-            // from `cards`, so a miss is purely defensive.
-            const live = cardById.get(row.card.id);
-            if (!live) return null;
-            const isOpen = openId === row.card.id;
-            const flag = studyFlagColor(live.flag);
-            return (
-              <View key={row.card.id} style={styles.cardRow} testID={`study-browse-card-${row.card.id}`}>
-                <Pressable
-                  onPress={() => {
-                    setEditing(false);
-                    setError(null);
-                    setOpenId(isOpen ? null : row.card.id);
-                  }}
-                  style={({ pressed }) => [styles.cardHead, pressed && styles.pressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: isOpen }}
-                >
-                  <View style={styles.cardHeadText}>
-                    <View style={styles.frontLine}>
-                      {flag ? <View style={[styles.rowFlagDot, { backgroundColor: flag.hex }]} /> : null}
-                      <Text style={styles.front} numberOfLines={isOpen ? undefined : 1}>
-                        {previewOf(normalizeCardText(live.front), 200)}
+      {/* PAGE 1 — Decks / Tags / Flags, each collapsible. */}
+      {page === "sections" ? (
+        <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-sections">
+          {cards.length === 0 && decks.length === 0 ? (
+            <Text style={styles.empty}>No decks yet.</Text>
+          ) : (
+            sections.map((section) => {
+              const folded = collapsed.has(section.key);
+              return (
+                <View key={section.key} testID={`study-browse-section-${section.key}`}>
+                  <Pressable
+                    onPress={() => toggleSection(section.key)}
+                    style={({ pressed }) => [styles.sectionHead, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: !folded }}
+                    testID={`study-browse-section-${section.key}-toggle`}
+                  >
+                    {/* One chevron, rotated — pointing right when folded, down
+                        when open, the same affordance as the Library tree. */}
+                    <View style={folded ? undefined : styles.chevronOpen}>
+                      <ChevronIcon size={14} color={c.text3} />
+                    </View>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    <Text style={styles.sectionCount}>{section.rows.length}</Text>
+                  </Pressable>
+
+                  {!folded
+                    ? section.rows.length === 0
+                      ? <Text style={styles.sectionEmpty}>{section.key === "decks" ? "No decks yet." : "Nothing here yet."}</Text>
+                      : section.rows.map((row) => (
+                          <Pressable
+                            key={row.id}
+                            onPress={() => openRow(row.filter, row.label)}
+                            style={({ pressed }) => [styles.sectionRow, pressed && styles.pressed]}
+                            accessibilityRole="button"
+                            testID={`study-browse-row-${row.id}`}
+                          >
+                            {/* Nesting is drawn, never spelled: a deck named
+                                "Pharm::Cardio::Week 1" indents under its folder
+                                and reads "Week 1". */}
+                            <View style={{ width: row.depth * space(3) }} />
+                            {row.hex ? <View style={[styles.rowFlagDot, { backgroundColor: row.hex }]} /> : null}
+                            <View style={styles.rowText}>
+                              <Text style={styles.rowLabel} numberOfLines={1}>{row.label}</Text>
+                              {row.parent ? <Text style={styles.rowParent} numberOfLines={1}>{row.parent}</Text> : null}
+                            </View>
+                            <Text style={styles.rowCount}>{row.count}</Text>
+                          </Pressable>
+                        ))
+                    : null}
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      ) : null}
+
+      {/* PAGE 2 — the cards in whatever you tapped. */}
+      {page === "cards" ? (
+        <>
+          <View style={styles.countRow}>
+            <Text style={styles.count} numberOfLines={1} testID="study-browse-count">
+              {fromLabel ? `${fromLabel}  ·  ` : ""}
+              {filtered.length} {filtered.length === 1 ? "card" : "cards"}
+            </Text>
+            {fromLabel ? (
+              <Pressable
+                onPress={() => {
+                  setRowFilter(ALL_CARDS);
+                  setFromLabel("");
+                }}
+                hitSlop={8}
+                testID="study-browse-clear"
+              >
+                <Text style={styles.clearLabel}>All cards</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-list">
+            {filtered.length === 0 ? (
+              <Text style={styles.empty}>{cards.length === 0 ? "No cards yet." : "No cards match this."}</Text>
+            ) : (
+              filtered.map((row) => {
+                // The full card (with scheduling fields the edit ops need) — the
+                // filter rows carry only the browse subset. Every filtered id
+                // came from `cards`, so a miss is purely defensive.
+                const live = cardById.get(row.card.id);
+                if (!live) return null;
+                const flag = studyFlagColor(live.flag);
+                return (
+                  <Pressable
+                    key={row.card.id}
+                    onPress={() => openCard(live)}
+                    style={({ pressed }) => [styles.cardRow, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    testID={`study-browse-card-${row.card.id}`}
+                  >
+                    <View style={styles.cardHeadText}>
+                      <View style={styles.frontLine}>
+                        {flag ? <View style={[styles.rowFlagDot, { backgroundColor: flag.hex }]} /> : null}
+                        <Text style={styles.front} numberOfLines={1}>{previewOf(normalizeCardText(live.front), 200)}</Text>
+                      </View>
+                      <Text style={styles.deckName} numberOfLines={1}>
+                        {row.deckName}
+                        {live.suspended ? "  ·  Suspended" : ""}
                       </Text>
                     </View>
-                    <Text style={styles.deckName} numberOfLines={1}>
-                      {row.deckName}
-                      {live.suspended ? "  ·  Suspended" : ""}
-                    </Text>
-                  </View>
-                </Pressable>
+                    <ChevronIcon size={14} color={c.textHint} />
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </>
+      ) : null}
 
-                {isOpen && !editing ? (
-                  <View style={styles.cardBody} testID={`study-browse-card-${row.card.id}-body`}>
-                    <View style={styles.divider} />
-                    <MessageBody content={normalizeCardText(live.back)} styles={cardStyles} />
-                    <View style={styles.actionRow}>
-                      <ActionText label="Edit" onPress={() => startEdit(live)} disabled={busy} testID="study-browse-edit" />
-                      <ActionText
-                        label={live.suspended ? "Unsuspend" : "Suspend"}
-                        onPress={() => void run(() => setStudyCardSuspended(userId, live.id, !live.suspended))}
-                        disabled={busy}
-                        testID="study-browse-suspend"
-                      />
-                      <ActionText label="Delete" danger onPress={() => confirmDelete(live)} disabled={busy} testID="study-browse-delete" />
-                    </View>
-                  </View>
-                ) : null}
+      {/* PAGE 3 — one card, read then edit. */}
+      {page === "card" && open ? (
+        <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-card">
+          <Text style={styles.cardDeck} numberOfLines={1}>
+            {deckLeafById.get(open.deckId) ?? ""}
+            {open.suspended ? "  ·  Suspended" : ""}
+          </Text>
 
-                {isOpen && editing ? (
-                  <View style={styles.cardBody} testID={`study-browse-card-${row.card.id}-edit`}>
-                    <View style={styles.divider} />
-                    <Text style={styles.fieldLabel}>Front</Text>
-                    <TextInput style={styles.editInput} value={editFront} onChangeText={setEditFront} multiline placeholderTextColor={c.text3} testID="study-browse-edit-front" />
-                    <Text style={styles.fieldLabel}>Back</Text>
-                    <TextInput style={styles.editInput} value={editBack} onChangeText={setEditBack} multiline placeholderTextColor={c.text3} testID="study-browse-edit-back" />
-                    <Text style={styles.fieldLabel}>Flag</Text>
-                    <View style={styles.flagRow}>
-                      <Pressable onPress={() => setEditFlag(0)} style={[styles.flagNone, editFlag === 0 && styles.flagNoneActive]} testID="study-browse-edit-flag-0">
-                        <Text style={styles.flagNoneText}>None</Text>
-                      </Pressable>
-                      {STUDY_FLAG_COLORS.map((f) => (
-                        <Pressable
-                          key={f.value}
-                          onPress={() => setEditFlag(f.value)}
-                          hitSlop={6}
-                          accessibilityLabel={`${f.name} flag`}
-                          testID={`study-browse-edit-flag-${f.value}`}
-                          style={[styles.flagDotWrap, editFlag === f.value && styles.flagDotWrapActive]}
-                        >
-                          <View style={[styles.flagDot, { backgroundColor: f.hex }]} />
-                        </Pressable>
-                      ))}
-                    </View>
-                    <View style={styles.editButtons}>
-                      <Pressable onPress={() => setEditing(false)} hitSlop={6} style={styles.cancelBtn} testID="study-browse-edit-cancel">
-                        <Text style={styles.cancelText}>Cancel</Text>
-                      </Pressable>
-                      <MissionButton
-                        label={busy ? "Saving…" : "Save"}
-                        variant="primary"
-                        busy={busy}
-                        disabled={busy || !editFront.trim() || !editBack.trim()}
-                        onPress={() => saveEdit(live)}
-                        testID="study-browse-edit-save"
-                      />
-                    </View>
-                  </View>
-                ) : null}
+          {!editing ? (
+            <View testID="study-browse-card-read">
+              <Text style={styles.fieldLabel}>Front</Text>
+              <MessageBody content={normalizeCardText(open.front)} styles={cardStyles} />
+              <View style={styles.divider} />
+              <Text style={styles.fieldLabel}>Back</Text>
+              <MessageBody content={normalizeCardText(open.back)} styles={cardStyles} />
+              <View style={styles.actionRow}>
+                <ActionText label="Edit" onPress={() => startEdit(open)} disabled={busy} testID="study-browse-edit" />
+                <ActionText
+                  label={open.suspended ? "Unsuspend" : "Suspend"}
+                  onPress={() => void run(() => setStudyCardSuspended(userId, open.id, !open.suspended))}
+                  disabled={busy}
+                  testID="study-browse-suspend"
+                />
+                <ActionText label="Delete" danger onPress={() => confirmDelete(open)} disabled={busy} testID="study-browse-delete" />
               </View>
-            );
-          })
-        )}
-      </ScrollView>
+            </View>
+          ) : (
+            <View testID="study-browse-card-edit">
+              <Text style={styles.fieldLabel}>Front</Text>
+              <TextInput style={styles.editInput} value={editFront} onChangeText={setEditFront} multiline placeholderTextColor={c.textHint} testID="study-browse-edit-front" />
+              <Text style={styles.fieldLabel}>Back</Text>
+              <TextInput style={styles.editInput} value={editBack} onChangeText={setEditBack} multiline placeholderTextColor={c.textHint} testID="study-browse-edit-back" />
+              <Text style={styles.fieldLabel}>Flag</Text>
+              <View style={styles.flagRow}>
+                <Pressable onPress={() => setEditFlag(0)} style={[styles.flagNone, editFlag === 0 && styles.flagNoneActive]} testID="study-browse-edit-flag-0">
+                  <Text style={styles.flagNoneText}>None</Text>
+                </Pressable>
+                {STUDY_FLAG_COLORS.map((f) => (
+                  <Pressable
+                    key={f.value}
+                    onPress={() => setEditFlag(f.value)}
+                    hitSlop={6}
+                    accessibilityLabel={`${f.name} flag`}
+                    testID={`study-browse-edit-flag-${f.value}`}
+                    style={[styles.flagDotWrap, editFlag === f.value && styles.flagDotWrapActive]}
+                  >
+                    <View style={[styles.flagDot, { backgroundColor: f.hex }]} />
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.editButtons}>
+                <Pressable onPress={() => setEditing(false)} hitSlop={6} style={styles.cancelBtn} testID="study-browse-edit-cancel">
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </Pressable>
+                <MissionButton
+                  label={busy ? "Saving…" : "Save"}
+                  variant="primary"
+                  busy={busy}
+                  disabled={busy || !editFront.trim() || !editBack.trim()}
+                  onPress={() => saveEdit(open)}
+                  testID="study-browse-edit-save"
+                />
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      ) : null}
     </SlideUpSheet>
-  );
-}
-
-function Chip({ label, active, onPress, testID }: { label: string; active: boolean; onPress: () => void; testID?: string }) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <Pressable onPress={onPress} testID={testID} style={[styles.chip, active && styles.chipActive]} accessibilityRole="button" accessibilityState={{ selected: active }}>
-      <Text style={[styles.chipLabel, active && styles.chipLabelActive]} numberOfLines={1}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -501,12 +549,51 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: 0,
     },
 
-    // Segmented picker for which filter group is on screen.
-    groupRow: { flexDirection: "row", backgroundColor: c.surface, borderRadius: radius.pill, padding: 3, marginBottom: space(2) },
-    groupTab: { flex: 1, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
-    groupTabActive: { backgroundColor: c.bg },
-    groupTabLabel: { ...type.small, color: c.text3 },
-    groupTabLabelActive: { color: c.text, fontWeight: "600" },
+    // The page toggle. Centred and self-sizing rather than three stretched
+    // thirds, so it reads as a control rather than a tab bar.
+    pageRow: {
+      flexDirection: "row",
+      alignSelf: "center",
+      backgroundColor: c.surface,
+      borderRadius: radius.pill,
+      padding: 3,
+      marginBottom: space(2),
+      flexShrink: 0,
+    },
+    pageTab: { minWidth: 84, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, paddingHorizontal: space(3) },
+    pageTabActive: { backgroundColor: c.bg },
+    pageTabLabel: { ...type.small, color: c.text3 },
+    pageTabLabelActive: { color: c.text, fontWeight: "600" },
+    pageTabLabelOff: { color: c.textHint },
+
+    // Section headers and rows (page 1).
+    sectionHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1.5),
+      paddingVertical: space(2),
+      borderBottomWidth: 1,
+      borderBottomColor: c.line,
+    },
+    chevronOpen: { transform: [{ rotate: "90deg" }] },
+    sectionTitle: { ...type.small, color: c.text, fontWeight: "600", marginRight: "auto" },
+    sectionCount: { ...type.micro, color: c.textHint },
+    sectionEmpty: { ...type.micro, color: c.textHint, paddingVertical: space(2.5), paddingLeft: space(4) },
+    sectionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1.5),
+      // Slightly tighter than a card row (owner 2026-07-24: "make the deck cards
+      // slight smaller") — these are a table of contents, not content.
+      minHeight: control.md,
+      paddingLeft: space(2),
+      borderBottomWidth: 1,
+      borderBottomColor: c.line2,
+    },
+    rowText: { flexShrink: 1, marginRight: "auto", gap: 1 },
+    rowLabel: { ...type.small, color: c.text },
+    rowParent: { ...type.micro, color: c.textHint },
+    rowCount: { ...type.micro, color: c.text3 },
 
     flagRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space(1.5), marginBottom: space(2) },
     flagDotWrap: { padding: 3, borderRadius: 999, borderWidth: 2, borderColor: "transparent", alignSelf: "center" },
@@ -515,24 +602,6 @@ const createStyles = (c: ThemeColors) =>
     flagNone: { paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: c.line },
     flagNoneActive: { borderColor: c.accent, backgroundColor: c.accentFaint },
     flagNoneText: { ...type.micro, color: c.text2 },
-
-    // Explicit heights, not padding-derived ones: a horizontal ScrollView has no
-    // intrinsic height of its own, so inside the sheet's animated maxHeight body
-    // it was being squeezed and cutting its pills off mid-letter.
-    chipScroll: { height: CHIP_ROW_HEIGHT, flexGrow: 0, flexShrink: 0, marginBottom: space(2) },
-    chipScrollInner: { alignItems: "center", gap: space(1.5), paddingRight: space(4) },
-    chip: {
-      height: CHIP_HEIGHT,
-      justifyContent: "center",
-      paddingHorizontal: space(3),
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: c.line,
-      backgroundColor: c.surface,
-    },
-    chipActive: { backgroundColor: c.accent, borderColor: c.accent },
-    chipLabel: { ...type.small, color: c.text2, maxWidth: 180 },
-    chipLabelActive: { color: c.onAccent, fontWeight: "600" },
 
     error: { ...type.small, color: c.danger, marginBottom: space(1.5) },
     countRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(3), marginBottom: space(1.5) },
@@ -545,24 +614,31 @@ const createStyles = (c: ThemeColors) =>
     listInner: { paddingBottom: space(2) },
     empty: { ...type.small, color: c.text3, textAlign: "center", paddingVertical: space(8) },
 
-    cardRow: { borderBottomWidth: 1, borderBottomColor: c.line },
-    cardHead: { paddingVertical: space(2.5), paddingHorizontal: space(1) },
+    cardRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2),
+      paddingVertical: space(2.5),
+      paddingHorizontal: space(1),
+      borderBottomWidth: 1,
+      borderBottomColor: c.line,
+    },
     pressed: { backgroundColor: c.surface },
-    cardHeadText: { gap: 2 },
+    cardHeadText: { gap: 2, flexShrink: 1, marginRight: "auto" },
     frontLine: { flexDirection: "row", alignItems: "center", gap: space(1.5) },
     rowFlagDot: { width: 9, height: 9, borderRadius: 5 },
     front: { ...type.small, color: c.text, flexShrink: 1 },
     deckName: { ...type.micro, color: c.text3 },
 
-    cardBody: { paddingHorizontal: space(1), paddingBottom: space(3) },
-    divider: { height: 1, backgroundColor: c.line2, marginBottom: space(2.5) },
-    actionRow: { flexDirection: "row", gap: space(4), marginTop: space(3) },
+    cardDeck: { ...type.micro, color: c.text3, marginTop: space(2) },
+    divider: { height: 1, backgroundColor: c.line2, marginVertical: space(3) },
+    actionRow: { flexDirection: "row", gap: space(4), marginTop: space(4) },
     actionText: { paddingVertical: space(1) },
     actionLabel: { ...type.small, color: c.accent, fontWeight: "600" },
     actionLabelDanger: { color: c.danger },
     actionLabelDisabled: { opacity: 0.4 },
 
-    fieldLabel: { ...type.micro, color: c.text3, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: space(1), marginTop: space(2) },
+    fieldLabel: { ...type.micro, color: c.textHint, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: space(1), marginTop: space(3) },
     editInput: {
       ...type.body,
       color: c.text,
