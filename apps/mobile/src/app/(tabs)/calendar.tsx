@@ -332,7 +332,10 @@ export default function CalendarScreen() {
   // Recomputed fresh each render like the rest of this screen's derived data —
   // monthMatrix is cheap and the window tops out in the low tens of months.
   const monthViews = monthWindow.map((m) => monthMatrix(m.year, m.month, events, todayKey));
-  const cardHeights = monthViews.map((mv) => monthCardHeight(mv.weeks.length));
+  // showWeekdays false on both sides: the letters are pinned above the scroll,
+  // so the cards no longer draw their own row and must not be measured as if
+  // they did.
+  const cardHeights = monthViews.map((mv) => monthCardHeight(mv.weeks.length, false));
   const cardOffsets = cumulativeOffsets(cardHeights);
   // getItemLayout's offsets are relative to the FlatList's own content origin —
   // RN does NOT fold contentContainerStyle's paddingTop into them automatically
@@ -371,7 +374,7 @@ export default function CalendarScreen() {
             Apple's month view does this, and without it you lose track of which
             column is which as soon as a month header scrolls past. */}
         <View style={[styles.monthWeekdayBar, { top: contentTop }]} pointerEvents="none">
-          <WeekdayStripe />
+          <WeekdayStripe flush />
         </View>
         <FlatList
           testID="calendar-monthly-view"
@@ -382,6 +385,7 @@ export default function CalendarScreen() {
               month={monthViews[index]}
               size="large"
               selectedKey={shownDay}
+              showWeekdays={false}
               // Tapping a day SELECTS it and lists its events below, instead of
               // leaving for the Daily view (owner 2026-07-24: more like Apple
               // Calendar). Leaving the month on every tap made comparing two

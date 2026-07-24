@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   applyGrade,
   EMPTY_PROGRESS,
+  NEW_STEPS,
   isDue,
   revertTo,
   sessionCounts,
@@ -231,4 +232,24 @@ Deno.test("revertTo: restores an earlier sitting exactly, as a fresh object", ()
   // A copy, so mutating the restored value can't reach back into the trail.
   assertEquals(undone.doneIds === before.doneIds, false);
   assertEquals(undone.learning[0] === before.learning[0], false);
+});
+
+Deno.test("Hard on a brand-new card does NOT do what Good does", () => {
+  // The press where Hard is used most is the first one. Advancing the ladder
+  // there made hard,good and good,good master a card in the same two looks.
+  const fresh = card({ id: "a", repetitions: 0 });
+  const hard = applyGrade(progress(), fresh, "hard");
+  const good = applyGrade(progress(), fresh, "good");
+  assertEquals(hard.learning[0].stepsLeft, NEW_STEPS, "Hard holds the ladder where it is");
+  assertEquals(good.learning[0].stepsLeft, NEW_STEPS - 1, "Good advances it");
+  assertEquals(hard.learning[0].stepsLeft === good.learning[0].stepsLeft, false);
+});
+
+Deno.test("Hard on an established review card still finishes it for the sitting", () => {
+  // Anki shortens the next interval on Hard; it does not drop a mature card
+  // back into learning steps.
+  const mature = card({ id: "b", repetitions: 6, intervalDays: 30 });
+  const after = applyGrade(progress(), mature, "hard");
+  assertEquals(after.learning.length, 0);
+  assertEquals(after.doneIds, ["b"]);
 });

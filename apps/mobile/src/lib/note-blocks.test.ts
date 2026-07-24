@@ -243,3 +243,65 @@ Deno.test("mergeBlockIntoPrevious refuses across a blank line, and at the edges"
   assertEquals(mergeBlockIntoPrevious(spaced, 0), null);
   assertEquals(mergeBlockIntoPrevious(spaced, 99), null);
 });
+
+// --- boundary offsets between GAPLESS blocks -------------------------------
+//
+// Tables and line-oriented splitting both emit `gap: ""`, so a block's body end
+// and the next block's start are the same number. Getting that boundary wrong
+// put the caret one block ABOVE whatever was tapped, and made the last item of
+// every gapless run unreachable — no tap could ever give it the caret.
+
+Deno.test("tapping the second bullet of a list activates the SECOND bullet", () => {
+  const nb = splitBlocks("- alpha\n- bravo\n- charlie\n");
+  assertEquals(nb.blocks.length, 3);
+  for (let i = 0; i < nb.blocks.length; i += 1) {
+    assertEquals(blockIndexAtOffset(nb, blockStartOffset(nb, i)), i, `block ${i} is not reachable`);
+  }
+});
+
+Deno.test("every heading in a stacked run is reachable", () => {
+  const nb = splitBlocks("# One\n## Two\n### Three\n");
+  assertEquals(nb.blocks.length, 3);
+  assertEquals(blockIndexAtOffset(nb, blockStartOffset(nb, 1)), 1);
+  assertEquals(blockIndexAtOffset(nb, blockStartOffset(nb, 2)), 2);
+});
+
+Deno.test("tapping a table under a heading lands on the TABLE, not the heading", () => {
+  // This is the exact case the table split exists for: resolving to the
+  // heading means isTableBlock says no and the grid editor never opens.
+  const nb = splitBlocks("## Results\n| drug | dose |\n|---|---|\n| aspirin | 81mg |\n");
+  assertEquals(nb.blocks.length, 2);
+  assertEquals(blockIndexAtOffset(nb, blockStartOffset(nb, 1)), 1);
+});
+
+Deno.test("a caret inside a block still resolves to that block", () => {
+  const nb = splitBlocks("- alpha\n- bravo\n");
+  // Mid-word in the second bullet.
+  assertEquals(blockIndexAtOffset(nb, blockStartOffset(nb, 1) + 3), 1);
+  // The very end of the document clamps to the last block.
+  assertEquals(blockIndexAtOffset(nb, 999), 1);
+});
+
+Deno.test("a blank line between paragraphs still puts the boundary in the FIRST", () => {
+  // With a gap there is somewhere for the caret to be that is not the next
+  // block's first character, and the tail of the paragraph is the right answer.
+  const nb = splitBlocks("one\n\ntwo\n");
+  assertEquals(nb.blocks.length, 2);
+  const endOfFirst = nb.leading.length + nb.blocks[0].body.length;
+  assertEquals(blockIndexAtOffset(nb, endOfFirst), 0);
+});
+
+// --- indented children stay with their parent ------------------------------
+
+Deno.test("a nested list is ONE block, so the child keeps its indent meaning", () => {
+  // Standing alone, "    - child" is four spaces of indent, which markdown
+  // reads as a code block — the outline turned into grey monospace boxes the
+  // moment edit mode opened.
+  assertEquals(splitBlocks("- parent\n    - child\n").blocks.length, 1);
+  assertEquals(splitBlocks("- a\n\t- tabbed\n").blocks.length, 1);
+  assertEquals(splitBlocks("- a\n  - two spaces\n").blocks.length, 1);
+});
+
+Deno.test("a flat list at the margin still splits per line", () => {
+  assertEquals(splitBlocks("- a\n- b\n- c\n").blocks.length, 3);
+});

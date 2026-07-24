@@ -21,8 +21,20 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
   const [transcript, setTranscript] = useState("");
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
+  // Set the instant CANCEL is pressed, cleared by the next start().
+  //
+  // This is the difference between cancelling and finishing. `stop()` is
+  // documented to "attempt to return a final result through the result event",
+  // and on iOS the final result only arrives AFTER recognition has stopped — so
+  // a cancel that merely stopped the engine got one more result a beat later,
+  // which wrote the abandoned sentence back into the composer. Cancel and Done
+  // produced the same text. `abort()` is the API that skips the final result;
+  // the flag is the belt to its braces, because the event has already been
+  // observed to arrive late and the composer must not take it either way.
+  const cancelledRef = useRef(false);
 
   useSpeechRecognitionEvent("result", (event) => {
+    if (cancelledRef.current) return;
     const next = event.results?.[0]?.transcript;
     if (typeof next === "string") {
       setTranscript(next);
@@ -45,6 +57,7 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
     try {
       const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!perm.granted) return false;
+      cancelledRef.current = false;
       setTranscript("");
       resetMicLevel();
       ExpoSpeechRecognitionModule.start({
@@ -64,6 +77,7 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
     }
   }, []);
 
+  /** Finish: ask the engine for its best final transcript and keep it. */
   const stop = useCallback(() => {
     try {
       ExpoSpeechRecognitionModule.stop();
@@ -74,5 +88,18 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
     resetMicLevel();
   }, []);
 
-  return { listening, start, stop, transcript };
+  /** Throw it away. Not the same call as stop(): see cancelledRef above. */
+  const cancel = useCallback(() => {
+    cancelledRef.current = true;
+    try {
+      ExpoSpeechRecognitionModule.abort();
+    } catch {
+      // best-effort — the flag alone already protects the composer
+    }
+    setTranscript("");
+    setListening(false);
+    resetMicLevel();
+  }, []);
+
+  return { cancel, listening, start, stop, transcript };
 }

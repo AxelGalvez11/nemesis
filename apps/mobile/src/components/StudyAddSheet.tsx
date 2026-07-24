@@ -403,13 +403,17 @@ export function StudyAddSheet({
         )
       ) : null}
 
-      {/* The deck dropdown, opening at the trigger. */}
+      {/* The deck dropdown, opening at the trigger. `portal` because this is
+          the one MiniMenu inside a panel rather than at a screen root: the
+          anchor is a window coordinate, and without it the menu would open the
+          sheet's own top offset (~120pt) below the finger. */}
       <MiniMenu
         visible={deckMenuAnchor !== null}
         anchor={deckMenuAnchor}
         actions={deckRows}
         emptyText="No decks yet."
         onClose={() => setDeckMenuAnchor(null)}
+        portal
         testID="study-add-deck-menu"
       />
 

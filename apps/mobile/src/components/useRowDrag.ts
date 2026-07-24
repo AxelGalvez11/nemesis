@@ -104,6 +104,9 @@ export function useRowDrag({
   const rects = useRef(new Map<string, RowRect>());
   // Catch-all zones, kept apart so they can be tested after everything else.
   const fallbackRects = useRef(new Map<string, RowRect>());
+  // Every row's rect, droppable or not — the dragged row's own rectangle is
+  // what tells a drifted hold apart from a deliberate drop (see hitTest).
+  const allRects = useRef(new Map<string, RowRect>());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
   // Read inside gesture callbacks, which close over the value at construction
@@ -144,17 +147,24 @@ export function useRowDrag({
     return callback;
   }, []);
 
-  /** Snapshot every registered droppable row's window rect. Fire-and-forget:
+  /** Snapshot every registered row's window rect. Fire-and-forget:
    *  measureInWindow answers on a later frame, which lands well before a
-   *  finger has travelled anywhere meaningful. */
+   *  finger has travelled anywhere meaningful.
+   *
+   *  EVERY row, not only the droppable ones: the row being dragged is usually
+   *  not a drop target itself (a note, a deck), and hitTest needs its rectangle
+   *  to tell "I let go without going anywhere" apart from "I aimed at the space
+   *  outside the folders". */
   const measureRows = useCallback(() => {
     rects.current.clear();
     fallbackRects.current.clear();
+    allRects.current.clear();
     for (const [key, row] of rows.current) {
-      if (!row.droppable || !row.node) continue;
-      const into = row.fallback ? fallbackRects.current : rects.current;
+      if (!row.node) continue;
+      const droppableInto = row.fallback ? fallbackRects.current : rects.current;
       row.node.measureInWindow((_x, y, _width, height) => {
-        into.set(key, { height, y });
+        allRects.current.set(key, { height, y });
+        if (row.droppable) droppableInto.set(key, { height, y });
       });
     }
   }, []);
@@ -165,16 +175,42 @@ export function useRowDrag({
    *  out-of-folders zone spans the whole list now, so it contains every folder
    *  row's rectangle. A single first-match loop over one Map would resolve
    *  essentially every drop to it — and which one won would come down to
-   *  registration order, so it would look like folders "sometimes" worked. */
-  const hitTest = useCallback((windowY: number, canDropOn: (key: string) => boolean): string | null => {
-    for (const [key, rect] of rects.current) {
-      if (windowY >= rect.y && windowY < rect.y + rect.height && canDropOn(key)) return key;
-    }
-    for (const [key, rect] of fallbackRects.current) {
-      if (windowY >= rect.y && windowY < rect.y + rect.height && canDropOn(key)) return key;
-    }
-    return null;
-  }, []);
+   *  registration order, so it would look like folders "sometimes" worked.
+   *
+   *  TWO WAYS TO ANSWER "NOWHERE", and both matter because the fallback zone is
+   *  legal almost everywhere:
+   *
+   *   - The finger is over a real row that REFUSED the drop. Refusing is not
+   *     the same as being absent: dropping a note on the folder it already
+   *     lives in, or a folder onto its own descendant, has to do NOTHING. Left
+   *     to fall through, each of those became "move to the top level" — the
+   *     student aimed at the folder their note was already in and watched it
+   *     get yanked out of it.
+   *   - The finger never left the row it picked up. That is a hold that
+   *     drifted, not a move. MOVE_SLOP alone can't tell the difference: 15pt of
+   *     drift while opening the actions menu counts as movement, and with a
+   *     whole-list fallback zone underneath, letting go moved the deck out of
+   *     its folder and never opened the menu.
+   */
+  const hitTest = useCallback(
+    (windowY: number, canDropOn: (key: string) => boolean, sourceKey: string): string | null => {
+      const inside = (rect: RowRect) => windowY >= rect.y && windowY < rect.y + rect.height;
+      let refused = false;
+      for (const [key, rect] of rects.current) {
+        if (!inside(rect)) continue;
+        if (canDropOn(key)) return key;
+        refused = true;
+      }
+      if (refused) return null;
+      const own = allRects.current.get(sourceKey);
+      if (own && inside(own)) return null;
+      for (const [key, rect] of fallbackRects.current) {
+        if (inside(rect) && canDropOn(key)) return key;
+      }
+      return null;
+    },
+    [],
+  );
 
   const gestureFor = useCallback(
     (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean; holdForMenu?: boolean }) => {
@@ -197,7 +233,7 @@ export function useRowDrag({
           fingerX.value = event.absoluteX;
           fingerY.value = event.absoluteY;
           if (!opts.draggable) return;
-          const next = hitTest(event.absoluteY, opts.canDropOn);
+          const next = hitTest(event.absoluteY, opts.canDropOn, key);
           if (next !== overKeyRef.current) {
             overKeyRef.current = next;
             setOverKey(next);

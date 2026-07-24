@@ -55,8 +55,15 @@ function isTableStart(lines: readonly string[], index: number): boolean {
 
 /** A line that is a COMPLETE markdown construct on its own: a heading, a list
  *  item, a task, a blockquote line. Each renders correctly in isolation, which
- *  is what makes it safe to reveal one without the others. */
-const LINE_ORIENTED = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?)/;
+ *  is what makes it safe to reveal one without the others.
+ *
+ *  NO LEADING WHITESPACE, deliberately. An indented line is a CHILD — it means
+ *  something only in relation to the line above it, and pulling it out to
+ *  stand alone changes what it is: markdown reads four spaces at the start of a
+ *  block as a code fence, so an indented sub-bullet rendered by itself came out
+ *  as a grey monospace box, and a two-space child simply lost its nesting. A
+ *  nested outline therefore stays whole — one block, revealed together. */
+const LINE_ORIENTED = /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?)/;
 
 /**
  * Split a finished block into ONE BLOCK PER LINE when every line stands alone.
@@ -274,14 +281,30 @@ export function blockStartOffset(nb: NoteBlocks, index: number): number {
 /** Index of the block whose [start, start+body.length] span contains `offset`
  * (clamped to the last block). Used to re-find "the block I was editing"
  * after a normalize re-split shifted indices — e.g. typing a blank line into
- * a paragraph turns it into two blocks. */
+ * a paragraph turns it into two blocks.
+ *
+ * THE BOUNDARY CASE IS THE WHOLE FUNCTION. Until tables and line-oriented
+ * splitting arrived, every block but the last was produced by a blank-line
+ * flush and so had `gap !== ""` — block i's body end and block i+1's start were
+ * different offsets, and an offset landing exactly on `end` could only mean
+ * "the tail of block i". Both new splits emit `gap: ""`, which makes those two
+ * offsets THE SAME NUMBER, and the answer flips: with nothing between them, the
+ * offset that ends "- alpha\n" is the offset that starts "- bravo\n", and it is
+ * the second bullet the caret belongs to. Reading it the old way put the caret
+ * one block above the tapped line and left the last item of every gapless run
+ * unreachable by any tap at all.
+ */
 export function blockIndexAtOffset(nb: NoteBlocks, offset: number): number {
   if (nb.blocks.length === 0) return 0;
   let at = nb.leading.length;
   for (let i = 0; i < nb.blocks.length; i += 1) {
-    const end = at + nb.blocks[i].body.length;
-    if (offset <= end) return i;
-    at = end + nb.blocks[i].gap.length;
+    const block = nb.blocks[i];
+    const end = at + block.body.length;
+    if (offset < end) return i;
+    // Exactly on the boundary: it belongs here only when there is something
+    // (a blank-line gap) or nothing at all (end of document) after it.
+    if (offset === end && (block.gap !== "" || i === nb.blocks.length - 1)) return i;
+    at = end + block.gap.length;
   }
   return nb.blocks.length - 1;
 }

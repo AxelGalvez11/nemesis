@@ -236,9 +236,17 @@ export function applyGrade(
     // carried on the entry from now on — see LearningCard.steps.
     const steps = stepsForCard(card);
     if (grade === "again") return requeue(steps, steps);
-    // A new card starts its ladder even on a pass; an established review card
-    // that you simply recalled is done.
-    if (card.repetitions === 0) return requeue(Math.max(1, steps - 1), steps);
+    if (card.repetitions === 0) {
+      // A new card starts its ladder even on a pass. Hard HOLDS that ladder
+      // where it is instead of advancing it, on the first look exactly as on
+      // every later one — without this, Hard did precisely what Good did, so
+      // "that was hard" and "I knew that" mastered a card in the same two
+      // looks and the button meant nothing on the press where it is used most.
+      return grade === "hard" ? requeue(steps, steps) : requeue(Math.max(1, steps - 1), steps);
+    }
+    // An established review card you simply recalled is done for the sitting —
+    // including on Hard, which in Anki shortens the next interval rather than
+    // dropping the card back into learning steps.
     return graduate();
   }
 

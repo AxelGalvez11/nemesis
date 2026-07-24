@@ -46,18 +46,27 @@ export function AttachLibrarySheet({
   const { colors: c } = useTheme();
   const [notes, setNotes] = useState<CloudLibraryNote[] | null>(null);
   const [query, setQuery] = useState("");
+  // Which folders the student has OPENED, rather than which are shut.
+  //
   // Full folder paths ("PHCY 1205/Unit 1"), never leaf names — two parents can
   // each hold a "Unit 1" and collapsing one must not shut the other.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  //
+  // Tracking the openings and DERIVING the collapsed set from the notes on hand
+  // is what makes "folders start collapsed" true. Snapshotting the collapsed
+  // set once, from the disk cache, left every folder that wasn't in that cache
+  // hanging open the moment the fresh fetch landed — which is precisely the
+  // first time a student opens this on a new phone, when the cache is empty and
+  // the whole library flops open. It is also how the Library tab does it.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     if (!visible || !userId) return;
     let alive = true;
     setQuery("");
+    setOpened(new Set());
     void loadCachedLibrary(userId).then((cached) => {
       if (!alive) return;
       setNotes(cached.notes);
-      setCollapsed(collapsedFolderPaths(cached.notes));
     });
     void fetchLibrary(userId)
       .then((fresh) => {
@@ -75,6 +84,14 @@ export function AttachLibrarySheet({
     ? notesList.filter((note) => note.title.toLowerCase().includes(needle) || note.path.toLowerCase().includes(needle))
     : notesList;
 
+  // Everything shut except what the student opened — recomputed from whatever
+  // notes are currently on hand, so a folder that only the fresh fetch knows
+  // about is collapsed like all the others.
+  const collapsed = useMemo(() => {
+    const all = collapsedFolderPaths(notesList);
+    return new Set([...all].filter((path) => !opened.has(path)));
+  }, [notesList, opened]);
+
   // One note per path, so a tree row can be turned back into the note it names.
   const byPath = useMemo(() => new Map(notesList.map((note) => [note.path, note])), [notesList]);
   const treeRows = useMemo(
@@ -83,7 +100,7 @@ export function AttachLibrarySheet({
   );
 
   const toggleFolder = (path: string) =>
-    setCollapsed((prev) => {
+    setOpened((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);

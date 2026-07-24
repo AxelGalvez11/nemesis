@@ -130,6 +130,17 @@ export default function ReviewScreen() {
   // sitting as it stood before the grade plus the card's own fields before the
   // server rescheduled it. A ref rather than state because nothing renders from
   // it — and because the gesture that reads it must see the value synchronously.
+  // What each card's `repetitions` was the first time this sitting showed it.
+  // Written once per card, never updated — see activeCloze below for why.
+  const sittingRepsRef = useRef(new Map<string, number>());
+  const sittingReps = (row: { id: string; repetitions: number } | null | undefined): number => {
+    if (!row) return 0;
+    const seen = sittingRepsRef.current.get(row.id);
+    if (seen !== undefined) return seen;
+    sittingRepsRef.current.set(row.id, row.repetitions);
+    return row.repetitions;
+  };
+
   const undoRef = useRef<{ progress: SessionProgress; card: CloudStudyCard }[]>([]);
   // The back button is hidden until pulled for (owner 2026-07-23), then goes
   // away on its own — see BACK_VISIBLE_MS.
@@ -151,6 +162,8 @@ export default function ReviewScreen() {
         setCards(found ? allCards.filter((card) => card.deckId === found.id) : []);
         setProgress(EMPTY_PROGRESS);
         undoRef.current = [];
+        // A new sitting: let the cloze rotation move on to the next deletion.
+        sittingRepsRef.current.clear();
         setRevealed(false);
         setGradeError(null);
       } catch {
@@ -196,7 +209,17 @@ export default function ReviewScreen() {
   // and rendered the garbage through a plain <Text>, which is also why the
   // images and *emphasis* stayed literal. Anything with {{c}} skips it.
   const ankiCloze = hasCloze(front);
-  const activeCloze = ankiCloze ? activeClozeNumber(front, current?.repetitions ?? 0) : null;
+  // WHICH blank is hidden is pinned for the sitting, not read off the live row.
+  //
+  // A multi-deletion card rotates its blank by `repetitions`, and the grade RPC
+  // bumps repetitions on every call — a value this screen deliberately writes
+  // back so the footer stops tallying stale scheduling. Reading it here meant
+  // that when the learning ladder brought a card round again in the SAME
+  // sitting, it came back asking a different blank: you answered c1, pressed
+  // Good, and were shown c2, a deletion you had never seen. On the Again path
+  // it was worse — the whole point of that re-look is to re-ask what you just
+  // failed. Day-to-day rotation is unaffected: the pin lasts one sitting.
+  const activeCloze = ankiCloze ? activeClozeNumber(front, sittingReps(current)) : null;
   // What the prompt actually renders — markdown either way, so images and
   // emphasis work. Never a bare <Text>: the answer to one of these blanks is
   // itself usually an image.

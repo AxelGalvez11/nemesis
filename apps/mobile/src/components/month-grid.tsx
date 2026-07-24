@@ -29,8 +29,8 @@ const LARGE_CARD_GAP = space(8);
 /** Total rendered height of one "large" month card, given its week-row count
  *  (4, 5, or 6 — monthMatrix decides). Must stay in lockstep with the
  *  `*Large` styles below; calendar.tsx uses this for FlatList's getItemLayout. */
-export function monthCardHeight(weeksCount: number): number {
-  return LARGE_LABEL_H + LARGE_WEEKDAY_H + weeksCount * LARGE_ROW_H + LARGE_CARD_GAP;
+export function monthCardHeight(weeksCount: number, showWeekdays = true): number {
+  return LARGE_LABEL_H + (showWeekdays ? LARGE_WEEKDAY_H : 0) + weeksCount * LARGE_ROW_H + LARGE_CARD_GAP;
 }
 
 function kindColors(c: ThemeColors): Record<AgendaEventKind, string> {
@@ -43,6 +43,7 @@ export function MonthGrid({
   month,
   size = "large",
   selectedKey,
+  showWeekdays = true,
   onSelectDay,
   onSelectMonth,
 }: {
@@ -55,6 +56,12 @@ export function MonthGrid({
    *  to look CHOSEN — before this, tapping a day left the month view entirely
    *  and nothing on the grid was ever marked. */
   selectedKey?: string;
+  /** Draw this card's own "S M T W T F S" row. Monthly turns it OFF because it
+   *  pins ONE such row above the whole scroll (calendar.tsx); leaving both on
+   *  put two identical rows on screen at once. Whatever this is set to,
+   *  monthCardHeight must be called with the SAME value or the FlatList's
+   *  getItemLayout offsets drift a row per month. */
+  showWeekdays?: boolean;
   /** Choose a day — wired into every cell when provided. */
   onSelectDay?: (dayKey: string) => void;
   /** Mini only: jump to the full-size Monthly view centered on this month. */
@@ -79,7 +86,7 @@ export function MonthGrid({
         </View>
       )}
 
-      {mini ? null : (
+      {mini || !showWeekdays ? null : (
         <View style={styles.weekdayRowLarge}>
           {WEEKDAY_LABELS.map((label, i) => (
             <Text key={i} style={styles.weekdayLarge}>{label}</Text>
@@ -96,7 +103,12 @@ export function MonthGrid({
               styles={styles}
               dotColor={dotColor}
               mini={mini}
-              selected={cell.key === selectedKey}
+              // inMonth guard: a month grid pads its first and last rows with
+              // the neighbouring months' days, so the same date can appear
+              // twice on screen — once as its own month's cell and once as a
+              // pad cell. Without this, choosing such a day drew TWO filled
+              // discs.
+              selected={cell.inMonth && cell.key === selectedKey}
               onSelectDay={onSelectDay}
             />
           ))}
@@ -169,10 +181,13 @@ function DayCell({
  *  height-locked copy inline above). Pass `activeIndex` (0 = Sunday) to accent
  *  the weekday the shown day falls on, so a single-day view still reads as part
  *  of the same week. */
-export function WeekdayStripe({ activeIndex }: { activeIndex?: number }) {
+export function WeekdayStripe({ activeIndex, flush = false }: { activeIndex?: number; flush?: boolean }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <View style={styles.weekdayStripe} testID="calendar-weekday-stripe">
+    // `flush` drops the stripe's own side padding so its seven columns land on
+    // exactly the same centres as a month card's day columns, which have none.
+    // 4pt of padding is enough to make every letter sit visibly off its column.
+    <View style={[styles.weekdayStripe, flush && styles.weekdayStripeFlush]} testID="calendar-weekday-stripe">
       {WEEKDAY_LABELS.map((label, i) => (
         <Text key={i} style={[styles.weekdayStripeLabel, i === activeIndex && styles.weekdayStripeActive]}>
           {label}
@@ -212,6 +227,7 @@ const createStyles = (c: ThemeColors) =>
     // weekday row treatment; active column takes the accent (color only, no
     // size/weight jump, so it stays a quiet cue).
     weekdayStripe: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1) },
+    weekdayStripeFlush: { paddingHorizontal: 0 },
     weekdayStripeLabel: { flex: 1, textAlign: "center", fontSize: type.micro.fontSize, fontWeight: "700", color: c.text3 },
     weekdayStripeActive: { color: c.accent },
 

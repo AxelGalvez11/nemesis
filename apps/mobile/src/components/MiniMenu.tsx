@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import type { RowAction } from "./RowActionSheets";
@@ -50,6 +50,7 @@ export function MiniMenu({
   actions,
   onClose,
   emptyText,
+  portal = false,
   testID,
 }: {
   visible: boolean;
@@ -57,6 +58,17 @@ export function MiniMenu({
   anchor: MenuAnchor | null;
   actions: MenuRow[];
   onClose: () => void;
+  /** Lift the menu out of its parent and onto the WINDOW.
+   *
+   *  The anchor is a window coordinate (pageX/pageY), and the layout below is
+   *  absoluteFill — which is only the window when this renders at a screen or
+   *  Modal root, as every original caller does. Rendered inside a panel that is
+   *  itself inset from the top of the screen (SlideUpSheet's body), absoluteFill
+   *  is that PANEL, so every window coordinate is read as a panel-relative one
+   *  and the menu opens roughly the panel's own offset below the finger — and
+   *  the fit/flip maths, computed against the window's height, goes with it.
+   *  Pass this from inside such a panel. */
+  portal?: boolean;
   /** Shown instead of rows when there are none — a menu that opens empty
    *  otherwise reads as broken. Without it, an empty menu doesn't open at all. */
   emptyText?: string;
@@ -84,7 +96,7 @@ export function MiniMenu({
     ? below
     : Math.max(insets.top + EDGE_MARGIN, anchor.y - TOUCH_GAP - menuHeight);
 
-  return (
+  const body = (
     <View style={StyleSheet.absoluteFill} testID={testID ?? "mini-menu"}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       {/* No entering animation. This renders inside a native Modal (see
@@ -132,6 +144,16 @@ export function MiniMenu({
         </GlassSurface>
       </View>
     </View>
+  );
+
+  // animationType none: the menu is already under the finger, and a slide would
+  // read as the panel behind it moving.
+  return portal ? (
+    <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      {body}
+    </Modal>
+  ) : (
+    body
   );
 }
 

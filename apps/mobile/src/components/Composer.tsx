@@ -236,7 +236,7 @@ export function Composer({
   // the mic was tapped (captured in dictationBase), so speaking adds to your draft
   // rather than clobbering it.
   const dictationBase = useRef("");
-  const { listening, start, stop, transcript } = useSpeechInput((heard) => {
+  const { cancel, listening, start, stop, transcript } = useSpeechInput((heard) => {
     const base = dictationBase.current;
     onChangeText(base ? `${base} ${heard}` : heard);
   });
@@ -252,7 +252,11 @@ export function Composer({
    *  cancel half of the listening bar — without it, the only way out of
    *  dictation was to accept whatever it had heard and delete it by hand. */
   const cancelDictation = () => {
-    stop();
+    // cancel(), not stop(): stop() asks the engine for one last transcript, and
+    // that late result used to land after the draft had been restored — the
+    // abandoned sentence reappeared a beat later and Cancel did the same thing
+    // as Done. See useSpeechInput's cancelledRef.
+    cancel();
     onChangeText(dictationBase.current);
   };
 
