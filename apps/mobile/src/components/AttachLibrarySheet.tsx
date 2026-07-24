@@ -1,13 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
-import { SearchIcon } from "@/components/icons";
+import { ChevronIcon, FolderIcon, SearchIcon } from "@/components/icons";
 import { Skeleton } from "@/components/Skeleton";
 import { SlideUpSheet } from "@/components/StudySheet";
+import { buildLibraryRows } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
+// FOLDERS AND NOTES, not a flat list of every note in the account (owner
+// 2026-07-24: "attach from library needs to show folders and notes"). It listed
+// notes only, which meant a student with a semester of material had to scroll
+// past everything they own or already know the note's name to search for it —
+// the folders they filed it under were the one piece of structure the picker
+// threw away. Rows come from lib/library-sync.ts's buildLibraryRows, the SAME
+// tree builder the Library tab draws, so the two agree on nesting, on
+// folders-before-notes, and on A–Z ordering.
+//
+// Folders start COLLAPSED, matching the Library tab. Searching switches back to
+// a flat list of matches: once you have typed a query, where a note lives
+// matters less than seeing every note that matches, and a tree with one hit
+// four levels down would hide it behind two taps.
+//
 // Composer "+" → "Attach from Library" picker (chat.tsx). Same shape as
 // app/notebook.tsx's own LibraryPickerSheet (cached-then-fresh cloud fetch,
 // search-as-you-type) — kept as a SEPARATE component rather than a shared
@@ -31,13 +46,27 @@ export function AttachLibrarySheet({
   const { colors: c } = useTheme();
   const [notes, setNotes] = useState<CloudLibraryNote[] | null>(null);
   const [query, setQuery] = useState("");
+  // Which folders the student has OPENED, rather than which are shut.
+  //
+  // Full folder paths ("PHCY 1205/Unit 1"), never leaf names — two parents can
+  // each hold a "Unit 1" and collapsing one must not shut the other.
+  //
+  // Tracking the openings and DERIVING the collapsed set from the notes on hand
+  // is what makes "folders start collapsed" true. Snapshotting the collapsed
+  // set once, from the disk cache, left every folder that wasn't in that cache
+  // hanging open the moment the fresh fetch landed — which is precisely the
+  // first time a student opens this on a new phone, when the cache is empty and
+  // the whole library flops open. It is also how the Library tab does it.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     if (!visible || !userId) return;
     let alive = true;
     setQuery("");
+    setOpened(new Set());
     void loadCachedLibrary(userId).then((cached) => {
-      if (alive) setNotes(cached.notes);
+      if (!alive) return;
+      setNotes(cached.notes);
     });
     void fetchLibrary(userId)
       .then((fresh) => {
@@ -54,6 +83,29 @@ export function AttachLibrarySheet({
   const filtered = needle
     ? notesList.filter((note) => note.title.toLowerCase().includes(needle) || note.path.toLowerCase().includes(needle))
     : notesList;
+
+  // Everything shut except what the student opened — recomputed from whatever
+  // notes are currently on hand, so a folder that only the fresh fetch knows
+  // about is collapsed like all the others.
+  const collapsed = useMemo(() => {
+    const all = collapsedFolderPaths(notesList);
+    return new Set([...all].filter((path) => !opened.has(path)));
+  }, [notesList, opened]);
+
+  // One note per path, so a tree row can be turned back into the note it names.
+  const byPath = useMemo(() => new Map(notesList.map((note) => [note.path, note])), [notesList]);
+  const treeRows = useMemo(
+    () => (needle ? [] : buildLibraryRows(notesList.map((n) => ({ path: n.path, title: n.title })), collapsed)),
+    [notesList, collapsed, needle],
+  );
+
+  const toggleFolder = (path: string) =>
+    setOpened((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
 
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title="Attach from Library" testID="attach-library-sheet">
@@ -83,7 +135,9 @@ export function AttachLibrarySheet({
           </View>
         ) : filtered.length === 0 ? (
           <Text style={styles.mutedText}>{notesList.length === 0 ? "Your library is empty." : "No notes match that search."}</Text>
-        ) : (
+        ) : needle ? (
+          // Searching: a flat list of every match, with its folder underneath —
+          // see the top-of-file note on why the tree steps aside here.
           filtered.map((note) => (
             <Pressable
               key={note.id}
@@ -97,11 +151,78 @@ export function AttachLibrarySheet({
               </View>
             </Pressable>
           ))
+        ) : (
+          treeRows.map((row) => {
+            if (row.type === "folder") {
+              const shut = collapsed.has(row.path);
+              return (
+                <Pressable
+                  key={`folder:${row.path}`}
+                  style={({ pressed }) => [
+                    styles.folderRow,
+                    { marginLeft: row.depth * INDENT_STEP },
+                    pressed && styles.rowPressed,
+                  ]}
+                  onPress={() => toggleFolder(row.path)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: !shut }}
+                  testID={`attach-library-folder-${row.path}`}
+                >
+                  {/* Chevron right when shut, down when open — the Library tab's
+                      own language, so the two trees read identically. */}
+                  <View style={shut ? null : styles.chevronOpen}>
+                    <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
+                  </View>
+                  <FolderIcon size={15} color={c.text2} strokeWidth={1.9} />
+                  <Text style={styles.folderName} numberOfLines={1}>{row.name}</Text>
+                </Pressable>
+              );
+            }
+            const note = byPath.get(row.path);
+            if (!note) return null;
+            return (
+              <Pressable
+                key={note.id}
+                style={({ pressed }) => [
+                  styles.row,
+                  { marginLeft: row.depth * INDENT_STEP },
+                  pressed && styles.rowPressed,
+                ]}
+                onPress={() => onPick(note)}
+                testID={`attach-library-note-${note.id}`}
+              >
+                {/* No path subline inside the tree — the folder above it IS the
+                    path, and repeating it makes every row two lines tall. */}
+                <Text style={styles.rowTitle} numberOfLines={1}>{row.title}</Text>
+              </Pressable>
+            );
+          })
         )}
         <View style={{ height: space(6) }} />
       </ScrollView>
     </SlideUpSheet>
   );
+}
+
+/** One indent step per tree level, so a folder and the notes inside it share a
+ *  left edge — same value the Library tab and the Study tree use. */
+const INDENT_STEP = 14;
+
+/** Every folder path in a note set, as the initial COLLAPSED set. Folders start
+ *  shut here exactly as they do on the Library tab: opening the picker onto a
+ *  fully expanded semester would be the flat list this replaces. */
+function collapsedFolderPaths(notes: readonly { path: string }[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const note of notes) {
+    const segments = note.path.split("/").filter(Boolean);
+    segments.pop();
+    let soFar = "";
+    for (const segment of segments) {
+      soFar = soFar === "" ? segment : `${soFar}/${segment}`;
+      out.add(soFar);
+    }
+  }
+  return out;
 }
 
 const createStyles = (c: ThemeColors) =>
@@ -115,6 +236,11 @@ const createStyles = (c: ThemeColors) =>
     mutedText: { ...type.small, color: c.text3, paddingVertical: space(2) },
     row: { borderRadius: radius.md, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, paddingVertical: space(3), paddingHorizontal: space(3.5), marginBottom: space(2) },
     rowPressed: { backgroundColor: c.surface2 },
+    // Folder rows are chrome, not cards: no fill or border, so the notes inside
+    // them stay the things you tap. Mirrors the Library tab's own folder row.
+    folderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm, marginBottom: space(1) },
+    folderName: { ...type.body, fontWeight: "600", color: c.text2, flex: 1, minWidth: 0 },
+    chevronOpen: { transform: [{ rotate: "90deg" }] },
     rowTextCol: { gap: 2 },
     rowTitle: { ...type.body, color: c.text },
     rowSubtitle: { ...type.micro, color: c.text3 },

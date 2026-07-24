@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
 import Svg, { Line, Path, Rect } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import { PlusIcon, SearchIcon } from "./icons";
@@ -49,24 +49,39 @@ export function NotePillBar({
   onSearch: () => void;
   onNew: () => void;
   onRecents: () => void;
-  onOutline: () => void;
+  /** The outline opens as a MINI MENU anchored to this button (owner
+   *  2026-07-24), so the press point rides along in window coordinates. */
+  onOutline: (x: number, y: number) => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const buttons: { key: string; label: string; disabled?: boolean; onPress: () => void; child: ReactNode }[] = [
+  // onPress takes the event so the outline button can hand its own screen
+  // position to a touch-anchored menu; every other button ignores it.
+  const buttons: {
+    key: string;
+    label: string;
+    disabled?: boolean;
+    onPress: (event: GestureResponderEvent) => void;
+    child: ReactNode;
+  }[] = [
     { child: <ChevronGlyph direction="left" color={c.text} />, key: "back", label: "Back", onPress: onBack },
     { child: <ChevronGlyph direction="right" color={canForward ? c.text : c.text3} />, disabled: !canForward, key: "forward", label: "Forward", onPress: onForward },
     { child: <SearchIcon size={22} color={c.text} strokeWidth={1.9} />, key: "search", label: "Search notes", onPress: onSearch },
     { child: <PlusIcon size={24} color={busy ? c.text3 : c.text} strokeWidth={1.8} />, disabled: busy, key: "new", label: "New note", onPress: onNew },
     { child: <RecentsGlyph color={c.text} count={recentCount} countStyle={styles.recentsCount} />, key: "recents", label: "Note tabs", onPress: onRecents },
-    { child: <OutlineGlyph color={c.text} />, key: "outline", label: "Note outline", onPress: onOutline },
+    {
+      child: <OutlineGlyph color={c.text} />,
+      key: "outline",
+      label: "Note outline",
+      onPress: (event) => onOutline(event.nativeEvent.pageX, event.nativeEvent.pageY),
+    },
   ];
   return (
     <GlassSurface style={styles.bar} fallbackColor={c.glassPanel} shadow>
       {buttons.map((btn) => (
         <Pressable
           key={btn.key}
-          onPress={btn.onPress}
+          onPress={(event) => btn.onPress(event)}
           disabled={btn.disabled}
           style={({ pressed }) => [styles.btn, pressed && !btn.disabled && styles.btnPressed]}
           hitSlop={4}

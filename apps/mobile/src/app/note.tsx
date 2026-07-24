@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -22,6 +24,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
@@ -88,6 +91,10 @@ const MENU_ITEMS = [
 // Re-exported from the bar itself so growing the buttons (owner 2026-07-22)
 // can't leave this spacer short and clip the note's last lines behind it.
 const PILL_BAR_HEIGHT = NOTE_PILL_BAR_HEIGHT;
+
+/** The title field's keyboard accessory — see the titleField comment for why
+ *  the title does NOT get the note's formatting toolbar. */
+const TITLE_TOOLBAR_ID = "note-title-toolbar";
 
 const EDIT_ON_WEB = "That happens on the web app for now.";
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
@@ -157,7 +164,10 @@ export default function NoteScreen() {
   const [searchSheetOpen, setSearchSheetOpen] = useState(false);
   const [searchSheetQuery, setSearchSheetQuery] = useState("");
   const [tabsOpen, setTabsOpen] = useState(false);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  // The outline is a MINI MENU now (owner 2026-07-24: "outline should be a mini
+  // menu not a popup from the bottom"), anchored where the pill bar's outline
+  // button was pressed — so null here means closed.
+  const [outlineAnchor, setOutlineAnchor] = useState<MenuAnchor | null>(null);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   // The note id that was just created here, so its title can take the caret
@@ -214,7 +224,7 @@ export default function NoteScreen() {
     setEditing(false);
     setSearchSheetOpen(false);
     setTabsOpen(false);
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     sectionYs.current = [];
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     // History bookkeeping now lives in lib/note-tabs.ts (pure + tested):
@@ -559,6 +569,14 @@ export default function NoteScreen() {
       blurOnSubmit
       multiline
       scrollEnabled={false}
+      // A bar above the keyboard here too (owner 2026-07-24: "editing toolbar
+      // should always be present when keyboard it up"). The title had none, and
+      // it is the field a NEW note opens with the caret in — so the very first
+      // keyboard of a note's life came up bare. It is not the formatting
+      // toolbar: these buttons write markdown, and a title is a FILENAME —
+      // "**Kinetics**" would become the note's name on disk. It gets the one
+      // action that makes sense instead, which is to finish and start writing.
+      inputAccessoryViewID={Platform.OS === "ios" ? TITLE_TOOLBAR_ID : undefined}
       placeholder="Untitled note"
       placeholderTextColor={c.text3}
       testID="note-title-input"
@@ -567,7 +585,7 @@ export default function NoteScreen() {
   ) : null;
 
   const jumpToSection = useCallback((sectionIndex: number) => {
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     const y = sectionYs.current[sectionIndex];
     if (typeof y === "number") scrollRef.current?.scrollTo({ animated: true, y: Math.max(0, y - space(2)) });
   }, []);
@@ -598,9 +616,15 @@ export default function NoteScreen() {
     });
   }, [nav.tabIds, notesIndex, doc]);
 
-  const outlineRows = useMemo<NoteSheetRow[]>(
-    () => outline.map((h) => ({ indent: Math.min(h.level - 1, 4), key: String(h.sectionIndex), label: h.text })),
-    [outline],
+  const outlineRows = useMemo<MenuRow[]>(
+    () =>
+      outline.map((h) => ({
+        indent: Math.min(h.level - 1, 4),
+        key: String(h.sectionIndex),
+        label: h.text,
+        onPress: () => jumpToSection(h.sectionIndex),
+      })),
+    [outline, jumpToSection],
   );
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
@@ -880,13 +904,34 @@ export default function NoteScreen() {
             }}
             onNew={() => void newNote()}
             onRecents={() => setTabsOpen(true)}
-            onOutline={() => {
+            onOutline={(x, y) => {
               // Sections only render (and measure) outside Find mode.
               if (findOpen) closeFind();
-              setOutlineOpen(true);
+              setOutlineAnchor({ x, y });
             }}
           />
         </View>
+      ) : null}
+
+      {/* The title field's bar above the keyboard. One action, and the one
+          that matters after naming a note: put the title away and get on with
+          writing. */}
+      {Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID={TITLE_TOOLBAR_ID} backgroundColor="transparent">
+          <View style={styles.titleAccessoryRail} pointerEvents="box-none">
+            <GlassSurface style={styles.titleAccessoryPill} fallbackColor={c.glassMenu} opaque shadow>
+              <Pressable
+                onPress={() => Keyboard.dismiss()}
+                style={({ pressed }) => [styles.titleAccessoryBtn, pressed && styles.titleAccessoryBtnPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Done naming this note"
+                testID="note-title-done"
+              >
+                <Text style={styles.titleAccessoryLabel}>Done</Text>
+              </Pressable>
+            </GlassSurface>
+          </View>
+        </InputAccessoryView>
       ) : null}
 
       <NoteListSheet
@@ -917,14 +962,18 @@ export default function NoteScreen() {
         }}
         onClose={() => setTabsOpen(false)}
       />
-      <NoteListSheet
-        visible={outlineOpen}
-        title="Outline"
-        rows={outlineRows}
+      {/* The heading outline, opening at the button rather than sliding up from
+          the bottom of the screen (owner 2026-07-24). MiniMenu flips itself
+          above the finger when there is no room below — which is always, since
+          the pill bar sits at the bottom edge — and scrolls when a note has
+          more headings than fit. */}
+      <MiniMenu
+        visible={outlineAnchor !== null}
+        anchor={outlineAnchor}
+        actions={outlineRows}
         emptyText="No headings in this note yet."
-        onPick={(key) => jumpToSection(Number(key))}
-        onClose={() => setOutlineOpen(false)}
-        testID="note-outline-sheet"
+        onClose={() => setOutlineAnchor(null)}
+        testID="note-outline-menu"
       />
     </View>
   );
@@ -1082,4 +1131,12 @@ const createStyles = (c: ThemeColors) =>
     menuLabel: { ...type.body, color: c.text },
     menuLabelDisabled: { color: c.text3 },
     menuTag: { ...type.micro, color: c.text3, textTransform: "uppercase", letterSpacing: 0.6 },
+
+    // The title field's keyboard bar — same floating glass pill as the block
+    // editor's formatting toolbar, so the two read as one family.
+    titleAccessoryRail: { alignItems: "flex-end", paddingBottom: space(2), paddingHorizontal: space(3) },
+    titleAccessoryPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    titleAccessoryBtn: { height: control.lg, paddingHorizontal: space(4), alignItems: "center", justifyContent: "center" },
+    titleAccessoryBtnPressed: { backgroundColor: c.surface2 },
+    titleAccessoryLabel: { ...type.body, color: c.accent, fontWeight: "600" },
   });

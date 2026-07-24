@@ -29,8 +29,8 @@ const LARGE_CARD_GAP = space(8);
 /** Total rendered height of one "large" month card, given its week-row count
  *  (4, 5, or 6 — monthMatrix decides). Must stay in lockstep with the
  *  `*Large` styles below; calendar.tsx uses this for FlatList's getItemLayout. */
-export function monthCardHeight(weeksCount: number): number {
-  return LARGE_LABEL_H + LARGE_WEEKDAY_H + weeksCount * LARGE_ROW_H + LARGE_CARD_GAP;
+export function monthCardHeight(weeksCount: number, showWeekdays = true): number {
+  return LARGE_LABEL_H + (showWeekdays ? LARGE_WEEKDAY_H : 0) + weeksCount * LARGE_ROW_H + LARGE_CARD_GAP;
 }
 
 function kindColors(c: ThemeColors): Record<AgendaEventKind, string> {
@@ -42,13 +42,27 @@ export type MonthGridSize = "large" | "mini";
 export function MonthGrid({
   month,
   size = "large",
+  selectedKey,
+  showWeekdays = true,
   onSelectDay,
   onSelectMonth,
 }: {
   month: MonthView;
   /** "large" (Monthly's scroll, bigger cells) | "mini" (Yearly's 12-up grid). */
   size?: MonthGridSize;
-  /** Jump to a day's agenda — wired into every cell when provided. */
+  /** The day currently being shown below the grid (owner 2026-07-24: the
+   *  calendar "needs to look more like apple calendar"). Apple keeps you in the
+   *  month and lists the chosen day's events underneath, so a day has to be able
+   *  to look CHOSEN — before this, tapping a day left the month view entirely
+   *  and nothing on the grid was ever marked. */
+  selectedKey?: string;
+  /** Draw this card's own "S M T W T F S" row. Monthly turns it OFF because it
+   *  pins ONE such row above the whole scroll (calendar.tsx); leaving both on
+   *  put two identical rows on screen at once. Whatever this is set to,
+   *  monthCardHeight must be called with the SAME value or the FlatList's
+   *  getItemLayout offsets drift a row per month. */
+  showWeekdays?: boolean;
+  /** Choose a day — wired into every cell when provided. */
   onSelectDay?: (dayKey: string) => void;
   /** Mini only: jump to the full-size Monthly view centered on this month. */
   onSelectMonth?: (year: number, month: number) => void;
@@ -72,7 +86,7 @@ export function MonthGrid({
         </View>
       )}
 
-      {mini ? null : (
+      {mini || !showWeekdays ? null : (
         <View style={styles.weekdayRowLarge}>
           {WEEKDAY_LABELS.map((label, i) => (
             <Text key={i} style={styles.weekdayLarge}>{label}</Text>
@@ -83,7 +97,20 @@ export function MonthGrid({
       {month.weeks.map((week, wi) => (
         <View key={wi} style={mini ? styles.weekRowMini : styles.weekRowLarge}>
           {week.map((cell) => (
-            <DayCell key={cell.key} cell={cell} styles={styles} dotColor={dotColor} mini={mini} onSelectDay={onSelectDay} />
+            <DayCell
+              key={cell.key}
+              cell={cell}
+              styles={styles}
+              dotColor={dotColor}
+              mini={mini}
+              // inMonth guard: a month grid pads its first and last rows with
+              // the neighbouring months' days, so the same date can appear
+              // twice on screen — once as its own month's cell and once as a
+              // pad cell. Without this, choosing such a day drew TWO filled
+              // discs.
+              selected={cell.inMonth && cell.key === selectedKey}
+              onSelectDay={onSelectDay}
+            />
           ))}
         </View>
       ))}
@@ -96,23 +123,36 @@ function DayCell({
   styles,
   dotColor,
   mini,
+  selected,
   onSelectDay,
 }: {
   cell: MonthCell;
   styles: ReturnType<typeof createStyles>;
   dotColor: Record<AgendaEventKind, string>;
   mini: boolean;
+  selected: boolean;
   onSelectDay?: (dayKey: string) => void;
 }) {
   const showDot = cell.inMonth && cell.eventCount > 0;
+  // Apple's exact three-way treatment, which is what makes the grid readable at
+  // a glance: TODAY is an accent-coloured number; the day you have SELECTED is
+  // a filled circle; today-while-selected is a filled ACCENT circle. Only one
+  // day is ever filled, so "where am I" and "what is today" never compete.
+  const filled = selected;
   const inner = (
     <>
-      <View style={[mini ? styles.dayInnerMini : styles.dayInnerLarge, cell.isToday && styles.dayToday]}>
+      <View
+        style={[
+          mini ? styles.dayInnerMini : styles.dayInnerLarge,
+          filled && (cell.isToday ? styles.dayToday : styles.daySelected),
+        ]}
+      >
         <Text
           style={[
             mini ? styles.dayNumMini : styles.dayNumLarge,
             !cell.inMonth && styles.dayOut,
-            cell.isToday && styles.dayTodayNum,
+            cell.isToday && !filled && styles.dayTodayText,
+            filled && (cell.isToday ? styles.dayTodayNum : styles.daySelectedNum),
           ]}
         >
           {cell.day}
@@ -141,10 +181,13 @@ function DayCell({
  *  height-locked copy inline above). Pass `activeIndex` (0 = Sunday) to accent
  *  the weekday the shown day falls on, so a single-day view still reads as part
  *  of the same week. */
-export function WeekdayStripe({ activeIndex }: { activeIndex?: number }) {
+export function WeekdayStripe({ activeIndex, flush = false }: { activeIndex?: number; flush?: boolean }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <View style={styles.weekdayStripe} testID="calendar-weekday-stripe">
+    // `flush` drops the stripe's own side padding so its seven columns land on
+    // exactly the same centres as a month card's day columns, which have none.
+    // 4pt of padding is enough to make every letter sit visibly off its column.
+    <View style={[styles.weekdayStripe, flush && styles.weekdayStripeFlush]} testID="calendar-weekday-stripe">
       {WEEKDAY_LABELS.map((label, i) => (
         <Text key={i} style={[styles.weekdayStripeLabel, i === activeIndex && styles.weekdayStripeActive]}>
           {label}
@@ -184,11 +227,19 @@ const createStyles = (c: ThemeColors) =>
     // weekday row treatment; active column takes the accent (color only, no
     // size/weight jump, so it stays a quiet cue).
     weekdayStripe: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1) },
+    weekdayStripeFlush: { paddingHorizontal: 0 },
     weekdayStripeLabel: { flex: 1, textAlign: "center", fontSize: type.micro.fontSize, fontWeight: "700", color: c.text3 },
     weekdayStripeActive: { color: c.accent },
 
     // Shared across both sizes.
     dayToday: { backgroundColor: c.accent },
+    // Today, unselected: the number takes the accent rather than a filled ring,
+    // so the filled circle can mean "selected" and only that.
+    dayTodayText: { color: c.accent, fontWeight: "700" },
+    // The selected day on any other date — a solid neutral disc, Apple's own
+    // treatment, distinct from today's accent without competing with it.
+    daySelected: { backgroundColor: c.text },
+    daySelectedNum: { color: c.bg, fontWeight: "700" },
     // Owner 2026-07-22: no faded text anywhere. Neighbouring-month days used to
     // sit at 50% opacity; they now read at full strength like every other
     // number, so the month boundary shows through position alone.

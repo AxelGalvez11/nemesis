@@ -578,3 +578,50 @@ Deno.test("createLayoutSim: a drag that never ends still reaches settled, so the
   }
   assert(sim.settled, `a drag with no endDrag must still settle; gave up after ${steps} steps`);
 });
+
+Deno.test("readPositions carries exactly what snapshot carries, flattened", () => {
+  // The rendering channel changed (owner 2026-07-24: the graph was "still
+  // slow"): graph.tsx no longer pushes a snapshot into React state every frame,
+  // it writes this flat array into a reanimated shared value instead. The two
+  // MUST agree, or nodes and edges would draw somewhere the layout never put
+  // them — and snapshot() is still what the zoom-to-fit measures.
+  const graph = buildNoteGraph(
+    Array.from({ length: 24 }, (_, i) => doc(`n${i}.md`, `N${i}`, `[[N${(i + 5) % 24}]]`)),
+  );
+  const sim = createLayoutSim(graph, { height: 700, width: 390 });
+  for (let i = 0; i < 40; i++) sim.step();
+
+  const snap = sim.snapshot();
+  const flat = sim.readPositions();
+  assertEquals(flat.length, snap.nodes.length * 2);
+  for (let i = 0; i < snap.nodes.length; i++) {
+    assertEquals(flat[i * 2], snap.nodes[i].x);
+    assertEquals(flat[i * 2 + 1], snap.nodes[i].y);
+  }
+});
+
+Deno.test("readPositions reflects a pinned node immediately, without a step", () => {
+  // A dragged node has to track the finger on the very next frame — graph.tsx
+  // writes readPositions() straight after pin() rather than waiting for the
+  // loop. If this needed a step() first, dragging would visibly lag the finger.
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 700, width: 390 });
+  sim.pin(0, 123, 234);
+  const flat = sim.readPositions();
+  assertEquals(flat[0], 123);
+  assertEquals(flat[1], 234);
+});
+
+Deno.test("readPositions never emits a hole, so the edge path can't take a NaN", () => {
+  // The edge worklet builds ONE "M x y L x y" path over every edge. An
+  // undefined slot would stringify into the d attribute and blank the entire
+  // edge set, not just one line — so every index must always be a real number,
+  // including before the first step().
+  const graph = buildNoteGraph(
+    Array.from({ length: 15 }, (_, i) => doc(`n${i}.md`, `N${i}`, `[[N${(i + 2) % 15}]]`)),
+  );
+  const sim = createLayoutSim(graph, { height: 700, width: 390 });
+  for (const value of sim.readPositions()) assert(Number.isFinite(value), "seeded position must be finite");
+  for (let i = 0; i < 90; i++) sim.step();
+  for (const value of sim.readPositions()) assert(Number.isFinite(value), "settled position must be finite");
+});

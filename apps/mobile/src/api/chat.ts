@@ -112,7 +112,10 @@ async function mintDeviceKey(uid: string): Promise<string | null> {
   }
 }
 
-async function deviceKey(uid: string): Promise<string | null> {
+/** The device key this phone talks to the app's own API with. Exported for
+ *  api/photos.ts, which posts a photograph to the same extract endpoint the web
+ *  app uses and needs the same `nmk_` bearer that route gates on. */
+export async function deviceKey(uid: string): Promise<string | null> {
   try {
     const stored = await SecureStore.getItemAsync(deviceKeyStoreFor(uid));
     if (stored?.startsWith("nmk_")) return stored;
@@ -741,7 +744,9 @@ export async function requestLiveNotes(uid: string, transcript: string, previous
   return parseLiveNotes(reply.text);
 }
 
-const APP_API_BASE = "https://app.enternemesis.com";
+/** The Next.js app that hosts the shared HTTP API (transcription, file and
+ *  photo extraction). Exported for api/photos.ts. */
+export const APP_API_BASE = "https://app.enternemesis.com";
 
 /** Rewrite one recording's chip entry on the thread (same merge the save path
  *  uses) — how the enhance pass below publishes its polish state and, at the

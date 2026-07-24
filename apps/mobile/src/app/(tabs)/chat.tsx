@@ -5,6 +5,7 @@ import {
   AppState,
   Easing,
   FlatList,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -32,7 +33,8 @@ import {
   saveThreadMessages,
   sendChat,
 } from "@/api/chat";
-import type { CloudLibraryNote } from "@/api/cloudLibrary";
+import { createNoteWithContent, type CloudLibraryNote } from "@/api/cloudLibrary";
+import { storeAndReadPhoto, type ReadPhoto } from "@/api/photos";
 import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
@@ -45,6 +47,7 @@ import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icon
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { PhotoCaptureSheet } from "@/components/PhotoCaptureSheet";
 import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
@@ -55,6 +58,7 @@ import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
+import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
 import { reasoningGlimpse } from "@/lib/reasoning-preview";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -173,6 +177,16 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // The camera (owner 2026-07-24). A photograph becomes an attachment through
+  // exactly the lane above — once the server has read it, a picture of a slide
+  // and an attached Library note are the same thing: text for one turn.
+  // `photo` is kept BESIDE attachedDoc rather than folded into it because the
+  // picture itself is only needed for the two things text can't do: show a
+  // thumbnail on the chip, and put the image in the note if it gets saved.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photo, setPhoto] = useState<ReadPhoto | null>(null);
+  const [photoSaved, setPhotoSaved] = useState<"idle" | "saving" | "saved">("idle");
   // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
@@ -395,6 +409,55 @@ export default function ChatScreen() {
     return () => setHeaderTitle(null);
   }, [setHeaderTitle]);
 
+  // A shot the student accepted: store it, read it, and hand the words to the
+  // next turn. The sheet STAYS UP with a spinner until this lands — dropping
+  // back to chat first would leave the student watching an empty composer with
+  // no sign that a 3 MB upload was in flight.
+  const usePhoto = useCallback(
+    async (uri: string) => {
+      if (!uid) return;
+      setPhotoBusy(true);
+      try {
+        const read = await storeAndReadPhoto(uid, uri);
+        setPhoto(read);
+        setPhotoSaved("idle");
+        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
+        // photograph is a Library note, because where a fact came from changes
+        // how much weight it deserves.
+        setAttachedDoc({ content: read.text, title: photoAttachmentTitle(read.title) });
+        setCameraOpen(false);
+      } catch (cause) {
+        // api/photos.ts throws sentences, so this reaches the screen as-is.
+        setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
+        setCameraOpen(false);
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    [uid],
+  );
+
+  // "…and even saved to library if it's a note" (owner). Deliberately a TAP,
+  // not a guess: a photo of a slide is a note and a photo of a broken pipette
+  // is not, and no classifier should be deciding that on the student's behalf.
+  const savePhotoToLibrary = useCallback(async () => {
+    if (!uid || !photo || photoSaved !== "idle") return;
+    setPhotoSaved("saving");
+    try {
+      await createNoteWithContent(uid, photo.title, photoNoteBody(photo.text, photo.imageUrl, photo.storagePath));
+      setPhotoSaved("saved");
+    } catch (cause) {
+      setPhotoSaved("idle");
+      setLastError(cause instanceof Error ? cause.message : "Couldn't save that to your library.");
+    }
+  }, [photo, photoSaved, uid]);
+
+  const clearAttachment = useCallback(() => {
+    setAttachedDoc(null);
+    setPhoto(null);
+    setPhotoSaved("idle");
+  }, []);
+
   const send = useCallback(() => {
     const text = input.trim();
     if (!text || !uid || !threadId || sendingRef.current) return;
@@ -415,6 +478,11 @@ export default function ChatScreen() {
     setLastError(null);
     setInput("");
     setAttachedDoc(null);
+    // The picture goes with it: the attachment is one-shot, and a chip left
+    // offering "Save to Library" after the turn has gone would be pointing at
+    // something that is no longer attached to anything.
+    setPhoto(null);
+    setPhotoSaved("idle");
     setSending(true);
     setStreamingText("");
     setPhase({ kind: "routing" });
@@ -958,6 +1026,12 @@ export default function ChatScreen() {
             setLibraryPickerOpen(false);
           }}
         />
+        <PhotoCaptureSheet
+          visible={cameraOpen}
+          busy={photoBusy}
+          onClose={() => setCameraOpen(false)}
+          onCaptured={(uri) => void usePhoto(uri)}
+        />
         <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
         <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />
         {/* The bottom edge of the transcript, softened (owner 2026-07-23: "in
@@ -1007,7 +1081,15 @@ export default function ChatScreen() {
               }}
             />
           ) : null}
-          {composerMode === "chat" && attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
+          {composerMode === "chat" && attachedDoc ? (
+            <AttachedDocChip
+              title={attachedDoc.title}
+              onRemove={clearAttachment}
+              thumbnailUri={photo?.imageUrl ?? null}
+              onSave={photo ? () => void savePhotoToLibrary() : undefined}
+              saveState={photoSaved}
+            />
+          ) : null}
           <Composer
             value={input}
             onChangeText={setInput}
@@ -1055,6 +1137,7 @@ export default function ChatScreen() {
           onClose={() => setPlusMenuOpen(false)}
           bottomOffset={composerMenuOffset}
           onAttach={() => setLibraryPickerOpen(true)}
+          onTakePhoto={() => setCameraOpen(true)}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
@@ -1235,17 +1318,48 @@ function ChatSkeleton() {
   );
 }
 
-function AttachedDocChip({ title, onRemove }: { title: string; onRemove: () => void }) {
+/** The one-shot attachment sitting above the composer. A photographed page adds
+ *  two things a Library note doesn't have: a thumbnail (so the student can see
+ *  WHICH shot is attached without opening anything) and a "Save to Library"
+ *  action, which is where "even saved to library if it's a note" actually
+ *  lives. Both are optional — an attached note renders exactly as before. */
+function AttachedDocChip({
+  title,
+  onRemove,
+  thumbnailUri = null,
+  onSave,
+  saveState = "idle",
+}: {
+  title: string;
+  onRemove: () => void;
+  thumbnailUri?: string | null;
+  onSave?: () => void;
+  saveState?: "idle" | "saving" | "saved";
+}) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   return (
     <View style={styles.attachChipRow}>
       <View style={styles.attachChip} testID="chat-attached-doc-chip">
+        {thumbnailUri ? <Image source={{ uri: thumbnailUri }} style={styles.attachChipThumb} /> : null}
         <Text style={styles.attachChipText} numberOfLines={1}>{title}</Text>
         <Pressable onPress={onRemove} hitSlop={8} accessibilityLabel={`Remove ${title}`} testID="chat-attached-doc-remove">
           <CloseIcon size={12} color={c.text2} />
         </Pressable>
       </View>
+      {onSave ? (
+        <Pressable
+          onPress={saveState === "idle" ? onSave : undefined}
+          disabled={saveState !== "idle"}
+          hitSlop={8}
+          accessibilityRole="button"
+          testID="chat-photo-save"
+        >
+          <Text style={[styles.attachChipAction, saveState === "saved" && styles.attachChipActionDone]}>
+            {saveState === "saved" ? "Saved to Library" : saveState === "saving" ? "Saving…" : "Save to Library"}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -1304,8 +1418,10 @@ const createStyles = (c: ThemeColors) =>
     // Muted with its icon — see the StarterRows comment on why these two spots
     // keep gray when the rest of the app went pure black/white.
     starterLabel: { ...type.body, color: c.textHint },
-    // The attached-Library-doc chip staged above the composer input.
-    attachChipRow: { marginBottom: space(1.5), paddingHorizontal: space(1) },
+    // The attached-Library-doc chip staged above the composer input. A row
+    // rather than a lone pill since the camera landed: a photo chip carries a
+    // "Save to Library" action beside it.
+    attachChipRow: { alignItems: "center", flexDirection: "row", gap: space(2), marginBottom: space(1.5), paddingHorizontal: space(1) },
     attachChip: {
       flexDirection: "row",
       alignItems: "center",
@@ -1318,6 +1434,11 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surface2,
     },
     attachChipText: { ...type.small, color: c.text, flexShrink: 1 },
+    // Small enough to read as provenance rather than as a picture viewer — its
+    // job is "which shot is attached", not "look at this photo".
+    attachChipThumb: { borderRadius: radius.sm, height: 22, width: 22 },
+    attachChipAction: { ...type.small, color: c.accent },
+    attachChipActionDone: { color: c.textHint },
 
     // "…" chat-actions button (rendered into the TopBar's right slot) + its dropdown.
     actionsBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },

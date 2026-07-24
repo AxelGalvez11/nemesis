@@ -21,6 +21,7 @@ import {
   EMPTY_PROGRESS,
   sessionCounts,
   sessionQueue,
+  shouldEmitGrade,
   type SessionProgress,
 } from "@/lib/review-queue";
 import { confirmHoldRemaining, gradeButtonState } from "@/lib/grade-confirm";
@@ -129,6 +130,17 @@ export default function ReviewScreen() {
   // sitting as it stood before the grade plus the card's own fields before the
   // server rescheduled it. A ref rather than state because nothing renders from
   // it — and because the gesture that reads it must see the value synchronously.
+  // What each card's `repetitions` was the first time this sitting showed it.
+  // Written once per card, never updated — see activeCloze below for why.
+  const sittingRepsRef = useRef(new Map<string, number>());
+  const sittingReps = (row: { id: string; repetitions: number } | null | undefined): number => {
+    if (!row) return 0;
+    const seen = sittingRepsRef.current.get(row.id);
+    if (seen !== undefined) return seen;
+    sittingRepsRef.current.set(row.id, row.repetitions);
+    return row.repetitions;
+  };
+
   const undoRef = useRef<{ progress: SessionProgress; card: CloudStudyCard }[]>([]);
   // The back button is hidden until pulled for (owner 2026-07-23), then goes
   // away on its own — see BACK_VISIBLE_MS.
@@ -150,6 +162,8 @@ export default function ReviewScreen() {
         setCards(found ? allCards.filter((card) => card.deckId === found.id) : []);
         setProgress(EMPTY_PROGRESS);
         undoRef.current = [];
+        // A new sitting: let the cloze rotation move on to the next deletion.
+        sittingRepsRef.current.clear();
         setRevealed(false);
         setGradeError(null);
       } catch {
@@ -195,7 +209,17 @@ export default function ReviewScreen() {
   // and rendered the garbage through a plain <Text>, which is also why the
   // images and *emphasis* stayed literal. Anything with {{c}} skips it.
   const ankiCloze = hasCloze(front);
-  const activeCloze = ankiCloze ? activeClozeNumber(front, current?.repetitions ?? 0) : null;
+  // WHICH blank is hidden is pinned for the sitting, not read off the live row.
+  //
+  // A multi-deletion card rotates its blank by `repetitions`, and the grade RPC
+  // bumps repetitions on every call — a value this screen deliberately writes
+  // back so the footer stops tallying stale scheduling. Reading it here meant
+  // that when the learning ladder brought a card round again in the SAME
+  // sitting, it came back asking a different blank: you answered c1, pressed
+  // Good, and were shown c2, a deletion you had never seen. On the Again path
+  // it was worse — the whole point of that re-look is to re-ask what you just
+  // failed. Day-to-day rotation is unaffected: the pin lasts one sitting.
+  const activeCloze = ankiCloze ? activeClozeNumber(front, sittingReps(current)) : null;
   // What the prompt actually renders — markdown either way, so images and
   // emphasis work. Never a bare <Text>: the answer to one of these blanks is
   // itself usually an image.
@@ -239,13 +263,22 @@ export default function ReviewScreen() {
     const before = current;
     const beforeProgress = progressRef.current;
     const startedAt = Date.now();
-    const result = await gradeStudyCard(current.id, value);
+
+    // ONLY THE FIRST PRESS OF A CARD REACHES THE SERVER (owner 2026-07-24 — a
+    // new card now takes two "Good"s to graduate and comes back in between).
+    // grade_study_card applies every call as an independent review, so sending
+    // each rung of the learning ladder would advance one card's real interval
+    // two or three times for a single sitting and push it weeks out. The later
+    // presses are a second LOOK, not a second review — they stay on the phone.
+    // See review-queue.ts's SessionProgress.gradedIds.
+    const emit = shouldEmitGrade(beforeProgress, before.id);
+    const result = emit ? await gradeStudyCard(before.id, value) : null;
     const remaining = confirmHoldRemaining(Date.now() - startedAt, CONFIRM_HOLD_MS);
     if (remaining > 0) await wait(remaining);
     gradingRef.current = false;
     setGrading(false);
     setFlashGrade(null);
-    if (!result.ok) {
+    if (result && !result.ok) {
       // Stay put — revealed, ungraded — so the student can retry once online.
       setGradeError(result.message);
       return;
@@ -253,21 +286,23 @@ export default function ReviewScreen() {
     // Write the server's answer back into the local card. It used to be
     // discarded, which meant the footer was tallying stale scheduling fields
     // for the rest of the sitting.
-    setCards((rows) =>
-      rows.map((row) =>
-        row.id === before.id
-          ? {
-              ...row,
-              dueAt: result.dueAt,
-              intervalDays: result.intervalDays,
-              lapses: result.lapses,
-              repetitions: result.repetitions,
-            }
-          : row,
-      ),
-    );
+    if (result?.ok) {
+      setCards((rows) =>
+        rows.map((row) =>
+          row.id === before.id
+            ? {
+                ...row,
+                dueAt: result.dueAt,
+                intervalDays: result.intervalDays,
+                lapses: result.lapses,
+                repetitions: result.repetitions,
+              }
+            : row,
+        ),
+      );
+    }
     undoRef.current = [...undoRef.current, { card: before, progress: beforeProgress }];
-    setProgress(applyGrade(beforeProgress, before.id, value === "again"));
+    setProgress(applyGrade(beforeProgress, before, value));
     setRevealed(false);
   }
 
@@ -288,9 +323,14 @@ export default function ReviewScreen() {
     setCards((rows) => rows.map((row) => (row.id === last.card.id ? last.card : row)));
     setProgress(last.progress);
     setGradeError(null);
-    // Revealed, because you have just seen this card's answer — hiding it again
-    // would make undo feel like a fresh card rather than a correction.
-    setRevealed(true);
+    // Back to the FRONT of the card, not the answer (owner 2026-07-24). This
+    // shipped the other way round on the reasoning that you had just seen the
+    // answer, so undo should feel like a correction rather than a fresh card.
+    // The owner wants the question — which is the more useful of the two: the
+    // reason to undo is usually that you graded before you had really answered,
+    // and landing on the answer denies you the second attempt you took the card
+    // back for.
+    setRevealed(false);
     hapticHoldRegistered();
   }, []);
 

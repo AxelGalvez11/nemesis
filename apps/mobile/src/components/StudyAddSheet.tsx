@@ -1,12 +1,25 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  InputAccessoryView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
-import { FolderIcon, PlusIcon } from "./icons";
-import { createStudyCard, createStudyDeck, type CloudStudyDeck } from "@/api/cloudStudy";
+import { GlassSurface } from "./GlassSurface";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "./MiniMenu";
+import { ChevronIcon, FolderIcon, PlusIcon } from "./icons";
+import { createStudyCard, createStudyDeck, type CloudStudyDeck, type NewCardType } from "@/api/cloudStudy";
+import { hasClozeDeletion, wrapCloze } from "@/lib/cloze-edit";
+import { pathLeaf } from "@/lib/study-tree";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The Study page's "add" sheet. ONE SlideUpSheet that walks a small internal
 // step stack — menu -> new-group / new-cards -> back to menu.
@@ -23,10 +36,35 @@ import { radius, space, type } from "@/theme/tokens";
 // an empty deck the student can grow into a folder by adding another deck whose
 // name shares that prefix.
 //
-// New cards: pick a deck, type front/back, insert into study_cards. Mirrors
-// apps/web/lib/workspace/study-cloud-store.ts's createCard (card_type "basic").
+// New cards: pick a deck, pick a card TYPE, type the card, insert into
+// study_cards. Mirrors apps/web/lib/workspace/study-cloud-store.ts's createCard.
+//
+// Owner 2026-07-24, three changes to this step:
+//
+//  - "the deck selector should be minimenu dropdown". It was an inline scrolling
+//    list capped at 22% of the screen — a second scroll area inside a scrolling
+//    form, which on a long deck list meant scrolling within scrolling, and which
+//    took up that space permanently even though the deck is picked once.
+//  - "users should be able to select card type for adding new cards" — Basic or
+//    Cloze, which changes what the form asks for. A cloze card is ONE piece of
+//    text with deletions in it, not a front and a back, so the fields change
+//    with the type rather than being labelled differently.
+//  - "there should be an editing toolbar above the keyboard when editing cards
+//    for cloze" — the cloze buttons ride the keyboard the way the note editor's
+//    formatting pill does. It is a SEPARATE accessory view from the note
+//    editor's: that toolbar writes markdown, and this one writes Anki syntax
+//    into a specific field.
 
 export type StudyAddStep = "menu" | "new-group" | "new-cards";
+
+/** The cloze toolbar's accessory-view id. Distinct from the note editor's — the
+ *  two write different syntax into different fields and must never share. */
+const CLOZE_TOOLBAR_ID = "study-cloze-toolbar";
+
+const CARD_TYPES: { id: NewCardType; label: string; hint: string }[] = [
+  { hint: "A question on the front, its answer on the back.", id: "basic", label: "Basic" },
+  { hint: "One passage with blanks — each blank becomes its own card.", id: "cloze", label: "Cloze" },
+];
 
 function titleForStep(step: StudyAddStep): string {
   switch (step) {
@@ -60,7 +98,6 @@ export function StudyAddSheet({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const { height } = useWindowDimensions();
   const [step, setStep] = useState<StudyAddStep>(initialStep);
 
   const [groupName, setGroupName] = useState("");
@@ -68,12 +105,19 @@ export function StudyAddSheet({
   const [groupError, setGroupError] = useState<string | null>(null);
 
   const [cardDeckId, setCardDeckId] = useState<string | null>(null);
+  const [deckMenuAnchor, setDeckMenuAnchor] = useState<MenuAnchor | null>(null);
+  const [cardType, setCardType] = useState<NewCardType>("basic");
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [savingCard, setSavingCard] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
   const [cardSavedFlash, setCardSavedFlash] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The front field's live selection, so the cloze buttons know what to wrap.
+  const frontSelection = useRef({ end: 0, start: 0 });
+  // Set by a toolbar action to move the caret; cleared as soon as the field
+  // reports back, or the field would be stuck unable to move its own caret.
+  const [forcedSelection, setForcedSelection] = useState<{ start: number; end: number } | null>(null);
 
   // Open straight onto the requested step (owner 2026-07-23) — the "…" menu
   // sends us to new-group / new-cards directly, the FAB used to always land on
@@ -90,11 +134,14 @@ export function StudyAddSheet({
     setCreatingGroup(false);
     setGroupError(null);
     setCardDeckId(decks[0]?.id ?? null);
+    setCardType("basic");
     setFront("");
     setBack("");
     setSavingCard(false);
     setCardError(null);
     setCardSavedFlash(null);
+    setForcedSelection(null);
+    frontSelection.current = { end: 0, start: 0 };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, step]);
 
@@ -105,7 +152,35 @@ export function StudyAddSheet({
     [],
   );
 
-  const deckPickMaxHeight = Math.round(height * 0.22);
+  // The deck dropdown's rows. Deck names carry their folder as a "Group::Leaf"
+  // prefix, so the row shows the leaf with the group underneath it rather than
+  // one long "Pharm::Cardio::Beta blockers" that truncates to nothing useful.
+  const deckRows = useMemo<MenuRow[]>(
+    () =>
+      decks.map((deck) => ({
+        key: deck.id,
+        label: pathLeaf(deck.name),
+        onPress: () => {
+          setCardDeckId(deck.id);
+          setDeckMenuAnchor(null);
+        },
+      })),
+    [decks],
+  );
+  const selectedDeck = decks.find((deck) => deck.id === cardDeckId) ?? null;
+
+  /** Wrap the front field's selection in a cloze deletion. Pure transform in
+   *  lib/cloze-edit.ts; this only moves the result back into the field. */
+  function applyCloze(opts?: { sameNumber?: boolean }) {
+    const next = wrapCloze({ ...frontSelection.current, text: front }, opts);
+    setFront(next.text);
+    frontSelection.current = { end: next.end, start: next.start };
+    setForcedSelection({ end: next.end, start: next.start });
+  }
+
+  const clozeReady = cardType !== "cloze" || hasClozeDeletion(front);
+  const canSubmitCard =
+    !!cardDeckId && !!front.trim() && (cardType === "cloze" ? clozeReady : !!back.trim()) && !savingCard;
 
   async function submitNewGroup() {
     const name = groupName.trim();
@@ -129,10 +204,11 @@ export function StudyAddSheet({
     setCardError(null);
     setCardSavedFlash(null);
     try {
-      await createStudyCard(userId, cardDeckId, front, back);
+      await createStudyCard(userId, cardDeckId, front, back, cardType);
       onChanged();
       setFront("");
       setBack("");
+      frontSelection.current = { end: 0, start: 0 };
       setCardSavedFlash("Added");
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setCardSavedFlash(null), 2000);
@@ -221,43 +297,91 @@ export function StudyAddSheet({
           >
             <BackRow onPress={() => setStep("menu")} />
             {cardError ? <Text style={styles.sheetError}>{cardError}</Text> : null}
+
+            {/* Deck — a dropdown, not an inline list (owner 2026-07-24). */}
             <Text style={styles.fieldLabel}>Deck</Text>
-            <ScrollView style={[styles.deckPickList, { maxHeight: deckPickMaxHeight }]} nestedScrollEnabled testID="study-add-deck-list">
-              {decks.map((deck) => {
-                const isActive = deck.id === cardDeckId;
+            <Pressable
+              onPress={(event) => setDeckMenuAnchor({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
+              style={({ pressed }) => [styles.dropdown, pressed && styles.rowPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Choose a deck"
+              testID="study-add-deck-trigger"
+            >
+              <View style={styles.dropdownText}>
+                <Text style={styles.dropdownLabel} numberOfLines={1}>
+                  {selectedDeck ? pathLeaf(selectedDeck.name) : "Choose a deck"}
+                </Text>
+                {/* The folder the deck sits in, when it has one — two decks in
+                    different units can share a leaf name. */}
+                {selectedDeck && selectedDeck.name !== pathLeaf(selectedDeck.name) ? (
+                  <Text style={styles.dropdownHint} numberOfLines={1}>
+                    {selectedDeck.name.slice(0, selectedDeck.name.length - pathLeaf(selectedDeck.name).length - 2)}
+                  </Text>
+                ) : null}
+              </View>
+              {/* Chevron down — the dropdown affordance. */}
+              <View style={styles.dropdownChevron}>
+                <ChevronIcon size={14} color={c.text2} strokeWidth={2.2} />
+              </View>
+            </Pressable>
+
+            {/* Card type — what the form below asks for depends on it. */}
+            <Text style={styles.fieldLabel}>Card type</Text>
+            <View style={styles.typeRow} testID="study-add-card-type">
+              {CARD_TYPES.map((option) => {
+                const on = option.id === cardType;
                 return (
                   <Pressable
-                    key={deck.id}
-                    onPress={() => setCardDeckId(deck.id)}
-                    style={({ pressed }) => [styles.deckPickRow, pressed && styles.rowPressed]}
-                    testID={`study-add-deck-${deck.id}`}
+                    key={option.id}
+                    onPress={() => setCardType(option.id)}
+                    style={({ pressed }) => [styles.typeBtn, on && styles.typeBtnOn, pressed && styles.rowPressed]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    testID={`study-add-card-type-${option.id}`}
                   >
-                    <Text style={[styles.deckPickLabel, isActive && styles.deckPickLabelActive]} numberOfLines={1}>
-                      {deck.name}
-                    </Text>
-                    {isActive ? <Text style={styles.deckPickCheck}>✓</Text> : null}
+                    <Text style={[styles.typeLabel, on && styles.typeLabelOn]}>{option.label}</Text>
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
+            <Text style={styles.stepHint}>{CARD_TYPES.find((o) => o.id === cardType)?.hint}</Text>
+
             <TextInput
-              style={[styles.sheetInput, styles.sheetNoteInput]}
+              style={[styles.sheetInput, styles.sheetNoteInput, cardType === "cloze" && styles.clozeInput]}
               value={front}
               onChangeText={setFront}
-              placeholder="Front"
+              onSelectionChange={(e) => {
+                frontSelection.current = e.nativeEvent.selection;
+                if (forcedSelection) setForcedSelection(null);
+              }}
+              selection={forcedSelection ?? undefined}
+              placeholder={cardType === "cloze" ? "Type the passage, then blank out the parts to test" : "Front"}
               placeholderTextColor={c.text3}
               multiline
+              // The cloze toolbar belongs to THIS field only — it writes into
+              // the passage, so it must not appear over the Extra field.
+              inputAccessoryViewID={Platform.OS === "ios" && cardType === "cloze" ? CLOZE_TOOLBAR_ID : undefined}
               testID="study-add-card-front"
             />
+            {/* Android has no accessory view, so the toolbar pins under the
+                field instead — same placement rule the note editor uses. */}
+            {Platform.OS !== "ios" && cardType === "cloze" ? (
+              <ClozeToolbar onCloze={() => applyCloze()} onClozeSame={() => applyCloze({ sameNumber: true })} />
+            ) : null}
             <TextInput
               style={[styles.sheetInput, styles.sheetNoteInput]}
               value={back}
               onChangeText={setBack}
-              placeholder="Back"
+              placeholder={cardType === "cloze" ? "Extra (optional)" : "Back"}
               placeholderTextColor={c.text3}
               multiline
               testID="study-add-card-back"
             />
+            {cardType === "cloze" && front.trim() && !clozeReady ? (
+              <Text style={styles.stepHint}>
+                Select a word and tap "Blank" — a cloze card needs at least one blank.
+              </Text>
+            ) : null}
             <View style={styles.sheetActions}>
               {cardSavedFlash ? (
                 <Text style={styles.savedFlash} accessibilityLiveRegion="polite">
@@ -270,7 +394,7 @@ export function StudyAddSheet({
                 label={savingCard ? "Adding…" : "Add card"}
                 variant="primary"
                 busy={savingCard}
-                disabled={!cardDeckId || !front.trim() || !back.trim() || savingCard}
+                disabled={!canSubmitCard}
                 onPress={() => void submitNewCard()}
                 testID="study-add-card-submit"
               />
@@ -278,7 +402,62 @@ export function StudyAddSheet({
           </ScrollView>
         )
       ) : null}
+
+      {/* The deck dropdown, opening at the trigger. `portal` because this is
+          the one MiniMenu inside a panel rather than at a screen root: the
+          anchor is a window coordinate, and without it the menu would open the
+          sheet's own top offset (~120pt) below the finger. */}
+      <MiniMenu
+        visible={deckMenuAnchor !== null}
+        anchor={deckMenuAnchor}
+        actions={deckRows}
+        emptyText="No decks yet."
+        onClose={() => setDeckMenuAnchor(null)}
+        portal
+        testID="study-add-deck-menu"
+      />
+
+      {/* The cloze toolbar riding the keyboard (iOS). */}
+      {Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID={CLOZE_TOOLBAR_ID} backgroundColor="transparent">
+          <ClozeToolbar onCloze={() => applyCloze()} onClozeSame={() => applyCloze({ sameNumber: true })} />
+        </InputAccessoryView>
+      ) : null}
     </SlideUpSheet>
+  );
+}
+
+/** The cloze buttons above the keyboard. "Blank" hides the selection as a new
+ *  card; "Same blank" hides it along with the previous one — Anki's two cloze
+ *  actions, in the words a student would use rather than "c1"/"c2". */
+function ClozeToolbar({ onCloze, onClozeSame }: { onCloze: () => void; onClozeSame: () => void }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
+  return (
+    <View style={styles.toolbarRail} pointerEvents="box-none">
+      <GlassSurface style={styles.toolbarPill} fallbackColor={c.glassMenu} opaque shadow>
+        <View style={styles.toolbarRow}>
+          <Pressable
+            onPress={onCloze}
+            style={({ pressed }) => [styles.toolBtn, pressed && styles.toolBtnPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Blank out the selection"
+            testID="study-cloze-new"
+          >
+            <Text style={styles.toolLabel}>Blank</Text>
+          </Pressable>
+          <Pressable
+            onPress={onClozeSame}
+            style={({ pressed }) => [styles.toolBtn, pressed && styles.toolBtnPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Blank out the selection on the same card"
+            testID="study-cloze-same"
+          >
+            <Text style={styles.toolLabel}>Same blank</Text>
+          </Pressable>
+        </View>
+      </GlassSurface>
+    </View>
   );
 }
 
@@ -358,11 +537,49 @@ const createStyles = (c: ThemeColors) =>
     sheetActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space(1) },
     savedFlash: { ...type.small, color: c.good, fontWeight: "600" },
 
-    // Step: new cards — the deck picker.
+    // Step: new cards — the deck dropdown + the card-type picker.
     fieldLabel: { ...type.micro, color: c.text3, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: space(1.5) },
-    deckPickList: { borderWidth: 1, borderColor: c.line, borderRadius: radius.md, marginBottom: space(3) },
-    deckPickRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(3) },
-    deckPickLabel: { ...type.small, color: c.text, flex: 1 },
-    deckPickLabelActive: { color: c.accent, fontWeight: "600" },
-    deckPickCheck: { color: c.accent, fontWeight: "700" },
+    // The deck trigger reads like a field, so the form has one visual language.
+    dropdown: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2),
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2.5),
+      marginBottom: space(3),
+    },
+    dropdownText: { flex: 1, minWidth: 0, gap: 1 },
+    dropdownLabel: { ...type.body, color: c.text },
+    dropdownHint: { ...type.micro, color: c.text3 },
+    dropdownChevron: { transform: [{ rotate: "90deg" }] },
+
+    typeRow: { flexDirection: "row", gap: space(2), marginBottom: space(2) },
+    typeBtn: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.surface,
+    },
+    typeBtnOn: { backgroundColor: c.accentFaint, borderColor: c.accent },
+    typeLabel: { ...type.small, color: c.text2, fontWeight: "600" },
+    typeLabelOn: { color: c.accent },
+    // A cloze passage is the whole card, so it gets more room to start with.
+    clozeInput: { minHeight: 120 },
+
+    // The cloze toolbar — same floating-pill shape as the note editor's
+    // formatting bar, so the two read as one idea in two places.
+    toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
+    toolbarPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden", maxWidth: "100%" },
+    toolbarRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1.5) },
+    toolBtn: { height: control.lg, paddingHorizontal: space(3.5), borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center" },
+    toolBtnPressed: { backgroundColor: c.surface2 },
+    toolLabel: { ...type.small, color: c.text, fontWeight: "600" },
   });

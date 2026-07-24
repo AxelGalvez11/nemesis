@@ -69,6 +69,14 @@ import { control, radius, space, type } from "@/theme/tokens";
 // month's own name in Yearly jumps to Monthly centered on that month — so the
 // three views read as one system instead of three unrelated screens.
 
+/** Height of the pinned weekday letter row in Monthly. Folded into the month
+ *  list's own top pad, so getItemLayout's offsets stay exact. */
+const MONTH_WEEKDAY_BAR_H = 26;
+/** Height of the selected day's docked event list in Monthly. Fixed rather
+ *  than a fraction of the screen: the month grid above it is built from fixed
+ *  row heights too, and a variable panel would make its scroll maths drift. */
+const MONTH_DAY_PANEL_H = 232;
+
 type CalendarView = "daily" | "monthly" | "yearly";
 
 const VIEW_OPTIONS: { id: CalendarView; label: string }[] = [
@@ -324,7 +332,10 @@ export default function CalendarScreen() {
   // Recomputed fresh each render like the rest of this screen's derived data —
   // monthMatrix is cheap and the window tops out in the low tens of months.
   const monthViews = monthWindow.map((m) => monthMatrix(m.year, m.month, events, todayKey));
-  const cardHeights = monthViews.map((mv) => monthCardHeight(mv.weeks.length));
+  // showWeekdays false on both sides: the letters are pinned above the scroll,
+  // so the cards no longer draw their own row and must not be measured as if
+  // they did.
+  const cardHeights = monthViews.map((mv) => monthCardHeight(mv.weeks.length, false));
   const cardOffsets = cumulativeOffsets(cardHeights);
   // getItemLayout's offsets are relative to the FlatList's own content origin —
   // RN does NOT fold contentContainerStyle's paddingTop into them automatically
@@ -334,7 +345,7 @@ export default function CalendarScreen() {
   // initialScrollIndex lands short — today's month would open scrolled a bit
   // past where it should sit. One variable, reused below in
   // contentContainerStyle's own paddingTop, so the two can never drift apart.
-  const monthListHeaderPad = contentTop + space(2);
+  const monthListHeaderPad = contentTop + space(2) + MONTH_WEEKDAY_BAR_H;
 
   const refreshControl = (
     <RefreshControl
@@ -358,11 +369,30 @@ export default function CalendarScreen() {
       ) : null}
       <Reanimated.View style={[styles.zoomWrap, contentAnimStyle]}>
       {view === "monthly" ? (
+        <View style={styles.flex}>
+        {/* The weekday letters PIN to the top while months scroll under them —
+            Apple's month view does this, and without it you lose track of which
+            column is which as soon as a month header scrolls past. */}
+        <View style={[styles.monthWeekdayBar, { top: contentTop }]} pointerEvents="none">
+          <WeekdayStripe flush />
+        </View>
         <FlatList
           testID="calendar-monthly-view"
           data={monthWindow}
           keyExtractor={(item) => `${item.year}-${item.month}`}
-          renderItem={({ index }) => <MonthGrid month={monthViews[index]} size="large" onSelectDay={goToDay} />}
+          renderItem={({ index }) => (
+            <MonthGrid
+              month={monthViews[index]}
+              size="large"
+              selectedKey={shownDay}
+              showWeekdays={false}
+              // Tapping a day SELECTS it and lists its events below, instead of
+              // leaving for the Daily view (owner 2026-07-24: more like Apple
+              // Calendar). Leaving the month on every tap made comparing two
+              // days a round trip each time.
+              onSelectDay={setShownDay}
+            />
+          )}
           getItemLayout={(_data, index) => ({
             length: cardHeights[index],
             offset: cardOffsets[index] + monthListHeaderPad,
@@ -375,10 +405,40 @@ export default function CalendarScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.monthListBody,
-            { paddingTop: monthListHeaderPad, paddingBottom: contentBottom + FAB_CLEARANCE },
+            { paddingTop: monthListHeaderPad, paddingBottom: contentBottom + FAB_CLEARANCE + MONTH_DAY_PANEL_H },
           ]}
           refreshControl={refreshControl}
         />
+
+        {/* The selected day's events, docked under the grid — the half of
+            Apple's month view this screen never had. Without it the month was
+            read-only: dots told you SOMETHING was on a day, and the only way to
+            find out what was to leave for another view. */}
+        <View style={[styles.dayPanel, { height: MONTH_DAY_PANEL_H, paddingBottom: contentBottom }]} testID="calendar-month-day-panel">
+          <Pressable
+            onPress={() => goToDay(shownDay)}
+            style={({ pressed }) => [styles.dayPanelHeader, pressed && styles.dayPanelHeaderPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${labelForDay(shownDay, todayKey)}`}
+            testID="calendar-month-day-open"
+          >
+            <Text style={styles.dayPanelTitle}>{labelForDay(shownDay, todayKey)}</Text>
+            <Text style={styles.dayPanelCount}>
+              {dayEvents.length === 0 ? "No events" : `${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}`}
+            </Text>
+          </Pressable>
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.dayPanelBody}
+            showsVerticalScrollIndicator={false}
+          >
+            {dayEvents.map((event) => (
+              <EventRow key={event.id} event={event} styles={styles} onPress={openEvent} />
+            ))}
+            {dayEvents.length === 0 ? <Text style={styles.dayPanelEmpty}>Nothing scheduled.</Text> : null}
+          </ScrollView>
+        </View>
+        </View>
       ) : null}
 
       {view === "yearly" ? (
@@ -453,7 +513,10 @@ export default function CalendarScreen() {
 
       <AddEventFab
         insetBottom={insets.bottom}
-        onPress={() => openAdd(view === "daily" ? shownDay : todayKey)}
+        // Monthly has a selected day of its own now, so "+" adds to the day you
+        // are actually looking at. Only Yearly, which has no day selection,
+        // falls back to today.
+        onPress={() => openAdd(view === "yearly" ? todayKey : shownDay)}
       />
 
       <EventSheet
@@ -987,6 +1050,45 @@ const createStyles = (c: ThemeColors) =>
     },
     errorBannerText: { ...type.small, color: c.text2, textAlign: "center" },
 
+    // The pinned weekday row: sits over the scrolling months, on the page
+    // background so the grid slides cleanly underneath it.
+    monthWeekdayBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      height: MONTH_WEEKDAY_BAR_H,
+      justifyContent: "center",
+      paddingHorizontal: space(4),
+      backgroundColor: c.bg,
+      zIndex: 5,
+    },
+    // The docked day list.
+    dayPanel: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: c.raised,
+      borderTopWidth: 1,
+      borderTopColor: c.line,
+      zIndex: 6,
+    },
+    dayPanelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: space(4),
+      paddingTop: space(3),
+      paddingBottom: space(2),
+    },
+    dayPanelHeaderPressed: { opacity: 0.6 },
+    dayPanelTitle: { ...type.bodyStrong, color: c.text },
+    dayPanelCount: { ...type.small, color: c.text3 },
+    // FAB_CLEARANCE at the foot: the add button and the view switcher float
+    // over this panel's lower corners, and an event row hiding behind either
+    // one would be unreadable and un-tappable.
+    dayPanelBody: { paddingHorizontal: space(4), paddingBottom: FAB_CLEARANCE },
+    dayPanelEmpty: { ...type.small, color: c.text3, paddingVertical: space(2) },
     monthListBody: { paddingHorizontal: space(4), flexGrow: 1 },
     yearBody: { paddingHorizontal: space(4), flexGrow: 1 },
     yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
