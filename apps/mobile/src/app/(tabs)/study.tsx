@@ -10,6 +10,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { SkeletonDeckList } from "@/components/Skeleton";
 import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { TOP_BAR_BUTTON, TOP_BAR_PAD_TOP } from "@/components/TopBar";
@@ -489,7 +490,25 @@ export default function StudyScreen() {
     );
   }
 
-  if (status === "idle" || status === "loading") return <View style={styles.flex} testID="study-loading" />;
+  // Skeleton rows rather than the blank screen this used to show (owner
+  // 2026-07-23). Study was the last list screen still flashing empty while it
+  // loaded — Library, Calendar, Chat and Notebooks all already did this — and a
+  // blank screen is indistinguishable from "you have no decks", which is exactly
+  // the wrong thing to say to someone waiting on their decks.
+  if (status === "idle" || status === "loading") {
+    return (
+      <View style={styles.flex} testID="study-loading">
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[styles.listBody, { paddingTop: contentTop, paddingBottom: contentBottom }]}
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+        >
+          <SkeletonDeckList testID="study-loading-rows" />
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (status === "error") {
     return (

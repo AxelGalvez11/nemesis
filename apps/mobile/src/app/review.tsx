@@ -23,6 +23,7 @@ import {
   sessionQueue,
   type SessionProgress,
 } from "@/lib/review-queue";
+import { confirmHoldRemaining, gradeButtonState } from "@/lib/grade-confirm";
 import { normalizeCardText } from "@/lib/card-text";
 import { clozeParts } from "@/lib/study-session";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/study-cloze";
@@ -61,13 +62,39 @@ import { control, radius, space, type } from "@/theme/tokens";
 // session-level for the same honest reason the replay is: study_review_logs is
 // an append-only record of what the student pressed, and there is no ungrade
 // RPC — so undo rewinds the QUEUE, and correcting the grade means grading again.
+//
+// Owner asks, 2026-07-23 (second pass) — three changes, and the third is what
+// makes the first two possible:
+//
+//  - "swipe right to undo"                      (was swipe LEFT, shipped above)
+//  - "tapping right side should leave 'good' on for a second while the rest
+//     disappear" / "tapping left should be for 'again' (leave again box for a
+//     second)"
+//  - "remove the swipe right to escape flashcard"
+//
+// Undo moving to a RIGHTWARD swipe collides head-on with iOS's own edge-swipe
+// back, which is also rightward — so the third ask isn't a separate cleanup,
+// it's the prerequisite. gestureEnabled: false on this screen's Stack.Screen
+// hands the whole rightward direction to undo. The way out of a live session
+// is now solely the pull-down-for-a-back-button built above.
 
 /** How long the pulled-for back button stays up (owner: "go away after 5 seconds"). */
 const BACK_VISIBLE_MS = 5000;
 /** How far the card has to be pulled past its top edge to summon that button. */
 const BACK_PULL_DISTANCE = 56;
-/** How far a leftward swipe has to travel to count as "undo that". */
+/** How far a rightward swipe has to travel to count as "undo that". */
 const UNDO_SWIPE_DISTANCE = 60;
+/**
+ * How long the graded button stays lit alone before the next card (owner: "leave
+ * 'good' on for a second while the rest disappear").
+ *
+ * This is a FLOOR on visible time, not a timer that advances the card — see
+ * grade(). The tap zones are invisible by design, so this lit button is the only
+ * confirmation of WHICH grade a blind half-screen tap actually registered.
+ */
+const CONFIRM_HOLD_MS = 900;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export default function ReviewScreen() {
   const { colors: c } = useTheme();
@@ -95,6 +122,9 @@ export default function ReviewScreen() {
   const [revealed, setRevealed] = useState(false);
   const [gradeError, setGradeError] = useState<string | null>(null);
   const [grading, setGrading] = useState(false);
+  // The grade currently being confirmed: the one button left lit while the other
+  // three fade out (owner 2026-07-23). Null except during that hold.
+  const [flashGrade, setFlashGrade] = useState<StudyGrade | null>(null);
   // The undo trail: one entry per grade, most recent last, each holding the
   // sitting as it stood before the grade plus the card's own fields before the
   // server rescheduled it. A ref rather than state because nothing renders from
@@ -189,16 +219,32 @@ export default function ReviewScreen() {
     progressRef.current = progress;
   }, [progress]);
 
+  /**
+   * Grade the current card, holding the pressed button lit for a beat first.
+   *
+   * The confirm hold is a FLOOR on elapsed time, not a timer of its own, and
+   * advancing stays gated on the server's answer. A free-running
+   * setTimeout(advance) would race the RPC three ways: a slow grade would write
+   * its result back over the NEXT card, a failed grade would still skip the card
+   * the server never recorded, and the gap would let a second tap through.
+   * Waiting out the remainder keeps one code path: fast RPC waits for the eye,
+   * slow RPC was already visible the whole time, failed RPC stays put.
+   */
   async function grade(value: StudyGrade) {
     if (!current || gradingRef.current) return;
     gradingRef.current = true;
     setGrading(true);
     setGradeError(null);
+    setFlashGrade(value);
     const before = current;
     const beforeProgress = progressRef.current;
+    const startedAt = Date.now();
     const result = await gradeStudyCard(current.id, value);
+    const remaining = confirmHoldRemaining(Date.now() - startedAt, CONFIRM_HOLD_MS);
+    if (remaining > 0) await wait(remaining);
     gradingRef.current = false;
     setGrading(false);
+    setFlashGrade(null);
     if (!result.ok) {
       // Stay put — revealed, ungraded — so the student can retry once online.
       setGradeError(result.message);
@@ -265,10 +311,15 @@ export default function ReviewScreen() {
     }).start();
   }, [backShown, backFade]);
 
-  // Swipe LEFT anywhere on the card to undo. activeOffsetX means it only takes
-  // over once the finger has genuinely committed sideways, and failOffsetY hands
-  // the gesture back to the card's own scrolling the moment it drifts vertical —
+  // Swipe RIGHT anywhere on the card to undo (owner 2026-07-23 — it was leftward
+  // when this shipped hours earlier). activeOffsetX means it only takes over once
+  // the finger has genuinely committed sideways, and failOffsetY hands the
+  // gesture back to the card's own scrolling the moment it drifts vertical —
   // otherwise reading a long answer would keep tripping the undo.
+  //
+  // Rightward is only free to mean "undo" because the screen's OS edge-swipe
+  // back is switched off below; leaving both on would have made the same drag
+  // either undo the card or abandon the session depending on where it started.
   const undoSwipe = useMemo(
     () =>
       Gesture.Pan()
@@ -276,7 +327,7 @@ export default function ReviewScreen() {
         .activeOffsetX([-24, 24])
         .failOffsetY([-20, 20])
         .onEnd((event) => {
-          if (event.translationX < -UNDO_SWIPE_DISTANCE) undo();
+          if (event.translationX > UNDO_SWIPE_DISTANCE) undo();
         }),
     [undo],
   );
@@ -298,8 +349,14 @@ export default function ReviewScreen() {
           card down past its top reveals it for five seconds. It rides the
           ScrollView's own bounce rather than a downward swipe gesture, which
           keeps it clear of both the card's scrolling and the OS notification
-          shade at the very top of the screen. */}
-      <Stack.Screen options={{ headerShown: false }} />
+          shade at the very top of the screen.
+
+          gestureEnabled: false kills iOS's edge-swipe back for this screen only
+          (owner 2026-07-23: "remove the swipe right to escape flashcard"). It
+          has to go: undo is a rightward swipe now, and the two would otherwise
+          fight over the same drag. Scoped to the review screen — every other
+          screen keeps the OS gesture. */}
+      <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
 
       <Animated.View
         style={[styles.backFloat, { opacity: backFade, top: insets.top + space(1) }]}
@@ -408,7 +465,12 @@ export default function ReviewScreen() {
                   then their ancestor, so a drag still scrolls a long answer and
                   only a genuine tap grades. Absent before the reveal — a
                   half-screen "Again" target on a card you haven't read yet would
-                  grade it out from under you. */}
+                  grade it out from under you.
+
+                  A tap here has no visual of its own — the zones are invisible
+                  and the halves are indistinguishable. The footer's confirm hold
+                  (CONFIRM_HOLD_MS) is what tells you which grade you just hit,
+                  which matters far more here than on the labelled buttons. */}
               {revealed ? (
                 <View style={styles.tapZones} testID="review-tap-zones">
                   <Pressable
@@ -448,22 +510,32 @@ export default function ReviewScreen() {
             </View>
             {revealed ? (
               <View style={styles.gradeRow} testID="review-grades">
-                {gradeButtons.map((button) => (
-                  <Pressable
-                    key={button.rating}
-                    testID={`grade-${button.rating}`}
-                    disabled={grading}
-                    onPress={() => void grade(button.rating)}
-                    style={({ pressed }) => [
-                      styles.gradeBtn,
-                      { backgroundColor: button.fill },
-                      pressed && styles.gradePressed,
-                      grading && styles.gradeBtnDisabled,
-                    ]}
-                  >
-                    <Text style={styles.gradeText}>{button.label}</Text>
-                  </Pressable>
-                ))}
+                {gradeButtons.map((button) => {
+                  // The confirm hold (owner 2026-07-23): the graded button stays
+                  // lit and the other three go to zero opacity. They keep their
+                  // slots rather than unmounting — dropping them from the row
+                  // would let the survivor stretch across the full width, so the
+                  // thing you're meant to read would jump as it appeared.
+                  const state = gradeButtonState(button.rating, flashGrade, grading);
+                  return (
+                    <Pressable
+                      key={button.rating}
+                      testID={`grade-${button.rating}`}
+                      disabled={grading}
+                      onPress={() => void grade(button.rating)}
+                      accessibilityElementsHidden={state === "hidden"}
+                      style={({ pressed }) => [
+                        styles.gradeBtn,
+                        { backgroundColor: button.fill },
+                        pressed && styles.gradePressed,
+                        state === "hidden" && styles.gradeMuted,
+                        state === "dimmed" && styles.gradeBtnDisabled,
+                      ]}
+                    >
+                      <Text style={styles.gradeText}>{button.label}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : null}
           </View>
@@ -521,5 +593,8 @@ const createStyles = (c: ThemeColors) =>
     },
     gradePressed: { opacity: 0.7 },
     gradeBtnDisabled: { opacity: 0.5 },
+    // The three grades you did NOT press, during the confirm hold. Invisible but
+    // still occupying their slots — see the comment at the render site.
+    gradeMuted: { opacity: 0 },
     gradeText: { ...type.bodyStrong, color: "#fff" },
   });
