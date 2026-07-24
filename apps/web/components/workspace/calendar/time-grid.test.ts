@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 
 import {
+  blockGeometry,
   DEFAULT_END_HOUR,
   DEFAULT_START_HOUR,
   hourLabels,
@@ -138,4 +139,34 @@ test("no now line is drawn when the time is outside the window", () => {
   // Pinning it to an edge instead would claim it is 8am when it is 3am.
   assert.equal(nowOffset(new Date(2026, 8, 11, 3, 0), window), null);
   assert.equal(nowOffset(new Date(2026, 8, 11, 22, 0), window), null);
+});
+
+// ── Block geometry ───────────────────────────────────────────────────────────
+// Equal-width columns were measured at 36px for a two-way overlap in a week
+// view — about three characters, so every title rendered as "P…".
+
+test("a lone block takes the whole column", () => {
+  assert.deepEqual(blockGeometry(0, 1), { leftPct: 0, widthPct: 100, zIndex: 0 });
+});
+
+test("overlapping blocks stagger instead of splitting evenly, so titles stay readable", () => {
+  const first = blockGeometry(0, 2);
+  const second = blockGeometry(1, 2);
+  assert.equal(first.widthPct, 100, "the bottom block keeps the full width");
+  assert.ok(second.widthPct > 50, `a staggered block should beat an even split, got ${second.widthPct}`);
+  assert.ok(second.leftPct > 0, "it must be visibly offset or the overlap is invisible");
+  assert.ok(second.zIndex > first.zIndex, "later blocks must paint on top");
+});
+
+test("a deep pile still leaves the last block readable", () => {
+  for (const columns of [2, 3, 4, 6, 10]) {
+    const last = blockGeometry(columns - 1, columns);
+    assert.ok(last.widthPct >= 40, `${columns}-deep pile left ${last.widthPct}% — too narrow to read`);
+    assert.ok(last.leftPct + last.widthPct <= 100.001, "a block must not run past the column");
+  }
+});
+
+test("blocks in a pile are each offset from the one below", () => {
+  const lefts = [0, 1, 2].map((column) => blockGeometry(column, 3).leftPct);
+  assert.ok(lefts[0]! < lefts[1]! && lefts[1]! < lefts[2]!, `expected increasing offsets, got ${lefts}`);
 });

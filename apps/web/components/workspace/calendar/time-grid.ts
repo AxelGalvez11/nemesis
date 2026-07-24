@@ -127,6 +127,42 @@ function packColumns(positioned: PositionedEvent[]): void {
   closeCluster();
 }
 
+/** How far each overlapping block is pushed right of the one beneath it, as a
+ *  fraction of the day column. See blockGeometry for why this is not an even
+ *  split. */
+const OVERLAP_INSET = 0.26;
+/** The narrowest a staggered block may get, as a fraction of the column. */
+const MIN_BLOCK_FRACTION = 0.4;
+
+export interface BlockGeometry {
+  /** Percentages of the day column. */
+  leftPct: number;
+  widthPct: number;
+  /** Later columns paint over earlier ones. */
+  zIndex: number;
+}
+
+/**
+ * Where a packed block actually sits.
+ *
+ * Splitting a column into n EQUAL parts is the obvious approach and it fails in
+ * practice: measured in a 7-day week at a normal window width, two overlapping
+ * events came out 36px wide — about three characters, so every title rendered
+ * as "P…". Instead each block is inset from the previous one and runs to the
+ * right edge, so the topmost keeps the full width and the ones beneath stay
+ * readable, with the overlap shown by the stagger. This is what Google Calendar
+ * and Notion do, for the same reason.
+ *
+ * The inset shrinks as the pile deepens so the last block never falls below
+ * MIN_BLOCK_FRACTION of the column.
+ */
+export function blockGeometry(column: number, columns: number): BlockGeometry {
+  if (columns <= 1) return { leftPct: 0, widthPct: 100, zIndex: 0 };
+  const inset = Math.min(OVERLAP_INSET, (1 - MIN_BLOCK_FRACTION) / (columns - 1));
+  const leftPct = column * inset * 100;
+  return { leftPct, widthPct: 100 - leftPct, zIndex: column };
+}
+
 export interface HourWindow {
   startHour: number;
   endHour: number;

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { formatEventDate, formatEventTime } from "./format";
 import { KIND_META } from "./kind-meta";
 import {
+  blockGeometry,
   hourLabels,
   hourWindow,
   layoutDay,
@@ -220,27 +221,32 @@ function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) 
       {timed.map((item) => {
         const top = offsetFor(item.startMinute, window);
         const height = offsetFor(item.endMinute, window) - top;
+        const geometry = blockGeometry(item.column, item.columns);
         return (
           <button
             className={cn(
-              "absolute overflow-hidden rounded-md px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight ring-1 ring-inset ring-border/50 transition-shadow hover:z-10 hover:shadow-md",
+              // A ring and an opaque background matter here: staggered blocks
+              // sit ON TOP of each other, so a translucent one would show the
+              // block beneath through it and read as a colour, not a stack.
+              "absolute overflow-hidden rounded-md border border-border/70 bg-card px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight shadow-sm transition-shadow hover:z-20 hover:shadow-md",
               KIND_META[item.event.kind].chip,
             )}
             key={item.event.id}
             onClick={() => onOpenEvent(item.event)}
             style={{
-              // A 1px inset between side-by-side blocks so a collision reads as
-              // two things, not one wide block.
               height: Math.max(height - 2, 14),
-              left: `calc(${(item.column / item.columns) * 100}% + 1px)`,
+              left: `calc(${geometry.leftPct}% + 1px)`,
               top,
-              width: `calc(${(1 / item.columns) * 100}% - 3px)`,
+              width: `calc(${geometry.widthPct}% - 3px)`,
+              zIndex: geometry.zIndex,
             }}
             title={item.event.title}
             type="button"
           >
             <span className="block truncate">{item.event.title}</span>
-            {height > 26 && item.event.time && (
+            {/* The time only earns its line when the block is tall enough AND
+                not squeezed by a stack — otherwise it renders as "9:…". */}
+            {height > 26 && geometry.widthPct > 55 && item.event.time && (
               <span className="block truncate text-[0.625rem] tabular-nums opacity-70">
                 {formatEventTime(item.event.time)}
               </span>
