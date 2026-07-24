@@ -39,11 +39,9 @@ interface TimeGridViewProps {
   eventsByDay: Map<string, CalendarEvent[]>;
   onAddOnDate: (dateKeyStr: string) => void;
   onOpenEvent: (event: CalendarEvent) => void;
-  /** Week shows weekday names above the number; day view does not need them. */
-  showWeekdayNames?: boolean;
 }
 
-export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent, showWeekdayNames = true }: TimeGridViewProps) {
+export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: TimeGridViewProps) {
   const [now, setNow] = useState<Date | null>(null);
 
   // Set after mount only: rendering a clock during SSR gives the server and the
@@ -71,11 +69,11 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent, show
         <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
           {days.map((day) => (
             <div className="group flex items-center justify-center gap-1.5 border-l border-border py-2" key={day.key}>
-              {showWeekdayNames && (
-                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-                  {day.date.toLocaleDateString(undefined, { weekday: "short" })}
-                </span>
-              )}
+              {/* Shown in day view too: a lone floating number reads as an
+                  orphan, and "FRI 24" costs nothing. */}
+              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+                {day.date.toLocaleDateString(undefined, { weekday: "short" })}
+              </span>
               <span
                 className={cn(
                   "grid size-6 place-items-center rounded-full text-[0.75rem] font-medium tabular-nums",

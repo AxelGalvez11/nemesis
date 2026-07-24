@@ -184,13 +184,7 @@ export function CalendarWorkspace() {
               — they were near-duplicate components before, so every fix had to
               be made twice. */}
           {view === "day" && (
-            <TimeGridView
-              days={dayColumn}
-              eventsByDay={byDate}
-              onAddOnDate={openAdd}
-              onOpenEvent={openEvent}
-              showWeekdayNames={false}
-            />
+            <TimeGridView days={dayColumn} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
           )}
           {view === "week" && (
             <TimeGridView days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
