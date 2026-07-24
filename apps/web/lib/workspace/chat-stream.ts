@@ -20,7 +20,7 @@ interface RawToolCallDelta {
 }
 
 interface StreamChoice {
-  delta?: { content?: unknown; tool_calls?: RawToolCallDelta[] };
+  delta?: { content?: unknown; reasoning_content?: unknown; tool_calls?: RawToolCallDelta[] };
 }
 
 /** Extract visible text from one OpenAI-compatible SSE data payload. */
@@ -36,19 +36,52 @@ export function completionDelta(data: string): string {
 }
 
 /**
+ * Extract the model's own working-out from one SSE payload.
+ *
+ * A deep turn streams `reasoning_content` for several seconds BEFORE the first
+ * word of the answer (measured against the live engine: first reasoning at
+ * ~0.5s, first answer word at ~4.5s) — that gap is what the thinking preview
+ * fills. The metering valve forwards provider bytes untouched, so this arrives
+ * on the wire already; reading it costs nothing new. (This half was added on
+ * the phone — apps/mobile/src/lib/chat-stream.ts — and until now was never
+ * back-ported here despite that file's "keep in sync" header.)
+ *
+ * Returns "" for every turn that has none: an Instant turn runs with thinking
+ * disabled, the tool-capable route (deepseek-chat) reports none, and a provider
+ * we fail over to may not emit it at all. Callers MUST treat empty as normal
+ * and fall back to the phase line.
+ */
+export function reasoningDelta(data: string): string {
+  if (!data || data === "[DONE]") return "";
+  try {
+    const parsed = JSON.parse(data) as { choices?: StreamChoice[] };
+    const reasoning = parsed.choices?.[0]?.delta?.reasoning_content;
+    return typeof reasoning === "string" ? reasoning : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Consume an OpenAI-compatible server-sent-event response without assuming
  * network chunks align to lines. Returns the accumulated assistant text plus
  * any tool calls the model streamed (empty array for plain answers).
+ *
+ * `onReasoning` receives the model's live working-out (`reasoning_content`) as
+ * it streams — the same shape as `onDelta`, delta plus running total. It fires
+ * only on turns that carry reasoning (see reasoningDelta); empty is the norm.
  */
 export async function readCompletionStreamFull(
   body: ReadableStream<Uint8Array> | null,
   onDelta?: CompletionDeltaHandler,
+  onReasoning?: CompletionDeltaHandler,
 ): Promise<CompletionStreamResult> {
   if (!body) return { text: "", toolCalls: [] };
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let accumulated = "";
+  let reasoning = "";
   const toolCalls = new Map<number, StreamedToolCall>();
 
   const consumeLine = (rawLine: string) => {
@@ -64,6 +97,12 @@ export async function readCompletionStreamFull(
     }
     const delta = parsed?.choices?.[0]?.delta;
     if (!delta) return;
+    // Reasoning first: a chunk carries one or the other, and the reasoning
+    // stream runs out before the answer's first chunk arrives.
+    if (onReasoning && typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+      reasoning += delta.reasoning_content;
+      onReasoning(delta.reasoning_content, reasoning);
+    }
     if (typeof delta.content === "string" && delta.content) {
       accumulated += delta.content;
       onDelta?.(delta.content, accumulated);
@@ -102,7 +141,8 @@ export async function readCompletionStreamFull(
 export async function readCompletionStream(
   body: ReadableStream<Uint8Array> | null,
   onDelta?: CompletionDeltaHandler,
+  onReasoning?: CompletionDeltaHandler,
 ): Promise<string> {
-  const result = await readCompletionStreamFull(body, onDelta);
+  const result = await readCompletionStreamFull(body, onDelta, onReasoning);
   return result.text;
 }

@@ -218,15 +218,35 @@ export function forcedResearchDecision(): ChatRouteDecision {
   return { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true };
 }
 
+/** The results that actually reach the model, in the exact order they are
+ *  numbered in the prompt. Ported from web's chat-web-search.ts::usableWebResults
+ *  — and load-bearing for the SAME reason: the answer's inline [n] markers are
+ *  resolved POSITIONALLY (SourcePill reads `sources[n-1]`), so the list stored on
+ *  the message MUST be this same filtered, sliced-to-5, same-order list. A result
+ *  with a url but no title AND no description is dropped here; if the caller
+ *  stored a differently-filtered list (e.g. url-only), every pill after that
+ *  dropped entry would point at the wrong source. api/chat.ts feeds THIS list to
+ *  both the prompt and the stored `sources`. */
+export function usableWebResults(results: ChatSource[]): ChatSource[] {
+  return results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+}
+
 /** Format live web-search results into a context block the model is told to
  *  cite from — ported from apps/web/lib/workspace/chat-web-search.ts's
  *  formatWebSearchContext (that module's trigger heuristics are NOT ported;
- *  the phone's ONLY search trigger is chat-routing.ts's `searchWeb` decision). */
+ *  the phone's ONLY search trigger is chat-routing.ts's `searchWeb` decision).
+ *
+ *  The instruction line is web's verbatim: it asks for a numbered `[n]` marker
+ *  per sentence, NOT the raw URL. This is load-bearing for the inline source
+ *  pills — MessageBody only turns `[n]` markers into pills, so if the model
+ *  cited bare URLs (the phone's old wording) no pill would ever appear. The 1..5
+ *  numbering here is usableWebResults' order, the SAME list the message stores,
+ *  so a pill resolves positionally to the right source. */
 export function formatWebSearchContext(results: ChatSource[]): string {
-  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+  const usable = usableWebResults(results);
   if (usable.length === 0) return "";
   return [
-    "Live web search results (use these for current facts and cite the relevant URL in the answer):",
+    "Live web search results. Use these for current facts. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
     ...usable.map((result, index) => `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`),
   ].join("\n\n");
 }

@@ -1,53 +1,31 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
+import {
+  DEFAULT_GENERAL_PREFS,
+  generalPrefsStoreKey,
+  parseGeneralPrefs,
+  serializeGeneralPrefs,
+  type GeneralPrefs,
+} from "@/lib/general-prefs";
 import { placeholderColor, useCommon } from "@/theme/common";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// General — phone half of the cloud-first settings port (build spec §11). Same
-// four fields as web's Settings > General (apps/web/components/SettingsSurface.tsx):
-// language, tone, nickname, occupation. Stored on-device only, per signed-in
-// account — NOT wired into the AI's behavior yet on either platform (a listed
-// follow-up), so the copy here says exactly that instead of promising a live
-// effect.
-
-interface GeneralPrefs {
-  language: string;
-  tone: string;
-  nickname: string;
-  occupation: string;
-}
-
-const DEFAULT_PREFS: GeneralPrefs = {
-  language: "English",
-  nickname: "",
-  occupation: "",
-  tone: "Clear and direct",
-};
+// General — phone half of the cloud-first settings port (build spec §11). The
+// language / tone / nickname / occupation fields mirror web's Settings > General
+// (apps/web/components/SettingsSurface.tsx) and are NOT wired into the AI's
+// behavior yet on either platform (a listed follow-up), so the copy says so.
+// The "Also save the full transcript" toggle DOES take effect — it controls what
+// a recording's Library note carries (owner item 4). The (de)serialization lives
+// in lib/general-prefs.ts because api/chat.ts's enhance pass reads the same key.
 
 const LANGUAGES = ["English", "Spanish", "French", "German", "Portuguese"];
 const TONES = ["Clear and direct", "Warm and encouraging", "Academic and precise", "Socratic tutor"];
-
-const storeKeyFor = (uid: string) => `nemesis_general_prefs_v1_${uid}`;
-
-function parsePrefs(raw: string | null): GeneralPrefs {
-  try {
-    const parsed = raw ? (JSON.parse(raw) as Partial<GeneralPrefs>) : null;
-    return {
-      language: typeof parsed?.language === "string" ? parsed.language : DEFAULT_PREFS.language,
-      nickname: typeof parsed?.nickname === "string" ? parsed.nickname : DEFAULT_PREFS.nickname,
-      occupation: typeof parsed?.occupation === "string" ? parsed.occupation : DEFAULT_PREFS.occupation,
-      tone: typeof parsed?.tone === "string" ? parsed.tone : DEFAULT_PREFS.tone,
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
-}
 
 export default function GeneralScreen() {
   const insets = useSafeAreaInsets();
@@ -57,19 +35,19 @@ export default function GeneralScreen() {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
 
-  const [prefs, setPrefs] = useState<GeneralPrefs>(DEFAULT_PREFS);
+  const [prefs, setPrefs] = useState<GeneralPrefs>(DEFAULT_GENERAL_PREFS);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     setLoaded(false);
     if (!uid) return;
     let alive = true;
-    void SecureStore.getItemAsync(storeKeyFor(uid))
+    void SecureStore.getItemAsync(generalPrefsStoreKey(uid))
       .then((raw) => {
-        if (alive) setPrefs(parsePrefs(raw));
+        if (alive) setPrefs(parseGeneralPrefs(raw));
       })
       .catch(() => {
-        if (alive) setPrefs(DEFAULT_PREFS);
+        if (alive) setPrefs(DEFAULT_GENERAL_PREFS);
       })
       .finally(() => {
         if (alive) setLoaded(true);
@@ -88,7 +66,7 @@ export default function GeneralScreen() {
     if (!uid || !loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void SecureStore.setItemAsync(storeKeyFor(uid), JSON.stringify(prefs)).catch(() => {});
+      void SecureStore.setItemAsync(generalPrefsStoreKey(uid), serializeGeneralPrefs(prefs)).catch(() => {});
     }, 300);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -142,6 +120,28 @@ export default function GeneralScreen() {
               value={prefs.occupation}
               onChangeText={(occupation) => update({ occupation })}
             />
+
+            <Text style={styles.label}>Recordings</Text>
+            {/* When on, a recording's Library note also carries the full
+                transcript, not just the notes (owner item 4). Default off. */}
+            <View style={styles.card}>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleText}>
+                  <Text style={styles.toggleTitle}>Also save the full transcript</Text>
+                  <Text style={styles.toggleHint}>
+                    Recording notes are saved to your Library. Turn this on to include the whole transcript alongside the
+                    notes.
+                  </Text>
+                </View>
+                <Switch
+                  testID="general-save-transcript"
+                  value={prefs.saveTranscript}
+                  onValueChange={(saveTranscript) => update({ saveTranscript })}
+                  trackColor={{ false: c.line, true: c.accent }}
+                  ios_backgroundColor={c.line}
+                />
+              </View>
+            </View>
           </>
         )}
       </ScrollView>
@@ -197,6 +197,12 @@ const createStyles = (c: ThemeColors) =>
     optionDivider: { borderBottomWidth: 1, borderBottomColor: c.line },
     optionLabel: { fontSize: type.small.fontSize + 1, color: c.text },
     optionCheck: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "700" },
+
+    // The switch sits on the right; the label + hint take the rest of the row.
+    toggleRow: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(3.5), paddingVertical: space(3) },
+    toggleText: { flex: 1 },
+    toggleTitle: { fontSize: type.small.fontSize + 1, color: c.text, marginBottom: space(1) },
+    toggleHint: { fontSize: type.micro.fontSize, lineHeight: 18, color: c.text3 },
   });
 
 type Styles = ReturnType<typeof createStyles>;

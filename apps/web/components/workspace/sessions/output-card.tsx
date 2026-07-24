@@ -5,6 +5,7 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { openOutputViewer } from "@/lib/workspace/output-viewer";
+import { spokenRecordingDuration } from "@/lib/workspace/recording-title";
 import type { SessionOutput } from "@/lib/workspace/sessions-store";
 
 const KIND_LABEL: Record<SessionOutput["kind"], string> = {
@@ -33,14 +34,28 @@ export function formatOutputDuration(durationSeconds: number | undefined): strin
   return `${Math.round(durationSeconds / 60)} min`;
 }
 
+/** "Jul 23" for a card subline or the recording viewer's header — or null when
+ *  the timestamp is missing or unparseable. */
+export function formatOutputDate(createdAt: string | undefined): string | null {
+  if (!createdAt) return null;
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 export function outputMetaLine(output: SessionOutput): string {
+  // Recordings read in plain spoken English (owner item 3): the AI title is the
+  // card's headline, so the subline is just how long it ran and when.
+  if (output.kind === "recording") {
+    return [spokenRecordingDuration(output.durationSeconds ?? 0), formatOutputDate(output.createdAt)]
+      .filter(Boolean)
+      .join(" · ");
+  }
   const parts: string[] = [KIND_LABEL[output.kind]];
   const duration = formatOutputDuration(output.durationSeconds);
   if (duration) parts.push(duration);
-  if (output.createdAt) {
-    const date = new Date(output.createdAt);
-    if (!Number.isNaN(date.getTime())) parts.push(date.toLocaleDateString(undefined, { day: "numeric", month: "short" }));
-  }
+  const date = formatOutputDate(output.createdAt);
+  if (date) parts.push(date);
   return parts.join(" · ");
 }
 

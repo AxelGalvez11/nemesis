@@ -505,13 +505,17 @@ export const sessionsStore = {
 
   /** Insert or update the assistant message for an in-flight turn. Streaming
    * chunks update memory without rewriting localStorage; the final call
-   * persists the completed message and its source metadata once. */
+   * persists the completed message, its source metadata, and any write cards
+   * once. `outputs` (thread cards for tools this turn ran) are only passed on
+   * that final call — the message row's FIRST cloud write then carries them, so
+   * they survive the reload the ignoreDuplicates upsert would otherwise drop. */
   upsertAssistantMessage(
     id: string,
     at: string,
     content: string,
     sources?: SessionSource[],
     persistNow = true,
+    outputs?: SessionOutput[],
   ) {
     ensureHydrated();
     setState({
@@ -525,10 +529,16 @@ export const sessionsStore = {
           role: "assistant",
           ...(index < 0 ? { id: newId() } : {}),
           ...(sources?.length ? { sources } : {}),
+          ...(outputs?.length ? { outputs } : {}),
         };
         const messages = index >= 0
           ? session.messages.map((existing, messageIndex) => messageIndex === index
-            ? { ...existing, ...message, ...(sources === undefined && existing.sources ? { sources: existing.sources } : {}) }
+            ? {
+                ...existing,
+                ...message,
+                ...(sources === undefined && existing.sources ? { sources: existing.sources } : {}),
+                ...(outputs === undefined && existing.outputs ? { outputs: existing.outputs } : {}),
+              }
             : existing)
           : [...session.messages, message].slice(-MAX_MESSAGES_PER_SESSION);
         return { ...session, messages, updatedAt: nowIso() };

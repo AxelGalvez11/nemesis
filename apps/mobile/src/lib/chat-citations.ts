@@ -1,14 +1,20 @@
-// Answers grounded on web search cite their numbered results as [1]..[5].
-// This turns those markers into `#nemesis-cite=` links, which the chat
-// markdown renderer paints as inline favicon pills (same pre-process idiom as
-// ==highlight== and <u>underline</u> — never rehype-raw).
+// Answers grounded on web search cite their numbered results as [1]..[5]. This
+// turns those markers into `#nemesis-cite=` links; MessageBody's custom `link`
+// render rule paints those as inline favicon pills (same pre-process idiom as
+// the ==highlight== / <u>underline</u> rules in markdown-obsidian.ts).
+//
+// Ported VERBATIM from web's apps/web/lib/workspace/chat-citations.ts so a
+// thread shared between phone and web renders identical pills — same grouping,
+// same out-of-range handling, same code-span skipping. The only regex feature
+// used is a negative LOOKAHEAD `(?!\()` (Hermes supports these); there is no
+// lookbehind anywhere, which Hermes forbids.
 //
 // Consecutive markers ("[1][2]", or "[1] [2]") collapse into ONE pill whose
 // href carries every index ("#nemesis-cite=1,2"); the renderer labels it with
-// the first source and a "+n" suffix and lists all of them in the hover card.
+// the first source and a "+n" suffix and lists all of them in the tap sheet.
 //
 // Kept as a pure module, separate from the renderer, so the edge cases below
-// are covered by chat-citations.test.ts without mounting React.
+// are covered by chat-citations.test.ts without mounting React Native.
 
 /** The href scheme the renderer keys off. Exported so the parse below and the
  *  renderer agree on one spelling. */

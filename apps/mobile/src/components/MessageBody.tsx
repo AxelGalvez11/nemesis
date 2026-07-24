@@ -1,11 +1,14 @@
 import { useMemo, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
 import MarkdownIt from "markdown-it";
 import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
 import { MarkdownImage } from "./MarkdownImage";
+import { SourcePill } from "./SourcePill";
+import { citationsToMarkdown, parseCitationHref } from "@/lib/chat-citations";
+import type { ChatSource } from "@/lib/chat-thread";
 import { obsidianInline } from "@/lib/markdown-obsidian";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -68,6 +71,53 @@ const MARKDOWN_RULES = {
   ),
 };
 
+// Replicates react-native-markdown-display's own openUrl (lib/util/openUrl.js):
+// when the caller supplied an onLinkPress it decides (returning `true` to also
+// open the URL, `false` to handle it itself, e.g. the note reader's wikilinks);
+// with no handler we just open the URL. Reproduced here because the citation
+// link rule below overrides `link`, so it can no longer inherit the library's
+// default. The .catch keeps a blocked/invalid URL from throwing.
+function openMarkdownLink(url: string, onLinkPress?: (url: string) => boolean): void {
+  if (onLinkPress) {
+    const result = onLinkPress(url);
+    if (url && result === true) void Linking.openURL(url).catch(() => {});
+  } else if (url) {
+    void Linking.openURL(url).catch(() => {});
+  }
+}
+
+// A `link` render rule that paints citation links (`[1](#nemesis-cite=1,2)`,
+// produced by citationsToMarkdown) as inline SourcePills and leaves every other
+// link behaving exactly like the library default. Built per-answer so it can
+// close over that answer's `sources` and the tap handler; only installed when an
+// answer actually carries sources, so note/review/flashcard callers keep the
+// untouched default `link` rule.
+function makeCitationLinkRule(
+  sources: ChatSource[],
+  onCitationPress: ((sources: ChatSource[]) => void) | undefined,
+  onLinkPress: ((url: string) => boolean) | undefined,
+) {
+  return function link(node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) {
+    const href = String(node.attributes?.href ?? "");
+    const indices = parseCitationHref(href);
+    if (indices.length > 0) {
+      const cited = indices
+        .map((n) => sources[n - 1])
+        .filter((source): source is ChatSource => Boolean(source));
+      // The rewrite only emits in-range markers, so an empty result means stale
+      // markup (an edited/replayed answer) — drop the chip rather than leave a
+      // bare "[1]" number sitting in the prose.
+      if (cited.length === 0) return null;
+      return <SourcePill key={node.key} sources={cited} onPress={() => onCitationPress?.(cited)} />;
+    }
+    return (
+      <Text key={node.key} style={styles.link} onPress={() => openMarkdownLink(href, onLinkPress)}>
+        {children}
+      </Text>
+    );
+  };
+}
+
 type Segment =
   | { type: "markdown"; text: string }
   | { type: "display"; tex: string }
@@ -79,16 +129,44 @@ interface MessageBodyProps {
   /** The note reader routes [[wikilinks]] and external URLs through its own
    *  handler; chat and review leave this off and get default link handling. */
   onLinkPress?: (url: string) => boolean;
+  /** Web-search results backing this answer. Supplying them turns the answer's
+   *  [n] markers into inline source pills (chat only); omitting them renders the
+   *  text exactly as before, so the note reader / review / flashcard callers are
+   *  byte-identical. */
+  sources?: ChatSource[];
+  /** Tapping a pill hands back the sources it groups, so chat.tsx can open the
+   *  detail sheet — the phone's stand-in for web's hover card. */
+  onCitationPress?: (sources: ChatSource[]) => void;
 }
 
-export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) {
+export function MessageBody({ content, styles, onLinkPress, sources, onCitationPress }: MessageBodyProps) {
   const { colors: c } = useTheme();
-  const segments = useMemo(() => buildSegments(content), [content]);
+  const sourceCount = sources?.length ?? 0;
+
+  // Rewrite [n] markers into pill links ONCE, then feed the SAME string to both
+  // the fast path and the math splitter. No sources → the text is untouched, so
+  // every non-chat caller renders exactly as it did before this feature.
+  const rendered = useMemo(
+    () => (sourceCount > 0 ? citationsToMarkdown(content, sourceCount) : content),
+    [content, sourceCount],
+  );
+  const segments = useMemo(() => buildSegments(rendered), [rendered]);
+
+  // Only swap in the citation-aware `link` rule when this answer has sources;
+  // otherwise pass the static rules untouched so other surfaces keep the
+  // library's default link behaviour.
+  const rules = useMemo(
+    () =>
+      sourceCount > 0 && sources
+        ? { ...MARKDOWN_RULES, link: makeCitationLinkRule(sources, onCitationPress, onLinkPress) }
+        : MARKDOWN_RULES,
+    [sourceCount, sources, onCitationPress, onLinkPress],
+  );
 
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
   if (!segments) {
-    return <Markdown style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{content}</Markdown>;
+    return <Markdown style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{rendered}</Markdown>;
   }
 
   return (
@@ -96,7 +174,7 @@ export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) 
       {segments.map((seg, index) => {
         if (seg.type === "markdown") {
           return (
-            <Markdown key={index} style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>
+            <Markdown key={index} style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>
               {seg.text}
             </Markdown>
           );

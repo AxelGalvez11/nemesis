@@ -244,6 +244,19 @@ export default function ChatScreen() {
     setLastTurnHeight((prev) => (Math.abs(prev - total) > 1 ? total : prev));
   }, []);
 
+  // Tapping a deliverable chip: a recording opens the FULLSCREEN view (owner
+  // item 3 — title, date, duration, notes, full transcript), everything else
+  // still opens the bottom sheet. output.id is the chat_recording_artifacts row
+  // id on both surfaces (see api/chat.ts loadRecordingArtifact), so the screen
+  // re-fetches the body from there.
+  const openDeliverable = useCallback((output: ChatOutput) => {
+    if (output.kind === "recording") {
+      router.push({ pathname: "/recording", params: { id: output.id } });
+      return;
+    }
+    setDeliverableSheetFor(output);
+  }, []);
+
   // Load the active thread: the route's `c` if present, else the most recent
   // thread (resume), else a brand-new empty thread. Re-runs on user/thread change.
   useEffect(() => {
@@ -873,11 +886,16 @@ export default function ChatScreen() {
                         {settledLabel(item.thoughtMs)}
                       </Text>
                     ) : null}
-                    <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                    <MessageBody
+                      content={item.msg!.content}
+                      styles={markdownStyles}
+                      sources={item.msg!.sources}
+                      onCitationPress={(picked) => setSourcesSheetFor(picked)}
+                    />
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
@@ -886,7 +904,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
+              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={openDeliverable} /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (

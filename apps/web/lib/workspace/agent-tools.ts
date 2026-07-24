@@ -8,6 +8,8 @@
 
 import { supabase } from "@/lib/supabase";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
+import { writeLibraryNote } from "./library-write";
+import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
 
 const MAX_NOTE_CHARS = 8_000;
 const MAX_LIST = 30;
@@ -86,6 +88,55 @@ export const AGENT_TOOLS = [
           deck_name: { description: "Deck name, e.g. 'Cardiovascular pharmacology'", type: "string" },
         },
         required: ["deck_name", "cards"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Save a multiple-choice practice test to the student's Study page. Write the questions yourself from the material — do not ask a second tool to generate them. Tell the student you saved it.",
+      name: "add_practice_test",
+      parameters: {
+        properties: {
+          group_name: { description: "Optional folder/group on the Study page, e.g. 'Cardiovascular pharmacology'", type: "string" },
+          questions: {
+            items: {
+              properties: {
+                answer: { description: "0-based index into options of the correct answer", type: "number" },
+                options: { items: { type: "string" }, type: "array" },
+                q: { description: "The question", type: "string" },
+                why: { description: "One-sentence explanation of the correct answer", type: "string" },
+              },
+              required: ["q", "options", "answer"],
+              type: "object",
+            },
+            type: "array",
+          },
+          title: { description: "Test title, e.g. 'ACE inhibitors practice test'", type: "string" },
+        },
+        required: ["title", "questions"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Save a mind map to the student's Study page. Provide a markdown outline you write yourself. Tell the student you saved it.",
+      name: "add_mindmap",
+      parameters: {
+        properties: {
+          group_name: { description: "Optional folder/group on the Study page", type: "string" },
+          outline: {
+            description: "Markdown outline: one '# Topic' root heading, then nested '- ' bullets (2-space indents, at most 3 levels, at most ~35 nodes)",
+            type: "string",
+          },
+          title: { description: "Mind map title, e.g. 'RAAS pathway'", type: "string" },
+        },
+        required: ["title", "outline"],
         type: "object",
       },
     },
@@ -204,20 +255,55 @@ async function readLibraryNote(path: string) {
   return { content: clip(str(data.content)), path: str(data.path), title: str(data.title) };
 }
 
+/** The signed-in user id for THIS turn. readable_library_documents.user_id is
+ *  NOT NULL with no auth.uid() default (unlike study_*), so every Library write
+ *  must set it explicitly or the insert violates NOT NULL and the note never
+ *  saves. Read from the cached session — no extra round-trip. */
+async function currentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
+}
+
 async function createLibraryNote(title: string, content: string, folder: string) {
-  const cleanTitle = title.trim().replace(/[\\/:]/g, "-").slice(0, 120) || "Untitled note";
-  const cleanFolder = folder.trim().replace(/^\/+|\/+$/g, "");
-  const now = new Date().toISOString();
-  for (let suffix = 1; suffix <= 20; suffix += 1) {
-    const name = suffix === 1 ? cleanTitle : `${cleanTitle} ${suffix}`;
-    const path = `${cleanFolder ? `${cleanFolder}/` : ""}${name}.md`;
-    const { error } = await supabase
-      .from("readable_library_documents")
-      .insert({ content: content.slice(0, 100_000), deleted: false, kind: "note", path, title: name, updated_at: now });
-    if (!error) return { created: true, path, title: name };
-    if (!/duplicate|unique/i.test(error.message)) return { error: error.message };
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to save a note." };
+  try {
+    const saved = await writeLibraryNote({ content, folder, title, userId });
+    return { created: true, path: saved.path, title: saved.title };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't save the note." };
   }
-  return { error: "Couldn't find a free note name — too many duplicates." };
+}
+
+async function addPracticeTest(args: Record<string, unknown>) {
+  const title = str(args.title).trim().slice(0, 160);
+  if (!title) return { error: "A test title is required." };
+  const groupName = str(args.group_name).trim().slice(0, 120);
+  const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
+  // Validate through the same parser the generation flow uses so a malformed
+  // question (bad answer index, <2 options) is dropped, not saved broken.
+  const content = parseTestContent({ attempts: [], questions: rawQuestions });
+  if (!content) return { error: "No usable questions — each needs a prompt, at least two options, and a valid answer index." };
+  const { error } = await supabase
+    .from("study_artifacts")
+    .insert({ content, group_name: groupName, kind: "test", status: "ready", title });
+  if (error) return { error: error.message };
+  return { added: true, group: groupName || null, kind: "test", questions: content.questions.length, title };
+}
+
+async function addMindmap(args: Record<string, unknown>) {
+  const title = str(args.title).trim().slice(0, 160);
+  if (!title) return { error: "A mind map title is required." };
+  const groupName = str(args.group_name).trim().slice(0, 120);
+  // Accept a {outline} JSON wrapper or a bare markdown outline, then re-validate.
+  const outline = parseGeneratedMindmap(str(args.outline));
+  const content = outline ? parseMindmapContent({ outline }) : null;
+  if (!content) return { error: "The outline wasn't usable — provide a markdown outline with a heading and nested bullets." };
+  const { error } = await supabase
+    .from("study_artifacts")
+    .insert({ content, group_name: groupName, kind: "mindmap", status: "ready", title });
+  if (error) return { error: error.message };
+  return { added: true, group: groupName || null, kind: "mindmap", title };
 }
 
 async function listStudyDecks() {
@@ -303,6 +389,8 @@ export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
       case "create_library_note": return await createLibraryNote(str(args.title), str(args.content), str(args.folder));
       case "list_study_decks": return await listStudyDecks();
       case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as { front: string; back: string }[]) : []);
+      case "add_practice_test": return await addPracticeTest(args);
+      case "add_mindmap": return await addMindmap(args);
       case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
       case "add_calendar_event": return await addCalendarEvent(args);
       default: return { error: `Unknown tool '${call.name}'.` };

@@ -24,6 +24,8 @@ import {
   isAtOrUnder,
   movedFolderPath,
   normalizeLibraryFolder,
+  recordingLibraryPath,
+  recordingNoteBaseName,
   remapUnder,
   renamedFolderPath,
   safeLibraryTitle,
@@ -256,6 +258,49 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
     return note;
   }
   throw new Error("Couldn't find an available name for a new note.");
+}
+
+/** Mirror a finished recording's notes into the Library as a note at
+ *  "Recordings/<title>.md" (owner item 4). Called from api/chat.ts's enhance
+ *  pass once the transcript, title, and notes are durable — this is a
+ *  best-effort secondary write, so it throws on failure and the caller swallows
+ *  it. The Recordings/ folder needs no row of its own: the phone's tree is
+ *  derived from note paths (lib/library-sync.ts), so writing this path is all it
+ *  takes for the folder to appear on both surfaces.
+ *
+ *  Same suffix retry as createNote, and for the same reason — deletes are soft,
+ *  so a title used (and deleted) before still owns its path forever and the
+ *  first insert can bounce off the (user_id, path) unique constraint.
+ *  `user_id` is set explicitly (the column is NOT NULL with no auth.uid()
+ *  default). Returns the created note, or upserts it into the offline cache like
+ *  every other write here. */
+export async function saveRecordingNote(
+  uid: string,
+  input: { title: string; content: string; createdAt?: string },
+): Promise<CloudLibraryNote> {
+  // A recording made minutes ago; the enhance pass that calls this runs later,
+  // so stamp the note with the recording's own time when we have it — that's the
+  // date the student expects to see next to it in the Library.
+  const updatedAt = input.createdAt ?? new Date().toISOString();
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    // path and title step together so the Library list shows "…", "… 2", never
+    // two identical rows (recordingNoteBaseName is the shared, sanitized base).
+    const path = recordingLibraryPath(input.title, suffix);
+    const title = recordingNoteBaseName(input.title, suffix);
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path, kind: "note", title, content: input.content, deleted: false, updated_at: updatedAt })
+      .select("id,path,kind,title,content,created_at,updated_at")
+      .single();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    if (!note) throw new Error("The recording note was saved but came back unreadable.");
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for the recording note.");
 }
 
 /** Save one note's edited content — the phone's first library WRITE (owner

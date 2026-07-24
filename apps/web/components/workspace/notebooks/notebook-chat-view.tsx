@@ -16,7 +16,7 @@ import { appendMessage } from "@/lib/notebooks/chats-api";
 import { consumeNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { requestRecordingTitle, useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { NotebookComposer } from "./notebook-composer";
 import { NotebookTranscript } from "./notebook-transcript";
@@ -41,7 +41,7 @@ export function NotebookChatView() {
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
   const [recordCanvasOpen, setRecordCanvasOpen] = useState(false);
-  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
+  const { artifacts: recordingArtifacts, createArtifact, renameArtifact } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
 
   const wireSources: NotebookWireSource[] = useMemo(
     () => sources.map((s) => ({ name: s.name, content: s.content })),
@@ -90,22 +90,36 @@ export function NotebookChatView() {
     setRightRailOpen(true);
     const chatId = activeChatId;
     const targetNotebookId = notebookId;
-    void createArtifact(draft)
-      .then((artifact) => {
-        if (!chatId) return;
-        const content = "Recording captured — transcript and notes are ready.";
-        notebookChatStore.append(chatId, {
-          at: new Date().toISOString(),
-          content,
-          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-          role: "assistant",
-        });
-        // Cloud rows carry plain content only; the artifact itself persists in
-        // chat_recording_artifacts, so a reload still shows it under Outputs.
-        if (!preview && targetNotebookId) void appendMessage({ chatId, content, notebookId: targetNotebookId, role: "assistant" }).catch(() => {});
-      })
-      .catch(() => undefined);
-  }, [activeChatId, createArtifact, notebookId, preview]);
+    void (async () => {
+      // Persist first (the transcript is the only record on web), then name it
+      // from the final transcript — same order as the Sessions surface.
+      const artifact = await createArtifact(draft);
+      let title = artifact.title;
+      if (uid && !preview) {
+        const aiTitle = await requestRecordingTitle(uid, artifact.transcript, artifact.notes);
+        if (aiTitle && aiTitle !== artifact.title) {
+          try {
+            await renameArtifact(artifact.id, aiTitle);
+            title = aiTitle;
+          } catch {
+            // Row rename didn't stick — keep the timestamp so the rail and the
+            // chat card stay in agreement.
+          }
+        }
+      }
+      if (!chatId) return;
+      const content = "Recording captured — transcript and notes are ready.";
+      notebookChatStore.append(chatId, {
+        at: new Date().toISOString(),
+        content,
+        outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title, transcript: artifact.transcript }],
+        role: "assistant",
+      });
+      // Cloud rows carry plain content only; the artifact itself persists in
+      // chat_recording_artifacts, so a reload still shows it under Outputs.
+      if (!preview && targetNotebookId) void appendMessage({ chatId, content, notebookId: targetNotebookId, role: "assistant" }).catch(() => {});
+    })().catch(() => undefined);
+  }, [activeChatId, createArtifact, notebookId, preview, renameArtifact, uid]);
 
   const submit = useCallback(
     async (text: string, files: File[]) => {

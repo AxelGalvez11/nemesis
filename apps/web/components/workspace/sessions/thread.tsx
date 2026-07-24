@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { ThinkingPhase } from "@/lib/workspace/thinking-phase";
 import { cn } from "@/lib/utils";
 
 import { AssistantMessage, type TurnError } from "./assistant-message";
@@ -22,6 +23,9 @@ interface ThreadProps {
   turns: ThreadTurn[];
   busy: boolean;
   liveSeconds: number | null;
+  /** Live thinking-preview state for the in-flight turn (last turn, while busy). */
+  phase?: ThinkingPhase;
+  reasoning?: string;
   error: TurnError | null;
   centeredComposer?: boolean;
   onEditMessage: (at: string, content: string) => void;
@@ -33,7 +37,7 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, phase, reasoning, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const initialAssistantMessages = useRef(new Set(turns.flatMap((turn) => turn.assistant ? [turn.assistant.at] : [])));
   const isEmpty = turns.length === 0;
@@ -89,6 +93,8 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                         durationSeconds={turnDurationSeconds(turn)}
                         error={isLast ? error : null}
                         liveSeconds={isLast && busy ? liveSeconds : null}
+                        phase={isLast && busy ? phase : undefined}
+                        reasoning={isLast && busy ? reasoning : undefined}
                         message={turn.assistant}
                         animateReveal={isLast && Boolean(turn.assistant) && !initialAssistantMessages.current.has(turn.assistant?.at ?? "")}
                         onOpenSources={turn.assistant?.sources?.length ? onOpenSources : undefined}

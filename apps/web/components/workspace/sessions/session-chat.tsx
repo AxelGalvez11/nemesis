@@ -14,11 +14,15 @@ import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
+import { routeArtifact } from "@/lib/workspace/artifact-routing";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
+import { writeLibraryNote } from "@/lib/workspace/library-write";
+import { reasoningGlimpse } from "@/lib/workspace/reasoning-preview";
+import type { ThinkingPhase } from "@/lib/workspace/thinking-phase";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
-import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { requestRecordingTitle, useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
@@ -63,6 +67,13 @@ function titleFromPrompt(text: string) {
   return compact.length <= 54 ? compact : `${compact.slice(0, 54).trimEnd()}…`;
 }
 
+// How often the buffered reasoning is promoted onto the screen. It streams far
+// too fast to render chunk by chunk (~80 chunks/sec on a deep turn), so the
+// caller collects it in a ref and this cadence — matched to the phone's
+// REASONING_FLUSH_MS — is what a reader can actually follow. It also drives the
+// live elapsed timer; the second granularity there is unaffected.
+const THINKING_FLUSH_MS = 220;
+
 export function SessionChat() {
   const preview = Boolean(useWorkspacePreview());
   const { session: authSession } = useAuth();
@@ -84,9 +95,16 @@ export function SessionChat() {
   // and re-rendering the thread because a dropdown moved would be waste.
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
-  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
+  const { artifacts: recordingArtifacts, createArtifact, renameArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
+  // Live thinking-preview state, keyed by session id the same way turnStartedAt
+  // is: an in-flight turn on a session you've navigated away from keeps writing
+  // to its own entry, but the render below only reads the selected session's.
+  // The reasoning ref holds the RAW accumulated stream; the readable one-line
+  // glimpse is derived at render time (reasoningGlimpse), flushed on the tick.
+  const phaseBySession = useRef<Map<string, ThinkingPhase>>(new Map());
+  const reasoningBySession = useRef<Map<string, string>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
 
   const busy = selectedId ? Boolean(working[selectedId]) : false;
@@ -99,12 +117,26 @@ export function SessionChat() {
     return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   })();
 
+  // The in-flight turn's live thinking state for the session in view. The phase
+  // drives the honest status line; the reasoning is flattened to one readable
+  // line here (the tick below re-renders often enough to follow the stream).
+  const livePhase = busy && selectedId ? phaseBySession.current.get(selectedId) : undefined;
+  const liveReasoning = busy && selectedId ? reasoningGlimpse(reasoningBySession.current.get(selectedId) ?? "") : "";
+
   // Only ticks while the currently-viewed session is busy — an in-flight turn
   // on a session you've navigated away from keeps its own start timestamp in
-  // turnStartedAt and needs no per-second re-render until it's back in view.
+  // turnStartedAt and needs no re-render until it's back in view. The cadence is
+  // fast enough to animate the reasoning line (the seconds granularity is coarser
+  // and unaffected).
+  //
+  // LANDMINE: this tick is the ONLY thing that promotes the buffered reasoning
+  // (a ref, updated ~80×/s without a re-render) onto the screen. It works
+  // because the render chain from here down — Thread → AssistantMessage →
+  // ActivityStrip — is un-memoized, so a forceTick re-runs it and recomputes the
+  // glimpse. Wrap any of those in React.memo and the reasoning line freezes.
   useEffect(() => {
     if (!busy) return;
-    const id = window.setInterval(forceTick, 1000);
+    const id = window.setInterval(forceTick, THINKING_FLUSH_MS);
     return () => window.clearInterval(id);
   }, [busy]);
 
@@ -114,6 +146,10 @@ export function SessionChat() {
   const runTurn = useCallback(async (targetUid: string, targetId: string, history: SessionMessage[], text: string) => {
     const effort = effortRef.current;
     turnStartedAt.current.set(targetId, Date.now());
+    // Seed the thinking preview before the turn starts working, so the very
+    // first render while busy already shows an honest line rather than a blank.
+    phaseBySession.current.set(targetId, { kind: "routing" });
+    reasoningBySession.current.set(targetId, "");
     sessionsStore.setWorking(targetId, true);
 
     const controller = new AbortController();
@@ -121,11 +157,32 @@ export function SessionChat() {
     const assistantAt = new Date().toISOString();
 
     try {
-      const reply = await sendChatTurn(targetUid, history, text, controller.signal, (_delta, accumulated) => {
-        sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
-      }, effort);
-      if (reply.text) {
-        sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources);
+      const reply = await sendChatTurn(
+        targetUid,
+        history,
+        text,
+        controller.signal,
+        (_delta, accumulated) => {
+          sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
+        },
+        effort,
+        (phase) => {
+          // A handful of times per turn — cheap to render immediately so the
+          // status line (route → search → think → write) stays snappy.
+          phaseBySession.current.set(targetId, phase);
+          forceTick();
+        },
+        (_delta, accumulated) => {
+          // Fires ~80 times a second on a deep turn: buffer only. The flush tick
+          // above is what actually promotes the glimpse onto the screen.
+          reasoningBySession.current.set(targetId, accumulated);
+        },
+      );
+      if (reply.text || reply.outputs?.length) {
+        // A write with no accompanying prose still gets a short line so the
+        // thread never shows a bare card with no context.
+        const finalText = reply.text ?? "Saved to your workspace.";
+        sessionsStore.upsertAssistantMessage(targetId, assistantAt, finalText, reply.sources, true, reply.outputs);
       } else if (reply.errorText && reply.errorKind) {
         setError({ kind: reply.errorKind, sessionId: targetId, text: reply.errorText });
       }
@@ -136,6 +193,8 @@ export function SessionChat() {
     } finally {
       sessionsStore.setWorking(targetId, false);
       turnStartedAt.current.delete(targetId);
+      phaseBySession.current.delete(targetId);
+      reasoningBySession.current.delete(targetId);
       abortControllers.current.delete(targetId);
     }
   }, []);
@@ -243,20 +302,55 @@ export function SessionChat() {
     setRightPanel("outputs");
     setRightRailOpen(true);
     const targetId = selectedId;
-    void createArtifact(draft)
-      .then((artifact) => {
-        // The artifact also lands in the chat itself as a clickable card
-        // (owner ask 2026-07-20) — message outputs sync to cloud meta.
-        if (!targetId) return;
-        sessionsStore.appendMessage(targetId, {
-          at: new Date().toISOString(),
-          content: "Recording captured — transcript and notes are ready.",
-          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-          role: "assistant",
-        });
-      })
-      .catch(() => undefined);
-  }, [createArtifact, selectedId]);
+    void (async () => {
+      // Persist the recording FIRST. On web the transcript is the only record
+      // (no audio file is kept), so it must be durable before the naming
+      // round-trip — the row also lands in the right rail instantly with the
+      // timestamp title, then refines to the AI name below.
+      const artifact = await createArtifact(draft);
+      // Name it from the final transcript. The chat card is written once, into
+      // an immutable chat_messages row, so its title has to be final BEFORE the
+      // append — hence naming happens here, not as an after-the-fact rewrite.
+      let title = artifact.title;
+      if (uid && !preview) {
+        const aiTitle = await requestRecordingTitle(uid, artifact.transcript, artifact.notes);
+        if (aiTitle && aiTitle !== artifact.title) {
+          try {
+            await renameArtifact(artifact.id, aiTitle);
+            title = aiTitle;
+          } catch {
+            // The durable row rename didn't stick — keep the timestamp so the
+            // rail and the immutable chat card can't disagree after a reload.
+          }
+        }
+      }
+      // Owner item 6: the recording's NOTES also land in the Library under
+      // "Recordings/" so they sit beside the student's other saved material.
+      // Notes only — filing the transcript too is a separate per-surface
+      // setting (item 4), default off and out of this change's scope.
+      // Best-effort: a Library hiccup must never block the durable recording
+      // row or the thread card below.
+      if (uid && !preview && artifact.notes.trim()) {
+        const destination = routeArtifact("recording");
+        if (destination.surface === "library") {
+          try {
+            await writeLibraryNote({ content: `# ${title}\n\n${artifact.notes.trim()}`, folder: destination.folder, title, userId: uid });
+          } catch {
+            // Library unreachable — the recording is still safe in its own row + rail.
+          }
+        }
+      }
+      // The artifact also lands in the chat itself as a clickable card
+      // (owner ask 2026-07-20) — message outputs sync to cloud meta.
+      if (!targetId) return;
+      sessionsStore.appendMessage(targetId, {
+        at: new Date().toISOString(),
+        content: "Recording captured — transcript and notes are ready.",
+        outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title, transcript: artifact.transcript }],
+        role: "assistant",
+      });
+    })().catch(() => undefined);
+  }, [createArtifact, preview, renameArtifact, selectedId, uid]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");
@@ -280,7 +374,7 @@ export function SessionChat() {
               onFinished={handleRecordingFinished}
             />
           ) : (
-            <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
+            <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} phase={livePhase} reasoning={liveReasoning} turns={turns} />
           )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
           <Composer

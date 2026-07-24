@@ -6,13 +6,15 @@
 
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
+import { writeCardFor } from "@/lib/workspace/chat-write-cards";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { classifyChatRequest, detectsSaveRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
+import type { ThinkingPhase } from "@/lib/workspace/thinking-phase";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
@@ -44,7 +46,9 @@ export const CHAT_SYSTEM_PROMPT =
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. " +
   "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
-  "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
+  "list flashcard decks and add cards, save practice tests and mind maps to their Study page, and list or add calendar events. " +
+  "When a student asks you to make flashcards, a practice test, or a mind map, WRITE it yourself and save it with the matching tool in the same turn — " +
+  "do not just describe it in prose. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
   "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. " +
   "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
@@ -232,12 +236,22 @@ export interface ChatReply {
   sources: ChatWebResult[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
+  /** Cards for the writes this turn made (flashcards saved, note created, …),
+   *  so the caller can attach them to the assistant message and show what
+   *  landed. Only sendChatTurn populates this — postChatCompletion is one round. */
+  outputs?: SessionOutput[];
 }
 
 export interface ChatCompletionOptions {
   signal?: AbortSignal;
   decision?: ChatRouteDecision;
   onDelta?: CompletionDeltaHandler;
+  /** The model's own working-out (`reasoning_content`) as it streams, for the
+   *  live thinking preview. Fires many times a second on a deep turn, so the
+   *  caller is expected to buffer rather than render every call. NEVER fires on
+   *  a turn with thinking off (Instant, or a tool-capable route) — an empty
+   *  preview is a normal outcome, not a failure. */
+  onReasoning?: CompletionDeltaHandler;
   /** OpenAI-format tool schemas; the valve forwards them verbatim. */
   tools?: readonly unknown[];
 }
@@ -256,11 +270,12 @@ export async function postChatCompletion(
   if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
   const decision = options.decision ?? { route: "conversation", model: "deepseek-chat", searchWeb: false };
+  const streaming = Boolean(options.onDelta || options.onReasoning);
   const payload = JSON.stringify({
     messages: wireMessages,
     model: decision.model,
     ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
-    ...(options.onDelta ? { stream: true } : {}),
+    ...(streaming ? { stream: true } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
   });
   const call = (bearer: string) =>
@@ -293,8 +308,8 @@ export async function postChatCompletion(
     }
     let text: string | null = null;
     let toolCalls: AgentToolCall[] = [];
-    if (options.onDelta) {
-      const streamed = await readCompletionStreamFull(res.body, options.onDelta);
+    if (streaming) {
+      const streamed = await readCompletionStreamFull(res.body, options.onDelta, options.onReasoning);
       text = streamed.text.trim() ? streamed.text : null;
       toolCalls = streamed.toolCalls;
     } else {
@@ -332,10 +347,22 @@ export async function sendChatTurn(
   signal?: AbortSignal,
   onDelta?: CompletionDeltaHandler,
   effort: ChatEffort = DEFAULT_CHAT_EFFORT,
+  // Reports what this turn is ACTUALLY doing (route → search → read → think →
+  // write) so the strip can show a live line, and streams the model's own
+  // working-out. Both mirror the phone's sendChat exactly — every phase maps to
+  // a real step below, and reasoning only ever appears on turns that emit it.
+  onPhase?: (phase: ThinkingPhase) => void,
+  onReasoning?: CompletionDeltaHandler,
 ): Promise<ChatReply> {
+  onPhase?.({ kind: "routing" });
   const classified = classifyChatRequest(userText);
   const needsWeb = classified.searchWeb || shouldSearchWeb(userText);
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
+  // A late "conversation → current" web promotion moves the turn onto the
+  // reasoner, which loses its tools. A save request must never make that jump:
+  // classifyChatRequest already keeps saves off route "conversation", and this
+  // guard makes that invariant explicit so a future edit can't quietly reopen
+  // the "make me flashcards" saves-nothing bug.
+  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !detectsSaveRequest(userText)
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.
@@ -343,28 +370,58 @@ export async function sendChatTurn(
   let groundedText = userText;
   let sources: ChatWebResult[] = [];
   if (needsWeb) {
+    // The phase echoes the student's OWN words, not the wire query —
+    // buildFreshSearchQuery staples a freshness date on, and showing that back
+    // would read like the app invented part of the question.
+    onPhase?.({ kind: "searching", query: userText });
     const result = await searchWebContext(uid, buildFreshSearchQuery(userText), signal);
     sources = result.sources;
+    onPhase?.({ kind: "reading", sources: sources.length });
     groundedText = result.context
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
+  onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
+
+  // The preview's job ends the moment real words appear, so the first content
+  // delta flips it to "writing" and the strip drops the line. Declared once
+  // outside the loop so the flip survives across tool rounds.
+  let announcedWriting = false;
+  const relayDelta: CompletionDeltaHandler | undefined =
+    onDelta || onPhase
+      ? (delta, accumulated) => {
+          if (!announcedWriting) {
+            announcedWriting = true;
+            onPhase?.({ kind: "writing" });
+          }
+          onDelta?.(delta, accumulated);
+        }
+      : undefined;
 
   const toolsEnabled = toolsAllowed(decision);
   let messages: WireMsg[] = buildWireMessages(history, groundedText, decision);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
+  // Cards for the writes this turn makes, collected across rounds (the per-round
+  // `reply` is overwritten each loop, so this must live outside it). The caller
+  // attaches them to the assistant message so the student sees what landed.
+  const writes: SessionOutput[] = [];
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
     reply = await postChatCompletion(uid, messages, {
       decision,
-      onDelta,
+      onDelta: relayDelta,
+      onReasoning,
       signal,
       ...(offerTools ? { tools: AGENT_TOOLS } : {}),
     });
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
     const results = await Promise.all(calls.map(async (call) => ({ call, result: await executeAgentTool(call) })));
+    for (const { call, result } of results) {
+      const card = writeCardFor(call.name, result, { createdAt: new Date().toISOString(), id: newWriteCardId() });
+      if (card) writes.push(card);
+    }
     messages = [
       ...messages,
       {
@@ -379,7 +436,15 @@ export async function sendChatTurn(
       })),
     ];
   }
-  return { ...reply, sources };
+  return { ...reply, outputs: writes, sources };
+}
+
+/** Stable-ish unique id for a thread card. crypto.randomUUID everywhere it
+ *  exists; a timestamp+random fallback keeps older runtimes working. */
+function newWriteCardId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {

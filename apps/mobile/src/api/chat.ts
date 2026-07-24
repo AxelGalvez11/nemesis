@@ -28,6 +28,7 @@ import {
   chatErrorMessage,
   forcedResearchDecision,
   formatWebSearchContext,
+  usableWebResults,
   type AttachedLibraryDoc,
   type BudgetResetKind,
   type ChatErrorKind,
@@ -48,7 +49,15 @@ import {
   planFinalNotesWindows,
   shouldReplaceNotes,
 } from "@/lib/live-notes";
-import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
+import {
+  buildRecordingNoteMarkdown,
+  buildRecordingTitleMessages,
+  cleanRecordingTitle,
+  mergeOutputsMeta,
+  type RecordingDraft,
+} from "@/lib/recording";
+import { DEFAULT_GENERAL_PREFS, generalPrefsStoreKey, parseGeneralPrefs } from "@/lib/general-prefs";
+import { saveRecordingNote } from "./cloudLibrary";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
@@ -158,7 +167,12 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
     });
     if (!res.ok) return { context: "", sources: [] };
     const body = (await res.json()) as { data?: { web?: ChatSource[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 5);
+    // ONE list feeds both the prompt numbering and the stored sources — the
+    // inline pills resolve [n] positionally against the stored list, so it must
+    // be byte-for-byte the same list formatWebSearchContext numbers. Using a
+    // looser filter here (e.g. url-only) would shift a pill onto the wrong source
+    // the moment a text-less result slipped in ahead of a real one.
+    const sources = usableWebResults(body.data?.web ?? []);
     return { context: formatWebSearchContext(sources), sources };
   } catch {
     return { context: "", sources: [] };
@@ -658,15 +672,53 @@ export async function loadThreadOutputs(uid: string, id: string): Promise<ChatOu
   }
 }
 
+/** One recording's full detail for the fullscreen view (app/recording.tsx,
+ *  owner item 3), read straight from the canonical `chat_recording_artifacts`
+ *  row by its id. The chip entry in `chat_threads.meta.outputs` is NOT a
+ *  reliable transcript source — web strips an oversized transcript out of the
+ *  meta mirror (sessions-cloud.ts) to keep the row under its size cap — so the
+ *  screen always re-fetches the body here rather than reading it off the
+ *  in-memory ChatOutput. This also hands back the freshest post-enhance
+ *  transcript/notes/title. Same id on both surfaces (web mints it with
+ *  crypto.randomUUID and mirrors it into meta; the phone does the same in
+ *  saveRecordingArtifact), so this resolves a recording made on either one.
+ *  Returns null when the row is gone or the read fails — the screen shows an
+ *  "unavailable" state with a visible way out either way. */
+export async function loadRecordingArtifact(uid: string, id: string): Promise<ChatOutput | null> {
+  try {
+    const { data, error } = await supabase
+      .from("chat_recording_artifacts")
+      .select("id,title,transcript,notes,duration_seconds,created_at")
+      .eq("id", id)
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      kind: "recording",
+      title: typeof data.title === "string" ? data.title : "Recording",
+      transcript: typeof data.transcript === "string" ? data.transcript : "",
+      ...(typeof data.notes === "string" && data.notes ? { notes: data.notes } : {}),
+      durationSeconds:
+        typeof data.duration_seconds === "number" && Number.isFinite(data.duration_seconds)
+          ? Math.max(0, Math.round(data.duration_seconds))
+          : 0,
+      ...(typeof data.created_at === "string" ? { createdAt: data.created_at } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Save a phone recording exactly the way web's Record mode does: a canonical
  *  row in `chat_recording_artifacts` (web's right-rail source) plus a mirror
  *  entry in the thread's `chat_threads.meta.outputs` (the chip row BOTH this
  *  chat surface and web render — see loadThreadOutputs above). Recording into
  *  a thread that never reached the cloud (no message sent yet) creates the
  *  thread row so the chips have somewhere to live. The artifact insert is the
- *  load-bearing write and throws on failure; the meta mirror is best-effort —
- *  if it fails, the recording still exists server-side and web's rail shows
- *  it, the chip just waits for the next successful meta write. */
+ *  load-bearing write and throws on failure; the meta mirror AND the Library
+ *  note are best-effort — if either fails, the recording still exists
+ *  server-side and web's rail shows it. */
 export async function saveRecordingArtifact(uid: string, threadId: string, draft: RecordingDraft): Promise<ChatOutput> {
   const id = generateUuidV4();
   const title = draft.title.slice(0, 200);
@@ -691,6 +743,29 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
     created_at: draft.createdAt,
   });
   if (error) throw new Error(error.message);
+
+  // Mirror the recording's notes into the Library at "Recordings/<title>.md"
+  // (owner item 4). Done HERE, at save — NOT in the enhance pass — on purpose:
+  // enhance is detached fire-and-forget and usually won't finish once the
+  // student leaves the screen (iOS suspends the JS runtime mid-upload, which is
+  // also why the recorder holds useKeepAwake only while it's mounted). A note
+  // written only there would never appear for the common "record, save, leave"
+  // flow — and for an offline recording, never at all. Saving it now, while the
+  // student is still on the Save button, is the reliable path the MUST needs.
+  // Its OWN try, AFTER the artifact insert is durable, so a Library failure can
+  // never lose the recording. The title is the on-device timestamp (the AI title
+  // isn't back yet — it degrades cleanly, "use it when available"), and the
+  // transcript rides along only when the student turned the setting on. The
+  // "Recordings" folder needs no row — the tree is derived from note paths
+  // (lib/library-sync.ts).
+  try {
+    const includeTranscript = await shouldSaveTranscriptToLibrary(uid);
+    const content = buildRecordingNoteMarkdown({ includeTranscript, notes: draft.notes, transcript: draft.transcript });
+    await saveRecordingNote(uid, { content, createdAt: draft.createdAt, title });
+  } catch (cause) {
+    console.warn("recording Library note skipped:", cause instanceof Error ? cause.message : cause);
+  }
+
   try {
     const { data } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
     if (data) {
@@ -734,6 +809,17 @@ export async function requestLiveNotes(uid: string, transcript: string, previous
   const reply = await postChatCompletion(uid, buildLiveNotesMessages(transcript, previousNotes), LIVE_NOTES_DECISION);
   if (!reply.text) return null;
   return parseLiveNotes(reply.text);
+}
+
+/** One title pass for a finished recording (owner item 3): the enhanced
+ *  transcript in, a short human title out, on the SAME cheap conversational
+ *  slot the live-notes pass uses (LIVE_NOTES_DECISION — never search, never the
+ *  reasoner). null means keep the timestamp — the call failed (offline, out of
+ *  tokens) or the reply cleaned down to nothing (see cleanRecordingTitle). */
+export async function requestRecordingTitle(uid: string, transcript: string): Promise<string | null> {
+  const reply = await postChatCompletion(uid, buildRecordingTitleMessages(transcript), LIVE_NOTES_DECISION);
+  if (!reply.text) return null;
+  return cleanRecordingTitle(reply.text);
 }
 
 const APP_API_BASE = "https://app.enternemesis.com";
@@ -788,6 +874,19 @@ async function rebuildNotesFromTranscript(
     notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
   }
   return shouldReplaceNotes(notes, existingNotes) ? liveNotesText(notes) : null;
+}
+
+/** Whether this account asked for the FULL transcript in a recording's Library
+ *  note (owner item 4, profile/general.tsx's "Also save the full transcript").
+ *  A per-account on-device preference; missing/unreadable reads as the default
+ *  (OFF — notes only). One tested (de)serializer, shared with the settings
+ *  screen (lib/general-prefs.ts). */
+async function shouldSaveTranscriptToLibrary(uid: string): Promise<boolean> {
+  try {
+    return parseGeneralPrefs(await SecureStore.getItemAsync(generalPrefsStoreKey(uid))).saveTranscript;
+  } catch {
+    return DEFAULT_GENERAL_PREFS.saveTranscript;
+  }
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -852,13 +951,42 @@ export async function enhanceRecordingArtifact(
       .update({ transcript: enhanced })
       .eq("id", artifact.id)
       .eq("user_id", uid);
-    const polished: ChatOutput = { ...artifact, polish: "done", transcript: enhanced };
-    await writeChipEntry(uid, threadId, polished);
+    // The evolving "best known" chip entry. Every sub-pass below (title, notes)
+    // that succeeds folds its field into THIS object and re-publishes the whole
+    // thing — writeChipEntry replaces the entry by id (mergeOutputsMeta), so a
+    // pass that forked from the original would silently drop the other pass's
+    // field. Threading one object is what keeps the row and the chip in sync
+    // when more than one field changes.
+    let published: ChatOutput = { ...artifact, polish: "done", transcript: enhanced };
+    await writeChipEntry(uid, threadId, published);
 
     // The recording is fully in the cloud now, so free the phone's copy before
     // the rebuild rather than after it — a lecture is 100MB+ and the rebuild
     // below can run for minutes. The finally block still sweeps, idempotently.
     await deleteLocalAudio(uris);
+
+    // A human title from the sharper transcript (owner item 3), so two
+    // recordings in one thread stop reading as identical "Recording" chips. Its
+    // OWN try, independent of the notes rebuild below: a title failure must
+    // never cost the better transcript or the better notes, and a failed pass
+    // just leaves the timestamp title standing.
+    try {
+      const title = await requestRecordingTitle(uid, enhanced);
+      if (title && title !== published.title) {
+        const { error: titleError } = await supabase
+          .from("chat_recording_artifacts")
+          .update({ title })
+          .eq("id", artifact.id)
+          .eq("user_id", uid);
+        // The artifact row is web's source of truth; only publish the chip title
+        // once the row took it, or the card and the row would disagree.
+        if (titleError) throw new Error(titleError.message);
+        published = { ...published, title };
+        await writeChipEntry(uid, threadId, published);
+      }
+    } catch (cause) {
+      console.warn("recording title pass skipped:", cause instanceof Error ? cause.message : cause);
+    }
 
     // Sharper transcript, sharper notes. Deliberately AFTER the transcript is
     // durable and inside its own try: this costs several model calls and can
@@ -876,7 +1004,10 @@ export async function enhanceRecordingArtifact(
         // not take, do NOT publish the new notes to the chip — a chip showing
         // bullets the row does not have is a divergence that never resolves.
         if (notesError) throw new Error(notesError.message);
-        await writeChipEntry(uid, threadId, { ...polished, notes });
+        // {...published} (not {...polished}) so a title set just above survives
+        // this write — see the "evolving best entry" note where published is set.
+        published = { ...published, notes };
+        await writeChipEntry(uid, threadId, published);
       }
     } catch (cause) {
       console.warn("notes rebuild skipped:", cause instanceof Error ? cause.message : cause);

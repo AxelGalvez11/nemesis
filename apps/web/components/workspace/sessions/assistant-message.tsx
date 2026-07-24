@@ -14,6 +14,7 @@ import { citationDomains, faviconUrl } from "@/lib/favicon";
 import type { ChatErrorKind } from "@/lib/workspace/chat-api";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import type { SessionMessage, SessionSource } from "@/lib/workspace/sessions-store";
+import type { ThinkingPhase } from "@/lib/workspace/thinking-phase";
 
 import { ActivityStrip } from "./activity-strip";
 import { OutputCard } from "./output-card";
@@ -29,11 +30,15 @@ interface AssistantMessageProps {
   pending: boolean;
   liveSeconds: number | null;
   durationSeconds: number | null;
+  /** The in-flight turn's current phase — drives the live thinking line. */
+  phase?: ThinkingPhase;
+  /** The in-flight turn's trimmed reasoning glimpse (empty on turns with none). */
+  reasoning?: string;
   error: TurnError | null;
   onOpenSources?: () => void;
 }
 
-export function AssistantMessage({ message, animateReveal = false, pending, liveSeconds, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
+export function AssistantMessage({ message, animateReveal = false, pending, liveSeconds, durationSeconds, phase, reasoning, error, onOpenSources }: AssistantMessageProps) {
   if (!message && !pending && !error) return null;
 
   const visibleText = message?.content || null;
@@ -58,7 +63,7 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
             {message.outputs.map((output) => <OutputCard key={output.id} output={output} />)}
           </div>
         )}
-        {pending && <ActivityStrip placement="live" seconds={liveSeconds} />}
+        {pending && <ActivityStrip phase={phase} placement="live" reasoning={reasoning} seconds={liveSeconds} />}
         {error && <AssistantErrorRow error={error} />}
       </div>
       {visibleText && <AssistantFooter onOpenSources={onOpenSources} sources={message?.sources ?? []} text={visibleText} />}

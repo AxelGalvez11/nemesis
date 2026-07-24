@@ -3,7 +3,7 @@
 // so the tests pin the copy: a drift here shows up on the other client as a
 // duplicate-looking note.
 // Run from the REPO ROOT: deno test --no-check --allow-env apps/mobile/src/
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   allFolderPaths,
   folderLeaf,
@@ -12,6 +12,9 @@ import {
   movedFolderPath,
   normalizeLibraryFolder,
   notePathFor,
+  recordingLibraryPath,
+  recordingNoteBaseName,
+  RECORDINGS_LIBRARY_FOLDER,
   remapUnder,
   renamedFolderPath,
   safeLibraryTitle,
@@ -97,4 +100,33 @@ Deno.test("allFolderPaths derives every ancestor from note paths", () => {
 
 Deno.test("allFolderPaths folds in explicit folder rows and dedupes", () => {
   assertEquals(allFolderPaths(["A/x.md"], ["A", "B/C"]), ["A", "B/C"]);
+});
+
+Deno.test("recordingLibraryPath nests a recording note under the Recordings folder", () => {
+  assertEquals(recordingLibraryPath("Beta-Blocker Pharmacology"), "Recordings/Beta-Blocker Pharmacology.md");
+  // A "/" (or other path char) in the AI title must NOT nest the note into a
+  // bogus subfolder — it's sanitized to "-" so it stays one file in Recordings/.
+  assertEquals(recordingLibraryPath("Anatomy 1/2 review"), "Recordings/Anatomy 1-2 review.md");
+  // The timestamp title (its ":" becomes "-") still lands cleanly under the folder.
+  assertEquals(recordingLibraryPath("Recording · Jul 24, 3:14 PM"), "Recordings/Recording · Jul 24, 3-14 PM.md");
+  // A title that sanitizes to nothing falls back rather than nesting weirdly.
+  assertEquals(recordingLibraryPath("   "), `${RECORDINGS_LIBRARY_FOLDER}/Untitled note.md`);
+});
+
+Deno.test("recordingNoteBaseName steps a suffix WITHOUT eating a long title", () => {
+  assertEquals(recordingNoteBaseName("Kinetics"), "Kinetics");
+  assertEquals(recordingNoteBaseName("Kinetics", 1), "Kinetics");
+  assertEquals(recordingNoteBaseName("Kinetics", 2), "Kinetics 2");
+  // A 120-char title (safeLibraryTitle's own cap) must still produce DISTINCT
+  // suffixed names — the soft-delete retry depends on it. If the suffix were
+  // routed back through safeLibraryTitle the " 2"/" 3" would be trimmed off and
+  // every candidate would collapse to the same 120-char path.
+  const long = "A".repeat(200);
+  const base = recordingNoteBaseName(long, 1);
+  assertEquals(base.length, 120);
+  const two = recordingNoteBaseName(long, 2);
+  const three = recordingNoteBaseName(long, 3);
+  assertEquals(two, `${base} 2`);
+  assertEquals(three, `${base} 3`);
+  assert(two !== base && three !== two);
 });

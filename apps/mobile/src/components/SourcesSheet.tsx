@@ -1,15 +1,24 @@
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SlideUpSheet } from "./StudySheet";
 import type { ChatSource } from "@/lib/chat-thread";
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Compact "Sources · N" pill under an assistant message (chat.tsx) plus the
-// bottom-up sheet it opens. Replaces the previous per-source chip row (one
-// tappable chip per citation, each opening the browser directly) with the
-// owner's spec: ONE pill, tap opens a SlideUpSheet listing every source as a
-// row (title + domain, favicon-less), and tapping a ROW opens it.
+// Two entry points, one sheet:
+//   • the footer "Sources · N" pill under an answer (all of the turn's sources), and
+//   • an inline citation pill tapped mid-answer (just the sources it grouped).
+// Both open this bottom-up SlideUpSheet, which lists each source as a card —
+// favicon + short name, title, and the search snippet — the touch equivalent of
+// web's hover card (source-pill.tsx). Favicons are safe here because a sheet row
+// is a block <View>, so a fixed-size remote <Image> lays out normally (unlike the
+// inline pill, where nesting an image in flowing text is the fragile part).
+
+/** Fixed favicon box — a remote <Image> needs an explicit size in RN or it
+ *  collapses to zero (the MarkdownImage landmine). */
+const FAVICON_SIZE = 16;
+
 export function SourcesPill({ count, onPress }: { count: number; onPress: () => void }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -24,29 +33,33 @@ export function SourcesSheet({ visible, onClose, sources }: { visible: boolean; 
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title={`Sources · ${sources.length}`} testID="chat-sources-sheet">
       <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-        {sources.map((source, index) => (
-          <Pressable
-            key={`${source.url}-${index}`}
-            style={({ pressed }) => [styles.row, index > 0 && styles.rowDivider, pressed && styles.rowPressed]}
-            onPress={() => void Linking.openURL(source.url).catch(() => {})}
-            testID={`chat-sources-sheet-row-${index}`}
-          >
-            <Text style={styles.rowTitle} numberOfLines={2}>{source.title.trim() || hostnameOf(source.url)}</Text>
-            <Text style={styles.rowDomain}>{hostnameOf(source.url)}</Text>
-          </Pressable>
-        ))}
+        {sources.map((source, index) => {
+          const host = hostnameOf(source.url);
+          const name = sourceLabel(source.url) ?? host ?? "Source";
+          return (
+            <Pressable
+              key={`${source.url}-${index}`}
+              style={({ pressed }) => [styles.row, index > 0 && styles.rowDivider, pressed && styles.rowPressed]}
+              onPress={() => void Linking.openURL(source.url).catch(() => {})}
+              testID={`chat-sources-sheet-row-${index}`}
+            >
+              <View style={styles.eyebrow}>
+                {host ? (
+                  <Image source={{ uri: faviconUrl(host, 64) }} style={styles.favicon} accessibilityIgnoresInvertColors />
+                ) : null}
+                <Text style={styles.eyebrowText} numberOfLines={1}>{name}</Text>
+              </View>
+              <Text style={styles.rowTitle} numberOfLines={2}>{source.title.trim() || host || source.url}</Text>
+              {source.description.trim() ? (
+                <Text style={styles.rowSnippet} numberOfLines={3}>{source.description.trim()}</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
         <View style={{ height: space(4) }} />
       </ScrollView>
     </SlideUpSheet>
   );
-}
-
-/** Bare hostname for a row's domain line — dependency-free, can't throw on a
- *  malformed url (falls back to the raw string). Ported from chat.tsx, which
- *  used it per-chip before this pill+sheet replaced that row. */
-export function hostnameOf(url: string): string {
-  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?([^/:?#]+)/i.exec(url);
-  return (match?.[1] ?? url).replace(/^www\./, "");
 }
 
 const createStyles = (c: ThemeColors) =>
@@ -70,6 +83,10 @@ const createStyles = (c: ThemeColors) =>
     row: { paddingVertical: space(3) },
     rowDivider: { borderTopWidth: 1, borderTopColor: c.line },
     rowPressed: { backgroundColor: c.surface },
+    // Favicon + short name eyebrow, echoing the stacked sources in web's card.
+    eyebrow: { flexDirection: "row", alignItems: "center", marginBottom: 3 },
+    favicon: { width: FAVICON_SIZE, height: FAVICON_SIZE, borderRadius: FAVICON_SIZE / 2, marginRight: space(1.5) },
+    eyebrowText: { ...type.micro, color: c.text3, flexShrink: 1 },
     rowTitle: { ...type.bodyStrong, color: c.text },
-    rowDomain: { ...type.micro, color: c.text3, marginTop: 2 },
+    rowSnippet: { ...type.small, color: c.text2, marginTop: 3 },
   });

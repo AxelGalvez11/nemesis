@@ -52,6 +52,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   fitContent = false,
+  fullscreen = false,
   banner,
   bannerTone = "error",
   ...props
@@ -60,6 +61,9 @@ function DialogContent({
   // Size the dialog to its content (capped at the viewport) instead of the
   // default fixed `max-w-lg`.
   fitContent?: boolean;
+  // Edge-to-edge, full-viewport variant (the recording viewer, owner item 3) —
+  // no centering, radius, or border; the child owns its own header/scroll.
+  fullscreen?: boolean;
   // A dialog-level notice rendered as a banner flush to the bottom edge.
   banner?: React.ReactNode;
   bannerTone?: DialogBannerTone;
@@ -79,6 +83,29 @@ function DialogContent({
       </Button>
     </DialogPrimitive.Close>
   ) : null;
+
+  if (fullscreen) {
+    return (
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          className={cn(
+            // Fade only (no zoom) — a full-viewport panel zooming in reads as a
+            // page transition gone wrong. The child is a flex column so it can
+            // pin its own header and scroll the body.
+            "fixed inset-0 z-[130] pointer-events-auto flex flex-col overflow-hidden bg-(--ui-chat-bubble-background) text-[length:var(--conversation-text-font-size)] text-foreground duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+            className,
+          )}
+          data-slot="dialog-content"
+          data-workspace=""
+          {...props}
+        >
+          {children}
+          {closeButton}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  }
 
   // With a banner, the border can't live on the scroll/clip box (it would draw a
   // line around the banner too). The body keeps its own bottom radius and sits

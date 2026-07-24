@@ -13,6 +13,7 @@ import {
   forcedResearchDecision,
   formatWebSearchContext,
   trimHistory,
+  usableWebResults,
   withAttachmentNote,
   type ChatMsg,
   type ChatSource,
@@ -85,11 +86,42 @@ Deno.test("formatWebSearchContext: formats up to 5 usable results, empty string 
   ];
   const formatted = formatWebSearchContext(results);
   assertMatch(formatted, /Live web search results/);
+  // The model must be told to cite with a numbered [n] marker (NOT the raw URL):
+  // MessageBody only turns [n] into inline source pills, so this wording is what
+  // makes the pills appear at all.
+  assertMatch(formatted, /square brackets, like \[1\]/);
+  assertMatch(formatted, /never write the raw URL in the prose/);
   assertMatch(formatted, /1\. Next\.js 16\nURL: https:\/\/nextjs\.org\/blog\/16/);
   assertMatch(formatted, /2\. https:\/\/example\.com\/no-title/); // falls back to the URL as the title
   assertEquals(formatted.includes("dropped"), false); // no-url result is excluded
   assertEquals(formatWebSearchContext([]), "");
   assertEquals(formatWebSearchContext(Array.from({ length: 8 }, (_, i) => ({ title: `t${i}`, url: `https://x.test/${i}`, description: "" }))).match(/URL:/g)?.length, 5);
+});
+
+Deno.test("usableWebResults is the SINGLE list behind both the prompt numbering and the stored sources", () => {
+  // The pills resolve [n] positionally (SourcePill reads sources[n-1]), so the
+  // list stored on the message must equal the list the prompt numbers. A result
+  // with a url but no title AND no description is the trap: if it survived into
+  // the stored list but not the numbered one, every later pill would shift by one.
+  const raw: ChatSource[] = [
+    { title: "Real one", url: "https://a.test/1", description: "has text" },
+    { title: "", url: "https://b.test/2", description: "" }, // url only, no text — dropped
+    { title: "", url: "https://c.test/3", description: "also real" },
+    { title: "No url", url: "", description: "dropped, no url" },
+  ];
+  const usable = usableWebResults(raw);
+  // The text-less and url-less entries are gone; order of the survivors is kept.
+  assertEquals(usable.map((s) => s.url), ["https://a.test/1", "https://c.test/3"]);
+
+  // The prompt numbers exactly those survivors, in the same order — so [2] in the
+  // answer resolves to usable[1] (c.test/3), the source the model actually saw.
+  const formatted = formatWebSearchContext(raw);
+  assertMatch(formatted, /1\. Real one\nURL: https:\/\/a\.test\/1/);
+  assertMatch(formatted, /2\. https:\/\/c\.test\/3\nURL: https:\/\/c\.test\/3/);
+  assertEquals(formatted.includes("b.test"), false);
+
+  // Caps at five, so [n] never exceeds the stored list length.
+  assertEquals(usableWebResults(Array.from({ length: 9 }, (_, i) => ({ title: `t${i}`, url: `https://x.test/${i}`, description: "d" }))).length, 5);
 });
 
 Deno.test("completionText: extracts assistant text, rejects empty/malformed", () => {

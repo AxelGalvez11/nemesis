@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
 import type { ChatOutput } from "@/lib/chat-thread";
-import { polishState } from "@/lib/recording";
+import { polishState, spokenDuration } from "@/lib/recording";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -52,29 +52,80 @@ function formatDuration(seconds: number | undefined): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-/** A horizontal row of deliverable chips — used BOTH as the thread-level
- *  ListHeaderComponent (chat_threads.meta.outputs) and under a single message
- *  (chat_messages.meta.outputs), so the two call sites in chat.tsx share one
- *  rendering + one wording. */
+/** The card's date line — just the day (owner item 3: "a date"). The AI title
+ *  is what tells two recordings apart, so the card needs the date, not a
+ *  down-to-the-minute stamp. */
+function formatRecordingDate(iso: string | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** The deliverables row under a turn / at the top of a thread — used BOTH as the
+ *  thread-level ListHeaderComponent (chat_threads.meta.outputs) and under a
+ *  single message (chat_messages.meta.outputs), so the two call sites in chat.tsx
+ *  share one rendering.
+ *
+ *  Recordings (owner item 3) render as a full-width CARD — AI title headline,
+ *  then "Recorded 25 minutes" and the date — because two recordings in one
+ *  thread used to be indistinguishable bare "Recording" pills. Every other kind
+ *  keeps the compact pill it always was (today only web produces those; see the
+ *  scope note at the top of this file). */
 export function DeliverableChipRow({ outputs, onSelect }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void }) {
   const styles = useThemedStyles(createStyles);
   if (!outputs.length) return null;
+  const now = new Date();
+  const recordings = outputs.filter((output) => output.kind === "recording");
+  const pills = outputs.filter((output) => output.kind !== "recording");
   return (
-    <View style={styles.chipRow} testID="chat-deliverables-row">
-      {outputs.map((output) => (
-        <Pressable
-          key={output.id}
-          style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
-          onPress={() => onSelect(output)}
-          testID={`chat-deliverable-chip-${output.id}`}
-        >
-          <Text style={styles.chipText} numberOfLines={1}>
-            {polishState(output, new Date()) === "pending"
-              ? `${OUTPUT_CHIP_LABEL[output.kind]} · Polishing…`
-              : OUTPUT_CHIP_LABEL[output.kind]}
-          </Text>
-        </Pressable>
-      ))}
+    <View style={styles.deliverables} testID="chat-deliverables-row">
+      {recordings.map((output) => {
+        const polish = polishState(output, now);
+        // "Recorded 25 minutes · Jul 23" (+ " · Polishing…" mid-enhance). Each
+        // part is optional so a recording missing a field never shows a stray
+        // separator.
+        const meta = [
+          typeof output.durationSeconds === "number" ? `Recorded ${spokenDuration(output.durationSeconds)}` : "",
+          formatRecordingDate(output.createdAt),
+          polish === "pending" ? "Polishing…" : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <Pressable
+            key={output.id}
+            style={({ pressed }) => [styles.recordingCard, pressed && styles.recordingCardPressed]}
+            onPress={() => onSelect(output)}
+            testID={`chat-deliverable-chip-${output.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Open recording: ${output.title || "Recording"}`}
+          >
+            <Text style={styles.recordingTitle} numberOfLines={2}>
+              {output.title || "Recording"}
+            </Text>
+            {meta ? <Text style={styles.recordingMeta}>{meta}</Text> : null}
+          </Pressable>
+        );
+      })}
+      {pills.length ? (
+        <View style={styles.chipRow}>
+          {pills.map((output) => (
+            <Pressable
+              key={output.id}
+              style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
+              onPress={() => onSelect(output)}
+              testID={`chat-deliverable-chip-${output.id}`}
+            >
+              <Text style={styles.chipText} numberOfLines={1}>
+                {polishState(output, now) === "pending"
+                  ? `${OUTPUT_CHIP_LABEL[output.kind]} · Polishing…`
+                  : OUTPUT_CHIP_LABEL[output.kind]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -144,10 +195,28 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5), marginTop: space(1.5), paddingHorizontal: space(0.5) },
+    // The stack under a turn: recording cards first (each full-width), then any
+    // remaining pills in their own wrapping row.
+    deliverables: { gap: space(1.5), marginTop: space(1.5), paddingHorizontal: space(0.5) },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5) },
     chip: { paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint },
     chipPressed: { backgroundColor: c.surface2 },
     chipText: { ...type.small, color: c.accent, fontWeight: "600" },
+    // The recording card (owner item 3): a real card, not a pill, so the AI
+    // title has room to be the headline and the two-recordings-look-identical
+    // problem is gone. Calm B/W — a hairline border and a faint surface fill,
+    // no accent tint.
+    recordingCard: {
+      paddingVertical: space(2.5),
+      paddingHorizontal: space(3),
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.surface,
+    },
+    recordingCardPressed: { backgroundColor: c.surface2 },
+    recordingTitle: { ...type.bodyStrong, color: c.text },
+    recordingMeta: { ...type.micro, color: c.text3, marginTop: space(1) },
     // Height is owned by SlideUpSheet's body (collapsed cap + drag-up-to-
     // expand, owner 2026-07-21); flexShrink lets the scroll area compress to
     // that animated cap instead of overflowing it.

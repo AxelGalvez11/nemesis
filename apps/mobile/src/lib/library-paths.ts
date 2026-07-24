@@ -105,6 +105,37 @@ export function renamedFolderPath(sourcePath: string, nextLeaf: string): string 
   return parent ? `${parent}/${leaf}` : leaf;
 }
 
+/** The Library folder every auto-generated recording note lands in (owner item
+ *  4 + item 6: recordings get their own folder). Implicit — writing a note at
+ *  "Recordings/…" is all it takes; the folder appears on both surfaces because
+ *  the tree is derived from note paths (lib/library-sync.ts), never from folder
+ *  rows. */
+export const RECORDINGS_LIBRARY_FOLDER = "Recordings";
+
+/** The sanitized, suffix-stepped filename base for a recording note — the SAME
+ *  string is used for both the `path` and the `title` column so the Library list
+ *  and the file on disk agree (mirrors createNote). `suffix` starts at 1 (no
+ *  suffix) and steps 2, 3, … for the soft-delete collision retry in
+ *  api/cloudLibrary.ts: a title deleted last week keeps its path forever, so the
+ *  first candidate can bounce off the (user_id, path) unique constraint.
+ *
+ *  The suffix is appended to the ALREADY-sanitized base rather than routed back
+ *  through safeLibraryTitle — that function caps at 120 chars, and re-running it
+ *  on "<120-char title> 2" would trim the " 2" straight back off and hand the
+ *  retry the exact path that just collided. */
+export function recordingNoteBaseName(title: string, suffix = 1): string {
+  const safe = safeLibraryTitle(title);
+  return suffix <= 1 ? safe : `${safe} ${suffix}`;
+}
+
+/** The "Recordings/<title>.md" Library path a recording note is written at. The
+ *  title (the AI name when the enhance pass produced one, else the timestamp) is
+ *  sanitized into a safe filename first — a title carrying a "/" or other path
+ *  character must never nest the note into a bogus subfolder. */
+export function recordingLibraryPath(title: string, suffix = 1): string {
+  return `${RECORDINGS_LIBRARY_FOLDER}/${recordingNoteBaseName(title, suffix)}.md`;
+}
+
 /** Every folder path implied by a set of note paths, plus any explicit folder
  *  rows — the candidate list a "move to…" picker offers. Sorted for a stable,
  *  alphabetical picker. */

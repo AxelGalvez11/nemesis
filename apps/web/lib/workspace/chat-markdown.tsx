@@ -10,9 +10,9 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
-import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
+import { SourcePill } from "@/components/workspace/sessions/source-pill";
 import { cn } from "@/lib/utils";
-import { citationsToMarkdown } from "@/lib/workspace/chat-citations";
+import { citationsToMarkdown, parseCitationHref } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
@@ -29,10 +29,13 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
 
-/** A web result the answer can cite. Structural, so SessionSource fits as-is. */
+/** A web result the answer can cite. Structural, so SessionSource fits as-is.
+ *  `description` is the search snippet the hover card shows; optional so a
+ *  source that arrived without one still resolves (the card just omits it). */
 export interface CitationSource {
   title: string;
   url: string;
+  description?: string;
 }
 
 
@@ -81,31 +84,21 @@ function markdownComponents(
           </span>
         );
       }
-      const citeIndex = href?.startsWith("#nemesis-cite=")
-        ? Number.parseInt(href.slice("#nemesis-cite=".length), 10)
-        : null;
-      if (citeIndex !== null) {
-        const source = sources?.[citeIndex - 1];
+      // Citation pills. The href carries one index (`#nemesis-cite=3`) or a
+      // merged run (`#nemesis-cite=1,2`); resolve each to its source and hand
+      // the list to SourcePill, which owns the hover card. NO native title= here
+      // — the pill supplies its own accessible label and an OS tooltip would
+      // fire on top of the card.
+      const citeIndices = parseCitationHref(href);
+      if (citeIndices.length > 0) {
+        const cited = citeIndices
+          .map((n) => sources?.[n - 1])
+          .filter((source): source is CitationSource => Boolean(source));
         // Pre-processing only emits in-range markers, so a miss means stale
         // markup (an edited/replayed answer) — drop the chip rather than leave
         // a bare number sitting in the prose.
-        if (!source) return null;
-        const host = hostnameOf(source.url);
-        return (
-          <a
-            className="mx-0.5 inline-flex items-center gap-1 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-1.5 py-px align-baseline text-[0.78em] font-medium text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
-            href={source.url}
-            rel="noopener noreferrer"
-            target="_blank"
-            title={source.title || source.url}
-          >
-            {host && (
-              // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-              <img alt="" className="size-3 rounded-full" src={faviconUrl(host)} />
-            )}
-            {sourceLabel(source.url) ?? host}
-          </a>
-        );
+        if (cited.length === 0) return null;
+        return <SourcePill sources={cited} />;
       }
       const wikiTarget = href?.startsWith("#nemesis-note=")
         ? decodeURIComponent(href.slice("#nemesis-note=".length))

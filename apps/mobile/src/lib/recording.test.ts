@@ -4,12 +4,18 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import {
   applyRecognitionResult,
   buildRecordingDraft,
+  buildRecordingNoteMarkdown,
+  buildRecordingTitleMessages,
+  cleanRecordingTitle,
   emptyTranscript,
   formatRecordingClock,
   fullTranscript,
   hasTranscript,
   mergeOutputsMeta,
   polishState,
+  RECORDING_TITLE_MAX_CHARS,
+  RECORDING_TITLE_TRANSCRIPT_CHARS,
+  spokenDuration,
 } from "./recording.ts";
 
 Deno.test("interim results rewrite in place until the utterance commits", () => {
@@ -77,6 +83,85 @@ Deno.test("draft folds live notes in; default stays empty", () => {
   const at = new Date("2026-07-21T15:30:00.000Z");
   assertEquals(buildRecordingDraft(t, 10, at).notes, "");
   assertEquals(buildRecordingDraft(t, 10, at, "one\ntwo").notes, "one\ntwo");
+});
+
+Deno.test("spokenDuration reads the recording length in plain minutes", () => {
+  // The four boundaries the card has to get right (owner item 3).
+  assertEquals(spokenDuration(0), "less than a minute");
+  assertEquals(spokenDuration(59), "less than a minute");
+  assertEquals(spokenDuration(60), "1 minute");
+  assertEquals(spokenDuration(90 * 60), "90 minutes");
+  // Floored like a clock: a 25:40 lecture reads "25 minutes", not 26.
+  assertEquals(spokenDuration(25 * 60 + 40), "25 minutes");
+  // A negative/garbage duration never reads as a negative minute count.
+  assertEquals(spokenDuration(-5), "less than a minute");
+});
+
+Deno.test("cleanRecordingTitle unwraps the model's title, or keeps the timestamp", () => {
+  assertEquals(cleanRecordingTitle("Beta-Blocker Pharmacology"), "Beta-Blocker Pharmacology");
+  // Common wrappers a chat-route reply adds.
+  assertEquals(cleanRecordingTitle('"Loop Diuretics Overview"'), "Loop Diuretics Overview");
+  assertEquals(cleanRecordingTitle("Title: Renal Clearance Basics"), "Renal Clearance Basics");
+  assertEquals(cleanRecordingTitle("**Cardiac Cycle Review**"), "Cardiac Cycle Review");
+  assertEquals(cleanRecordingTitle("# Enzyme Kinetics"), "Enzyme Kinetics");
+  assertEquals(cleanRecordingTitle("Antibiotic Resistance."), "Antibiotic Resistance");
+  // Multi-line reply: the first real line is the title, chatter below is dropped.
+  assertEquals(cleanRecordingTitle("\n\nGlomerular Filtration\nHere is your title."), "Glomerular Filtration");
+  // Empty / whitespace-only → null so the caller keeps the existing title.
+  assertEquals(cleanRecordingTitle(""), null);
+  assertEquals(cleanRecordingTitle("   \n  "), null);
+  assertEquals(cleanRecordingTitle('""'), null);
+  // Over-long titles are capped to a headline.
+  const long = "A ".repeat(120).trim();
+  const cleaned = cleanRecordingTitle(long);
+  assert(cleaned !== null && cleaned.length <= RECORDING_TITLE_MAX_CHARS);
+});
+
+Deno.test("buildRecordingTitleMessages asks on one transcript turn and clips it", () => {
+  const messages = buildRecordingTitleMessages("x".repeat(RECORDING_TITLE_TRANSCRIPT_CHARS + 500));
+  assertEquals(messages.length, 2);
+  assertEquals(messages[0].role, "system");
+  assertEquals(messages[1].role, "user");
+  // The user turn carries only the clipped transcript (plus the short label).
+  assert(messages[1].content.includes("x".repeat(100)));
+  assert(messages[1].content.length <= RECORDING_TITLE_TRANSCRIPT_CHARS + 40);
+});
+
+Deno.test("recording Library note: notes become bullets, no duplicate title heading", () => {
+  const md = buildRecordingNoteMarkdown({
+    includeTranscript: false,
+    notes: "Beta blockers lower heart rate\nChlorophyll absorbs red and blue light",
+    transcript: "full transcript here",
+  });
+  // liveNotesText joins points with bare newlines; each becomes its own bullet.
+  assertEquals(md, "- Beta blockers lower heart rate\n- Chlorophyll absorbs red and blue light\n");
+  // No "# <title>" — note.tsx renders the title itself (would double up).
+  assert(!md.includes("#"));
+  // Transcript is withheld unless the setting is on.
+  assert(!md.includes("Transcript"));
+});
+
+Deno.test("recording Library note: transcript appended only when the setting is on", () => {
+  const withT = buildRecordingNoteMarkdown({ includeTranscript: true, notes: "Point one", transcript: "the words spoken" });
+  assertEquals(withT, "- Point one\n\n## Transcript\n\nthe words spoken\n");
+});
+
+Deno.test("recording Library note: already-bulleted lines aren't double-bulleted", () => {
+  const md = buildRecordingNoteMarkdown({ includeTranscript: false, notes: "- Already a bullet\n* star bullet", transcript: "" });
+  assertEquals(md, "- Already a bullet\n* star bullet\n");
+});
+
+Deno.test("recording Library note: empty notes / transcript degrade to a plain line, never a blank file", () => {
+  // A short or quiet recording: no notes captured at all.
+  assertEquals(
+    buildRecordingNoteMarkdown({ includeTranscript: false, notes: undefined, transcript: "" }),
+    "No notes were captured for this recording.\n",
+  );
+  // Setting on but the transcript is empty too — still says so rather than an empty section.
+  assertEquals(
+    buildRecordingNoteMarkdown({ includeTranscript: true, notes: "   \n  ", transcript: "   " }),
+    "No notes were captured for this recording.\n\n## Transcript\n\nNo transcript was captured for this recording.\n",
+  );
 });
 
 Deno.test("polish state: pending while fresh, silent once stale, done sticks", () => {
