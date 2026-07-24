@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   buildSyllabusPrompt,
   describeMeeting,
+  scheduleWindow,
   isRealDate,
   MAX_IMPORT_EVENTS,
   meetingToAnchorEvent,
@@ -273,4 +274,53 @@ test("the prompt anchors the year and carries the text", () => {
   assert.match(prompt, /Today is 2026-07-24/);
   assert.match(prompt, /sourceQuote/);
   assert.ok(prompt.includes(SOURCE));
+});
+
+// ── Choosing the window the model reads ──────────────────────────────────────
+// Shaped after a real 13-page pharmacokinetics syllabus: 34,927 characters of
+// which the first 25,736 are policy — grading, attendance, accommodations — and
+// every one of its 87 dated sessions is in the appendix that follows. Slicing
+// from the front returned a syllabus with no dates in it.
+
+const POLICY = "Attendance is expected at every session. Late work is penalised. ".repeat(400);
+const CALENDAR = [
+  "Date Time (CT:ET) Format/Campus Topic Instructor",
+  "T-1/6 8-8:50 CT: 9-9:50 ET L1/Nash Introduction and Review of Concepts",
+  "W-1/7 8-8:50 CT: 9-9:50 ET L2/Mem Fundamental principles of pharmacokinetics 1",
+  "Th-1/8 8-8:50 CT: 9-9:50 ET R1/Mem Basic Pharmacokinetics Recitation",
+  "Tu-1/13 8-8:50 CT: 9-9:50 ET L4/Mem Intravascular Dosing 1",
+  "W-2/4 8-9:50 CT: 9-10:50 ET E1/Mem Exam 1",
+].join("\n");
+
+test("a syllabus that fits is passed through whole", () => {
+  const text = `${CALENDAR}`;
+  assert.equal(scheduleWindow(text, 60_000), text);
+});
+
+test("the schedule is found even when it is an appendix", () => {
+  const text = `${POLICY}\n${CALENDAR}`;
+  const window = scheduleWindow(text, 4_000);
+  assert.ok(window.includes("T-1/6"), "the first session must be in the window");
+  assert.ok(window.includes("Exam 1"), "and so must the last");
+});
+
+test("the table's heading row comes with it, since the rows depend on it", () => {
+  const window = scheduleWindow(`${POLICY}\n${CALENDAR}`, 4_000);
+  assert.ok(window.includes("Date Time (CT:ET) Format/Campus"));
+});
+
+test("the window starts on a line boundary, so no row is cut in half", () => {
+  const window = scheduleWindow(`${POLICY}\n${CALENDAR}`, 4_000);
+  assert.doesNotMatch(window, /^[^\n]*\bET L1\/Nash/, "a severed row loses its quote and gets dropped in verification");
+});
+
+test("a document with no dates at all falls back to its opening", () => {
+  const text = "No dates here at all. ".repeat(500);
+  const window = scheduleWindow(text, 1_000);
+  assert.equal(window, text.slice(0, 1_000));
+});
+
+test("the window never exceeds the limit it was given", () => {
+  const text = `${POLICY}\n${CALENDAR}\n${POLICY}`;
+  assert.ok(scheduleWindow(text, 3_000).length <= 3_000);
 });

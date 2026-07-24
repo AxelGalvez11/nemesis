@@ -12,16 +12,29 @@ import { extractDocument } from "@/lib/workspace/chat-attachments";
 import { jsonSlice } from "@/lib/workspace/study-artifact-content";
 import {
   buildSyllabusPrompt,
+  scheduleWindow,
   SYLLABUS_SYSTEM_PROMPT,
   type SyllabusExtraction,
   type VerifiedSyllabus,
   verifySyllabus,
 } from "@/lib/workspace/syllabus";
 
-/** How much of the file the model sees. A syllabus that runs past this is
- *  mostly policy boilerplate — the schedule is near the front — and an
- *  unbounded prompt is an unbounded bill. */
-export const SYLLABUS_TEXT_LIMIT = 24_000;
+/**
+ * How much of the file the model sees.
+ *
+ * This was 24,000 characters, on the assumption that a long syllabus is mostly
+ * policy boilerplate and the schedule sits near the front. A real one says
+ * otherwise: a 13-page, 34,927-character pharmacokinetics syllabus keeps every one
+ * of its 87 dated sessions between characters 25,736 and 33,348 — the course
+ * calendar is an appendix, after the grading policy and the attendance rules.
+ * Against that file the old limit returned NOTHING, and looked like a syllabus with
+ * no dates in it.
+ *
+ * So: a ceiling generous enough for a real syllabus, and when a document does run
+ * past it, the window is chosen by where the dates are rather than by taking the
+ * opening (see scheduleWindow).
+ */
+export const SYLLABUS_TEXT_LIMIT = 60_000;
 
 /** Local yyyy-mm-dd. The calendar stores local dates with no timezone
  *  (calendar-model.ts), so building this from UTC would shift the anchor a day
@@ -66,7 +79,7 @@ export async function readSyllabus(options: ReadSyllabusOptions): Promise<Verifi
   // SAME slice. Verifying against the full text instead would accept a quote
   // from a part of the document the model was never shown — which can only
   // happen by coincidence or fabrication.
-  const text = fullText.slice(0, SYLLABUS_TEXT_LIMIT);
+  const text = scheduleWindow(fullText, SYLLABUS_TEXT_LIMIT);
   if (!text.trim()) {
     return { course: null, term: null, events: [], meetings: [], dropped: [], note: "That file had no readable text." };
   }

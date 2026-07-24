@@ -97,6 +97,66 @@ export interface VerifiedSyllabus {
   note?: string;
 }
 
+// ── Choosing what the model reads ────────────────────────────────────────────
+
+/** Anything that looks like a course-calendar date: "1/6", "01/06/26", "Jan 6",
+ *  "January 6". Used only to LOCATE the schedule, never to parse it — the dates
+ *  themselves are the model's job, checked afterwards against the source. */
+const DATE_LIKE =
+  /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/gi;
+
+/**
+ * The part of a long document worth showing the model.
+ *
+ * Taking the opening N characters assumes the schedule comes first. Measured
+ * against a real 13-page syllabus, every one of its 87 dated sessions sat in the
+ * last quarter — an appendix after the grading and attendance policy — so the
+ * opening slice contained no dates at all and the import came back empty.
+ *
+ * When a document fits, it is returned whole. When it does not, the window that
+ * holds the most dates wins, snapped to a line boundary so a table row is never cut
+ * in half (a severed row would take its quote with it and be dropped in
+ * verification). PURE.
+ */
+export function scheduleWindow(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+
+  const positions: number[] = [];
+  for (const match of text.matchAll(DATE_LIKE)) {
+    if (match.index !== undefined) positions.push(match.index);
+  }
+  if (positions.length === 0) return text.slice(0, limit);
+
+  // Slide a window of `limit` characters over the date positions and keep the
+  // start that covers the most of them. Candidates are the dates themselves, so
+  // this costs one pass rather than one per character.
+  let bestStart = 0;
+  let bestCount = 0;
+  let end = 0;
+  for (let start = 0; start < positions.length; start += 1) {
+    const from = positions[start]!;
+    while (end < positions.length && positions[end]! < from + limit) end += 1;
+    const count = end - start;
+    if (count > bestCount) {
+      bestCount = count;
+      bestStart = from;
+    }
+  }
+
+  // Back up to the start of the line, and take some of what came before: a
+  // schedule table's heading row names the columns the rows depend on. When there is
+  // no line break to back up to — a PDF that extracted as one long run — the offset
+  // stands on its own, because falling back to the start of the document would throw
+  // away the very schedule this just located.
+  const lead = Math.min(bestStart, Math.floor(limit * 0.1));
+  const wanted = Math.max(0, bestStart - lead);
+  const breakAt = text.lastIndexOf("\n", wanted);
+  const from = breakAt >= 0 ? breakAt + 1 : wanted;
+  const slice = text.slice(from, from + limit);
+  const lastBreak = slice.lastIndexOf("\n");
+  return lastBreak > limit * 0.5 ? slice.slice(0, lastBreak) : slice;
+}
+
 // ── Verification helpers ─────────────────────────────────────────────────────
 
 /** Collapse whitespace and case so a quote still matches when the PDF
