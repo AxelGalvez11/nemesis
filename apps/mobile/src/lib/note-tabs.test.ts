@@ -6,6 +6,7 @@ import {
   closeTab,
   EMPTY_NOTE_NAV,
   openTabIds,
+  plainTextOf,
   previewOf,
   selectTab,
   type NoteNavState,
@@ -121,4 +122,47 @@ Deno.test("previewOf drops YAML frontmatter instead of leaking '---' and keys", 
 
 Deno.test("previewOf drops horizontal-rule lines mid-note", () => {
   assertEquals(previewOf("Above the rule.\n\n---\n\nBelow the rule."), "Above the rule. Below the rule.");
+});
+
+// --- plainTextOf: what Find shows instead of the note's raw source
+
+Deno.test("plainTextOf: strips heading marks but keeps the heading text and the line", () => {
+  assertEquals(plainTextOf("## Beta blockers\nSlow the heart."), "Beta blockers\nSlow the heart.");
+});
+
+Deno.test("plainTextOf: strips emphasis, highlight, and code marks", () => {
+  assertEquals(plainTextOf("**Bradycardia** is ==key== and `atropine` reverses ~~it~~."), "Bradycardia is key and atropine reverses it.");
+});
+
+Deno.test("plainTextOf: keeps paragraph breaks, unlike previewOf", () => {
+  assertEquals(plainTextOf("One.\n\nTwo."), "One.\n\nTwo.");
+  assertEquals(previewOf("One.\n\nTwo."), "One. Two.");
+});
+
+Deno.test("plainTextOf: bullets become real bullets, nesting preserved", () => {
+  assertEquals(plainTextOf("- first\n  - nested\n* third"), "• first\n  • nested\n• third");
+});
+
+Deno.test("plainTextOf: links read as their text, images vanish", () => {
+  assertEquals(plainTextOf("See [the chart](https://x.example/a.png) and ![a diagram](x.png)"), "See the chart and");
+});
+
+Deno.test("plainTextOf: wikilinks read as their alias when they have one", () => {
+  assertEquals(plainTextOf("[[Beta blockers]] and [[Beta blockers|these]]"), "Beta blockers and these");
+});
+
+Deno.test("plainTextOf: a table loses its pipes and its separator row", () => {
+  assertEquals(plainTextOf("| Drug | Class |\n| --- | --- |\n| Atenolol | B1 |"), "Drug   Class\nAtenolol   B1");
+});
+
+Deno.test("plainTextOf: code fences go, the code inside stays searchable", () => {
+  assertEquals(plainTextOf("```ts\nconst dose = 5;\n```"), "const dose = 5;");
+});
+
+Deno.test("plainTextOf: leading frontmatter is dropped entirely", () => {
+  assertEquals(plainTextOf("---\ntags: [pharm]\n---\nReal content."), "Real content.");
+});
+
+Deno.test("plainTextOf: blockquote markers go", () => {
+  assertEquals(plainTextOf("> Quoted line\n> and another"), "Quoted line\nand another");
 });

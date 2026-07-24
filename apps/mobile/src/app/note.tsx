@@ -41,7 +41,7 @@ import {
 } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { outlineOf, splitSections } from "@/lib/note-outline";
-import { arriveAt, closeTab, noteNavHolder, openTabIds, previewOf, selectTab } from "@/lib/note-tabs";
+import { arriveAt, closeTab, noteNavHolder, openTabIds, plainTextOf, previewOf, selectTab } from "@/lib/note-tabs";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -272,9 +272,18 @@ export default function NoteScreen() {
   const outline = useMemo(() => outlineOf(sections), [sections]);
 
   const findActive = findOpen && findQuery.trim().length > 0;
+  // Search the note as it READS, not as it is stored (owner 2026-07-24: "dont
+  // show markdown preview at all"). Highlighting a match means owning the <Text>
+  // nodes, which the markdown renderer won't hand over, so Find has to print the
+  // text itself — and printing doc.content meant turning Find on replaced a
+  // clean page with "## Heading", "**bold**" and tables full of pipes. plainTextOf
+  // strips the syntax and keeps the lines, so the same fallback now looks like
+  // the note. Matching the stripped text is also the more honest search: nobody
+  // looking for "bold" means the asterisks around it.
+  const findText = useMemo(() => (findActive && doc ? plainTextOf(doc.content) : ""), [findActive, doc]);
   const segments = useMemo(
-    () => (findActive && doc ? splitMatches(doc.content, findQuery) : null),
-    [findActive, doc, findQuery],
+    () => (findActive && doc ? splitMatches(findText, findQuery) : null),
+    [findActive, doc, findText, findQuery],
   );
   const matchCount = segments ? segments.reduce((n, seg) => n + (seg.hit ? 1 : 0), 0) : 0;
 
@@ -816,8 +825,9 @@ export default function NoteScreen() {
               content straight away — no path/updated metadata line between them. */}
           {titleField}
           {findActive && segments ? (
-            // Find mode: render the note's own text so matches can actually be
-            // highlighted (the markdown renderer builds its own nodes and can't be).
+            // Find mode: render the note's text ourselves so matches can be
+            // highlighted (the markdown renderer builds its own nodes and can't
+            // be). Syntax-stripped first — see findText above.
             <Text style={styles.findBody} testID="note-find-body">
               {segments.map((seg, i) =>
                 seg.hit ? (
