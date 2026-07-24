@@ -258,6 +258,45 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
   throw new Error("Couldn't find an available name for a new note.");
 }
 
+/**
+ * Create a note that already HAS a title and a body — what "save this to my
+ * library" needs (owner 2026-07-24: a photographed page becomes a note).
+ *
+ * Separate from createNote above rather than an options bag on it, because the
+ * two answer different questions: createNote opens an empty page for the
+ * student to write on and deliberately ships EMPTY content, while this one
+ * files something that already exists. Both share the suffix retry, which is
+ * the part that actually matters — two photos of the same slide would otherwise
+ * collide on `Beta blockers.md` and the second would be lost.
+ */
+export async function createNoteWithContent(
+  uid: string,
+  title: string,
+  content: string,
+  folder = "",
+): Promise<CloudLibraryNote> {
+  const now = new Date().toISOString();
+  const base = safeLibraryTitle(title);
+  const where = normalizeLibraryFolder(folder);
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const name = suffix === 1 ? base : `${base} ${suffix}`;
+    const path = where ? `${where}/${name}.md` : `${name}.md`;
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path, kind: "note", title: name, content, deleted: false, updated_at: now })
+      .select("id,path,kind,title,content,created_at,updated_at")
+      .single();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    if (!note) throw new Error("The note was saved but came back unreadable.");
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for that note.");
+}
+
 /** Save one note's edited content — the phone's first library WRITE (owner
  *  2026-07-20: real on-phone editing). Mirrors the web store's saveNote UPDATE
  *  (apps/web/lib/workspace/library-cloud-store.ts) with two deliberate
