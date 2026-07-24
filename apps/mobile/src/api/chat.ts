@@ -80,6 +80,11 @@ import {
 } from "@/lib/chat-threads";
 
 const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-llm`;
+
+// Cost attribution: tells the metering valve WHICH app spent the tokens. Until a build
+// carrying this ships, the valve reads the device-key label ("Nemesis iPhone") instead,
+// so phone spend is attributed either way.
+const CLIENT_HEADER = { "X-Nemesis-Client": "ios" } as const;
 const SEARCH_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-search/v2/search`;
 
 // SecureStore keys allow [A-Za-z0-9._-]; uuids fit as-is.
@@ -153,7 +158,7 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
   try {
     const res = await fetch(SEARCH_URL, {
       body: JSON.stringify({ limit: 5, query }),
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };
@@ -202,7 +207,7 @@ async function postChatCompletion(
   const call = (bearer: string) =>
     expoFetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
-      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
 

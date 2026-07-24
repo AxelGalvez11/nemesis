@@ -17,6 +17,11 @@ import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrad
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 
+// Cost attribution: tells the metering valve WHICH app spent the tokens, so provider
+// spend can be reported per app. The valve falls back to the device-key label when
+// this is missing, and to "unknown" when neither says — never silently to "web".
+const CLIENT_HEADER = { "X-Nemesis-Client": "web" } as const;
+
 export interface WireToolCall {
   id: string;
   type: "function";
@@ -266,7 +271,7 @@ export async function postChatCompletion(
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
-      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
       signal: options.signal,
     });

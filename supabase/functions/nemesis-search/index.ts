@@ -51,6 +51,54 @@ const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_UNITS = 10 // free-tier default when no entitlement row
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
+// ── Cost attribution ────────────────────────────────────────────────────────
+// Same two-ledger split as nemesis-llm: the counters above are the student's unit
+// meter, this is what the unit COST US, tagged with which app spent it.
+// The project token is PUBLISHABLE (it ships in the web bundle) and write-only.
+const POSTHOG_KEY = Deno.env.get('POSTHOG_KEY') ?? 'phc_xcEjfTB3a2ftyzsw7oEAkpiBXRThWWjA3D5BcPBj36ht'
+const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
+
+/** USD per search/scrape unit by the provider that actually answered. These are
+ *  ESTIMATES from the providers' published per-search rates (docs/research/
+ *  competitor-economics-2026-07.md, "about a penny a search") — unlike the token
+ *  prices in nemesis-llm, no provider bills us a line item per call, so events carry
+ *  price_estimated: true and a report must not present them as exact. */
+const UNIT_USD: Record<string, number> = { firecrawl: 0.01, linkup: 0.005, tavily: 0.008 }
+const PRICE_REV = '2026-07-24'
+
+/** Which app is calling. MIRROR of resolveClient in _shared/llm-cost.ts. */
+function resolveClient(header: string | null, keyLabel: string | null): string {
+  const declared = (header ?? '').trim().toLowerCase()
+  if (declared === 'web' || declared === 'ios' || declared === 'desktop') return declared
+
+  const label = keyLabel ?? ''
+  if (/iphone|ipad|ios/i.test(label)) return 'ios'
+  if (/web/i.test(label)) return 'web'
+  if (/desktop|mac/i.test(label)) return 'desktop'
+
+  return 'unknown'
+}
+
+/** Report one billable unit to PostHog. Never throws — a missing cost report must
+ *  never cost a student their search result. */
+async function reportCost(distinctId: string, props: Record<string, unknown>): Promise<void> {
+  if (!POSTHOG_KEY) return
+
+  try {
+    await fetch(`${POSTHOG_HOST}/i/v0/e/`, {
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        event: 'nemesis_service_cost',
+        properties: { distinct_id: distinctId, ...props }
+      }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST'
+    })
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     headers: { 'Content-Type': 'application/json' },
@@ -72,6 +120,8 @@ interface KeyContext {
   monthlyLimit: number
   monthlyUsed: number
   monthStart: string
+  /** Device-key label — the fallback signal for which app spent this unit. */
+  label: string | null
 }
 
 /** Resolve a device key to its user + plan + today's usage. Mirrors nemesis-llm. */
@@ -83,7 +133,7 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
   const keyHash = await sha256Hex(deviceKey)
   const { data: keyRow } = await admin
     .from('device_keys')
-    .select('user_id,revoked')
+    .select('user_id,revoked,label')
     .eq('key_hash', keyHash)
     .maybeSingle()
 
@@ -136,6 +186,7 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
 
   return {
     dailyLimit,
+    label: typeof keyRow.label === 'string' ? keyRow.label : null,
     monthStart,
     monthlyLimit,
     monthlyUsed: usedFor(MONTHLY_COUNTER_KEY, monthStart),
@@ -229,8 +280,17 @@ async function linkupSearch(body: Record<string, unknown>): Promise<Response | n
   })
 }
 
-/** Record one spent unit against today's + this month's counters + the event ledger. */
-async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: string): Promise<void> {
+/** Record one spent unit against today's + this month's counters + the event ledger,
+ *  and report what that unit cost us. `provider` is whichever upstream actually
+ *  answered — they charge different rates, so the cheapest-first routing only shows
+ *  up in the numbers if the winner is recorded. */
+async function recordUsage(
+  ctx: KeyContext,
+  kind: 'scrape' | 'search',
+  detail: string,
+  provider: 'firecrawl' | 'linkup' | 'tavily',
+  client: string
+): Promise<void> {
   const nowIso = new Date().toISOString()
 
   await admin.from('usage_counters').upsert(
@@ -259,13 +319,28 @@ async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: s
     { onConflict: 'user_id,counter_key,period_start' }
   )
 
+  const usd = UNIT_USD[provider] ?? null
+
   await admin.from('usage_events').insert({
     cost_credits: 1,
     counter_key: COUNTER_KEY,
     event_type: `nemesis_search_${kind}`,
-    metadata: { detail: detail.slice(0, 200), kind },
+    metadata: { client, cost_usd: usd, detail: detail.slice(0, 200), kind, price_rev: PRICE_REV, provider },
     period_start: ctx.periodStart,
     user_id: ctx.userId
+  })
+
+  await reportCost(ctx.userId, {
+    client,
+    cost_usd: usd,
+    kind,
+    plan: ctx.plan,
+    // Per-unit search rates are published averages, not a billed line item.
+    price_estimated: true,
+    price_rev: PRICE_REV,
+    provider,
+    service: 'search',
+    units: 1
   })
 
   void maybeWarnCap(ctx, 'daily', ctx.used, ctx.used + 1, ctx.dailyLimit, ctx.periodStart)
@@ -308,6 +383,9 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     return ctx
   }
 
+  // Which app is spending. Header first, device-key label as the fallback.
+  const client = resolveClient(req.headers.get('x-nemesis-client'), ctx.label)
+
   if (ctx.used >= ctx.dailyLimit) {
     return json(
       {
@@ -345,7 +423,7 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     const primary = await linkupSearch(body)
 
     if (primary) {
-      void recordUsage(ctx, 'search', detail)
+      void recordUsage(ctx, 'search', detail, 'linkup', client)
 
       return primary
     }
@@ -353,7 +431,7 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     const secondary = await tavilySearch(body)
 
     if (secondary) {
-      void recordUsage(ctx, 'search', detail)
+      void recordUsage(ctx, 'search', detail, 'tavily', client)
 
       return secondary
     }
@@ -368,7 +446,7 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     : null
 
   if (upstream?.ok) {
-    void recordUsage(ctx, route === '/v2/search' ? 'search' : 'scrape', detail)
+    void recordUsage(ctx, route === '/v2/search' ? 'search' : 'scrape', detail, 'firecrawl', client)
 
     return new Response(await upstream.text(), {
       headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
