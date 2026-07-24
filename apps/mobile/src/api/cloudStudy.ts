@@ -310,13 +310,29 @@ export async function createStudyDeck(userId: string, name: string): Promise<Clo
  *  workspace's createCard insert shape (lib/workspace/study-cloud-store.ts)
  *  — card_type is always "basic" here; the mobile "New cards" flow doesn't
  *  offer the reversed/cloze/image-occlusion types web's dialog does. */
-export async function createStudyCard(userId: string, deckId: string, front: string, back: string): Promise<CloudStudyCard> {
+/** The card kinds the phone can AUTHOR (owner 2026-07-24: "users should be able
+ *  to select card type for adding new cards"). The review screen also renders
+ *  image_occlusion cards, but those are made on the web app where there is a
+ *  picture to draw boxes on. */
+export type NewCardType = "basic" | "cloze";
+
+export async function createStudyCard(
+  userId: string,
+  deckId: string,
+  front: string,
+  back: string,
+  cardType: NewCardType = "basic",
+): Promise<CloudStudyCard> {
   const trimmedFront = front.trim();
   const trimmedBack = back.trim();
-  if (!trimmedFront || !trimmedBack) throw new Error("Add both a front and a back.");
+  if (!trimmedFront) throw new Error(cardType === "cloze" ? "Add some text first." : "Add both a front and a back.");
+  // A cloze card's back is Anki's "Extra" field — genuinely optional, because
+  // the deletions in the FRONT are what make the card. Requiring one would make
+  // every cloze card carry a duplicate of its own sentence.
+  if (cardType === "basic" && !trimmedBack) throw new Error("Add both a front and a back.");
   const { data, error } = await supabase
     .from("study_cards")
-    .insert({ user_id: userId, deck_id: deckId, front: trimmedFront, back: trimmedBack, card_type: "basic", source_path: null })
+    .insert({ user_id: userId, deck_id: deckId, front: trimmedFront, back: trimmedBack, card_type: cardType, source_path: null })
     .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
     .single();
   if (error) throw new Error(error.message);
