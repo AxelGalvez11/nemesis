@@ -80,6 +80,9 @@ import { control, radius, space, type } from "@/theme/tokens";
 // byte-identical to the old single-TextInput editor.
 
 const TOOLBAR_ID = "note-block-toolbar";
+/** The table grid's own keyboard accessory — see NoteTableEditor's
+ *  accessoryViewID for why it is a separate bar rather than this file's. */
+const TABLE_TOOLBAR_ID = "note-table-toolbar";
 
 interface ToolSpec {
   key: string;
@@ -317,6 +320,7 @@ export function NoteBlockEditor({
               body={block.body}
               onChange={onEditActive}
               onInteract={keepActive}
+              accessoryViewID={TABLE_TOOLBAR_ID}
             />
           ) : i === activeIdx ? (
             <TextInput

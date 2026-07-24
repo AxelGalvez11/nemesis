@@ -104,3 +104,62 @@ Deno.test("CRLF documents: blank/fence/frontmatter detection works, bytes preser
   assertEquals(nb.blocks[0].body, "---\r\ntitle: x\r\n---\r\n");
   assertEquals(nb.blocks[2].body, "```\r\ncode\r\n\r\nstill code\r\n```\r\n");
 });
+
+// --- tables get their own block (owner 2026-07-24) ---------------------------
+//
+// "Table in editing mode should not show the markdown at all." The grid editor
+// existed and was wired; it simply never fired, because a table written
+// directly under a heading (which is how everyone writes one) shared a block
+// with it and isTableBlock said no.
+
+Deno.test("a table under a heading is its own block, with no blank line between", () => {
+  const nb = splitBlocks("## Results\n| drug | dose |\n|---|---|\n| aspirin | 81mg |\n");
+  assertEquals(nb.blocks.length, 2);
+  assertEquals(nb.blocks[0].body, "## Results\n");
+  assertEquals(nb.blocks[1].body, "| drug | dose |\n|---|---|\n| aspirin | 81mg |\n");
+});
+
+Deno.test("a sentence written UNDER a table is not swallowed by it", () => {
+  // The worse half of the same bug: parseTable treats every line after the
+  // delimiter as a body row, so this sentence used to be absorbed into the grid
+  // and rewritten as "| That is all. |  |" the moment it saved.
+  const nb = splitBlocks("| a | b |\n|---|---|\n| 1 | 2 |\nThat is all.\n");
+  assertEquals(nb.blocks.length, 2);
+  assertEquals(nb.blocks[0].body, "| a | b |\n|---|---|\n| 1 | 2 |\n");
+  assertEquals(nb.blocks[1].body, "That is all.\n");
+});
+
+Deno.test("a pipe in ordinary prose does NOT start a table", () => {
+  // Only a delimiter row makes a table. Without this guard, a sentence
+  // containing "|" would be torn out of its own paragraph.
+  const md = "Use a | to separate them\nand carry on writing.\n";
+  const nb = splitBlocks(md);
+  assertEquals(nb.blocks.length, 1);
+  assertEquals(joinBlocks(nb), md);
+});
+
+Deno.test("splitting tables out stays byte-for-byte lossless", () => {
+  // The whole block model rests on this: entering and leaving edit mode must
+  // never rewrite a note the student didn't touch.
+  for (
+    const md of [
+      "## Results\n| a | b |\n|---|---|\n| 1 | 2 |\nAfter.\n",
+      "Intro line\n| a | b |\n|---|---|\n\n\nTail\n",
+      "| a | b |\n|---|---|\n",
+      "- bullet\n| a | b |\n|---|---|\n| 1 | 2 |\n- another\n",
+      "\n\n| a | b |\n|---|---|\n",
+      "| a | b |\r\n|---|---|\r\n| 1 | 2 |\r\n",
+    ]
+  ) {
+    assertEquals(joinBlocks(splitBlocks(md)), md, `lossless for ${JSON.stringify(md)}`);
+  }
+});
+
+Deno.test("a table inside a fenced code block is left alone", () => {
+  // Fences are captured whole and must stay that way — a table drawn inside a
+  // code sample is text, not a grid to edit.
+  const md = "```\n| a | b |\n|---|---|\n```\n";
+  const nb = splitBlocks(md);
+  assertEquals(nb.blocks.length, 1);
+  assertEquals(joinBlocks(nb), md);
+});

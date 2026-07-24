@@ -37,6 +37,22 @@ const BLANK_RE = /^[ \t\r]*$/;
  * bytes (including any \r) always stay in the block body. */
 const bareLine = (line: string) => line.replace(/\r?\n$/, "");
 
+/** A line that could be part of a markdown table: it has a pipe in it. */
+const isTableRow = (bare: string) => bare.includes("|") && bare.trim() !== "";
+
+/** A table's second line — `|---|:--:|` and friends. This is the line that
+ *  actually makes a table a table; a lone pipe is just punctuation. */
+const DELIMITER_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+
+/** True when a TABLE starts at `index` — a row of cells followed immediately by
+ *  a delimiter row. Both are required: "a | b" on its own is a sentence with a
+ *  pipe in it, and treating it as a table would tear a paragraph in half. */
+function isTableStart(lines: readonly string[], index: number): boolean {
+  const first = bareLine(lines[index] ?? "");
+  const second = bareLine(lines[index + 1] ?? "");
+  return isTableRow(first) && isTableRow(second) && DELIMITER_ROW.test(second);
+}
+
 /** Split markdown into blocks. Blank lines separate blocks; a fenced code
  * block (``` or ~~~) and a leading YAML frontmatter block (--- ... ---) are
  * each kept whole even though they may contain blank lines. */
@@ -100,6 +116,40 @@ export function splitBlocks(md: string): NoteBlocks {
         i += 1;
         if (bareLine(inner) === "---") break;
       }
+      continue;
+    }
+
+    // A TABLE is its own block, even with no blank line around it.
+    //
+    // This is what makes the grid editor actually fire (owner 2026-07-24:
+    // "table in editing mode should not show the markdown at all"). Blank lines
+    // alone are not enough of a boundary, because nobody writes
+    //
+    //     ## Results
+    //
+    //     | drug | dose |
+    //
+    // — they write the heading directly above the table. That put the heading
+    // and the table in ONE block, isTableBlock saw a leading "## Results" and
+    // said no, and the whole thing opened as raw source: pipes, dashes and all.
+    //
+    // Ending the run at the last table-shaped line matters just as much, and
+    // for a worse reason: parseTable treats every line after the delimiter as a
+    // body row, so a sentence written under a table used to be absorbed INTO
+    // it and rewritten as "| That is all. |  |" the moment the grid saved.
+    if (isTableStart(lines, i)) {
+      if (body.length > 0) {
+        // Close the paragraph above the table without consuming a gap — the
+        // table starts a new block right here, sharing no blank line.
+        blocks.push({ body: body.join(""), gap: "" });
+        body = [];
+      }
+      while (i < lines.length && isTableRow(bareLine(lines[i]))) {
+        body.push(lines[i]);
+        i += 1;
+      }
+      blocks.push({ body: body.join(""), gap: "" });
+      body = [];
       continue;
     }
 
