@@ -55,6 +55,49 @@ export function detectsSaveRequest(text: string): boolean {
   return SAVE_TO_WORKSPACE.test(compact);
 }
 
+// A message that asks how the student is DOING — retention, scores, what to
+// review next. Same tool-gate hazard as a save, one layer up: "how am I doing
+// on cardio pharm?" trips LEARNING_PATTERN ("how"), lands on the reasoner, and
+// toolsAllowed() strips every tool — so read_study_performance would be absent
+// on exactly the questions it exists to answer, and the model would confabulate
+// a progress report instead of reading the real review log.
+//
+// Deliberately enumerated rather than a wildcard, because the failure mode is
+// asymmetric: a missed performance question just answers without data (today's
+// behaviour), while a false positive drops a genuine reasoning question onto the
+// non-thinking model. So every arm needs BOTH a first-person self-reference and
+// a performance noun; "how do I calculate retention" and "explain spaced
+// repetition" must not match. Pinned by chat-routing.test.ts.
+const PERFORMANCE_PATTERNS: RegExp[] = [
+  // "how am I doing", "how'm I doing on my cards", "how is my retention"
+  /\bhow(?:'s|'m|\s+(?:is|am|are|was|were))\s+(?:i|my)\b[^.?!]{0,60}\b(?:doing|performing|progress|retention|accuracy|scores?|results?|cards?|decks?|tests?|quiz(?:zes)?|flash\s?cards?|studying|reviews?)\b/i,
+  // "how did I do on the last test"
+  /\bhow\s+did\s+i\s+do\b/i,
+  // possessive performance nouns — "my retention", "my weak areas", "my stats"
+  /\bmy\s+(?:study\s+|test\s+|quiz\s+|overall\s+)?(?:progress|retention|accuracy|performance|scores?|results?|stats|statistics|streak|lapses|weak(?:\s+(?:areas?|spots?|topics?|points?|subjects?))?)\b/i,
+  // "what should I review / focus on / study next"
+  /\bwhat\s+(?:should|do|ought)\s+i\s+(?:need\s+to\s+)?(?:review|study|focus|work|practice|drill|brush\s+up)\b/i,
+  // "am I ready for the exam"
+  /\bam\s+i\s+(?:ready|prepared|on\s+track|behind|improving)\b/i,
+  // "which cards do I keep missing", "what topics am I failing"
+  /\b(?:which|what)\s+(?:cards?|topics?|decks?|questions?|subjects?|areas?)\s+(?:do\s+|am\s+|are\s+)?i\s+(?:keep|always|often|usually|still|consistently)?\s*(?:miss|missing|forget|forgetting|fail|failing|struggl\w*|get(?:ting)?\s+wrong)\b/i,
+  // "based on my study data", "look at my review history"
+  /\b(?:based\s+on|look\s+at|check|pull\s+up|according\s+to)\s+my\s+(?:study\s+|review\s+|test\s+)?(?:data|history|logs?|reviews?|results?|performance|record)\b/i,
+];
+
+/** Does this message ask Nemesis to look at how the student is doing? Pure and
+ *  exported so the routing tests can pin real student phrasings. */
+export function detectsPerformanceRequest(text: string): boolean {
+  const compact = text.trim();
+  return PERFORMANCE_PATTERNS.some((pattern) => pattern.test(compact));
+}
+
+/** A turn that must keep the tools-capable model, whatever else it looks like:
+ *  the answer is performed by a tool call, not by thinking harder. */
+export function needsWorkspaceTools(text: string): boolean {
+  return detectsSaveRequest(text) || detectsPerformanceRequest(text);
+}
+
 export function classifyChatRequest(text: string): ChatRouteDecision {
   const compact = text.trim();
   // A save request wins over every reasoner route below so its tools can fire.
@@ -62,8 +105,13 @@ export function classifyChatRequest(text: string): ChatRouteDecision {
   // never emit route "conversation" for a save, so sendChatTurn's web
   // re-promotion (which only upgrades "conversation" to the reasoner) can't
   // quietly undo this.
-  if (detectsSaveRequest(compact)) {
-    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
+  if (needsWorkspaceTools(compact)) {
+    // A performance question is about the student's OWN logged data — the web
+    // has nothing to add, so it never promotes to search even if it happens to
+    // say "latest" ("how did I do on my latest test").
+    const wantsWeb =
+      !detectsPerformanceRequest(compact) &&
+      (RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact));
     return wantsWeb
       ? { route: "current", model: "deepseek-chat", searchWeb: true }
       : { route: "learning", model: "deepseek-chat", searchWeb: false };

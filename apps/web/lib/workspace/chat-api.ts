@@ -11,7 +11,7 @@ import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspa
 import { writeCardFor } from "@/lib/workspace/chat-write-cards";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { classifyChatRequest, detectsSaveRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { classifyChatRequest, needsWorkspaceTools, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import type { ThinkingPhase } from "@/lib/workspace/thinking-phase";
@@ -46,11 +46,18 @@ export const CHAT_SYSTEM_PROMPT =
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. " +
   "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
-  "list flashcard decks and add cards, save practice tests and mind maps to their Study page, and list or add calendar events. " +
+  "list flashcard decks and add cards, save practice tests and mind maps to their Study page, read how they are performing across " +
+  "their cards and tests, and list or add calendar events. " +
   "When a student asks you to make flashcards, a practice test, or a mind map, WRITE it yourself and save it with the matching tool in the same turn — " +
   "do not just describe it in prose. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
-  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. " +
+  "note or calendar says. After any write, state plainly what you created or changed. " +
+  "Their Library is their own semester material and their Study history is their own record: when a question is about what THEY know, what " +
+  "they should review, how they are doing, or whether they are ready for something, call read_study_performance (and search their Library " +
+  "when the topic matters) before you answer, and ground the advice in what you find. Report the returned figures exactly as given — you may " +
+  "explain and interpret them, but never estimate, round away, or invent a retention rate, score, or streak. When their history is empty, say " +
+  "so plainly and offer to help them start, rather than describing progress that does not exist. " +
+  "School portals are still handled by the Mac app's missions. " +
   "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
   "answered what was actually asked. If a step does not hold up, fix it before replying rather than hedging afterwards. When you are unsure, say what " +
   "you are unsure about and what would settle it — never fill a gap with something that merely sounds right.";
@@ -358,11 +365,12 @@ export async function sendChatTurn(
   const classified = classifyChatRequest(userText);
   const needsWeb = classified.searchWeb || shouldSearchWeb(userText);
   // A late "conversation → current" web promotion moves the turn onto the
-  // reasoner, which loses its tools. A save request must never make that jump:
-  // classifyChatRequest already keeps saves off route "conversation", and this
-  // guard makes that invariant explicit so a future edit can't quietly reopen
-  // the "make me flashcards" saves-nothing bug.
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !detectsSaveRequest(userText)
+  // reasoner, which loses its tools. A turn that needs the workspace tools —
+  // a save, or a question about the student's own performance — must never make
+  // that jump: classifyChatRequest already keeps those off route
+  // "conversation", and this guard makes that invariant explicit so a future
+  // edit can't quietly reopen the "make me flashcards" saves-nothing bug.
+  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !needsWorkspaceTools(userText)
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.

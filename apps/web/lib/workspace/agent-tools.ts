@@ -10,6 +10,13 @@ import { supabase } from "@/lib/supabase";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
+import {
+  summarizePerformance,
+  type CardRow,
+  type DeckRow,
+  type ReviewLogRow,
+  type TestArtifactRow,
+} from "./study-performance";
 
 const MAX_NOTE_CHARS = 8_000;
 const MAX_LIST = 30;
@@ -137,6 +144,22 @@ export const AGENT_TOOLS = [
           title: { description: "Mind map title, e.g. 'RAAS pathway'", type: "string" },
         },
         required: ["title", "outline"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Read how this student is actually DOING: per-deck retention and card mix, cards that keep lapsing, practice-test scores and the questions they keep missing. " +
+        "Call this before answering anything about their progress, what to review, or whether they are ready for an exam. " +
+        "Every number it returns is computed from their real review history — report those numbers as given and never estimate your own.",
+      name: "read_study_performance",
+      parameters: {
+        properties: {
+          days: { description: "How many days of review history to include (default 30, max 365)", type: "number" },
+        },
         type: "object",
       },
     },
@@ -342,6 +365,40 @@ async function addFlashcards(deckName: string, cards: { front: string; back: str
   return { added: cleanCards.length, created_deck: createdDeck, deck: name };
 }
 
+/** Rows pulled for one performance read. Bounded on BOTH sides — a time window
+ *  and a row cap — because a heavy user's review log grows without limit and
+ *  this runs inline in a chat turn. The study_review_logs
+ *  (user_id, reviewed_at desc) index makes the windowed slice cheap. */
+const PERF_DEFAULT_DAYS = 30;
+const PERF_MAX_DAYS = 365;
+const PERF_MAX_CARDS = 2_000;
+const PERF_MAX_LOGS = 4_000;
+const PERF_MAX_TESTS = 60;
+
+async function readStudyPerformance(daysRaw: number) {
+  const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(Math.round(daysRaw), PERF_MAX_DAYS) : PERF_DEFAULT_DAYS;
+  const now = new Date();
+  const since = new Date(now.getTime() - days * 86_400_000).toISOString();
+
+  const [decksRes, cardsRes, logsRes, testsRes] = await Promise.all([
+    supabase.from("study_decks").select("id,name").limit(MAX_LIST * 4),
+    supabase.from("study_cards").select("id,deck_id,front,interval_days,repetitions,lapses,suspended,due_at").limit(PERF_MAX_CARDS),
+    supabase.from("study_review_logs").select("card_id,grade,reviewed_at").gte("reviewed_at", since).order("reviewed_at", { ascending: false }).limit(PERF_MAX_LOGS),
+    supabase.from("study_artifacts").select("title,group_name,content").eq("kind", "test").limit(PERF_MAX_TESTS),
+  ]);
+  const failure = decksRes.error ?? cardsRes.error ?? logsRes.error ?? testsRes.error;
+  if (failure) return { error: failure.message };
+
+  return summarizePerformance({
+    cards: (cardsRes.data ?? []) as CardRow[],
+    decks: (decksRes.data ?? []) as DeckRow[],
+    logs: (logsRes.data ?? []) as ReviewLogRow[],
+    now,
+    tests: (testsRes.data ?? []) as TestArtifactRow[],
+    windowDays: days,
+  });
+}
+
 async function listCalendarEvents(daysAhead: number) {
   const days = Number.isFinite(daysAhead) && daysAhead > 0 ? Math.min(daysAhead, 120) : 14;
   const today = new Date().toISOString().slice(0, 10);
@@ -391,6 +448,7 @@ export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
       case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as { front: string; back: string }[]) : []);
       case "add_practice_test": return await addPracticeTest(args);
       case "add_mindmap": return await addMindmap(args);
+      case "read_study_performance": return await readStudyPerformance(Number(args.days));
       case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
       case "add_calendar_event": return await addCalendarEvent(args);
       default: return { error: `Unknown tool '${call.name}'.` };

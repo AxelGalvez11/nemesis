@@ -1,11 +1,19 @@
 // Notebook file source extraction — turns an uploaded PDF / Word / PowerPoint into plain text server
 // side (Node runtime: unpdf + fflate need it), then hands the text back to the client, which writes
 // the notebook_sources row under its own RLS session. The file bytes are never stored — text in,
-// text out (the "extract to text" pipeline). This route holds no secrets and does no DB writes.
+// text out (the "extract to text" pipeline). This route does no DB writes.
+//
+// It is the single chokepoint for THREE lanes — Library import (library-sidebar.tsx), notebook
+// sources (notebook-source-actions.ts), and chat attachments (chat-attachments.ts) — so the
+// scanned-PDF vision fallback below reaches all of them from one place.
+//
+// Secrets: none required. GEMINI_API_KEY is read ONLY if present, purely to enable that fallback;
+// with no key the route behaves exactly as it did before (see lib/pdf/vision.ts).
 import { NextResponse } from "next/server";
 
 import { extractDocxText, extractPptxText } from "@/lib/notebooks/office";
-import { extractPdfText } from "@/lib/pdf/extract";
+import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
+import { readPdfWithVision } from "@/lib/pdf/vision";
 
 export const runtime = "nodejs";
 
@@ -67,7 +75,25 @@ export async function POST(req: Request): Promise<Response> {
       result = extractPptxText(bytes);
     }
 
-    const text = result.text.trim();
+    let text = result.text.trim();
+    // A scanned or photographed PDF has no text LAYER to extract — the words are
+    // pixels. That used to be the end of the road (the 422 below). When vision is
+    // configured we read the pages instead; when it is not, or the file is too
+    // big, or the provider fails, readPdfWithVision returns null and the original
+    // 422 stands unchanged. See lib/pdf/vision.ts.
+    let readBy: string | undefined;
+    if (!text && kind === "pdf") {
+      const seen = await readPdfWithVision(bytes);
+      if (seen) {
+        text = seen.text.trim();
+        readBy = seen.model;
+        // extractPdfText derives its title from the text layer, so a scanned PDF
+        // always arrived here with title null. Now that there IS text, guess from
+        // it — but ONLY on this path, so Word/PowerPoint titles are untouched.
+        result = { ...result, title: result.title ?? guessTitle(text) };
+      }
+    }
+
     if (!text) {
       return NextResponse.json(
         {
@@ -86,6 +112,9 @@ export async function POST(req: Request): Promise<Response> {
       title: result.title ?? (baseName || "Untitled document"),
       text,
       bytes: file.size,
+      // Present only when the pages had to be read as images, so a caller (and
+      // the student) can tell a transcription apart from an exact text layer.
+      ...(readBy ? { readBy } : {}),
     });
   } catch (err) {
     return NextResponse.json(

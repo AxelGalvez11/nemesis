@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
-import { classifyChatRequest, detectsSaveRequest, routeInstruction } from "./chat-routing";
+import { toolsAllowed } from "./chat-effort";
+import { classifyChatRequest, detectsPerformanceRequest, detectsSaveRequest, needsWorkspaceTools, routeInstruction } from "./chat-routing";
 
 // Ordinary conversation stays on the least expensive lane.
 assert.deepEqual(classifyChatRequest("hello"), {
@@ -85,5 +86,62 @@ for (const prompt of [
 }
 // The reasoner routes those still resolve to are untouched by the save gate.
 assert.equal(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
+
+// --- performance questions ---------------------------------------------------
+// Same tool-gate hazard as a save, one layer up: these all trip LEARNING_PATTERN
+// ("how", "study", "practice", "quiz") or the 120-char rule, which would land
+// them on the reasoner — and toolsAllowed() strips every tool there, so
+// read_study_performance would be missing on exactly the questions it answers.
+for (const prompt of [
+  "how am I doing?",
+  "how am I doing on my flashcards",
+  "how's my retention on the cardio deck",
+  "how did I do on the last practice test",
+  "what's my progress this month",
+  "show me my weak areas",
+  "my test scores are what exactly",
+  "what should I review today",
+  "what do I need to study before Friday",
+  "am I ready for the exam",
+  "which cards do I keep missing",
+  "what topics am I failing",
+  "based on my study data, where am I weakest",
+  "check my review history and tell me what to drill",
+]) {
+  assert.equal(detectsPerformanceRequest(prompt), true, prompt);
+  assert.equal(needsWorkspaceTools(prompt), true, prompt);
+  const decision = classifyChatRequest(prompt);
+  assert.equal(decision.model, "deepseek-chat", prompt);
+  assert.notEqual(decision.route, "conversation", prompt);
+  assert.equal(decision.reasoningEffort, undefined, prompt);
+  // toolsAllowed() is the gate that actually matters — pin it here too so a
+  // future edit to either file can't silently strip the tools again.
+  assert.equal(toolsAllowed(decision), true, prompt);
+}
+
+// A performance question never promotes to web search: the answer lives in the
+// student's own logs, and "my latest test" must not trigger a news lookup.
+for (const prompt of ["how did I do on my latest test", "what should I review today"]) {
+  assert.equal(classifyChatRequest(prompt).searchWeb, false, prompt);
+}
+
+// Teaching questions that merely mention these words must NOT read as
+// performance — they belong on the reasoner, where the thinking is worth it.
+for (const prompt of [
+  "how do I calculate retention in spaced repetition",
+  "explain how spaced repetition scheduling works",
+  "what is a good retention rate for medical students",
+  "how should students study for pharmacology exams",
+  "teach me how to make flashcards that actually work",
+  "why do I forget things I studied last week",
+  "explain the forgetting curve",
+]) {
+  assert.equal(detectsPerformanceRequest(prompt), false, prompt);
+}
+assert.equal(classifyChatRequest("explain how spaced repetition scheduling works").model, "deepseek-reasoner");
+
+// A save is still a save, and both gates feed the same tools invariant.
+assert.equal(needsWorkspaceTools("make flashcards about the Krebs cycle"), true);
+assert.equal(needsWorkspaceTools("explain how beta blockers work"), false);
 
 console.log("chat-routing.test.ts OK");
