@@ -121,6 +121,16 @@ function resolveClient(header: string | null, keyLabel: string | null): string {
   return 'unknown'
 }
 
+/** Keep a background promise alive past the response. Metering runs un-awaited so
+ *  the student never waits on it, but the runtime can tear the isolate down the
+ *  moment a streamed response closes — and a streamed chat is nearly every chat, so
+ *  without this the cost report is exactly the thing that gets cut. */
+function keepAlive(work: Promise<unknown>): void {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime
+
+  if (typeof runtime?.waitUntil === 'function') runtime.waitUntil(work)
+}
+
 /** Fire one $ai_generation into PostHog's LLM analytics. Never throws and never
  *  blocks the student's answer — a cost report going missing must not break chat. */
 async function reportCost(props: Record<string, unknown>, distinctId: string): Promise<void> {
@@ -356,6 +366,32 @@ async function recordUsage(
   const completionTokens = estimated ? 0 : Math.max(0, Math.round(usage.completion))
   const usd = costUsd(model, { cacheHitTokens: cacheHit, completionTokens, promptTokens })
 
+  // The same facts to PostHog, where they land in LLM analytics as a generation and
+  // can be sliced by app without anyone writing SQL. usd is OURS (computed from the
+  // provider's published prices), so PostHog doesn't guess it from a model name.
+  keepAlive(
+    reportCost(
+      {
+        $ai_cache_read_input_tokens: cacheHit,
+        $ai_input_tokens: promptTokens,
+        $ai_latency: Math.round(latencyMs) / 1000,
+        $ai_model: model,
+        $ai_output_tokens: completionTokens,
+        $ai_provider: model.toLowerCase().startsWith('glm') ? 'z.ai' : 'deepseek',
+        $ai_total_cost_usd: usd ?? undefined,
+        $ai_trace_id: crypto.randomUUID(),
+        client,
+        cost_estimated: estimated,
+        // Unpriced = a model missing from the price list. Counted, never treated as $0.
+        cost_unpriced: usd === null,
+        metered_tokens: spent,
+        plan: ctx.plan,
+        price_rev: PRICE_REV
+      },
+      ctx.userId
+    )
+  )
+
   await admin.from('usage_counters').upsert(
     {
       counter_key: COUNTER_KEY,
@@ -408,29 +444,6 @@ async function recordUsage(
     user_id: ctx.userId
   })
 
-  // The same facts to PostHog, where they land in LLM analytics as a generation and
-  // can be sliced by app without anyone writing SQL. usd is OURS (computed from the
-  // provider's published prices), so PostHog doesn't guess it from a model name.
-  await reportCost(
-    {
-      $ai_cache_read_input_tokens: cacheHit,
-      $ai_input_tokens: promptTokens,
-      $ai_latency: Math.round(latencyMs) / 1000,
-      $ai_model: model,
-      $ai_output_tokens: completionTokens,
-      $ai_provider: model.toLowerCase().startsWith('glm') ? 'z.ai' : 'deepseek',
-      $ai_total_cost_usd: usd ?? undefined,
-      $ai_trace_id: crypto.randomUUID(),
-      client,
-      cost_estimated: estimated,
-      // Unpriced = a model missing from the price list. Counted, never treated as $0.
-      cost_unpriced: usd === null,
-      metered_tokens: spent,
-      plan: ctx.plan,
-      price_rev: PRICE_REV
-    },
-    ctx.userId
-  )
 
   // Fire a single early-warning event the first time this spend pushes the user
   // past CAP_WARN_FRACTION of the daily or monthly cap (crossed = below before,
