@@ -106,6 +106,14 @@ const REASONING_FLUSH_MS = 220;
  *  far enough that it shows up as soon as there is genuinely something below. */
 const JUMP_TO_BOTTOM_AT = 160;
 
+/** The question a photo asks when the student has not typed one. Written as a
+ *  student would ask it, because it is shown in the transcript as their own
+ *  message — so it has to read like something a person would say, not a system
+ *  instruction. Deliberately open: the photo could be a slide, a page, a
+ *  whiteboard or a piece of equipment, and naming the wrong one would steer the
+ *  answer. */
+const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
+
 // Where the remembered intelligence dial lives, per signed-in account. Same
 // SecureStore idiom as the General settings screen (app/profile/general.tsx),
 // so the choice survives app launches and chat switches.
@@ -421,33 +429,6 @@ export default function ChatScreen() {
     return () => setHeaderTitle(null);
   }, [setHeaderTitle]);
 
-  // A shot the student accepted: store it, read it, and hand the words to the
-  // next turn. The sheet STAYS UP with a spinner until this lands — dropping
-  // back to chat first would leave the student watching an empty composer with
-  // no sign that a 3 MB upload was in flight.
-  const usePhoto = useCallback(
-    async (uri: string) => {
-      if (!uid) return;
-      setPhotoBusy(true);
-      try {
-        const read = await storeAndReadPhoto(uid, uri);
-        setPhoto(read);
-        setPhotoSaved("idle");
-        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
-        // photograph is a Library note, because where a fact came from changes
-        // how much weight it deserves.
-        setAttachedDoc({ content: read.text, title: photoAttachmentTitle(read.title) });
-        setCameraOpen(false);
-      } catch (cause) {
-        // api/photos.ts throws sentences, so this reaches the screen as-is.
-        setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
-        setCameraOpen(false);
-      } finally {
-        setPhotoBusy(false);
-      }
-    },
-    [uid],
-  );
 
   // "…and even saved to library if it's a note" (owner). Deliberately a TAP,
   // not a guess: a photo of a slide is a note and a photo of a broken pipette
@@ -470,8 +451,15 @@ export default function ChatScreen() {
     setPhotoSaved("idle");
   }, []);
 
-  const send = useCallback(() => {
-    const text = input.trim();
+  /** Send a turn.
+   *
+   *  `override` exists for the camera: a photo has to go straight out for
+   *  analysis, and the question plus the attachment are known at that moment but
+   *  are NOT yet in state — a setState in the same tick would not have flushed, so
+   *  reading them from state here would send an empty turn with no picture. The
+   *  composer passes nothing and everything comes from state as before. */
+  const send = useCallback((override?: { text?: string; doc?: { content: string; title: string }; keepPhoto?: boolean }) => {
+    const text = (override?.text ?? input).trim();
     if (!text || !uid || !threadId || sendingRef.current) return;
     sendingRef.current = true;
     const epoch = epochRef.current;
@@ -481,7 +469,7 @@ export default function ChatScreen() {
     // same turn), deep research is a persistent toggle the student switches
     // off themselves (NOT cleared here). Both ride into sendChat's options,
     // never into the persisted/displayed ChatMsg.content itself.
-    const doc = attachedDoc;
+    const doc = override?.doc ?? attachedDoc;
     const research = deepResearchOn;
     const chosenEffort = effort;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
@@ -490,11 +478,19 @@ export default function ChatScreen() {
     setLastError(null);
     setInput("");
     setAttachedDoc(null);
-    // The picture goes with it: the attachment is one-shot, and a chip left
-    // offering "Save to Library" after the turn has gone would be pointing at
-    // something that is no longer attached to anything.
-    setPhoto(null);
-    setPhotoSaved("idle");
+    // The picture normally goes with it: the attachment is one-shot, and a chip
+    // left offering "Save to Library" after the turn has gone would be pointing
+    // at something that is no longer attached to anything.
+    //
+    // keepPhoto is the camera's exception. A photo now sends itself the moment it
+    // is taken, so the student never gets a beat in which to tap "Save to
+    // Library" — clearing here would delete the offer before it was ever on
+    // screen. The photo stays available to save while its answer arrives; the
+    // ATTACHMENT is still cleared, so it cannot ride a second turn.
+    if (!override?.keepPhoto) {
+      setPhoto(null);
+      setPhotoSaved("idle");
+    }
     setSending(true);
     setStreamingText("");
     setPhase({ kind: "routing" });
@@ -566,6 +562,50 @@ export default function ChatScreen() {
         }
       });
   }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
+
+  // A shot the student accepted: store it, read it, and hand the words to the
+  // next turn. The sheet STAYS UP with a spinner until this lands — dropping
+  // back to chat first would leave the student watching an empty composer with
+  // no sign that a 3 MB upload was in flight.
+  const usePhoto = useCallback(
+    async (uri: string) => {
+      if (!uid) return;
+      setPhotoBusy(true);
+      try {
+        const read = await storeAndReadPhoto(uid, uri);
+        setPhoto(read);
+        setPhotoSaved("idle");
+        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
+        // photograph is a Library note, because where a fact came from changes
+        // how much weight it deserves.
+        const doc = { content: read.text, title: photoAttachmentTitle(read.title) };
+        setAttachedDoc(doc);
+        setCameraOpen(false);
+        // Straight out for analysis (owner 2026-07-24: "taking a photo should
+        // send it to the chat for analysis"). Every piece of this already
+        // existed — camera, upload, Gemini read, attachment — but the photo then
+        // sat as a silent chip waiting for the student to think of something to
+        // type, so taking a picture appeared to do nothing at all.
+        //
+        // Whatever they had already typed is the question, because their own
+        // words beat any default. An empty composer gets PHOTO_ANALYSIS_ASK.
+        // Passed explicitly rather than through state: the setAttachedDoc above
+        // has not flushed yet, so a send that read state would go out with no
+        // picture attached.
+        send({ doc, keepPhoto: true, text: input.trim() || PHOTO_ANALYSIS_ASK });
+      } catch (cause) {
+        // api/photos.ts throws sentences, so this reaches the screen as-is.
+        setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
+        setCameraOpen(false);
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    // `send` and `input` are read at capture time to build the turn. usePhoto is
+    // only ever called from the camera sheet's shutter, so a re-created callback
+    // costs nothing here.
+    [uid, send, input],
+  );
 
   // Promote the buffered reasoning onto the screen a few times a second while a
   // turn is in flight. Rendering every chunk would mean hundreds of re-renders
@@ -1145,9 +1185,14 @@ export default function ChatScreen() {
               }}
             />
           ) : null}
-          {composerMode === "chat" && attachedDoc ? (
+          {/* `photo` as well as `attachedDoc`: a photo now sends itself, which
+              clears the attachment immediately, and the chip is where "Save to
+              Library" lives. Without the second condition the offer would vanish
+              in the same frame it appeared. Once the attachment is gone the chip
+              is purely that offer — the picture is not riding any further turn. */}
+          {composerMode === "chat" && (attachedDoc || photo) ? (
             <AttachedDocChip
-              title={attachedDoc.title}
+              title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
               onRemove={clearAttachment}
               thumbnailUri={photo?.imageUrl ?? null}
               onSave={photo ? () => void savePhotoToLibrary() : undefined}
@@ -1157,7 +1202,10 @@ export default function ChatScreen() {
           <Composer
             value={input}
             onChangeText={setInput}
-            onSend={send}
+            // Wrapped, not passed straight through: the send button hands its
+            // press event to onPress, and send() now takes an optional override
+            // object — an event arriving in that slot would be read as one.
+            onSend={() => send()}
             onPlus={() => {
               setEffortMenuOpen(false);
               setPlusMenuOpen((v) => !v);
