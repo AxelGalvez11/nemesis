@@ -95,19 +95,31 @@ export interface WireMsg {
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
- *  plain, concise, no emojis, never a different product's name. Adopted
- *  verbatim from the web CHAT_SYSTEM_PROMPT (apps/web/lib/workspace/chat-api.ts)
- *  so a thread shared between phone and web sounds the same either side — the
- *  "Mac app's missions" line is a known stale reference on web too (tracked,
- *  out of scope for this round). */
+ *  plain, concise, no emojis, never a different product's name. Adopted from the
+ *  web CHAT_SYSTEM_PROMPT (apps/web/lib/workspace/chat-api.ts) so a thread shared
+ *  between phone and web sounds the same either side.
+ *
+ *  THE WORKSPACE PARAGRAPH IS LOAD-BEARING, and it used to say the opposite. This
+ *  prompt previously ended "if a question needs the student's own files … say that
+ *  the Mac app's missions handle those" — correct while the phone had no tools, and
+ *  actively harmful the moment it did: the same turn would hand the model
+ *  search_library and create_library_note while instructing it to decline and send
+ *  the student to a different app. A tool the prompt disowns is a tool the model
+ *  will not call. The list below is deliberately concrete about what this app's
+ *  tools can do, and stops at what the phone actually offers — no calendar tools
+ *  here, unlike web. */
 export const CHAT_SYSTEM_PROMPT =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
-  "Never use emojis. If a question needs the student's own files or their school portals, " +
-  "say that the Mac app's missions handle those and answer what you can from knowledge.";
+  "Never use emojis. " +
+  "You can see and change this student's own Nemesis workspace through your tools: search and read their Library notes, create a note, " +
+  "add to an existing note, make folders, rename and move notes, list their flashcard decks, add cards to a deck, and save practice tests " +
+  "and mind maps to their Study page. Use the tools whenever a question involves their own notes or decks, or when they ask you to make or " +
+  "save something — read their real material instead of guessing, and never invent what one of their notes says. After any change, say " +
+  "plainly what you created or changed and where it is. School portals are still handled by the Mac app.";
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —

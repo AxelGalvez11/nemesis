@@ -400,9 +400,17 @@ export async function sendChat(
     announcedWriting = false;
     if (reply.text) carried = `${carried}${reply.text}\n\n`;
 
-    const results = await Promise.all(
-      calls.map(async (call) => ({ call, result: await executeAgentTool(uid, call) })),
-    );
+    // SEQUENTIAL, not Promise.all. Two calls in one round can depend on each
+    // other's writes: two add_flashcards naming the same NEW deck would both run
+    // the does-this-deck-exist lookup before either insert landed, both miss, and
+    // both create it — the duplicate-deck outcome matchDeckName exists to prevent,
+    // handed straight back by the parallelism. A round almost never has more than
+    // two calls and the wall-clock here is dominated by the model, so there is
+    // nothing to win by overlapping them.
+    const results: { call: AgentToolCall; result: unknown }[] = [];
+    for (const call of calls) {
+      results.push({ call, result: await executeAgentTool(uid, call) });
+    }
     // The assistant's tool request and each result are appended to THIS TURN'S wire
     // array only. None of it is persisted: a ChatMsg has no tool role, and the web
     // renderer reads the same `chat_messages` rows (see WireMsg's doc comment).
@@ -425,12 +433,17 @@ export async function sendChat(
     ];
   }
 
-  // `carried` is prepended so the saved message holds everything the student
-  // watched arrive, not just the final round's share of it. `toolCalls` is dropped:
-  // it is internal to this turn, and the screen persists whatever it is handed.
-  const { toolCalls: _internal, ...rest } = reply;
-  const text = carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text;
-  return { ...rest, sources, text };
+  // Built field by field rather than spread from `reply`, so `toolCalls` cannot
+  // ride out of here: it is internal to this turn, and the screen persists whatever
+  // it is handed. `carried` is prepended so the saved message holds everything the
+  // student watched arrive, not just the final round's share of it.
+  return {
+    budgetReset: reply.budgetReset,
+    errorKind: reply.errorKind,
+    errorText: reply.errorText,
+    sources,
+    text: carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
+  };
 }
 
 // --- local cache file (instant open + offline read) -------------------------

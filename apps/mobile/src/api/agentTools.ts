@@ -20,6 +20,7 @@ import {
   createFolder,
   createNoteWithContent,
   fetchLibrary,
+  fetchNote,
   moveNote,
   renameNote,
   updateNoteContent,
@@ -113,9 +114,11 @@ async function createLibraryNote({ args, uid }: ToolContext) {
 }
 
 /** Notes on the phone are addressed by PATH everywhere the model can see (search
- *  returns paths), but every write helper takes the row's id. This is the one
- *  translation, kept in a single place so each library tool resolves it the same
- *  way and gives the same advice when it misses. */
+ *  returns paths), but every write helper takes the row's id. This is that
+ *  translation for the tools that already hold a full snapshot, kept in one place
+ *  so each of them resolves a path the same way and gives the same advice when it
+ *  misses. (appendLibraryNote does not use it — it fetches its single note
+ *  directly rather than pulling a snapshot it has no other use for.) */
 function noteByPath(snapshot: CloudLibrarySnapshot, path: string): CloudLibraryNote | null {
   const wanted = path.trim();
   if (!wanted) return null;
@@ -137,9 +140,15 @@ function noteByPath(snapshot: CloudLibrarySnapshot, path: string): CloudLibraryN
 async function appendLibraryNote({ args, uid }: ToolContext) {
   const addition = str(args.content).trim();
   if (!addition) return { error: "Nothing to add." };
-  const snapshot = await fetchLibrary(uid);
-  const note = noteByPath(snapshot, str(args.path));
-  if (!note) return { error: `No note at '${str(args.path)}'. Use search_library to find the right path.` };
+  const path = str(args.path).trim();
+  if (!path) return { error: "Which note? Use search_library to get its path." };
+  // ONE ROW, not the whole Library. fetchLibrary selects `content` for every note
+  // the student owns, so using it here would pull their entire Library — note
+  // bodies and all — across a phone connection to add one paragraph. The three
+  // tools below genuinely need the full snapshot (they check name collisions
+  // against every sibling); this one only needs the note it is writing to.
+  const note = await fetchNote(uid, { path });
+  if (!note) return { error: `No note at '${path}'. Use search_library to find the right path.` };
   // One blank line between what was there and what is being added, unless the
   // note is empty — otherwise the new text runs into the last sentence.
   const existing = note.content.replace(/\s+$/, "");
