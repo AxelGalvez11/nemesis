@@ -39,6 +39,13 @@ import {
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
 import {
+  formatLibraryContext,
+  notesUsed,
+  shouldSearchLibrary,
+  type LibraryHit,
+} from "@/lib/library-context";
+import { searchLibrarySemantic } from "./librarySearch";
+import {
   buildLiveNotesMessages,
   FINAL_NOTES_MAX_KEPT,
   FINAL_NOTES_MAX_WINDOWS,
@@ -299,6 +306,13 @@ export async function sendChat(
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
+  // The student's own notes, looked up by meaning. Started HERE, before the web
+  // search, and awaited after it: the two are independent lookups, so running
+  // them at the same time costs one wait instead of two. Never rejects — an
+  // empty list is the normal outcome for a topic they have no notes on.
+  const libraryLookup: Promise<LibraryHit[]> = shouldSearchLibrary(userText)
+    ? searchLibrarySemantic(userText)
+    : Promise.resolve([]);
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     // The phase echoes the student's OWN words, not `query` — the "current"
@@ -311,6 +325,14 @@ export async function sendChat(
     groundedText = result.context
       ? `${groundedText}\n\n${result.context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
+  }
+  // The Library goes in LAST, after any web results, so the closest thing to hand
+  // when the model starts writing is the student's own course material.
+  const libraryHits = await libraryLookup;
+  const libraryContext = formatLibraryContext(libraryHits);
+  if (libraryContext) {
+    onPhase?.({ kind: "recalling", notes: notesUsed(libraryHits) });
+    groundedText = `${groundedText}\n\n${libraryContext}`;
   }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
   // The preview's job ends the moment real words appear, so the first delta
