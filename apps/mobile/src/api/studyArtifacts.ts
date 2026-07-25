@@ -194,13 +194,8 @@ export async function deleteStudyArtifact(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Missed questions as flashcard drafts — the prompt on the front, the correct
- *  option plus its explanation on the back. Active recall, not recognition. */
-export function missedQuestionCards(questions: TestQuestion[], missed: TestAttempt["missed"]): { front: string; back: string }[] {
-  return missed.flatMap((miss) => {
-    const question = questions[miss.questionIndex];
-    if (!question) return [];
-    const answer = question.options[question.answer] ?? "";
-    return [{ back: question.why ? `${answer}\n\n${question.why}` : answer, front: question.q }];
-  });
-}
+// Deliberately NOT ported here yet: the web's missedQuestionCards(), which turns
+// the questions you got wrong into flashcard drafts. It needs a deck picker and a
+// card-insert path on top of it to mean anything, and a helper with no caller is
+// dead weight that reads as a half-built feature. Worth building as its own thing
+// — "turn my misses into cards" is a genuinely good end to a test.

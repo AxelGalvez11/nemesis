@@ -98,6 +98,20 @@ import { control, radius, space, type } from "@/theme/tokens";
 // byte-identical to the old single-TextInput editor.
 
 const TOOLBAR_ID = "note-block-toolbar";
+
+// lib/accessory-bar.ts writes its height out as a literal so it can stay
+// import-free and therefore testable. This line is what keeps that literal
+// honest: both sides have literal types, so if `control.lg` changes and
+// ACCESSORY_BAR_HEIGHT does not, `tsc` fails here rather than shipping a bar
+// whose scroller and buttons are different heights.
+//
+// The rail padding needs no equivalent: the call site below passes `space(3)`
+// straight into accessoryPillWidth, so there is nothing to drift out of step.
+// (A first attempt asserted on it the same way and tsc rejected it — `space()`
+// returns a plain `number`, not a literal. Passing the token was the better fix
+// than weakening the check.)
+const _accessoryBarIsOneControlTall: typeof ACCESSORY_BAR_HEIGHT = control.lg;
+void _accessoryBarIsOneControlTall;
 /** The table grid's own keyboard accessory — see NoteTableEditor's
  *  accessoryViewID for why it is a separate bar rather than this file's. */
 const TABLE_TOOLBAR_ID = "note-table-toolbar";
@@ -154,7 +168,7 @@ export function NoteBlockEditor({
   // The toolbar's width has to be a NUMBER, not a percentage — see
   // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
   const { width: windowWidth } = useWindowDimensions();
-  const pillWidth = accessoryPillWidth(windowWidth);
+  const pillWidth = accessoryPillWidth(windowWidth, space(3));
 
   const [nb, setNb] = useState<NoteBlocks>(() => splitBlocks(content));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);

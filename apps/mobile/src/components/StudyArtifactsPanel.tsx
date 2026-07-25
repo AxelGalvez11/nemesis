@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { EmptyBlock, MissionButton } from "./mission-ui";
 import { GlassSurface } from "./GlassSurface";
@@ -8,6 +8,7 @@ import { SkeletonDeckList } from "./Skeleton";
 import { SlideUpSheet } from "./StudySheet";
 import {
   bestAttempt,
+  deleteStudyArtifact,
   listStudyArtifacts,
   recordTestAttempt,
   scoreAttempt,
@@ -105,7 +106,34 @@ export function StudyArtifactsPanel({
         testID={`study-${kind}-list`}
       >
         {rows.map((artifact) => (
-          <ArtifactRow key={artifact.id} artifact={artifact} onOpen={() => setOpen(artifact)} />
+          <ArtifactRow
+            key={artifact.id}
+            artifact={artifact}
+            onOpen={() => setOpen(artifact)}
+            onDelete={() => {
+              // Every other row on the Study page deletes by long press, so the
+              // absence of it here would read as a missing feature rather than a
+              // decision. Study deletes are PERMANENT on this app (Library is the
+              // surface with a soft delete), so it asks first.
+              Alert.alert(`Delete "${artifact.title}"?`, "This can't be undone.", [
+                { style: "cancel", text: "Cancel" },
+                {
+                  onPress: () => {
+                    // Optimistic: the row goes at once, and a failed delete puts
+                    // it back rather than leaving a row that is gone on screen
+                    // and present in the account.
+                    setRows((prev) => prev?.filter((row) => row.id !== artifact.id) ?? prev);
+                    void deleteStudyArtifact(artifact.id).catch((cause) => {
+                      setRows((prev) => (prev ? [artifact, ...prev] : prev));
+                      onError(cause instanceof Error ? cause.message : "Couldn't delete that.");
+                    });
+                  },
+                  style: "destructive",
+                  text: "Delete",
+                },
+              ]);
+            }}
+          />
         ))}
       </ScrollView>
       <SlideUpSheet
@@ -133,7 +161,15 @@ export function StudyArtifactsPanel({
   );
 }
 
-function ArtifactRow({ artifact, onOpen }: { artifact: StudyArtifact; onOpen: () => void }) {
+function ArtifactRow({
+  artifact,
+  onOpen,
+  onDelete,
+}: {
+  artifact: StudyArtifact;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
   const styles = useThemedStyles(createStyles);
   const best = artifact.attempts?.length ? bestAttempt(artifact.attempts) : null;
   const detail =
@@ -145,10 +181,12 @@ function ArtifactRow({ artifact, onOpen }: { artifact: StudyArtifact; onOpen: ()
   return (
     <Pressable
       onPress={ready ? onOpen : undefined}
-      disabled={!ready}
+      onLongPress={onDelete}
+      delayLongPress={300}
       style={({ pressed }) => [styles.row, pressed && ready && styles.rowPressed]}
       accessibilityRole="button"
       accessibilityLabel={artifact.title}
+      accessibilityHint="Touch and hold to delete."
       testID={`study-artifact-${artifact.id}`}
     >
       <View style={styles.rowText}>

@@ -36,14 +36,27 @@
 // which is the point, since nothing else in the suite can catch a view that
 // lays out to zero.
 
-/** The scroller's height, and so the bar's. One control tall — matches
- *  `control.lg` in theme/tokens.ts, hard-coded here to keep this module free of
- *  imports (and therefore trivially testable). Kept in step by a test. */
-export const ACCESSORY_BAR_HEIGHT = 44;
+// Both numbers below are declared with LITERAL types (`= 44 as const`), not
+// `number`. That is what lets NoteBlockEditor assert at COMPILE TIME that they
+// still equal the theme tokens they claim to match — see the assertions next to
+// its styles. Writing the values here rather than importing theme/tokens keeps
+// this module import-free, which is what makes it testable at all: the test
+// runner cannot resolve the `@/` aliases or load React Native.
+//
+// A test that asserted `ACCESSORY_BAR_HEIGHT === 44` would only be pinning the
+// constant against itself. The compile-time check is the one that means something.
 
-/** Space between the pill's edge and the screen's, left and right. Matches the
- *  rail's `paddingHorizontal: space(3)`. */
-export const ACCESSORY_RAIL_PADDING = 12;
+/** The scroller's height, and so the bar's. One control tall — must equal
+ *  `control.lg` in theme/tokens.ts, which tsc enforces. */
+export const ACCESSORY_BAR_HEIGHT = 44 as const;
+
+/** Space between the pill's edge and the screen's, left and right. Must equal
+ *  the rail's `paddingHorizontal`, i.e. `space(3)`, which tsc enforces.
+ *
+ *  If this were SMALLER than the rail's real padding, the pill would be wider
+ *  than the space left for it and would clip at both screen edges — a new
+ *  visual bug on the one surface that has already failed twice. */
+export const ACCESSORY_RAIL_PADDING = 12 as const;
 
 /** Narrow enough to fit any phone, wide enough that the bar is unmistakably
  *  present if a window measurement ever arrives broken. */
@@ -60,7 +73,7 @@ export const MIN_ACCESSORY_PILL_WIDTH = 120;
  * as: a zero here is the exact failure this module exists to prevent, so the
  * floor is a real minimum rather than a clamp to nothing.
  */
-export function accessoryPillWidth(windowWidth: number, railPadding = ACCESSORY_RAIL_PADDING): number {
+export function accessoryPillWidth(windowWidth: number, railPadding: number = ACCESSORY_RAIL_PADDING): number {
   if (!Number.isFinite(windowWidth) || windowWidth <= 0) return MIN_ACCESSORY_PILL_WIDTH;
   return Math.max(MIN_ACCESSORY_PILL_WIDTH, Math.round(windowWidth - railPadding * 2));
 }

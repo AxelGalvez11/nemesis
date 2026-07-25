@@ -15,11 +15,14 @@ import {
 } from "./accessory-bar.ts";
 
 Deno.test("the bar has a real height — a zero here is an invisible toolbar", () => {
+  // Deliberately NOT `=== 44`: that would pin the constant against itself and
+  // prove nothing. That it still equals theme/tokens' control.lg is checked at
+  // COMPILE TIME in NoteBlockEditor.tsx, where both tokens are in scope — this
+  // test only holds the property that matters here, which is that the number is
+  // real and positive, because zero is an invisible toolbar.
   assertStrictEquals(typeof ACCESSORY_BAR_HEIGHT, "number");
   assertEquals(ACCESSORY_BAR_HEIGHT > 0, true);
-  // Matches control.lg in theme/tokens.ts. If that token changes, change this
-  // together with it — the bar must stay exactly one control tall.
-  assertStrictEquals(ACCESSORY_BAR_HEIGHT, 44);
+  assertEquals(ACCESSORY_RAIL_PADDING >= 0, true);
 });
 
 Deno.test("the pill width is a definite number on every phone size", () => {

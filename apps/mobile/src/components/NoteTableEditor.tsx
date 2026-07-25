@@ -68,7 +68,7 @@ export function NoteTableEditor({
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
-  const pillWidth = accessoryPillWidth(windowWidth);
+  const pillWidth = accessoryPillWidth(windowWidth, space(3));
   // The caller only mounts this for a block that parses, so the fallback is
   // purely defensive — a one-cell table is still something you can type in.
   const [table, setTable] = useState<MarkdownTable>(
