@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { GlassSurface } from "./GlassSurface";
@@ -29,6 +30,7 @@ import {
   wrapInline,
   type EditSel,
 } from "@/lib/note-edit";
+import { ACCESSORY_BAR_HEIGHT, accessoryPillWidth } from "@/lib/accessory-bar";
 import { preprocessWikilinks } from "@/lib/wikilinks";
 import type { IconProps } from "./icons";
 import {
@@ -149,6 +151,10 @@ export function NoteBlockEditor({
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { colors: c } = useTheme();
+  // The toolbar's width has to be a NUMBER, not a percentage — see
+  // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
+  const { width: windowWidth } = useWindowDimensions();
+  const pillWidth = accessoryPillWidth(windowWidth);
 
   const [nb, setNb] = useState<NoteBlocks>(() => splitBlocks(content));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -322,14 +328,18 @@ export function NoteBlockEditor({
   const toolbar = useMemo(
     () => (
       <View style={styles.toolbarRail} pointerEvents="box-none">
-        <GlassSurface style={styles.toolbarPill} fallbackColor={c.glassMenu} opaque shadow>
+        {/* The explicit width is load-bearing, not cosmetic: a horizontal
+            ScrollView takes its width from its parent, and this pill used to be
+            shrink-to-fit, so each was waiting on the other and the bar laid out
+            zero pixels wide. lib/accessory-bar.ts has the whole story. */}
+        <GlassSurface style={[styles.toolbarPill, { width: pillWidth }]} fallbackColor={c.glassMenu} opaque shadow>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="always"
-            // See styles.toolbarScroll: without a fixed height this scroller
-            // collapses to nothing inside the keyboard accessory view, which is
-            // what made the whole toolbar invisible.
+            // Height for the same reason as the width above — a scroller has no
+            // intrinsic size in either axis, and an accessory view sizes itself
+            // to its child, so anything indefinite here renders as nothing.
             style={styles.toolbarScroll}
             contentContainerStyle={styles.toolbarRow}
           >
@@ -469,25 +479,26 @@ const createStyles = (c: ThemeColors) =>
     // flexGrow (not a fixed height) so on a short note the target is the whole
     // rest of the page rather than a 180pt strip with dead space under it.
     tail: { flexGrow: 1, minHeight: 180 },
-    // Floating pill above the keyboard (owner's ask verbatim) — centered, not
-    // a full-width bar.
+    // Floating pill above the keyboard (owner's ask verbatim). The rail centres
+    // it; the WIDTH is applied inline from accessoryPillWidth() because it must
+    // be a number — the `maxWidth: "100%"` that used to live here was a
+    // percentage of a parent that had no width of its own, so it clamped nothing
+    // and left the pill with no width to give the scroller inside it.
     toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
     toolbarPill: {
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: c.line,
       overflow: "hidden",
-      maxWidth: "100%",
     },
-    // WHY THE EXPLICIT HEIGHT (owner 2026-07-24: "editing toolbar is still
-    // missing"). The bar was built and correctly wired, and it still drew
-    // nothing, because these 14 buttons scroll horizontally while the cloze
-    // toolbar's four sit in a plain row. A ScrollView has no intrinsic height —
-    // it expects a parent to give it one — and InputAccessoryView sizes itself
-    // to its content, so the two of them agreed on zero and the pill rendered
-    // 0pt tall above the keyboard. Pinning the scroller to exactly one button's
-    // height breaks the cycle; `toolbarRow` then centres the buttons in it.
-    toolbarScroll: { height: control.lg },
+    // Both of the bar's dimensions are definite, and both had to be — see
+    // lib/accessory-bar.ts, which owns the numbers and the reasoning. Short
+    // version: an InputAccessoryView sizes itself to its child, a horizontal
+    // ScrollView has no intrinsic size in either axis, so anything left to
+    // "measure itself" here renders as nothing at all. The height was fixed on
+    // 2026-07-23 and the toolbar was STILL invisible, because the width was the
+    // same bug on the other axis. `toolbarRow` then centres the buttons in it.
+    toolbarScroll: { height: ACCESSORY_BAR_HEIGHT },
     toolbarRow: { alignItems: "center", paddingHorizontal: space(1.5) },
     // Circle when it holds a single glyph, pill when a wider one needs the
     // room — never the rounded square this was (owner 2026-07-23: "make sure

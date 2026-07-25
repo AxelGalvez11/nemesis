@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { InputAccessoryView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { InputAccessoryView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { GlassSurface } from "./GlassSurface";
+import { accessoryPillWidth } from "@/lib/accessory-bar";
 import {
   addColumn,
   addRow,
@@ -66,6 +67,8 @@ export function NoteTableEditor({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const pillWidth = accessoryPillWidth(windowWidth);
   // The caller only mounts this for a block that parses, so the fallback is
   // purely defensive — a one-cell table is still something you can type in.
   const [table, setTable] = useState<MarkdownTable>(
@@ -158,7 +161,7 @@ export function NoteTableEditor({
       {Platform.OS === "ios" && accessoryViewID ? (
         <InputAccessoryView nativeID={accessoryViewID} backgroundColor="transparent">
           <View style={styles.accessoryRail} pointerEvents="box-none">
-            <GlassSurface style={styles.accessoryPill} fallbackColor={c.glassMenu} opaque shadow>
+            <GlassSurface style={[styles.accessoryPill, { maxWidth: pillWidth }]} fallbackColor={c.glassMenu} opaque shadow>
               <View style={styles.accessoryRow}>{sizeControls}</View>
             </GlassSurface>
           </View>
@@ -201,7 +204,13 @@ const createStyles = (c: ThemeColors) =>
     // The keyboard accessory: the same floating glass pill the note toolbar
     // uses, so the two bars are visibly the same kind of thing.
     accessoryRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
-    accessoryPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden", maxWidth: "100%" },
+    // These controls sit in a plain row, so the pill measures itself from its
+    // children and has never collapsed the way the two scrolling toolbars did
+    // (lib/accessory-bar.ts). The old `maxWidth: "100%"` is gone all the same: a
+    // percentage of a parent with no width clamps nothing, so it was a guard
+    // that read as real and wasn't. maxWidth comes from the window instead, and
+    // now genuinely keeps a wide row from running off the screen edge.
+    accessoryPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     accessoryRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(2), paddingVertical: space(1) },
     gridInner: { paddingRight: space(4) },
     grid: { borderWidth: 1, borderColor: c.line, borderRadius: radius.sm, overflow: "hidden" },
