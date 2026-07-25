@@ -52,6 +52,23 @@ export interface ChatMsg {
   /** Deliverables recorded against this turn (persisted into the cloud row's
    *  `meta.outputs`) — see ChatOutput's doc. */
   outputs?: ChatOutput[];
+  /** What the model worked through before answering, kept so it can be reopened
+   *  after the fact (persisted into the cloud row's `meta.thinking`).
+   *
+   *  This is the model's OWN reasoning as it streamed — never a summary and never
+   *  written by us. Turns with thinking switched off (Instant mode) simply have
+   *  no field, which is the normal quiet case rather than a failure.
+   *
+   *  It used to be discarded the instant the first answer word arrived, so a
+   *  student who looked away had no way to see why an answer said what it said. */
+  thinking?: MessageThinking;
+}
+
+export interface MessageThinking {
+  /** Wall-clock milliseconds from question to first answer text. */
+  ms: number;
+  /** The reasoning text itself. */
+  text: string;
 }
 
 export interface WireMsg {

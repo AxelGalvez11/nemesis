@@ -44,6 +44,7 @@ import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
 import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
+import { ThoughtTrail } from "@/components/ThoughtTrail";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
@@ -533,6 +534,14 @@ export default function ChatScreen() {
         if (epochRef.current !== epoch) return;
         if (reply.text) {
           hapticAnswerReady();
+          // Keep what it worked through, so the answer can be opened up later
+          // (owner 2026-07-24: the thinking preview should be "modern like
+          // chatgpt or claude"). Both of those keep a collapsed row you can
+          // expand after the fact; ours used to throw the reasoning away the
+          // moment the first answer word landed. This is the model's OWN text,
+          // never a summary we wrote. An Instant turn runs with thinking off and
+          // simply has none.
+          const thought = reasoningRef.current.trim();
           const next: ChatMsg[] = [
             ...base,
             {
@@ -540,6 +549,7 @@ export default function ChatScreen() {
               content: reply.text,
               role: "assistant",
               ...(reply.sources.length ? { sources: reply.sources } : {}),
+              ...(thought ? { thinking: { ms: Date.now() - turnStartedAtRef.current, text: thought } } : {}),
             },
           ];
           setMessages(next);
@@ -1002,6 +1012,13 @@ export default function ChatScreen() {
                       <Text style={styles.thoughtNote} testID="chat-thought-note">
                         {settledLabel(item.thoughtMs)}
                       </Text>
+                    ) : null}
+                    {/* A finished turn keeps what it worked through, openable —
+                        the half ChatGPT and Claude both have that we did not.
+                        Above the answer, same place the live line was, so the
+                        transcript does not jump as one replaces the other. */}
+                    {item.msg!.thinking ? (
+                      <ThoughtTrail thinking={item.msg!.thinking} testID="chat-thought-trail" />
                     ) : null}
                     <MessageBody content={item.msg!.content} styles={markdownStyles} />
                     {item.msg!.sources?.length ? (

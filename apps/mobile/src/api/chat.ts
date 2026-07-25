@@ -419,8 +419,15 @@ async function withOneRetry<T extends SupabaseResult>(fn: () => PromiseLike<T>):
  *  has no UPDATE grant, so an existing row is never overwritten — see
  *  syncThreadToCloud's ignoreDuplicates upsert below). */
 function cloudMessageRow(uid: string, threadId: string, message: ChatMsg & { id: string }) {
-  const meta = message.sources?.length || message.outputs?.length
-    ? { ...(message.sources?.length ? { sources: message.sources } : {}), ...(message.outputs?.length ? { outputs: message.outputs } : {}) }
+  const thinking = message.thinking?.text ? { ms: message.thinking.ms, text: message.thinking.text.slice(0, 40_000) } : null;
+  const meta = message.sources?.length || message.outputs?.length || thinking
+    ? {
+        ...(message.sources?.length ? { sources: message.sources } : {}),
+        ...(message.outputs?.length ? { outputs: message.outputs } : {}),
+        // Clamped well under the content column's own limit: reasoning on a deep
+        // turn runs long, and this rides in a jsonb column alongside sources.
+        ...(thinking ? { thinking } : {}),
+      }
     : null;
   return {
     content: message.content.slice(0, 60_000),
