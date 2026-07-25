@@ -5,6 +5,12 @@
 // verify_jwt=false so this custom check is the gate.
 //
 // Contract per tick:
+//   0. The caller already holds the run lease (20260725T01) — pg_cron takes it
+//      before it fires this function, and this function hands it back when the
+//      batch is done. Without it, a run longer than the 2-minute cron period let
+//      the next tick pull the SAME documents and pay for the same embeddings
+//      twice; with backoff in place that also meant charging a healthy note for
+//      the loser's unique violation.
 //   1. Ask list_dirty_library_docs for up to DOC_LIMIT stale notes. That RPC is
 //      the ONLY definition of "stale" — it does the LEFT JOIN and the LIMIT in
 //      one SQL statement. Selecting documents here and filtering in JS would
@@ -125,6 +131,24 @@ async function clearFailure(doc: DirtyDoc): Promise<void> {
   }
 }
 
+/**
+ * Hand back the run lease that run_library_indexing() took before calling us.
+ *
+ * Called only after the batch loop finishes — NOT from a `finally`. A finally
+ * does not run when the platform kills the isolate, so it cannot be the thing
+ * the design depends on; the lease's own expiry has to cover that case anyway.
+ * Releasing here means the ten-minute window only ever applies to a run that
+ * really died, while a normal 2-second run frees the lease immediately.
+ */
+async function releaseLease(): Promise<void> {
+  try {
+    await admin.rpc('release_library_index_lease')
+  } catch {
+    // Absent until 20260725T01 is applied, and harmless if it fails: the lease
+    // expires on its own. Never worth failing a completed batch over.
+  }
+}
+
 /** Replace one document's chunks, then stamp it. Throws on failure. */
 async function indexDocument(doc: DirtyDoc, hash: string): Promise<number> {
   const chunks = chunkNote(doc.content.slice(0, MAX_CONTENT_CHARS)).slice(0, MAX_CHUNKS_PER_DOC)
@@ -178,7 +202,12 @@ Deno.serve(async (req) => {
   if (new URL(req.url).pathname.endsWith('/embed-query')) return await embedQuery(req)
 
   const { data, error } = await admin.rpc('list_dirty_library_docs', { p_limit: DOC_LIMIT })
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // Nothing was touched, so holding the lease for ten more minutes would only
+    // delay the tick that might succeed.
+    await releaseLease()
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
   const docs = (data ?? []) as DirtyDoc[]
   let indexed = 0
@@ -220,6 +249,8 @@ Deno.serve(async (req) => {
       failures.push(`${doc.document_id}${count === null ? '' : ` (attempt ${count})`}: ${reason}`)
     }
   }
+
+  await releaseLease()
 
   if (failures.length) console.warn('library-index failures:', failures.join(' | '))
   return Response.json({

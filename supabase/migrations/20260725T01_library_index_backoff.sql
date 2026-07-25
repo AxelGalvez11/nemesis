@@ -29,7 +29,35 @@
 -- lifetime, so they get their own row, created on first failure and deleted on
 -- first success.
 --
--- ── BUG 2: A SEARCH THAT COMES BACK SHORT (latent) ──────────────────────────
+-- ── BUG 2: TWO TICKS ON THE SAME BATCH ──────────────────────────────────────
+--
+-- pg_cron fires every 2 minutes and net.http_post is fire-and-forget, so nothing
+-- stops tick N+1 starting while tick N is still running. Both then call
+-- list_dirty_library_docs and get the SAME documents — the first tick has not
+-- stamped them yet. UNIQUE (document_id, chunk_index) means this cannot corrupt
+-- the index, but both ticks pay for the same embeddings, and the loser's INSERT
+-- raises a unique violation.
+--
+-- Harmless before this file. NOT harmless with backoff: that spurious violation
+-- would now be recorded as a real failure and delay a note that is perfectly
+-- fine — and since both ticks share the whole batch, one slow tick could back
+-- off up to 40 healthy documents at once. The stall fix needs this lease to be
+-- correct, which is why they ship together.
+--
+-- A lease and not an advisory lock: a lock taken in run_library_indexing()
+-- releases the instant net.http_post returns, so it would never cover the edge
+-- function's actual runtime. A row with an expiry does. The conditional UPDATE
+-- is atomic on its own, so two ticks racing cannot both win it.
+--
+-- Ten minutes, from measurement rather than from the cron period: library-index
+-- runs observed in production 2026-07-25 took 1.7s to 3.1s, so ten minutes is
+-- roughly 200x headroom for a batch far larger than any seen. It is released on
+-- the success path, so that window only ever applies when the function actually
+-- died mid-run — exactly when a long guard is what you want. The cost of a crash
+-- is then at most ten minutes of indexing delay, picked up automatically by the
+-- next tick; searches keep working on the chunks that already exist.
+--
+-- ── BUG 3: A SEARCH THAT COMES BACK SHORT (latent) ──────────────────────────
 --
 -- HNSW visits a fixed number of candidates and the WHERE clause is applied
 -- AFTERWARDS. match_library_chunks has two hard filters — RLS scoping to one
@@ -185,7 +213,107 @@ comment on function public.list_dirty_library_docs is
 -- document that is backing off. That shared definition is why this file does not
 -- have to touch the scheduler at all.
 
--- ── 4. An ANN search that cannot come back short ────────────────────────────
+-- ── 4. One indexing run at a time ───────────────────────────────────────────
+
+-- Exactly one row, enforced by the type: `id` can only be true, and it is the
+-- primary key. No sequence, no chance of a second lease appearing.
+create table if not exists public.library_index_lease (
+  id boolean primary key default true check (id),
+  -- '-infinity' reads as "free" without a nullable column and a three-state
+  -- comparison in every caller.
+  leased_until timestamptz not null default '-infinity',
+  leased_at timestamptz
+);
+insert into public.library_index_lease (id) values (true) on conflict (id) do nothing;
+
+alter table public.library_index_lease enable row level security;
+revoke all on public.library_index_lease from public, anon, authenticated;
+grant select, update on public.library_index_lease to service_role;
+
+comment on table public.library_index_lease is
+  'Single-row mutex for the library indexer. Taken by run_library_indexing() before it fires the edge function, released by that function when it finishes, expires by itself if it dies.';
+
+-- The whole mutex. `where leased_until < now()` inside the UPDATE is what makes
+-- it atomic: two ticks racing both run this statement, and row locking means the
+-- second one re-evaluates the condition against the first one's committed row
+-- and matches nothing. Returns true to the winner, NULL (no rows) to the loser.
+-- VOLATILE by default and must stay so — marking it stable would let the planner
+-- reuse a result and hand the lease to both.
+create or replace function public.take_library_index_lease(p_seconds int default 600)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  update public.library_index_lease
+     set leased_until = now() + make_interval(secs => greatest(60, least(p_seconds, 3600))),
+         leased_at = now()
+   where id = true
+     and leased_until < now()
+  returning true;
+$$;
+
+create or replace function public.release_library_index_lease()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.library_index_lease set leased_until = '-infinity' where id = true;
+$$;
+
+revoke execute on function public.take_library_index_lease(int) from public, anon, authenticated;
+revoke execute on function public.release_library_index_lease() from public, anon, authenticated;
+grant execute on function public.take_library_index_lease(int) to service_role;
+grant execute on function public.release_library_index_lease() to service_role;
+
+-- Rewritten from 20260723T02 to take the lease. The only change is the guard;
+-- the Vault lookup deliberately stays ABOVE it, so a project whose secrets are
+-- unset returns without holding a lease nobody will ever release.
+create or replace function public.run_library_indexing()
+returns integer
+language plpgsql
+security definer
+set search_path = public, extensions, vault
+as $$
+declare
+  v_url text;
+  v_key text;
+begin
+  -- Cheap exit first: nothing to do when no live note is stale. Shares ONE
+  -- definition of staleness with the indexer's batch selection, which is also
+  -- why the cron now goes quiet when the only work left is backing off.
+  if not exists (select 1 from public.list_dirty_library_docs(1)) then
+    return 0;
+  end if;
+
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'library_index_url';
+  select decrypted_secret into v_key from vault.decrypted_secrets where name = 'library_index_service_role_key';
+  if v_url is null or v_key is null then
+    raise warning 'library indexer: stale notes exist but Vault secrets (library_index_url / library_index_service_role_key) are unset — skipping';
+    return 0;
+  end if;
+
+  -- A run is already in flight. Doing nothing is correct: the work is still
+  -- dirty, and this tick would only pay twice for it.
+  if not coalesce(public.take_library_index_lease(), false) then
+    return 0;
+  end if;
+
+  -- ONE call per tick: the function drains its own batch internally (DOC_LIMIT),
+  -- so fan-out here would just multiply concurrent embedding spend.
+  perform net.http_post(
+    url := v_url,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_key),
+    body := '{}'::jsonb
+  );
+  return 1;
+end;
+$$;
+
+revoke execute on function public.run_library_indexing() from public, anon, authenticated;
+
+-- ── 5. An ANN search that cannot come back short ────────────────────────────
 
 -- `hnsw.*` is only a RECOGNISED parameter once pgvector's library is loaded into
 -- the session; in a connection that has never touched a vector it is an unknown
