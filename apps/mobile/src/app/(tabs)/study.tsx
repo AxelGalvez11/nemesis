@@ -10,6 +10,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { StudyArtifactsPanel } from "@/components/StudyArtifactsPanel";
 import { SkeletonDeckList } from "@/components/Skeleton";
 import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
@@ -90,8 +91,11 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the control stays one tap wide. It IS this screen's header: it's published
 // into the TopBar's center slot, where the word "Study" used to sit (same
 // owner, later the same day), so the list gets that whole row back.
-// Tests/Mindmaps aren't built yet, so selecting them swaps the deck list for
-// an inline "coming soon" panel rather than routing anywhere. Stats rides in
+// Tests and Mindmaps are REAL as of 2026-07-24 (they said "coming soon" for
+// weeks while the artifacts already existed in the account, written from the web
+// or by chat, and were invisible here): selecting either swaps the deck list for
+// StudyArtifactsPanel, which reads study_artifacts — the same rows the web
+// workspace writes. Stats rides in
 // the same menu as a trailing row; tapping it still opens the same
 // numbers-only SlideUpSheet as before (due/new/total/decks — no invented
 // streak metric).
@@ -115,11 +119,6 @@ const INDENT_STEP = 14;
  *  "::"-prefix shared by some decks — it has no row of its own server-side — so
  *  its actions fan out across every deck beneath it (see lib/study-tree.ts). */
 type StudyRowTarget = { kind: "deck"; id: string; name: string } | { kind: "folder"; path: string; label: string };
-
-const COMING_SOON_LABEL: Record<Exclude<StudyModeKey, "cards">, string> = {
-  tests: "Tests",
-  mindmaps: "Mindmaps",
-};
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -767,10 +766,16 @@ export default function StudyScreen() {
           )}
         </ScrollView>
       ) : (
-        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={[styles.comingSoonWrap, { paddingTop: contentTop }]} testID={`study-mode-panel-${activeMode}`}>
-          <EmptyBlock
-            title={COMING_SOON_LABEL[activeMode]}
-            body={`${COMING_SOON_LABEL[activeMode]} mode is coming soon. Cards has your due decks covered for now.`}
+        // Tests and Mindmaps are real now (owner 2026-07-24). Both segments said
+        // "coming soon" while the artifacts they refer to were already in the
+        // student's account — written on the web, or by chat — and invisible on
+        // the device they study on.
+        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={styles.flex} testID={`study-mode-panel-${activeMode}`}>
+          <StudyArtifactsPanel
+            kind={activeMode === "tests" ? "test" : "mindmap"}
+            contentTop={contentTop}
+            contentBottom={contentBottom}
+            onError={(message) => Alert.alert("Couldn't do that", message)}
           />
         </Animated.View>
       )}
@@ -1112,10 +1117,6 @@ const createStyles = (c: ThemeColors) =>
     folderTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
     folderTotal: { ...type.small, fontWeight: "600", color: c.text3, fontVariant: ["tabular-nums"] },
     folderDue: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
-
-    // Inline Tests/Mindmaps placeholder (owner ask 1) — replaces the deck list
-    // area while one of those two is the active segment.
-    comingSoonWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6) },
 
     // The "…" header actions button + its dropdown (owner 2026-07-23).
     kebabBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
