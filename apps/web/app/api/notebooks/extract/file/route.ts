@@ -13,7 +13,8 @@ import { NextResponse } from "next/server";
 
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
-import { describeFiguresWithVision, readPdfWithVision } from "@/lib/pdf/vision";
+import { splicePages, thinPages, unreadPages } from "@/lib/pdf/pages";
+import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 
 export const runtime = "nodejs";
 
@@ -77,7 +78,12 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "That file is too large (25 MB max)." }, { status: 413 });
   }
 
+  // ONE defensive copy, here, at the door. pdf.js detaches whatever ArrayBuffer it
+  // is handed, so every later reader of these bytes — the page slicer, a second
+  // sniff — would silently see zeros. Copying at each call site instead would work
+  // right up until the next reader was added and forgot.
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const original = new Uint8Array(bytes);
   // Name first (cheap and right almost always), contents second (right when a name
   // has lost its extension). Refusing only after both have failed.
   const kind = kindFor(file.name, file.type) ?? sniffKind(bytes);
@@ -94,8 +100,33 @@ export async function POST(req: Request): Promise<Response> {
     let skippedFigures = 0;
     let coverage: Record<string, number> | undefined;
     if (kind === "pdf") {
-      const r = await extractPdfText(bytes);
+      const r = await extractPdfText(original);
       result = { title: r.meta.title, text: r.text };
+      // Pages whose content is a picture. The old fallback further down only fires
+      // when the WHOLE file is empty, so a lecture with a readable contents page
+      // and forty pictures of slides counted as fully read. Measured on the owner's
+      // real course: 88 such pages across 22 files that all "read" fine before.
+      const thin = thinPages(r.pageTexts);
+      if (thin.length > 0) {
+        const needed = unreadPages(r.pageTexts);
+        const seen = await readPdfPagesWithVision(original, needed);
+        if (seen.size > 0) {
+          result = { ...result, text: splicePages(r.pageTexts, seen, thin) };
+          readBy = "pages";
+        }
+        coverage = {
+          pages: r.meta.pages,
+          pagesFromText: r.meta.pages - thin.length,
+          pagesRead: seen.size,
+          // Counted against EVERY picture-page, not just the ones that were sent —
+          // a page dropped to the per-document cap is unread too, and rolling it
+          // into pagesFromText would make the cap invisible.
+          pagesUnread: thin.length - seen.size,
+        };
+      }
+      // A 2,116-page book still loses its tail at TEXT_CAP. That was computed and
+      // thrown away; say it instead, so a clipped source is never presented whole.
+      if (r.meta.truncated) coverage = { ...(coverage ?? { pages: r.meta.pages }), truncated: 1 };
     } else if (kind === "docx") {
       result = extractDocxText(bytes);
     } else {
@@ -132,7 +163,7 @@ export async function POST(req: Request): Promise<Response> {
     // big, or the provider fails, readPdfWithVision returns null and the original
     // 422 stands unchanged. See lib/pdf/vision.ts.
     if (!text && kind === "pdf") {
-      const seen = await readPdfWithVision(bytes);
+      const seen = await readPdfWithVision(original);
       if (seen) {
         text = seen.text.trim();
         readBy = seen.model;
@@ -167,7 +198,9 @@ export async function POST(req: Request): Promise<Response> {
       // Present only when a deck had more figures than the per-deck cap, so a
       // partial read is never presented as a complete one.
       ...(skippedFigures > 0 ? { skippedFigures } : {}),
-      // PowerPoint only: the full account of what was read and what was not.
+      // The full account of what was read and what was not: slides, notes, charts
+      // and figures for a deck; pages read from text, read as pictures, and left
+      // unread for a PDF.
       ...(coverage ? { coverage } : {}),
     });
   } catch (err) {

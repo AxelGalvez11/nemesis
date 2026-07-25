@@ -16,13 +16,24 @@
  * this on; nothing else changes. That is deliberate — a half-wired vision path
  * that throws at request time would be worse than one that is simply off.
  *
- * Scope, stated plainly: this reads pages that have NO text layer. Diagrams and
- * figures embedded in a PDF that already has readable text are a different job
- * (they need an image extractor to pull the figure out first) and are not
- * handled here.
+ * Scope, stated plainly. Two doors, and they answer different questions:
+ *   readPdfWithVision  — the WHOLE file has no text layer. One call, one document.
+ *   readPdfPagesWithVision — SOME pages have no usable text inside a file that is
+ *     otherwise readable. This is the common case in real lecture material and was
+ *     missed entirely until 2026-07-24; see lib/pdf/pages.ts for the measurements.
+ *     Those pages are cut out with pdf-lib and sent on their own, which is both
+ *     cheaper than resending the file and the ONLY way to reach a page of a
+ *     2,116-page book that could never go inline whole.
  *
- * Everything except the single fetch is pure and unit-tested.
+ * A figure sitting on a page that already has plenty of text is still not read.
+ * The page-level rule reaches a page whose content IS the picture, not a chart
+ * beside three paragraphs; the coverage numbers report which pages were read so
+ * that limit is visible rather than assumed away.
+ *
+ * Everything except the fetches is pure and unit-tested.
  */
+
+import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
 
 /** Google retires fixed model ids for new keys (learned 2026-07-14 with
  *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
@@ -58,6 +69,22 @@ export const FIGURE_PROMPT =
   "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
   "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
   "Answer as a numbered list with one entry per image and nothing else.";
+
+/**
+ * Reading PAGES whose content is a picture — a slide exported as an image, a
+ * screenshot of a drug monograph, a scanned handout inside an otherwise digital
+ * file. Unlike FIGURE_PROMPT this asks for the words, because on these pages the
+ * words ARE the picture; and unlike VISION_PROMPT it must label each page, since
+ * the slice being read is a handful of pages pulled out of a longer document and
+ * the transcripts have to go back where they came from.
+ */
+export const PAGE_PROMPT =
+  "Each page of this PDF is a page of course material whose text could not be extracted. " +
+  "Transcribe every word you can see on each page, in reading order, preserving headings, lists and table structure as plain markdown. " +
+  "For a diagram, figure, chart or screenshot, write what it shows and the relationships or values it conveys, then every label and line of text printed in it. " +
+  "Do not summarise, do not add commentary, and do not invent text that is not visible. " +
+  "Begin each page with a line containing only [[page N]], numbering from 1 in the order the pages appear, " +
+  "and include that line for every page even if the page is blank.";
 
 /** How many figures to put in one request. Gemini handles more, but a smaller batch
  *  keeps any single failure from costing the whole deck's descriptions. */
@@ -255,6 +282,98 @@ async function callGemini(body: string, key: string, env: VisionEnv, signal?: Ab
     return parseVisionText(payload) || null;
   }
   return null;
+}
+
+/**
+ * Cut `indices` (0-based, in page order) out of a PDF into a fresh one-file-per-
+ * batch document. `ignoreEncryption` because a student's file is often protected
+ * against editing rather than against opening, and refusing to read a page they
+ * can see on screen would be the wrong call. Returns null if the pages cannot be
+ * copied at all.
+ */
+async function slicePages(bytes: Uint8Array, indices: readonly number[]): Promise<Uint8Array | null> {
+  try {
+    // pdf-lib is already a dependency (apps/web/package.json) — no new install.
+    const { PDFDocument } = await import("pdf-lib");
+    const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const slice = await PDFDocument.create();
+    const copied = await slice.copyPages(source, [...indices]);
+    for (const page of copied) slice.addPage(page);
+    return await slice.save();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the given pages of a PDF, keyed by their ORIGINAL 0-based page index.
+ *
+ * Batches are sliced, sent, and spliced back by the [[page N]] markers the model
+ * is asked for, so a page it skips costs that page alone. A batch too large to
+ * send inline is halved and retried; a SINGLE page too large is left out, and the
+ * caller reports it as unread rather than pretending otherwise.
+ *
+ * Returns an empty map — never throws — when vision is unconfigured or every
+ * request fails, so a PDF still imports with exactly the text it has today.
+ */
+export async function readPdfPagesWithVision(
+  bytes: Uint8Array,
+  indices: readonly number[],
+  options: { env?: VisionEnv; signal?: AbortSignal } = {},
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const env = options.env ?? process.env;
+  const key = (env.GEMINI_API_KEY ?? "").trim();
+  if (!key || indices.length === 0) return out;
+
+  const readBatch = async (batch: number[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const sliced = await slicePages(bytes, batch);
+    if (!sliced) return;
+    if (!withinVisionLimit(sliced.byteLength)) {
+      // One page that is itself too big cannot be split any further; leave it out
+      // and let the caller count it. Anything larger splits and retries.
+      if (batch.length === 1) return;
+      const half = Math.ceil(batch.length / 2);
+      await readBatch(batch.slice(0, half));
+      await readBatch(batch.slice(half));
+      return;
+    }
+    const body = JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { inline_data: { data: Buffer.from(sliced).toString("base64"), mime_type: "application/pdf" } },
+            { text: PAGE_PROMPT },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0 },
+    });
+    const reply = await callGemini(body, key, env, options.signal);
+    if (!reply) return;
+    const parsed = parsePageTranscripts(reply, batch.length);
+    if (!parsed) return;
+    parsed.forEach((text, position) => {
+      const page = batch[position];
+      if (page !== undefined && text) out.set(page, text);
+    });
+  };
+
+  const batches: number[][] = [];
+  for (let start = 0; start < indices.length; start += PAGE_BATCH_SIZE) {
+    batches.push([...indices.slice(start, start + PAGE_BATCH_SIZE)]);
+  }
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(PAGE_CONCURRENCY, batches.length) }, async () => {
+      while (next < batches.length) {
+        const batch = batches[next++];
+        if (batch) await readBatch(batch);
+      }
+    }),
+  );
+  return out;
 }
 
 /**
