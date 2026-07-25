@@ -12,11 +12,16 @@
 import { NextResponse } from "next/server";
 
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
-import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
-import { splicePages, thinPages, unreadPages } from "@/lib/pdf/pages";
+import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
+import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 
 export const runtime = "nodejs";
+/** A picture-heavy lecture now costs several transcription calls in waves of
+ *  three. The worst file in a real 83-PDF course needs 26 pages read — four
+ *  requests, two waves — so the old implicit budget is no longer obviously
+ *  enough to state by omission. */
+export const maxDuration = 300;
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB upload ceiling.
 
@@ -98,20 +103,36 @@ export async function POST(req: Request): Promise<Response> {
     let result: { title: string | null; text: string };
     let readBy: string | undefined;
     let skippedFigures = 0;
-    let coverage: Record<string, number> | undefined;
+    let coverage: Record<string, number | boolean> | undefined;
     if (kind === "pdf") {
       const r = await extractPdfText(original);
       result = { title: r.meta.title, text: r.text };
-      // Pages whose content is a picture. The old fallback further down only fires
-      // when the WHOLE file is empty, so a lecture with a readable contents page
-      // and forty pictures of slides counted as fully read. Measured on the owner's
-      // real course: 88 such pages across 22 files that all "read" fine before.
-      const thin = thinPages(r.pageTexts);
-      if (thin.length > 0) {
-        const needed = unreadPages(r.pageTexts);
+      // Pages whose content is a picture. The old fallback below only fires when the
+      // WHOLE file comes back empty, so a lecture with a readable contents page and
+      // forty pictures of slides counted as fully read. Measured on the owner's real
+      // course: 308 such pages across 83 files that all "read" fine before.
+      const plan = planPdfRead(r.pageTexts);
+      // Every page is a picture: readPdfWithVision reads the whole document in one
+      // request, with no per-document page cap. Slicing is the fallback for that
+      // shape, never the upgrade.
+      if (plan.kind === "whole") {
+        const whole = await readPdfWithVision(original);
+        if (whole?.text.trim()) {
+          const { text: capped, truncated } = capText(whole.text.trim(), TEXT_CAP);
+          result = { title: result.title ?? guessTitle(capped), text: capped };
+          readBy = whole.model;
+          coverage = { pages: r.meta.pages, pagesFromText: 0, pagesRead: r.meta.pages, pagesUnread: 0, truncated };
+        }
+      }
+      if (plan.kind !== "text" && !readBy) {
+        const thin = thinPages(r.pageTexts);
+        // A "whole" document that vision could not take (over the inline limit, or
+        // the request failed) still gets its pages read one slice at a time.
+        const needed = plan.kind === "pages" ? plan.needed : unreadPages(r.pageTexts);
         const seen = await readPdfPagesWithVision(original, needed);
+        const read = finishPdfPages(r.pageTexts, seen, thin, TEXT_CAP);
         if (seen.size > 0) {
-          result = { ...result, text: splicePages(r.pageTexts, seen, thin) };
+          result = { ...result, text: read.text };
           readBy = "pages";
         }
         coverage = {
@@ -122,11 +143,14 @@ export async function POST(req: Request): Promise<Response> {
           // a page dropped to the per-document cap is unread too, and rolling it
           // into pagesFromText would make the cap invisible.
           pagesUnread: thin.length - seen.size,
+          truncated: seen.size > 0 ? read.truncated : r.meta.truncated,
         };
+      } else if (plan.kind === "text" && r.meta.truncated) {
+        // Nothing to read as a picture, but the tail was still dropped at TEXT_CAP.
+        // That was computed and thrown away; say it, so a clipped source is never
+        // presented as a whole one.
+        coverage = { pages: r.meta.pages, truncated: true };
       }
-      // A 2,116-page book still loses its tail at TEXT_CAP. That was computed and
-      // thrown away; say it instead, so a clipped source is never presented whole.
-      if (r.meta.truncated) coverage = { ...(coverage ?? { pages: r.meta.pages }), truncated: 1 };
     } else if (kind === "docx") {
       result = extractDocxText(bytes);
     } else {

@@ -24,6 +24,8 @@
 //
 // PURE: page text in, decisions and merged text out.
 
+import { capText } from "@/lib/pdf/extract";
+
 /**
  * Below this many characters, a page has not really been read — whatever it says
  * is in the picture. Set from the real corpus: section dividers ("Lactation 04",
@@ -48,20 +50,6 @@ export const PAGE_BATCH_SIZE = 8;
 /** Requests in flight at once. Each carries a slice of PDF, and the provider
  *  rate-limits per key. */
 export const PAGE_CONCURRENCY = 3;
-
-export interface PdfCoverage {
-  /** Pages in the document. */
-  pages: number;
-  /** Pages whose own text layer carried them. */
-  pagesFromText: number;
-  /** Pages that had to be read as pictures, and were. */
-  pagesRead: number;
-  /** Pages that needed reading and did not get it — over the cap, too large to
-   *  send, or a failed request. The number that keeps this honest. */
-  pagesUnread: number;
-  /** True when the extracted text hit TEXT_CAP and the tail was dropped. */
-  truncated: boolean;
-}
 
 /** How much readable text a page really has, ignoring layout whitespace. PURE. */
 export function pageTextLength(text: string): number {
@@ -99,6 +87,36 @@ export function unreadPages(
     .slice(0, max)
     .map((page) => page.index)
     .sort((a, b) => a - b);
+}
+
+/**
+ * What kind of read this document needs.
+ *
+ *   "text"  — every page carries its own words. Nothing to do.
+ *   "whole" — EVERY page is a picture. One request reads the entire document with
+ *             no per-document page cap, which is strictly better than slicing:
+ *             page-slicing a 100-page scan would read 40 and call the other 60
+ *             unreadable, worse than the behaviour it replaced.
+ *   "pages" — some pages are pictures inside a document that is otherwise fine.
+ *             This is the common case in real lecture material and the one that
+ *             was missed entirely.
+ *
+ * PURE.
+ */
+export type PdfPlan =
+  | { kind: "text" }
+  | { kind: "whole" }
+  | { kind: "pages"; needed: number[] };
+
+export function planPdfRead(
+  perPageText: readonly string[],
+  max = MAX_VISION_PAGES,
+  threshold = THIN_PAGE_CHARS,
+): PdfPlan {
+  const thin = thinPages(perPageText, threshold);
+  if (thin.length === 0) return { kind: "text" };
+  if (thin.length === perPageText.length) return { kind: "whole" };
+  return { kind: "pages", needed: unreadPages(perPageText, max, threshold) };
 }
 
 /** The marker the model is asked to put before each page's transcript. */
@@ -175,4 +193,25 @@ export function splicePages(
     if (own) parts.push(own);
   });
   return parts.join("\n").trim();
+}
+
+/**
+ * The finished text for the page-slicing path, and whether it had to be clipped.
+ *
+ * splicePages builds from the RAW per-page text, which capText has never touched —
+ * `extractPdfText` caps the joined string it returns, not the array. So reading
+ * even one picture-page of a very long document used to hand back the whole thing
+ * uncapped: for the 2,116-page book in this corpus, a single blank page was enough
+ * to trigger it. The cap is a contract with every caller downstream (the request
+ * body, the saved note, the chunker), and it has to hold on BOTH paths, so the
+ * spliced result is capped here rather than at the one call site that remembered.
+ * PURE.
+ */
+export function finishPdfPages(
+  perPageText: readonly string[],
+  transcripts: ReadonlyMap<number, string>,
+  needed: readonly number[],
+  cap: number,
+): { text: string; truncated: boolean } {
+  return capText(splicePages(perPageText, transcripts, needed), cap);
 }

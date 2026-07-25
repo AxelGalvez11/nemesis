@@ -5,6 +5,8 @@ import {
   MAX_VISION_PAGES,
   pageTextLength,
   parsePageTranscripts,
+  finishPdfPages,
+  planPdfRead,
   splicePages,
   THIN_PAGE_CHARS,
   thinPages,
@@ -146,4 +148,47 @@ test("pages that were never in question are untouched and unlabelled", () => {
 test("with nothing read at all the text is exactly what it was", () => {
   const pages = ["Alpha", "Beta", "Gamma"];
   assert.equal(splicePages(pages, new Map(), []), pages.join("\n"));
+});
+
+// ── Which kind of read the document needs ────────────────────────────────────
+
+test("a document that reads fine needs no vision at all", () => {
+  assert.deepEqual(planPdfRead([words(300), words(300)]), { kind: "text" });
+});
+
+// The regression the page path could have caused. readPdfWithVision reads a whole
+// scan in ONE request with no page cap; slicing would have read 40 pages of a
+// 100-page scan and labelled the other 60 unreadable — worse than what it replaced.
+test("a document that is ALL pictures is read whole, not sliced", () => {
+  assert.deepEqual(planPdfRead(Array.from({ length: 100 }, () => "")), { kind: "whole" });
+});
+
+test("one readable page is enough to make it a page-by-page read", () => {
+  const plan = planPdfRead(["", words(300), ""]);
+  assert.equal(plan.kind, "pages");
+  assert.deepEqual(plan.kind === "pages" ? plan.needed : null, [0, 2]);
+});
+
+test("an empty document asks for nothing", () => {
+  assert.deepEqual(planPdfRead([]), { kind: "text" });
+});
+
+// ── The cap holds on the spliced path too ────────────────────────────────────
+
+// splicePages builds from the RAW per-page text, which capText never touched:
+// extractPdfText caps the string it returns, not the array behind it. So reading
+// ONE picture-page of a very long document used to hand back the whole thing
+// uncapped — and a 2,116-page book in the owner's course has exactly one such page.
+test("a spliced document is still capped", () => {
+  const pages = Array.from({ length: 400 }, () => words(200));
+  pages[0] = "";
+  const finished = finishPdfPages(pages, new Map([[0, "Read from the picture"]]), [0], 5_000);
+  assert.equal(finished.text.length, 5_000);
+  assert.equal(finished.truncated, true);
+});
+
+test("a document that fits is not reported as clipped", () => {
+  const finished = finishPdfPages(["", "Short"], new Map([[0, "A figure"]]), [0], 5_000);
+  assert.equal(finished.truncated, false);
+  assert.match(finished.text, /A figure/);
 });

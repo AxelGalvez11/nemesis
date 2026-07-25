@@ -291,11 +291,13 @@ async function callGemini(body: string, key: string, env: VisionEnv, signal?: Ab
  * can see on screen would be the wrong call. Returns null if the pages cannot be
  * copied at all.
  */
-async function slicePages(bytes: Uint8Array, indices: readonly number[]): Promise<Uint8Array | null> {
+async function slicePages(
+  source: import("pdf-lib").PDFDocument,
+  indices: readonly number[],
+): Promise<Uint8Array | null> {
   try {
     // pdf-lib is already a dependency (apps/web/package.json) — no new install.
     const { PDFDocument } = await import("pdf-lib");
-    const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const slice = await PDFDocument.create();
     const copied = await slice.copyPages(source, [...indices]);
     for (const page of copied) slice.addPage(page);
@@ -326,9 +328,21 @@ export async function readPdfPagesWithVision(
   const key = (env.GEMINI_API_KEY ?? "").trim();
   if (!key || indices.length === 0) return out;
 
+  // Parse the source ONCE. pdf-lib re-reads the whole document on every load, and
+  // a picture-heavy lecture is both large and split across several batches — the
+  // worst file in a real course is 7.6 MB and four batches, i.e. four full parses
+  // of the same bytes for no reason.
+  let source: import("pdf-lib").PDFDocument;
+  try {
+    const { PDFDocument } = await import("pdf-lib");
+    source = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  } catch {
+    return out;
+  }
+
   const readBatch = async (batch: number[]): Promise<void> => {
     if (batch.length === 0) return;
-    const sliced = await slicePages(bytes, batch);
+    const sliced = await slicePages(source, batch);
     if (!sliced) return;
     if (!withinVisionLimit(sliced.byteLength)) {
       // One page that is itself too big cannot be split any further; leave it out
