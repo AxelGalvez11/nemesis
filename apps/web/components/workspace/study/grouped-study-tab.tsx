@@ -17,7 +17,8 @@
 // a folder writes group_name and survives a reload. It only LOOKS broken when
 // the tab has no folder yet, because then there is nothing to drop onto.
 
-import { IconFolder, IconFolderPlus, IconTrash } from "@tabler/icons-react";
+import { IconArrowRight, IconChecklist, IconFolder, IconFolderPlus, IconSitemap, IconTrash } from "@tabler/icons-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -28,6 +29,7 @@ import { normalizeGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
+import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 interface GroupedStudyTabProps {
@@ -209,19 +211,38 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   return (
     <div className="scrollbar-study flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
-        <Button className="rounded-xl" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>
-        <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
-      </nav>
+      {groups.length > 0 && (
+        <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
+          <Button className="rounded-xl" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>
+          <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
+        </nav>
+      )}
 
-      {/* shrink-0: same flex trap as the Cards tab — see cards-tab.tsx. Without it
-          `overflow-hidden` zeroes this item's automatic minimum size, so a long
-          list is clipped instead of scrolling its parent. */}
-      <section className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
-        <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
-          <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
+      {groups.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center">
+          <AgentEmptyState
+            action={
+              <Button asChild className="bg-(--theme-primary) text-white hover:opacity-90">
+                <Link href="/sessions">Open a chat <IconArrowRight /></Link>
+              </Button>
+            }
+            description={isTests
+              ? "Practice tests are generated in chat from the notes or files you attach. Completed attempts and scores return here automatically."
+              : "Mindmaps are generated in chat from the notes or files you attach. Save one and it will appear here for browsing and organization."}
+            icon={isTests ? <IconChecklist size={20} /> : <IconSitemap size={20} />}
+            prompt={isTests
+              ? "Create a 20-question practice test from these notes and focus on the concepts I am most likely to miss."
+              : "Turn these notes into a mindmap that connects the major ideas, mechanisms, and exceptions."}
+            title={isTests ? "Build your first practice test" : "Map your first topic"}
+          />
         </div>
-        {groups.length > 0 ? (
+      ) : (
+        /* shrink-0: same flex trap as the Cards tab — see cards-tab.tsx.
+           Without it a long list is clipped instead of scrolling its parent. */
+        <section className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+          <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
+            <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
+          </div>
           <div className="py-1.5">
             {groups.map((group) => {
               const grouped = items.filter((item) => (item.groupName || UNGROUPED) === group);
@@ -266,12 +287,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
               );
             })}
           </div>
-        ) : (
-          <div className="grid min-h-44 place-items-center px-6 text-center">
-            <div><p className="text-xs font-semibold">No {label.toLowerCase()} yet</p><p className="mt-1 max-w-64 text-[0.75rem] text-muted-foreground">Nemesis builds {label.toLowerCase()} for you — attach a note from your Library in a chat and ask.</p></div>
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {actionError && <p className="mx-auto mt-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">{actionError}</p>}
 

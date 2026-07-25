@@ -34,7 +34,7 @@ export default function StudyPage() {
       {activeTab === "cards" && <CardsTab reviewSettings={reviewSettings} sourcePath={sourcePath} />}
       {activeTab === "tests" && <GroupedStudyTab kind="tests" />}
       {activeTab === "maps" && <GroupedStudyTab kind="mindmaps" />}
-      {activeTab === "stats" && <StatsTab reviews={reviews} />}
+      {activeTab === "stats" && <StatsTab onStartReview={() => setActiveTab("cards")} reviews={reviews} />}
     </div>
   );
 }

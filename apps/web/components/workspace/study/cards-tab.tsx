@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
-import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { Input } from "@/components/desktop-ui/input";
 import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { isWithinGroup, normalizeGroupPath, pathLeaf, pathParent, renamedGroupPath } from "@/lib/workspace/study-tree";
@@ -18,6 +17,7 @@ import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 import type { StudyReviewSettings } from "./study-chrome";
+import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 const DECK_GROUPS_KEY = "nemesis.web.study-deck-groups";
@@ -366,16 +366,17 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
       {decks.length === 0 && extraGroups.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <EmptyState
+          <AgentEmptyState
             action={
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button onClick={() => setCreateKind("deck")} variant="secondary">Create your first deck</Button>
-                <Button className="bg-background" onClick={() => setImportOpen(true)} variant="outline"><IconFileUpload size={14} /> Import from Anki</Button>
-                <Button className="bg-background" onClick={() => setStarterOpen(true)} variant="outline"><IconBooks size={14} /> Starter decks</Button>
-              </div>
+              <>
+                <Button onClick={() => setCreateKind("deck")} variant="secondary">Create a deck</Button>
+                <Button className="bg-background" onClick={() => setImportOpen(true)} variant="outline"><IconFileUpload size={14} /> Import Anki</Button>
+                <Button className="bg-background" onClick={() => setStarterOpen(true)} variant="outline"><IconBooks size={14} /> Browse starters</Button>
+              </>
             }
-            description={sourcePath ? "Turn this Library note into a linked cloud deck." : "Create a deck to start building a durable review habit."}
-            title="No decks yet"
+            description={sourcePath ? "Make a deck for this Library note, then add cards yourself or ask Nemesis to build them." : "Decks keep flashcards together. Create one, import an Anki package, or begin with a curated starter deck."}
+            icon={<IconCards size={20} />}
+            title={sourcePath ? "Turn this note into cards" : "Start your first deck"}
           />
         </div>
       ) : (
