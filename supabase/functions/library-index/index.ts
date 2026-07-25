@@ -10,15 +10,17 @@
 //      one SQL statement. Selecting documents here and filtering in JS would
 //      apply the limit before the staleness join, so on a library bigger than
 //      the batch the newest edit is never reached and the cron never converges.
-//   2. For each: if the content hash is unchanged, only re-stamp the state row
-//      (a move/rename/sync echo bumped updated_at but not the words — no
-//      embedding spend). Otherwise chunk, embed, and replace its chunks.
-//   3. EVERY document handled leaves the dirty set, whether it was re-embedded
-//      or merely re-stamped. Skipping the stamp is what turns this into a loop.
+//   2. For each: purge it if the note was deleted; otherwise, if the content hash
+//      is unchanged, only re-stamp the state row (a move/rename/sync echo bumped
+//      updated_at but not the words — no embedding spend); otherwise chunk, embed,
+//      and replace its chunks. docAction() decides, and its doc explains the order.
+//   3. EVERY document handled leaves the dirty set, whether it was re-embedded,
+//      merely re-stamped, or purged. Skipping that is what turns this into a loop.
 //   4. A document that throws is left dirty on purpose — the next tick retries it.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { chunkNote } from './chunk-note.ts'
 import { contentHash } from './content-hash.ts'
+import { docAction } from './doc-action.ts'
 import { embedCoreTexts } from '../core-source-sync/embeddings.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -38,6 +40,10 @@ interface DirtyDoc {
   title: string
   content: string
   known_hash: string | null
+  /** Optional: supplied by list_dirty_library_docs only AFTER migration
+   *  20260724T01. Absent means "this deploy is running one step ahead of the
+   *  migration", which docAction() handles as today's behaviour. */
+  deleted?: boolean | null
 }
 
 /** Mark a document current. Called on BOTH paths — re-embedded and unchanged. */
@@ -50,6 +56,23 @@ async function stampState(doc: DirtyDoc, hash: string, chunkCount: number): Prom
     indexed_at: new Date().toISOString(),
   }, { onConflict: 'document_id' })
   if (error) throw new Error(`stamp state: ${error.message}`)
+}
+
+/**
+ * Forget a deleted note completely: its chunks, then its index row. Throws on
+ * failure, which leaves it dirty for the next tick.
+ *
+ * The state row goes LAST and on purpose. It is the only record that this
+ * document was ever indexed, so while it exists the document keeps being
+ * reported as needing a purge. Removing it first would drop the document out of
+ * the dirty set with its chunks still in place — the exact leak this fixes,
+ * reintroduced from the other side.
+ */
+async function purgeDocument(doc: DirtyDoc): Promise<void> {
+  const { error: chunkErr } = await admin.from('library_chunks').delete().eq('document_id', doc.document_id)
+  if (chunkErr) throw new Error(`purge chunks: ${chunkErr.message}`)
+  const { error: stateErr } = await admin.from('library_index_state').delete().eq('document_id', doc.document_id)
+  if (stateErr) throw new Error(`purge state: ${stateErr.message}`)
 }
 
 /** Replace one document's chunks, then stamp it. Throws on failure. */
@@ -110,26 +133,35 @@ Deno.serve(async (req) => {
   const docs = (data ?? []) as DirtyDoc[]
   let indexed = 0
   let restamped = 0
+  let purged = 0
   let chunks = 0
   const failures: string[] = []
 
   for (const doc of docs) {
     try {
       const hash = await contentHash(doc.title, doc.content)
-      if (doc.known_hash === hash) {
-        // Touched but not edited. Re-stamp so it leaves the dirty set — WITHOUT
-        // this the cron re-selects it every two minutes forever.
-        await stampState(doc, hash, -1)
-        restamped += 1
-        continue
+      switch (docAction(doc, doc.known_hash, hash)) {
+        case 'purge':
+          // The student deleted this note. Its chunks must stop being searchable.
+          await purgeDocument(doc)
+          purged += 1
+          break
+        case 'restamp':
+          // Touched but not edited. Re-stamp so it leaves the dirty set — WITHOUT
+          // this the cron re-selects it every two minutes forever.
+          await stampState(doc, hash, -1)
+          restamped += 1
+          break
+        case 'reindex':
+          chunks += await indexDocument(doc, hash)
+          indexed += 1
+          break
       }
-      chunks += await indexDocument(doc, hash)
-      indexed += 1
     } catch (e) {
       failures.push(`${doc.document_id}: ${(e as Error).message}`)
     }
   }
 
   if (failures.length) console.warn('library-index failures:', failures.join(' | '))
-  return Response.json({ dirty: docs.length, indexed, restamped, chunks, failures: failures.length })
+  return Response.json({ dirty: docs.length, indexed, restamped, purged, chunks, failures: failures.length })
 })
