@@ -395,7 +395,7 @@ export function NoteBlockEditor({
               // a placeholder is just a label floating in the middle of your
               // writing — the "text box" look the owner called out (2026-07-22).
               placeholder={nb.blocks.length <= 1 && block.body === "" ? "Start writing" : undefined}
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               inputAccessoryViewID={Platform.OS === "ios" ? TOOLBAR_ID : undefined}
               testID="note-block-input"
             />

@@ -116,7 +116,7 @@ export function AttachLibrarySheet({
           value={query}
           onChangeText={setQuery}
           placeholder="Search your notes"
-          placeholderTextColor={c.text3}
+          placeholderTextColor={c.textHint}
           autoCorrect={false}
           testID="attach-library-search"
         />

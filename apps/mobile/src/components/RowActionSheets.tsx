@@ -142,7 +142,7 @@ export function TextPromptSheet({
             value={value}
             onChangeText={setValue}
             placeholder={placeholder}
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             autoFocus={visible}
             autoCorrect={false}
             returnKeyType="done"

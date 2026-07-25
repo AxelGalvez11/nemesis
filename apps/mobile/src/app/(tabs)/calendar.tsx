@@ -943,7 +943,7 @@ function EventSheet({
             value={title}
             onChangeText={setTitle}
             placeholder="Title"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             testID="calendar-event-title"
           />
           <View style={styles.sheetRow}>
@@ -952,7 +952,7 @@ function EventSheet({
               value={date}
               onChangeText={setDate}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoCapitalize="none"
               autoCorrect={false}
               testID="calendar-event-date"
@@ -962,7 +962,7 @@ function EventSheet({
               value={time}
               onChangeText={setTime}
               placeholder="HH:MM"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoCapitalize="none"
               autoCorrect={false}
               testID="calendar-event-time"
@@ -989,7 +989,7 @@ function EventSheet({
             value={course}
             onChangeText={setCourse}
             placeholder="Course (optional)"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             testID="calendar-event-course"
           />
           <TextInput
@@ -997,7 +997,7 @@ function EventSheet({
             value={note}
             onChangeText={setNote}
             placeholder="Notes (optional)"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             multiline
             testID="calendar-event-note"
           />

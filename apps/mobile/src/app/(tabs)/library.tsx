@@ -684,7 +684,7 @@ export default function LibraryScreen() {
               value={query}
               onChangeText={setQuery}
               placeholder="Search notes"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoFocus
               autoCorrect={false}
               autoCapitalize="none"

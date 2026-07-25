@@ -28,7 +28,7 @@ import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
-import { safeLibraryTitle } from "@/lib/library-paths";
+import { safeLibraryTitle, UNTITLED_NOTE_TITLE } from "@/lib/library-paths";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import {
   createNote,
@@ -178,6 +178,7 @@ export default function NoteScreen() {
   // what lets the field be cleared to empty mid-edit without the rename firing
   // on every keystroke.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [titleFocused, setTitleFocused] = useState(false);
   // Browser-style note history (owner picked "browser-style" for the pill
   // bar), now held in lib/note-tabs.ts's MODULE-scoped noteNavHolder (owner
   // 2026-07-21: the numbered square opens a real tab viewer, so open tabs
@@ -556,24 +557,39 @@ export default function NoteScreen() {
    * content is empty now (api/cloudLibrary.ts createNote), and this is where the
    * caret lands.
    *
-   * selectTextOnFocus is what makes it "ready to use": the caret arrives with
-   * "Untitled note" selected, so the first keystroke replaces it rather than
-   * appending to it.
+   * An UNNAMED note shows an EMPTY line, not the words "Untitled note" (owner
+   * 2026-07-24: "new notes should not show 'untitled note' when cursor is on the
+   * title"). "Untitled note" is the note's stored name — the fallback a nameless
+   * note has to have on disk — but showing it as the field's value meant the
+   * caret landed on two words the student had to get rid of before typing their
+   * own. So while the stored title is still the fallback, the field renders
+   * blank; the hint only appears when the field is NOT focused, so nothing is
+   * under the caret at the moment they start typing. Clearing a title and
+   * walking away still lands back on "Untitled note" — commitTitle ignores an
+   * empty string, so the note keeps a filename either way.
+   *
+   * No selectTextOnFocus: it existed solely to make "Untitled note" replaceable
+   * in one keystroke, and a blank field does that better. Left in, it would
+   * select the WHOLE of a real title every time you tapped in to fix one letter.
    *
    * Rendered in both reading and edit mode from this one definition, so the
    * title cannot drift between them.
    */
   const autoFocusTitle = !!doc && justCreatedIdRef.current === doc.id;
   if (autoFocusTitle) justCreatedIdRef.current = null;
+  const storedTitle = doc && doc.title !== UNTITLED_NOTE_TITLE ? doc.title : "";
   const titleField = doc ? (
     <TextInput
       style={styles.title}
-      value={titleDraft ?? doc.title}
+      value={titleDraft ?? storedTitle}
       onChangeText={setTitleDraft}
-      onBlur={() => void commitTitle(titleDraft ?? doc.title)}
+      onFocus={() => setTitleFocused(true)}
+      onBlur={() => {
+        setTitleFocused(false);
+        void commitTitle(titleDraft ?? storedTitle);
+      }}
       onSubmitEditing={(e) => void commitTitle(e.nativeEvent.text)}
       autoFocus={autoFocusTitle}
-      selectTextOnFocus
       returnKeyType="done"
       blurOnSubmit
       multiline
@@ -586,8 +602,8 @@ export default function NoteScreen() {
       // "**Kinetics**" would become the note's name on disk. It gets the one
       // action that makes sense instead, which is to finish and start writing.
       inputAccessoryViewID={Platform.OS === "ios" ? TITLE_TOOLBAR_ID : undefined}
-      placeholder="Untitled note"
-      placeholderTextColor={c.text3}
+      placeholder={titleFocused ? undefined : UNTITLED_NOTE_TITLE}
+      placeholderTextColor={c.textHint}
       testID="note-title-input"
       accessibilityLabel="Note title"
     />
@@ -748,7 +764,7 @@ export default function NoteScreen() {
             value={findQuery}
             onChangeText={setFindQuery}
             placeholder="Find in note"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             autoFocus
             autoCorrect={false}
             autoCapitalize="none"

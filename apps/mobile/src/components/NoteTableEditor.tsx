@@ -120,7 +120,7 @@ export function NoteTableEditor({
                 onFocus={onInteract}
                 inputAccessoryViewID={Platform.OS === "ios" ? accessoryViewID : undefined}
                 placeholder="Column"
-                placeholderTextColor={c.text3}
+                placeholderTextColor={c.textHint}
                 multiline
                 scrollEnabled={false}
                 testID={`note-table-header-${column}`}
