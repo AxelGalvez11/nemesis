@@ -79,9 +79,29 @@
 -- order. hnsw.max_scan_tuples (20000, unchanged) stays the bound on total work,
 -- so a pathological query cannot scan the whole table.
 --
--- DEPLOY: owner-gated — against ref qyjmivntajbigjswhahb. Merging does not apply
--- it. Order does not matter for this file: the new indexer tolerates the table
--- being absent, and the table is inert until the indexer writes to it.
+-- DEPLOY: owner-gated — against ref qyjmivntajbigjswhahb. Merging does not apply it.
+--
+-- ORDER: DEPLOY THE EDGE FUNCTION FIRST, THEN THIS MIGRATION. Same rule as
+-- 20260724T01, and this time for a different reason.
+--
+-- The failure table on its own IS order-independent — the new indexer treats a
+-- missing RPC as "no backoff" and behaves exactly as it does today. THE LEASE IS
+-- NOT. This file rewrites run_library_indexing() to take a lease, but only the
+-- new edge function knows to release one. Applied first, the cron would take a
+-- 10-minute lease that today's deployed function never hands back, so indexing
+-- would drop from once every 2 minutes to once every 10 until the deploy landed.
+-- Not broken — every tick still converges, and the lease always expires — but
+-- 5x slower for no reason, and it would look like this migration caused a stall.
+--
+-- Function first, and the window does not exist: releaseLease() is a no-op until
+-- these objects are created.
+--
+-- PRIVILEGES: the grants below copy list_dirty_library_docs and
+-- library_index_state exactly. Verified in production 2026-07-25 that the shape
+-- works: both functions are owned by postgres and SECURITY DEFINER, execute is
+-- true for postgres and service_role and FALSE for anon, and library_index_state
+-- has RLS on with full DML for service_role and nothing for anon. Worth stating
+-- because a fresh CREATE takes Supabase's defaults, which include anon.
 
 -- ── 1. The failure record ───────────────────────────────────────────────────
 
