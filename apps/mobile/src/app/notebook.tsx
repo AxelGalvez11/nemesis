@@ -522,7 +522,7 @@ export default function NotebookScreen() {
           value={renameValue}
           onChangeText={setRenameValue}
           placeholder="Notebook title"
-          placeholderTextColor={c.text3}
+          placeholderTextColor={c.textHint}
           maxLength={200}
           returnKeyType="done"
           onSubmitEditing={() => void handleRename()}
@@ -865,7 +865,7 @@ function LibraryPickerSheet({
           value={query}
           onChangeText={setQuery}
           placeholder="Search your notes"
-          placeholderTextColor={c.text3}
+          placeholderTextColor={c.textHint}
           autoCorrect={false}
           testID="notebook-source-picker-search"
         />

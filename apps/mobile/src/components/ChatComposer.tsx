@@ -25,7 +25,7 @@ export function ChatComposer({
         testID="ask-input"
         style={styles.input}
         placeholder="Ask about a drug, dose, or interaction…"
-        placeholderTextColor={c.text3}
+        placeholderTextColor={c.textHint}
         multiline
         maxLength={500}
         value={value}

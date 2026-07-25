@@ -20,7 +20,7 @@
 // upsert/insert-with-conflict-ignore keyed on `id`, so a message can safely be
 // re-sent after a dropped connection without ever duplicating a row.
 
-import type { ChatMsg, ChatOutput, ChatRole, ChatSource } from "./chat-thread.ts";
+import type { ChatMsg, ChatOutput, ChatRole, ChatSource, MessageThinking } from "./chat-thread.ts";
 
 export interface ChatThread {
   id: string;
@@ -419,6 +419,7 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
   const at = parsed.toISOString();
   const sources = sourcesFromMeta(row.meta);
   const outputs = outputsFromMeta(row.meta);
+  const thinking = thinkingFromMeta(row.meta);
   return {
     at,
     content: row.content,
@@ -426,7 +427,22 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
     role: row.role,
     ...(sources.length ? { sources } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(thinking ? { thinking } : {}),
   };
+}
+
+/** Tolerant parse of the `meta` jsonb column's `{ thinking?: { ms, text } }`
+ *  shape. Same posture as sourcesFromMeta: a row written by an older build, or
+ *  by the web app which does not set this, simply has none — never a throw. */
+export function thinkingFromMeta(meta: unknown): MessageThinking | null {
+  if (typeof meta !== "object" || meta === null) return null;
+  const raw = (meta as Record<string, unknown>).thinking;
+  if (typeof raw !== "object" || raw === null) return null;
+  const row = raw as Record<string, unknown>;
+  const text = typeof row.text === "string" ? row.text.trim() : "";
+  if (!text) return null;
+  const ms = Number(row.ms);
+  return { ms: Number.isFinite(ms) && ms >= 0 ? ms : 0, text };
 }
 
 /** Merge a thread's local + cloud message lists: de-duplicated by stable id

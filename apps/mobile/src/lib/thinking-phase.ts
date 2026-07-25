@@ -19,7 +19,30 @@ export type ThinkingPhase =
   | { kind: "searching"; query: string }
   | { kind: "reading"; sources: number }
   | { kind: "thinking"; deep: boolean }
+  /** A workspace tool is running: the chat is reading or writing the student's own
+   *  Library or Study page. `tools` holds the tool names the model asked for, in
+   *  the order it asked. Real work with a real duration — without a phase here the
+   *  line would sit on "Putting this together" while a deck is being written, and a
+   *  save of thirty cards takes long enough for that to read as hung. */
+  | { kind: "acting"; tools: string[] }
   | { kind: "writing" };
+
+/** Plain-English phrase per workspace tool. Keys are the tool names in
+ *  api/agentTools.ts — a name with no entry here falls back to the generic line
+ *  below rather than showing the student a function name. */
+const TOOL_PHRASE: Record<string, string> = {
+  add_flashcards: "Making your flashcards",
+  add_mindmap: "Drawing your mind map",
+  add_practice_test: "Writing your practice test",
+  append_library_note: "Adding to your note",
+  create_library_folder: "Making a folder in your library",
+  create_library_note: "Writing a note in your library",
+  list_study_decks: "Checking your decks",
+  move_library_note: "Filing that note",
+  read_library_note: "Reading your note",
+  rename_library_note: "Renaming that note",
+  search_library: "Looking through your library",
+};
 
 /** How much of the student's own question to echo back inside the search line
  *  before trimming — long enough to recognise, short enough for one line. */
@@ -51,6 +74,16 @@ export function phaseLabel(phase: ThinkingPhase): string {
       return phase.sources === 1 ? "Reading 1 source" : `Reading ${phase.sources} sources`;
     case "thinking":
       return phase.deep ? "Thinking it through" : "Putting this together";
+    case "acting": {
+      // One tool: name what it is doing. Several at once: don't stack three
+      // phrases into a line that no longer fits, and don't pick one arbitrarily
+      // and imply it is the only thing happening.
+      const [first, ...rest] = phase.tools;
+      if (!first) return "Working in your workspace";
+      const phrase = TOOL_PHRASE[first];
+      if (!phrase) return "Working in your workspace";
+      return rest.length > 0 ? "Working in your workspace" : phrase;
+    }
     case "writing":
       return "";
   }

@@ -18,6 +18,11 @@ export interface ChatRouteDecision {
   model: ChatModelAlias;
   searchWeb: boolean;
   reasoningEffort?: "high";
+  /** Set when the student asked Nemesis to SAVE something into their own
+   *  workspace. Load-bearing, not a label: the write happens through a tool call,
+   *  tool calls only ride the non-thinking model, and this flag is what stops the
+   *  effort dial from quietly switching the tools off (chat-effort.ts). */
+  savesToWorkspace?: boolean;
 }
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
 const CURRENT_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|who (?:is|won|leads|runs|owns))\b/i;
@@ -26,8 +31,50 @@ const LEARNING_PATTERN = /\b(explain|teach|learn|study|solve|derive|prove|analy[
 const CASUAL_PATTERN = /^(?:hi|hello|hey|thanks|thank you|good (?:morning|afternoon|evening)|who are you|what can you do)[!.?\s]*$/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 
+// A message that asks Nemesis to SAVE or CREATE something in the student's own
+// workspace — a flashcard deck, a practice test, a mind map, a Library note. These
+// MUST leave on the tools-capable model: the write is performed by a tool call,
+// and tool calls only ride the non-thinking model (deepseek-chat, see
+// chat-effort.ts:toolsAllowed). Route a save to the reasoner and it answers in
+// prose and saves nothing — which is exactly why "make me flashcards on beta
+// blockers" (LEARNING_PATTERN matches "flashcards") used to do nothing.
+//
+// Two shapes are matched, deliberately narrow so ordinary learning questions
+// never trip it:
+//   1. A creation verb next to an UNAMBIGUOUS study artifact ("make flashcards",
+//      "build a mind map", "create a practice test"). Those nouns never mean
+//      anything but the artifact, so a nearby verb is enough. "write" is NOT a
+//      save verb — "write a literature review" / "write a test for this
+//      function" must stay on their normal routes.
+//   2. An explicit "into my workspace" phrase for the AMBIGUOUS targets:
+//      "add these to my deck", "save this as a note", "put my exam on my
+//      calendar". "note"/"schedule"/"test" alone are ordinary words, so they
+//      only count when anchored to the student's own deck/library/notes/calendar.
+const SAVE_ARTIFACT = /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|study sets?|decks?)\b/i;
+const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
+const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
+
+/** Does this message ask to persist something in the student's workspace? Pure
+ *  and exported so the routing tests can pin the real phrasings students use. */
+export function detectsSaveRequest(text: string): boolean {
+  const compact = text.trim();
+  if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  return SAVE_TO_WORKSPACE.test(compact);
+}
+
 export function classifyChatRequest(text: string): ChatRouteDecision {
   const compact = text.trim();
+  // A save request wins over every reasoner route below so its tools can fire.
+  // Web is kept when the topic needs it (deepseek-chat can still search), and
+  // route "conversation" is never emitted for a save — the phone has no web
+  // re-promotion step today, but the web copy does, and these two files are meant
+  // to classify identically.
+  if (detectsSaveRequest(compact)) {
+    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
+    return wantsWeb
+      ? { model: "deepseek-chat", route: "current", savesToWorkspace: true, searchWeb: true }
+      : { model: "deepseek-chat", route: "learning", savesToWorkspace: true, searchWeb: false };
+  }
   if (RESEARCH_PATTERN.test(compact)) {
     return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
   }
@@ -41,6 +88,27 @@ export function classifyChatRequest(text: string): ChatRouteDecision {
     return { route: "learning", model: "deepseek-reasoner", searchWeb: false };
   }
   return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+}
+
+/**
+ * The route for one turn, once the composer's Deep research toggle is taken into
+ * account. `research` is the forced research decision when that toggle is on, and
+ * null when it isn't.
+ *
+ * A SAVE REQUEST BEATS THE TOGGLE. Deep research runs on the reasoner, which
+ * carries no tools — so "make me flashcards on beta blockers" with the toggle left
+ * on would produce an essay and save nothing, and the student would have no way to
+ * tell why. Deep research is a persistent toggle they may have flipped days ago;
+ * "make me flashcards" is what they typed just now, so the fresher, more specific
+ * instruction wins. The research route is still honoured for every turn that
+ * isn't asking us to write something into their account.
+ *
+ * Pure and separate from the caller so this precedence has a test rather than
+ * living as one condition inside a 40-line send function.
+ */
+export function routeForTurn(text: string, research: ChatRouteDecision | null): ChatRouteDecision {
+  if (research && !detectsSaveRequest(text)) return research;
+  return classifyChatRequest(text);
 }
 
 export function routeInstruction(route: ChatRoute): string {

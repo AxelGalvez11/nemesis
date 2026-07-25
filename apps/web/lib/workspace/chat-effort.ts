@@ -43,6 +43,15 @@ export function applyChatEffort(decision: ChatRouteDecision, effort: ChatEffort)
     return { ...decision, model: "deepseek-chat", reasoningEffort: undefined };
   }
   if (effort === "high") {
+    // A SAVE KEEPS ITS TOOLS, whatever the dial says. High effort means the
+    // thinking flagship, which cannot carry tool calls (see toolsAllowed) — so
+    // "make me flashcards on beta blockers" with the dial left on High would come
+    // back as prose having saved nothing, with no way for the student to tell why.
+    // The dial is a stored preference that persists across sessions; the save is
+    // what they typed a second ago. The specific, fresher instruction wins.
+    // Deliberately silent: there is nothing for the student to fix, and the answer
+    // they asked for still arrives.
+    if (decision.savesToWorkspace) return { ...decision, reasoningEffort: undefined };
     return { ...decision, reasoningEffort: "high" };
   }
   return { ...decision, reasoningEffort: undefined };

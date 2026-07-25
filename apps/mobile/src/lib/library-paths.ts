@@ -28,11 +28,18 @@ export function normalizeLibraryFolder(value: string): string {
     .join("/");
 }
 
+/** The name a note takes when it has none. Exported because it is a PLACEHOLDER
+ *  as much as a value: the note screen blanks the title field when the stored
+ *  title is still this, so a new note opens on an empty line rather than on two
+ *  words the student has to delete (owner 2026-07-24). Comparing against the
+ *  constant is what keeps those two behaviours from drifting apart. */
+export const UNTITLED_NOTE_TITLE = "Untitled note";
+
 /** A title safe to use as a filename. Matches web's safeLibraryTitle: illegal
  *  characters become "-", runs of whitespace collapse, 120 chars max, and an
  *  empty result falls back rather than producing a nameless file. */
 export function safeLibraryTitle(value: string): string {
-  return value.trim().replace(/[\\/:<>"|?*]/g, "-").replace(/\s+/g, " ").slice(0, 120) || "Untitled note";
+  return value.trim().replace(/[\\/:<>"|?*]/g, "-").replace(/\s+/g, " ").slice(0, 120) || UNTITLED_NOTE_TITLE;
 }
 
 /** The `Folder/Sub/Title.md` path a note with this title in this folder gets. */
