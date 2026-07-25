@@ -41,6 +41,24 @@ test("tools ride instant turns but never reasoner or high-effort turns", () => {
   assert.equal(toolsAllowed(applyChatEffort(classifyChatRequest("explain osmosis"), "medium")), false);
 });
 
+// The regression this batch fixes: a save request phrased like a lesson used to
+// route to the reasoner (LEARNING_PATTERN matches "flashcards"/"quiz"), which
+// stripped its tools, so the save never ran. At the DEFAULT effort these must
+// now keep tools. (High effort is still a deliberate "think hard, no tools"
+// mode — see the assertion above — so saving at High is a known limitation.)
+test("save requests keep their tools at the default effort", () => {
+  for (const prompt of [
+    "make me flashcards on beta blockers",
+    "create a deck for pharmacology and add ten cards",
+    "generate a practice test on ACE inhibitors",
+    "build a mind map of the RAAS pathway",
+    "add these to my deck",
+  ]) {
+    const decision = applyChatEffort(classifyChatRequest(prompt), "medium");
+    assert.equal(toolsAllowed(decision), true, prompt);
+  }
+});
+
 test("effort values are validated before use", () => {
   assert.equal(isChatEffort("instant"), true);
   assert.equal(isChatEffort("highest"), false);

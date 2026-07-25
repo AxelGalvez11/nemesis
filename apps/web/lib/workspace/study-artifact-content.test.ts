@@ -20,7 +20,12 @@ const QUESTION = { answer: 1, options: ["Alpha", "Beta", "Gamma", "Delta"], q: "
 test("generated tests parse through fences, junk, and bad rows", () => {
   const good = parseGeneratedTest('```json\n{"questions":[' + JSON.stringify(QUESTION) + "]}\n```");
   assert.equal(good.length, 1);
-  assert.equal(good[0]?.answer, 1);
+  // Not the literal index any more: parseGeneratedTest now re-seats the correct
+  // option so a paper's answers are not all in the same place (2026-07-24, see
+  // test-answer-balance.ts). What has to hold is that the index still points at
+  // the option that was actually true — which is the stronger assertion.
+  assert.equal(good[0]?.options[good[0]?.answer ?? -1], "Beta");
+  assert.deepEqual([...(good[0]?.options ?? [])].sort(), ["Alpha", "Beta", "Delta", "Gamma"]);
   const mixed = parseGeneratedTest(JSON.stringify({
     questions: [QUESTION, { answer: 9, options: ["a", "b"], q: "out of bounds" }, { options: ["a", "b"], q: "" }],
   }));

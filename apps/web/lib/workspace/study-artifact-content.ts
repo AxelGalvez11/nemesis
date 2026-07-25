@@ -6,6 +6,8 @@
 // builders, mermaid conversion, and attempt scoring all live here for tests.
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
+import { balanceAnswerPositions } from "@/lib/workspace/test-answer-balance";
 
 export interface TestQuestion {
   q: string;
@@ -114,11 +116,22 @@ export function jsonSlice(raw: string): Record<string, unknown> | null {
   }
 }
 
-/** Parse one generation reply into validated questions (capped). */
+/** Parse one generation reply into validated questions (capped), then spread the
+ *  correct answers across the four positions.
+ *
+ *  The balancing is here rather than in parseTestContent because this function
+ *  only ever sees a FRESHLY generated paper. parseTestContent also reads stored
+ *  content back, and an attempt records the option the student picked as an
+ *  INDEX — reordering options after an attempt exists would silently rewrite
+ *  what they answered. See test-answer-balance.ts. */
 export function parseGeneratedTest(raw: string): TestQuestion[] {
   const parsed = jsonSlice(raw);
   if (!parsed || !Array.isArray(parsed.questions)) return [];
-  return parsed.questions.map(toQuestion).filter((question): question is TestQuestion => question !== null).slice(0, MAX_QUESTIONS);
+  const questions = parsed.questions
+    .map(toQuestion)
+    .filter((question): question is TestQuestion => question !== null)
+    .slice(0, MAX_QUESTIONS);
+  return balanceAnswerPositions(questions);
 }
 
 /** Parse one generation reply into an outline. Accepts {outline} JSON or a
@@ -163,8 +176,17 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
     {
       content:
         `Write a practice test of exactly ${count} multiple-choice questions from the student's ${material.label}. ` +
-        "Probe understanding (mechanisms, contrasts, applications, likely exam traps), not recall alone. " +
-        'Return JSON shaped {"questions":[{"q":"…","options":["…","…","…","…"],"answer":0,"why":"…"}]} — ' +
+        // The item-writing rules are shared with the chat "test-craft" skill so
+        // the two test-producing lanes cannot drift apart — see item-writing.ts.
+        `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +
+        // The example index used to read `"answer":0`, and models copy the
+        // example — which is a large part of why every correct answer came out
+        // first (owner 2026-07-24: "the answer isnt always B"). Written as a
+        // placeholder now so the shape is still unambiguous without demonstrating
+        // a position. The real guarantee is balanceAnswerPositions(), applied in
+        // parseGeneratedTest after this reply comes back; this only helps the
+        // model write better distractors while it is still deciding.
+        'Return JSON shaped {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…"}]} — ' +
         "4 options per question, answer is the 0-based index of the correct option, why is a one-sentence explanation " +
         "grounded in the material. If the material is too thin for that many questions, write fewer.\n\n" +
         `Material:\n${material.text}`,

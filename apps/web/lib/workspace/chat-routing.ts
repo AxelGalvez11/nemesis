@@ -23,8 +23,51 @@ const LEARNING_PATTERN = /\b(explain|teach|learn|study|solve|derive|prove|analy[
 const CASUAL_PATTERN = /^(?:hi|hello|hey|thanks|thank you|good (?:morning|afternoon|evening)|who are you|what can you do)[!.?\s]*$/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 
+// A message that asks Nemesis to SAVE or CREATE something in the student's own
+// workspace — a flashcard deck, a practice test, a mind map, a Library note, or
+// a calendar event. These MUST leave on the tools-capable model: the write is
+// performed by a tool call, and tool calls only ride the non-thinking model
+// (deepseek-chat, see chat-effort.ts:toolsAllowed). Route a save to the reasoner
+// and it answers in prose and saves nothing — which is exactly why "make me
+// flashcards on beta blockers" (LEARNING_PATTERN matches "flashcards") used to
+// do nothing. See classifyChatRequest below.
+//
+// Two shapes are matched, deliberately narrow so ordinary learning questions
+// never trip it:
+//   1. A creation verb next to an UNAMBIGUOUS study artifact ("make flashcards",
+//      "build a mind map", "create a practice test"). Those nouns never mean
+//      anything but the artifact, so a nearby verb is enough. "write" is NOT a
+//      save verb — "write a literature review" / "write a test for this
+//      function" must stay on their normal routes.
+//   2. An explicit "into my workspace" phrase for the AMBIGUOUS targets:
+//      "add these to my deck", "save this as a note", "put my exam on my
+//      calendar". "note"/"schedule"/"test" alone are ordinary words, so they
+//      only count when anchored to the student's own deck/library/notes/calendar.
+const SAVE_ARTIFACT = /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|study sets?|decks?)\b/i;
+const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
+const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
+
+/** Does this message ask to persist something in the student's workspace? Pure
+ *  and exported so the routing tests can pin the real phrasings students use. */
+export function detectsSaveRequest(text: string): boolean {
+  const compact = text.trim();
+  if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  return SAVE_TO_WORKSPACE.test(compact);
+}
+
 export function classifyChatRequest(text: string): ChatRouteDecision {
   const compact = text.trim();
+  // A save request wins over every reasoner route below so its tools can fire.
+  // We keep web when the topic needs it (deepseek-chat can still search), and we
+  // never emit route "conversation" for a save, so sendChatTurn's web
+  // re-promotion (which only upgrades "conversation" to the reasoner) can't
+  // quietly undo this.
+  if (detectsSaveRequest(compact)) {
+    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
+    return wantsWeb
+      ? { route: "current", model: "deepseek-chat", searchWeb: true }
+      : { route: "learning", model: "deepseek-chat", searchWeb: false };
+  }
   if (RESEARCH_PATTERN.test(compact)) {
     return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
   }
