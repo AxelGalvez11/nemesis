@@ -16,7 +16,13 @@
 //      and replace its chunks. docAction() decides, and its doc explains the order.
 //   3. EVERY document handled leaves the dirty set, whether it was re-embedded,
 //      merely re-stamped, or purged. Skipping that is what turns this into a loop.
-//   4. A document that throws is left dirty on purpose — the next tick retries it.
+//   4. A document that throws is left dirty on purpose — the next tick retries it,
+//      but only after a backoff (20260725T01). Retrying forever at full speed is
+//      what let ONE unindexable note burn ~720 embedding attempts a day and sit at
+//      the head of the queue — it has the oldest updated_at — until 40 of them
+//      stalled the indexer outright. The delay lives in the failure row, which
+//      list_dirty_library_docs reads, so a backed-off document is not handed out
+//      at all rather than being handed out and skipped.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { chunkNote } from './chunk-note.ts'
 import { contentHash } from './content-hash.ts'
@@ -73,6 +79,50 @@ async function purgeDocument(doc: DirtyDoc): Promise<void> {
   if (chunkErr) throw new Error(`purge chunks: ${chunkErr.message}`)
   const { error: stateErr } = await admin.from('library_index_state').delete().eq('document_id', doc.document_id)
   if (stateErr) throw new Error(`purge state: ${stateErr.message}`)
+}
+
+/**
+ * Push a document's next attempt out, exponentially. Returns its new failure
+ * count, or null when the record could not be written.
+ *
+ * NEVER throws. It runs inside the catch block, so throwing here would replace
+ * the real reason a document failed with a bookkeeping error — the one message
+ * that would have explained the outage. A document whose failure cannot be
+ * recorded simply keeps today's behaviour: retried on the next tick.
+ */
+async function recordFailure(doc: DirtyDoc, reason: string): Promise<number | null> {
+  try {
+    const { data, error } = await admin.rpc('record_library_index_failure', {
+      p_document_id: doc.document_id,
+      p_user_id: doc.user_id,
+      p_error: reason,
+    })
+    // Absent until migration 20260725T01 is applied. Until then this is a no-op
+    // and the indexer behaves exactly as it does now, so the two can ship in
+    // either order.
+    if (error) return null
+    return typeof data === 'number' ? data : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Forget that a document ever failed. Called after EVERY success — a purge and a
+ * re-stamp clear it just as an index does, because all three prove the document
+ * can be processed.
+ *
+ * Unconditional, and cheap on purpose: the dirty list does not say whether a
+ * failure row exists, and deleting nothing costs a primary-key probe. Asking
+ * first would double the round trips to save nothing.
+ */
+async function clearFailure(doc: DirtyDoc): Promise<void> {
+  try {
+    await admin.from('library_index_failures').delete().eq('document_id', doc.document_id)
+  } catch {
+    // Same reasoning as recordFailure: bookkeeping must not fail a document that
+    // was just processed successfully. A stale row only delays its next edit.
+  }
 }
 
 /** Replace one document's chunks, then stamp it. Throws on failure. */
@@ -135,6 +185,7 @@ Deno.serve(async (req) => {
   let restamped = 0
   let purged = 0
   let chunks = 0
+  let backedOff = 0
   const failures: string[] = []
 
   for (const doc of docs) {
@@ -157,11 +208,30 @@ Deno.serve(async (req) => {
           indexed += 1
           break
       }
+      // Processed, by whichever route. Any earlier failure is history.
+      await clearFailure(doc)
     } catch (e) {
-      failures.push(`${doc.document_id}: ${(e as Error).message}`)
+      const reason = (e as Error).message
+      const count = await recordFailure(doc, reason)
+      if (count !== null) backedOff += 1
+      // The attempt number is the part worth having in the log: "3rd failure"
+      // separates a provider having a bad minute from a note that will never
+      // work, which the message alone never told anyone.
+      failures.push(`${doc.document_id}${count === null ? '' : ` (attempt ${count})`}: ${reason}`)
     }
   }
 
   if (failures.length) console.warn('library-index failures:', failures.join(' | '))
-  return Response.json({ dirty: docs.length, indexed, restamped, purged, chunks, failures: failures.length })
+  return Response.json({
+    dirty: docs.length,
+    indexed,
+    restamped,
+    purged,
+    chunks,
+    failures: failures.length,
+    // How many of those failures now carry a backoff. Below `failures` means the
+    // failure table is unreachable — worth seeing, because that is the state in
+    // which the old stall can still happen.
+    backedOff,
+  })
 })
