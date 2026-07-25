@@ -251,6 +251,17 @@ export function ArrowUpIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
   );
 }
 
+/** Jump to the newest message. The mirror of ArrowUpIcon (the send button), so
+ *  the two read as a pair — up sends, down returns you to the bottom. */
+export function ArrowDownIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="12" y1="5" x2="12" y2="18" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M6.5 12.5 12 18l5.5-5.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function CloseIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

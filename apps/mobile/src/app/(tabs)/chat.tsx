@@ -15,7 +15,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Reanimated, { FadeIn } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,7 +43,7 @@ import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
-import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
+import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
@@ -99,6 +99,12 @@ const THINKING_ID = "__thinking__";
  *  read as live, slow enough that the transcript isn't re-rendered hundreds of
  *  times in the seconds before the answer starts. */
 const REASONING_FLUSH_MS = 220;
+
+/** How far from the end the transcript has to be before the jump-to-bottom arrow
+ *  appears, in points. Roughly one line of prose plus the fade: close enough that
+ *  a small overscroll or the tail of a momentum fling never flashes the button,
+ *  far enough that it shows up as soon as there is genuinely something below. */
+const JUMP_TO_BOTTOM_AT = 160;
 
 // Where the remembered intelligence dial lives, per signed-in account. Same
 // SecureStore idiom as the General settings screen (app/profile/general.tsx),
@@ -243,6 +249,12 @@ export default function ChatScreen() {
   const rowHeights = useRef(new Map<string, number>());
   const rowIdsRef = useRef<string[]>([]);
   const [listHeight, setListHeight] = useState(0);
+  // "Jump to the newest message" (owner 2026-07-24). Only meaningful when the
+  // transcript is actually scrolled up away from the end, so the control is
+  // absent — not disabled — the rest of the time. A long answer plus the
+  // scroll-the-question-to-the-top spacer means it is easy to end up a long way
+  // from the newest text with no quick way back.
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [lastTurnHeight, setLastTurnHeight] = useState(0);
 
   const measureLastTurn = useCallback(() => {
@@ -906,6 +918,16 @@ export default function ChatScreen() {
               }, 120);
             }}
             onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+            // Drives the jump-to-bottom button. Compared against a threshold
+            // rather than exact equality: momentum and rubber-banding mean the
+            // offset is rarely exactly the end, and a button that blinks at the
+            // bottom of every scroll is worse than no button.
+            scrollEventThrottle={64}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              const fromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              setAwayFromBottom(fromBottom > JUMP_TO_BOTTOM_AT);
+            }}
             renderItem={({ item }) => (
               // The wrapper exists to MEASURE: the bottom spacer below is sized
               // from the height of the last turn, so every row reports its own.
@@ -1051,6 +1073,48 @@ export default function ChatScreen() {
             third of the screen and washed out the starter rows themselves.
             Nothing to fade means nothing to draw. */}
         {composerMode === "chat" && hasContent ? <BottomFadeBlur height={composerBlockH} /> : null}
+        {/* Jump to the newest message (owner 2026-07-24: "add a downward arrow in
+            the chat for when conversations get long so users can scroll all the
+            way to the bottom (it should disappear if user is already at the
+            bottom)").
+            Mounted only while it has a job — not rendered-and-faded — so it can
+            never sit over the transcript as a dead control, and it fades in so it
+            does not pop. It rides ABOVE the composer block, whose measured height
+            already tracks the starter rows, an attached chip and a multi-line
+            draft, so the arrow moves with the composer instead of guessing. */}
+        {composerMode === "chat" && hasContent && awayFromBottom ? (
+          <Reanimated.View
+            entering={FadeIn.duration(160)}
+            exiting={FadeOut.duration(120)}
+            style={[styles.jumpWrap, { bottom: composerBlockH + space(2) }]}
+            pointerEvents="box-none"
+          >
+            <Pressable
+              onPress={() => {
+                // The list's footer spacer is part of the content, so scrollToEnd
+                // lands where the newest text actually finishes — which is what
+                // "all the way to the bottom" means here.
+                listRef.current?.scrollToEnd({ animated: true });
+                setAwayFromBottom(false);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to the newest message"
+              testID="chat-jump-to-bottom"
+            >
+              {({ pressed }) => (
+                <GlassSurface
+                  style={[styles.jumpBtn, pressed && styles.jumpBtnPressed]}
+                  fallbackColor={c.glassMenu}
+                  opaque
+                  shadow
+                >
+                  <ArrowDownIcon size={20} color={c.text} />
+                </GlassSurface>
+              )}
+            </Pressable>
+          </Reanimated.View>
+        ) : null}
         <View
           style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}
           onLayout={(e) => {
@@ -1401,6 +1465,24 @@ const createStyles = (c: ThemeColors) =>
     // zIndex — it renders after the blur, and tree order is what puts it on
     // top. Adding one would also lift it over this screen's bottom sheets.
     composerFloat: { position: "absolute", bottom: 0, left: 0, right: 0 },
+    // The jump-to-bottom arrow, centred above the composer. `bottom` is applied
+    // inline from the composer's measured height. Same reasoning as
+    // composerFloat about zIndex: it is rendered AFTER the bottom fade and
+    // BEFORE the composer, and tree order is what stacks them on iOS — so it
+    // sits over the fading transcript and under the composer, which is the only
+    // order that works if a tall draft ever grows up to meet it.
+    jumpWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
+    jumpBtn: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      borderWidth: 1,
+      borderColor: c.line,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    jumpBtnPressed: { opacity: 0.7 },
     // Landing starter rows — plain (no glass, no borders) so they read as quiet
     // suggestions on the page, not controls; generous air between rows like the
     // ChatGPT reference.
