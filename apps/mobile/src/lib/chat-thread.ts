@@ -71,9 +71,27 @@ export interface MessageThinking {
   text: string;
 }
 
+export interface WireToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+/** One message on the WIRE — not one message in the thread.
+ *
+ *  The `tool` role and `tool_calls` exist only inside a single turn's agent loop
+ *  (api/chat.ts): the assistant asks for a tool, we answer with a `tool` message,
+ *  and the model then writes its real reply. NONE of that is ever persisted. A
+ *  `ChatMsg` (above) is what the student sees and what syncs to `chat_messages`,
+ *  and it has no tool roles at all — the web renderer reads those same rows and
+ *  knows nothing about a role called "tool". */
 export interface WireMsg {
-  role: "assistant" | "system" | "user";
+  role: "assistant" | "system" | "user" | "tool";
   content: string;
+  /** Assistant messages that requested tools (echoed back on the next round). */
+  tool_calls?: WireToolCall[];
+  /** Tool-result messages: which call this answers. */
+  tool_call_id?: string;
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):

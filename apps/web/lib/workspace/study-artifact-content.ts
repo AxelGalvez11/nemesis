@@ -134,13 +134,42 @@ export function parseGeneratedTest(raw: string): TestQuestion[] {
   return balanceAnswerPositions(questions);
 }
 
-/** Parse one generation reply into an outline. Accepts {outline} JSON or a
- *  bare markdown outline (models sometimes skip the wrapper). */
+/** The `"outline": "…"` value inside a JSON wrapper that did NOT parse — i.e. one
+ *  the model's output ran out of tokens partway through. Stops at the first
+ *  unescaped quote, so a complete-but-unparseable object works too. */
+const TRUNCATED_OUTLINE_FIELD = /"outline"\s*:\s*"((?:[^"\\]|\\.)*)/;
+
+/** Parse one generation reply into an outline. Accepts {outline} JSON, that
+ *  wrapper cut off mid-string by a token limit, or a bare markdown outline
+ *  (models sometimes skip the wrapper).
+ *
+ *  The truncated arm is not defensive padding: without it the bare fallback
+ *  matches the `- point` line INSIDE the broken JSON and returns the whole
+ *  string, so the mind map's first node renders as the literal text
+ *  `{"outline": "`. Kept identical to the phone's parseOutline
+ *  (apps/mobile/src/lib/study-artifact-content.ts) — both surfaces now write
+ *  mind maps from chat, so they must read a half-finished one the same way. */
 export function parseGeneratedMindmap(raw: string): string | null {
   const parsed = jsonSlice(raw);
   const fromJson = parsed ? (parsed as Record<string, unknown>).outline : null;
   if (typeof fromJson === "string" && fromJson.trim()) return fromJson.trim();
-  const bare = raw.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const trimmed = raw.trim();
+  // A wrapper that failed to parse: salvage its field, or refuse. Handing it to
+  // the bare arm below would return JSON punctuation as outline text.
+  if (!parsed && trimmed.startsWith("{")) {
+    const salvaged = TRUNCATED_OUTLINE_FIELD.exec(trimmed)?.[1];
+    if (!salvaged) return null;
+    try {
+      // JSON.parse on the quoted fragment unescapes \n, \t and \uXXXX correctly,
+      // which a chain of .replace() calls would get wrong.
+      const text = JSON.parse(`"${salvaged}"`) as string;
+      return text.trim() || null;
+    } catch {
+      // The fragment ends inside an escape sequence.
+      return null;
+    }
+  }
+  const bare = trimmed.replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
   return /^(#{1,6}\s|[-*+]\s)/m.test(bare) ? bare : null;
 }
 

@@ -63,6 +63,8 @@ for (const prompt of [
   assert.equal(decision.model, "deepseek-chat", prompt);
   assert.notEqual(decision.route, "conversation", prompt);
   assert.equal(decision.reasoningEffort, undefined, prompt);
+  // The flag applyChatEffort reads to stop the High dial stripping the tools.
+  assert.equal(decision.savesToWorkspace, true, prompt);
 }
 
 // A save request that also names a current topic keeps web AND the tools model.

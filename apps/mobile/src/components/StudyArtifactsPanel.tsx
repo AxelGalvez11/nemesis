@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { EmptyBlock, MissionButton } from "./mission-ui";
 import { GlassSurface } from "./GlassSurface";
@@ -57,19 +58,35 @@ export function StudyArtifactsPanel({
   const [rows, setRows] = useState<StudyArtifact[] | null>(null);
   const [open, setOpen] = useState<StudyArtifact | null>(null);
 
+  // `onError` is held in a ref rather than named as a dependency below, and that is
+  // load-bearing: the Study screen passes an inline arrow, so its identity changes
+  // on every render. A `load` that depended on it would be new every render, which
+  // makes the focus effect below re-run every render, which calls load, which sets
+  // state, which renders — an endless refetch loop. The ref keeps `load` stable and
+  // still calls the current handler.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
   const load = useCallback(async () => {
     try {
       const all = await listStudyArtifacts();
       setRows(all.filter((artifact) => artifact.kind === kind));
     } catch (cause) {
       setRows([]);
-      onError(cause instanceof Error ? cause.message : "Couldn't load these yet.");
+      onErrorRef.current(cause instanceof Error ? cause.message : "Couldn't load these yet.");
     }
-  }, [kind, onError]);
+  }, [kind]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // ON FOCUS, not on mount. The chat lives in another tab and can now write tests
+  // and mind maps (api/agentTools.ts), so the common path is: ask chat for a test,
+  // switch to Study, expect it there. A mount-only load would have shown nothing
+  // until the app was restarted, because this tab stays mounted once visited —
+  // which is why the deck list above it already loads this way (study.tsx).
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   if (rows === null) {
     return (

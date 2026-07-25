@@ -11,29 +11,32 @@
 //
 // CONTENT SHAPES ARE VALIDATED, NEVER TRUSTED. `content` is a jsonb column and
 // the row could have been written by the web app, by chat, or by an older build.
-// The parsers below are ports of the web's (lib/workspace/study-artifact-content.ts)
-// and drop anything malformed rather than rendering a broken test. Keep them in
-// step with the web original: both clients read the same rows, so drift means a
-// test that works on one device and vanishes on the other.
+// The validators live in lib/study-artifact-content.ts — pure, so the Deno test
+// runner can load them (it can load neither Supabase nor React Native) — and are
+// ports of the web's lib/workspace/study-artifact-content.ts. Keep them in step
+// with that original: both clients read the same rows, so drift means a test that
+// works on one device and vanishes on the other.
 import { supabase } from "./supabase";
+import {
+  bestAttempt,
+  cleanText,
+  parseOutline,
+  scoreAttempt,
+  toAttempt,
+  toQuestion,
+  usableQuestions,
+  type StudyArtifactKind,
+  type StudyArtifactStatus,
+  type TestAttempt,
+  type TestQuestion,
+} from "@/lib/study-artifact-content";
+import { balanceAnswerPositions } from "@/lib/test-answer-balance";
 
-export type StudyArtifactKind = "test" | "mindmap";
-export type StudyArtifactStatus = "draft" | "ready";
-
-export interface TestQuestion {
-  q: string;
-  options: string[];
-  /** 0-based index into `options` — always in bounds after parsing. */
-  answer: number;
-  why: string;
-}
-
-export interface TestAttempt {
-  at: string;
-  score: number;
-  total: number;
-  missed: { questionIndex: number; picked: number }[];
-}
+// Re-exported so every caller keeps importing artifacts from ONE place: the
+// screens want the row type and the scorer together, and splitting that across
+// two import paths buys nothing.
+export { bestAttempt, scoreAttempt };
+export type { StudyArtifactKind, StudyArtifactStatus, TestAttempt, TestQuestion };
 
 export interface StudyArtifact {
   id: string;
@@ -52,76 +55,13 @@ export interface StudyArtifact {
 }
 
 const MAX_ARTIFACTS = 200;
-const MAX_TEXT = 500;
-const MAX_OPTIONS = 6;
+/** Titles and folder names are shown on a row, so they are clipped to what a row
+ *  can hold rather than to the column's limit. */
+const MAX_TITLE = 160;
+const MAX_GROUP = 120;
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-function cleanText(value: unknown, maxLength = MAX_TEXT): string | null {
-  if (typeof value !== "string") return null;
-  const compact = value.trim().replace(/\s+/g, " ").slice(0, maxLength);
-  return compact || null;
-}
-
-/** Port of the web's toQuestion. A question with no prompt, fewer than two
- *  options, or an answer index outside those options is unusable — dropped, not
- *  shown, because a test you cannot score right is worse than a missing one. */
-function toQuestion(value: unknown): TestQuestion | null {
-  if (typeof value !== "object" || value === null) return null;
-  const row = value as Record<string, unknown>;
-  const q = cleanText(row.q ?? row.question);
-  const why = cleanText(row.why ?? row.explanation) ?? "";
-  const rawOptions = Array.isArray(row.options) ? row.options : [];
-  const options = rawOptions
-    .map((option) => cleanText(option))
-    .filter((option): option is string => option !== null)
-    .slice(0, MAX_OPTIONS);
-  const answer = Number(row.answer);
-  if (!q || options.length < 2) return null;
-  if (!Number.isInteger(answer) || answer < 0 || answer >= options.length) return null;
-  return { answer, options, q, why };
-}
-
-function toAttempt(value: unknown): TestAttempt | null {
-  if (typeof value !== "object" || value === null) return null;
-  const row = value as Record<string, unknown>;
-  const at = typeof row.at === "string" ? row.at : null;
-  const score = Number(row.score);
-  const total = Number(row.total);
-  if (!at || !Number.isFinite(score) || !Number.isFinite(total) || total <= 0) return null;
-  const missed = Array.isArray(row.missed)
-    ? row.missed.flatMap((miss) => {
-        if (typeof miss !== "object" || miss === null) return [];
-        const entry = miss as Record<string, unknown>;
-        const questionIndex = Number(entry.questionIndex);
-        const picked = Number(entry.picked);
-        return Number.isInteger(questionIndex) && Number.isInteger(picked) ? [{ picked, questionIndex }] : [];
-      })
-    : [];
-  return { at, missed, score, total };
-}
-
-/** Grade a finished run. `picks[i]` is the chosen option for `questions[i]`;
- *  -1 means unanswered, which counts as missed rather than silently correct. */
-export function scoreAttempt(questions: TestQuestion[], picks: number[], at: string): TestAttempt {
-  const missed: TestAttempt["missed"] = [];
-  let score = 0;
-  questions.forEach((question, index) => {
-    if (picks[index] === question.answer) score += 1;
-    else missed.push({ picked: picks[index] ?? -1, questionIndex: index });
-  });
-  return { at, missed, score, total: questions.length };
-}
-
-/** The attempt to show on a test row — best score, newest on ties. */
-export function bestAttempt(attempts: TestAttempt[]): TestAttempt | null {
-  let best: TestAttempt | null = null;
-  for (const attempt of attempts) {
-    if (!best || attempt.score / attempt.total >= best.score / best.total) best = attempt;
-  }
-  return best;
 }
 
 function toArtifact(row: Record<string, unknown>): StudyArtifact | null {
@@ -166,6 +106,84 @@ export async function listStudyArtifacts(): Promise<StudyArtifact[]> {
   return (data ?? [])
     .map((row) => toArtifact(row as Record<string, unknown>))
     .filter((artifact): artifact is StudyArtifact => artifact !== null);
+}
+
+/**
+ * Save a practice test the chat just wrote (owner 2026-07-24: "the phone chat
+ * needs to be able to create flashcards, tests, mindmaps and those should show up
+ * in the study page").
+ *
+ * The questions go through the SAME validator the reader uses, so a malformed
+ * question is refused here rather than landing as an unusable row — and then
+ * through balanceAnswerPositions, so a paper written on the phone has its correct
+ * answers spread across the positions exactly like one written on the web. That
+ * call is safe only because the paper is brand new: `attempts` starts empty, and
+ * reordering options after an attempt exists would rewrite what the student
+ * answered (see lib/test-answer-balance.ts).
+ *
+ * `user_id` is written explicitly. The column does default to `auth.uid()`, but
+ * every other write in this app names it, and a row that silently depends on a
+ * server-side default is a row that breaks quietly if that default is ever
+ * dropped.
+ */
+export async function createStudyTest(
+  userId: string,
+  input: { title: string; groupName?: string; questions: unknown },
+): Promise<{ id: string; questions: TestQuestion[] }> {
+  const title = cleanText(input.title, MAX_TITLE);
+  if (!title) throw new Error("A test needs a title.");
+  const questions = balanceAnswerPositions(usableQuestions(input.questions));
+  if (questions.length === 0) {
+    throw new Error("No usable questions — each needs a prompt, at least two options, and a valid answer index.");
+  }
+  const { data, error } = await supabase
+    .from("study_artifacts")
+    .insert({
+      content: { attempts: [], questions },
+      group_name: cleanText(input.groupName, MAX_GROUP) ?? "",
+      kind: "test",
+      status: "ready",
+      title,
+      user_id: userId,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  const id = str(data?.id);
+  if (!id) throw new Error("The test was saved but came back unreadable.");
+  return { id, questions };
+}
+
+/** Save a mind map the chat just wrote. The outline is re-validated here because
+ *  a model asked for "a markdown outline" also produces JSON wrappers, fenced
+ *  blocks, and plain prose — and prose renders as a single blob, which is not a
+ *  mind map. See parseOutline. */
+export async function createStudyMindmap(
+  userId: string,
+  input: { title: string; groupName?: string; outline: string },
+): Promise<{ id: string; outline: string }> {
+  const title = cleanText(input.title, MAX_TITLE);
+  if (!title) throw new Error("A mind map needs a title.");
+  const outline = parseOutline(input.outline);
+  if (!outline) {
+    throw new Error("That outline wasn't usable — it needs a '# Topic' heading and nested '- ' bullets.");
+  }
+  const { data, error } = await supabase
+    .from("study_artifacts")
+    .insert({
+      content: { outline },
+      group_name: cleanText(input.groupName, MAX_GROUP) ?? "",
+      kind: "mindmap",
+      status: "ready",
+      title,
+      user_id: userId,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  const id = str(data?.id);
+  if (!id) throw new Error("The mind map was saved but came back unreadable.");
+  return { id, outline };
 }
 
 /** Record one finished run against a test.

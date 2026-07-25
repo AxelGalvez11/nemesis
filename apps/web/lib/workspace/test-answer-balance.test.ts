@@ -100,6 +100,18 @@ test("empty and single-question papers are handled without special-casing", () =
   assert.equal(question.options[question.answer], "correct 0");
 });
 
+// The seam with the phone's copy (apps/mobile/src/lib/test-answer-balance.ts).
+// A test can be created on either surface and taken on the other — both read the
+// same stored row — so the two implementations must agree EXACTLY, not merely
+// both "look balanced". This pins the output of a fixed paper; the identical
+// assertion sits in the phone's Deno suite against the same numbers, so editing
+// one copy fails the side that was not updated.
+const GOLDEN_20 = [3, 2, 1, 1, 3, 3, 3, 1, 2, 2, 0, 1, 0, 2, 0, 1, 2, 0, 3, 0];
+
+test("GOLDEN: web and phone lay out the same paper identically", () => {
+  assert.deepEqual(balanceAnswerPositions(allFirst(20)).map((q) => q.answer), GOLDEN_20);
+});
+
 test("balancedPositions covers every slot before repeating any", () => {
   // Pinned directly: the balance step is what stops a lean, the shuffle only
   // hides the order. With a stubbed generator the balance must still hold.

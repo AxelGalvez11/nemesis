@@ -2,7 +2,7 @@
 // mirrors apps/web/lib/workspace/chat-effort.test.ts.
 // Run: deno test --no-check apps/mobile/src/lib/chat-effort.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { applyChatEffort, CHAT_EFFORT_LABEL, CHAT_EFFORTS, DEFAULT_CHAT_EFFORT, isChatEffort } from "./chat-effort.ts";
+import { applyChatEffort, CHAT_EFFORT_LABEL, CHAT_EFFORTS, DEFAULT_CHAT_EFFORT, isChatEffort, toolsAllowed } from "./chat-effort.ts";
 import { classifyChatRequest } from "./chat-routing.ts";
 
 Deno.test("instant drops to the cheap model and clears any routed thinking", () => {
@@ -52,4 +52,33 @@ Deno.test("isChatEffort guards a persisted/unknown value", () => {
   assertEquals(isChatEffort("medium"), true);
   assertEquals(isChatEffort("turbo"), false);
   assertEquals(isChatEffort(null), false);
+});
+
+// ── Which turns may carry workspace tools ────────────────────────────────────
+
+Deno.test("tools ride the cheap model and never a thinking turn", () => {
+  const chatty = classifyChatRequest("hello");
+  assertEquals(toolsAllowed(applyChatEffort(chatty, "instant")), true);
+  assertEquals(toolsAllowed(applyChatEffort(chatty, "medium")), true);
+  // A reasoner turn has to echo reasoning_content back on a tool round, which the
+  // stream does not retain — so it goes out with no tools rather than half-working.
+  assertEquals(toolsAllowed(classifyChatRequest("explain osmosis")), false);
+});
+
+Deno.test("High keeps its tools on a SAVE — otherwise the save silently does nothing", () => {
+  // THE BUG THIS PINS: the effort dial is stored per user and persists across app
+  // launches. A student who once picked High and later types "make me flashcards on
+  // beta blockers" would, without this, get an essay and an unchanged Study page,
+  // with nothing on screen explaining why.
+  const save = classifyChatRequest("make me flashcards on beta blockers");
+  const high = applyChatEffort(save, "high");
+  assertEquals(high.reasoningEffort, undefined);
+  assertEquals(high.model, "deepseek-chat");
+  assertEquals(toolsAllowed(high), true);
+});
+
+Deno.test("High still means High on everything that is not a save", () => {
+  const ordinary = applyChatEffort(classifyChatRequest("hello"), "high");
+  assertEquals(ordinary.reasoningEffort, "high");
+  assertEquals(toolsAllowed(ordinary), false);
 });

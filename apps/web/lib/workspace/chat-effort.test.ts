@@ -26,6 +26,21 @@ test("high adds the effort flag without changing the route's model", () => {
   assert.equal(high.reasoningEffort, "high");
 });
 
+// CHANGED 2026-07-24, and this used to assert the opposite. Saving at High was
+// recorded below as "a known limitation": the dial set reasoningEffort, that
+// stripped the tools, and the save came back as prose having written nothing. But
+// the dial is a STORED preference that persists across sessions, so a student who
+// picked High once got a chat that silently stopped saving — with nothing on screen
+// to explain it. A limitation the user cannot see is a bug. The specific, fresher
+// instruction ("make me flashcards") now beats the standing one.
+test("high keeps its tools on a save, because the alternative is saving nothing", () => {
+  const save = classifyChatRequest("make me flashcards on beta blockers");
+  const high = applyChatEffort(save, "high");
+  assert.equal(high.reasoningEffort, undefined);
+  assert.equal(high.model, "deepseek-chat");
+  assert.equal(toolsAllowed(high), true);
+});
+
 test("web search survives every effort level", () => {
   const current = classifyChatRequest("what is the latest news on this?");
   assert.equal(current.searchWeb, true);
@@ -35,7 +50,9 @@ test("web search survives every effort level", () => {
 });
 
 test("tools ride instant turns but never reasoner or high-effort turns", () => {
-  const chatty = classifyChatRequest("add these to my deck");
+  // A NON-save prompt for the high case: a save now keeps its tools at High on
+  // purpose (see the test above), so asserting it here would pin the old bug.
+  const chatty = classifyChatRequest("hello");
   assert.equal(toolsAllowed(applyChatEffort(chatty, "instant")), true);
   assert.equal(toolsAllowed(applyChatEffort(chatty, "high")), false);
   assert.equal(toolsAllowed(applyChatEffort(classifyChatRequest("explain osmosis"), "medium")), false);
@@ -43,9 +60,8 @@ test("tools ride instant turns but never reasoner or high-effort turns", () => {
 
 // The regression this batch fixes: a save request phrased like a lesson used to
 // route to the reasoner (LEARNING_PATTERN matches "flashcards"/"quiz"), which
-// stripped its tools, so the save never ran. At the DEFAULT effort these must
-// now keep tools. (High effort is still a deliberate "think hard, no tools"
-// mode — see the assertion above — so saving at High is a known limitation.)
+// stripped its tools, so the save never ran. These must keep tools at EVERY
+// effort level — see the High case above for why that now includes High.
 test("save requests keep their tools at the default effort", () => {
   for (const prompt of [
     "make me flashcards on beta blockers",
@@ -54,8 +70,10 @@ test("save requests keep their tools at the default effort", () => {
     "build a mind map of the RAAS pathway",
     "add these to my deck",
   ]) {
-    const decision = applyChatEffort(classifyChatRequest(prompt), "medium");
-    assert.equal(toolsAllowed(decision), true, prompt);
+    for (const effort of ["instant", "medium", "high"] as const) {
+      const decision = applyChatEffort(classifyChatRequest(prompt), effort);
+      assert.equal(toolsAllowed(decision), true, `${prompt} @ ${effort}`);
+    }
   }
 });
 
