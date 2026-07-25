@@ -10,6 +10,47 @@ export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
  *  is still a HEIC. */
 export const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
 
+export interface ChatAttachmentGroup {
+  /** Stable for the lifetime of the selected File objects. */
+  key: string;
+  label: string;
+  kind: "file" | "folder";
+  files: readonly File[];
+}
+
+function relativePath(file: File): string {
+  return file.webkitRelativePath.trim().replace(/^\/+/, "");
+}
+
+/**
+ * Browser folder selection returns one File per descendant. Group those files
+ * by root directory so the composer and sent message show the directory once,
+ * while the model still receives the readable files inside it.
+ */
+export function groupChatAttachments(files: readonly File[]): ChatAttachmentGroup[] {
+  const groups: ChatAttachmentGroup[] = [];
+  const folders = new Map<string, File[]>();
+
+  for (const [index, file] of files.entries()) {
+    const path = relativePath(file);
+    const slash = path.indexOf("/");
+    if (slash > 0) {
+      const folder = path.slice(0, slash);
+      const existing = folders.get(folder);
+      if (existing) existing.push(file);
+      else {
+        const children = [file];
+        folders.set(folder, children);
+        groups.push({ key: `folder:${folder}`, kind: "folder", label: folder, files: children });
+      }
+      continue;
+    }
+    groups.push({ key: `file:${index}:${file.name}:${file.lastModified}`, kind: "file", label: file.name, files: [file] });
+  }
+
+  return groups;
+}
+
 export function isImage(file: File) {
   const name = file.name.toLowerCase();
   if (IMAGE_EXTENSIONS.some((extension) => name.endsWith(extension))) return true;
@@ -64,7 +105,8 @@ export async function extractFile(file: File, uid: string | null): Promise<Extra
 
 function attachmentSummary(files: readonly File[]) {
   if (!files.length) return "";
-  return `\n\nAttachments: ${files.map((file) => file.name).join(", ")}`;
+  const labels = groupChatAttachments(files).map((group) => group.kind === "folder" ? `${group.label}/` : group.label);
+  return `\n\nAttachments: ${labels.join(", ")}`;
 }
 
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
@@ -89,7 +131,7 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     }
     const remaining = MAX_TOTAL_CHARS - used;
     const clipped = content.trim().slice(0, Math.min(MAX_ATTACHMENT_CHARS, remaining));
-    blocks.push(`### Attachment: ${file.name}\nType: ${file.type || "unknown"}\n\n${clipped}`);
+    blocks.push(`### Attachment: ${relativePath(file) || file.name}\nType: ${file.type || "unknown"}\n\n${clipped}`);
     used += clipped.length;
   }
 

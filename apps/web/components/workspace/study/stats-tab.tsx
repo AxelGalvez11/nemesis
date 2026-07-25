@@ -1,6 +1,10 @@
+import { IconChartBar } from "@tabler/icons-react";
+
+import { Button } from "@/components/desktop-ui/button";
 import type { StudyReview } from "@/lib/workspace/study-cloud-store";
 import { retentionRate, retentionSeries } from "@/lib/workspace/study-stats";
 
+import { AgentEmptyState } from "./agent-empty-state";
 import { StudyHeatmap } from "./heatmap";
 
 function RetentionGraph({ reviews }: { reviews: StudyReview[] }) {
@@ -38,7 +42,20 @@ function RetentionGraph({ reviews }: { reviews: StudyReview[] }) {
   );
 }
 
-export function StatsTab({ reviews }: { reviews: StudyReview[] }) {
+export function StatsTab({ reviews, onStartReview }: { reviews: StudyReview[]; onStartReview: () => void }) {
+  if (reviews.length === 0) {
+    return (
+      <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-10">
+        <AgentEmptyState
+          action={<Button onClick={onStartReview} variant="secondary">Go to cards</Button>}
+          description="This page charts review activity and recall—not cards you have merely created. Complete a card review and your first day will appear here."
+          icon={<IconChartBar size={20} />}
+          title="Your study history starts after one review"
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="scrollbar-study flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-6 py-10">
       <div className="grid w-full max-w-4xl gap-5">
