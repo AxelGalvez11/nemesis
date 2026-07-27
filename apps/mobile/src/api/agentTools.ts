@@ -36,8 +36,15 @@ import {
   parseToolArgs,
   str,
   usableCards,
+  usableSlides,
   type AgentToolName,
 } from "@/lib/agent-tools";
+import {
+  GENERATED_NOTES_FOLDER,
+  GENERATED_SLIDES_FOLDER,
+  GENERATED_TESTS_GROUP,
+} from "@/lib/academic-skills";
+import { qualityPracticeQuestions } from "@/lib/item-writing";
 
 export interface AgentToolCall {
   id: string;
@@ -109,8 +116,49 @@ async function createLibraryNote({ args, uid }: ToolContext) {
   const content = str(args.content);
   if (!title) return { error: "A note needs a title." };
   if (!content.trim()) return { error: "A note needs a body — write the markdown yourself." };
-  const note = await createNoteWithContent(uid, title, content, str(args.folder));
-  return { created: true, path: note.path, title: note.title };
+  const folder = str(args.folder).trim() || GENERATED_NOTES_FOLDER;
+  const note = await createNoteWithContent(uid, title, content, folder);
+  return {
+    artifact: { id: note.id, kind: "other", route: `/note?id=${encodeURIComponent(note.id)}`, title: note.title },
+    created: true,
+    path: note.path,
+    title: note.title,
+  };
+}
+
+async function createSlideDeck({ args, uid }: ToolContext) {
+  const title = str(args.title).trim().slice(0, 180);
+  if (!title) return { error: "A slide deck needs a title." };
+  const slides = usableSlides(args.slides);
+  if (slides.length < 2) {
+    return { error: "A slide deck needs at least two usable slides with a title and content." };
+  }
+  const folder = str(args.folder).trim() || GENERATED_SLIDES_FOLDER;
+  const body = [
+    "---",
+    "nemesis_artifact: slides",
+    `slide_count: ${slides.length}`,
+    "---",
+    "",
+    `# ${title}`,
+    "",
+    ...slides.flatMap((slide, index) => [
+      `## ${index + 1}. ${slide.title}`,
+      "",
+      ...slide.bullets.map((bullet) => `- ${bullet}`),
+      ...(slide.speakerNotes ? ["", "### Speaker notes", "", slide.speakerNotes] : []),
+      ...(index < slides.length - 1 ? ["", "---", ""] : []),
+    ]),
+  ].join("\n");
+  const note = await createNoteWithContent(uid, title, body, folder);
+  return {
+    artifact: { id: note.id, kind: "slides", route: `/slides?id=${encodeURIComponent(note.id)}`, title: note.title },
+    created: true,
+    kind: "slides",
+    path: note.path,
+    slides: slides.length,
+    title: note.title,
+  };
 }
 
 /** Notes on the phone are addressed by PATH everywhere the model can see (search
@@ -203,6 +251,84 @@ async function listStudyDecks(_context: ToolContext) {
   return { decks: decks.map((deck) => ({ cards: counts.get(str(deck.id)) ?? 0, name: str(deck.name) })) };
 }
 
+async function readStudyDeck({ args }: ToolContext) {
+  const wanted = str(args.deck_name).trim();
+  if (!wanted) return { error: "Which deck? Use list_study_decks to see the names." };
+  const { data: decks, error: deckError } = await supabase.from("study_decks").select("id,name").limit(200);
+  if (deckError) return { error: deckError.message };
+  const names = (decks ?? []).map((deck) => str(deck.name));
+  const matched = matchDeckName(wanted, names);
+  if (!matched) return { error: `No unique Study deck matched '${wanted}'. Use list_study_decks and pass the full name.` };
+  const deck = (decks ?? []).find((row) => str(row.name) === matched);
+  if (!deck) return { error: `No Study deck matched '${wanted}'.` };
+  const rawOffset = Number(args.offset);
+  const rawLimit = Number(args.limit);
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 20) : 12;
+  const { data: cards, error } = await supabase
+    .from("study_cards")
+    .select("front,back,card_type,tags,suspended")
+    .eq("deck_id", deck.id)
+    .order("created_at")
+    .range(offset, offset + limit - 1);
+  if (error) return { error: error.message };
+  return {
+    deck: matched,
+    cards: (cards ?? []).map((card) => ({
+      back: clip(str(card.back), 600),
+      card_type: str(card.card_type),
+      front: clip(str(card.front), 300),
+      suspended: card.suspended === true,
+      tags: Array.isArray(card.tags) ? card.tags.map(str).filter(Boolean).slice(0, 20) : [],
+    })),
+    next_offset: (cards?.length ?? 0) === limit ? offset + limit : null,
+    offset,
+  };
+}
+
+async function listStudyArtifacts({ args }: ToolContext) {
+  const requestedKind = str(args.kind).trim().toLowerCase();
+  let query = supabase
+    .from("study_artifacts")
+    .select("id,kind,title,group_name,status,content,updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(MAX_LIST);
+  if (requestedKind === "test" || requestedKind === "mindmap") query = query.eq("kind", requestedKind);
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  return {
+    artifacts: (data ?? []).map((artifact) => ({
+      group: str(artifact.group_name),
+      id: str(artifact.id),
+      kind: str(artifact.kind),
+      status: str(artifact.status),
+      title: str(artifact.title),
+      updated_at: str(artifact.updated_at),
+    })),
+  };
+}
+
+async function readStudyArtifact({ args }: ToolContext) {
+  const id = str(args.id).trim();
+  if (!id) return { error: "Which item? Use list_study_artifacts to get its id." };
+  const { data, error } = await supabase
+    .from("study_artifacts")
+    .select("id,kind,title,group_name,status,content,updated_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: `No Study item with id '${id}'.` };
+  return {
+    content: clip(JSON.stringify(data.content ?? {}), 12_000),
+    group: str(data.group_name),
+    id: str(data.id),
+    kind: str(data.kind),
+    status: str(data.status),
+    title: str(data.title),
+    updated_at: str(data.updated_at),
+  };
+}
+
 async function addFlashcards({ args, uid }: ToolContext) {
   const wanted = str(args.deck_name).trim().slice(0, 120);
   if (!wanted) return { error: "Which deck?" };
@@ -243,25 +369,104 @@ async function addFlashcards({ args, uid }: ToolContext) {
     })),
   );
   if (insertError) return { error: insertError.message };
-  return { added: cards.length, created_deck: createdDeck, deck: matched ?? wanted };
+  const deckName = matched ?? wanted;
+  return {
+    added: cards.length,
+    artifact: { id: deckId, kind: "flashcards", route: "/study?section=cards", title: deckName },
+    created_deck: createdDeck,
+    deck: deckName,
+  };
 }
 
 async function addPracticeTest({ args, uid }: ToolContext) {
+  const groupName = str(args.group_name).trim() || GENERATED_TESTS_GROUP;
+  const questions = qualityPracticeQuestions(args.questions);
+  if (questions.length < 4) {
+    return {
+      error:
+        "The test did not pass the quality check. Write at least four unique one-best-answer questions with 3–6 distinct options, a rationale, no negative stems, and no all/none-of-the-above choices.",
+    };
+  }
   const saved = await createStudyTest(uid, {
-    groupName: str(args.group_name),
-    questions: args.questions,
+    groupName,
+    questions,
     title: str(args.title),
   });
-  return { added: true, group: str(args.group_name).trim() || null, kind: "test", questions: saved.questions.length, title: str(args.title).trim() };
+  const title = str(args.title).trim();
+  return {
+    added: true,
+    artifact: { id: saved.id, kind: "test", route: "/study?section=tests", title },
+    group: groupName,
+    kind: "test",
+    questions: saved.questions.length,
+    title,
+  };
 }
 
 async function addMindmap({ args, uid }: ToolContext) {
-  await createStudyMindmap(uid, {
+  const saved = await createStudyMindmap(uid, {
     groupName: str(args.group_name),
     outline: str(args.outline),
     title: str(args.title),
   });
-  return { added: true, group: str(args.group_name).trim() || null, kind: "mindmap", title: str(args.title).trim() };
+  const title = str(args.title).trim();
+  return {
+    added: true,
+    artifact: { id: saved.id, kind: "mindmap", route: "/study?section=mindmaps", title },
+    group: str(args.group_name).trim() || null,
+    kind: "mindmap",
+    title,
+  };
+}
+
+// ── calendar ──────────────────────────────────────────────────────────────────
+
+async function listCalendarEvents({ args }: ToolContext) {
+  const rawDays = Number(args.days_ahead);
+  const days = Number.isFinite(rawDays) && rawDays > 0 ? Math.min(Math.floor(rawDays), 120) : 14;
+  const today = new Date().toISOString().slice(0, 10);
+  const end = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("id,title,date,time,kind,course,note")
+    .gte("date", today)
+    .lte("date", end)
+    .order("date")
+    .order("time")
+    .limit(MAX_LIST * 2);
+  if (error) return { error: error.message };
+  return { events: data ?? [], window: { from: today, to: end } };
+}
+
+const EVENT_KINDS = new Set(["assignment", "exam", "rotation", "class", "other"]);
+
+async function addCalendarEvent({ args, uid }: ToolContext) {
+  const title = str(args.title).trim().slice(0, 300);
+  const date = str(args.date).trim();
+  if (!title) return { error: "An event needs a title." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Use YYYY-MM-DD for the date." };
+  const rawKind = str(args.kind).trim().toLowerCase();
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .insert({
+      course: str(args.course).trim().slice(0, 200) || null,
+      date,
+      kind: EVENT_KINDS.has(rawKind) ? rawKind : "other",
+      note: str(args.note).trim().slice(0, 4_000) || null,
+      source: "agent",
+      time: str(args.time).trim().slice(0, 40) || null,
+      title,
+      user_id: uid,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
+  return {
+    added: true,
+    artifact: { id: str(data.id), kind: "other", route: `/calendar?date=${encodeURIComponent(date)}`, title },
+    date,
+    title,
+  };
 }
 
 /** Every advertised tool, with the thing that runs it.
@@ -272,13 +477,19 @@ async function addMindmap({ args, uid }: ToolContext) {
  *  cannot reach a student. */
 const HANDLERS: Record<AgentToolName, ToolHandler> = {
   add_flashcards: addFlashcards,
+  add_calendar_event: addCalendarEvent,
   add_mindmap: addMindmap,
   add_practice_test: addPracticeTest,
   append_library_note: appendLibraryNote,
   create_library_folder: createLibraryFolder,
   create_library_note: createLibraryNote,
+  create_slide_deck: createSlideDeck,
+  list_calendar_events: listCalendarEvents,
+  list_study_artifacts: listStudyArtifacts,
   list_study_decks: listStudyDecks,
   move_library_note: moveLibraryNote,
+  read_study_deck: readStudyDeck,
+  read_study_artifact: readStudyArtifact,
   read_library_note: readLibraryNote,
   rename_library_note: renameLibraryNote,
   search_library: searchLibrary,

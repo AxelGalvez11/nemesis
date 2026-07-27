@@ -45,7 +45,8 @@ export default function DesktopAuthPage() {
 
     const query = new URLSearchParams(window.location.search);
     const state = query.get("state") ?? "";
-    setIsPhone(query.get("client") === "phone");
+    const phoneClient = query.get("client") === "phone";
+    setIsPhone(phoneClient);
 
     if (!STATE_PATTERN.test(state)) {
       setError("This sign-in link is missing its security code. Start again from the Nemesis app.");
@@ -106,7 +107,8 @@ export default function DesktopAuthPage() {
       return;
     }
     startedRef.current = true;
-    void signInWithOAuth(provider, `/auth/desktop?state=${state}`).then((err) => {
+    const returnPath = `/auth/desktop?state=${state}${phoneClient ? "&client=phone" : ""}`;
+    void signInWithOAuth(provider, returnPath).then((err) => {
       if (err) {
         startedRef.current = false;
         setError(err);

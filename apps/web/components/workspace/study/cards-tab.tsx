@@ -17,6 +17,7 @@ import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 import type { StudyReviewSettings } from "./study-chrome";
+import { TextStudyImportDialog } from "./text-import-dialog";
 import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
@@ -117,6 +118,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const [extraGroups, setExtraGroups] = useState<string[]>([]);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [textImportSource, setTextImportSource] = useState<"anki" | "quizlet" | null>(null);
   const [starterOpen, setStarterOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -357,7 +359,9 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
             <DropdownMenuItem onSelect={() => setCreateKind("deck")}><IconCards /> New deck</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}><IconFolderPlus /> New group</DropdownMenuItem>
             <DropdownMenuItem disabled={decks.length === 0} onSelect={() => setCreateKind("card")}><IconSquarePlus /> New card</DropdownMenuItem>
-            <DropdownMenuItem data-testid="import-anki" onSelect={() => setImportOpen(true)}><IconFileUpload /> Import from Anki</DropdownMenuItem>
+            <DropdownMenuItem data-testid="import-anki" onSelect={() => setImportOpen(true)}><IconFileUpload /> Import Anki package</DropdownMenuItem>
+            <DropdownMenuItem data-testid="import-anki-text" onSelect={() => setTextImportSource("anki")}><IconFileUpload /> Import Anki text</DropdownMenuItem>
+            <DropdownMenuItem data-testid="import-quizlet" onSelect={() => setTextImportSource("quizlet")}><IconFileUpload /> Import from Quizlet</DropdownMenuItem>
             <DropdownMenuItem data-testid="starter-decks" onSelect={() => setStarterOpen(true)}><IconBooks /> Starter decks</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -426,6 +430,13 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
       <StudyCreateDialog deck={selectedDeck} kind={createKind ?? "deck"} onOpenChange={(open) => !open && setCreateKind(null)} open={createKind !== null} sourcePath={sourcePath} />
       <AnkiImportDialog onOpenChange={setImportOpen} open={importOpen} />
+      {textImportSource && (
+        <TextStudyImportDialog
+          onOpenChange={(open) => { if (!open) setTextImportSource(null); }}
+          open
+          source={textImportSource}
+        />
+      )}
       <StarterDeckDialog onOpenChange={setStarterOpen} open={starterOpen} />
       <Dialog onOpenChange={(open) => !open && setMerge(null)} open={merge !== null}>
         <DialogContent className="max-w-sm">

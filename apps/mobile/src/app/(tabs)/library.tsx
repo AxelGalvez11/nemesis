@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import Reanimated, { LinearTransition } from "react-native-reanimated";
@@ -20,6 +19,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
+import { SlideUpSheet } from "@/components/StudySheet";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
@@ -39,6 +39,7 @@ import {
   moveNote,
   renameFolder,
   renameNote,
+  subscribeLibraryChanges,
   type CloudLibraryNote,
   type CloudLibrarySnapshot,
 } from "@/api/cloudLibrary";
@@ -60,9 +61,9 @@ import { control, radius, space, type } from "@/theme/tokens";
 // Library (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md §7):
 // the same notes the web app's Library reads and writes, on your phone. Shows the
 // last-cached list instantly (offline included), then refreshes from the cloud
-// behind that — on open and whenever this screen regains focus. No editor anywhere
-// on this screen by design (single-writer architecture, for now): the web app is
-// the only place a note gets created or changed; this phone shows a read-only copy.
+// behind that — on open, when this screen regains focus, and in response to
+// Realtime changes. Notes and folders can be created, renamed, moved, edited, and
+// removed here against the same cloud rows used by the web app.
 // Only kind:"note" rows render here — folder rows only inform the folder tree.
 //
 // Folders nest arbitrarily deep (mirrors the web app's own folder structure) and
@@ -84,10 +85,8 @@ import { control, radius, space, type } from "@/theme/tokens";
 // which disambiguates same-named notes. Folder headers show a recursive item
 // count.
 //
-// Read-only controls (this screen owns the UI, never the data): a Search that filters
-// the list, a Sort half-sheet that reorders it, and New note / New folder buttons that
-// only ever explain "create it on the web app" — a phone write isn't wired up yet, so
-// those actions are deliberately inert until phone editing ships.
+// Controls include Search, a draggable full-width Sort sheet, and native creation,
+// move, rename, selection, and soft-delete actions shared across iOS and web.
 
 // A–Z / Z–A by title; Modified by the row's updated_at; Created by its created_at —
 // the cloud table carries both, so every ordering the owner specced has honest data
@@ -606,8 +605,12 @@ export default function LibraryScreen() {
         setDataReady(true);
         void refresh(userId);
       })();
+      const unsubscribe = subscribeLibraryChanges(userId, () => {
+        if (alive) void refresh(userId);
+      });
       return () => {
         alive = false;
+        unsubscribe();
       };
     }, [userId, refresh]),
   );
@@ -887,7 +890,7 @@ export default function LibraryScreen() {
               <>
                 <EmptyBlock
                   title="Nothing here yet"
-                  body="Your library lives in your account. Create notes on the web app and they appear here."
+                  body="Create a note or folder here. Everything syncs with your Nemesis library on the web."
                 />
                 <View style={styles.emptyRefreshBtn}>
                   <MissionButton
@@ -1189,9 +1192,7 @@ function LibraryActionsMenu({
   );
 }
 
-/** The half-height SORT sheet. Always mounted (like SlideUpSheet / StudyModeMenu) so
- * both the open and close animations play; a transparent tap-catcher closes it and the
- * sheet's own glass supplies the blur (owner: no whole-screen blur behind popups). */
+/** Sorting uses the same full-width, drag-to-expand sheet as the rest of iOS. */
 function SortSheet({
   visible,
   current,
@@ -1204,58 +1205,27 @@ function SortSheet({
   onClose: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
-  const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const progress = useRef(new Animated.Value(0)).current;
-  const sheetH = Math.round(height * 0.5);
-
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: visible ? 1 : 0,
-      duration: visible ? 240 : 180,
-      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [visible, progress]);
-
-  // Slide off the FULL window height so the sheet is always fully hidden when
-  // closed, whatever its content height ends up being.
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="library-sort-sheet">
-      {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
-          The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sort" />
-      <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
-        {/* At LEAST half the screen tall (the "half sheet"), but grows to fit its rows
-            on short devices so the last option never clips. */}
-        <GlassSurface style={[styles.sheet, { minHeight: sheetH }]} fallbackColor={c.bg2}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Sort</Text>
-          <View style={{ paddingBottom: insets.bottom + space(4) }}>
-            {SORT_OPTIONS.map((opt) => {
-              const optKey = opt.key as SortKey;
-              const isActive = current === optKey;
-              return (
-                <Pressable
-                  key={opt.key}
-                  testID={`sort-option-${opt.key}`}
-                  onPress={() => onSelect(optKey)}
-                  style={({ pressed }) => [styles.sortRow, pressed && styles.rowPressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text style={[styles.sortLabel, isActive && styles.sortLabelActive]}>{opt.label}</Text>
-                  {isActive ? <Text style={styles.sortCheck}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
-          </View>
-        </GlassSurface>
-      </Animated.View>
-    </View>
+    <SlideUpSheet visible={visible} onClose={onClose} title="Sort" testID="library-sort-sheet">
+      {SORT_OPTIONS.map((opt) => {
+        const optKey = opt.key as SortKey;
+        const isActive = current === optKey;
+        return (
+          <Pressable
+            key={opt.key}
+            testID={`sort-option-${opt.key}`}
+            onPress={() => onSelect(optKey)}
+            style={({ pressed }) => [styles.sortRow, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
+          >
+            <Text style={[styles.sortLabel, isActive && styles.sortLabelActive]}>{opt.label}</Text>
+            {isActive ? <Text style={styles.sortCheck}>✓</Text> : null}
+          </Pressable>
+        );
+      })}
+    </SlideUpSheet>
   );
 }
 

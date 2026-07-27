@@ -57,12 +57,13 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "Include the detail that distinguishes this item from its neighbours — the reason a student confuses two drugs, two enzymes, or two dates is the thing the card must isolate.",
     "Never put a list of more than about four items on one card. Split the list into separate cards, or write it as a cloze per item.",
     "Use cloze deletion ({{c1::hidden text}}) when the fact only makes sense inside its sentence, and plain front/back when the question stands on its own.",
+    "When the student asks you to CREATE flashcards, you MUST call list_study_decks and then add_flashcards. Do not print the requested deck as a prose list in chat; the saved tool result is the deliverable.",
     "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
     "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
     "Keep answers short enough to recall in one breath. A back longer than a sentence or two is a sign the card should be split.",
     "State plainly how many cards you made and what each one covers.",
   ].join("\n"),
-  match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|deck)\b/i,
+  match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|(?:flashcard|study) deck)\b/i,
   name: "Flashcard craft",
 };
 
@@ -98,10 +99,38 @@ const EVIDENCE_HONESTY: ChatSkill = {
 
 const TEST_CRAFT: ChatSkill = {
   id: "test-craft",
-  instructions: ["SKILL — writing exam questions that measure understanding:", EXAM_ITEM_RULES].join("\n"),
+  instructions: [
+    "SKILL — writing exam questions that measure understanding:",
+    "When the student asks you to CREATE a test, you MUST call add_practice_test. Do not print the requested test and answer key in chat; the saved tool result is the deliverable.",
+    EXAM_ITEM_RULES,
+  ].join("\n"),
   match:
     /\b(practice (?:test|exam|quiz|questions?)|quiz(?:zes)?|quiz me|test me|mcqs?|multiple[- ]choice|exam questions?|question bank|board[- ]style|write (?:me )?(?:some )?(?:practice )?questions?|make (?:me )?a (?:practice )?(?:test|exam))\b/i,
   name: "Test craft",
+};
+
+const SLIDES_BUILDER: ChatSkill = {
+  id: "slides-builder",
+  instructions: [
+    "SKILL — saving a requested slide deliverable:",
+    "The student asked you to CREATE slides. You MUST call create_slide_deck. Do not print the slides as headings and bullets in chat.",
+    "Give every slide one purpose, concise teaching bullets, and useful speaker notes. The tool result becomes a fullscreen preview link and the deck is also filed in Library.",
+  ].join("\n"),
+  match:
+    /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:slides?|slide deck|presentation)\b/i,
+  name: "Slides builder",
+};
+
+const NOTES_BUILDER: ChatSkill = {
+  id: "notes-builder",
+  instructions: [
+    "SKILL — saving a requested note deliverable:",
+    "The student asked you to CREATE notes. You MUST call create_library_note. Do not leave the requested note only inside chat.",
+    "Write skimmable markdown with a clear title, concise sections, worked examples where useful, misconceptions, and a recap. The tool result becomes the clickable Library link.",
+  ].join("\n"),
+  match:
+    /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:study notes?|class notes?|lecture notes?|study guide|revision guide)\b/i,
+  name: "Notes builder",
 };
 
 const TEACHING: ChatSkill = {
@@ -176,6 +205,8 @@ const SOCRATIC_TUTORING: ChatSkill = {
  *  a "quiz me" or "explain this" turn is actually about. It still takes the
  *  second slot on those turns. */
 export const CHAT_SKILLS: ChatSkill[] = [
+  SLIDES_BUILDER,
+  NOTES_BUILDER,
   FLASHCARD_CRAFT,
   TEST_CRAFT,
   SOCRATIC_TUTORING,

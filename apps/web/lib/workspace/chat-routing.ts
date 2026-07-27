@@ -48,7 +48,8 @@ const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 //      "add these to my deck", "save this as a note", "put my exam on my
 //      calendar". "note"/"schedule"/"test" alone are ordinary words, so they
 //      only count when anchored to the student's own deck/library/notes/calendar.
-const SAVE_ARTIFACT = /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|study sets?|decks?)\b/i;
+const SAVE_ARTIFACT =
+  /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|study sets?|decks?|slides?|slide decks?|presentations?|study notes?|class notes?|lecture notes?|study guides?)\b/i;
 const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
 const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
 

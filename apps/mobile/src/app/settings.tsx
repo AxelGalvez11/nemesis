@@ -94,7 +94,12 @@ export default function SettingsScreen() {
   }
 
   const email = session.user.email ?? "";
-  const initial = (email[0] ?? "N").toUpperCase();
+  const metadataName = session.user.user_metadata?.full_name;
+  const displayName =
+    typeof metadataName === "string" && metadataName.trim()
+      ? metadataName.trim()
+      : email.split("@")[0]?.replace(/[._-]+/g, " ") || "Student";
+  const initial = (displayName[0] ?? email[0] ?? "N").toUpperCase();
 
   return (
     <View style={styles.root}>
@@ -104,18 +109,20 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
         testID="tab-profile"
       >
-        <View style={styles.identity}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
+        <View style={styles.hero}>
+          <View style={styles.identity}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+            <Text style={styles.identityName} numberOfLines={1}>{displayName}</Text>
+            <Text style={styles.identityEmail} testID="profile-email" numberOfLines={1}>{email}</Text>
+            <Text style={styles.planText}>Free plan · Academic OS synced</Text>
           </View>
-          <Text style={styles.identityEmail} testID="profile-email" numberOfLines={1}>{email}</Text>
         </View>
 
         <SectionLabel styles={styles}>Account</SectionLabel>
         <Card styles={styles}>
-          <SettingRow styles={styles} icon={MailIcon} label="Email" value={email} last />
-        </Card>
-        <Card styles={styles}>
+          <SettingRow styles={styles} icon={MailIcon} label="Email" value={email} />
           <SettingRow styles={styles} icon={SparkleIcon} label="Subscription" value="Free" chevron last testID="nav-subscription" onPress={() => router.push("/profile/subscription")} />
         </Card>
 
@@ -186,6 +193,8 @@ function SettingRow({
       testID={testID}
       disabled={!onPress}
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={value ? `${label}, ${value}` : label}
       style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && onPress && styles.rowPressed]}
     >
       <View style={styles.rowIcon}>
@@ -211,19 +220,47 @@ const createStyles = (c: ThemeColors) =>
 
     body: { paddingHorizontal: space(4), flexGrow: 1 },
 
-    identity: { alignItems: "center", paddingTop: space(1), paddingBottom: space(5), gap: space(2.5) },
-    avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.accentFaint, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.accentLine },
-    avatarText: { ...type.display, color: c.accent },
-    identityEmail: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", maxWidth: "90%" },
+    hero: { marginTop: space(1), marginBottom: space(2) },
+    identity: { alignItems: "center", paddingHorizontal: space(4), paddingVertical: space(5), gap: space(1.5) },
+    avatar: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: c.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarText: { ...type.display, color: c.text },
+    identityName: { ...type.h2, color: c.text, marginTop: space(1) },
+    identityEmail: { color: c.text2, fontSize: type.small.fontSize, maxWidth: "90%" },
+    planText: { ...type.micro, color: c.text3, marginTop: space(1.5) },
 
-    sectionLabel: { color: c.text3, fontSize: type.micro.fontSize, fontWeight: "600", marginTop: space(4), marginBottom: space(1.5), marginLeft: space(1) },
-    card: { backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    sectionLabel: {
+      color: c.text3,
+      fontSize: type.micro.fontSize,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+      marginTop: space(4),
+      marginBottom: space(1.5),
+      marginLeft: space(1),
+    },
+    card: {
+      backgroundColor: c.raised,
+      borderRadius: radius.md,
+      overflow: "hidden",
+    },
     cardPad: { padding: space(3.5) },
 
     row: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(3.5), paddingVertical: space(3.25), minHeight: 52 },
     rowDivider: { borderBottomWidth: 1, borderBottomColor: c.line },
     rowPressed: { backgroundColor: c.surface2 },
-    rowIcon: { width: 22, alignItems: "center" },
+    rowIcon: {
+      width: 24,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     rowLabel: { fontSize: type.small.fontSize + 1, color: c.text },
     rowValue: { flex: 1, textAlign: "right", fontSize: type.small.fontSize, color: c.text3 },
     chevron: { fontSize: 20, color: c.text3, marginLeft: space(1) },

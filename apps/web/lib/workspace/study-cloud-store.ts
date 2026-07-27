@@ -508,6 +508,7 @@ export interface UpdateArtifactPatch {
 
 export interface ImportDeckInput {
   name: string;
+  source?: "Anki" | "Quizlet";
   cards: { front: string; back: string; cardType: StudyCardType; tags: string[] }[];
 }
 
@@ -753,7 +754,7 @@ export function useCloudStudy(): UseCloudStudyApi {
       for (const deck of input) {
         const name = availableDeckName(deck.name, taken);
         if (preview) {
-          const created: StudyDeck = { id: `preview-${crypto.randomUUID()}`, name, description: "Imported from Anki", sourcePath: null, createdAt: timestamp, updatedAt: timestamp };
+          const created: StudyDeck = { id: `preview-${crypto.randomUUID()}`, name, description: `Imported from ${deck.source ?? "Anki"}`, sourcePath: null, createdAt: timestamp, updatedAt: timestamp };
           newDecks.push(created);
           for (const card of deck.cards) {
             newCards.push({
@@ -781,7 +782,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         }
         const { data, error } = await supabase
           .from("study_decks")
-          .insert({ user_id: userId, name, description: "Imported from Anki", source_path: null })
+          .insert({ user_id: userId, name, description: `Imported from ${deck.source ?? "Anki"}`, source_path: null })
           .select("id,name,description,source_path,created_at,updated_at")
           .single();
         if (error) throw new Error(error.message);

@@ -29,26 +29,16 @@
 // able to act on that reading. Adding it later means adding a confirm first.
 
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing.ts";
+import { GENERATED_NOTES_FOLDER, GENERATED_SLIDES_FOLDER, GENERATED_TESTS_GROUP } from "./academic-skills.ts";
+import { WORKSPACE_AGENT_TOOL_NAMES, type WorkspaceAgentToolName } from "@nemesis/shared";
 
 /** Every tool the phone offers, as a literal tuple. api/agentTools.ts keys its
  *  handler map by this union, so tsc refuses to compile a tool that is advertised
  *  to the model with nothing behind it — the failure that would otherwise show up
  *  as "Unknown tool" mid-conversation. */
-export const AGENT_TOOL_NAMES = [
-  "search_library",
-  "read_library_note",
-  "create_library_note",
-  "append_library_note",
-  "create_library_folder",
-  "rename_library_note",
-  "move_library_note",
-  "list_study_decks",
-  "add_flashcards",
-  "add_practice_test",
-  "add_mindmap",
-] as const;
+export const AGENT_TOOL_NAMES = WORKSPACE_AGENT_TOOL_NAMES;
 
-export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
+export type AgentToolName = WorkspaceAgentToolName;
 
 export function isAgentToolName(name: string): name is AgentToolName {
   return (AGENT_TOOL_NAMES as readonly string[]).includes(name);
@@ -63,6 +53,8 @@ export const MAX_NOTE_CHARS = 8_000;
 export const MAX_LIST = 30;
 /** Cards accepted in one add_flashcards call. */
 export const MAX_CARDS_PER_CALL = 100;
+/** Slides accepted in one create_slide_deck call. */
+export const MAX_SLIDES_PER_CALL = 40;
 
 export function clip(text: string, max = MAX_NOTE_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}\n…[truncated]` : text;
@@ -90,15 +82,57 @@ export function str(value: unknown): string {
  *  reviewed, so it would sit in the deck failing forever. */
 export function usableCards(raw: unknown): { front: string; back: string }[] {
   const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set<string>();
   return list
     .flatMap((entry) => {
       if (typeof entry !== "object" || entry === null) return [];
       const row = entry as Record<string, unknown>;
-      const front = str(row.front).trim().slice(0, 12_000);
-      const back = str(row.back).trim().slice(0, 20_000);
-      return front && back ? [{ back, front }] : [];
+      const front = str(row.front).trim().slice(0, 800);
+      const back = str(row.back).trim().slice(0, 4_000);
+      const key = front.toLocaleLowerCase().replace(/\s+/g, " ");
+      const answerKey = back.toLocaleLowerCase().replace(/\s+/g, " ");
+      const vague = /^(?:what is|define|explain)\s+(?:it|this|that|the concept)\??$/i.test(front);
+      const questionCount = (front.match(/\?/g) ?? []).length;
+      // Quality gate for new AI cards. The Library reader remains permissive;
+      // only newly generated cards are held to this minimum-information bar.
+      if (
+        !front ||
+        !back ||
+        front.length < 3 ||
+        answerKey === key ||
+        vague ||
+        questionCount > 1 ||
+        seen.has(key)
+      ) return [];
+      seen.add(key);
+      return [{ back, front }];
     })
     .slice(0, MAX_CARDS_PER_CALL);
+}
+
+export interface UsableSlide {
+  title: string;
+  bullets: string[];
+  speakerNotes: string;
+}
+
+/** Clean, bounded slide payloads. A slide without a title or content is not a
+ * slide; dropping it keeps malformed model output out of the Library artifact. */
+export function usableSlides(raw: unknown): UsableSlide[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .flatMap((entry) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const row = entry as Record<string, unknown>;
+      const title = str(row.title).trim().slice(0, 180);
+      const bullets = (Array.isArray(row.bullets) ? row.bullets : [])
+        .map((bullet) => str(bullet).trim().slice(0, 500))
+        .filter(Boolean)
+        .slice(0, 8);
+      const speakerNotes = str(row.speaker_notes).trim().slice(0, 4_000);
+      return title && (bullets.length > 0 || speakerNotes) ? [{ bullets, speakerNotes, title }] : [];
+    })
+    .slice(0, MAX_SLIDES_PER_CALL);
 }
 
 /**
@@ -153,7 +187,7 @@ export const AGENT_TOOLS = [
       description: "Read one Library note's full text by its path (get the path from search_library).",
       name: "read_library_note",
       parameters: {
-        properties: { path: { description: "The note's path, e.g. 'Pharmacology/ACE inhibitors.md'", type: "string" } },
+        properties: { path: { description: "The note's path, e.g. 'Biology/Cell division.md'", type: "string" } },
         required: ["path"],
         type: "object",
       },
@@ -163,15 +197,53 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Create a new Library note. Write the body yourself in markdown. Tell the student you created it and where it is.",
+        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, omit folder and it will be filed in '${GENERATED_NOTES_FOLDER}'. Tell the student you created it and where it is.`,
       name: "create_library_note",
       parameters: {
         properties: {
           content: { description: "Markdown body of the note", type: "string" },
-          folder: { description: "Optional folder path like 'Pharmacology/Unit 3'", type: "string" },
+          folder: { description: `Optional requested folder path. Omit it to use '${GENERATED_NOTES_FOLDER}'.`, type: "string" },
           title: { description: "Note title", type: "string" },
         },
         required: ["title", "content"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        `Create and save a slide deck as a structured Library artifact. You MUST use this when the student asks for slides or a presentation. If they did not name a folder, omit folder and it will be filed in '${GENERATED_SLIDES_FOLDER}'. Tell the student the saved path.`,
+      name: "create_slide_deck",
+      parameters: {
+        properties: {
+          folder: {
+            description: `Optional requested folder path. Omit it to use '${GENERATED_SLIDES_FOLDER}'.`,
+            type: "string",
+          },
+          slides: {
+            items: {
+              properties: {
+                bullets: {
+                  description: "Up to 8 concise teaching bullets; one idea per bullet",
+                  items: { type: "string" },
+                  type: "array",
+                },
+                speaker_notes: {
+                  description: "Optional explanation, example, or teaching cue not shown as a bullet",
+                  type: "string",
+                },
+                title: { description: "The slide heading", type: "string" },
+              },
+              required: ["title", "bullets"],
+              type: "object",
+            },
+            type: "array",
+          },
+          title: { description: "Deck title", type: "string" },
+        },
+        required: ["title", "slides"],
         type: "object",
       },
     },
@@ -198,7 +270,7 @@ export const AGENT_TOOLS = [
       description: "Create an empty folder in the student's Library.",
       name: "create_library_folder",
       parameters: {
-        properties: { path: { description: "Folder path like 'Pharmacology/Unit 3'", type: "string" } },
+        properties: { path: { description: "Folder path like 'Biology/Unit 3'", type: "string" } },
         required: ["path"],
         type: "object",
       },
@@ -246,7 +318,50 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Add flashcards to a deck, creating the deck if it does not exist. Write the cards yourself. One fact per card, question on the front. Tell the student how many you added and to which deck.",
+        "Read the cards in one Study deck so you can tutor from, compare, summarize, or improve the student's actual study material. Call list_study_decks first when the deck name is uncertain.",
+      name: "read_study_deck",
+      parameters: {
+        properties: {
+          deck_name: { description: "Full deck name or its unique leaf name", type: "string" },
+          limit: { description: "Cards to read, default 12 and maximum 20", type: "number" },
+          offset: { description: "How many cards to skip for the next page", type: "number" },
+        },
+        required: ["deck_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "List the student's saved Study tests and mind maps with their ids, titles, folders, and status. Use read_study_artifact for one item's content.",
+      name: "list_study_artifacts",
+      parameters: {
+        properties: {
+          kind: { description: "Optional: 'test' or 'mindmap'", type: "string" },
+        },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Read one saved Study test or mind map by the id returned from list_study_artifacts.",
+      name: "read_study_artifact",
+      parameters: {
+        properties: { id: { description: "Study artifact id", type: "string" } },
+        required: ["id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Add flashcards to a deck, creating the deck if it does not exist. Every requested flashcard must be saved with this tool rather than printed only in chat. Apply the minimum-information principle: one retrievable fact or relationship per card, precise prompt, concise self-contained answer, no duplicates, and no answer leakage. Tell the student how many you added and to which deck.",
       name: "add_flashcards",
       parameters: {
         properties: {
@@ -273,12 +388,12 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Save a multiple-choice practice test to the student's Study page. Write the questions yourself from the material — do not ask another tool to generate them. Tell the student you saved it. " +
+        `Save a multiple-choice practice test to the student's Study page. Every requested test must be saved with this tool rather than printed only in chat. Write the questions yourself from the material — do not ask another tool to generate them. Use '${GENERATED_TESTS_GROUP}' when the student did not name a group. Tell the student you saved it. ` +
         `How to write them: ${EXAM_ITEM_RULES_SHORT} That last rule matters here specifically: the app re-seats the options after saving, so 'option B' in an explanation would become wrong.`,
       name: "add_practice_test",
       parameters: {
         properties: {
-          group_name: { description: "Optional folder on the Study page, e.g. 'Cardiovascular pharmacology'", type: "string" },
+          group_name: { description: `Optional folder on the Study page. Omit it to use '${GENERATED_TESTS_GROUP}'.`, type: "string" },
           questions: {
             items: {
               properties: {
@@ -287,12 +402,12 @@ export const AGENT_TOOLS = [
                 q: { description: "The question", type: "string" },
                 why: { description: "One-sentence explanation of the correct answer", type: "string" },
               },
-              required: ["q", "options", "answer"],
+              required: ["q", "options", "answer", "why"],
               type: "object",
             },
             type: "array",
           },
-          title: { description: "Test title, e.g. 'ACE inhibitors practice test'", type: "string" },
+          title: { description: "Test title, e.g. 'Limits and continuity practice test'", type: "string" },
         },
         required: ["title", "questions"],
         type: "object",
@@ -313,9 +428,42 @@ export const AGENT_TOOLS = [
               "Markdown outline: one '# Topic' root heading, then nested '- ' bullets (2-space indents, at most 3 levels, at most ~35 nodes)",
             type: "string",
           },
-          title: { description: "Mind map title, e.g. 'RAAS pathway'", type: "string" },
+          title: { description: "Mind map title, e.g. 'Cellular respiration'", type: "string" },
         },
         required: ["title", "outline"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "List the student's upcoming Calendar events. Use this whenever the answer depends on their schedule, deadlines, exams, classes, or available study time.",
+      name: "list_calendar_events",
+      parameters: {
+        properties: {
+          days_ahead: { description: "How many days forward to read (default 14, maximum 120)", type: "number" },
+        },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Add an event to the student's Calendar and tell them what was scheduled.",
+      name: "add_calendar_event",
+      parameters: {
+        properties: {
+          course: { description: "Optional course name", type: "string" },
+          date: { description: "Event date in YYYY-MM-DD", type: "string" },
+          kind: { description: "assignment, exam, rotation, class, or other", type: "string" },
+          note: { description: "Optional details", type: "string" },
+          time: { description: "Optional time such as '14:00' or '2:00 PM'", type: "string" },
+          title: { description: "Event title", type: "string" },
+        },
+        required: ["title", "date"],
         type: "object",
       },
     },

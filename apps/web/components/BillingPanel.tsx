@@ -231,7 +231,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           </p>
           <ul style={billingList}>
             <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Student, plus:</li>
-            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep research</strong> with multi-step cited reports</span></li>
+            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Web-grounded answers</strong> with source citations</span></li>
             <li style={billingItem}><span style={billingTick}>✓</span>Higher desktop-agent automation limits</li>
             <li style={billingItem}><span style={billingTick}>✓</span>90 live copilot minutes each month</li>
           </ul>

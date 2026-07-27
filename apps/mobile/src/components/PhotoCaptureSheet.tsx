@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,15 +13,9 @@ import { radius, space, type } from "@/theme/tokens";
 // a navigation param, and a camera is a transient thing the student is either
 // in or out of. As a modal it returns its result by simply calling onCaptured.
 //
-// expo-camera is ALREADY in the installed native build (and declared in
-// app.json), so this ships over the air. Nothing here touches app.json — an
-// edit there changes the fingerprint runtime version and would orphan the
-// update from the build the phone is actually running.
-//
-// KNOWN, DELIBERATE: the iOS permission prompt still reads "Nemesis uses the
-// camera only to scan the pairing code shown on your Mac", because that string
-// lives in app.json. It is wrong now and can only be corrected in a new native
-// build; correcting it here would cost the over-the-air path this feature rides.
+// expo-camera is declared in app.json and the native permission copy describes
+// this study-material use case. The camera is opened only from the student's
+// explicit attachment action.
 //
 // Two states, no more: live preview with a shutter, then the shot with Retake /
 // Use photo. The confirmation step is not decoration — a blurred or half-framed
@@ -46,19 +40,39 @@ export function PhotoCaptureSheet({
   const [permission, requestPermission] = useCameraPermissions();
   const [shot, setShot] = useState<string | null>(null);
   const [taking, setTaking] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
   // Before the first ask, `permission` is null — treat that as askable.
   const askable = permission?.canAskAgain ?? true;
 
+  // The parent closes the sheet after it finishes reading an accepted picture.
+  // That path does not call this component's close() function, so reset hidden
+  // camera state here or the next open would show the previous photograph.
+  useEffect(() => {
+    if (visible) return;
+    setShot(null);
+    setTaking(false);
+    setCameraReady(false);
+    setCaptureError(null);
+  }, [visible]);
+
   const close = () => {
     setShot(null);
     setTaking(false);
+    setCameraReady(false);
+    setCaptureError(null);
     onClose();
   };
 
   const take = async () => {
-    if (taking || !cameraRef.current) return;
+    if (taking) return;
+    if (!cameraReady || !cameraRef.current) {
+      setCaptureError("The camera is still starting. Try again in a moment.");
+      return;
+    }
     setTaking(true);
+    setCaptureError(null);
     try {
       // quality 0.7 is the only size lever available: expo-image-manipulator is
       // not installed, and adding it is a native dependency that would orphan
@@ -66,9 +80,9 @@ export function PhotoCaptureSheet({
       // comfortably inside the 14 MB ceiling the bucket and the reader share.
       const picture = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       if (picture?.uri) setShot(picture.uri);
-    } catch {
-      // Nothing to say that the student could act on — the shutter simply
-      // didn't fire. Leaving the live preview up IS the retry.
+      else setCaptureError("The camera didn't return a photo. Try again.");
+    } catch (cause) {
+      setCaptureError(cause instanceof Error ? cause.message : "Couldn't take that photo. Try again.");
     } finally {
       setTaking(false);
     }
@@ -105,7 +119,16 @@ export function PhotoCaptureSheet({
           <>
             <Image source={{ uri: shot }} style={StyleSheet.absoluteFill} resizeMode="contain" />
             <View style={[styles.bar, { paddingBottom: insets.bottom + space(5) }]}>
-              <Pressable onPress={() => setShot(null)} disabled={busy} accessibilityRole="button" hitSlop={10}>
+              <Pressable
+                onPress={() => {
+                  setShot(null);
+                  setCameraReady(false);
+                  setCaptureError(null);
+                }}
+                disabled={busy}
+                accessibilityRole="button"
+                hitSlop={10}
+              >
                 <Text style={[styles.barAction, busy && styles.barActionDim]}>Retake</Text>
               </Pressable>
               <Pressable
@@ -128,15 +151,36 @@ export function PhotoCaptureSheet({
           </>
         ) : (
           <>
-            <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              mode="picture"
+              onCameraReady={() => {
+                setCameraReady(true);
+                setCaptureError(null);
+              }}
+              onMountError={(event) => setCaptureError(event.message || "The camera could not start.")}
+            />
+            {captureError ? (
+              <View style={styles.captureError} accessibilityLiveRegion="polite">
+                <Text style={styles.captureErrorText}>{captureError}</Text>
+              </View>
+            ) : null}
             <View style={[styles.shutterBar, { paddingBottom: insets.bottom + space(6) }]}>
               <Pressable
                 onPress={() => void take()}
                 accessibilityLabel="Take photo"
+                accessibilityHint={cameraReady ? "Captures the study material in view" : "Wait for the camera to finish starting"}
                 testID="photo-shutter"
-                style={({ pressed }) => [styles.shutter, pressed && styles.shutterPressed]}
+                disabled={!cameraReady || taking}
+                style={({ pressed }) => [
+                  styles.shutter,
+                  (!cameraReady || taking) && styles.shutterDisabled,
+                  pressed && styles.shutterPressed,
+                ]}
               >
-                <ShutterGlyph />
+                {taking ? <ActivityIndicator color="#fff" size="large" /> : <ShutterGlyph />}
               </Pressable>
             </View>
           </>
@@ -189,6 +233,16 @@ const styles = StyleSheet.create({
   barActionStrong: { fontWeight: "600" },
   busyRow: { alignItems: "center", flexDirection: "row", gap: space(2) },
   close: { left: space(4), padding: space(2), position: "absolute", zIndex: 2 },
+  captureError: {
+    position: "absolute",
+    left: space(5),
+    right: space(5),
+    top: "16%",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderRadius: radius.md,
+    padding: space(3),
+  },
+  captureErrorText: { ...type.small, color: "#fff", textAlign: "center" },
   host: { backgroundColor: "#000", flex: 1 },
   permission: { alignItems: "center", flex: 1, gap: space(4), justifyContent: "center", padding: space(8) },
   permissionBody: { ...type.body, color: "rgba(255,255,255,0.7)", textAlign: "center" },
@@ -202,6 +256,7 @@ const styles = StyleSheet.create({
   primaryButtonText: { ...type.body, color: "#000", fontWeight: "600" },
   secondaryText: { ...type.body, color: "rgba(255,255,255,0.6)" },
   shutter: { alignItems: "center", justifyContent: "center" },
+  shutterDisabled: { opacity: 0.5 },
   shutterBar: { alignItems: "center", bottom: 0, left: 0, paddingTop: space(6), position: "absolute", right: 0 },
   shutterPressed: { opacity: 0.7 },
 });

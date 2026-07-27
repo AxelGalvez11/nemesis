@@ -5,7 +5,7 @@ import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 // Small presentational primitives shared across the chat answer, drug page + source viewer.
-// Dark theme (PharmaOrb tokens) — ported to match the web app.
+// Shared Nemesis theme primitives, kept in step with the web app.
 
 export function Card({ children, testID }: { children: ReactNode; testID?: string }) {
   const styles = useThemedStyles(createStyles);

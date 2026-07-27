@@ -27,6 +27,9 @@ export interface ChatRouteDecision {
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
 const CURRENT_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|who (?:is|won|leads|runs|owns))\b/i;
 const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet)\b/i;
+const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
+const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;
 const LEARNING_PATTERN = /\b(explain|teach|learn|study|solve|derive|prove|analy[sz]e|compare|contrast|why|how|calculate|debug|interpret|summari[sz]e|quiz|flashcards?|practice|step[- ]by[- ]step|concept|theorem|case|argument|equation|code)\b/i;
 const CASUAL_PATTERN = /^(?:hi|hello|hey|thanks|thank you|good (?:morning|afternoon|evening)|who are you|what can you do)[!.?\s]*$/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
@@ -50,15 +53,22 @@ const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 //      "add these to my deck", "save this as a note", "put my exam on my
 //      calendar". "note"/"schedule"/"test" alone are ordinary words, so they
 //      only count when anchored to the student's own deck/library/notes/calendar.
-const SAVE_ARTIFACT = /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|study sets?|decks?)\b/i;
+const SAVE_ARTIFACT =
+  /\b(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|study sets?|decks?|slides?|slide decks?|presentations?|study notes?|class notes?|lecture notes?|study guides?)\b/i;
 const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
 const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
+const DIRECT_ARTIFACT_REQUEST =
+  /\b(?:i (?:need|want)|give me|please (?:make|create|prepare)|can you (?:make|create|prepare))\b[^.?!]{0,80}\b(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|slides?|slide decks?|presentations?|study notes?|study guides?)\b/i;
+const BARE_ARTIFACT_REQUEST =
+  /^(?:please\s+)?(?:\d+\s+)?(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|slides?|slide decks?|presentations?|study notes?|class notes?|lecture notes?|study guides?)\b/i;
 
 /** Does this message ask to persist something in the student's workspace? Pure
  *  and exported so the routing tests can pin the real phrasings students use. */
 export function detectsSaveRequest(text: string): boolean {
   const compact = text.trim();
   if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  if (DIRECT_ARTIFACT_REQUEST.test(compact)) return true;
+  if (BARE_ARTIFACT_REQUEST.test(compact)) return true;
   return SAVE_TO_WORKSPACE.test(compact);
 }
 
@@ -70,7 +80,15 @@ export function classifyChatRequest(text: string): ChatRouteDecision {
   // re-promotion step today, but the web copy does, and these two files are meant
   // to classify identically.
   if (detectsSaveRequest(compact)) {
-    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
+    const wantsWeb =
+      RESEARCH_PATTERN.test(compact) ||
+      CURRENT_PATTERN.test(compact) ||
+      CHANGING_FACT_PATTERN.test(compact) ||
+      LIVE_SPORTS_PATTERN.test(compact) ||
+      EMERGING_ENTITY_PATTERN.test(compact) ||
+      EXPLICIT_WEB_PATTERN.test(compact) ||
+      RECENT_YEAR_PATTERN.test(compact) ||
+      /https?:\/\//i.test(compact);
     return wantsWeb
       ? { model: "deepseek-chat", route: "current", savesToWorkspace: true, searchWeb: true }
       : { model: "deepseek-chat", route: "learning", savesToWorkspace: true, searchWeb: false };
@@ -78,7 +96,15 @@ export function classifyChatRequest(text: string): ChatRouteDecision {
   if (RESEARCH_PATTERN.test(compact)) {
     return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
   }
-  if (CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact)) {
+  if (
+    CURRENT_PATTERN.test(compact) ||
+    CHANGING_FACT_PATTERN.test(compact) ||
+    LIVE_SPORTS_PATTERN.test(compact) ||
+    EMERGING_ENTITY_PATTERN.test(compact) ||
+    EXPLICIT_WEB_PATTERN.test(compact) ||
+    RECENT_YEAR_PATTERN.test(compact) ||
+    /https?:\/\//i.test(compact)
+  ) {
     return { route: "current", model: "deepseek-reasoner", searchWeb: true };
   }
   if (CASUAL_PATTERN.test(compact)) {

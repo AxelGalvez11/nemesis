@@ -1,5 +1,6 @@
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { supabase } from "@/api/supabase";
 
@@ -20,18 +21,54 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/** Request permission (soft-fail if denied) and upsert this device's Expo push
- * token into `devices`. Call after a session exists (AuthProvider). Push tokens
- * don't work in the simulator or Expo Go — real verification is a physical-device
- * step, out of scope here; this function still runs safely there, it just
- * returns early via `Device.isDevice`. */
+const studyReminderKey = (uid: string) => `nemesis_study_reminder_notification_v1_${uid}`;
+
+/** Enable/disable the student's real on-device daily study reminder.
+ * Permission is requested only after the explicit ON tap in Settings. */
+export async function setStudyReminder(uid: string, enabled: boolean): Promise<{ enabled: boolean; error: string | null }> {
+  try {
+    const existingId = await SecureStore.getItemAsync(studyReminderKey(uid));
+    if (existingId) {
+      await Notifications.cancelScheduledNotificationAsync(existingId).catch(() => {});
+      await SecureStore.deleteItemAsync(studyReminderKey(uid)).catch(() => {});
+    }
+    if (!enabled) return { enabled: false, error: null };
+
+    const current = await Notifications.getPermissionsAsync();
+    const granted = current.granted || (await Notifications.requestPermissionsAsync()).granted;
+    if (!granted) {
+      return { enabled: false, error: "Notifications are off for Nemesis. Enable them in iOS Settings to use study reminders." };
+    }
+
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        body: "Review what is due, then do one focused study block.",
+        data: { destination: "study" },
+        title: "Ready for a quick review?",
+      },
+      trigger: {
+        hour: 19,
+        minute: 0,
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      },
+    });
+    await SecureStore.setItemAsync(studyReminderKey(uid), id);
+    return { enabled: true, error: null };
+  } catch {
+    return { enabled: false, error: "Nemesis couldn't schedule that reminder. Try again." };
+  }
+}
+
+/** Upsert this device's Expo push token when notification permission has already
+ * been granted. Permission is requested only from an explicit Settings action.
+ * Push tokens don't work in the simulator or Expo Go — real verification is a
+ * physical-device step; this function safely returns early there. */
 export async function registerForPush(): Promise<void> {
   try {
     if (!Device.isDevice) return;
 
     const existing = await Notifications.getPermissionsAsync();
-    const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
-    if (!granted) return;
+    if (!existing.granted) return;
 
     const { data: pushToken } = await Notifications.getExpoPushTokenAsync();
 
@@ -53,15 +90,12 @@ export async function registerForPush(): Promise<void> {
   }
 }
 
-/** Route a notification tap to the app's home. Cloud-first phone (owner call
- * 2026-07-20): Mac-dispatch missions — and the mission detail screen a push used
- * to deep-link into — are retired (docs/design/nemesis-cloud-first-phone-2026-07.md
- * §10), so every notification tap now just opens home; home itself redirects to
- * /chat. Wired once at app root (root _layout.tsx), independent of auth state, so
- * a tap always navigates somewhere useful. */
+/** Route study reminders to Study and other notifications to home. Wired once
+ * at app root, independent of auth state. */
 export function setupPushResponseRouting(): () => void {
-  const sub = Notifications.addNotificationResponseReceivedListener(() => {
-    router.push("/" as never);
+  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const destination = response.notification.request.content.data?.destination;
+    router.push(destination === "study" ? ("/study" as never) : ("/" as never));
   });
   return () => sub.remove();
 }

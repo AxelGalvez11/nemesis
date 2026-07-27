@@ -11,7 +11,7 @@ import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor } from "./MiniMenu";
 import { TextPromptSheet, type RowAction } from "./RowActionSheets";
-import { CalendarIcon, ChevronIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, ChevronIcon, LibraryIcon, NotebookIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -22,7 +22,7 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the right by the panel width to reveal it, instead of sliding an overlay on top — see DrawerShell.
 //
 // The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
-// Library · Graph · Calendar), then the live CHATS history (owner: "chats should
+// Library · Calendar), then the live CHATS history (owner: "chats should
 // save to the sidebar") — each conversation persisted as its own thread — then a
 // solid "New chat" button and a settings gear. Tapping a chat reopens it (via the
 // /chat?c=<id> route param). Mac-dispatch "sessions" (the missions feature) are
@@ -501,9 +501,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           {NOTEBOOKS_RETIRED ? null : (
             <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
           )}
-          <NavRow Icon={GraphIcon} label="Graph" onPress={() => go("/graph")} />
           <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
-          <NavRow Icon={PluginIcon} label="Plugins" onPress={() => go("/plugins")} />
         </View>
 
         {searchOpen ? (
@@ -570,11 +568,9 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           FLOATING bottom row hovering over the chat list — a solid ACCENT "Chat"
           pill (compose icon + label; its color follows the appearance setting's
           accent swatch) that starts a new chat, and a raised circular Settings
-          gear. Settings deliberately skips onClose(): unlike go() (used by every
-          nav/chat row, which SHOULD close the drawer on navigation), pushing
-          /settings without closing keeps the drawer `open` underneath, so
-          dismissing the sheet lands right back on the still-open drawer. See
-          TopBar.tsx / settings.tsx. */}
+          gear. Close the drawer before presenting Settings: otherwise the pushed
+          page shadow intersects the floating gear and makes its right edge look
+          clipped beneath the modal. */}
       <View style={[styles.footerFloat, { bottom: insets.bottom + space(2.5) }]} pointerEvents="box-none">
         <Pressable
           style={({ pressed }) => [styles.chatPill, pressed && styles.chatPillPressed]}
@@ -592,7 +588,10 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
 
         <Pressable
           style={({ pressed }) => [styles.gearFloat, pressed && styles.gearFloatPressed]}
-          onPress={() => router.push("/settings" as never)}
+          onPress={() => {
+            onClose();
+            router.push("/settings" as never);
+          }}
           testID="drawer-settings"
           accessibilityRole="button"
           accessibilityLabel="Settings"
@@ -760,7 +759,7 @@ const createStyles = (c: ThemeColors) =>
     footerFloat: {
       position: "absolute", left: 0, right: 0,
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingLeft: space(3.5), paddingRight: space(6),
+      paddingLeft: space(3.5), paddingRight: space(4),
     },
     // The Chat pill: solid ACCENT fill (the appearance setting's swatch drives
     // it), onAccent content, soft drop shadow (c.pageShadow bakes the alpha).
@@ -779,7 +778,7 @@ const createStyles = (c: ThemeColors) =>
     // call; the shadow makes the disc deliberate instead of a stray blob).
     gearFloat: {
       width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center",
-      backgroundColor: c.raised, borderWidth: 1, borderColor: c.line,
+      backgroundColor: c.raised,
       shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 10,
       shadowOffset: { height: 5, width: 0 }, elevation: 8,
     },

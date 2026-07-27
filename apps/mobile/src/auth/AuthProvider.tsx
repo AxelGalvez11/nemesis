@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Linking } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/api/supabase";
 import { identify, resetAnalyticsUser } from "@/lib/analytics";
@@ -16,6 +17,7 @@ import { generateUuidV4 } from "@/lib/chat-threads";
 import { EMPTY_NOTE_NAV, noteNavHolder } from "@/lib/note-tabs";
 import {
   buildProviderSignInUrl,
+  AUTH_CALLBACK_URL,
   isValidAuthState,
   parseAuthCallback,
   type SocialProvider,
@@ -34,9 +36,8 @@ interface AuthState {
   // Reserved for a future sign-up screen (with email-confirmation handling). Not wired
   // into any screen in 6b-1, where we only drive sign-IN against seeded/known users.
   signUpEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  /** Google / Apple. Hands off to Safari and returns as soon as it has opened —
-   *  the session arrives later, through the deep-link listener below, so callers
-   *  should not treat a null error as "signed in". */
+  /** Google / Apple. Opens an in-app ASWebAuthenticationSession sheet and
+   *  resolves after its callback has been exchanged for a real session. */
   signInWithProvider: (provider: SocialProvider) => Promise<{ error: string | null }>;
   /** Set when a social sign-in came back and the hand-off failed. */
   providerError: string | null;
@@ -142,8 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }, []);
 
-  // --- Google / Apple, via the web bounce page (see lib/oauth-deeplink.ts for
-  // the whole route and why it isn't the native Apple sheet).
+  // --- Google / Apple, via an in-app ASWebAuthenticationSession sheet.
   //
   // THE NONCE IS THE SECURITY BOUNDARY, and it is worth being explicit about
   // what it defends. Any app on this phone can open `nemesis://auth/callback?…`.
@@ -160,66 +160,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // the student happens to have a sign-in open, which is not a practical attack;
   // but it is not the guarantee a real random source would give, and the day
   // this app takes a native build anyway, expo-crypto should replace it.
-  // The nonce lives in the KEYCHAIN, not just in memory. Tapping "Continue with
-  // Google" sends the student to Safari, and iOS is free to kill a backgrounded
-  // app while they are over there — which, with an in-memory nonce, would mean
-  // coming back to a callback we could no longer recognise and a sign-in that
-  // failed for no visible reason. SecureStore is where the session already
-  // lives, so the nonce is no less protected than the thing it guards.
+  // The nonce lives in the KEYCHAIN, not just in memory. The auth sheet usually
+  // returns directly to this promise, while the deep-link listener below remains
+  // a cold-start/fallback path. Both consume the same single-use nonce.
+  const finishProviderSignIn = useCallback(async (url: string): Promise<boolean> => {
+    const callback = parseAuthCallback(url);
+    if (!callback) return false;
+
+    const pending = await readPendingSignIn();
+    if (!pending || callback.state !== pending.state) return false;
+    await SecureStore.deleteItemAsync(PENDING_SIGNIN_KEY).catch(() => {});
+    if (Date.now() - pending.startedAt > SIGNIN_WINDOW_MS) {
+      setProviderError("That sign-in expired. Please try again.");
+      return true;
+    }
+
+    const { error } = await supabase.auth.refreshSession({ refresh_token: callback.refreshToken });
+    if (error) setProviderError("That sign-in didn't finish. Please try again.");
+    return true;
+  }, []);
+
   const signInWithProvider = useCallback(async (provider: SocialProvider) => {
     const state = generateUuidV4();
     try {
       const url = buildProviderSignInUrl(WEB_BASE_URL, provider, state);
       await SecureStore.setItemAsync(PENDING_SIGNIN_KEY, JSON.stringify({ startedAt: Date.now(), state }));
-      await Linking.openURL(url);
+      const result = await WebBrowser.openAuthSessionAsync(url, AUTH_CALLBACK_URL);
+      if (result.type === "success") {
+        const handled = await finishProviderSignIn(result.url);
+        if (!handled) {
+          const current = await supabase.auth.getSession();
+          if (!current.data.session) {
+            await SecureStore.deleteItemAsync(PENDING_SIGNIN_KEY).catch(() => {});
+            return { error: "That sign-in didn't finish. Please try again." };
+          }
+        }
+        return { error: null };
+      }
+      await SecureStore.deleteItemAsync(PENDING_SIGNIN_KEY).catch(() => {});
+      if (result.type === "cancel" || result.type === "dismiss") {
+        return { error: "Sign-in was canceled." };
+      }
       return { error: null };
     } catch (cause) {
       await SecureStore.deleteItemAsync(PENDING_SIGNIN_KEY).catch(() => {});
       return {
-        error: cause instanceof Error ? cause.message : "Couldn't open the browser to finish signing in.",
+        error: cause instanceof Error ? cause.message : "Couldn't open the sign-in window.",
       };
     }
-  }, []);
+  }, [finishProviderSignIn]);
 
   useEffect(() => {
-    let alive = true;
-
-    async function handleUrl(url: string) {
-      const callback = parseAuthCallback(url);
-      if (!callback) return; // not an auth callback, or malformed — see the parser
-
-      const pending = await readPendingSignIn();
-      // No attempt in flight, a nonce that isn't ours, or one that has gone
-      // stale: drop it silently. Saying anything here would tell a prober that
-      // it reached something real.
-      if (!pending || callback.state !== pending.state) return;
-      // Single use, and cleared BEFORE the exchange: iOS can deliver the same
-      // deep link twice, and a second exchange would present a refresh token the
-      // first one has already rotated away — which fails, and would have shown
-      // the student an error on a sign-in that actually worked.
-      await SecureStore.deleteItemAsync(PENDING_SIGNIN_KEY).catch(() => {});
-      if (Date.now() - pending.startedAt > SIGNIN_WINDOW_MS) return;
-
-      // onAuthStateChange (above) is what stores the session and moves the route
-      // guard along; this only has to perform the exchange.
-      const { error } = await supabase.auth.refreshSession({ refresh_token: callback.refreshToken });
-      if (!alive) return;
-      if (error) setProviderError("That sign-in didn't finish. Please try again.");
-    }
-
-    // A cold start: iOS launched the app WITH the link, so there was no listener
-    // to hear it. getInitialURL is the only way to see that one.
+    // Cold-start/fallback delivery. The normal path is captured by
+    // openAuthSessionAsync above and closes the in-app sheet automatically.
     void Linking.getInitialURL().then((url) => {
-      if (alive && url) void handleUrl(url);
+      if (url) void finishProviderSignIn(url);
     });
     const sub = Linking.addEventListener("url", ({ url }) => {
-      if (alive) void handleUrl(url);
+      void finishProviderSignIn(url);
     });
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
+    return () => sub.remove();
+  }, [finishProviderSignIn]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();

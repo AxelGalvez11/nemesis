@@ -22,7 +22,7 @@
 // Deploy with verify_jwt=false (custom auth is implemented here: JWT for minting,
 // device keys for completions). Secrets used: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
 // (platform-injected), DEEPSEEK_API_KEY (already set for the ask/research functions),
-// and GLM_API_KEY (Z.ai — premium tier + DeepSeek failover target; GLM_MODEL picks
+// and GLM_API_KEY (Z.ai — premium tier + first DeepSeek failover target; GLM_MODEL picks
 // the model used for direct-GLM requests without one and for the failover retry,
 // default 'glm-5.2'). GEMINI_API_KEY also lives in the vault but is RESERVED for
 // image generation (owner decision 2026-07-14) — it plays no part in chat.
@@ -43,6 +43,19 @@ const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
 // GLM remains the automatic DeepSeek-outage failover regardless of this flag.
 const GLM_HIGH_MODE = (Deno.env.get('GLM_HIGH_MODE') ?? 'off') === 'on'
 const GLM_BASE = 'https://api.z.ai/api/paas/v4'
+// Additional OpenAI-compatible outage fallbacks. These are deliberately behind
+// DeepSeek and GLM rather than a user-facing model picker: one Nemesis identity,
+// multiple server-owned providers. Every endpoint/model can be overridden
+// without a deploy because provider regions and model aliases evolve.
+const QWEN_KEY = Deno.env.get('QWEN_API_KEY') ?? Deno.env.get('DASHSCOPE_API_KEY') ?? ''
+const QWEN_BASE = Deno.env.get('QWEN_BASE_URL') ?? 'https://dashscope-us.aliyuncs.com/compatible-mode/v1'
+const QWEN_MODEL = Deno.env.get('QWEN_MODEL') ?? 'qwen3.7-plus'
+const KIMI_KEY = Deno.env.get('KIMI_API_KEY') ?? Deno.env.get('MOONSHOT_API_KEY') ?? ''
+const KIMI_BASE = Deno.env.get('KIMI_BASE_URL') ?? 'https://api.moonshot.ai/v1'
+const KIMI_MODEL = Deno.env.get('KIMI_MODEL') ?? 'kimi-k3'
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
+const ANTHROPIC_BASE = Deno.env.get('ANTHROPIC_BASE_URL') ?? 'https://api.anthropic.com/v1'
+const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6'
 
 // High-effort turns on a paying plan route to the premium v4-pro model — measured
 // ~80% blind-preferred over fast-tier deep-thinking on hard clinical questions
@@ -67,6 +80,13 @@ const FALLBACK_MONTHLY_TOKENS = 750_000
 const CAP_WARN_FRACTION = 0.85
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
+// Bound per-request memory and provider exposure. Edge isolates scale out, but
+// one unbounded JSON body can still consume a large share of a 256 MB worker,
+// making otherwise-independent users contend with it.
+const MAX_REQUEST_BYTES = 2_000_000
+const MAX_MESSAGES = 200
+const MAX_MESSAGE_BYTES = 1_250_000
+const MAX_COMPLETION_TOKENS = 32_000
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
 // ── Cost attribution (PostHog LLM analytics) ────────────────────────────────
@@ -356,8 +376,6 @@ async function recordUsage(
   const raw = Math.max(1, Math.round(usage.total))
   const cacheHit = Math.min(Math.max(0, Math.round(usage.cacheHit)), raw)
   const spent = Math.max(1, raw - cacheHit + Math.ceil(cacheHit * CACHE_HIT_WEIGHT))
-  const nowIso = new Date().toISOString()
-
   // The provider bill. When the usage chunk was missing entirely we only have an
   // estimated total, so the split is unknown — attribute it all to input rather than
   // invent an output share, and mark it estimated so the report can exclude it.
@@ -377,7 +395,12 @@ async function recordUsage(
         $ai_latency: Math.round(latencyMs) / 1000,
         $ai_model: model,
         $ai_output_tokens: completionTokens,
-        $ai_provider: model.toLowerCase().startsWith('glm') ? 'z.ai' : 'deepseek',
+        $ai_provider:
+          model.toLowerCase().startsWith('glm') ? 'z.ai'
+            : model.toLowerCase().startsWith('qwen') ? 'alibaba'
+              : model.toLowerCase().startsWith('kimi') ? 'moonshot'
+                : model.toLowerCase().startsWith('claude') ? 'anthropic'
+                  : 'deepseek',
         $ai_total_cost_usd: usd ?? undefined,
         $ai_trace_id: crypto.randomUUID(),
         client,
@@ -392,43 +415,15 @@ async function recordUsage(
     )
   )
 
-  await admin.from('usage_counters').upsert(
-    {
-      counter_key: COUNTER_KEY,
-      limit_snapshot: ctx.dailyLimit,
-      period_end: ctx.periodStart,
-      period_start: ctx.periodStart,
-      updated_at: nowIso,
-      used: ctx.used + spent,
-      user_id: ctx.userId
-    },
-    { onConflict: 'user_id,counter_key,period_start' }
-  )
-
-  // Monthly bucket — the same spent amount against the 1st-of-month counter.
-  await admin.from('usage_counters').upsert(
-    {
-      counter_key: MONTHLY_COUNTER_KEY,
-      limit_snapshot: ctx.monthlyLimit,
-      period_end: ctx.monthStart,
-      period_start: ctx.monthStart,
-      updated_at: nowIso,
-      used: ctx.monthlyUsed + spent,
-      user_id: ctx.userId
-    },
-    { onConflict: 'user_id,counter_key,period_start' }
-  )
-
-  await admin.from('usage_events').insert({
-    cost_credits: Math.ceil(spent / 1000),
-    counter_key: COUNTER_KEY,
-    event_type: 'nemesis_llm_completion',
-    // tokens = what the meter charged; tokens_raw/cache_hit_tokens keep the full
-    // picture auditable (and let us re-tune CACHE_HIT_WEIGHT from real data).
-    // client/cost_usd are the OTHER ledger: which app, and what we actually paid.
-    // cost_usd is stamped at write time with the price revision that produced it —
-    // a later price change must never silently rewrite what last month cost.
-    metadata: {
+  // One RPC performs both counter increments and the audit event in one
+  // transaction. `used = used + spent` is concurrency-safe; the former
+  // read-then-upsert shape lost increments when the same account ran two chats
+  // at once and cost three database round trips per completion.
+  const { data: totals, error: meterError } = await admin.rpc('record_nemesis_llm_usage', {
+    p_cost_credits: Math.ceil(spent / 1000),
+    p_daily_limit: ctx.dailyLimit,
+    p_daily_period: ctx.periodStart,
+    p_metadata: {
       cache_hit_tokens: cacheHit,
       client,
       cost_estimated: estimated,
@@ -440,16 +435,25 @@ async function recordUsage(
       tokens: spent,
       tokens_raw: raw
     },
-    period_start: ctx.periodStart,
-    user_id: ctx.userId
+    p_month_period: ctx.monthStart,
+    p_monthly_limit: ctx.monthlyLimit,
+    p_spent: spent,
+    p_user_id: ctx.userId
   })
 
+  if (meterError) {
+    console.error('nemesis usage meter failed', meterError.message)
+    return
+  }
 
   // Fire a single early-warning event the first time this spend pushes the user
   // past CAP_WARN_FRACTION of the daily or monthly cap (crossed = below before,
   // at/above now), so a heavy account surfaces before it's a surprise bill.
-  void maybeWarnCap(ctx, 'daily', ctx.used, ctx.used + spent, ctx.dailyLimit, ctx.periodStart)
-  void maybeWarnCap(ctx, 'monthly', ctx.monthlyUsed, ctx.monthlyUsed + spent, ctx.monthlyLimit, ctx.monthStart)
+  const recorded = totals && typeof totals === 'object' ? totals as Record<string, unknown> : {}
+  const dailyAfter = typeof recorded.daily_used === 'number' ? recorded.daily_used : ctx.used + spent
+  const monthlyAfter = typeof recorded.monthly_used === 'number' ? recorded.monthly_used : ctx.monthlyUsed + spent
+  void maybeWarnCap(ctx, 'daily', Math.max(0, dailyAfter - spent), dailyAfter, ctx.dailyLimit, ctx.periodStart)
+  void maybeWarnCap(ctx, 'monthly', Math.max(0, monthlyAfter - spent), monthlyAfter, ctx.monthlyLimit, ctx.monthStart)
 }
 
 /** Emit one nemesis_cap_warning event the moment usage crosses the warn line for a
@@ -524,9 +528,49 @@ async function isProviderUnusable(res: Response): Promise<boolean> {
   return /insufficient balance/i.test(text)
 }
 
+interface ProviderFallback {
+  base: string
+  key: string
+  model: string
+}
+
+const SECONDARY_FALLBACKS: ProviderFallback[] = [
+  { base: QWEN_BASE, key: QWEN_KEY, model: QWEN_MODEL },
+  { base: KIMI_BASE, key: KIMI_KEY, model: KIMI_MODEL },
+  { base: ANTHROPIC_BASE, key: ANTHROPIC_KEY, model: ANTHROPIC_MODEL }
+]
+
+/** Continue an outage across the extra providers the owner configured. All
+ * three expose OpenAI-compatible chat/completions APIs, including streaming
+ * and tool calls, so the valve can preserve the client contract byte-for-byte.
+ * A request error is not retried; only an unusable provider reaches here. */
+async function callSecondaryFallbacks(
+  body: Record<string, unknown>
+): Promise<{ model: string; response: Response } | null> {
+  delete body.thinking
+  delete body.reasoning
+  delete body.reasoning_effort
+
+  let last: { model: string; response: Response } | null = null
+  for (const provider of SECONDARY_FALLBACKS) {
+    if (!provider.key) continue
+    body.model = provider.model
+    const response = await callProvider(provider.base, provider.key, body)
+    if (!response) continue
+    last = { model: provider.model, response }
+    if (!(await isProviderUnusable(response))) return last
+  }
+  return last
+}
+
 async function chatCompletions(req: Request): Promise<Response> {
-  if (!DEEPSEEK_KEY && !GLM_KEY) {
+  if (!DEEPSEEK_KEY && !GLM_KEY && !SECONDARY_FALLBACKS.some(provider => provider.key)) {
     return json({ error: 'model provider key not configured on the server' }, 500)
+  }
+
+  const declaredBytes = Number(req.headers.get('content-length') ?? '0')
+  if (Number.isFinite(declaredBytes) && declaredBytes > MAX_REQUEST_BYTES) {
+    return json({ error: 'chat request is too large' }, 413)
   }
 
   const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
@@ -559,6 +603,19 @@ async function chatCompletions(req: Request): Promise<Response> {
 
   if (!body || !Array.isArray(body.messages)) {
     return json({ error: 'invalid chat.completions body' }, 400)
+  }
+  if (body.messages.length > MAX_MESSAGES) {
+    return json({ error: `chat history exceeds ${MAX_MESSAGES} messages` }, 413)
+  }
+  if (JSON.stringify(body.messages).length > MAX_MESSAGE_BYTES) {
+    return json({ error: 'chat history is too large' }, 413)
+  }
+
+  if (typeof body.max_tokens === 'number') {
+    body.max_tokens = Math.max(1, Math.min(MAX_COMPLETION_TOKENS, Math.floor(body.max_tokens)))
+  }
+  if (typeof body.max_completion_tokens === 'number') {
+    body.max_completion_tokens = Math.max(1, Math.min(MAX_COMPLETION_TOKENS, Math.floor(body.max_completion_tokens)))
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
@@ -662,6 +719,18 @@ async function chatCompletions(req: Request): Promise<Response> {
     }
   }
 
+  // GLM may itself be unavailable, or may not be configured. Continue through
+  // Qwen, Kimi, and Anthropic if their server-side keys exist. This is only
+  // uptime insurance; ordinary traffic retains the established routing/cost
+  // posture above.
+  if (!upstream || (await isProviderUnusable(upstream))) {
+    const fallback = await callSecondaryFallbacks(body)
+    if (fallback) {
+      model = fallback.model
+      upstream = fallback.response
+    }
+  }
+
   if (!upstream) {
     return json({ error: 'model provider unreachable' }, 502)
   }
@@ -669,7 +738,7 @@ async function chatCompletions(req: Request): Promise<Response> {
   if (!streaming) {
     const data = await upstream.json().catch(() => null)
     const num = (field: string): number => (data?.usage?.[field] as number | undefined) ?? 0
-    void recordUsage(
+    keepAlive(recordUsage(
       ctx,
       {
         cacheHit: num('prompt_cache_hit_tokens'),
@@ -680,7 +749,7 @@ async function chatCompletions(req: Request): Promise<Response> {
       model,
       client,
       Date.now() - startedAt
-    )
+    ))
 
     return json(data ?? { error: 'upstream returned no body' }, upstream.status)
   }
@@ -712,7 +781,7 @@ async function chatCompletions(req: Request): Promise<Response> {
       // The length/4 fallback has no usage chunk to read cache data from — bill it
       // at full weight rather than guessing a discount, and with no prompt/completion
       // split, which recordUsage marks as an ESTIMATED cost rather than a measured one.
-      void recordUsage(
+      keepAlive(recordUsage(
         ctx,
         {
           cacheHit: usageTokens ? cacheHitTokens : 0,
@@ -723,7 +792,7 @@ async function chatCompletions(req: Request): Promise<Response> {
         model,
         client,
         Date.now() - startedAt
-      )
+      ))
     },
     transform(chunk, controller) {
       controller.enqueue(chunk)

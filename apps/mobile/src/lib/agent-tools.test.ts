@@ -17,6 +17,7 @@ import {
   MAX_NOTE_CHARS,
   parseToolArgs,
   usableCards,
+  usableSlides,
 } from "./agent-tools.ts";
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing.ts";
 import { phaseLabel } from "./thinking-phase.ts";
@@ -118,6 +119,39 @@ Deno.test("usableCards keeps complete pairs and drops half-written ones", () => 
     { back: "Blocks ACE", front: "What does lisinopril do?" },
     { back: "spaced", front: "trimmed" },
   ]);
+});
+
+Deno.test("usableCards removes duplicate prompts", () => {
+  assertEquals(
+    usableCards([
+      { front: "What is a limit?", back: "A value a function approaches." },
+      { front: "  WHAT   IS A LIMIT? ", back: "Duplicate." },
+    ]),
+    [{ front: "What is a limit?", back: "A value a function approaches." }],
+  );
+});
+
+Deno.test("usableCards rejects vague, compound, and answer-equals-prompt cards", () => {
+  assertEquals(
+    usableCards([
+      { front: "What is this?", back: "A vague card" },
+      { front: "ATP", back: "ATP" },
+      { front: "What is preload? What is afterload?", back: "Two facts" },
+      { front: "What determines preload?", back: "Ventricular end-diastolic stretch." },
+    ]),
+    [{ front: "What determines preload?", back: "Ventricular end-diastolic stretch." }],
+  );
+});
+
+Deno.test("usableSlides keeps structured teaching slides and drops blanks", () => {
+  assertEquals(
+    usableSlides([
+      { title: "Limits", bullets: ["Approach, not arrival", "Check both sides"], speaker_notes: "Sketch a graph." },
+      { title: "", bullets: ["No heading"] },
+      { title: "Empty", bullets: [] },
+    ]),
+    [{ title: "Limits", bullets: ["Approach, not arrival", "Check both sides"], speakerNotes: "Sketch a graph." }],
+  );
 });
 
 Deno.test("usableCards caps a runaway batch and tolerates a non-array", () => {

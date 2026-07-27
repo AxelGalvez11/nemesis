@@ -1,9 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { EmptyBlock, MissionButton } from "./mission-ui";
-import { GlassSurface } from "./GlassSurface";
 import { MessageBody } from "./MessageBody";
 import { SkeletonDeckList } from "./Skeleton";
 import { SlideUpSheet } from "./StudySheet";
@@ -20,7 +19,7 @@ import {
 import { outlineNodes } from "@/lib/mindmap-outline";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
-import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 // The Study page's Tests and Mindmaps panels.
@@ -237,7 +236,7 @@ function TestRunner({
   onError: (message: string) => void;
 }) {
   const styles = useThemedStyles(createStyles);
-  const questions = artifact.questions ?? [];
+  const questions = useMemo(() => artifact.questions ?? [], [artifact.questions]);
   const [index, setIndex] = useState(0);
   const [picks, setPicks] = useState<number[]>([]);
   const [picked, setPicked] = useState<number | null>(null);

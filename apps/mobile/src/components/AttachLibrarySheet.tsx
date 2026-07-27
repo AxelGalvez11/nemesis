@@ -79,7 +79,7 @@ export function AttachLibrarySheet({
   }, [visible, userId]);
 
   const needle = query.trim().toLowerCase();
-  const notesList = notes ?? [];
+  const notesList = useMemo(() => notes ?? [], [notes]);
   const filtered = needle
     ? notesList.filter((note) => note.title.toLowerCase().includes(needle) || note.path.toLowerCase().includes(needle))
     : notesList;

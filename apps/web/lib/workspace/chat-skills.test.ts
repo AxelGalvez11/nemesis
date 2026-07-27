@@ -87,6 +87,11 @@ test("test requests get the test-writing skill", () => {
   assert.deepEqual(idsFor("quiz me on antibiotics"), ["test-craft", "socratic-tutoring"]);
 });
 
+test("slide and note deliverables select persistence skills", () => {
+  assert.deepEqual(idsFor("create a slide deck on mitosis"), ["slides-builder"]);
+  assert.deepEqual(idsFor("make me lecture notes for organic chemistry"), ["notes-builder"]);
+});
+
 test("teaching requests get the teaching skill", () => {
   assert.deepEqual(idsFor("explain beta blockers"), ["teaching"]);
   assert.deepEqual(idsFor("teach me the coagulation cascade"), ["teaching"]);

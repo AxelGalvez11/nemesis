@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
   InputAccessoryView,
@@ -32,10 +33,12 @@ import { safeLibraryTitle, UNTITLED_NOTE_TITLE } from "@/lib/library-paths";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import {
   createNote,
+  deleteNote,
   fetchNote,
   findCachedNote,
   loadCachedLibrary,
   renameNote,
+  subscribeLibraryChanges,
   updateNoteContent,
   type CloudLibraryNote,
 } from "@/api/cloudLibrary";
@@ -77,13 +80,12 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the notes you've opened, search your notes, new note, an Obsidian-style TAB
 // VIEWER (NoteTabsSheet + lib/note-tabs.ts, owner 2026-07-21), and a heading
 // outline. The old lower-left corner button is gone; its menu
-// moved into the top-right dots. Find is REAL; Rename / Replace / Delete still
-// flash the "on the web app" note.
+// moved into the top-right dots. Find, Rename, and Delete are real iOS actions;
+// there is no fake "Replace on web" row for markdown notes.
 const MENU_ITEMS = [
   { key: "find", label: "Find", enabled: true },
-  { key: "rename", label: "Rename", enabled: false },
-  { key: "replace", label: "Replace", enabled: false },
-  { key: "delete", label: "Delete", enabled: false },
+  { key: "rename", label: "Rename", enabled: true },
+  { key: "delete", label: "Delete", enabled: true },
 ] as const;
 
 // The bottom pill bar's rendered height — the reading body's bottom spacer
@@ -96,7 +98,6 @@ const PILL_BAR_HEIGHT = NOTE_PILL_BAR_HEIGHT;
  *  the title does NOT get the note's formatting toolbar. */
 const TITLE_TOOLBAR_ID = "note-title-toolbar";
 
-const EDIT_ON_WEB = "That happens on the web app for now.";
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
 const SAVE_FAILED = "Couldn't save — check your connection and try Done again.";
 
@@ -179,6 +180,7 @@ export default function NoteScreen() {
   // on every keystroke.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [titleFocused, setTitleFocused] = useState(false);
+  const titleInputRef = useRef<TextInput>(null);
   // Browser-style note history (owner picked "browser-style" for the pill
   // bar), now held in lib/note-tabs.ts's MODULE-scoped noteNavHolder (owner
   // 2026-07-21: the numbered square opens a real tab viewer, so open tabs
@@ -266,6 +268,22 @@ export default function NoteScreen() {
       alive = false;
     };
   }, [userId, noteId]);
+
+  // Keep an open note current when it is edited from the web. Never replace an
+  // active local draft: the autosave lane owns the document while the student
+  // is typing, and the next server response becomes truth once they finish.
+  useEffect(() => {
+    if (!userId || !noteId) return;
+    return subscribeLibraryChanges(userId, () => {
+      if (editing || dirtyRef.current) return;
+      void fetchNote(userId, { id: noteId })
+        .then((fresh) => {
+          if (fresh) setDoc(fresh);
+          else setDoc(null);
+        })
+        .catch(() => {});
+    });
+  }, [userId, noteId, editing]);
 
   // The reading body renders one <Markdown> per heading-led section so each
   // section's y falls out of onLayout — that's what the outline jumps to.
@@ -401,10 +419,31 @@ export default function NoteScreen() {
         }
         return;
       }
-      // Delete / Rename / Replace: still web-app actions.
-      flashNotice(EDIT_ON_WEB);
+      if (item.key === "rename") {
+        if (!doc) return;
+        setTitleDraft(doc.title === UNTITLED_NOTE_TITLE ? "" : doc.title);
+        setTimeout(() => titleInputRef.current?.focus(), 0);
+        return;
+      }
+      if (item.key === "delete" && doc && userId) {
+        Alert.alert("Delete note?", `"${doc.title}" will be removed from your Library on every device.`, [
+          { style: "cancel", text: "Cancel" },
+          {
+            style: "destructive",
+            text: "Delete",
+            onPress: () => {
+              void deleteNote(userId, doc.id)
+                .then(() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace("/library");
+                })
+                .catch((err) => flashNotice(err instanceof Error ? err.message : "Couldn't delete the note."));
+            },
+          },
+        ]);
+      }
     },
-    [flashNotice, editing, doneEditing],
+    [flashNotice, editing, doneEditing, doc, userId],
   );
 
   // The mode pill's left half: pencil (reading → edit) / book (editing → save
@@ -580,6 +619,7 @@ export default function NoteScreen() {
   const storedTitle = doc && doc.title !== UNTITLED_NOTE_TITLE ? doc.title : "";
   const titleField = doc ? (
     <TextInput
+      ref={titleInputRef}
       style={styles.title}
       value={titleDraft ?? storedTitle}
       onChangeText={setTitleDraft}
