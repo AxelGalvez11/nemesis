@@ -41,17 +41,40 @@ export interface WireMsg {
  *  plain, concise, no emojis, never a different product's name.
  *  Universal rigor lives here because it rides every turn at no marginal cost;
  *  task-specific craft lives in chat-skills.ts and is injected only on match. */
-export const CHAT_SYSTEM_PROMPT =
+const CHAT_PROMPT_HEAD =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
-  "Never use emojis. " +
+  "Never use emojis. ";
+
+/** True ONLY on a turn that actually carries AGENT_TOOLS. */
+export const CHAT_TOOLS_PROMPT =
   "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
   "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
-  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. " +
+  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. ";
+
+/**
+ * What replaces it when the turn goes out WITHOUT tools (a reasoner route, or
+ * high effort — see chat-effort.ts:toolsAllowed).
+ *
+ * This paragraph exists because the sentence above used to ride every turn
+ * unconditionally, including the ones with no tools attached. Observed live
+ * 2026-07-27: told it could add cards and told to "state plainly what you
+ * created", the model wrote "[Calling tool: add_flashcards ...]" as prose,
+ * invented a "Pharmacology" deck the student does not have, and reported 14
+ * cards saved. A prompt that promises a capability the request never carried is
+ * an instruction to fabricate one.
+ */
+export const CHAT_NO_TOOLS_PROMPT =
+  "This turn carries no tools. You cannot read or change the student's Library, decks, or calendar right now, and you cannot see what is in them. " +
+  "Never write a line that imitates a tool call (for example '[Calling tool: ...]'), never say or imply that anything was created, added, saved, or " +
+  "scheduled, and never describe what their existing notes, decks, or events contain. Put the material itself in your reply instead, and tell them to " +
+  "ask for it to be saved if they want it kept. ";
+
+const CHAT_PROMPT_TAIL =
   "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
   "answered what was actually asked. If a step does not hold up, fix it before replying rather than hedging afterwards. " +
   // Owner-specified verification procedure (2026-07-27): decompose, label,
@@ -67,6 +90,19 @@ export const CHAT_SYSTEM_PROMPT =
   "to fill. End a factual answer with an overall confidence from 0.0 to 1.0. If that confidence is below 0.8, or the question needed context you do not " +
   "have, write exactly 'I cannot confirm this with high certainty', then say what stays unknown and what would settle it. " +
   "Keep this proportionate: a simple question needs a labelled answer and a score, not a five-part report.";
+
+/**
+ * The base prompt for one turn. The workspace paragraph is chosen from the SAME
+ * boolean that decides whether the tools ride, so the prompt can never claim a
+ * capability the request does not carry.
+ */
+export function chatSystemPrompt(toolsEnabled: boolean): string {
+  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL}`;
+}
+
+/** The tools-on prompt, kept as a named export for callers and tests that want
+ *  the full text rather than a per-turn build. */
+export const CHAT_SYSTEM_PROMPT = chatSystemPrompt(true);
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —
@@ -108,6 +144,9 @@ export function buildWireMessages(
   history: SessionMessage[],
   userText: string,
   decision = classifyChatRequest(userText),
+  // Derived from the decision by default so a caller cannot accidentally
+  // describe tools that will not be sent.
+  toolsEnabled = toolsAllowed(decision),
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -118,7 +157,7 @@ export function buildWireMessages(
   // recent instruction the model reads before the conversation itself.
   const skills = buildSkillMessage(selectChatSkills(userText));
   return [
-    { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${liveClock}`, role: "system" },
+    { content: `${chatSystemPrompt(toolsEnabled)}\n\n${routeInstruction(decision.route)}\n\n${liveClock}`, role: "system" },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
     ...(skills ? [{ content: skills, role: "system" as const }] : []),
     ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
@@ -373,7 +412,12 @@ export async function sendChatTurn(
   // meant one slide citing a recent year bought a paid web search on every
   // upload. Skills below still see the full text, deliberately.
   const askText = promptWithoutAttachments(userText);
-  const classified = classifyChatRequest(askText);
+  // The previous assistant turn is what makes a one-word "flashcards" or "all
+  // three" legible as a save: our own lecture-intake skill ends by offering to
+  // build them, and the reply that accepts the offer carries no save verb.
+  // (copied before reversing — findLast is ES2023 and this project targets ES2022)
+  const priorAssistant = [...history].reverse().find((message) => message.role === "assistant" && message.content.trim())?.content ?? "";
+  const classified = classifyChatRequest(askText, priorAssistant);
   const needsWeb = classified.searchWeb || shouldSearchWeb(askText);
   const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
@@ -391,7 +435,7 @@ export async function sendChatTurn(
   }
 
   const toolsEnabled = toolsAllowed(decision);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {

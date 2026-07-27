@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
-import { classifyChatRequest, detectsSaveRequest, promptWithoutAttachments, routeInstruction } from "./chat-routing";
+import { applyChatEffort, toolsAllowed } from "./chat-effort";
+import { acceptsOffer, classifyChatRequest, detectsSaveRequest, offersToCreate, promptWithoutAttachments, routeInstruction } from "./chat-routing";
 import { shouldSearchWeb } from "./chat-web-search";
 
 // Ordinary conversation stays on the least expensive lane.
@@ -85,8 +86,17 @@ for (const prompt of [
   "what's on my schedule today",
   "Teach me the renin-angiotensin system",
   "Compare negligence and strict liability",
+  // Questions ABOUT the artifact carry a save verb and a save noun, but asking
+  // words never open a request — these belong on the reasoner, not the tool lane.
+  "how do I make good flashcards?",
+  "what is the best way to build a mind map",
+  "why do flashcards work better than rereading",
 ]) {
   assert.equal(detectsSaveRequest(prompt), false, prompt);
+}
+// A polite ask is still an ask — "can/could/would you" must stay saves.
+for (const prompt of ["can you make me flashcards on the Krebs cycle", "could you build a mind map of this"]) {
+  assert.equal(detectsSaveRequest(prompt), true, prompt);
 }
 // The reasoner routes those still resolve to are untouched by the save gate.
 assert.equal(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
@@ -104,5 +114,49 @@ assert.equal(classifyChatRequest("explain how beta blockers work").model, "deeps
 // A message with no attachment is untouched, and a real live-info question still searches.
 assert.equal(promptWithoutAttachments("what is the latest guidance"), "what is the latest guidance");
 assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidance")), true);
+
+// Accepting the offer our OWN lecture-intake skill makes. Observed live
+// 2026-07-27: the student replied "flashcards", LEARNING_PATTERN matched
+// `flashcards?`, the turn went to the tool-less reasoner, and the model wrote
+// "[Calling tool: add_flashcards ...]" as prose and reported 14 cards saved to
+// a deck that does not exist. Asserted at the END of the chain — through
+// applyChatEffort to toolsAllowed — because that is where the failure was; a
+// classifier-only assertion would pass over the same dead feature.
+{
+  const offer = "I have read the lecture.\n\nWant me to turn this into notes, flashcards, a practice test, or all three?";
+  assert.equal(offersToCreate(offer), true);
+  for (const reply of ["flashcards", "notes", "all three", "yes", "yes please", "a practice test", "do it", "notes and flashcards"]) {
+    assert.equal(detectsSaveRequest(reply, offer), true, reply);
+    const decision = classifyChatRequest(reply, offer);
+    assert.equal(decision.savesToWorkspace, true, reply);
+    for (const effort of ["instant", "medium", "high"] as const) {
+      assert.equal(toolsAllowed(applyChatEffort(decision, effort)), true, `${reply} @ ${effort}`);
+    }
+  }
+}
+
+// Both halves are required. Without the offer the same words are ordinary
+// learning questions, and after an offer a question back is not an acceptance.
+{
+  const offer = "Want me to turn this into notes, flashcards, a practice test, or all three?";
+  for (const reply of ["flashcards", "notes", "all three", "yes"]) {
+    assert.equal(detectsSaveRequest(reply, ""), false, `${reply} with no offer`);
+  }
+  for (const reply of [
+    "explain how flashcards help memory",
+    "what is the difference between notes and flashcards?",
+    "how do I make good flashcards?",
+    // Long enough to be a new instruction rather than an acceptance.
+    "actually let's go back to the contraindications section and walk through each one in detail",
+  ]) {
+    assert.equal(detectsSaveRequest(reply, offer), false, reply);
+  }
+  // An assistant turn that merely mentions flashcards is not an offer.
+  assert.equal(offersToCreate("Flashcards are effective because of spaced retrieval."), false);
+  // Nor is an offer that is not a question.
+  assert.equal(offersToCreate("I can turn this into flashcards."), false);
+  assert.equal(acceptsOffer("flashcards"), true);
+  assert.equal(acceptsOffer(""), false);
+}
 
 console.log("chat-routing.test.ts OK");

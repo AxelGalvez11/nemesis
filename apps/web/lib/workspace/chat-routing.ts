@@ -53,22 +53,77 @@ const SAVE_ARTIFACT =
 const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
 const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
 
-/** Does this message ask to persist something in the student's workspace? Pure
- *  and exported so the routing tests can pin the real phrasings students use. */
-export function detectsSaveRequest(text: string): boolean {
-  const compact = text.trim();
-  if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
-  return SAVE_TO_WORKSPACE.test(compact);
+// ── accepting an offer the app itself made ───────────────────────────────────
+// The lecture-intake skill ends every deck upload with "Want me to turn this
+// into notes, flashcards, a practice test, or all three?" — and the student
+// then replies with one word. "flashcards" carries no save verb, so the two
+// rules above cannot see it; LEARNING_PATTERN matches `flashcards?` and sends
+// the turn to the reasoner, which has no tools. Observed live 2026-07-27: the
+// model wrote "[Calling tool: add_flashcards ...]" as PROSE, invented a
+// "Pharmacology" deck that does not exist, and reported 14 cards saved. Nothing
+// was written.
+//
+// The words alone can never decide this — "notes" and "all three" are not save
+// requests in isolation. The offer is the missing half, so both sides must
+// agree: the previous assistant turn ended by offering to build something, AND
+// this reply is a short acceptance.
+const OFFER_VERB = /\b(?:want me to|would you like me to|do you want me to|shall i|should i|i can)\b/i;
+const OFFER_TARGET = /\b(?:notes?|flash\s?cards?|cards?|practice tests?|tests?|quiz(?:zes)?|mind\s?maps?|study guides?|deck|slides?|summary|outline)\b/i;
+const ACCEPTANCE = /^(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|do it|go ahead|sounds good|all (?:three|of them|of it|of the above)|both|everything)\b/i;
+/** A reply longer than this is the student saying something new, not "yes". */
+const ACCEPTANCE_MAX_CHARS = 80;
+/** Openers that make a short artifact-word reply a QUESTION about the artifact
+ *  ("explain how flashcards help memory") rather than a request to build one. */
+const NOT_AN_ACCEPTANCE = /^(?:what|why|how|when|where|who|which|is|are|does|can|could|would|explain|tell|describe|define|compare)\b/i;
+/** Opens a question ABOUT something rather than a request FOR it. Deliberately
+ *  excludes "can/could/would you", which are how students phrase a polite ask. */
+const ASKS_ABOUT = /^(?:what|why|how|when|where|who|which)\b/i;
+
+/** Did the assistant's previous turn end by offering to CREATE something? Only
+ *  the last line counts — that is where an offer lands, and a mid-answer
+ *  mention of flashcards is not an offer. */
+export function offersToCreate(assistantText: string): boolean {
+  const lastLine = assistantText.trim().split("\n").map((line) => line.trim()).filter(Boolean).pop() ?? "";
+  if (!lastLine.endsWith("?")) return false;
+  return OFFER_VERB.test(lastLine) && OFFER_TARGET.test(lastLine);
 }
 
-export function classifyChatRequest(text: string): ChatRouteDecision {
+/** Is this reply a short "yes, build it"? Checked only against a real offer. */
+export function acceptsOffer(text: string): boolean {
+  const compact = text.trim();
+  if (!compact || compact.length > ACCEPTANCE_MAX_CHARS || compact.includes("?")) return false;
+  // "do it" and "ok" start with words NOT_AN_ACCEPTANCE would otherwise reject.
+  if (ACCEPTANCE.test(compact)) return true;
+  if (NOT_AN_ACCEPTANCE.test(compact)) return false;
+  return OFFER_TARGET.test(compact);
+}
+
+/** Does this message ask to persist something in the student's workspace? Pure
+ *  and exported so the routing tests can pin the real phrasings students use.
+ *
+ *  `priorAssistantText` is optional so every existing call site is unchanged;
+ *  pass it wherever the conversation is available, because it is the only thing
+ *  that can classify a bare "flashcards" or "all three". */
+export function detectsSaveRequest(text: string, priorAssistantText = ""): boolean {
+  const compact = text.trim();
+  // "How do I make good flashcards?" is a question ABOUT the artifact, not a
+  // request FOR one, but it carries both a save verb and a save noun. Asking
+  // words only ever open a question; a request uses "can you", "could you" or
+  // a bare imperative, none of which start this way.
+  if (ASKS_ABOUT.test(compact)) return false;
+  if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  if (SAVE_TO_WORKSPACE.test(compact)) return true;
+  return offersToCreate(priorAssistantText) && acceptsOffer(compact);
+}
+
+export function classifyChatRequest(text: string, priorAssistantText = ""): ChatRouteDecision {
   const compact = text.trim();
   // A save request wins over every reasoner route below so its tools can fire.
   // We keep web when the topic needs it (deepseek-chat can still search), and we
   // never emit route "conversation" for a save, so sendChatTurn's web
   // re-promotion (which only upgrades "conversation" to the reasoner) can't
   // quietly undo this.
-  if (detectsSaveRequest(compact)) {
+  if (detectsSaveRequest(compact, priorAssistantText)) {
     const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
     return wantsWeb
       ? { route: "current", model: "deepseek-chat", savesToWorkspace: true, searchWeb: true }
