@@ -229,7 +229,6 @@ export default function ChatScreen() {
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [deepResearchOn, setDeepResearchOn] = useState(false);
   // Instant/Medium/High — the composer's intelligence dial. A per-USER working
   // preference (owner 2026-07-23: "the chat should remember which intelligence
   // mode has been picked because it always defaults to medium"): remembered
@@ -337,10 +336,8 @@ export default function ChatScreen() {
     setPlusMenuOpen(false);
     setLibraryPickerOpen(false);
     setAttachedDoc(null);
-    setDeepResearchOn(false);
     // NB: effort is intentionally NOT reset here — it's a per-user preference
-    // remembered across chats (see the hydrate/persist effects below), unlike
-    // deep research, which is a per-thread toggle that starts off each thread.
+    // remembered across chats (see the hydrate/persist effects below).
     setEffortMenuOpen(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
@@ -506,7 +503,10 @@ export default function ChatScreen() {
     // off themselves (NOT cleared here). Both ride into sendChat's options,
     // never into the persisted/displayed ChatMsg.content itself.
     const doc = override?.doc ?? attachedDoc;
-    const research = deepResearchOn;
+    // No Deep research control any more (owner removed the row 2026-07-27). The
+    // router still picks the research lane by itself when a question needs current
+    // sources; nothing here forces it.
+    const research = false;
     const chosenEffort = effort;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
     const base = [...history, userMsg];
@@ -607,7 +607,7 @@ export default function ChatScreen() {
           setStreamingText("");
         }
       });
-  }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
+  }, [input, messages, uid, threadId, attachedDoc, effort]);
 
   // A shot the student accepted: store it, read it, and hand the words to the
   // next turn. The sheet STAYS UP with a spinner until this lands — dropping
@@ -1294,8 +1294,6 @@ export default function ChatScreen() {
           onAttach={() => setLibraryPickerOpen(true)}
           onAddFile={() => void addFileFromDevice()}
           onTakePhoto={() => setCameraOpen(true)}
-          deepResearchOn={deepResearchOn}
-          onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
         {/* The intelligence pill's dropdown — anchored above the composer off
             the same measurements the "+" menu uses, so the two hang at exactly

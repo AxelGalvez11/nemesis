@@ -280,16 +280,49 @@ export function SearchIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
+/**
+ * The settings gear, generated rather than pasted.
+ *
+ * The previous glyph was a 12-lobe outline whose valleys were about as wide as the
+ * stroke drawn into them, so at the sizes this app actually uses it (18-23px) the
+ * strokes either side of each notch merged and the icon rendered as a lumpy blob
+ * instead of a gear. Computing the path fixes the ratio at the source: the notch is
+ * NOTCH_DEPTH deep against a 1.6 stroke, so it stays open at any size, and every
+ * tooth is identical by construction rather than by hand-drawn arcs.
+ *
+ * Built once at module load, like Orb.tsx's lattice.
+ */
+const GEAR_TEETH = 6;
+const GEAR_TIP_R = 9.6; // tooth tip
+const GEAR_ROOT_R = 6.6; // valley floor — 3.0 below the tip, well clear of the stroke
+const GEAR_HUB_R = 2.9;
+const GEAR_TIP_HALF = 11; // degrees of tip arc either side of a tooth's centre
+const GEAR_FLANK = 6; // degrees the tooth flank slants over
+
+function gearPoint(angleDeg: number, radius: number): string {
+  const a = ((angleDeg - 90) * Math.PI) / 180; // -90 so tooth 0 points up
+  return `${(12 + radius * Math.cos(a)).toFixed(2)} ${(12 + radius * Math.sin(a)).toFixed(2)}`;
+}
+
+const GEAR_PATH = (() => {
+  const pitch = 360 / GEAR_TEETH;
+  let d = `M ${gearPoint(-GEAR_TIP_HALF, GEAR_TIP_R)}`;
+  for (let i = 0; i < GEAR_TEETH; i++) {
+    const centre = i * pitch;
+    // Across the tip, down the trailing flank, along the valley, up the next flank.
+    d += ` A ${GEAR_TIP_R} ${GEAR_TIP_R} 0 0 1 ${gearPoint(centre + GEAR_TIP_HALF, GEAR_TIP_R)}`;
+    d += ` L ${gearPoint(centre + GEAR_TIP_HALF + GEAR_FLANK, GEAR_ROOT_R)}`;
+    d += ` A ${GEAR_ROOT_R} ${GEAR_ROOT_R} 0 0 1 ${gearPoint(centre + pitch - GEAR_TIP_HALF - GEAR_FLANK, GEAR_ROOT_R)}`;
+    d += ` L ${gearPoint(centre + pitch - GEAR_TIP_HALF, GEAR_TIP_R)}`;
+  }
+  return `${d} Z`;
+})();
+
 export function SettingsIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={strokeWidth} {...base} />
-      <Path
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15Z"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        {...base}
-      />
+      <Path d={GEAR_PATH} stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Circle cx="12" cy="12" r={GEAR_HUB_R} stroke={color} strokeWidth={strokeWidth} {...base} />
     </Svg>
   );
 }
