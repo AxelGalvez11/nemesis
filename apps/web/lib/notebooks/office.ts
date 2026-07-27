@@ -24,6 +24,7 @@ import {
   collapseBlankLines,
   diagramXmlToText,
   docxXmlToText,
+  firstContentLine,
   firstLine,
   orderSlideFiles,
   pptxNotesXmlToText,
@@ -56,7 +57,7 @@ export function extractPptxText(bytes: Uint8Array): OfficeExtract {
   const text = collapseBlankLines(slides.filter((s) => s.length > 0).join("\n\n"));
   // The title placeholder beats firstLine: on a real lecture the first line of slide 1
   // is the lecturer's name and address block, so the deck filed itself under "FRANK PARK".
-  return { title: deckTitle ?? firstLine(text), text };
+  return { title: deckTitle ?? firstContentLine(text), text };
 }
 
 /** What was found in a deck and what became of it. Reported so a partial read is never
@@ -246,5 +247,5 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
 export function pptxTextWithFigures(contents: PptxContents, descriptions: ReadonlyMap<string, string>): OfficeExtract {
   const merged = mergeImageDescriptions(contents.slides, descriptions, contents.media.images);
   const text = collapseBlankLines(merged.filter((s) => s.length > 0).join("\n\n"));
-  return { title: contents.deckTitle ?? firstLine(text), text };
+  return { title: contents.deckTitle ?? firstContentLine(text), text };
 }

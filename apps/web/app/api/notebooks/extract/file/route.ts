@@ -181,6 +181,17 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     let text = result.text.trim();
+    // Word and PowerPoint were never capped, only PDF was. A deck now carries slide
+    // headings and bullet markers on top of its words, so the ceiling matters more
+    // than it did — and an uncapped 300-slide deck would otherwise ride the whole
+    // way into a database row and a prompt. Cap to the same TEXT_CAP the PDF lane
+    // uses, and REPORT it: a partial read presented as a complete one is the one
+    // outcome this route is built to avoid.
+    if (kind !== "pdf") {
+      const capped = capText(text, TEXT_CAP);
+      text = capped.text;
+      if (capped.truncated) coverage = { ...(coverage ?? {}), truncated: true };
+    }
     // A scanned or photographed PDF has no text LAYER to extract — the words are
     // pixels. That used to be the end of the road (the 422 below). When vision is
     // configured we read the pages instead; when it is not, or the file is too

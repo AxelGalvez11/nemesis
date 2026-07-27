@@ -6,6 +6,7 @@ import {
   decodeXmlEntities,
   diagramXmlToText,
   docxXmlToText,
+  firstContentLine,
   firstLine,
   orderSlideFiles,
   pptxNotesXmlToText,
@@ -230,6 +231,21 @@ const para = (runs: string, lvl?: number) =>
   const body = pptxSlideXmlToMarkdown(xml).body;
   assert.match(body, /CYP3A4/);
   assert.match(body, /Renal clearance/);
+}
+
+// A soft line break is a word boundary. Walking runs one by one would otherwise fuse
+// the words either side of it -- a real deck's title came out "Lecture 4Intravascular".
+{
+  const xml = sp(`<p:ph type="title"/><a:p>${run("Lecture 4")}<a:br/>${run("Intravascular Dosing")}</a:p>`);
+  assert.equal(pptxSlideTitle(xml), "Lecture 4 Intravascular Dosing");
+}
+
+// The fallback title must not read this module's own markup. A deck with no title
+// placeholder anywhere came out named "## Slide 1".
+{
+  assert.equal(firstContentLine("## Slide 1\n- **Real first line**\n- more"), "Real first line");
+  assert.equal(firstContentLine("## Slide 3: Kept Title\n- body"), "Kept Title");
+  assert.equal(firstContentLine("plain text\nsecond"), "plain text");
 }
 
 console.log("notebooks/office-text.test.ts: emphasis fidelity assertions passed");

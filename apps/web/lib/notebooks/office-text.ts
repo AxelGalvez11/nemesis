@@ -31,6 +31,26 @@ export function collapseBlankLines(s: string): string {
     .trim();
 }
 
+/**
+ * The first line of real content, ignoring the slide headings and bullet markers this
+ * module itself adds. Used as the deck-title fallback when a deck has no title
+ * placeholder at all: plain `firstLine` reads the assembled markdown, so on such a
+ * deck it returned the literal string "## Slide 1" as the document's name. PURE.
+ */
+export function firstContentLine(markdown: string): string | null {
+  const cleaned = markdown
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\s*#{1,6}\s+Slide\s+\d+\s*:?\s*/, "")
+        .replace(/^\s*#{1,6}\s+/, "")
+        .replace(/^\s*[-*]\s+/, "")
+        .replace(/\*\*|<\/?u>/g, ""),
+    )
+    .join("\n");
+  return firstLine(cleaned);
+}
+
 /** The first non-empty, trimmed line (capped) — a best-effort document/deck title. PURE. */
 export function firstLine(text: string): string | null {
   const line = text
@@ -169,12 +189,16 @@ interface SlideParagraph {
 // A shape that contains no nested shape — the same guard the notes reader uses, so a
 // group shape does not swallow its children into one match.
 //
-// `p:graphicFrame` is here because a TABLE's cells are paragraphs inside a frame, not
-// inside a `p:sp`, and walking shapes alone dropped them: measured at 937 characters
-// across six real decks. Charts and SmartArt also sit in frames but hold no inline
-// text — their words live in ppt/charts and ppt/diagrams and arrive through the
-// slide's relationships — so nothing is double-counted by reading frames here.
-const SHAPE_RE = /<p:sp>(?:(?!<p:sp>)[\s\S])*?<\/p:sp>|<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g;
+// A TABLE's cells are paragraphs inside a `p:graphicFrame`, not inside a `p:sp`, so
+// walking shapes alone dropped them — 38 distinct words on one real lecture.
+//
+// The frame must be matched ONLY when it holds a table. Charts and SmartArt sit in
+// frames too, and they DO carry inline text: on a real 13-chart deck, matching every
+// frame emitted that text a second time, once from the frame and once from the
+// `[Chart: …]` block the slide's relationships already produce. Requiring `<a:tbl>`
+// is what keeps the two paths disjoint.
+const SHAPE_RE =
+  /<p:sp>(?:(?!<p:sp>)[\s\S])*?<\/p:sp>|<p:graphicFrame>(?=(?:(?!<\/p:graphicFrame>)[\s\S])*?<a:tbl>)[\s\S]*?<\/p:graphicFrame>/g;
 const TITLE_PH_RE = /<p:ph\b[^>]*type="(?:ctrT|t)itle"/;
 // Auto-fields that are chrome, not content: a slide number or date on every slide
 // would otherwise add a junk bullet per slide. Other field types keep their text.
@@ -202,8 +226,14 @@ function paragraphsOf(shapeXml: string, markBold: boolean): SlideParagraph[] {
  * `**Cmax**`.
  */
 function runsToMarkdown(paragraphXml: string, markBold: boolean): string {
+  // A soft line break is a word boundary the lecturer typed. Runs are walked one by
+  // one, so a bare <a:br/> between two of them would contribute no character at all
+  // and the words either side would fuse — a real title came out as
+  // "Lecture 4Intravascular Dosing Part I". Turning it into an unformatted space run
+  // keeps the boundary without inventing a newline inside a bullet.
+  const withBreaks = paragraphXml.replace(/<a:br\b[^>]*\/?>/g, "<a:r><a:t> </a:t></a:r>");
   const segments: { text: string; bold: boolean; italic: boolean; underline: boolean }[] = [];
-  for (const [, inner] of paragraphXml.matchAll(/<a:r>([\s\S]*?)<\/a:r>/g)) {
+  for (const [, inner] of withBreaks.matchAll(/<a:r>([\s\S]*?)<\/a:r>/g)) {
     const raw = inner.match(/<a:t>([\s\S]*?)<\/a:t>/)?.[1];
     if (raw === undefined) continue;
     const rPr = inner.match(/<a:rPr\b[^>]*>/)?.[0] ?? "";
