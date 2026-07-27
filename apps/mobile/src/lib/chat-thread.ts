@@ -157,11 +157,13 @@ export function buildWireMessages(
   userText: string,
   decision: ChatRouteDecision = classifyChatRequest(userText),
   learnerProfile = "",
+  /** True when course material rides along with this turn — see MATERIAL_OFFER. */
+  hasMaterial = false,
 ): WireMsg[] {
   const profile = learnerProfile.trim() ? `\n\n${learnerProfile.trim()}` : "";
   return [
     {
-      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${academicSkillInstruction(userText)}${profile}`,
+      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${academicSkillInstruction(userText, hasMaterial)}${profile}`,
       role: "system",
     },
     ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),

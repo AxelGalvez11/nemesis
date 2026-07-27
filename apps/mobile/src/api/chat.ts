@@ -418,7 +418,7 @@ export async function sendChat(
 
   const toolsEnabled = toolsAllowed(decision);
   const learnerProfile = await learnerProfileForChat(uid);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile, Boolean(attachedDoc));
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice
