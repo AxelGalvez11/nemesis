@@ -39,6 +39,7 @@ import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
+import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
@@ -193,6 +194,27 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // "Add a file": the entry point the phone never had. Everything downstream already
+  // existed -- the reader handles PDF/Word/PowerPoint, and the result is the same
+  // one-shot attachment a Library note or a photograph makes. A refusal (wrong kind,
+  // too big, unreadable) arrives already written for the student, so it is shown
+  // verbatim rather than wrapped in a second sentence.
+  const [fileLoading, setFileLoading] = useState(false);
+  const addFileFromDevice = useCallback(async () => {
+    if (!uid || fileLoading) return;
+    setFileLoading(true);
+    try {
+      const doc = await pickAndReadDocument(uid);
+      if (doc) setAttachedDoc({ content: doc.text, title: doc.title });
+    } catch (cause) {
+      Alert.alert(
+        "Couldn't add that file",
+        cause instanceof DocumentError ? cause.message : "Something went wrong reading it. Try again.",
+      );
+    } finally {
+      setFileLoading(false);
+    }
+  }, [fileLoading, uid]);
   // The camera (owner 2026-07-24). A photograph becomes an attachment through
   // exactly the lane above — once the server has read it, a picture of a slide
   // and an attached Library note are the same thing: text for one turn.
@@ -1270,6 +1292,7 @@ export default function ChatScreen() {
           onClose={() => setPlusMenuOpen(false)}
           bottomOffset={composerMenuOffset}
           onAttach={() => setLibraryPickerOpen(true)}
+          onAddFile={() => void addFileFromDevice()}
           onTakePhoto={() => setCameraOpen(true)}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}

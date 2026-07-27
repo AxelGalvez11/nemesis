@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
-import { LibraryIcon, SearchIcon } from "./icons";
+import { FileIcon, LibraryIcon, SearchIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -12,6 +12,9 @@ import { radius, space, type } from "@/theme/tokens";
 // screen's composer pill; GlassSurface `opaque` for the same page-bleed-through
 // fix). Two rows:
 //  - "Attach from Library" opens AttachLibrarySheet.tsx.
+//  - "Add a file" opens the system picker for a lecture the student was given
+//    (PDF / Word / PowerPoint). It fills the SAME one-shot chip: a deck and an
+//    attached note are the same thing once they are text.
 //  - "Take photo" opens PhotoCaptureSheet.tsx — the shot is uploaded, read by
 //    the server, and lands in the SAME one-shot attachment chip the Library
 //    picker fills, because a photograph and an attached note are the same thing
@@ -42,6 +45,7 @@ export function ComposerPlusMenu({
   onClose,
   bottomOffset,
   onAttach,
+  onAddFile,
   onTakePhoto,
   deepResearchOn,
   onToggleDeepResearch,
@@ -53,6 +57,8 @@ export function ComposerPlusMenu({
    *  row itself renders with (see Composer.tsx's COMPOSER_PILL_HEIGHT). */
   bottomOffset: number;
   onAttach: () => void;
+  /** Opens the system file picker for a PDF / Word / PowerPoint (api/documents.ts). */
+  onAddFile: () => void;
   onTakePhoto: () => void;
   deepResearchOn: boolean;
   onToggleDeepResearch: () => void;
@@ -94,6 +100,15 @@ export function ComposerPlusMenu({
           >
             <LibraryIcon size={17} color={c.text2} />
             <Text style={styles.rowLabel}>Attach from Library</Text>
+          </Pressable>
+          <Pressable
+            testID="composer-plus-file"
+            onPress={() => pickAndClose(onAddFile)}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+          >
+            <FileIcon size={17} color={c.text2} />
+            <Text style={styles.rowLabel}>Add a file</Text>
           </Pressable>
           <Pressable
             testID="composer-plus-camera"
