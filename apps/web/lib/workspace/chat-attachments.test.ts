@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { groupChatAttachments } from "./chat-attachments";
+import { fitAttachmentBlocks, groupChatAttachments, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -25,6 +25,43 @@ test("folder selections render as one attachment group", () => {
     { kind: "folder", label: "Cardiology", count: 2 },
     { kind: "file", label: "outline.pdf", count: 1 },
   ]);
+});
+
+test("a lecture deck that fits is sent whole, with nothing appended", () => {
+  const deck = "Learning objective 1. ".repeat(400);
+
+  const [block] = fitAttachmentBlocks([{ label: "lecture.pptx", type: "application/pptx", content: deck }]);
+
+  assert.ok(block?.includes(deck.trim()), "the whole deck should reach the model");
+  assert.ok(!block?.includes("Truncated"), "nothing was cut, so nothing should claim it was");
+});
+
+test("a deck too big to send says so instead of silently losing its back half", () => {
+  const huge = `${"x".repeat(MAX_ATTACHMENT_CHARS)}THE-FINAL-SLIDE`;
+
+  const [block] = fitAttachmentBlocks([{ label: "big.pptx", type: "application/pptx", content: huge }]);
+
+  assert.ok(!block?.includes("THE-FINAL-SLIDE"), "the tail is genuinely over budget");
+  // The whole point of the fix: the model is told, so it can tell the student.
+  assert.ok(block?.includes("Truncated"), "truncation must be disclosed, not silent");
+  assert.ok(block?.includes(huge.length.toLocaleString()), "disclose the true size so the gap is knowable");
+});
+
+test("attachments past the total budget are reported, never dropped in silence", () => {
+  // It takes more than one file to exhaust the total: the per-file cap clips a
+  // single huge deck long before the shared budget runs out. Two full-size
+  // decks spend it, so the third is the one that never reaches the model.
+  const full = "y".repeat(MAX_ATTACHMENT_CHARS);
+  const blocks = fitAttachmentBlocks([
+    { label: "first.pptx", type: "application/pptx", content: full },
+    { label: "second.pptx", type: "application/pptx", content: full },
+    { label: "third.pptx", type: "application/pptx", content: "the third deck" },
+  ]);
+
+  const joined = blocks.join("\n");
+  assert.ok(joined.includes("third.pptx"), "the student must learn this file was not read");
+  assert.ok(!joined.includes("the third deck"), "and its content genuinely did not fit");
+  assert.ok(joined.includes("Not read"), "skipped files get their own labelled block");
 });
 
 test("different selected folders remain separate", () => {

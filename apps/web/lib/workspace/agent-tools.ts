@@ -808,7 +808,13 @@ async function addCalendarEvent(args: Record<string, unknown>) {
     date,
     kind: EVENT_KINDS.has(kindRaw) ? kindRaw : "other",
     note: str(args.note).trim().slice(0, 4000) || null,
-    source: "agent",
+    // "manual", not "agent", and this is load-bearing: calendar-workspace routes
+    // source === "agent" to EventViewDialog, which takes only onClose — no edit,
+    // no delete. Every event chat wrote was therefore permanent, while the dialog
+    // told the student to "ask it to change this" with no update or delete tool
+    // in AGENT_TOOLS to change it with. The student asked for this event, so it
+    // is theirs to correct. Provenance stays readable in `note`.
+    source: "manual",
     time: str(args.time).trim().slice(0, 40) || null,
     title,
   }).select("id").single();

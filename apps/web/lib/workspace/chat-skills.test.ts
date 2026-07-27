@@ -197,3 +197,33 @@ test("an exclusion cannot bar a skill that was chosen earlier", () => {
   const ids = CHAT_SKILLS.map((skill) => skill.id);
   assert.ok(ids.indexOf("socratic-tutoring") < ids.indexOf("teaching"));
 });
+
+// A student usually attaches a deck with NO message at all. The matcher sees
+// prepareChatAttachments' wireText, headers included, so the upload itself is
+// what has to fire the skill — nothing typed can be relied on.
+test("a bare deck upload fires the intake skill with no typed message", () => {
+  const wireText = "### Attachment: week-3-pharmacokinetics.pptx\nType: application/pptx\n\nSlide 1: Objectives";
+  assert.ok(idsFor(wireText).includes("lecture-intake"));
+});
+
+test("a student who already said what they want is not asked again", () => {
+  const wireText = "make flashcards from this\n\n### Attachment: lecture.pdf\nType: application/pdf\n\nContent";
+  const ids = idsFor(wireText);
+  // Both may ride along, but the explicit request must take the first slot —
+  // that ordering is what stops the intake packet from re-asking the question.
+  assert.equal(ids[0], "flashcard-craft", `expected flashcard-craft first, got ${ids.join(", ")}`);
+});
+
+test("an ordinary message with no attachment does not fire intake", () => {
+  assert.ok(!idsFor("explain first-pass metabolism").includes("lecture-intake"));
+});
+
+test("a syllabus upload routes to the calendar offer, not the lecture miner", () => {
+  const wireText = "### Attachment: PHAR501-syllabus.pdf\nType: application/pdf\n\nCourse syllabus. Grading policy. Midterm Oct 14.";
+  const ids = idsFor(wireText);
+  assert.ok(ids.includes("syllabus-intake"), `got ${ids.join(", ")}`);
+  // Both match the same upload; the exclusion is what stops one packet saying
+  // "mine the concepts" while the other says "offer a calendar import".
+  assert.ok(!ids.includes("lecture-intake"), "syllabus intake must exclude lecture intake");
+});
+
