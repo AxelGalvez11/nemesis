@@ -60,6 +60,24 @@ Deno.test("tests and mind maps land on their own Study sections", () => {
   assertEquals(artifactCard(out({ kind: "test", route: "/study?section=tests", title: "Limits" })).kicker, "Practice test");
 });
 
+Deno.test("a test filed into a NAMED folder says that folder, not just 'Tests'", () => {
+  // A Study artifact's folder is its own column, so unlike a deck it is not in
+  // the title — api/agentTools.ts puts it in the route for exactly this.
+  const card = artifactCard(out({ kind: "test", route: "/study?section=tests&group=Exam%202%20prep", title: "Limits" }));
+  assertEquals(card.where, "Study · Exam 2 prep");
+  assertEquals(card.place, "Study");
+  assertEquals(
+    artifactCard(out({ kind: "mindmap", route: "/study?section=mindmaps&group=Unit%203", title: "Cells" })).where,
+    "Study · Unit 3",
+  );
+});
+
+Deno.test("a broken group param falls back instead of taking the card down", () => {
+  // decodeURIComponent throws on a lone '%'.
+  assertEquals(artifactCard(out({ kind: "test", route: "/study?section=tests&group=%E0%A4%A", title: "T" })).where, "Study · Tests");
+  assertEquals(artifactCard(out({ kind: "test", route: "/study?section=tests&group=", title: "T" })).where, "Study · Tests");
+});
+
 Deno.test("a recording has no page to land on, so the card says it opens a preview", () => {
   const card = artifactCard(out({ kind: "recording", title: "Lecture 4" }));
   assertEquals(card.opens, false);

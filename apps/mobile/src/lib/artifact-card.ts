@@ -55,6 +55,23 @@ function routePath(route: string | undefined): string {
   return cut === -1 ? route : route.slice(0, cut);
 }
 
+/** The folder a test or mind map was filed into, which api/agentTools.ts puts
+ *  in the route's `group` param. It cannot come from the title the way a deck's
+ *  does — a Study artifact's folder is a separate column — and it cannot be a
+ *  new ChatOutput field either, because `meta.outputs` is shared with web.
+ *  Hand-parsed rather than via URLSearchParams: these are Expo route strings,
+ *  not URLs, and `new URL("/study?…")` throws without a base. */
+function routeGroup(route: string | undefined): string {
+  const match = /[?&]group=([^&]*)/.exec(route ?? "");
+  if (!match?.[1]) return "";
+  try {
+    return decodeURIComponent(match[1]).trim();
+  } catch {
+    // A malformed escape must not take the whole card down with it.
+    return "";
+  }
+}
+
 /** What an "other" artifact really is, read off its destination. Everything the
  *  phone files under "other" today lands on a distinct route, so this is a
  *  lookup rather than a guess; anything genuinely unknown says "Saved" instead
@@ -83,8 +100,8 @@ const KICKER: Record<ChatOutput["kind"], string> = {
 };
 
 /** The destination, phrased as a place rather than a path. `folder` is the
- *  deck's own folder when it has one — the only artifact that carries its
- *  location in the title. */
+ *  deck's own folder when it has one — a deck is the only artifact that carries
+ *  its location in its title; a test or mind map carries it in the route. */
 function destination(kind: ChatOutput["kind"], route: string | undefined, folder: string): string {
   if (kind === "recording") return "Tap to read";
   const path = routePath(route);
@@ -92,8 +109,9 @@ function destination(kind: ChatOutput["kind"], route: string | undefined, folder
   if (path === "/calendar") return "Calendar";
   if (path !== "/study") return route ? "Tap to open" : "Tap to read";
   if (kind === "flashcards") return folder ? `Study · ${folder}` : "Study · Cards";
-  if (kind === "test") return "Study · Tests";
-  if (kind === "mindmap") return "Study · Mind maps";
+  const group = routeGroup(route);
+  if (kind === "test") return group ? `Study · ${group}` : "Study · Tests";
+  if (kind === "mindmap") return group ? `Study · ${group}` : "Study · Mind maps";
   return "Study";
 }
 

@@ -1069,7 +1069,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableCardStack outputs={threadOutputs} onSelect={openDeliverable} /> : null
+              threadOutputs.length ? <DeliverableCardStack outputs={threadOutputs} onSelect={openDeliverable} compact /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (

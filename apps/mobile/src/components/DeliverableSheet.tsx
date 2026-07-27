@@ -58,8 +58,17 @@ function formatDuration(seconds: number | undefined): string {
  *
  *  Full width and stacked rather than a wrapping pill row: the card now carries
  *  a name and a destination, and a pill that has to hold both either truncates
- *  the name or leaves an orphan on the next line. */
-export function DeliverableCardStack({ outputs, onSelect }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void }) {
+ *  the name or leaves an orphan on the next line.
+ *
+ *  `compact` is for the THREAD-LEVEL header, where every row is a recording the
+ *  student made in this conversation. A three-line card is right under a single
+ *  answer and wrong as a header: a thread with four recordings would open on
+ *  ~360pt of chrome before the first message. One line each keeps it to a
+ *  quarter of that, and the kicker/destination earn their space least there —
+ *  the rows are all the same kind, and a recording has nowhere to route to. */
+export function DeliverableCardStack(
+  { outputs, onSelect, compact = false }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void; compact?: boolean },
+) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   if (!outputs.length) return null;
@@ -74,7 +83,7 @@ export function DeliverableCardStack({ outputs, onSelect }: { outputs: ChatOutpu
         return (
           <Pressable
             key={output.id}
-            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && styles.cardPressed]}
             onPress={() => onSelect(output)}
             accessibilityRole="button"
             accessibilityLabel={`${card.kicker}: ${card.title}. ${card.where}`}
@@ -84,15 +93,19 @@ export function DeliverableCardStack({ outputs, onSelect }: { outputs: ChatOutpu
               <ArtifactIcon kind={output.kind} where={card.where} color={colors.accent} />
             </View>
             <View style={styles.cardText}>
-              <Text style={styles.cardKicker} numberOfLines={1}>
-                {card.kicker.toUpperCase()}
-              </Text>
-              <Text style={styles.cardTitle} numberOfLines={2}>
+              {compact ? null : (
+                <Text style={styles.cardKicker} numberOfLines={1}>
+                  {card.kicker.toUpperCase()}
+                </Text>
+              )}
+              <Text style={styles.cardTitle} numberOfLines={compact ? 1 : 2}>
                 {card.title}
               </Text>
-              <Text style={styles.cardWhere} numberOfLines={1}>
-                {polishing ? "Polishing transcript…" : card.where}
-              </Text>
+              {compact && !polishing ? null : (
+                <Text style={styles.cardWhere} numberOfLines={1}>
+                  {polishing ? "Polishing transcript…" : card.where}
+                </Text>
+              )}
             </View>
             <ChevronIcon size={18} color={colors.text3} />
           </Pressable>
@@ -178,6 +191,7 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: radius.md, borderCurve: "continuous",
       borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint,
     },
+    cardCompact: { paddingVertical: space(1.25) },
     cardPressed: { backgroundColor: c.surface2 },
     // Fixed so the three text lines start on the same x whatever the glyph is.
     cardIcon: { width: 22, alignItems: "center" },
