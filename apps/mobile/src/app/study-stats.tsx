@@ -4,6 +4,8 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { fetchCloudStudy, loadCachedStudy, countsForCards, type CloudStudyCard, type CloudStudyDeck } from "@/api/cloudStudy";
+import { listStudyArtifacts, type StudyArtifact } from "@/api/studyArtifacts";
+import { computeStudyStats, relativeDay } from "@/lib/study-stats";
 import { CloseIcon } from "@/components/icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -17,13 +19,23 @@ export default function StudyStatsScreen() {
   const styles = useThemedStyles(createStyles);
   const [decks, setDecks] = useState<CloudStudyDeck[]>([]);
   const [cards, setCards] = useState<CloudStudyCard[]>([]);
+  // Practice tests, the OTHER way a student revises. Their attempts were being
+  // written to the artifact payload all along and nothing on this page read them,
+  // so a student who revises by testing saw an empty page.
+  const [artifacts, setArtifacts] = useState<StudyArtifact[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!uid) return;
-    const fresh = await fetchCloudStudy(uid);
+    const [fresh, rows] = await Promise.all([
+      fetchCloudStudy(uid),
+      // Never let a tests failure blank the card stats: they are independent reads,
+      // and half a page beats an empty one.
+      listStudyArtifacts().catch(() => [] as StudyArtifact[]),
+    ]);
     setDecks(fresh.decks);
     setCards(fresh.cards);
+    setArtifacts(rows);
   }, [uid]);
 
   useFocusEffect(
@@ -43,15 +55,17 @@ export default function StudyStatsScreen() {
   );
 
   const counts = countsForCards(cards);
-  const reviewed = cards.filter((card) => card.repetitions > 0);
-  const remembered = reviewed.reduce((sum, card) => sum + Math.max(0, card.repetitions - card.lapses), 0);
-  const attempts = reviewed.reduce((sum, card) => sum + card.repetitions, 0);
-  const retention = attempts > 0 ? Math.round((remembered / attempts) * 100) : null;
+  const stats = computeStudyStats(
+    cards,
+    artifacts.flatMap((artifact) => artifact.attempts ?? []),
+  );
   const tiles = [
     { label: "Due now", value: String(counts.dueCount) },
     { label: "New", value: String(counts.newCount) },
     { label: "Total cards", value: String(cards.length) },
     { label: "Decks", value: String(decks.length) },
+    { label: "Tests taken", value: String(stats.testsTaken) },
+    { label: "Questions answered", value: String(stats.totalAnswered) },
   ];
 
   return (
@@ -90,12 +104,29 @@ export default function StudyStatsScreen() {
         </View>
         <View style={styles.section}>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Retention</Text>
-            <Text style={styles.rowValue}>{retention === null ? "Not enough reviews" : `${retention}%`}</Text>
+            <Text style={styles.rowLabel}>Card retention</Text>
+            <Text style={styles.rowValue}>
+              {stats.cardRetention === null ? "Not enough reviews" : `${stats.cardRetention}%`}
+            </Text>
+          </View>
+          {/* Reported beside card retention, never averaged with it: "did it stick
+              between reviews" and "did you pick the right option" are different
+              measurements, and one blended number would move for the wrong reasons. */}
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Test accuracy</Text>
+            <Text style={styles.rowValue}>
+              {stats.testAccuracy === null ? "No tests taken yet" : `${stats.testAccuracy}%`}
+            </Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Streak</Text>
-            <Text style={styles.rowValue}>Not tracked yet</Text>
+            <Text style={styles.rowLabel}>Best test</Text>
+            <Text style={styles.rowValue}>{stats.testBest === null ? "—" : `${stats.testBest}%`}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Last test</Text>
+            <Text style={styles.rowValue}>
+              {stats.lastTestAt === null ? "—" : relativeDay(stats.lastTestAt, new Date())}
+            </Text>
           </View>
         </View>
       </ScrollView>
