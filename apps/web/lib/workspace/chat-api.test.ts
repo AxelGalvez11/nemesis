@@ -54,6 +54,19 @@ test("a tool-less turn is told it has no tools, and never told to report a write
   assert.match(CHAT_SYSTEM_PROMPT, /through your tools/);
 });
 
+// Owner 2026-07-27: a created deck, test, or note belongs in chat as a card that
+// opens it, not as a wall of prose. The rule lives in the BASE tools paragraph
+// rather than only in the craft skills, because at most MAX_ACTIVE_SKILLS ride
+// any turn — a reply like "all three" matches no skill at all.
+test("a turn with tools is told to show the card, not reprint what it saved", () => {
+  assert.match(CHAT_SYSTEM_PROMPT, /do not reprint what you saved/i);
+  assert.match(CHAT_SYSTEM_PROMPT, /shows the student a card that opens it/i);
+  // And the exception survives, so a failed save never loses the student's work.
+  assert.match(CHAT_SYSTEM_PROMPT, /when the save failed/i);
+  // "all three" carries no skill, so the base prompt is the only thing carrying it.
+  assert.match(systemText("all three"), /do not reprint what you saved/i);
+});
+
 test("buildWireMessages derives the tools claim from the route, not from hope", () => {
   // "explain osmosis" routes to the reasoner, which carries no tools.
   const learning = classifyChatRequest("explain osmosis");

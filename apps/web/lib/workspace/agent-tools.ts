@@ -423,7 +423,8 @@ async function createLibraryNote(title: string, content: string, folder: string)
     return {
       artifact: {
         id: saved.path,
-        kind: "other",
+        // Was "other", which labelled a saved note "Output" in the transcript.
+        kind: "note",
         title: saved.title,
         url: `/library?note=${encodeURIComponent(saved.path)}`,
       },

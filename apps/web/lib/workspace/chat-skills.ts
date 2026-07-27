@@ -61,7 +61,9 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
     "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
     "Keep answers short enough to recall in one breath. A back longer than a sentence or two is a sign the card should be split.",
-    "State plainly how many cards you made and what each one covers.",
+    // Was "state ... what each one covers", which contradicted the line above
+    // and produced exactly the prose dump it forbids.
+    "Say how many cards you saved and which deck they went to. One line. The card the app shows opens the deck; the cards themselves do not belong in chat.",
   ].join("\n"),
   match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|(?:flashcard|study) deck)\b/i,
   name: "Flashcard craft",

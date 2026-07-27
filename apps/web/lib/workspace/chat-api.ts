@@ -54,7 +54,16 @@ export const CHAT_TOOLS_PROMPT =
   "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
   "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
-  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. ";
+  "note or calendar says. School portals are still handled by the Mac app's missions. " +
+  // Owner 2026-07-27: "flashcards, tests, or notes that were created should not
+  // be output in chat but rather as an artifact in chat that routes user to the
+  // location of it." The app renders a card for every write and that card opens
+  // the deck, test, or note — so reprinting the contents duplicates a
+  // deliverable the student already has, and the copy in chat is the one that
+  // goes stale the moment they edit the real thing.
+  "When you save something, the app shows the student a card that opens it. So do not reprint what you saved: no card lists, no question-and-answer " +
+  "dumps, no full note text. Give one short line saying what you saved, how many items, and where it now lives, then stop. Write the material out in " +
+  "full ONLY when the student asked to see it rather than save it, or when the save failed and they would otherwise lose the work. ";
 
 /**
  * What replaces it when the turn goes out WITHOUT tools (a reasoner route, or
@@ -384,7 +393,7 @@ function outputFromToolResult(result: unknown): SessionOutput | null {
   const artifact = (result as Record<string, unknown>).artifact;
   if (!artifact || typeof artifact !== "object") return null;
   const row = artifact as Record<string, unknown>;
-  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
+  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "note", "report", "recording", "other"]);
   if (typeof row.id !== "string" || typeof row.title !== "string" || typeof row.kind !== "string") return null;
   if (!kinds.has(row.kind as SessionOutput["kind"])) return null;
   return {

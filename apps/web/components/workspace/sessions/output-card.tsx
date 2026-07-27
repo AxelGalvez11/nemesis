@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 const KIND_LABEL: Record<SessionOutput["kind"], string> = {
   flashcards: "Flashcards",
   mindmap: "Mindmap",
+  note: "Library note",
   other: "Output",
   recording: "Recording",
   report: "Report",
@@ -21,6 +22,7 @@ const KIND_LABEL: Record<SessionOutput["kind"], string> = {
 const KIND_ICON: Record<SessionOutput["kind"], string> = {
   flashcards: "layers",
   mindmap: "type-hierarchy-sub",
+  note: "note",
   other: "file",
   recording: "mic",
   report: "file",
