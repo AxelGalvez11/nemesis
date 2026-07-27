@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.enternemesis.mobile",
-      "buildNumber": "19",
+      "buildNumber": "22",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Nemesis accesses your photo library only if you choose to add or attach an image in a chat.",
@@ -63,7 +63,16 @@
           "microphonePermission": "Nemesis uses the microphone only when you tap the mic to dictate a message.",
           "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ],
+      "./plugins/withFluidAudioPod.js"
     ],
     "experiments": {
       "typedRoutes": true
