@@ -393,7 +393,7 @@ function outputFromToolResult(result: unknown): SessionOutput | null {
   const artifact = (result as Record<string, unknown>).artifact;
   if (!artifact || typeof artifact !== "object") return null;
   const row = artifact as Record<string, unknown>;
-  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "note", "report", "recording", "other"]);
+  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
   if (typeof row.id !== "string" || typeof row.title !== "string" || typeof row.kind !== "string") return null;
   if (!kinds.has(row.kind as SessionOutput["kind"])) return null;
   return {
@@ -402,6 +402,47 @@ function outputFromToolResult(result: unknown): SessionOutput | null {
     title: row.title,
     ...(typeof row.url === "string" ? { url: row.url } : {}),
   };
+}
+
+/** Above this many cards of one kind, a transcript stops being a list of things
+ *  you made and becomes a wall to scroll past. */
+export const OUTPUT_COLLAPSE_THRESHOLD = 3;
+
+const COLLAPSED_NOUN: Partial<Record<SessionOutput["kind"], string>> = {
+  event: "calendar events",
+  flashcards: "decks",
+  note: "notes",
+  test: "practice tests",
+};
+
+/**
+ * Collapse a run of same-kind writes into ONE card.
+ *
+ * Owner 2026-07-27 asked for a created thing to appear as "an artifact in chat
+ * that routes user to the location of it" — singular. Importing a syllabus calls
+ * add_calendar_event once per date, so a real 51-date syllabus produced 51 cards
+ * in a row: a worse wall than the prose the rule replaced.
+ *
+ * The survivor keeps the FIRST item's url, which for a syllabus lands on the
+ * first date of term — where you would want to start reading anyway.
+ */
+export function collapseOutputs(outputs: readonly SessionOutput[], threshold = OUTPUT_COLLAPSE_THRESHOLD): SessionOutput[] {
+  const counts = new Map<SessionOutput["kind"], number>();
+  for (const output of outputs) counts.set(output.kind, (counts.get(output.kind) ?? 0) + 1);
+
+  const collapsed: SessionOutput[] = [];
+  const done = new Set<SessionOutput["kind"]>();
+  for (const output of outputs) {
+    const total = counts.get(output.kind) ?? 0;
+    if (total <= threshold) {
+      collapsed.push(output);
+      continue;
+    }
+    if (done.has(output.kind)) continue;
+    done.add(output.kind);
+    collapsed.push({ ...output, title: `${total} ${COLLAPSED_NOUN[output.kind] ?? "items"}` });
+  }
+  return collapsed;
 }
 
 /** One routed completion turn for the signed-in user `uid` on the main Sessions chat.
@@ -480,7 +521,8 @@ export async function sendChatTurn(
       })),
     ];
   }
-  return { ...reply, sources, ...(outputs.length ? { outputs } : {}) };
+  const shown = collapseOutputs(outputs);
+  return { ...reply, sources, ...(shown.length ? { outputs: shown } : {}) };
 }
 
 export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {

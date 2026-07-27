@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt } from "@/lib/workspace/chat-api";
+import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs } from "@/lib/workspace/chat-api";
 import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
@@ -75,6 +75,38 @@ test("buildWireMessages derives the tools claim from the route, not from hope", 
   // A save keeps deepseek-chat, so the tools paragraph is true and stays.
   assert.equal(toolsAllowed(classifyChatRequest("make me flashcards on ACE inhibitors")), true);
   assert.match(systemText("make me flashcards on ACE inhibitors"), /through your tools/);
+});
+
+// Importing a real syllabus calls add_calendar_event once per date. Measured
+// live on the owner's PCT syllabus: 51 events, so 51 cards in a row — a worse
+// wall than the prose the artifact rule was meant to replace.
+test("a syllabus import shows one calendar card, not one per date", () => {
+  const events = Array.from({ length: 51 }, (_, index) => ({
+    id: `e${index}`,
+    kind: "event" as const,
+    title: `PCT item ${index}`,
+    url: `/calendar?date=2026-01-${String((index % 28) + 1).padStart(2, "0")}`,
+  }));
+  const shown = collapseOutputs(events);
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0]?.title, "51 calendar events");
+  // Keeps the FIRST item's link, which for a syllabus is the start of term.
+  assert.equal(shown[0]?.url, events[0]?.url);
+});
+
+test("a handful of writes still get a card each, and kinds do not merge", () => {
+  const outputs = [
+    { id: "a", kind: "flashcards" as const, title: "Deck A", url: "/study?section=cards" },
+    { id: "b", kind: "flashcards" as const, title: "Deck B", url: "/study?section=cards" },
+    { id: "c", kind: "note" as const, title: "A note", url: "/library?note=x" },
+  ];
+  assert.deepEqual(collapseOutputs(outputs), outputs);
+  // Collapsing one kind leaves the others alone.
+  const many = [...Array.from({ length: 4 }, (_, i) => ({ id: `e${i}`, kind: "event" as const, title: `E${i}`, url: "/calendar" })), outputs[2]!];
+  const shown = collapseOutputs(many);
+  assert.equal(shown.length, 2);
+  assert.equal(shown[0]?.title, "4 calendar events");
+  assert.equal(shown[1]?.title, "A note");
 });
 
 test("the user's message is still the last thing sent", () => {

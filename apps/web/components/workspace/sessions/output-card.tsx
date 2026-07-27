@@ -9,6 +9,7 @@ import type { SessionOutput } from "@/lib/workspace/sessions-store";
 import { useRouter } from "next/navigation";
 
 const KIND_LABEL: Record<SessionOutput["kind"], string> = {
+  event: "Calendar",
   flashcards: "Flashcards",
   mindmap: "Mindmap",
   note: "Library note",
@@ -20,6 +21,7 @@ const KIND_LABEL: Record<SessionOutput["kind"], string> = {
 };
 
 const KIND_ICON: Record<SessionOutput["kind"], string> = {
+  event: "calendar",
   flashcards: "layers",
   mindmap: "type-hierarchy-sub",
   note: "note",

@@ -829,7 +829,7 @@ async function addCalendarEvent(args: Record<string, unknown>) {
   if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
   return {
     added: true,
-    artifact: { id: str(data.id), kind: "other", title, url: `/calendar?date=${encodeURIComponent(date)}` },
+    artifact: { id: str(data.id), kind: "event", title, url: `/calendar?date=${encodeURIComponent(date)}` },
     date,
     title,
   };

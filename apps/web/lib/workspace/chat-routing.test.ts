@@ -150,6 +150,22 @@ assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidan
   }
 }
 
+// The same shape for syllabus-intake, whose offer names the CALENDAR rather than
+// a study artifact. Without "calendar" in the offer vocabulary a bare "yes" kept
+// its tools only by accident — it fell through to the conversation route, which
+// happens to use the tools model. On High effort that accident stops working and
+// the turn lands on the tool-less lane, which is the fabrication path.
+{
+  const offer = "Here are the 22 dated items I found.\n\nWant me to add these to your calendar?";
+  assert.equal(offersToCreate(offer), true);
+  for (const reply of ["yes", "yes please", "go ahead", "sure"]) {
+    assert.equal(detectsSaveRequest(reply, offer), true, reply);
+    assert.equal(classifyChatRequest(reply, offer).savesToWorkspace, true, reply);
+    // High is the case that was silently broken.
+    assert.equal(toolsAllowed(applyChatEffort(classifyChatRequest(reply, offer), "high")), true, `${reply} @ high`);
+  }
+}
+
 // Both halves are required. Without the offer the same words are ordinary
 // learning questions, and after an offer a question back is not an acceptance.
 {

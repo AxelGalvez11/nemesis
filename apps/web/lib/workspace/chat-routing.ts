@@ -68,7 +68,12 @@ const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|cal
 // agree: the previous assistant turn ended by offering to build something, AND
 // this reply is a short acceptance.
 const OFFER_VERB = /\b(?:want me to|would you like me to|do you want me to|shall i|should i|i can)\b/i;
-const OFFER_TARGET = /\b(?:notes?|flash\s?cards?|cards?|practice tests?|tests?|quiz(?:zes)?|mind\s?maps?|study guides?|deck|slides?|summary|outline)\b/i;
+// `calendar`/`events`/`dates` are here because syllabus-intake's offer is "Want
+// me to add these to your calendar?". Without them the offer went unrecognised,
+// and a bare "yes" only kept its tools by falling through to the conversation
+// route — which quietly breaks the moment the effort dial is on High, since
+// that strips tools from everything except a decision flagged savesToWorkspace.
+const OFFER_TARGET = /\b(?:notes?|flash\s?cards?|cards?|practice tests?|tests?|quiz(?:zes)?|mind\s?maps?|study guides?|deck|slides?|summary|outline|calendar|events?|dates|schedule)\b/i;
 const ACCEPTANCE = /^(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|do it|go ahead|sounds good|all (?:three|of them|of it|of the above)|both|everything)\b/i;
 /** A reply longer than this is the student saying something new, not "yes". */
 const ACCEPTANCE_MAX_CHARS = 80;
