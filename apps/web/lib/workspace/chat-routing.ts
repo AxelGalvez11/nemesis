@@ -140,7 +140,11 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
   // re-promotion (which only upgrades "conversation" to the reasoner) can't
   // quietly undo this.
   if (detectsSaveRequest(compact, priorAssistantText)) {
-    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact);
+    // RECENT_YEAR is deliberately NOT consulted here. In a save request a year
+    // is part of a DATE — "add Aug 3 2026 exam to my calendar" — not a request
+    // for current information, and every calendar request carries one. Measured
+    // live 2026-07-27: that phrasing bought a paid search it had no use for.
+    const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact);
     return wantsWeb
       ? { route: "current", model: "deepseek-chat", savesToWorkspace: true, searchWeb: true }
       : { route: "learning", model: "deepseek-chat", savesToWorkspace: true, searchWeb: false };

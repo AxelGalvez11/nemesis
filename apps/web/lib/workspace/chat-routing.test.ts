@@ -76,6 +76,20 @@ const currentSave = classifyChatRequest("make flashcards about the latest COVID 
 assert.equal(currentSave.model, "deepseek-chat");
 assert.equal(currentSave.searchWeb, true);
 
+// But a YEAR inside a save request is part of a date, not a request for current
+// information — and every calendar request carries one. Measured live: "Add
+// these five to my calendar: Aug 3 2026 ..." bought a paid search it had no use
+// for, purely because RECENT_YEAR_PATTERN matches \b202[4-9]\b.
+for (const prompt of [
+  "Add these five to my calendar: Aug 3 2026 Pharmacology exam, Aug 31 2026 Final exam",
+  "put my exam on my calendar for May 4 2026",
+  "make flashcards from the 2026 guidelines I pasted",
+]) {
+  const decision = classifyChatRequest(prompt);
+  assert.equal(decision.savesToWorkspace, true, prompt);
+  assert.equal(decision.searchWeb, false, prompt);
+}
+
 // Ordinary learning/research/coding requests must NOT read as saves — they keep
 // their normal routes. "write" is deliberately not a save verb, and ambiguous
 // nouns only count when anchored to the student's own workspace.
