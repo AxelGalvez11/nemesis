@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@nemesis/shared"],
-  // /app was the old PharmaOrb-era shell and no longer exists; the workspace at "/"
+  // /app was the old pre-Nemesis shell and no longer exists; the workspace at "/"
   // (→ /sessions) replaced it. Redirect instead of 404 so stale links keep working.
   async redirects() {
     return [

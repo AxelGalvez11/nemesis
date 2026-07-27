@@ -9,7 +9,7 @@
 import { parseMeshEfetch, type MeshTerm } from "./mesh";
 
 const EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
-const TOOL = "pharmaorb";
+const TOOL = "nemesis";
 
 export interface NcbiOpts {
   fetchImpl?: typeof fetch;

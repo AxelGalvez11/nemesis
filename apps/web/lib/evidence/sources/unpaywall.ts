@@ -22,7 +22,7 @@ export async function resolveUnpaywallAccess(
   if (!normalized) return null;
 
   const fetchImpl = options.fetchImpl ?? fetch;
-  const email = process.env.UNPAYWALL_EMAIL ?? "support@pharmaorb.app";
+  const email = process.env.UNPAYWALL_EMAIL ?? "support@enternemesis.com";
   const url = new URL(`https://api.unpaywall.org/v2/${encodeURIComponent(normalized)}`);
   url.searchParams.set("email", email);
 
