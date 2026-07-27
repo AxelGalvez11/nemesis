@@ -13,7 +13,11 @@
 // record why each line is the way it is. The parts worth testing are pure and live in
 // @/lib/document-kind.
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+// The LEGACY entry point, same as photos.ts. `uploadAsync` and the
+// `FileSystemUploadType` enum it needs live only there — the SDK 54 rewrite of
+// expo-file-system dropped them from the main export, so importing the modern
+// one type-errors on the enum and would fail at runtime on the call.
+import * as FileSystem from "expo-file-system/legacy";
 
 import { APP_API_BASE, deviceKey } from "./chat";
 import {
