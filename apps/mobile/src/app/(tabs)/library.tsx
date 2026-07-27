@@ -43,7 +43,9 @@ import {
   type CloudLibraryNote,
   type CloudLibrarySnapshot,
 } from "@/api/cloudLibrary";
+import { searchLibrarySemantic } from "@/api/librarySearch";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
+import { findNotes, findSummary } from "@/lib/library-find";
 import {
   allFolderPaths,
   folderOf,
@@ -167,6 +169,11 @@ export default function LibraryScreen() {
   // hook order never changes between the loading / signed-out / signed-in renders.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Paths the semantic index returned for the CURRENT query, strongest first.
+  // Empty is the normal state: before the debounce fires, while the request is in
+  // flight, and whenever the lookup finds nothing or cannot be reached. The name
+  // filter never waits on any of that.
+  const [semanticPaths, setSemanticPaths] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("az");
   const [sortOpen, setSortOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -247,6 +254,35 @@ export default function LibraryScreen() {
       return !open;
     });
   }, []);
+
+  // Ask the semantic index what this query is ABOUT, a beat after typing stops.
+  // Debounced so a six-letter word is one lookup rather than six, and guarded by
+  // `alive` so a slow answer to an abandoned query can never overwrite the rows
+  // for the query the reader is actually looking at.
+  //
+  // Two characters is the floor: below that every note in a library is a
+  // plausible neighbour and the results are noise, not answers.
+  useEffect(() => {
+    const needle = query.trim();
+    if (needle.length < 2) {
+      setSemanticPaths([]);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      void searchLibrarySemantic(needle).then((hits) => {
+        if (!alive) return;
+        // One entry per note, keeping the strongest chunk's position — several
+        // chunks of one lecture are still one row in a list of notes.
+        const seen = new Set<string>();
+        setSemanticPaths(hits.flatMap((hit) => (seen.has(hit.path) ? [] : (seen.add(hit.path), [hit.path]))));
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   // Toggle ONE folder by its full path — never mutates the previous Set, always
   // builds a fresh one, so a folder's collapsed-ness is independent of its
@@ -619,17 +655,22 @@ export default function LibraryScreen() {
 
   const trimmed = query.trim();
   const searching = trimmed.length > 0;
-  const needle = trimmed.toLowerCase();
   // Flat, globally-sorted list ONLY while searching. Picking a sort used to
   // flatten the tree too — which read as "my folders disappeared" (owner bug
   // report 2026-07-21) — so now every sort order reorders the folder tree in
   // place instead: notes within their folder, folders among their siblings.
   const flat = searching;
-  const filtered = searching
-    ? notes.filter((n) => n.title.toLowerCase().includes(needle) || n.path.toLowerCase().includes(needle))
-    : notes;
+  // Name matches now, meaning matches when the lookup lands. findNotes appends the
+  // second group without disturbing the first, so the list does not jump under the
+  // reader's finger when the answer arrives a few hundred milliseconds later.
+  const found = findNotes(notes, trimmed, semanticPaths);
+  const filtered = found.notes;
   const rows: LibraryRow[] = flat
-    ? sortNotes(filtered, sort).map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
+    ? // Only the NAME matches are re-sorted. The meaning matches arrive ranked by
+      // how well they answer the query, and an A–Z pass over them would throw away
+      // the one thing that ordering knows.
+      [...sortNotes(filtered.slice(0, filtered.length - found.byMeaning), sort), ...filtered.slice(filtered.length - found.byMeaning)]
+        .map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
     : buildLibraryRows(
         notes.map((d) => ({ path: d.path, title: d.title, updatedAt: d.updatedAt, createdAt: d.createdAt })),
         collapsed,
@@ -639,7 +680,7 @@ export default function LibraryScreen() {
 
   // Context line above the list: match count while searching, else which
   // non-default sort is on (nothing for the everyday A–Z tree).
-  const listHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sort !== "az" ? sortLabel(sort) : null;
+  const listHeader = searching ? findSummary(rows.length, found.byMeaning) : sort !== "az" ? sortLabel(sort) : null;
 
   // Row-action derivations. Every folder in the tree is a move destination; for
   // a FOLDER being moved, its own subtree is struck out — dropping a folder
