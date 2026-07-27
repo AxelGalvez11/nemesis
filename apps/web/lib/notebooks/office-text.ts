@@ -63,6 +63,46 @@ export function pptxSlideXmlToText(slideXml: string): string {
   return collapseBlankLines(decodeXmlEntities(stripped));
 }
 
+/**
+ * A speaker-notes page, as text.
+ *
+ * Notes are where a lecturer writes what the slide does not say — the explanation,
+ * the exam hint, the worked reasoning — and reading only ppt/slides/ missed every
+ * word of it. Two things have to be removed first, or the notes arrive as noise:
+ * the automatic slide-number field (a notes page whose entire content is "25"), and
+ * the thumbnail placeholder that copies the slide's own body text back in. PURE.
+ */
+export function pptxNotesXmlToText(notesXml: string): string {
+  const withoutFields = notesXml.replace(/<a:fld\b[\s\S]*?<\/a:fld>/g, "");
+  // The <p:sp> whose placeholder type is "sldImg" is the slide thumbnail; anything
+  // else on the page is the lecturer's own writing.
+  const withoutThumbnail = withoutFields.replace(
+    /<p:sp>(?:(?!<p:sp>)[\s\S])*?<p:ph\b[^>]*type="sldImg"[\s\S]*?<\/p:sp>/g,
+    "",
+  );
+  const text = pptxSlideXmlToText(withoutThumbnail);
+  // A page left holding only the slide number is not notes.
+  return /^\d{1,4}$/.test(text.trim()) ? "" : text;
+}
+
+/**
+ * The words on a chart: its title, axis titles, series names and category labels —
+ * the parts stored as drawing text. The numeric series are deliberately NOT
+ * included: a flashcard generator handed 24,000 characters of raw data points learns
+ * nothing and loses the lecture in the noise. PURE.
+ */
+export function chartXmlToText(chartXml: string): string {
+  const runs = [...chartXml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXmlEntities(m[1] ?? ""));
+  const joined = runs.join(" ").replace(/\s+/g, " ").trim();
+  return joined;
+}
+
+/** SmartArt (a "diagram" part): the text inside the shapes, which lives outside the
+ *  slide entirely and so was invisible to slide-only extraction. PURE. */
+export function diagramXmlToText(diagramXml: string): string {
+  return pptxSlideXmlToText(diagramXml);
+}
+
 /** Keep only slide XML files, ordered by their real numeric index (slide2 before slide10). PURE. */
 export function orderSlideFiles(names: string[]): string[] {
   return names
