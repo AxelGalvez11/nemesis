@@ -409,10 +409,16 @@ export async function sendChat(
             announcedWriting = true;
             onPhase?.({ kind: "writing" });
           }
-          // Once a tool has created a deliverable, the transcript becomes an
-          // artifact-only turn: the clickable card is the answer. Do not stream
-          // the model's prose copy of the deck/test/slides back into chat.
-          if (outputs.length === 0) onDelta?.(delta, carried + accumulated);
+          // Everything the model writes is relayed, INCLUDING on a turn that
+          // saved something. This used to stop dead the moment a deliverable
+          // existed, on the theory that the card was the whole answer — but
+          // "explain X in three sentences AND make me cards" writes the
+          // explanation in the same round as the tool call, so that rule threw
+          // the answer away (reproduced on device 2026-07-27). What keeps the
+          // deck itself out of the transcript is the instruction handed back
+          // with the tool result — see SAVED_NOTE in api/agentTools.ts — which
+          // is the model's job to follow, not something to fix by deletion.
+          onDelta?.(delta, carried + accumulated);
         }
       : undefined;
 
@@ -503,13 +509,21 @@ export async function sendChat(
   // ride out of here: it is internal to this turn, and the screen persists whatever
   // it is handed. `carried` is prepended so the saved message holds everything the
   // student watched arrive, not just the final round's share of it.
+  //
+  // This used to return `null` for the whole message whenever a tool had
+  // created something, so that the card would be the only answer. That is right
+  // for "make me a deck" and wrong for everything else: "explain X in three
+  // sentences AND make me cards" saved the cards and silently threw the
+  // explanation away (reproduced on device, 2026-07-27). The deck itself is
+  // kept out of the transcript by SAVED_NOTE (api/agentTools.ts) instead — an
+  // instruction the model follows, rather than deleting words it was asked for.
   return {
     budgetReset: reply.budgetReset,
     errorKind: reply.errorKind,
     errorText: reply.errorText,
     sources,
     ...(outputs.length ? { outputs } : {}),
-    text: outputs.length ? null : carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
+    text: carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
   };
 }
 

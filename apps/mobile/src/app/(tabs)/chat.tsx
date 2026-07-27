@@ -42,7 +42,7 @@ import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
 import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
-import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
+import { DeliverableCardStack, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
 import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { ThoughtTrail } from "@/components/ThoughtTrail";
@@ -1060,7 +1060,7 @@ export default function ChatScreen() {
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
+                    {item.msg!.outputs?.length ? <DeliverableCardStack outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
@@ -1069,7 +1069,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={openDeliverable} /> : null
+              threadOutputs.length ? <DeliverableCardStack outputs={threadOutputs} onSelect={openDeliverable} /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (
