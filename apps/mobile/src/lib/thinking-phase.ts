@@ -18,6 +18,7 @@ export type ThinkingPhase =
   | { kind: "routing" }
   | { kind: "searching"; query: string }
   | { kind: "reading"; sources: number }
+  | { kind: "recalling"; notes: number }
   | { kind: "thinking"; deep: boolean }
   /** A workspace tool is running: the chat is reading or writing the student's own
    *  Library or Study page. `tools` holds the tool names the model asked for, in
@@ -72,6 +73,12 @@ export function phaseLabel(phase: ThinkingPhase): string {
       // beats a cheerful lie about reading sources that don't exist.
       if (phase.sources <= 0) return "No sources came back — answering from what I know";
       return phase.sources === 1 ? "Reading 1 source" : `Reading ${phase.sources} sources`;
+    case "recalling":
+      // Same honesty rule as "reading": finding nothing in the student's Library
+      // is a normal outcome on a topic they have not taken notes on, and the line
+      // should say so rather than imply notes were consulted.
+      if (phase.notes <= 0) return "";
+      return phase.notes === 1 ? "Reading 1 note from your Library" : `Reading ${phase.notes} notes from your Library`;
     case "thinking":
       return phase.deep ? "Thinking it through" : "Putting this together";
     case "acting": {
