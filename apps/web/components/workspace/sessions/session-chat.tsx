@@ -19,6 +19,12 @@ import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { requestRecordingNote } from "@/lib/workspace/live-audio-insights";
+import { writeLibraryNote } from "@/lib/workspace/library-write";
+
+/** Where a recording's notes are filed. Its own folder so a semester of
+ *  lectures stays browsable next to the student's typed notes. */
+const RECORDINGS_FOLDER = "Nemesis/Recordings";
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
@@ -252,20 +258,43 @@ export function SessionChat() {
     setRightPanel("outputs");
     setRightRailOpen(true);
     const targetId = selectedId;
-    void createArtifact(draft)
-      .then((artifact) => {
-        // The artifact also lands in the chat itself as a clickable card
-        // (owner ask 2026-07-20) — message outputs sync to cloud meta.
-        if (!targetId) return;
-        sessionsStore.appendMessage(targetId, {
-          at: new Date().toISOString(),
-          content: "Recording captured — transcript and notes are ready.",
-          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-          role: "assistant",
-        });
-      })
-      .catch(() => undefined);
-  }, [createArtifact, selectedId]);
+    void (async () => {
+      // What the student watched being written during the recording is a stream
+      // of short live points. This composes the note they actually keep, from
+      // the whole transcript at once. On failure it falls back to those live
+      // points — a failed model call must never cost someone their lecture.
+      const liveNotes = draft.notes.split("\n").filter(Boolean);
+      const composed = uid ? await requestRecordingNote({ liveNotes, transcript: draft.transcript, uid }) : "";
+      const notes = composed || draft.notes;
+      const artifact = await createArtifact({ ...draft, notes });
+
+      // The third destination (owner ask 2026-07-27). Until now a recording
+      // reached the Outputs panel and the chat card but never the Library, so
+      // it stayed stranded in one conversation instead of joining the semester.
+      let libraryPath: string | null = null;
+      if (uid && !preview && notes.trim()) {
+        try {
+          libraryPath = (await writeLibraryNote({ content: notes, folder: RECORDINGS_FOLDER, title: artifact.title, userId: uid })).path;
+        } catch {
+          // Saving to the Library is a bonus destination, not the recording
+          // itself — a failure here must not discard the artifact above.
+          libraryPath = null;
+        }
+      }
+
+      // The artifact also lands in the chat itself as a clickable card
+      // (owner ask 2026-07-20) — message outputs sync to cloud meta.
+      if (!targetId) return;
+      sessionsStore.appendMessage(targetId, {
+        at: new Date().toISOString(),
+        content: libraryPath
+          ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
+          : "Recording captured — transcript and notes are ready.",
+        outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
+        role: "assistant",
+      });
+    })().catch(() => undefined);
+  }, [createArtifact, preview, selectedId, uid]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");

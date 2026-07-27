@@ -153,7 +153,11 @@ export function buildLiveAudioInsightMessages(
         // from the recorder, so generating those bullets would waste tokens.
         // parseLiveAudioInsights still tolerates the extra keys if a model
         // returns them.
-        "Extract only what the speaker actually established. Separate uncertainty from fact. Return strict JSON with exactly one string-array key: notes (up to 6 concise new note bullets). " +
+        "Extract only what the speaker actually established. Separate uncertainty from fact. Return strict JSON with exactly one string-array key: notes (up to 6 new notes). " +
+        // These stream while the student is still recording, so each has to be
+        // short — but short is not the same as a bare fact. A note carrying its
+        // reason is worth revising from later; "CYP3A4 inhibited" is not.
+        "Each note must be a COMPLETE idea, not a fragment: state the point together with the reason, mechanism, number, or example the speaker gave for it. A note that records a fact with no 'why' is the thing to avoid. Keep exact figures, units, and names as spoken. " +
         "Do not repeat prior notes. Do not include markdown fences or any text outside the JSON object.",
     },
     {
@@ -162,6 +166,46 @@ export function buildLiveAudioInsightMessages(
         contextLine ? `Known session context: ${contextLine}` : "",
         previousNotes.length ? `Notes already captured:\n- ${previousNotes.slice(-12).join("\n- ")}` : "",
         `Most recent transcript:\n${clippedTranscript}`,
+      ].filter(Boolean).join("\n\n"),
+    },
+  ];
+}
+
+/** How much transcript the closing note is written from. Generous because this
+ *  runs ONCE per recording, not on a timer like the live insights above. */
+export const RECORDING_NOTE_TRANSCRIPT_CHARS = 60_000;
+
+/**
+ * The note the student actually keeps, written once when recording stops.
+ *
+ * Separate from the live insights on purpose. Those must stay short because
+ * they appear while the student is still talking, and a stream of short units
+ * is exactly the "bullet points of facts" problem — it is a constraint of
+ * being live, not a description of a good note. This pass sees the whole
+ * transcript at once, so it can organise by idea instead of by clock.
+ */
+export function buildRecordingNoteMessages(transcript: string, liveNotes: string[], context?: string): WireMsg[] {
+  const clipped = transcript.slice(-RECORDING_NOTE_TRANSCRIPT_CHARS);
+  const contextLine = cleanLine(context, 500);
+  return [
+    {
+      role: "system",
+      content:
+        "You are turning a recording into the notes a student will revise from. Any subject or profession; never assume a biomedical one. " +
+        "Write markdown. Open with one short paragraph saying what this session covered and what the listener should be able to do afterwards. " +
+        "Then organise BY IDEA, not by chronology — group what belongs together even if it was said twenty minutes apart. Use headings. " +
+        "For each idea give the point, the reasoning or mechanism behind it, and whatever example, number, or case the speaker used to make it. Prose and short lists both fine; a page of bare bullets is not. " +
+        "Mark explicitly anything the speaker called examinable, important, or likely to appear on a test, and anything they were openly unsure about. " +
+        "Keep every figure, unit, name, and definition exactly as spoken. Never add material that was not said — if the transcript is too fragmentary to support a section, leave it out rather than padding it. " +
+        "Finish with a short 'Open questions' list of what was raised but not resolved. " +
+        "Return the markdown body only: no title heading, no code fences, no preamble.",
+    },
+    {
+      role: "user",
+      content: [
+        contextLine ? `Session context: ${contextLine}` : "",
+        liveNotes.length ? `Points already captured live:\n- ${liveNotes.join("\n- ")}` : "",
+        `Transcript:\n${clipped}`,
       ].filter(Boolean).join("\n\n"),
     },
   ];
