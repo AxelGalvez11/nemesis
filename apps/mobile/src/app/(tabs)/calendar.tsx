@@ -15,6 +15,7 @@ import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withT
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { daySwipeIntent, gridSwipeIntent, type SwipeIntent } from "@/lib/calendar-gestures";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { CalendarIcon, PlusIcon, SearchIcon, TrashIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -126,7 +127,7 @@ export default function CalendarScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const { openDrawer, setImmersive } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
@@ -377,30 +378,54 @@ export default function CalendarScreen() {
     setShownYear(today.getFullYear());
     setView("monthly");
   };
+  // Gestures (owner 2026-07-27). Horizontal on the month and year grids is the
+  // SIDEBAR now, not the period: dragging rightward used to jump a month and the
+  // drawer had no way in from this tab at all. The period moves vertically instead.
+  // Day view keeps a horizontal flick because the day IS the thing you page
+  // through, but only from the right two thirds -- the left third stays the
+  // sidebar's, so there is always a way out. Rules live in lib/calendar-gestures.
+  const applyGrid = (intent: SwipeIntent, step: (direction: 1 | -1) => void) => {
+    if (intent === "sidebar") openDrawer();
+    else if (intent === "next") step(1);
+    else if (intent === "prev") step(-1);
+  };
   const monthSwipe = Gesture.Pan()
     .runOnJS(true)
+    // Both axes activate: horizontal reaches the sidebar, vertical the month.
     .activeOffsetX([-18, 18])
-    .failOffsetY([-14, 14])
+    .activeOffsetY([-18, 18])
     .onEnd((event) => {
-      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
-      stepVisibleMonth(event.translationX < 0 ? 1 : -1);
+      applyGrid(
+        gridSwipeIntent(event.translationX, event.translationY, event.velocityX, event.velocityY),
+        stepVisibleMonth,
+      );
     });
   const yearSwipe = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetX([-18, 18])
-    .failOffsetY([-14, 14])
+    .activeOffsetY([-18, 18])
     .onEnd((event) => {
-      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
-      setShownYear((year) => year + (event.translationX < 0 ? 1 : -1));
+      applyGrid(
+        gridSwipeIntent(event.translationX, event.translationY, event.velocityX, event.velocityY),
+        (direction) => setShownYear((year) => year + direction),
+      );
     });
   const daySwipe = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetX([-18, 18])
     .failOffsetY([-14, 14])
     .onEnd((event) => {
-      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
+      // Where the finger went DOWN, derived rather than tracked in a ref: the
+      // current x minus how far it has travelled is exactly the start.
+      const startX = event.x - event.translationX;
+      const intent = daySwipeIntent(startX, screenWidth, event.translationX, event.velocityX);
+      if (intent === "sidebar") {
+        openDrawer();
+        return;
+      }
+      if (intent === "none") return;
       const [year, month, day] = shownDay.split("-").map(Number);
-      const next = new Date(year, (month || 1) - 1, (day || 1) + (event.translationX < 0 ? 1 : -1));
+      const next = new Date(year, (month || 1) - 1, (day || 1) + (intent === "next" ? 1 : -1));
       setShownDay(dayKeyFromDate(next));
       setMonthAnchor({ year: next.getFullYear(), month: next.getMonth() });
     });
