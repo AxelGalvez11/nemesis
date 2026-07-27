@@ -135,10 +135,48 @@ export async function extractFile(file: File, uid: string | null): Promise<Extra
   return { readBy: body.readBy, text: body.text, title: body.title ?? null };
 }
 
+/** Marks the trailing line of a sent message that lists what was attached. */
+export const ATTACHMENT_SUMMARY_PREFIX = "Attachments: ";
+
 function attachmentSummary(files: readonly File[]) {
   if (!files.length) return "";
   const labels = groupChatAttachments(files).map((group) => group.kind === "folder" ? `${group.label}/` : group.label);
-  return `\n\nAttachments: ${labels.join(", ")}`;
+  return `\n\n${ATTACHMENT_SUMMARY_PREFIX}${labels.join(", ")}`;
+}
+
+/**
+ * Split a sent message into what the student typed and what they attached, so
+ * the transcript can render files as cards instead of a line of prose.
+ *
+ * Only the LAST line is considered, because that is the one attachmentSummary
+ * appends — a message whose own text happens to begin "Attachments: " keeps it
+ * as text rather than being silently reinterpreted as a file list.
+ */
+export function splitAttachmentSummary(content: string): { body: string; attachments: string[] } {
+  const parse = (line: string, body: string) => {
+    // A summary is ONE line; anything after a newline is the student's own text.
+    if (line.includes("\n")) return null;
+    const attachments = line.split(", ").map((name) => name.trim()).filter(Boolean);
+    return attachments.length ? { attachments, body } : null;
+  };
+
+  // Attached with nothing typed. prepareChatAttachments trims the message, so
+  // the separating blank line is GONE and the summary is the entire content —
+  // the common case, and the one a fixture written by hand tends to miss.
+  if (content.startsWith(ATTACHMENT_SUMMARY_PREFIX)) {
+    const parsed = parse(content.slice(ATTACHMENT_SUMMARY_PREFIX.length), "");
+    if (parsed) return parsed;
+  }
+
+  // Attached alongside a message: the summary is the trailing line. Only the
+  // LAST one counts, so prose that happens to begin "Attachments: " stays text.
+  const cut = content.lastIndexOf(`\n\n${ATTACHMENT_SUMMARY_PREFIX}`);
+  if (cut !== -1) {
+    const parsed = parse(content.slice(cut + 2 + ATTACHMENT_SUMMARY_PREFIX.length), content.slice(0, cut).trim());
+    if (parsed) return parsed;
+  }
+
+  return { attachments: [], body: content };
 }
 
 export interface AttachmentSource {

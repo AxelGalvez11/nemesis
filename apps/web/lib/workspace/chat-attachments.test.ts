@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fitAttachmentBlocks, groupChatAttachments, partitionImportables, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { fitAttachmentBlocks, groupChatAttachments, partitionImportables, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -94,4 +94,29 @@ test("an ordinary attachment selection is left entirely alone", () => {
   const { decks, rest } = partitionImportables([attachment("notes.md"), attachment("slides.pptx")]);
   assert.equal(decks.length, 0);
   assert.equal(rest.length, 2);
+});
+
+// Owner 2026-07-27: attachments should read as cards, not as a line of prose.
+test("a sent message splits into what was typed and what was attached", () => {
+  const { body, attachments } = splitAttachmentSummary("summarise this\n\nAttachments: lecture.pdf, notes.md");
+  assert.equal(body, "summarise this");
+  assert.deepEqual(attachments, ["lecture.pdf", "notes.md"]);
+});
+
+// The shape the app ACTUALLY stores when nothing was typed: prepareChatAttachments
+// trims the message, so the blank line separating body from summary is gone.
+// The first version of this test invented a leading "\n\n" that the real code
+// path never produces, and passed while the feature did nothing on screen.
+test("an attachment with no typed message leaves an empty body", () => {
+  const { body, attachments } = splitAttachmentSummary("Attachments: deck.pptx");
+  assert.equal(body, "");
+  assert.deepEqual(attachments, ["deck.pptx"]);
+});
+
+// Someone writing about attachments must not have their own words eaten.
+test("prose that merely mentions the word is left alone", () => {
+  const written = "Attachments: I never received them.\n\nCan you resend?";
+  assert.deepEqual(splitAttachmentSummary(written), { attachments: [], body: written });
+  const plain = "no files here";
+  assert.deepEqual(splitAttachmentSummary(plain), { attachments: [], body: plain });
 });
