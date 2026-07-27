@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { GlassSurface } from "./GlassSurface";
@@ -14,6 +15,7 @@ import {
   blockIndexAtOffset,
   blockStartOffset,
   joinBlocks,
+  mergeBlockIntoPrevious,
   replaceBlockBody,
   splitBlocks,
   type NoteBlocks,
@@ -28,6 +30,7 @@ import {
   wrapInline,
   type EditSel,
 } from "@/lib/note-edit";
+import { ACCESSORY_BAR_HEIGHT, accessoryPillWidth } from "@/lib/accessory-bar";
 import { preprocessWikilinks } from "@/lib/wikilinks";
 import type { IconProps } from "./icons";
 import {
@@ -58,12 +61,27 @@ import { control, radius, space, type } from "@/theme/tokens";
 // should work like the webapp — markdown syntax is not shown unless cursor
 // reveals it"). The web editor is CodeMirror, a browser engine the phone
 // can't run without a WebView (a native addition that would orphan OTA
-// updates — see docs in the PR), so the phone reveals syntax at BLOCK
-// granularity: lib/note-blocks.ts splits the note into blocks, every block
-// renders as real markdown, and ONLY the block you tap swaps into a raw-
-// source TextInput. Tapping any other block (or the tail of the page) moves
-// the reveal there; the document re-normalizes at each switch so typing a
-// blank line mid-block splits it into real blocks.
+// updates — see docs in the PR), so the phone reveals syntax one UNIT at a
+// time: lib/note-blocks.ts splits the note into blocks, every block renders as
+// real markdown, and ONLY the block you tap swaps into a raw-source TextInput.
+// Tapping any other block (or the tail of the page) moves the reveal there; the
+// document re-normalizes at each switch so typing a blank line mid-block splits
+// it into real blocks.
+//
+// THE UNIT IS AS SMALL AS IT CAN HONESTLY BE (owner 2026-07-24: "markdown
+// syntax should only be present when cursor is next to it"). Character-level
+// hiding — the `**` disappearing while the caret is three words away — is not
+// reachable in React Native at all: there is no way to render a text field
+// whose displayed text differs from its value, and nested <Text> children can
+// style characters but never omit them. What IS reachable is shrinking the
+// unit, so a heading, a list item and a quote line are each their own block
+// (splitLineOriented) and tapping one item of a six-item list no longer reveals
+// all six items' dashes. Prose and wrapped list items stay whole, because a
+// continuation line rendered alone would lose the item it belongs to.
+//
+// Smaller units mean more boundaries, which is why Backspace at offset 0 now
+// merges with the block above (onActiveKeyPress) — joining two bullets is an
+// everyday edit and must not read as a stuck keyboard.
 //
 // The formatting toolbar is the floating PILL riding above the keyboard
 // (owner: "show a pill component above keyboard with editing toolbar") — an
@@ -80,6 +98,23 @@ import { control, radius, space, type } from "@/theme/tokens";
 // byte-identical to the old single-TextInput editor.
 
 const TOOLBAR_ID = "note-block-toolbar";
+
+// lib/accessory-bar.ts writes its height out as a literal so it can stay
+// import-free and therefore testable. This line is what keeps that literal
+// honest: both sides have literal types, so if `control.lg` changes and
+// ACCESSORY_BAR_HEIGHT does not, `tsc` fails here rather than shipping a bar
+// whose scroller and buttons are different heights.
+//
+// The rail padding needs no equivalent: the call site below passes `space(3)`
+// straight into accessoryPillWidth, so there is nothing to drift out of step.
+// (A first attempt asserted on it the same way and tsc rejected it — `space()`
+// returns a plain `number`, not a literal. Passing the token was the better fix
+// than weakening the check.)
+const _accessoryBarIsOneControlTall: typeof ACCESSORY_BAR_HEIGHT = control.lg;
+void _accessoryBarIsOneControlTall;
+/** The table grid's own keyboard accessory — see NoteTableEditor's
+ *  accessoryViewID for why it is a separate bar rather than this file's. */
+const TABLE_TOOLBAR_ID = "note-table-toolbar";
 
 interface ToolSpec {
   key: string;
@@ -130,6 +165,10 @@ export function NoteBlockEditor({
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { colors: c } = useTheme();
+  // The toolbar's width has to be a NUMBER, not a percentage — see
+  // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
+  const { width: windowWidth } = useWindowDimensions();
+  const pillWidth = accessoryPillWidth(windowWidth, space(3));
 
   const [nb, setNb] = useState<NoteBlocks>(() => splitBlocks(content));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -220,6 +259,38 @@ export function NoteBlockEditor({
     [report],
   );
 
+  /**
+   * Backspace pressed with the caret at the very start of a block: join it to
+   * the one above.
+   *
+   * This became necessary the moment a list turned into one block per item
+   * (lib/note-blocks.ts's splitLineOriented): joining two bullets is an
+   * everyday edit, and with each item in its own field the key would otherwise
+   * do nothing at all — which reads as a stuck keyboard, not as a boundary.
+   * Refused across a blank line, where the ordinary field behaviour (delete the
+   * blank line) is the right one.
+   */
+  const onActiveKeyPress = useCallback(
+    (key: string) => {
+      if (key !== "Backspace") return;
+      const idx = activeRef.current;
+      if (idx === null) return;
+      const { start, end } = selRef.current;
+      if (start !== 0 || end !== 0) return;
+      const merged = mergeBlockIntoPrevious(nbRef.current, idx);
+      if (!merged) return;
+      focusEpochRef.current += 1;
+      setNb(merged.nb);
+      onChangeText(joinBlocks(merged.nb));
+      setActiveIdx(idx - 1);
+      // Caret exactly where the two lines now meet, so the next keystroke
+      // continues from the join rather than from the end of the merged line.
+      selRef.current = { end: merged.caret, start: merged.caret };
+      setForcedSel({ end: merged.caret, start: merged.caret });
+    },
+    [onChangeText],
+  );
+
   const applyTool = useCallback(
     (transform: (s: EditSel) => EditSel) => {
       const idx = activeRef.current;
@@ -271,11 +342,19 @@ export function NoteBlockEditor({
   const toolbar = useMemo(
     () => (
       <View style={styles.toolbarRail} pointerEvents="box-none">
-        <GlassSurface style={styles.toolbarPill} fallbackColor={c.glassMenu} opaque shadow>
+        {/* The explicit width is load-bearing, not cosmetic: a horizontal
+            ScrollView takes its width from its parent, and this pill used to be
+            shrink-to-fit, so each was waiting on the other and the bar laid out
+            zero pixels wide. lib/accessory-bar.ts has the whole story. */}
+        <GlassSurface style={[styles.toolbarPill, { width: pillWidth }]} fallbackColor={c.glassMenu} opaque shadow>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="always"
+            // Height for the same reason as the width above — a scroller has no
+            // intrinsic size in either axis, and an accessory view sizes itself
+            // to its child, so anything indefinite here renders as nothing.
+            style={styles.toolbarScroll}
             contentContainerStyle={styles.toolbarRow}
           >
             {TOOLS.map((tool) => (
@@ -295,7 +374,7 @@ export function NoteBlockEditor({
         </GlassSurface>
       </View>
     ),
-    [styles, c, applyTool],
+    [styles, c, applyTool, pillWidth],
   );
 
   return (
@@ -317,6 +396,7 @@ export function NoteBlockEditor({
               body={block.body}
               onChange={onEditActive}
               onInteract={keepActive}
+              accessoryViewID={TABLE_TOOLBAR_ID}
             />
           ) : i === activeIdx ? (
             <TextInput
@@ -329,6 +409,7 @@ export function NoteBlockEditor({
                 if (forcedSel) setForcedSel(null);
               }}
               onBlur={onBlockBlur}
+              onKeyPress={(e) => onActiveKeyPress(e.nativeEvent.key)}
               selection={forcedSel ?? undefined}
               multiline
               autoFocus
@@ -338,7 +419,7 @@ export function NoteBlockEditor({
               // a placeholder is just a label floating in the middle of your
               // writing — the "text box" look the owner called out (2026-07-22).
               placeholder={nb.blocks.length <= 1 && block.body === "" ? "Start writing" : undefined}
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               inputAccessoryViewID={Platform.OS === "ios" ? TOOLBAR_ID : undefined}
               testID="note-block-input"
             />
@@ -412,16 +493,26 @@ const createStyles = (c: ThemeColors) =>
     // flexGrow (not a fixed height) so on a short note the target is the whole
     // rest of the page rather than a 180pt strip with dead space under it.
     tail: { flexGrow: 1, minHeight: 180 },
-    // Floating pill above the keyboard (owner's ask verbatim) — centered, not
-    // a full-width bar.
+    // Floating pill above the keyboard (owner's ask verbatim). The rail centres
+    // it; the WIDTH is applied inline from accessoryPillWidth() because it must
+    // be a number — the `maxWidth: "100%"` that used to live here was a
+    // percentage of a parent that had no width of its own, so it clamped nothing
+    // and left the pill with no width to give the scroller inside it.
     toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
     toolbarPill: {
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: c.line,
       overflow: "hidden",
-      maxWidth: "100%",
     },
+    // Both of the bar's dimensions are definite, and both had to be — see
+    // lib/accessory-bar.ts, which owns the numbers and the reasoning. Short
+    // version: an InputAccessoryView sizes itself to its child, a horizontal
+    // ScrollView has no intrinsic size in either axis, so anything left to
+    // "measure itself" here renders as nothing at all. The height was fixed on
+    // 2026-07-23 and the toolbar was STILL invisible, because the width was the
+    // same bug on the other axis. `toolbarRow` then centres the buttons in it.
+    toolbarScroll: { height: ACCESSORY_BAR_HEIGHT },
     toolbarRow: { alignItems: "center", paddingHorizontal: space(1.5) },
     // Circle when it holds a single glyph, pill when a wider one needs the
     // room — never the rounded square this was (owner 2026-07-23: "make sure

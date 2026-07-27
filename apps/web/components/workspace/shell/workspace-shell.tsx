@@ -30,6 +30,7 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 // that leaves the surface. No floating nav-reopen control is offered here —
 // leaving the route is the only way back, which keeps the exit unambiguous.
 const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set(["/library", "/dev-preview/workspace/library"]);
+const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides"]);
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
   ["--titlebar-height" as string]: "0px",
@@ -70,7 +71,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // which would leave no visible exit once the nav rail is suppressed too.
   // Settings → General can opt out entirely ("Keep Nemesis sidebar").
   const { libraryFullScreen } = useTheme();
-  const focusMode = libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(pathname.replace(/\/+$/, "") || "/");
+  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  const focusMode =
+    IMMERSIVE_ROUTES.has(normalizedPathname) ||
+    (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(normalizedPathname));
 
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const sidebarVisible = sidebarOpen && !focusMode;

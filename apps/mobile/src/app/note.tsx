@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -22,23 +25,26 @@ import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
-import { safeLibraryTitle } from "@/lib/library-paths";
+import { safeLibraryTitle, UNTITLED_NOTE_TITLE } from "@/lib/library-paths";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import {
   createNote,
+  deleteNote,
   fetchNote,
   findCachedNote,
   loadCachedLibrary,
   renameNote,
+  subscribeLibraryChanges,
   updateNoteContent,
   type CloudLibraryNote,
 } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { outlineOf, splitSections } from "@/lib/note-outline";
-import { arriveAt, closeTab, noteNavHolder, openTabIds, previewOf, selectTab } from "@/lib/note-tabs";
+import { arriveAt, closeTab, noteNavHolder, openTabIds, plainTextOf, previewOf, selectTab } from "@/lib/note-tabs";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -74,13 +80,12 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the notes you've opened, search your notes, new note, an Obsidian-style TAB
 // VIEWER (NoteTabsSheet + lib/note-tabs.ts, owner 2026-07-21), and a heading
 // outline. The old lower-left corner button is gone; its menu
-// moved into the top-right dots. Find is REAL; Rename / Replace / Delete still
-// flash the "on the web app" note.
+// moved into the top-right dots. Find, Rename, and Delete are real iOS actions;
+// there is no fake "Replace on web" row for markdown notes.
 const MENU_ITEMS = [
   { key: "find", label: "Find", enabled: true },
-  { key: "rename", label: "Rename", enabled: false },
-  { key: "replace", label: "Replace", enabled: false },
-  { key: "delete", label: "Delete", enabled: false },
+  { key: "rename", label: "Rename", enabled: true },
+  { key: "delete", label: "Delete", enabled: true },
 ] as const;
 
 // The bottom pill bar's rendered height — the reading body's bottom spacer
@@ -89,7 +94,10 @@ const MENU_ITEMS = [
 // can't leave this spacer short and clip the note's last lines behind it.
 const PILL_BAR_HEIGHT = NOTE_PILL_BAR_HEIGHT;
 
-const EDIT_ON_WEB = "That happens on the web app for now.";
+/** The title field's keyboard accessory — see the titleField comment for why
+ *  the title does NOT get the note's formatting toolbar. */
+const TITLE_TOOLBAR_ID = "note-title-toolbar";
+
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
 const SAVE_FAILED = "Couldn't save — check your connection and try Done again.";
 
@@ -157,7 +165,10 @@ export default function NoteScreen() {
   const [searchSheetOpen, setSearchSheetOpen] = useState(false);
   const [searchSheetQuery, setSearchSheetQuery] = useState("");
   const [tabsOpen, setTabsOpen] = useState(false);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  // The outline is a MINI MENU now (owner 2026-07-24: "outline should be a mini
+  // menu not a popup from the bottom"), anchored where the pill bar's outline
+  // button was pressed — so null here means closed.
+  const [outlineAnchor, setOutlineAnchor] = useState<MenuAnchor | null>(null);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
   // The note id that was just created here, so its title can take the caret
@@ -168,6 +179,8 @@ export default function NoteScreen() {
   // what lets the field be cleared to empty mid-edit without the rename firing
   // on every keystroke.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [titleFocused, setTitleFocused] = useState(false);
+  const titleInputRef = useRef<TextInput>(null);
   // Browser-style note history (owner picked "browser-style" for the pill
   // bar), now held in lib/note-tabs.ts's MODULE-scoped noteNavHolder (owner
   // 2026-07-21: the numbered square opens a real tab viewer, so open tabs
@@ -214,7 +227,7 @@ export default function NoteScreen() {
     setEditing(false);
     setSearchSheetOpen(false);
     setTabsOpen(false);
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     sectionYs.current = [];
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     // History bookkeeping now lives in lib/note-tabs.ts (pure + tested):
@@ -256,15 +269,40 @@ export default function NoteScreen() {
     };
   }, [userId, noteId]);
 
+  // Keep an open note current when it is edited from the web. Never replace an
+  // active local draft: the autosave lane owns the document while the student
+  // is typing, and the next server response becomes truth once they finish.
+  useEffect(() => {
+    if (!userId || !noteId) return;
+    return subscribeLibraryChanges(userId, () => {
+      if (editing || dirtyRef.current) return;
+      void fetchNote(userId, { id: noteId })
+        .then((fresh) => {
+          if (fresh) setDoc(fresh);
+          else setDoc(null);
+        })
+        .catch(() => {});
+    });
+  }, [userId, noteId, editing]);
+
   // The reading body renders one <Markdown> per heading-led section so each
   // section's y falls out of onLayout — that's what the outline jumps to.
   const sections = useMemo(() => (doc ? splitSections(doc.content) : []), [doc]);
   const outline = useMemo(() => outlineOf(sections), [sections]);
 
   const findActive = findOpen && findQuery.trim().length > 0;
+  // Search the note as it READS, not as it is stored (owner 2026-07-24: "dont
+  // show markdown preview at all"). Highlighting a match means owning the <Text>
+  // nodes, which the markdown renderer won't hand over, so Find has to print the
+  // text itself — and printing doc.content meant turning Find on replaced a
+  // clean page with "## Heading", "**bold**" and tables full of pipes. plainTextOf
+  // strips the syntax and keeps the lines, so the same fallback now looks like
+  // the note. Matching the stripped text is also the more honest search: nobody
+  // looking for "bold" means the asterisks around it.
+  const findText = useMemo(() => (findActive && doc ? plainTextOf(doc.content) : ""), [findActive, doc]);
   const segments = useMemo(
-    () => (findActive && doc ? splitMatches(doc.content, findQuery) : null),
-    [findActive, doc, findQuery],
+    () => (findActive && doc ? splitMatches(findText, findQuery) : null),
+    [findActive, doc, findText, findQuery],
   );
   const matchCount = segments ? segments.reduce((n, seg) => n + (seg.hit ? 1 : 0), 0) : 0;
 
@@ -381,10 +419,31 @@ export default function NoteScreen() {
         }
         return;
       }
-      // Delete / Rename / Replace: still web-app actions.
-      flashNotice(EDIT_ON_WEB);
+      if (item.key === "rename") {
+        if (!doc) return;
+        setTitleDraft(doc.title === UNTITLED_NOTE_TITLE ? "" : doc.title);
+        setTimeout(() => titleInputRef.current?.focus(), 0);
+        return;
+      }
+      if (item.key === "delete" && doc && userId) {
+        Alert.alert("Delete note?", `"${doc.title}" will be removed from your Library on every device.`, [
+          { style: "cancel", text: "Cancel" },
+          {
+            style: "destructive",
+            text: "Delete",
+            onPress: () => {
+              void deleteNote(userId, doc.id)
+                .then(() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace("/library");
+                })
+                .catch((err) => flashNotice(err instanceof Error ? err.message : "Couldn't delete the note."));
+            },
+          },
+        ]);
+      }
     },
-    [flashNotice, editing, doneEditing],
+    [flashNotice, editing, doneEditing, doc, userId],
   );
 
   // The mode pill's left half: pencil (reading → edit) / book (editing → save
@@ -537,37 +596,61 @@ export default function NoteScreen() {
    * content is empty now (api/cloudLibrary.ts createNote), and this is where the
    * caret lands.
    *
-   * selectTextOnFocus is what makes it "ready to use": the caret arrives with
-   * "Untitled note" selected, so the first keystroke replaces it rather than
-   * appending to it.
+   * An UNNAMED note shows an EMPTY line, not the words "Untitled note" (owner
+   * 2026-07-24: "new notes should not show 'untitled note' when cursor is on the
+   * title"). "Untitled note" is the note's stored name — the fallback a nameless
+   * note has to have on disk — but showing it as the field's value meant the
+   * caret landed on two words the student had to get rid of before typing their
+   * own. So while the stored title is still the fallback, the field renders
+   * blank; the hint only appears when the field is NOT focused, so nothing is
+   * under the caret at the moment they start typing. Clearing a title and
+   * walking away still lands back on "Untitled note" — commitTitle ignores an
+   * empty string, so the note keeps a filename either way.
+   *
+   * No selectTextOnFocus: it existed solely to make "Untitled note" replaceable
+   * in one keystroke, and a blank field does that better. Left in, it would
+   * select the WHOLE of a real title every time you tapped in to fix one letter.
    *
    * Rendered in both reading and edit mode from this one definition, so the
    * title cannot drift between them.
    */
   const autoFocusTitle = !!doc && justCreatedIdRef.current === doc.id;
   if (autoFocusTitle) justCreatedIdRef.current = null;
+  const storedTitle = doc && doc.title !== UNTITLED_NOTE_TITLE ? doc.title : "";
   const titleField = doc ? (
     <TextInput
+      ref={titleInputRef}
       style={styles.title}
-      value={titleDraft ?? doc.title}
+      value={titleDraft ?? storedTitle}
       onChangeText={setTitleDraft}
-      onBlur={() => void commitTitle(titleDraft ?? doc.title)}
+      onFocus={() => setTitleFocused(true)}
+      onBlur={() => {
+        setTitleFocused(false);
+        void commitTitle(titleDraft ?? storedTitle);
+      }}
       onSubmitEditing={(e) => void commitTitle(e.nativeEvent.text)}
       autoFocus={autoFocusTitle}
-      selectTextOnFocus
       returnKeyType="done"
       blurOnSubmit
       multiline
       scrollEnabled={false}
-      placeholder="Untitled note"
-      placeholderTextColor={c.text3}
+      // A bar above the keyboard here too (owner 2026-07-24: "editing toolbar
+      // should always be present when keyboard it up"). The title had none, and
+      // it is the field a NEW note opens with the caret in — so the very first
+      // keyboard of a note's life came up bare. It is not the formatting
+      // toolbar: these buttons write markdown, and a title is a FILENAME —
+      // "**Kinetics**" would become the note's name on disk. It gets the one
+      // action that makes sense instead, which is to finish and start writing.
+      inputAccessoryViewID={Platform.OS === "ios" ? TITLE_TOOLBAR_ID : undefined}
+      placeholder={titleFocused ? undefined : UNTITLED_NOTE_TITLE}
+      placeholderTextColor={c.textHint}
       testID="note-title-input"
       accessibilityLabel="Note title"
     />
   ) : null;
 
   const jumpToSection = useCallback((sectionIndex: number) => {
-    setOutlineOpen(false);
+    setOutlineAnchor(null);
     const y = sectionYs.current[sectionIndex];
     if (typeof y === "number") scrollRef.current?.scrollTo({ animated: true, y: Math.max(0, y - space(2)) });
   }, []);
@@ -598,9 +681,15 @@ export default function NoteScreen() {
     });
   }, [nav.tabIds, notesIndex, doc]);
 
-  const outlineRows = useMemo<NoteSheetRow[]>(
-    () => outline.map((h) => ({ indent: Math.min(h.level - 1, 4), key: String(h.sectionIndex), label: h.text })),
-    [outline],
+  const outlineRows = useMemo<MenuRow[]>(
+    () =>
+      outline.map((h) => ({
+        indent: Math.min(h.level - 1, 4),
+        key: String(h.sectionIndex),
+        label: h.text,
+        onPress: () => jumpToSection(h.sectionIndex),
+      })),
+    [outline, jumpToSection],
   );
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
@@ -715,7 +804,7 @@ export default function NoteScreen() {
             value={findQuery}
             onChangeText={setFindQuery}
             placeholder="Find in note"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             autoFocus
             autoCorrect={false}
             autoCapitalize="none"
@@ -792,8 +881,9 @@ export default function NoteScreen() {
               content straight away — no path/updated metadata line between them. */}
           {titleField}
           {findActive && segments ? (
-            // Find mode: render the note's own text so matches can actually be
-            // highlighted (the markdown renderer builds its own nodes and can't be).
+            // Find mode: render the note's text ourselves so matches can be
+            // highlighted (the markdown renderer builds its own nodes and can't
+            // be). Syntax-stripped first — see findText above.
             <Text style={styles.findBody} testID="note-find-body">
               {segments.map((seg, i) =>
                 seg.hit ? (
@@ -880,13 +970,34 @@ export default function NoteScreen() {
             }}
             onNew={() => void newNote()}
             onRecents={() => setTabsOpen(true)}
-            onOutline={() => {
+            onOutline={(x, y) => {
               // Sections only render (and measure) outside Find mode.
               if (findOpen) closeFind();
-              setOutlineOpen(true);
+              setOutlineAnchor({ x, y });
             }}
           />
         </View>
+      ) : null}
+
+      {/* The title field's bar above the keyboard. One action, and the one
+          that matters after naming a note: put the title away and get on with
+          writing. */}
+      {Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID={TITLE_TOOLBAR_ID} backgroundColor="transparent">
+          <View style={styles.titleAccessoryRail} pointerEvents="box-none">
+            <GlassSurface style={styles.titleAccessoryPill} fallbackColor={c.glassMenu} opaque shadow>
+              <Pressable
+                onPress={() => Keyboard.dismiss()}
+                style={({ pressed }) => [styles.titleAccessoryBtn, pressed && styles.titleAccessoryBtnPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Done naming this note"
+                testID="note-title-done"
+              >
+                <Text style={styles.titleAccessoryLabel}>Done</Text>
+              </Pressable>
+            </GlassSurface>
+          </View>
+        </InputAccessoryView>
       ) : null}
 
       <NoteListSheet
@@ -917,14 +1028,18 @@ export default function NoteScreen() {
         }}
         onClose={() => setTabsOpen(false)}
       />
-      <NoteListSheet
-        visible={outlineOpen}
-        title="Outline"
-        rows={outlineRows}
+      {/* The heading outline, opening at the button rather than sliding up from
+          the bottom of the screen (owner 2026-07-24). MiniMenu flips itself
+          above the finger when there is no room below — which is always, since
+          the pill bar sits at the bottom edge — and scrolls when a note has
+          more headings than fit. */}
+      <MiniMenu
+        visible={outlineAnchor !== null}
+        anchor={outlineAnchor}
+        actions={outlineRows}
         emptyText="No headings in this note yet."
-        onPick={(key) => jumpToSection(Number(key))}
-        onClose={() => setOutlineOpen(false)}
-        testID="note-outline-sheet"
+        onClose={() => setOutlineAnchor(null)}
+        testID="note-outline-menu"
       />
     </View>
   );
@@ -1082,4 +1197,12 @@ const createStyles = (c: ThemeColors) =>
     menuLabel: { ...type.body, color: c.text },
     menuLabelDisabled: { color: c.text3 },
     menuTag: { ...type.micro, color: c.text3, textTransform: "uppercase", letterSpacing: 0.6 },
+
+    // The title field's keyboard bar — same floating glass pill as the block
+    // editor's formatting toolbar, so the two read as one family.
+    titleAccessoryRail: { alignItems: "flex-end", paddingBottom: space(2), paddingHorizontal: space(3) },
+    titleAccessoryPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    titleAccessoryBtn: { height: control.lg, paddingHorizontal: space(4), alignItems: "center", justifyContent: "center" },
+    titleAccessoryBtnPressed: { backgroundColor: c.surface2 },
+    titleAccessoryLabel: { ...type.body, color: c.accent, fontWeight: "600" },
   });

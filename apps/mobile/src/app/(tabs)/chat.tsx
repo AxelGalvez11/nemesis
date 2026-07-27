@@ -5,6 +5,7 @@ import {
   AppState,
   Easing,
   FlatList,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -14,7 +15,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Reanimated, { FadeIn } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,7 +33,8 @@ import {
   saveThreadMessages,
   sendChat,
 } from "@/api/chat";
-import type { CloudLibraryNote } from "@/api/cloudLibrary";
+import { createNoteWithContent, type CloudLibraryNote } from "@/api/cloudLibrary";
+import { storeAndReadPhoto, type ReadPhoto } from "@/api/photos";
 import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
@@ -41,10 +43,12 @@ import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
-import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
+import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
+import { ThoughtTrail } from "@/components/ThoughtTrail";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { PhotoCaptureSheet } from "@/components/PhotoCaptureSheet";
 import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
@@ -55,6 +59,8 @@ import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
+import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
+import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { reasoningGlimpse } from "@/lib/reasoning-preview";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -96,6 +102,20 @@ const THINKING_ID = "__thinking__";
  *  times in the seconds before the answer starts. */
 const REASONING_FLUSH_MS = 220;
 
+/** How far from the end the transcript has to be before the jump-to-bottom arrow
+ *  appears, in points. Roughly one line of prose plus the fade: close enough that
+ *  a small overscroll or the tail of a momentum fling never flashes the button,
+ *  far enough that it shows up as soon as there is genuinely something below. */
+const JUMP_TO_BOTTOM_AT = 160;
+
+/** The question a photo asks when the student has not typed one. Written as a
+ *  student would ask it, because it is shown in the transcript as their own
+ *  message — so it has to read like something a person would say, not a system
+ *  instruction. Deliberately open: the photo could be a slide, a page, a
+ *  whiteboard or a piece of equipment, and naming the wrong one would steer the
+ *  answer. */
+const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
+
 // Where the remembered intelligence dial lives, per signed-in account. Same
 // SecureStore idiom as the General settings screen (app/profile/general.tsx),
 // so the choice survives app launches and chat switches.
@@ -121,7 +141,7 @@ export default function ChatScreen() {
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
-  const { setHeaderTitle, newChat, setHeaderRight, setImmersive } = useShell();
+  const { setHeaderTitle, setHeaderRight, setImmersive } = useShell();
   const insets = useSafeAreaInsets();
 
   // The active thread rides in the route param so the drawer/TopBar can steer it.
@@ -173,6 +193,16 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // The camera (owner 2026-07-24). A photograph becomes an attachment through
+  // exactly the lane above — once the server has read it, a picture of a slide
+  // and an attached Library note are the same thing: text for one turn.
+  // `photo` is kept BESIDE attachedDoc rather than folded into it because the
+  // picture itself is only needed for the two things text can't do: show a
+  // thumbnail on the chip, and put the image in the note if it gets saved.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photo, setPhoto] = useState<ReadPhoto | null>(null);
+  const [photoSaved, setPhotoSaved] = useState<"idle" | "saving" | "saved">("idle");
   // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
@@ -209,6 +239,13 @@ export default function ChatScreen() {
   // Which message's sources/deliverable is showing in its bottom-up sheet, if any.
   const [sourcesSheetFor, setSourcesSheetFor] = useState<ChatSource[] | null>(null);
   const [deliverableSheetFor, setDeliverableSheetFor] = useState<ChatOutput | null>(null);
+  const openDeliverable = useCallback((output: ChatOutput) => {
+    if (output.route) {
+      router.push(output.route as never);
+      return;
+    }
+    setDeliverableSheetFor(output);
+  }, []);
   // Epoch bumps on user change AND thread change; in-flight sends compare before
   // touching state. sendingRef is the synchronous re-entrancy lock.
   const epochRef = useRef(0);
@@ -229,6 +266,12 @@ export default function ChatScreen() {
   const rowHeights = useRef(new Map<string, number>());
   const rowIdsRef = useRef<string[]>([]);
   const [listHeight, setListHeight] = useState(0);
+  // "Jump to the newest message" (owner 2026-07-24). Only meaningful when the
+  // transcript is actually scrolled up away from the end, so the control is
+  // absent — not disabled — the rest of the time. A long answer plus the
+  // scroll-the-question-to-the-top spacer means it is easy to end up a long way
+  // from the newest text with no quick way back.
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [lastTurnHeight, setLastTurnHeight] = useState(0);
 
   const measureLastTurn = useCallback(() => {
@@ -395,8 +438,42 @@ export default function ChatScreen() {
     return () => setHeaderTitle(null);
   }, [setHeaderTitle]);
 
-  const send = useCallback(() => {
-    const text = input.trim();
+
+  // "…and even saved to library if it's a note" (owner). Deliberately a TAP,
+  // not a guess: a photo of a slide is a note and a photo of a broken pipette
+  // is not, and no classifier should be deciding that on the student's behalf.
+  const savePhotoToLibrary = useCallback(async () => {
+    if (!uid || !photo || photoSaved !== "idle") return;
+    setPhotoSaved("saving");
+    try {
+      await createNoteWithContent(
+        uid,
+        photo.title,
+        photoNoteBody(photo.text, photo.imageUrl, photo.storagePath),
+        GENERATED_NOTES_FOLDER,
+      );
+      setPhotoSaved("saved");
+    } catch (cause) {
+      setPhotoSaved("idle");
+      setLastError(cause instanceof Error ? cause.message : "Couldn't save that to your library.");
+    }
+  }, [photo, photoSaved, uid]);
+
+  const clearAttachment = useCallback(() => {
+    setAttachedDoc(null);
+    setPhoto(null);
+    setPhotoSaved("idle");
+  }, []);
+
+  /** Send a turn.
+   *
+   *  `override` exists for the camera: a photo has to go straight out for
+   *  analysis, and the question plus the attachment are known at that moment but
+   *  are NOT yet in state — a setState in the same tick would not have flushed, so
+   *  reading them from state here would send an empty turn with no picture. The
+   *  composer passes nothing and everything comes from state as before. */
+  const send = useCallback((override?: { text?: string; doc?: { content: string; title: string }; keepPhoto?: boolean }) => {
+    const text = (override?.text ?? input).trim();
     if (!text || !uid || !threadId || sendingRef.current) return;
     sendingRef.current = true;
     const epoch = epochRef.current;
@@ -406,7 +483,7 @@ export default function ChatScreen() {
     // same turn), deep research is a persistent toggle the student switches
     // off themselves (NOT cleared here). Both ride into sendChat's options,
     // never into the persisted/displayed ChatMsg.content itself.
-    const doc = attachedDoc;
+    const doc = override?.doc ?? attachedDoc;
     const research = deepResearchOn;
     const chosenEffort = effort;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
@@ -415,6 +492,19 @@ export default function ChatScreen() {
     setLastError(null);
     setInput("");
     setAttachedDoc(null);
+    // The picture normally goes with it: the attachment is one-shot, and a chip
+    // left offering "Save to Library" after the turn has gone would be pointing
+    // at something that is no longer attached to anything.
+    //
+    // keepPhoto is the camera's exception. A photo now sends itself the moment it
+    // is taken, so the student never gets a beat in which to tap "Save to
+    // Library" — clearing here would delete the offer before it was ever on
+    // screen. The photo stays available to save while its answer arrives; the
+    // ATTACHMENT is still cleared, so it cannot ride a second turn.
+    if (!override?.keepPhoto) {
+      setPhoto(null);
+      setPhotoSaved("idle");
+    }
     setSending(true);
     setStreamingText("");
     setPhase({ kind: "routing" });
@@ -455,15 +545,25 @@ export default function ChatScreen() {
         // The epoch guard above is what keeps this quiet when the student has
         // moved to another thread — no buzz for an answer they can't see.
         if (epochRef.current !== epoch) return;
-        if (reply.text) {
+        if (reply.text || reply.outputs?.length) {
           hapticAnswerReady();
+          // Keep what it worked through, so the answer can be opened up later
+          // (owner 2026-07-24: the thinking preview should be "modern like
+          // chatgpt or claude"). Both of those keep a collapsed row you can
+          // expand after the fact; ours used to throw the reasoning away the
+          // moment the first answer word landed. This is the model's OWN text,
+          // never a summary we wrote. An Instant turn runs with thinking off and
+          // simply has none.
+          const thought = reasoningRef.current.trim();
           const next: ChatMsg[] = [
             ...base,
             {
               at: new Date().toISOString(),
-              content: reply.text,
+              content: reply.text ?? "",
               role: "assistant",
               ...(reply.sources.length ? { sources: reply.sources } : {}),
+              ...(reply.outputs?.length ? { outputs: reply.outputs } : {}),
+              ...(thought ? { thinking: { ms: Date.now() - turnStartedAtRef.current, text: thought } } : {}),
             },
           ];
           setMessages(next);
@@ -486,6 +586,50 @@ export default function ChatScreen() {
         }
       });
   }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
+
+  // A shot the student accepted: store it, read it, and hand the words to the
+  // next turn. The sheet STAYS UP with a spinner until this lands — dropping
+  // back to chat first would leave the student watching an empty composer with
+  // no sign that a 3 MB upload was in flight.
+  const handlePhoto = useCallback(
+    async (uri: string) => {
+      if (!uid) return;
+      setPhotoBusy(true);
+      try {
+        const read = await storeAndReadPhoto(uid, uri);
+        setPhoto(read);
+        setPhotoSaved("idle");
+        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
+        // photograph is a Library note, because where a fact came from changes
+        // how much weight it deserves.
+        const doc = { content: read.text, title: photoAttachmentTitle(read.title) };
+        setAttachedDoc(doc);
+        setCameraOpen(false);
+        // Straight out for analysis (owner 2026-07-24: "taking a photo should
+        // send it to the chat for analysis"). Every piece of this already
+        // existed — camera, upload, Gemini read, attachment — but the photo then
+        // sat as a silent chip waiting for the student to think of something to
+        // type, so taking a picture appeared to do nothing at all.
+        //
+        // Whatever they had already typed is the question, because their own
+        // words beat any default. An empty composer gets PHOTO_ANALYSIS_ASK.
+        // Passed explicitly rather than through state: the setAttachedDoc above
+        // has not flushed yet, so a send that read state would go out with no
+        // picture attached.
+        send({ doc, keepPhoto: true, text: input.trim() || PHOTO_ANALYSIS_ASK });
+      } catch (cause) {
+        // api/photos.ts throws sentences, so this reaches the screen as-is.
+        setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
+        setCameraOpen(false);
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    // `send` and `input` are read at capture time to build the turn. handlePhoto is
+    // only ever called from the camera sheet's shutter, so a re-created callback
+    // costs nothing here.
+    [uid, send, input],
+  );
 
   // Promote the buffered reasoning onto the screen a few times a second while a
   // turn is in flight. Rendering every chunk would mean hundreds of re-renders
@@ -838,6 +982,16 @@ export default function ChatScreen() {
               }, 120);
             }}
             onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+            // Drives the jump-to-bottom button. Compared against a threshold
+            // rather than exact equality: momentum and rubber-banding mean the
+            // offset is rarely exactly the end, and a button that blinks at the
+            // bottom of every scroll is worse than no button.
+            scrollEventThrottle={64}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              const fromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              setAwayFromBottom(fromBottom > JUMP_TO_BOTTOM_AT);
+            }}
             renderItem={({ item }) => (
               // The wrapper exists to MEASURE: the bottom spacer below is sized
               // from the height of the last turn, so every row reports its own.
@@ -873,11 +1027,18 @@ export default function ChatScreen() {
                         {settledLabel(item.thoughtMs)}
                       </Text>
                     ) : null}
-                    <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                    {/* A finished turn keeps what it worked through, openable —
+                        the half ChatGPT and Claude both have that we did not.
+                        Above the answer, same place the live line was, so the
+                        transcript does not jump as one replaces the other. */}
+                    {item.msg!.thinking ? (
+                      <ThoughtTrail thinking={item.msg!.thinking} testID="chat-thought-trail" />
+                    ) : null}
+                    {item.msg!.content.trim() ? <MessageBody content={item.msg!.content} styles={markdownStyles} /> : null}
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
@@ -886,7 +1047,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
+              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={openDeliverable} /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (
@@ -894,17 +1055,7 @@ export default function ChatScreen() {
                 // genuinely empty), so without this the greeting below would flash on
                 // screen a beat before real history replaces it. See messagesLoading.
                 <ChatSkeleton />
-              ) : (
-                // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
-                // 'what are we working on today...' because its too noisy. just a simple
-                // welcome back"). Rendered directly (not the shared EmptyBlock, which is
-                // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
-                // centered (prior owner call this preserves). The list's own paddingTop
-                // already clears the glass TopBar, so this only adds a little more.
-                <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
-                  <Text style={styles.emptyTitle}>Welcome back</Text>
-                </View>
-              )
+              ) : null
             }
             ListFooterComponent={
               // Bottom spacer so the last exchange can scroll up until the question sits at
@@ -958,6 +1109,12 @@ export default function ChatScreen() {
             setLibraryPickerOpen(false);
           }}
         />
+        <PhotoCaptureSheet
+          visible={cameraOpen}
+          busy={photoBusy}
+          onClose={() => setCameraOpen(false)}
+          onCaptured={(uri) => void handlePhoto(uri)}
+        />
         <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
         <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />
         {/* The bottom edge of the transcript, softened (owner 2026-07-23: "in
@@ -977,6 +1134,48 @@ export default function ChatScreen() {
             third of the screen and washed out the starter rows themselves.
             Nothing to fade means nothing to draw. */}
         {composerMode === "chat" && hasContent ? <BottomFadeBlur height={composerBlockH} /> : null}
+        {/* Jump to the newest message (owner 2026-07-24: "add a downward arrow in
+            the chat for when conversations get long so users can scroll all the
+            way to the bottom (it should disappear if user is already at the
+            bottom)").
+            Mounted only while it has a job — not rendered-and-faded — so it can
+            never sit over the transcript as a dead control, and it fades in so it
+            does not pop. It rides ABOVE the composer block, whose measured height
+            already tracks the starter rows, an attached chip and a multi-line
+            draft, so the arrow moves with the composer instead of guessing. */}
+        {composerMode === "chat" && hasContent && awayFromBottom ? (
+          <Reanimated.View
+            entering={FadeIn.duration(160)}
+            exiting={FadeOut.duration(120)}
+            style={[styles.jumpWrap, { bottom: composerBlockH + space(2) }]}
+            pointerEvents="box-none"
+          >
+            <Pressable
+              onPress={() => {
+                // The list's footer spacer is part of the content, so scrollToEnd
+                // lands where the newest text actually finishes — which is what
+                // "all the way to the bottom" means here.
+                listRef.current?.scrollToEnd({ animated: true });
+                setAwayFromBottom(false);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to the newest message"
+              testID="chat-jump-to-bottom"
+            >
+              {({ pressed }) => (
+                <GlassSurface
+                  style={[styles.jumpBtn, pressed && styles.jumpBtnPressed]}
+                  fallbackColor={c.glassMenu}
+                  opaque
+                  shadow
+                >
+                  <ArrowDownIcon size={20} color={c.text} />
+                </GlassSurface>
+              )}
+            </Pressable>
+          </Reanimated.View>
+        ) : null}
         <View
           style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}
           onLayout={(e) => {
@@ -1007,11 +1206,27 @@ export default function ChatScreen() {
               }}
             />
           ) : null}
-          {composerMode === "chat" && attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
+          {/* `photo` as well as `attachedDoc`: a photo now sends itself, which
+              clears the attachment immediately, and the chip is where "Save to
+              Library" lives. Without the second condition the offer would vanish
+              in the same frame it appeared. Once the attachment is gone the chip
+              is purely that offer — the picture is not riding any further turn. */}
+          {composerMode === "chat" && (attachedDoc || photo) ? (
+            <AttachedDocChip
+              title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
+              onRemove={clearAttachment}
+              thumbnailUri={photo?.imageUrl ?? null}
+              onSave={photo ? () => void savePhotoToLibrary() : undefined}
+              saveState={photoSaved}
+            />
+          ) : null}
           <Composer
             value={input}
             onChangeText={setInput}
-            onSend={send}
+            // Wrapped, not passed straight through: the send button hands its
+            // press event to onPress, and send() now takes an optional override
+            // object — an event arriving in that slot would be read as one.
+            onSend={() => send()}
             onPlus={() => {
               setEffortMenuOpen(false);
               setPlusMenuOpen((v) => !v);
@@ -1055,6 +1270,7 @@ export default function ChatScreen() {
           onClose={() => setPlusMenuOpen(false)}
           bottomOffset={composerMenuOffset}
           onAttach={() => setLibraryPickerOpen(true)}
+          onTakePhoto={() => setCameraOpen(true)}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
@@ -1235,17 +1451,48 @@ function ChatSkeleton() {
   );
 }
 
-function AttachedDocChip({ title, onRemove }: { title: string; onRemove: () => void }) {
+/** The one-shot attachment sitting above the composer. A photographed page adds
+ *  two things a Library note doesn't have: a thumbnail (so the student can see
+ *  WHICH shot is attached without opening anything) and a "Save to Library"
+ *  action, which is where "even saved to library if it's a note" actually
+ *  lives. Both are optional — an attached note renders exactly as before. */
+function AttachedDocChip({
+  title,
+  onRemove,
+  thumbnailUri = null,
+  onSave,
+  saveState = "idle",
+}: {
+  title: string;
+  onRemove: () => void;
+  thumbnailUri?: string | null;
+  onSave?: () => void;
+  saveState?: "idle" | "saving" | "saved";
+}) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   return (
     <View style={styles.attachChipRow}>
       <View style={styles.attachChip} testID="chat-attached-doc-chip">
+        {thumbnailUri ? <Image source={{ uri: thumbnailUri }} style={styles.attachChipThumb} /> : null}
         <Text style={styles.attachChipText} numberOfLines={1}>{title}</Text>
         <Pressable onPress={onRemove} hitSlop={8} accessibilityLabel={`Remove ${title}`} testID="chat-attached-doc-remove">
           <CloseIcon size={12} color={c.text2} />
         </Pressable>
       </View>
+      {onSave ? (
+        <Pressable
+          onPress={saveState === "idle" ? onSave : undefined}
+          disabled={saveState !== "idle"}
+          hitSlop={8}
+          accessibilityRole="button"
+          testID="chat-photo-save"
+        >
+          <Text style={[styles.attachChipAction, saveState === "saved" && styles.attachChipActionDone]}>
+            {saveState === "saved" ? "Saved to Library" : saveState === "saving" ? "Saving…" : "Save to Library"}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -1287,6 +1534,24 @@ const createStyles = (c: ThemeColors) =>
     // zIndex — it renders after the blur, and tree order is what puts it on
     // top. Adding one would also lift it over this screen's bottom sheets.
     composerFloat: { position: "absolute", bottom: 0, left: 0, right: 0 },
+    // The jump-to-bottom arrow, centred above the composer. `bottom` is applied
+    // inline from the composer's measured height. Same reasoning as
+    // composerFloat about zIndex: it is rendered AFTER the bottom fade and
+    // BEFORE the composer, and tree order is what stacks them on iOS — so it
+    // sits over the fading transcript and under the composer, which is the only
+    // order that works if a tall draft ever grows up to meet it.
+    jumpWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
+    jumpBtn: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      borderWidth: 1,
+      borderColor: c.line,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    jumpBtnPressed: { opacity: 0.7 },
     // Landing starter rows — plain (no glass, no borders) so they read as quiet
     // suggestions on the page, not controls; generous air between rows like the
     // ChatGPT reference.
@@ -1304,8 +1569,10 @@ const createStyles = (c: ThemeColors) =>
     // Muted with its icon — see the StarterRows comment on why these two spots
     // keep gray when the rest of the app went pure black/white.
     starterLabel: { ...type.body, color: c.textHint },
-    // The attached-Library-doc chip staged above the composer input.
-    attachChipRow: { marginBottom: space(1.5), paddingHorizontal: space(1) },
+    // The attached-Library-doc chip staged above the composer input. A row
+    // rather than a lone pill since the camera landed: a photo chip carries a
+    // "Save to Library" action beside it.
+    attachChipRow: { alignItems: "center", flexDirection: "row", gap: space(2), marginBottom: space(1.5), paddingHorizontal: space(1) },
     attachChip: {
       flexDirection: "row",
       alignItems: "center",
@@ -1318,6 +1585,11 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surface2,
     },
     attachChipText: { ...type.small, color: c.text, flexShrink: 1 },
+    // Small enough to read as provenance rather than as a picture viewer — its
+    // job is "which shot is attached", not "look at this photo".
+    attachChipThumb: { borderRadius: radius.sm, height: 22, width: 22 },
+    attachChipAction: { ...type.small, color: c.accent },
+    attachChipActionDone: { color: c.textHint },
 
     // "…" chat-actions button (rendered into the TopBar's right slot) + its dropdown.
     actionsBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },

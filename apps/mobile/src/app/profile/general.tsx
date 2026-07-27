@@ -8,46 +8,20 @@ import { placeholderColor, useCommon } from "@/theme/common";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
+import {
+  DEFAULT_GENERAL_PREFS,
+  GENERAL_LANGUAGES,
+  GENERAL_TONES,
+  generalPrefsStoreKey,
+  parseGeneralPrefs,
+  type GeneralPrefs,
+} from "@/lib/general-prefs";
 
 // General — phone half of the cloud-first settings port (build spec §11). Same
 // four fields as web's Settings > General (apps/web/components/SettingsSurface.tsx):
 // language, tone, nickname, occupation. Stored on-device only, per signed-in
-// account — NOT wired into the AI's behavior yet on either platform (a listed
-// follow-up), so the copy here says exactly that instead of promising a live
-// effect.
-
-interface GeneralPrefs {
-  language: string;
-  tone: string;
-  nickname: string;
-  occupation: string;
-}
-
-const DEFAULT_PREFS: GeneralPrefs = {
-  language: "English",
-  nickname: "",
-  occupation: "",
-  tone: "Clear and direct",
-};
-
-const LANGUAGES = ["English", "Spanish", "French", "German", "Portuguese"];
-const TONES = ["Clear and direct", "Warm and encouraging", "Academic and precise", "Socratic tutor"];
-
-const storeKeyFor = (uid: string) => `nemesis_general_prefs_v1_${uid}`;
-
-function parsePrefs(raw: string | null): GeneralPrefs {
-  try {
-    const parsed = raw ? (JSON.parse(raw) as Partial<GeneralPrefs>) : null;
-    return {
-      language: typeof parsed?.language === "string" ? parsed.language : DEFAULT_PREFS.language,
-      nickname: typeof parsed?.nickname === "string" ? parsed.nickname : DEFAULT_PREFS.nickname,
-      occupation: typeof parsed?.occupation === "string" ? parsed.occupation : DEFAULT_PREFS.occupation,
-      tone: typeof parsed?.tone === "string" ? parsed.tone : DEFAULT_PREFS.tone,
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
-}
+// account. Chat reads the same key before every turn, so these preferences are
+// now real behavior rather than decorative settings.
 
 export default function GeneralScreen() {
   const insets = useSafeAreaInsets();
@@ -57,19 +31,19 @@ export default function GeneralScreen() {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
 
-  const [prefs, setPrefs] = useState<GeneralPrefs>(DEFAULT_PREFS);
+  const [prefs, setPrefs] = useState<GeneralPrefs>(DEFAULT_GENERAL_PREFS);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     setLoaded(false);
     if (!uid) return;
     let alive = true;
-    void SecureStore.getItemAsync(storeKeyFor(uid))
+    void SecureStore.getItemAsync(generalPrefsStoreKey(uid))
       .then((raw) => {
-        if (alive) setPrefs(parsePrefs(raw));
+        if (alive) setPrefs(parseGeneralPrefs(raw));
       })
       .catch(() => {
-        if (alive) setPrefs(DEFAULT_PREFS);
+        if (alive) setPrefs(DEFAULT_GENERAL_PREFS);
       })
       .finally(() => {
         if (alive) setLoaded(true);
@@ -88,7 +62,7 @@ export default function GeneralScreen() {
     if (!uid || !loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void SecureStore.setItemAsync(storeKeyFor(uid), JSON.stringify(prefs)).catch(() => {});
+      void SecureStore.setItemAsync(generalPrefsStoreKey(uid), JSON.stringify(prefs)).catch(() => {});
     }, 300);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -107,8 +81,7 @@ export default function GeneralScreen() {
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space(6) }]}>
         <Text style={styles.title}>General</Text>
         <Text style={styles.subtitle}>
-          Shape how Nemesis writes and addresses you. Saved on this device — these don't change Nemesis's answers
-          yet; wiring them into the AI is a follow-up.
+          Shape how Nemesis writes and addresses you. Changes apply to your next chat message on this device.
         </Text>
 
         {!uid ? (
@@ -116,10 +89,10 @@ export default function GeneralScreen() {
         ) : (
           <>
             <Text style={styles.label}>Language</Text>
-            <OptionCard styles={styles} options={LANGUAGES} value={prefs.language} onChange={(language) => update({ language })} testIDPrefix="language" />
+            <OptionCard styles={styles} options={GENERAL_LANGUAGES} value={prefs.language} onChange={(language) => update({ language })} testIDPrefix="language" />
 
             <Text style={styles.label}>Tone</Text>
-            <OptionCard styles={styles} options={TONES} value={prefs.tone} onChange={(tone) => update({ tone })} testIDPrefix="tone" />
+            <OptionCard styles={styles} options={GENERAL_TONES} value={prefs.tone} onChange={(tone) => update({ tone })} testIDPrefix="tone" />
 
             <Text style={styles.label}>Nickname</Text>
             <TextInput
@@ -169,6 +142,9 @@ function OptionCard({
           key={option}
           testID={`${testIDPrefix}-${option}`}
           onPress={() => onChange(option)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === option }}
+          accessibilityLabel={option}
           style={[styles.optionRow, index < options.length - 1 && styles.optionDivider]}
         >
           <Text style={styles.optionLabel}>{option}</Text>

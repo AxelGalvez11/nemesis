@@ -116,7 +116,7 @@ export function NoteListSheet({
                 value={searchValue ?? ""}
                 onChangeText={onSearchChange}
                 placeholder={searchPlaceholder ?? "Search"}
-                placeholderTextColor={c.text3}
+                placeholderTextColor={c.textHint}
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="search"

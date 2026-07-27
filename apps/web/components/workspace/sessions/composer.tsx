@@ -23,9 +23,10 @@
 // — never a hardcoded color.
 
 import type { KeyboardEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { consumeSeededComposerFiles } from "@/lib/workspace/composer-seed";
+import { groupChatAttachments } from "@/lib/workspace/chat-attachments";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -92,6 +93,7 @@ interface ComposerProps {
 export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
@@ -100,6 +102,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const activeMode = mode ?? composerMode;
+  const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
   useEffect(() => {
     const stored = readStoredEffort();
@@ -234,10 +237,22 @@ export function Composer({ busy, centered = false, placement = "floating", place
           >
             {activeMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
-                {files.map((file, index) => (
-                  <span className="flex max-w-44 items-center gap-1 rounded-full bg-(--ui-bg-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary)" key={`${file.name}:${file.lastModified}:${index}`}>
-                    <span className="truncate">{file.name}</span>
-                    <button aria-label={`Remove ${file.name}`} className="rounded-full p-0.5 hover:bg-(--chrome-action-hover)" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} type="button"><Codicon name="close" size="0.65rem" /></button>
+                {attachmentGroups.map((group) => (
+                  <span
+                    className="flex max-w-44 items-center gap-1 rounded-full bg-(--ui-bg-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary)"
+                    key={group.key}
+                    title={group.kind === "folder" ? `${group.label} folder` : group.label}
+                  >
+                    {group.kind === "folder" && <Codicon name="folder" size="0.75rem" />}
+                    <span className="truncate">{group.label}</span>
+                    <button
+                      aria-label={`Remove ${group.label}`}
+                      className="rounded-full p-0.5 hover:bg-(--chrome-action-hover)"
+                      onClick={() => setFiles((current) => current.filter((file) => !group.files.includes(file)))}
+                      type="button"
+                    >
+                      <Codicon name="close" size="0.65rem" />
+                    </button>
                   </span>
                 ))}
               </div>
@@ -263,7 +278,21 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       ref={fileInputRef}
                       type="file"
                     />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
+                    <input
+                      className="sr-only"
+                      multiple
+                      onChange={(event) => {
+                        const picked = Array.from(event.target.files ?? []);
+                        if (picked.length > 0) setFiles((current) => [...current, ...picked]);
+                        event.target.value = "";
+                      }}
+                      ref={(node) => {
+                        folderInputRef.current = node;
+                        node?.setAttribute("webkitdirectory", "");
+                      }}
+                      type="file"
+                    />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -480,7 +509,7 @@ export function RecordCompanionPanel() {
 // "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
 // Notebooks page is retired. It opens a picker rather than a submenu because
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
-function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; onOpenLibrary: () => void }) {
+function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -493,13 +522,13 @@ function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; 
           <Codicon name="file-media" size="0.875rem" />
           Files
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onChooseFolder}>
+          <Codicon name="folder" size="0.875rem" />
+          Folder
+        </DropdownMenuItem>
         <DropdownMenuItem data-testid="composer-add-library" onSelect={onOpenLibrary}>
           <Codicon name="book" size="0.875rem" />
           Library
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Codicon name="search" size="0.875rem" />
-          Deep research
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

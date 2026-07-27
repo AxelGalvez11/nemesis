@@ -80,7 +80,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
     cta: "Upgrade to Agent Pro",
     recommended: true,
     features: [
-      "Deep research with multi-step cited reports",
+      "Web-grounded answers with source citations",
       "Higher desktop-agent automation limits",
       "90 live copilot minutes each month",
     ],

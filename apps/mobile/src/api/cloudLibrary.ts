@@ -187,6 +187,39 @@ export async function fetchLibrary(uid: string): Promise<CloudLibrarySnapshot> {
   return { folders, notes };
 }
 
+/**
+ * Listen for cross-device Library writes. The web app and iOS both write
+ * `readable_library_documents`; this is the small bridge that makes an edit on
+ * either surface appear on the other without waiting for a tab change or pull
+ * to refresh. The callback intentionally re-fetches through the normal RLS
+ * query instead of trusting a Realtime payload, so the cache and the visible
+ * snapshot always receive the same validated shape.
+ */
+export function subscribeLibraryChanges(uid: string, onChange: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const channel = supabase
+    .channel(`mobile-library-${uid}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        filter: `user_id=eq.${uid}`,
+        schema: "public",
+        table: "readable_library_documents",
+      },
+      () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(onChange, 180);
+      },
+    )
+    .subscribe();
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    void supabase.removeChannel(channel);
+  };
+}
+
 /** Fetch one note's latest content by id or path. Throws on a network failure so
  *  the caller can fall back to the cache; returns null when the row genuinely
  *  isn't there (deleted, wrong id, or a folder/other kind). On success, upserts
@@ -256,6 +289,86 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
     return note;
   }
   throw new Error("Couldn't find an available name for a new note.");
+}
+
+/**
+ * Create an empty folder (owner 2026-07-24: "useres cannot create new note or
+ * folder from the library sidebar" — before this the phone had rename, move and
+ * delete for folders, but no way to make one).
+ *
+ * A folder is its own row (`kind: "folder"`) rather than something implied by a
+ * note's path, which is the only way an EMPTY one can exist at all. The phone's
+ * tree used to be built purely by splitting note paths, so such a row was
+ * invisible until something was filed into it — `buildLibraryRows` and
+ * `folderNoteCounts` now take the explicit folder list for exactly this reason.
+ *
+ * Ported from the web store's createFolder so both clients agree on the path
+ * shape: normalise, refuse a duplicate outright rather than silently making a
+ * second one, and step a "2"/"3" suffix if the unique constraint objects anyway
+ * (which also covers a soft-deleted row still holding the path).
+ */
+export async function createFolder(uid: string, snapshot: CloudLibrarySnapshot, rawPath: string): Promise<string> {
+  const wanted = normalizeLibraryFolder(rawPath);
+  if (!wanted) throw new Error("Enter a folder name.");
+  // "" as the exclude, because nothing is being moved out of the way here.
+  if (folderExists(snapshot, wanted, "")) throw new Error("A folder with that name already exists there.");
+
+  const now = new Date().toISOString();
+  const parent = folderOf(wanted);
+  const leaf = wanted.slice(parent ? parent.length + 1 : 0);
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const title = suffix === 1 ? leaf : `${leaf} ${suffix}`;
+    const candidate = parent ? `${parent}/${title}` : title;
+    const { error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path: candidate, kind: "folder", title, content: null, deleted: false, updated_at: now });
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const cache = await readDiskCache(uid);
+    // Offline copy too, or the folder vanishes on the next cache-first open.
+    await writeDiskCache(uid, { ...cache, folders: [...cache.folders, candidate] });
+    return candidate;
+  }
+  throw new Error("Couldn't find an available name for a new folder.");
+}
+
+/**
+ * Create a note that already HAS a title and a body — what "save this to my
+ * library" needs (owner 2026-07-24: a photographed page becomes a note).
+ *
+ * Separate from createNote above rather than an options bag on it, because the
+ * two answer different questions: createNote opens an empty page for the
+ * student to write on and deliberately ships EMPTY content, while this one
+ * files something that already exists. Both share the suffix retry, which is
+ * the part that actually matters — two photos of the same slide would otherwise
+ * collide on `Beta blockers.md` and the second would be lost.
+ */
+export async function createNoteWithContent(
+  uid: string,
+  title: string,
+  content: string,
+  folder = "",
+): Promise<CloudLibraryNote> {
+  const now = new Date().toISOString();
+  const base = safeLibraryTitle(title);
+  const where = normalizeLibraryFolder(folder);
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const name = suffix === 1 ? base : `${base} ${suffix}`;
+    const path = where ? `${where}/${name}.md` : `${name}.md`;
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path, kind: "note", title: name, content, deleted: false, updated_at: now })
+      .select("id,path,kind,title,content,created_at,updated_at")
+      .single();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    if (!note) throw new Error("The note was saved but came back unreadable.");
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for that note.");
 }
 
 /** Save one note's edited content — the phone's first library WRITE (owner

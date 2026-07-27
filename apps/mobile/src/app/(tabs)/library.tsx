@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import Reanimated, { LinearTransition } from "react-native-reanimated";
@@ -20,6 +19,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
+import { SlideUpSheet } from "@/components/StudySheet";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
@@ -29,6 +29,8 @@ import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
 import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
+  createFolder,
+  createNote,
   deleteFolder,
   deleteNote,
   fetchLibrary,
@@ -37,10 +39,13 @@ import {
   moveNote,
   renameFolder,
   renameNote,
+  subscribeLibraryChanges,
   type CloudLibraryNote,
   type CloudLibrarySnapshot,
 } from "@/api/cloudLibrary";
+import { searchLibrarySemantic } from "@/api/librarySearch";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
+import { findNotes, findSummary } from "@/lib/library-find";
 import {
   allFolderPaths,
   folderOf,
@@ -56,9 +61,9 @@ import { control, radius, space, type } from "@/theme/tokens";
 // Library (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md §7):
 // the same notes the web app's Library reads and writes, on your phone. Shows the
 // last-cached list instantly (offline included), then refreshes from the cloud
-// behind that — on open and whenever this screen regains focus. No editor anywhere
-// on this screen by design (single-writer architecture, for now): the web app is
-// the only place a note gets created or changed; this phone shows a read-only copy.
+// behind that — on open, when this screen regains focus, and in response to
+// Realtime changes. Notes and folders can be created, renamed, moved, edited, and
+// removed here against the same cloud rows used by the web app.
 // Only kind:"note" rows render here — folder rows only inform the folder tree.
 //
 // Folders nest arbitrarily deep (mirrors the web app's own folder structure) and
@@ -80,10 +85,8 @@ import { control, radius, space, type } from "@/theme/tokens";
 // which disambiguates same-named notes. Folder headers show a recursive item
 // count.
 //
-// Read-only controls (this screen owns the UI, never the data): a Search that filters
-// the list, a Sort half-sheet that reorders it, and New note / New folder buttons that
-// only ever explain "create it on the web app" — a phone write isn't wired up yet, so
-// those actions are deliberately inert until phone editing ships.
+// Controls include Search, a draggable full-width Sort sheet, and native creation,
+// move, rename, selection, and soft-delete actions shared across iOS and web.
 
 // A–Z / Z–A by title; Modified by the row's updated_at; Created by its created_at —
 // the cloud table carries both, so every ordering the owner specced has honest data
@@ -99,8 +102,6 @@ const SORT_OPTIONS = [
   { key: "created-desc", label: "Created (new → old)" },
 ] as const;
 
-const NEW_NOTE_HINT = "New notes are created on the web app — this phone shows a read-only copy.";
-const NEW_FOLDER_HINT = "New folders are created on the web app — this phone shows a read-only copy.";
 
 function sortLabel(key: SortKey): string {
   switch (key) {
@@ -168,6 +169,11 @@ export default function LibraryScreen() {
   // hook order never changes between the loading / signed-out / signed-in renders.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Paths the semantic index returned for the CURRENT query, strongest first.
+  // Empty is the normal state: before the debounce fires, while the request is in
+  // flight, and whenever the lookup finds nothing or cannot be reached. The name
+  // filter never waits on any of that.
+  const [semanticPaths, setSemanticPaths] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("az");
   const [sortOpen, setSortOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -180,7 +186,7 @@ export default function LibraryScreen() {
   // "actions" is gone — a held row now opens a MiniMenu at the touch point
   // (owner 2026-07-23) instead of a bottom sheet. rowSheet only tracks the two
   // follow-on sheets the menu hands off to.
-  const [rowSheet, setRowSheet] = useState<"rename" | "move" | null>(null);
+  const [rowSheet, setRowSheet] = useState<"rename" | "move" | "new-folder" | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   // The held-row MiniMenu: where it opens, anchored to the finger. Null = closed.
@@ -249,6 +255,35 @@ export default function LibraryScreen() {
     });
   }, []);
 
+  // Ask the semantic index what this query is ABOUT, a beat after typing stops.
+  // Debounced so a six-letter word is one lookup rather than six, and guarded by
+  // `alive` so a slow answer to an abandoned query can never overwrite the rows
+  // for the query the reader is actually looking at.
+  //
+  // Two characters is the floor: below that every note in a library is a
+  // plausible neighbour and the results are noise, not answers.
+  useEffect(() => {
+    const needle = query.trim();
+    if (needle.length < 2) {
+      setSemanticPaths([]);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      void searchLibrarySemantic(needle).then((hits) => {
+        if (!alive) return;
+        // One entry per note, keeping the strongest chunk's position — several
+        // chunks of one lecture are still one row in a list of notes.
+        const seen = new Set<string>();
+        setSemanticPaths(hits.flatMap((hit) => (seen.has(hit.path) ? [] : (seen.add(hit.path), [hit.path]))));
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
   // Toggle ONE folder by its full path — never mutates the previous Set, always
   // builds a fresh one, so a folder's collapsed-ness is independent of its
   // siblings and its ancestors' own toggles.
@@ -262,7 +297,7 @@ export default function LibraryScreen() {
       // real Set from the SAME fully-collapsed baseline the render below is
       // already showing — only the tapped folder then flips, nothing else jumps.
       setCollapsedOverride((prev) => {
-        const base = prev ?? new Set(folderNoteCounts(snapshot.notes.map((n) => n.path)).keys());
+        const base = prev ?? new Set(folderNoteCounts(snapshot.notes.map((n) => n.path), snapshot.folders).keys());
         const next = new Set(base);
         if (next.has(path)) next.delete(path);
         else next.add(path);
@@ -327,6 +362,41 @@ export default function LibraryScreen() {
       }
     },
     [userId, refresh, closeRowSheets, flashHint],
+  );
+
+  /** Make a new note and open it (owner 2026-07-24: "useres cannot create new
+   *  note or folder from the library sidebar"). The Library's "…" menu carried
+   *  both rows already, but each one only printed "new notes are created on the
+   *  web app" — which had stopped being true: createNote is a real, working
+   *  insert, wired up to the note screen's "+" and nowhere else.
+   *
+   *  The ref is a SYNCHRONOUS lock. State would not do: two taps in the same
+   *  frame both read the old value and you get two "Untitled note" rows. */
+  const creatingNote = useRef(false);
+  const onNewNote = useCallback(async () => {
+    if (!userId || creatingNote.current) return;
+    creatingNote.current = true;
+    try {
+      const note = await createNote(userId);
+      await refresh(userId);
+      router.push({ params: { id: note.id }, pathname: "/note" });
+    } catch (e) {
+      flashHint((e as Error).message);
+    } finally {
+      creatingNote.current = false;
+    }
+  }, [userId, refresh, flashHint]);
+
+  /** Make an empty folder at the library root. Root rather than "the folder
+   *  you're looking at" because this screen has no notion of a current folder —
+   *  the tree shows every level at once — so there is nothing to infer from.
+   *  Putting it somewhere afterwards is a drag or a Move, same as any other row. */
+  const onNewFolderConfirm = useCallback(
+    (name: string) => {
+      if (!userId) return;
+      void applyRowChange(() => createFolder(userId, snapshot, name), { inline: true });
+    },
+    [userId, snapshot, applyRowChange],
   );
 
   // Delete confirms through the OS alert rather than another in-app sheet: it's
@@ -535,8 +605,12 @@ export default function LibraryScreen() {
         setDataReady(true);
         void refresh(userId);
       })();
+      const unsubscribe = subscribeLibraryChanges(userId, () => {
+        if (alive) void refresh(userId);
+      });
       return () => {
         alive = false;
+        unsubscribe();
       };
     }, [userId, refresh]),
   );
@@ -572,31 +646,41 @@ export default function LibraryScreen() {
   // Recursive per-folder note counts — also doubles as "every folder path known
   // right now," which is the fully-collapsed default whenever the reader hasn't
   // manually toggled anything yet this mount (see collapsedOverride above).
-  const folderCounts = folderNoteCounts(notes.map((n) => n.path));
+  // snapshot.folders is passed too, or a folder you just made — which by
+  // definition holds no notes yet — has no key here and is therefore both
+  // uncounted and, since these keys are the start-collapsed seed, missing from
+  // the tree entirely (owner 2026-07-24).
+  const folderCounts = folderNoteCounts(notes.map((n) => n.path), snapshot.folders);
   const collapsed = collapsedOverride ?? new Set(folderCounts.keys());
 
   const trimmed = query.trim();
   const searching = trimmed.length > 0;
-  const needle = trimmed.toLowerCase();
   // Flat, globally-sorted list ONLY while searching. Picking a sort used to
   // flatten the tree too — which read as "my folders disappeared" (owner bug
   // report 2026-07-21) — so now every sort order reorders the folder tree in
   // place instead: notes within their folder, folders among their siblings.
   const flat = searching;
-  const filtered = searching
-    ? notes.filter((n) => n.title.toLowerCase().includes(needle) || n.path.toLowerCase().includes(needle))
-    : notes;
+  // Name matches now, meaning matches when the lookup lands. findNotes appends the
+  // second group without disturbing the first, so the list does not jump under the
+  // reader's finger when the answer arrives a few hundred milliseconds later.
+  const found = findNotes(notes, trimmed, semanticPaths);
+  const filtered = found.notes;
   const rows: LibraryRow[] = flat
-    ? sortNotes(filtered, sort).map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
+    ? // Only the NAME matches are re-sorted. The meaning matches arrive ranked by
+      // how well they answer the query, and an A–Z pass over them would throw away
+      // the one thing that ordering knows.
+      [...sortNotes(filtered.slice(0, filtered.length - found.byMeaning), sort), ...filtered.slice(filtered.length - found.byMeaning)]
+        .map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
     : buildLibraryRows(
         notes.map((d) => ({ path: d.path, title: d.title, updatedAt: d.updatedAt, createdAt: d.createdAt })),
         collapsed,
         sort,
+        snapshot.folders,
       );
 
   // Context line above the list: match count while searching, else which
   // non-default sort is on (nothing for the everyday A–Z tree).
-  const listHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sort !== "az" ? sortLabel(sort) : null;
+  const listHeader = searching ? findSummary(rows.length, found.byMeaning) : sort !== "az" ? sortLabel(sort) : null;
 
   // Row-action derivations. Every folder in the tree is a move destination; for
   // a FOLDER being moved, its own subtree is struck out — dropping a folder
@@ -644,7 +728,7 @@ export default function LibraryScreen() {
               value={query}
               onChangeText={setQuery}
               placeholder="Search notes"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoFocus
               autoCorrect={false}
               autoCapitalize="none"
@@ -806,7 +890,7 @@ export default function LibraryScreen() {
               <>
                 <EmptyBlock
                   title="Nothing here yet"
-                  body="Your library lives in your account. Create notes on the web app and they appear here."
+                  body="Create a note or folder here. Everything syncs with your Nemesis library on the web."
                 />
                 <View style={styles.emptyRefreshBtn}>
                   <MissionButton
@@ -833,8 +917,8 @@ export default function LibraryScreen() {
         onClose={() => setActionsOpen(false)}
         searchActive={searchOpen}
         onSearch={toggleSearch}
-        onNewNote={() => flashHint(NEW_NOTE_HINT)}
-        onNewFolder={() => flashHint(NEW_FOLDER_HINT)}
+        onNewNote={() => void onNewNote()}
+        onNewFolder={() => setRowSheet("new-folder")}
         onSort={() => setSortOpen(true)}
         onSelect={() => enterSelectMode()}
         top={contentTop}
@@ -871,14 +955,33 @@ export default function LibraryScreen() {
         onClose={closeRowSheets}
         testID="library-rename-prompt"
       />
+      <TextPromptSheet
+        visible={rowSheet === "new-folder"}
+        title="New folder"
+        placeholder="Folder name"
+        initialValue=""
+        confirmLabel="Create"
+        busy={rowBusy}
+        // inline, so a name that's already taken can be corrected in place
+        // rather than closing the sheet and losing what was typed.
+        error={rowError}
+        onConfirm={onNewFolderConfirm}
+        onClose={closeRowSheets}
+        testID="library-new-folder-prompt"
+      />
       {/* Drop here to pull something out of every folder. The key's suffix is
           "" — the empty destination moveNote/moveFolder already read as the
           library root — so it needs no special case in onRowDrop. */}
       <RootDropZone
-        ref={rowDrag.registerRow("root:", true)}
+        // `true` twice: droppable, and a FALLBACK target. The zone spans the
+        // whole list now, so it contains every folder row — without the
+        // fallback flag a first-match hit test would send nearly every drop to
+        // the top level. See useRowDrag's RegisteredRow.fallback.
+        ref={rowDrag.registerRow("root:", true, true)}
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
         top={contentTop}
+        bottom={contentBottom}
       />
 
       {/* Rides the finger during a drag; the row itself stays put and dims. */}
@@ -924,19 +1027,11 @@ export default function LibraryScreen() {
               folder and a note inside it is one thing to act on, not two, because
               the folder carries the note. */}
           <Text style={styles.selectCount}>{selectedItems.length} selected</Text>
+          {/* Delete, Move, Cancel — the owner's order (2026-07-24), and the same
+              one Study uses. Cancel sits last because it's the way out, not the
+              first thing to reach for; it is also the only button with no
+              `disabled`, since backing out has to work with nothing ticked. */}
           <View style={styles.selectActions}>
-            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
-              <Text style={styles.selectBtnText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
-              disabled={selectedItems.length === 0 || rowBusy}
-              hitSlop={6}
-              style={styles.selectBtn}
-              testID="library-select-move-btn"
-            >
-              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
-            </Pressable>
             <Pressable
               onPress={deleteSelected}
               disabled={selectedItems.length === 0 || rowBusy}
@@ -947,6 +1042,18 @@ export default function LibraryScreen() {
               <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedItems.length === 0 && styles.selectBtnDisabled]}>
                 Delete
               </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => selectedItems.length > 0 && setSelectMoveOpen(true)}
+              disabled={selectedItems.length === 0 || rowBusy}
+              hitSlop={6}
+              style={styles.selectBtn}
+              testID="library-select-move-btn"
+            >
+              <Text style={[styles.selectBtnText, selectedItems.length === 0 && styles.selectBtnDisabled]}>Move to…</Text>
+            </Pressable>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="library-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
             </Pressable>
           </View>
         </View>
@@ -1085,9 +1192,7 @@ function LibraryActionsMenu({
   );
 }
 
-/** The half-height SORT sheet. Always mounted (like SlideUpSheet / StudyModeMenu) so
- * both the open and close animations play; a transparent tap-catcher closes it and the
- * sheet's own glass supplies the blur (owner: no whole-screen blur behind popups). */
+/** Sorting uses the same full-width, drag-to-expand sheet as the rest of iOS. */
 function SortSheet({
   visible,
   current,
@@ -1100,58 +1205,27 @@ function SortSheet({
   onClose: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
-  const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const progress = useRef(new Animated.Value(0)).current;
-  const sheetH = Math.round(height * 0.5);
-
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: visible ? 1 : 0,
-      duration: visible ? 240 : 180,
-      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [visible, progress]);
-
-  // Slide off the FULL window height so the sheet is always fully hidden when
-  // closed, whatever its content height ends up being.
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="library-sort-sheet">
-      {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
-          The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sort" />
-      <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
-        {/* At LEAST half the screen tall (the "half sheet"), but grows to fit its rows
-            on short devices so the last option never clips. */}
-        <GlassSurface style={[styles.sheet, { minHeight: sheetH }]} fallbackColor={c.bg2}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Sort</Text>
-          <View style={{ paddingBottom: insets.bottom + space(4) }}>
-            {SORT_OPTIONS.map((opt) => {
-              const optKey = opt.key as SortKey;
-              const isActive = current === optKey;
-              return (
-                <Pressable
-                  key={opt.key}
-                  testID={`sort-option-${opt.key}`}
-                  onPress={() => onSelect(optKey)}
-                  style={({ pressed }) => [styles.sortRow, pressed && styles.rowPressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text style={[styles.sortLabel, isActive && styles.sortLabelActive]}>{opt.label}</Text>
-                  {isActive ? <Text style={styles.sortCheck}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
-          </View>
-        </GlassSurface>
-      </Animated.View>
-    </View>
+    <SlideUpSheet visible={visible} onClose={onClose} title="Sort" testID="library-sort-sheet">
+      {SORT_OPTIONS.map((opt) => {
+        const optKey = opt.key as SortKey;
+        const isActive = current === optKey;
+        return (
+          <Pressable
+            key={opt.key}
+            testID={`sort-option-${opt.key}`}
+            onPress={() => onSelect(optKey)}
+            style={({ pressed }) => [styles.sortRow, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
+          >
+            <Text style={[styles.sortLabel, isActive && styles.sortLabelActive]}>{opt.label}</Text>
+            {isActive ? <Text style={styles.sortCheck}>✓</Text> : null}
+          </Pressable>
+        );
+      })}
+    </SlideUpSheet>
   );
 }
 

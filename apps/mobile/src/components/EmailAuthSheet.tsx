@@ -1,0 +1,194 @@
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Link, router } from "expo-router";
+import { SlideUpSheet } from "./StudySheet";
+import { useAuth } from "@/auth/AuthProvider";
+import { AGE_TOS_ACK } from "@/lib/legal";
+import { placeholderColor, useCommon } from "@/theme/common";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { space, type } from "@/theme/tokens";
+
+// Email + password sign-in and account creation, behind the "Log in or sign up"
+// button on the sign-in screen.
+//
+// MOVED HERE WHOLESALE from app/sign-in.tsx when that screen was rebuilt around
+// Continue with Apple / Google. The move was deliberately a move and not a
+// rewrite, because this form carries things that are not decoration: the 18+ and
+// Terms attestation that gates account creation, and the links to both
+// documents. The web app requires that attestation before it will create an
+// account; a phone that quietly stopped asking would be a compliance gap, not a
+// tidier screen. Same for the confirm-your-email notice — Supabase may not
+// return a session on sign-up, and without that line the student taps "Create
+// account", sees nothing happen, and taps it again.
+//
+// A sheet rather than a second route: sign-in has no navigation chrome to push
+// against, and SlideUpSheet already rides the keyboard, which a plain overlay
+// with two text fields in it does not.
+
+type Mode = "signin" | "signup";
+
+export function EmailAuthSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { signInEmail, signUpEmail } = useAuth();
+  const { colors: c } = useTheme();
+  const common = useCommon();
+  const styles = useThemedStyles(createStyles);
+  const [mode, setMode] = useState<Mode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [acked, setAcked] = useState(false);
+
+  // A password must never survive the sheet closing, and neither should a stale
+  // error from last time.
+  useEffect(() => {
+    if (visible) return;
+    setPassword("");
+    setError(null);
+    setNotice(null);
+    setBusy(false);
+  }, [visible]);
+
+  const isSignup = mode === "signup";
+  // Sign-in doesn't force a fresh attestation (they agreed at signup); creating an
+  // account does.
+  const canSubmit = !busy && email.trim().length > 3 && password.length > 0 && (!isSignup || acked);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const run = isSignup ? signUpEmail : signInEmail;
+    const result = await run(email.trim(), password);
+    setBusy(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    if (isSignup) {
+      // If email confirmation is on, there's no session yet — guide them. If it's
+      // off, onAuthStateChange has already signed them in and the guard will move
+      // them along; the notice is harmless in that brief window.
+      setNotice("Account created. Check your email to confirm, then sign in.");
+      setMode("signin");
+      setPassword("");
+      return;
+    }
+    onClose();
+    router.replace("/");
+  };
+
+  const switchMode = () => {
+    setMode((m) => (m === "signin" ? "signup" : "signin"));
+    setError(null);
+    setNotice(null);
+  };
+
+  return (
+    <SlideUpSheet
+      visible={visible}
+      onClose={onClose}
+      title={isSignup ? "Create your account" : "Log in"}
+      fullScreen
+      testID="email-auth-sheet"
+    >
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+        <TextInput
+          testID="email"
+          style={common.input}
+          placeholder="Email"
+          placeholderTextColor={placeholderColor(c)}
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <TextInput
+          testID="password"
+          style={common.input}
+          placeholder={isSignup ? "Create a password" : "Password"}
+          placeholderTextColor={placeholderColor(c)}
+          secureTextEntry
+          autoComplete={isSignup ? "new-password" : "current-password"}
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        {error ? (
+          <Text testID="signin-error" style={common.err}>{error}</Text>
+        ) : notice ? (
+          <Text testID="signin-notice" style={styles.notice}>{notice}</Text>
+        ) : null}
+
+        {isSignup ? (
+          <>
+            <Pressable
+              testID="age-ack"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acked }}
+              style={styles.ackRow}
+              onPress={() => setAcked((a) => !a)}
+            >
+              <View style={[styles.box, acked && styles.boxOn]}>
+                {acked ? <Text style={styles.tick}>✓</Text> : null}
+              </View>
+              <Text style={styles.ackText}>{AGE_TOS_ACK}</Text>
+            </Pressable>
+            <View style={styles.links}>
+              <Link testID="link-terms" href="/profile/legal?doc=terms" style={common.link}>Terms</Link>
+              <Text style={styles.dot}>·</Text>
+              <Link testID="link-privacy" href="/profile/legal?doc=privacy" style={common.link}>Privacy Policy</Link>
+            </View>
+          </>
+        ) : null}
+
+        <Pressable
+          testID="signin-submit"
+          style={[common.btn, styles.wide, !canSubmit && styles.disabled]}
+          disabled={!canSubmit}
+          onPress={submit}
+        >
+          <Text style={common.btnText}>
+            {busy ? (isSignup ? "Creating…" : "Signing in…") : isSignup ? "Create account" : "Sign in"}
+          </Text>
+        </Pressable>
+
+        <Pressable testID="switch-mode" onPress={switchMode} style={styles.switchRow} hitSlop={8}>
+          <Text style={styles.switchText}>
+            {isSignup ? "Already have an account? " : "New here? "}
+            <Text style={styles.switchLink}>{isSignup ? "Sign in" : "Create account"}</Text>
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </SlideUpSheet>
+  );
+}
+
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    body: { alignItems: "center", gap: space(2), paddingBottom: space(6), paddingTop: space(2) },
+    notice: { fontSize: type.micro.fontSize, lineHeight: 18, color: c.good, textAlign: "center", maxWidth: 320 },
+    ackRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), marginTop: space(2), maxWidth: 320 },
+    box: {
+      width: 22,
+      height: 22,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: c.line2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    boxOn: { backgroundColor: c.accent, borderColor: c.accent },
+    tick: { color: c.onAccent, fontSize: type.small.fontSize, fontWeight: "700", lineHeight: 16 },
+    ackText: { flex: 1, fontSize: type.micro.fontSize, lineHeight: 18, color: c.text2 },
+    links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
+    dot: { color: c.text3 },
+    wide: { alignSelf: "stretch", maxWidth: 360, alignItems: "center", marginTop: space(2) },
+    disabled: { opacity: 0.45 },
+    switchRow: { marginTop: space(3) },
+    switchText: { fontSize: type.micro.fontSize, color: c.text3, textAlign: "center" },
+    switchLink: { color: c.accent, fontWeight: "600" },
+  });

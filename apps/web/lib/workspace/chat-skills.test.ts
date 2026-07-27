@@ -79,9 +79,17 @@ test("no skill is big enough to be silently dropped when paired with another", (
 
 test("test requests get the test-writing skill", () => {
   assert.deepEqual(idsFor("make me a practice test on the renal unit"), ["test-craft"]);
-  assert.deepEqual(idsFor("quiz me on antibiotics"), ["test-craft"]);
   assert.deepEqual(idsFor("write some practice questions for my exam"), ["test-craft"]);
   assert.deepEqual(idsFor("can I get board-style mcqs on this"), ["test-craft"]);
+  // "quiz me" asks for two different things at once — questions worth answering
+  // AND being asked them one at a time — so it takes both slots. Updated
+  // 2026-07-24 when socratic-tutoring landed; it used to be test-craft alone.
+  assert.deepEqual(idsFor("quiz me on antibiotics"), ["test-craft", "socratic-tutoring"]);
+});
+
+test("slide and note deliverables select persistence skills", () => {
+  assert.deepEqual(idsFor("create a slide deck on mitosis"), ["slides-builder"]);
+  assert.deepEqual(idsFor("make me lecture notes for organic chemistry"), ["notes-builder"]);
 });
 
 test("teaching requests get the teaching skill", () => {
@@ -125,4 +133,67 @@ test("skills join into one message in catalog order", () => {
   const chosen = selectChatSkills("make flashcards and calculate the dose");
   const message = buildSkillMessage(chosen);
   assert.ok(message.indexOf("writing flashcards") < message.indexOf("quantitative work"));
+});
+
+// ---------------------------------------------------------------------------
+// Socratic tutoring (owner 2026-07-24: teach better by "asking one question at a
+// time and not showing the answer").
+// ---------------------------------------------------------------------------
+
+test("an ask to be quizzed or tutored picks up the tutoring protocol", () => {
+  for (const message of [
+    "quiz me on beta blockers",
+    "test me on the renal chapter",
+    "tutor me through this",
+    "ask me questions about the Krebs cycle",
+    "help me study pharmacokinetics",
+    "check my understanding of first-pass metabolism",
+    "drill me on antibiotic classes",
+    "one question at a time please",
+  ]) {
+    assert.ok(idsFor(message).includes("socratic-tutoring"), `no tutoring skill for: ${message}`);
+  }
+});
+
+// The whole reason `excludes` exists. "Explain it clearly" and "do not reveal the
+// answer" in one prompt is the same as having neither rule, so the tutoring
+// packet bars the teaching one outright rather than trusting the model to
+// reconcile them.
+test("tutoring and teaching never ride the same turn", () => {
+  const ids = idsFor("tutor me — explain the difference between these two drugs");
+  assert.ok(ids.includes("socratic-tutoring"));
+  assert.ok(!ids.includes("teaching"), "contradictory packets both fired");
+});
+
+// ...and the exclusion is one-directional: a plain request to explain still gets
+// an explanation. A model that answered "explain how ACE inhibitors work" with a
+// question instead of an answer would be useless.
+test("asking for an explanation still gets the explaining skill", () => {
+  const ids = idsFor("explain how ACE inhibitors work");
+  assert.ok(ids.includes("teaching"));
+  assert.ok(!ids.includes("socratic-tutoring"));
+});
+
+test("quiz me gets BOTH how to write the questions and how to deliver them", () => {
+  const ids = idsFor("quiz me on beta blockers");
+  assert.ok(ids.includes("test-craft"), "no item-writing rules");
+  assert.ok(ids.includes("socratic-tutoring"), "no delivery protocol");
+});
+
+// The landmine from the skills batch: selectChatSkills SKIPS an oversized packet
+// with a silent `continue`, so a skill written past its share simply vanishes
+// whenever it pairs with another — which reads as the model ignoring it.
+test("every packet fits its share of the budget", () => {
+  for (const skill of CHAT_SKILLS) {
+    assert.ok(
+      skill.instructions.length <= SKILL_CHAR_SHARE,
+      `${skill.id} is ${skill.instructions.length} chars, over the ${SKILL_CHAR_SHARE} share`,
+    );
+  }
+});
+
+test("an exclusion cannot bar a skill that was chosen earlier", () => {
+  // Order in the catalog is what decides; only the earlier skill excludes.
+  const ids = CHAT_SKILLS.map((skill) => skill.id);
+  assert.ok(ids.indexOf("socratic-tutoring") < ids.indexOf("teaching"));
 });

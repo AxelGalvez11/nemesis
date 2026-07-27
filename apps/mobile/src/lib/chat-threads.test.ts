@@ -366,9 +366,12 @@ Deno.test("outputsFromMeta: validates kind against the SessionOutput set, tolera
   assertEquals(mixed.map((o) => o.id), ["keep-1"]);
   assertEquals(mixed[0].kind, "flashcards");
   // Every documented kind round-trips.
-  for (const kind of ["flashcards", "slides", "test", "report", "recording", "other"] as const) {
-    const [output] = outputsFromMeta({ outputs: [{ id: `id-${kind}`, kind, title: `A ${kind}` }] });
+  for (const kind of ["flashcards", "slides", "test", "mindmap", "report", "recording", "other"] as const) {
+    const [output] = outputsFromMeta({
+      outputs: [{ id: `id-${kind}`, kind, route: `/artifact/${kind}`, title: `A ${kind}` }],
+    });
     assertEquals(output.kind, kind);
+    assertEquals(output.route, `/artifact/${kind}`);
   }
 });
 

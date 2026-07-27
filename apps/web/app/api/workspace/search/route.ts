@@ -15,7 +15,9 @@ export async function POST(request: NextRequest) {
     const upstream = await fetch(SEARCH_URL, {
       body,
       cache: "no-store",
-      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      // X-Nemesis-Client tags the spend as the web app's (this proxy only ever
+      // serves the browser). Without it the valve falls back to the device-key label.
+      headers: { Authorization: authorization, "Content-Type": "application/json", "X-Nemesis-Client": "web" },
       method: "POST",
       signal: AbortSignal.timeout(12_000),
     });

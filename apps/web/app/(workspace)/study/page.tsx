@@ -17,7 +17,16 @@ export default function StudyPage() {
   const [reviewSettings, setReviewSettings] = useState<StudyReviewSettings>({ flipAnimation: true, flashcardOutline: false });
   const searchParams = useSearchParams();
   const sourcePath = searchParams.get("source");
+  const requestedSection = searchParams.get("section");
   const { artifacts, cards, reviews } = useCloudStudy();
+
+  useEffect(() => {
+    if (requestedSection === "cards" || requestedSection === "tests" || requestedSection === "stats") {
+      setActiveTab(requestedSection);
+    } else if (requestedSection === "mindmaps" || requestedSection === "maps") {
+      setActiveTab("maps");
+    }
+  }, [requestedSection]);
 
   useEffect(() => {
     try {
@@ -34,7 +43,7 @@ export default function StudyPage() {
       {activeTab === "cards" && <CardsTab reviewSettings={reviewSettings} sourcePath={sourcePath} />}
       {activeTab === "tests" && <GroupedStudyTab kind="tests" />}
       {activeTab === "maps" && <GroupedStudyTab kind="mindmaps" />}
-      {activeTab === "stats" && <StatsTab reviews={reviews} />}
+      {activeTab === "stats" && <StatsTab onStartReview={() => setActiveTab("cards")} reviews={reviews} />}
     </div>
   );
 }

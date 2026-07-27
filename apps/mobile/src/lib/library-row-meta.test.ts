@@ -37,3 +37,24 @@ Deno.test("folderNoteCounts: recursive — a parent folder counts everything nes
 Deno.test("folderNoteCounts: empty input returns an empty map", () => {
   assertEquals(folderNoteCounts([]).size, 0);
 });
+
+// An explicitly-created folder has no notes in it yet. It still has to appear —
+// the keys of this map are also "every folder that exists", which is what the
+// screen seeds as collapsed (owner 2026-07-24: creating a folder that then
+// doesn't show up reads as the feature being broken).
+Deno.test("folderNoteCounts: an empty folder is present, at zero", () => {
+  const counts = folderNoteCounts([], ["PHCY 1205/Unit 3"]);
+  assertEquals(counts.get("PHCY 1205"), 0);
+  assertEquals(counts.get("PHCY 1205/Unit 3"), 0);
+  assertEquals(counts.size, 2, "every ancestor exists too, or the tree has a hole");
+});
+
+Deno.test("folderNoteCounts: seeding a folder never subtracts from its real count", () => {
+  const counts = folderNoteCounts(
+    ["PHCY 1205/Unit 1/Cardio.md", "PHCY 1205/Unit 1/Renal.md"],
+    ["PHCY 1205/Unit 1", "PHCY 1205/Unit 9"],
+  );
+  assertEquals(counts.get("PHCY 1205/Unit 1"), 2);
+  assertEquals(counts.get("PHCY 1205/Unit 9"), 0);
+  assertEquals(counts.get("PHCY 1205"), 2);
+});

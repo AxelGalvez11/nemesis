@@ -6,6 +6,7 @@
 // there is no client-side token accounting here — just context-window hygiene:
 // send a bounded slice of the transcript, never the whole history.
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
+import { academicSkillInstruction } from "./academic-skills.ts";
 
 export type ChatRole = "assistant" | "user";
 
@@ -18,14 +19,16 @@ export interface ChatSource {
 /** A deliverable/artifact attached to one turn or the whole thread — SAME shape
  *  as web's SessionOutput (apps/web/lib/workspace/sessions-store.ts), persisted
  *  into `chat_messages.meta.outputs` / `chat_threads.meta.outputs`. The phone
- *  Chat surface never CREATES one of these (no recording composer, no tool
- *  executor — see lib/chat-threads.ts's outputsFromMeta doc) — it only ever
- *  displays artifacts web already synced down through the shared cloud tables. */
+ *  Chat surface creates these for workspace tools and also displays artifacts
+ *  synced down through the shared cloud tables. */
 export interface ChatOutput {
   id: string;
-  kind: "flashcards" | "slides" | "test" | "report" | "recording" | "other";
+  kind: "flashcards" | "slides" | "test" | "mindmap" | "report" | "recording" | "other";
   title: string;
   url?: string;
+  /** An in-app destination for a saved artifact. Kept separate from `url` so
+   *  an Expo route is never handed to the OS as though it were a web link. */
+  route?: string;
   transcript?: string;
   notes?: string;
   durationSeconds?: number;
@@ -52,27 +55,74 @@ export interface ChatMsg {
   /** Deliverables recorded against this turn (persisted into the cloud row's
    *  `meta.outputs`) — see ChatOutput's doc. */
   outputs?: ChatOutput[];
+  /** What the model worked through before answering, kept so it can be reopened
+   *  after the fact (persisted into the cloud row's `meta.thinking`).
+   *
+   *  This is the model's OWN reasoning as it streamed — never a summary and never
+   *  written by us. Turns with thinking switched off (Instant mode) simply have
+   *  no field, which is the normal quiet case rather than a failure.
+   *
+   *  It used to be discarded the instant the first answer word arrived, so a
+   *  student who looked away had no way to see why an answer said what it said. */
+  thinking?: MessageThinking;
 }
 
+export interface MessageThinking {
+  /** Wall-clock milliseconds from question to first answer text. */
+  ms: number;
+  /** The reasoning text itself. */
+  text: string;
+}
+
+export interface WireToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+/** One message on the WIRE — not one message in the thread.
+ *
+ *  The `tool` role and `tool_calls` exist only inside a single turn's agent loop
+ *  (api/chat.ts): the assistant asks for a tool, we answer with a `tool` message,
+ *  and the model then writes its real reply. NONE of that is ever persisted. A
+ *  `ChatMsg` (above) is what the student sees and what syncs to `chat_messages`,
+ *  and it has no tool roles at all — the web renderer reads those same rows and
+ *  knows nothing about a role called "tool". */
 export interface WireMsg {
-  role: "assistant" | "system" | "user";
+  role: "assistant" | "system" | "user" | "tool";
   content: string;
+  /** Assistant messages that requested tools (echoed back on the next round). */
+  tool_calls?: WireToolCall[];
+  /** Tool-result messages: which call this answers. */
+  tool_call_id?: string;
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
- *  plain, concise, no emojis, never a different product's name. Adopted
- *  verbatim from the web CHAT_SYSTEM_PROMPT (apps/web/lib/workspace/chat-api.ts)
- *  so a thread shared between phone and web sounds the same either side — the
- *  "Mac app's missions" line is a known stale reference on web too (tracked,
- *  out of scope for this round). */
+ *  plain, concise, no emojis, never a different product's name. Adopted from the
+ *  web CHAT_SYSTEM_PROMPT (apps/web/lib/workspace/chat-api.ts) so a thread shared
+ *  between phone and web sounds the same either side.
+ *
+ *  THE WORKSPACE PARAGRAPH IS LOAD-BEARING, and it used to say the opposite. This
+ *  prompt previously ended "if a question needs the student's own files … say that
+ *  the Mac app's missions handle those" — correct while the phone had no tools, and
+ *  actively harmful the moment it did: the same turn would hand the model
+ *  search_library and create_library_note while instructing it to decline and send
+ *  the student to a different app. A tool the prompt disowns is a tool the model
+ *  will not call. The list below is deliberately concrete about what this app's
+ *  tools can do, and stops at what the phone actually offers — no calendar tools
+ *  here, unlike web. */
 export const CHAT_SYSTEM_PROMPT =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
-  "Never use emojis. If a question needs the student's own files or their school portals, " +
-  "say that the Mac app's missions handle those and answer what you can from knowledge.";
+  "Never use emojis. " +
+  "You can see and change this student's own Nemesis workspace through your tools: search and read their Library notes, create a note, " +
+  "add to an existing note, create slide decks, make folders, rename and move notes, list their flashcard decks, add cards to a deck, and save practice tests " +
+  "and mind maps to their Study page. Flashcards, tests, and mind maps belong in Study. Notes and slide decks belong in Library. Use the tools whenever a question involves their own notes or decks, or when they ask you to make or " +
+  "save something — read their real material instead of guessing, and never invent what one of their notes says. After any change, say " +
+  "plainly what you created or changed and where it is. School portals are still handled by the Mac app.";
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —
@@ -106,9 +156,14 @@ export function buildWireMessages(
   history: ChatMsg[],
   userText: string,
   decision: ChatRouteDecision = classifyChatRequest(userText),
+  learnerProfile = "",
 ): WireMsg[] {
+  const profile = learnerProfile.trim() ? `\n\n${learnerProfile.trim()}` : "";
   return [
-    { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}`, role: "system" },
+    {
+      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${academicSkillInstruction(userText)}${profile}`,
+      role: "system",
+    },
     ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),
     { content: userText, role: "user" },
   ];

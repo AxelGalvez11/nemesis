@@ -31,6 +31,21 @@ export function pathParent(path: string): string {
   return normalizeGroupPath(path).split(SEPARATOR).slice(0, -1).join(SEPARATOR);
 }
 
+/** One folder or deck name, with the nesting syntax taken out of the student's
+ *  hands (owner 2026-07-24: "folders shouldnt be created with the
+ *  'folder::nested folder' syntax, users should just drag and drop, or add a
+ *  drop down or use the 'move' function").
+ *
+ *  The "::" encoding stays — it is the storage contract this whole file exists
+ *  to keep identical to the web app — but it stops being something anyone types.
+ *  A name field now takes a LEAF and the parent comes from a dropdown, so any
+ *  "::" someone pastes in is a separator they did not mean; folding it to a
+ *  space keeps their words and drops the accidental nesting, where stripping it
+ *  outright would silently glue two words together. */
+export function safeLeafName(value: string): string {
+  return value.split(SEPARATOR).map((part) => part.trim()).filter(Boolean).join(" ").trim();
+}
+
 /** Put `leaf` under `group`; an empty group leaves it at the root. */
 export function joinGroupPath(group: string, leaf: string): string {
   const folder = normalizeGroupPath(group);

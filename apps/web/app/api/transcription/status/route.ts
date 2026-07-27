@@ -1,3 +1,4 @@
+import { reportVoiceCost } from "@/lib/cost-report";
 import { assemblyAiApiKey, groqApiKey } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 
@@ -88,6 +89,14 @@ export async function POST(request: Request) {
     p_actual_seconds: actualSeconds,
     p_job_id: job.id,
     p_status: "done",
+  });
+  // The AssemblyAI batch lane — reached only when Groq declined the job, so it is
+  // reported under its own (5x pricier) provider rather than folded in with Groq.
+  await reportVoiceCost({
+    lane: "recording",
+    provider: "assemblyai_batch",
+    seconds: actualSeconds,
+    userId: job.user_id,
   });
   await admin.storage.from("recordings").remove([job.storage_path]);
 

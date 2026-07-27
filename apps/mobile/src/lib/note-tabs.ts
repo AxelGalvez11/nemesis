@@ -137,3 +137,64 @@ export function previewOf(content: string, max = 220): string {
   const first = strip(max * 4);
   return (first || strip(max * 16)).slice(0, max);
 }
+
+/** The note as READABLE TEXT — markdown syntax removed, line structure kept.
+ *
+ *  This exists for Find (owner 2026-07-24: "dont show markdown preview at all").
+ *  Reading a note renders real markdown, but searching it did not: to highlight
+ *  a match you have to own the <Text> nodes, and the markdown renderer builds
+ *  its own, so Find fell back to printing the note's SOURCE. Turning Find on
+ *  therefore turned a clean page into "## Beta blockers", "**bradycardia**" and
+ *  tables full of pipes — the one place raw markdown still reached the screen
+ *  outside the editor.
+ *
+ *  So: strip the syntax, keep the words and the lines, and search THAT. Matching
+ *  against the stripped text is also more honest than matching the source —
+ *  nobody looking for "bold" means the two asterisks around it.
+ *
+ *  Deliberately NOT previewOf: that one collapses every run of whitespace into a
+ *  single space and truncates, because a one-line snippet is its whole job. Here
+ *  the paragraphs have to survive. The substitutions are otherwise the same set,
+ *  in the same order, and the reasoning behind each lives on previewOf above. */
+export function plainTextOf(content: string): string {
+  const inline = content
+    .replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, "")
+    // Fence LINES go, the code between them stays — it is text you may well be
+    // searching for.
+    .replace(/^\s*```.*$/gm, "")
+    .replace(/^(#{1,6})\s+/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target)
+    .replace(/(\*\*|__|~~|==|`)/g, "")
+    // A real bullet, so a list still reads as one without a "-" in front.
+    .replace(/^(\s*)[-*+]\s+/gm, "$1• ")
+    .replace(/^\s*>\s?/gm, "");
+
+  // Tables are handled a LINE AT A TIME, not by swapping every "|" for spaces.
+  // Doing it globally left the outer pipes of "| Drug | Class |" behind as
+  // padding on both ends, and blanked the |---|---| row in place instead of
+  // removing it — so a three-row table came out indented with a hole through
+  // the middle of it.
+  const lines: string[] = [];
+  for (const raw of inline.split("\n")) {
+    if (!raw.includes("|")) {
+      lines.push(raw.replace(/[ \t]+$/, ""));
+      continue;
+    }
+    // The alignment row (|---|:--:|) carries no words at all.
+    if (/^\s*\|?[\s:|-]*-{2,}[\s:|-]*\|?\s*$/.test(raw)) continue;
+    lines.push(
+      raw
+        .trim()
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((cell) => cell.trim())
+        .filter((cell) => cell.length > 0)
+        .join("   "),
+    );
+  }
+
+  // Three or more blank lines can only be an artifact of what was removed.
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}

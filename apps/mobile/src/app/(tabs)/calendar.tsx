@@ -1,28 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import {
   Alert,
-  Animated,
-  Easing,
-  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
+import type { RefreshControlProps } from "react-native";
 import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import Svg, { Path } from "react-native-svg";
-import { CalendarIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { CalendarIcon, PlusIcon, SearchIcon, TrashIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
-import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
-import { MonthGrid, monthCardHeight, WeekdayStripe } from "@/components/month-grid";
+import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { MonthGrid, WeekdayStripe } from "@/components/month-grid";
 import { Skeleton } from "@/components/Skeleton";
-import { useShellPadding } from "@/components/shell-chrome";
 import { SlideUpSheet } from "@/components/StudySheet";
+import { useShell } from "@/components/AppDrawer";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   createCalendarEvent,
@@ -37,8 +37,8 @@ import {
   eventsForDay,
   labelForDay,
   monthMatrix,
-  shiftDayKey,
   stepMonth,
+  weekDays,
   type AgendaEvent,
   type AgendaEventKind,
 } from "@/lib/agenda";
@@ -58,12 +58,10 @@ import { control, radius, space, type } from "@/theme/tokens";
 // View-switcher rework (owner call 2026-07-18): the old top Month/Week/Day
 // segmented control is gone, and Week goes away entirely. A single liquid-glass
 // button in the lower-left opens a small popup to pick Daily / Monthly / Yearly.
-// Monthly is now a continuous vertical scroll of month cards (bigger day cells;
-// no more tap-to-page arrows — scrolling IS the pager). It opens centered on
-// today's month and grows further into the future as the student nears the
-// edge (append-only — growing into the past would jump the scroll position
-// around, so that direction stays a generous fixed window instead). Yearly
-// lays the whole year out as 12 mini month grids, with its own ‹ year › pager.
+// Monthly shows one focused month with an explicit pager and a selected-day
+// agenda. This keeps the page calm and prevents the giant multi-month
+// accessibility tree that made VoiceOver lose the entire screen. Yearly lays
+// the whole year out as 12 mini month grids, with its own ‹ year › pager.
 // Daily is unchanged: one day's agenda with its own ‹ › pager. Every day cell,
 // in either grid size, jumps straight to that day in Daily view; a mini
 // month's own name in Yearly jumps to Monthly centered on that month — so the
@@ -76,7 +74,6 @@ const VIEW_OPTIONS: { id: CalendarView; label: string }[] = [
   { id: "monthly", label: "Monthly" },
   { id: "yearly", label: "Yearly" },
 ];
-const VIEW_LABEL: Record<CalendarView, string> = { daily: "Daily", monthly: "Monthly", yearly: "Yearly" };
 
 type MonthKey = { year: number; month: number };
 
@@ -112,77 +109,60 @@ function kindDotColor(kind: AgendaEventKind, c: ThemeColors): string {
   return map[kind];
 }
 
-// Monthly's continuous scroll: how far the fixed window reaches on first open,
-// and how many more months get appended once the student scrolls near the
-// future edge.
-const MONTHS_BACK = 12;
-const MONTHS_FORWARD = 12;
-const MONTHS_APPEND_STEP = 6;
-
-// Floating view-switcher geometry (lower-left liquid-glass button + its popup).
-// One size for every floating action in the app (owner 2026-07-23: "make sure
-// all buttons and liquid glass components have standardize size"). Study's FAB
-// was 52, the Library's 48 and this screen's 44 — three screens, three answers.
 const FAB_HEIGHT = control.xl;
-// Sits just above the home-indicator safe area (owner 2026-07-19: near the bottom).
 const FAB_BOTTOM = space(1);
 const MENU_GAP = space(3);
-// Keeps scrollable content clear of the floating button, so the last row is
-// never hidden behind it.
-const FAB_CLEARANCE = 76;
+const FAB_CLEARANCE = 82;
+const DAY_HOUR_HEIGHT = 68;
+const CALENDAR_SIDE = space(4);
 
-function buildMonthWindow(anchor: MonthKey, back: number, forward: number): MonthKey[] {
-  const items: MonthKey[] = [];
-  for (let i = -back; i <= forward; i++) items.push(stepMonth(anchor.year, anchor.month, i));
-  return items;
-}
-
-function appendFutureMonths(current: MonthKey[], count: number): MonthKey[] {
-  const last = current[current.length - 1];
-  if (!last) return current;
-  const extra = Array.from({ length: count }, (_, i) => stepMonth(last.year, last.month, i + 1));
-  return [...current, ...extra];
-}
-
-function cumulativeOffsets(lengths: number[]): number[] {
-  const offsets: number[] = [];
-  let sum = 0;
-  for (const len of lengths) {
-    offsets.push(sum);
-    sum += len;
-  }
-  return offsets;
+function selectedDayForMonth(month: MonthKey): string {
+  const now = new Date();
+  if (now.getFullYear() === month.year && now.getMonth() === month.month) return dayKeyFromDate(now);
+  return `${month.year}-${String(month.month + 1).padStart(2, "0")}-01`;
 }
 
 export default function CalendarScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { contentTop, contentBottom } = useShellPadding();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
+  const { openDrawer, setImmersive } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const pulling = useRef(false);
+  const pullingYears = useRef(new Set<string>());
+  const activeUserId = useRef<string | null>(userId);
   const [view, setView] = useState<CalendarView>("monthly");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [dialog, setDialog] = useState<EventDialogState>(null);
+  activeUserId.current = userId;
 
-  // Monthly's window of months around an anchor (defaults to today's month;
-  // retargeted by goToMonth when the student taps a mini month in Yearly).
+  // The one month visible in Monthly.
   const [monthAnchor, setMonthAnchor] = useState<MonthKey>(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
-  const [monthWindow, setMonthWindow] = useState<MonthKey[]>(() => buildMonthWindow(monthAnchor, MONTHS_BACK, MONTHS_FORWARD));
-
   // Yearly's shown year — independent of Monthly's window, pages by whole years.
   const [shownYear, setShownYear] = useState(() => new Date().getFullYear());
 
   // The day Daily view is showing — starts on today, paged by its ‹ › arrows.
   const [shownDay, setShownDay] = useState(() => dayKeyFromDate(new Date()));
+
+  // Calendar owns its whole chrome, matching the native iOS app: year/month
+  // breadcrumb on the left, view/search/add on the right, and the bottom
+  // Today/view/inbox dock. The inbox button remains the way back to Nemesis.
+  useFocusEffect(
+    useCallback(() => {
+      setImmersive(true);
+      return () => setImmersive(false);
+    }, [setImmersive]),
+  );
 
   // Quick zoom-in + fade whenever the mode changes (Daily↔Monthly↔Yearly), so the
   // three views settle into place as one system instead of hard-cutting. Runs on
@@ -202,22 +182,47 @@ export default function CalendarScreen() {
     transform: [{ scale: zoom.value }],
   }));
 
-  // Cloud fetch — no Realtime subscription this round (matches the rest of the
-  // cloud-first phone work): refresh on focus + pull-to-refresh only.
-  const pull = useCallback(async (uid: string) => {
-    if (pulling.current) return;
-    pulling.current = true;
+  const visibleYear =
+    view === "yearly"
+      ? shownYear
+      : view === "monthly"
+        ? monthAnchor.year
+        : Number(shownDay.slice(0, 4)) || new Date().getFullYear();
+
+  // Fetch only the year on screen. This keeps the indexed query and response
+  // bounded even for accounts that accumulate years of courses and deadlines.
+  const pull = useCallback(async (uid: string, year: number) => {
+    const requestKey = `${uid}:${year}`;
+    if (pullingYears.current.has(requestKey)) return;
+    pullingYears.current.add(requestKey);
     try {
-      const rows = await listCalendarEvents(uid);
-      setEvents(rows);
+      const from = `${year}-01-01`;
+      const to = `${year}-12-31`;
+      const rows = await listCalendarEvents(uid, { from, to });
+      if (activeUserId.current !== uid) return;
+      setEvents((previous) => [
+        ...previous.filter((event) => event.date < from || event.date > to),
+        ...rows,
+      ]);
       setError(null);
     } catch (e) {
-      setError((e as Error).message); // offline/error — the last-cached agenda still renders
+      if (activeUserId.current === uid) {
+        setError((e as Error).message); // offline/error — the last-cached agenda still renders
+      }
     } finally {
-      pulling.current = false;
-      setLoaded(true);
+      pullingYears.current.delete(requestKey);
+      if (activeUserId.current === uid) setLoaded(true);
     }
   }, []);
+
+  // Never carry one account's cached years across an in-place account switch.
+  // The subsequent focus/range pulls repopulate only the newly authenticated
+  // user's data.
+  useEffect(() => {
+    setEvents([]);
+    setLoaded(false);
+    setError(null);
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -231,12 +236,17 @@ export default function CalendarScreen() {
         setEvents((prev) => (prev.length > 0 ? prev : cached));
         setLoaded((prevLoaded) => prevLoaded || cached.length > 0);
       });
-      void pull(userId);
+      void pull(userId, new Date().getFullYear());
       return () => {
         alive = false;
       };
     }, [userId, pull]),
   );
+
+  useEffect(() => {
+    if (!userId) return;
+    void pull(userId, visibleYear);
+  }, [pull, userId, visibleYear]);
 
   // Jump straight to a day's agenda — wired into every day cell in both
   // Monthly and Yearly grids.
@@ -250,8 +260,16 @@ export default function CalendarScreen() {
   const goToMonth = useCallback((year: number, month: number) => {
     const anchor = { year, month };
     setMonthAnchor(anchor);
-    setMonthWindow(buildMonthWindow(anchor, MONTHS_BACK, MONTHS_FORWARD));
+    setShownDay(selectedDayForMonth(anchor));
     setView("monthly");
+  }, []);
+
+  const stepVisibleMonth = useCallback((delta: number) => {
+    setMonthAnchor((current) => {
+      const next = stepMonth(current.year, current.month, delta);
+      setShownDay(selectedDayForMonth(next));
+      return next;
+    });
   }, []);
 
   // Opens the add sheet for a brand-new event on the given date (the FAB passes
@@ -288,7 +306,7 @@ export default function CalendarScreen() {
   if (!userId) {
     return (
       <View
-        style={[styles.pairWrap, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
+        style={[styles.pairWrap, { paddingTop: insets.top + space(2), paddingBottom: insets.bottom + space(4) }]}
         testID="calendar-signed-out"
       >
         <EmptyBlock
@@ -308,33 +326,37 @@ export default function CalendarScreen() {
   if (!loaded) {
     return (
       <View style={styles.flex} testID="calendar-loading">
-        <CalendarSkeleton view={view} styles={styles} contentTop={contentTop} contentBottom={contentBottom} />
+        <CalendarSkeleton
+          view={view}
+          styles={styles}
+          contentTop={insets.top + space(2)}
+          contentBottom={insets.bottom + space(4)}
+        />
       </View>
     );
   }
 
   const todayKey = dayKeyFromDate(new Date());
   const dayEvents = eventsForDay(events, shownDay);
-  // Weekday (0 = Sunday) the shown day falls on, to accent its column in the
-  // Daily view's letter stripe. Parses the yyyy-mm-dd key as a LOCAL date.
-  const [sdY, sdM, sdD] = shownDay.split("-").map(Number);
-  const shownWeekday = new Date(sdY, (sdM || 1) - 1, sdD || 1).getDay();
+  const [sdY, sdM] = shownDay.split("-").map(Number);
 
-  // Monthly's rendered months + each card's (deterministic, fixed-height) size.
-  // Recomputed fresh each render like the rest of this screen's derived data —
-  // monthMatrix is cheap and the window tops out in the low tens of months.
-  const monthViews = monthWindow.map((m) => monthMatrix(m.year, m.month, events, todayKey));
-  const cardHeights = monthViews.map((mv) => monthCardHeight(mv.weeks.length));
-  const cardOffsets = cumulativeOffsets(cardHeights);
-  // getItemLayout's offsets are relative to the FlatList's own content origin —
-  // RN does NOT fold contentContainerStyle's paddingTop into them automatically
-  // (verified against @react-native/virtualized-lists' ListMetricsAggregator:
-  // a supplied getItemLayout's offset is used verbatim, then handed straight to
-  // the native scrollTo). Every offset needs that same leading pad added, or
-  // initialScrollIndex lands short — today's month would open scrolled a bit
-  // past where it should sit. One variable, reused below in
-  // contentContainerStyle's own paddingTop, so the two can never drift apart.
-  const monthListHeaderPad = contentTop + space(2);
+  const monthView = monthMatrix(monthAnchor.year, monthAnchor.month, events, todayKey);
+  const shownWeek = weekDays(events, shownDay, todayKey);
+  const monthRowHeight = Math.max(
+    74,
+    Math.floor(
+      (screenHeight - insets.top - insets.bottom - 56 - 82 - 24 - 74) /
+        monthView.weeks.length,
+    ),
+  );
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchResults = normalizedSearch
+    ? events.filter((event) =>
+        [event.title, event.course, event.note, event.date, event.time]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedSearch)),
+      )
+    : [];
 
   const refreshControl = (
     <RefreshControl
@@ -342,118 +364,202 @@ export default function CalendarScreen() {
       tintColor={c.text2}
       onRefresh={() => {
         setRefreshing(true);
-        void pull(userId).finally(() => setRefreshing(false));
+        void pull(userId, visibleYear).finally(() => setRefreshing(false));
       }}
     />
   );
+
+  const today = new Date();
+  const returnToToday = () => {
+    const key = dayKeyFromDate(today);
+    setShownDay(key);
+    setMonthAnchor({ year: today.getFullYear(), month: today.getMonth() });
+    setShownYear(today.getFullYear());
+    setView("monthly");
+  };
+  const monthSwipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-18, 18])
+    .failOffsetY([-14, 14])
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
+      stepVisibleMonth(event.translationX < 0 ? 1 : -1);
+    });
+  const yearSwipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-18, 18])
+    .failOffsetY([-14, 14])
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
+      setShownYear((year) => year + (event.translationX < 0 ? 1 : -1));
+    });
+  const daySwipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-18, 18])
+    .failOffsetY([-14, 14])
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) < 44 && Math.abs(event.velocityX) < 420) return;
+      const [year, month, day] = shownDay.split("-").map(Number);
+      const next = new Date(year, (month || 1) - 1, (day || 1) + (event.translationX < 0 ? 1 : -1));
+      setShownDay(dayKeyFromDate(next));
+      setMonthAnchor({ year: next.getFullYear(), month: next.getMonth() });
+    });
+  const monthName = monthView.label.replace(` ${monthView.year}`, "");
+  const shownDayMonthName = new Date(sdY, (sdM || 1) - 1, 1).toLocaleDateString(undefined, { month: "long" });
 
   return (
     <View style={styles.flex} testID="calendar-screen">
       {/* Background refresh failed (e.g. offline) — the last-loaded events still
           render underneath; this just says why nothing newer showed up. */}
       {error ? (
-        <View style={[styles.errorBanner, { top: contentTop + space(1) }]} pointerEvents="none" testID="calendar-error">
+        <View style={[styles.errorBanner, { top: insets.top + 58 }]} pointerEvents="none" testID="calendar-error">
           <Text style={styles.errorBannerText} numberOfLines={2}>Couldn't refresh: {error}</Text>
         </View>
       ) : null}
-      <Reanimated.View style={[styles.zoomWrap, contentAnimStyle]}>
-      {view === "monthly" ? (
-        <FlatList
-          testID="calendar-monthly-view"
-          data={monthWindow}
-          keyExtractor={(item) => `${item.year}-${item.month}`}
-          renderItem={({ index }) => <MonthGrid month={monthViews[index]} size="large" onSelectDay={goToDay} />}
-          getItemLayout={(_data, index) => ({
-            length: cardHeights[index],
-            offset: cardOffsets[index] + monthListHeaderPad,
-            index,
-          })}
-          initialScrollIndex={MONTHS_BACK}
-          extraData={{ events, todayKey }}
-          onEndReached={() => setMonthWindow((prev) => appendFutureMonths(prev, MONTHS_APPEND_STEP))}
-          onEndReachedThreshold={2}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.monthListBody,
-            { paddingTop: monthListHeaderPad, paddingBottom: contentBottom + FAB_CLEARANCE },
-          ]}
-          refreshControl={refreshControl}
-        />
-      ) : null}
-
-      {view === "yearly" ? (
-        <ScrollView
-          testID="calendar-yearly-view"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.yearBody,
-            { paddingTop: contentTop + space(2), paddingBottom: contentBottom + FAB_CLEARANCE },
-          ]}
-          refreshControl={refreshControl}
-        >
-          <YearNav year={shownYear} onStep={(delta) => setShownYear((y) => y + delta)} styles={styles} />
-          <View style={styles.yearGrid}>
-            {Array.from({ length: 12 }, (_, m) => (
-              <MonthGrid
-                key={m}
-                month={monthMatrix(shownYear, m, events, todayKey)}
-                size="mini"
-                onSelectDay={goToDay}
-                onSelectMonth={goToMonth}
-              />
-            ))}
-          </View>
-        </ScrollView>
-      ) : null}
-
-      {view === "daily" ? (
-        <View style={styles.flex} testID="calendar-day-view">
-          <View style={{ paddingTop: contentTop + space(2) }}>
-            <DayNav
-              dayKey={shownDay}
-              todayKey={todayKey}
-              onStep={(delta) => setShownDay((current) => shiftDayKey(current, delta))}
-              styles={styles}
-            />
-            <View style={styles.dayWeekdayWrap}>
-              <WeekdayStripe activeIndex={shownWeekday} />
-            </View>
-          </View>
-          <FlatList
-            data={dayEvents}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.listBody, { paddingBottom: contentBottom + FAB_CLEARANCE }]}
-            refreshControl={refreshControl}
-            renderItem={({ item }) => <EventRow event={item} styles={styles} onPress={openEvent} />}
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <EmptyBlock
-                  title="No events"
-                  body="Ask Nemesis to fill in your semester, or tap + to add an event yourself."
-                />
-              </View>
-            }
-          />
-        </View>
-      ) : null}
-      </Reanimated.View>
-
-      <ViewSwitcher
+      <AppleCalendarHeader
         view={view}
-        menuOpen={menuOpen}
-        onToggleMenu={() => setMenuOpen((v) => !v)}
-        onSelect={(v) => {
-          setView(v);
-          setMenuOpen(false);
+        monthName={view === "daily" ? shownDayMonthName : monthName}
+        year={view === "yearly" ? shownYear : view === "monthly" ? monthAnchor.year : sdY}
+        onBack={() => {
+          if (view === "daily") {
+            setMonthAnchor({ year: sdY, month: (sdM || 1) - 1 });
+            setView("monthly");
+          } else if (view === "monthly") {
+            setShownYear(monthAnchor.year);
+            setView("yearly");
+          }
         }}
-        onClose={() => setMenuOpen(false)}
-        insetBottom={insets.bottom}
+        onList={() => setView(view === "daily" ? "monthly" : "daily")}
+        onSearch={() => setSearchOpen((open) => !open)}
+        onAdd={() => openAdd(view === "yearly" ? todayKey : shownDay)}
+        top={insets.top}
         styles={styles}
       />
 
-      <AddEventFab
-        insetBottom={insets.bottom}
-        onPress={() => openAdd(view === "daily" ? shownDay : todayKey)}
+      {searchOpen ? (
+        <CalendarSearch
+          query={searchQuery}
+          results={searchResults}
+          top={insets.top + 66}
+          bottom={insets.bottom + FAB_CLEARANCE}
+          onChange={setSearchQuery}
+          onOpen={(event) => {
+            setShownDay(event.date);
+            setMonthAnchor({ year: Number(event.date.slice(0, 4)), month: Number(event.date.slice(5, 7)) - 1 });
+            setSearchOpen(false);
+            setView("daily");
+          }}
+          styles={styles}
+        />
+      ) : (
+        <Reanimated.View style={[styles.zoomWrap, contentAnimStyle]}>
+          {view === "monthly" ? (
+            <View style={[styles.flex, { paddingTop: insets.top + 64, paddingBottom: insets.bottom + FAB_CLEARANCE }]} testID="calendar-monthly-view">
+              <View style={styles.monthTitleRow}>
+                <Text style={styles.monthTitle}>{monthName}</Text>
+              </View>
+              <View style={styles.monthWeekdays}>
+                <WeekdayStripe flush />
+              </View>
+              <GestureDetector gesture={monthSwipe}>
+                <View style={styles.monthGridFill} testID="calendar-month-card">
+                  <MonthGrid
+                    month={monthView}
+                    size="large"
+                    events={events}
+                    rowHeight={monthRowHeight}
+                    showLabel={false}
+                    showWeekdays={false}
+                    onSelectDay={goToDay}
+                  />
+                </View>
+              </GestureDetector>
+            </View>
+          ) : null}
+
+          {view === "yearly" ? (
+            <GestureDetector gesture={yearSwipe}>
+              <ScrollView
+                testID="calendar-yearly-view"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.yearBody,
+                  { paddingTop: insets.top + 76, paddingBottom: insets.bottom + FAB_CLEARANCE },
+                ]}
+                refreshControl={refreshControl}
+              >
+                <Text style={styles.yearTitle}>{shownYear}</Text>
+                <View style={styles.yearRule} />
+                <View style={styles.yearGrid}>
+                  {Array.from({ length: 12 }, (_, m) => (
+                    <MonthGrid
+                      key={m}
+                      month={monthMatrix(shownYear, m, events, todayKey)}
+                      size="mini"
+                      miniColumns={3}
+                      selectedKey={todayKey}
+                      onSelectMonth={goToMonth}
+                    />
+                  ))}
+                </View>
+              </ScrollView>
+            </GestureDetector>
+          ) : null}
+
+          {view === "daily" ? (
+            <GestureDetector gesture={daySwipe}>
+              <View style={[styles.flex, { paddingTop: insets.top + 64 }]} testID="calendar-day-view">
+                <AppleWeekStrip
+                  days={shownWeek}
+                  selectedKey={shownDay}
+                  onSelect={(dayKey) => {
+                    setShownDay(dayKey);
+                    const [year, month] = dayKey.split("-").map(Number);
+                    setMonthAnchor({ year, month: (month || 1) - 1 });
+                  }}
+                  styles={styles}
+                />
+                <View style={styles.dailyDateRule}>
+                  <Text style={styles.dailyDateTitle}>{fullDayLabel(shownDay)}</Text>
+                </View>
+                <DayTimeline
+                  dayKey={shownDay}
+                  events={dayEvents}
+                  bottom={insets.bottom + FAB_CLEARANCE}
+                  onOpen={openEvent}
+                  refreshControl={refreshControl}
+                  styles={styles}
+                />
+              </View>
+            </GestureDetector>
+          ) : null}
+        </Reanimated.View>
+      )}
+
+      {menuOpen ? (
+        <CalendarViewMenu
+          view={view}
+          bottom={insets.bottom + FAB_BOTTOM + FAB_HEIGHT + MENU_GAP}
+          onSelect={(next) => {
+            if (next === "yearly") {
+              setShownYear(view === "monthly" ? monthAnchor.year : sdY);
+            } else if (next === "monthly" && view === "daily") {
+              setMonthAnchor({ year: sdY, month: (sdM || 1) - 1 });
+            }
+            setView(next);
+            setMenuOpen(false);
+          }}
+          onClose={() => setMenuOpen(false)}
+          styles={styles}
+        />
+      ) : null}
+
+      <CalendarBottomDock
+        bottom={insets.bottom + FAB_BOTTOM}
+        onToday={returnToToday}
+        onViews={() => setMenuOpen((open) => !open)}
+        onInbox={openDrawer}
+        styles={styles}
       />
 
       <EventSheet
@@ -534,7 +640,7 @@ function CalendarSkeleton({
 
   // Monthly (also the default before real data has decided otherwise).
   return (
-    <View style={[styles.monthListBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]} testID="calendar-skeleton">
+    <View style={[styles.monthBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]} testID="calendar-skeleton">
       {[0, 1].map((i) => (
         <View key={i} style={styles.skeletonMonthCard}>
           <Skeleton width={150} height={26} style={styles.skeletonMonthLabel} />
@@ -556,17 +662,219 @@ function CalendarSkeleton({
   );
 }
 
-const KIND_LABEL: Record<AgendaEvent["kind"], string> = {
-  assignment: "Due",
-  class: "Class",
-  exam: "Exam",
-  other: "",
-  rotation: "Rotation",
-};
+function BackChevronIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Path d="m14.8 4.5-7.5 7.5 7.5 7.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  );
+}
 
-function EventRow({ event, styles, onPress }: { event: AgendaEvent; styles: Styles; onPress: (event: AgendaEvent) => void }) {
+function ListViewIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Rect x="6.3" y="4" width="13.5" height="6" rx="1.2" stroke={color} strokeWidth={1.8} fill="none" />
+      <Rect x="6.3" y="14" width="13.5" height="6" rx="1.2" stroke={color} strokeWidth={1.8} fill="none" />
+      <Circle cx="3.2" cy="6" r="0.8" fill={color} />
+      <Circle cx="3.2" cy="9" r="0.8" fill={color} />
+      <Circle cx="3.2" cy="16" r="0.8" fill={color} />
+      <Circle cx="3.2" cy="19" r="0.8" fill={color} />
+    </Svg>
+  );
+}
+
+function InboxIcon({ color }: { color: string }) {
+  return (
+    <Svg width={23} height={23} viewBox="0 0 24 24">
+      <Path d="M4 8.2 6.2 4h11.6L20 8.2v10.2a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.4Z" stroke={color} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
+      <Path d="M4.3 13h4.3l1.3 2h4.2l1.3-2h4.3" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function AppleCalendarHeader({
+  view,
+  monthName,
+  year,
+  onBack,
+  onList,
+  onSearch,
+  onAdd,
+  top,
+  styles,
+}: {
+  view: CalendarView;
+  monthName: string;
+  year: number;
+  onBack: () => void;
+  onList: () => void;
+  onSearch: () => void;
+  onAdd: () => void;
+  top: number;
+  styles: Styles;
+}) {
   const { colors: c } = useTheme();
-  const kindColor: Record<AgendaEvent["kind"], string> = {
+  const backLabel = view === "daily" ? monthName : String(year);
+  return (
+    <View style={[styles.appleHeader, { paddingTop: top + space(1.5) }]} testID="calendar-apple-header">
+      {view === "yearly" ? <View style={styles.headerLeftSpacer} /> : (
+        <GlassSurface style={styles.headerBackGlass} fallbackColor={c.glassPanel} shadow>
+          <Pressable style={styles.headerBack} onPress={onBack} accessibilityLabel={`Back to ${backLabel}`}>
+            <BackChevronIcon color={c.text} />
+            <Text style={styles.headerBackText}>{backLabel}</Text>
+          </Pressable>
+        </GlassSurface>
+      )}
+      <GlassSurface style={styles.headerActionsGlass} fallbackColor={c.glassPanel} shadow>
+        <View style={styles.headerActions}>
+          {view === "yearly" ? null : (
+            <Pressable style={styles.headerIconButton} onPress={onList} accessibilityLabel={view === "daily" ? "Open month view" : "Open day view"}>
+              <ListViewIcon color={c.text} />
+            </Pressable>
+          )}
+          <Pressable style={styles.headerIconButton} onPress={onSearch} accessibilityLabel="Search calendar">
+            <SearchIcon size={23} color={c.text} strokeWidth={1.9} />
+          </Pressable>
+          <Pressable style={styles.headerIconButton} onPress={onAdd} accessibilityLabel="Add event">
+            <PlusIcon size={24} color={c.text} strokeWidth={1.9} />
+          </Pressable>
+        </View>
+      </GlassSurface>
+    </View>
+  );
+}
+
+function CalendarSearch({
+  query,
+  results,
+  top,
+  bottom,
+  onChange,
+  onOpen,
+  styles,
+}: {
+  query: string;
+  results: AgendaEvent[];
+  top: number;
+  bottom: number;
+  onChange: (query: string) => void;
+  onOpen: (event: AgendaEvent) => void;
+  styles: Styles;
+}) {
+  const { colors: c } = useTheme();
+  return (
+    <View style={[styles.searchPage, { paddingTop: top, paddingBottom: bottom }]} testID="calendar-search">
+      <View style={styles.searchInputWrap}>
+        <SearchIcon size={19} color={c.textHint} />
+        <TextInput
+          value={query}
+          onChangeText={onChange}
+          autoFocus
+          placeholder="Search events"
+          placeholderTextColor={c.textHint}
+          style={styles.searchInput}
+          testID="calendar-search-input"
+        />
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {results.map((event) => (
+          <Pressable key={event.id} style={styles.searchResult} onPress={() => onOpen(event)}>
+            <Text style={styles.searchResultTitle}>{event.title}</Text>
+            <Text style={styles.searchResultMeta}>{[event.date, event.time, event.course].filter(Boolean).join(" · ")}</Text>
+          </Pressable>
+        ))}
+        {query.trim() && results.length === 0 ? <Text style={styles.searchEmpty}>No matching events.</Text> : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+function AppleWeekStrip({
+  days,
+  selectedKey,
+  onSelect,
+  styles,
+}: {
+  days: ReturnType<typeof weekDays>;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  styles: Styles;
+}) {
+  return (
+    <View style={styles.appleWeekStrip} testID="calendar-day-week">
+      {days.map((day) => {
+        const selected = day.key === selectedKey;
+        return (
+          <Pressable key={day.key} style={styles.appleWeekDay} onPress={() => onSelect(day.key)}>
+            <Text style={styles.appleWeekdayLetter}>{day.label.slice(0, 1)}</Text>
+            <View style={[styles.appleWeekNumberWrap, selected && (day.isToday ? styles.appleWeekToday : styles.appleWeekSelected)]}>
+              <Text style={[styles.appleWeekNumber, selected && styles.appleWeekNumberSelected]}>{day.day}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const DAY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function fullDayLabel(dayKey: string): string {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const value = new Date(year, (month || 1) - 1, day || 1);
+  return `${DAY_NAMES[value.getDay()]} – ${DAY_MONTHS[value.getMonth()]} ${value.getDate()}, ${value.getFullYear()}`;
+}
+
+function minutesForTime(value?: string): number | null {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? "0");
+  if (!Number.isFinite(hour) || hour > 23 || minute > 59) return null;
+  const suffix = match[3]?.toLowerCase();
+  if (suffix) {
+    if (hour > 12 || hour === 0) return null;
+    if (hour === 12) hour = 0;
+    if (suffix === "pm") hour += 12;
+  }
+  return hour * 60 + minute;
+}
+
+function hourLabel(hour: number): string {
+  if (hour === 0) return "12 AM";
+  if (hour === 12) return "Noon";
+  return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+}
+
+function DayTimeline({
+  dayKey,
+  events,
+  bottom,
+  onOpen,
+  refreshControl,
+  styles,
+}: {
+  dayKey: string;
+  events: AgendaEvent[];
+  bottom: number;
+  onOpen: (event: AgendaEvent) => void;
+  refreshControl: ReactElement<RefreshControlProps>;
+  styles: Styles;
+}) {
+  const { colors: c } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  const positioned = events.flatMap((event) => {
+    const minute = minutesForTime(event.time);
+    return minute === null ? [] : [{ event, minute }];
+  });
+  const allDay = events.filter((event) => minutesForTime(event.time) === null);
+  const todayKey = dayKeyFromDate(new Date());
+  const current = new Date();
+  const nowMinutes = current.getHours() * 60 + current.getMinutes();
+  const nowHour = current.getHours();
+  const eventColor: Record<AgendaEventKind, string> = {
     assignment: c.warn,
     class: c.info,
     exam: c.danger,
@@ -574,183 +882,136 @@ function EventRow({ event, styles, onPress }: { event: AgendaEvent; styles: Styl
     rotation: c.accent,
   };
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const targetHour = dayKey === todayKey ? Math.max(0, nowHour - 2) : 6;
+      scrollRef.current?.scrollTo({ y: targetHour * DAY_HOUR_HEIGHT, animated: false });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [dayKey, nowHour, todayKey]);
+
   return (
-    <Pressable onPress={() => onPress(event)} testID={`event-${event.id}`}>
-      <Surface style={styles.eventCard}>
-        <View style={[styles.kindDot, { backgroundColor: kindColor[event.kind] }]} />
-        <View style={styles.eventText}>
-          <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
-          <Text style={styles.eventMeta} numberOfLines={1}>
-            {[event.time, KIND_LABEL[event.kind], event.course, event.source === "agent" ? "Nemesis" : ""]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
-          {event.note ? <Text style={styles.eventNote} numberOfLines={2}>{event.note}</Text> : null}
+    <ScrollView
+      ref={scrollRef}
+      style={styles.timelineScroll}
+      contentContainerStyle={{ paddingBottom: bottom }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={refreshControl}
+      testID="calendar-day-timeline"
+    >
+      {allDay.length > 0 ? (
+        <View style={styles.allDaySection}>
+          <Text style={styles.allDayLabel}>all-day</Text>
+          <View style={styles.allDayEvents}>
+            {allDay.map((event) => (
+              <Pressable key={event.id} onPress={() => onOpen(event)} style={[styles.allDayEvent, { borderLeftColor: eventColor[event.kind] }]}>
+                <Text style={styles.allDayEventTitle} numberOfLines={1}>{event.title}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
-      </Surface>
-    </Pressable>
+      ) : null}
+      <View style={[styles.timelineCanvas, { height: DAY_HOUR_HEIGHT * 24 }]}>
+        {Array.from({ length: 24 }, (_, hour) => (
+          <View key={hour} style={[styles.hourRow, { top: hour * DAY_HOUR_HEIGHT, height: DAY_HOUR_HEIGHT }]}>
+            <Text style={styles.hourLabel}>{hourLabel(hour)}</Text>
+            <View style={styles.hourRule} />
+          </View>
+        ))}
+        {dayKey === todayKey ? (
+          <View style={[styles.nowLine, { top: (nowMinutes / 60) * DAY_HOUR_HEIGHT }]}>
+            <View style={styles.nowDot} />
+            <View style={styles.nowRule} />
+          </View>
+        ) : null}
+        {positioned.map(({ event, minute }) => (
+          <Pressable
+            key={event.id}
+            onPress={() => onOpen(event)}
+            style={[
+              styles.timelineEvent,
+              {
+                top: (minute / 60) * DAY_HOUR_HEIGHT + 2,
+                borderLeftColor: eventColor[event.kind],
+                backgroundColor: c.surface2,
+              },
+            ]}
+          >
+            <Text style={styles.timelineEventTitle} numberOfLines={1}>{event.title}</Text>
+            <Text style={styles.timelineEventMeta} numberOfLines={1}>{[event.time, event.course].filter(Boolean).join(" · ")}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
-/** Day view's ‹ label › pager. */
-function DayNav({
-  dayKey,
-  todayKey,
-  onStep,
-  styles,
-}: {
-  dayKey: string;
-  todayKey: string;
-  onStep: (delta: number) => void;
-  styles: Styles;
-}) {
-  return (
-    <View style={styles.dayNav} testID="calendar-day-nav">
-      <Pressable onPress={() => onStep(-1)} hitSlop={12} testID="day-prev">
-        <Text style={styles.arrow}>‹</Text>
-      </Pressable>
-      <Text style={styles.dayNavLabel}>{labelForDay(dayKey, todayKey)}</Text>
-      <Pressable onPress={() => onStep(1)} hitSlop={12} testID="day-next">
-        <Text style={styles.arrow}>›</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-/** Yearly view's ‹ year › pager — same shape as DayNav, one year at a time. */
-function YearNav({ year, onStep, styles }: { year: number; onStep: (delta: number) => void; styles: Styles }) {
-  return (
-    <View style={styles.dayNav} testID="calendar-year-nav">
-      <Pressable onPress={() => onStep(-1)} hitSlop={12} testID="year-prev">
-        <Text style={styles.arrow}>‹</Text>
-      </Pressable>
-      <Text style={styles.dayNavLabel}>{year}</Text>
-      <Pressable onPress={() => onStep(1)} hitSlop={12} testID="year-next">
-        <Text style={styles.arrow}>›</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-/** Small upward caret for the view-switcher pill — defined inline here rather
- *  than in the shared icons.tsx set, since it's a one-off for this one control. */
-function ChevronUpIcon({ size = 10, color }: { size?: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M5 15l7-7 7 7" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-/** The lower-left liquid-glass view switcher: a compact pill showing the
- *  active view, tapping it opens a small popup to pick Daily / Monthly /
- *  Yearly. The popup's own glass supplies its blur; a transparent full-screen
- *  tap-catcher (mounted only while open) closes it WITHOUT blurring the agenda
- *  behind it (owner 2026-07-18: confine blur to the menu, no whole-screen blur). */
-function ViewSwitcher({
+function CalendarViewMenu({
   view,
-  menuOpen,
-  onToggleMenu,
+  bottom,
   onSelect,
   onClose,
-  insetBottom,
   styles,
 }: {
   view: CalendarView;
-  menuOpen: boolean;
-  onToggleMenu: () => void;
+  bottom: number;
   onSelect: (view: CalendarView) => void;
   onClose: () => void;
-  insetBottom: number;
   styles: Styles;
 }) {
   const { colors: c } = useTheme();
-  const progress = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: menuOpen ? 1 : 0,
-      duration: menuOpen ? 170 : 130,
-      easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [menuOpen, progress]);
-
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
-
   return (
     <>
-      {/* Transparent tap-catcher — closes the menu on an outside tap, no page blur. */}
-      {menuOpen ? (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          accessibilityLabel="Close view menu"
-          testID="calendar-view-menu-scrim"
-        />
-      ) : null}
-
-      <Animated.View
-        style={[
-          styles.menuPanelWrap,
-          { bottom: insetBottom + FAB_BOTTOM + FAB_HEIGHT + MENU_GAP, opacity: progress, transform: [{ translateY }] },
-        ]}
-        pointerEvents={menuOpen ? "auto" : "none"}
-        testID="calendar-view-menu"
-      >
-        <GlassSurface style={styles.menuPanel} fallbackColor={c.glassPanel} opaque>
-          {VIEW_OPTIONS.map((opt) => {
-            const active = view === opt.id;
-            return (
-              <Pressable
-                key={opt.id}
-                testID={`calendar-view-${opt.id}`}
-                onPress={() => onSelect(opt.id)}
-                style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-              >
-                <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>{opt.label}</Text>
-                {active ? <View style={styles.menuItemDot} /> : null}
-              </Pressable>
-            );
-          })}
-        </GlassSurface>
-      </Animated.View>
-
-      <View style={[styles.fabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
-        <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} testID="calendar-view-fab" shadow>
-          <Pressable
-            style={styles.fabInner}
-            onPress={onToggleMenu}
-            hitSlop={6}
-            accessibilityLabel={`Calendar view: ${VIEW_LABEL[view]}. Tap to change.`}
-          >
-            <CalendarIcon size={16} color={c.text2} />
-            <Text style={styles.fabLabel}>{VIEW_LABEL[view]}</Text>
-            <ChevronUpIcon size={10} color={c.text2} />
-          </Pressable>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close view menu" />
+      <View style={[styles.menuPanelWrap, { bottom }]} testID="calendar-view-menu">
+        <GlassSurface style={styles.menuPanel} fallbackColor={c.glassMenu} opaque shadow>
+          {VIEW_OPTIONS.map((option) => (
+            <Pressable
+              key={option.id}
+              onPress={() => onSelect(option.id)}
+              style={styles.menuItem}
+              testID={`calendar-view-${option.id}`}
+            >
+              <Text style={[styles.menuItemText, view === option.id && styles.menuItemTextActive]}>{option.label}</Text>
+              {view === option.id ? <View style={styles.menuItemDot} /> : null}
+            </Pressable>
+          ))}
         </GlassSurface>
       </View>
     </>
   );
 }
 
-/** Bottom-right liquid-glass "+" — opens the add-event sheet. Sits opposite the
- *  ViewSwitcher's bottom-left button, always visible across all three views. */
-function AddEventFab({ insetBottom, onPress }: { insetBottom: number; onPress: () => void }) {
-  const styles = useThemedStyles(createStyles);
+function CalendarBottomDock({
+  bottom,
+  onToday,
+  onViews,
+  onInbox,
+  styles,
+}: {
+  bottom: number;
+  onToday: () => void;
+  onViews: () => void;
+  onInbox: () => void;
+  styles: Styles;
+}) {
   const { colors: c } = useTheme();
   return (
-    <View style={[styles.addFabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
-      <GlassSurface style={styles.addFab} fallbackColor={c.glassPanel} testID="calendar-add-fab" shadow>
-        <Pressable
-          style={styles.addFabInner}
-          onPress={onPress}
-          hitSlop={6}
-          accessibilityRole="button"
-          accessibilityLabel="Add event"
-        >
-          <PlusIcon size={19} color={c.text} />
+    <View style={[styles.bottomDock, { bottom }]} pointerEvents="box-none">
+      <GlassSurface style={styles.todayGlass} fallbackColor={c.glassPanel} shadow>
+        <Pressable style={styles.todayButton} onPress={onToday} accessibilityLabel="Today" testID="calendar-today">
+          <Text style={styles.todayText}>Today</Text>
         </Pressable>
+      </GlassSurface>
+      <GlassSurface style={styles.bottomActionsGlass} fallbackColor={c.glassPanel} shadow>
+        <View style={styles.bottomActions}>
+          <Pressable style={styles.bottomAction} onPress={onViews} accessibilityLabel="Change calendar view" testID="calendar-view-fab">
+            <CalendarIcon size={21} color={c.text} strokeWidth={1.8} />
+          </Pressable>
+          <Pressable style={styles.bottomAction} onPress={onInbox} accessibilityLabel="Open Nemesis navigation">
+            <InboxIcon color={c.text} />
+          </Pressable>
+        </View>
       </GlassSurface>
     </View>
   );
@@ -880,7 +1141,7 @@ function EventSheet({
             value={title}
             onChangeText={setTitle}
             placeholder="Title"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             testID="calendar-event-title"
           />
           <View style={styles.sheetRow}>
@@ -889,7 +1150,7 @@ function EventSheet({
               value={date}
               onChangeText={setDate}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoCapitalize="none"
               autoCorrect={false}
               testID="calendar-event-date"
@@ -899,7 +1160,7 @@ function EventSheet({
               value={time}
               onChangeText={setTime}
               placeholder="HH:MM"
-              placeholderTextColor={c.text3}
+              placeholderTextColor={c.textHint}
               autoCapitalize="none"
               autoCorrect={false}
               testID="calendar-event-time"
@@ -926,7 +1187,7 @@ function EventSheet({
             value={course}
             onChangeText={setCourse}
             placeholder="Course (optional)"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             testID="calendar-event-course"
           />
           <TextInput
@@ -934,7 +1195,7 @@ function EventSheet({
             value={note}
             onChangeText={setNote}
             placeholder="Notes (optional)"
-            placeholderTextColor={c.text3}
+            placeholderTextColor={c.textHint}
             multiline
             testID="calendar-event-note"
           />
@@ -970,6 +1231,32 @@ const createStyles = (c: ThemeColors) =>
     zoomWrap: { flex: 1 },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6), gap: space(4), backgroundColor: c.bg },
     listBody: { paddingHorizontal: space(4), paddingTop: space(1), flexGrow: 1 },
+    appleHeader: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 20,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: CALENDAR_SIDE,
+      paddingBottom: space(1.5),
+    },
+    headerLeftSpacer: { width: 92, height: control.lg },
+    headerBackGlass: { borderRadius: radius.pill },
+    headerBack: {
+      height: control.lg,
+      minWidth: 92,
+      paddingHorizontal: space(2.5),
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1),
+    },
+    headerBackText: { ...type.title, color: c.text, fontWeight: "600" },
+    headerActionsGlass: { borderRadius: radius.pill },
+    headerActions: { flexDirection: "row", alignItems: "center", height: control.lg },
+    headerIconButton: { width: control.lg, height: control.lg, alignItems: "center", justifyContent: "center" },
 
     // Background-refresh failure banner (offline/error) — floats above the
     // active view without shifting its layout.
@@ -987,9 +1274,148 @@ const createStyles = (c: ThemeColors) =>
     },
     errorBannerText: { ...type.small, color: c.text2, textAlign: "center" },
 
-    monthListBody: { paddingHorizontal: space(4), flexGrow: 1 },
-    yearBody: { paddingHorizontal: space(4), flexGrow: 1 },
-    yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+    monthBody: { paddingHorizontal: space(4), flexGrow: 1 },
+    monthTitleRow: {
+      height: 74,
+      justifyContent: "flex-end",
+      paddingHorizontal: CALENDAR_SIDE,
+      paddingBottom: space(2),
+    },
+    monthTitle: {
+      fontSize: 46,
+      lineHeight: 52,
+      fontWeight: "700",
+      letterSpacing: -1.4,
+      color: c.text,
+    },
+    monthWeekdays: { paddingHorizontal: CALENDAR_SIDE, height: 24, justifyContent: "center" },
+    monthGridFill: { flex: 1, paddingHorizontal: CALENDAR_SIDE },
+    monthPager: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: space(3),
+    },
+    monthPagerCenter: { flex: 1, alignItems: "flex-start" },
+    monthPagerActions: { flexDirection: "row", alignItems: "center", gap: space(1) },
+    monthPagerLabel: { fontSize: 30, lineHeight: 36, fontWeight: "700", letterSpacing: -0.7, color: c.text },
+    monthToday: { ...type.small, color: c.danger, fontWeight: "600", paddingHorizontal: space(1.5) },
+    monthCard: {
+      paddingTop: space(1),
+      paddingBottom: 0,
+    },
+    // The docked day list.
+    dayPanel: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: c.bg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
+      zIndex: 6,
+    },
+    dayPanelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: space(4),
+      paddingTop: space(3),
+      paddingBottom: space(2),
+    },
+    dayPanelHeaderPressed: { opacity: 0.6 },
+    dayPanelTitle: { ...type.bodyStrong, color: c.text },
+    dayPanelCount: { ...type.small, color: c.text3 },
+    // FAB_CLEARANCE at the foot: the add button and the view switcher float
+    // over this panel's lower corners, and an event row hiding behind either
+    // one would be unreadable and un-tappable.
+    dayPanelBody: { paddingHorizontal: space(4), paddingBottom: FAB_CLEARANCE },
+    dayPanelEmpty: { ...type.small, color: c.text3, paddingVertical: space(2) },
+    yearBody: { paddingHorizontal: CALENDAR_SIDE, flexGrow: 1 },
+    yearTitle: {
+      fontSize: 44,
+      lineHeight: 52,
+      fontWeight: "700",
+      letterSpacing: -1.2,
+      color: c.danger,
+    },
+    yearRule: { height: StyleSheet.hairlineWidth, backgroundColor: c.line, marginBottom: space(3) },
+    yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start" },
+
+    searchPage: { flex: 1, paddingHorizontal: CALENDAR_SIDE, backgroundColor: c.bg },
+    searchInputWrap: {
+      height: control.lg,
+      borderRadius: radius.pill,
+      backgroundColor: c.surface2,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2),
+      paddingHorizontal: space(3),
+      marginBottom: space(3),
+    },
+    searchInput: { ...type.body, color: c.text, flex: 1, paddingVertical: 0 },
+    searchResult: {
+      paddingVertical: space(3),
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+    },
+    searchResultTitle: { ...type.bodyStrong, color: c.text },
+    searchResultMeta: { ...type.small, color: c.textHint },
+    searchEmpty: { ...type.body, color: c.textHint, textAlign: "center", paddingTop: space(10) },
+
+    appleWeekStrip: {
+      flexDirection: "row",
+      paddingHorizontal: CALENDAR_SIDE,
+      paddingBottom: space(2),
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+    },
+    appleWeekDay: { flex: 1, alignItems: "center", gap: space(1) },
+    appleWeekdayLetter: { ...type.micro, color: c.textHint, fontWeight: "600" },
+    appleWeekNumberWrap: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+    appleWeekSelected: { backgroundColor: c.text },
+    appleWeekToday: { backgroundColor: c.danger },
+    appleWeekNumber: { ...type.title, color: c.text, fontWeight: "500" },
+    appleWeekNumberSelected: { color: c.bg, fontWeight: "600" },
+    dailyDateRule: {
+      height: 52,
+      justifyContent: "center",
+      alignItems: "center",
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+    },
+    dailyDateTitle: { ...type.title, color: c.text, fontWeight: "600" },
+    timelineScroll: { flex: 1 },
+    allDaySection: {
+      minHeight: 48,
+      flexDirection: "row",
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+      paddingVertical: space(1),
+    },
+    allDayLabel: { ...type.micro, color: c.textHint, width: 66, textAlign: "right", paddingRight: space(2), paddingTop: space(1) },
+    allDayEvents: { flex: 1, gap: 2, paddingRight: CALENDAR_SIDE },
+    allDayEvent: { minHeight: 28, borderLeftWidth: 3, backgroundColor: c.surface2, borderRadius: radius.sm, justifyContent: "center", paddingHorizontal: space(2) },
+    allDayEventTitle: { ...type.small, color: c.text, fontWeight: "600" },
+    timelineCanvas: { position: "relative" },
+    hourRow: { position: "absolute", left: 0, right: 0, flexDirection: "row", alignItems: "flex-start" },
+    hourLabel: { ...type.micro, color: c.textHint, width: 66, textAlign: "right", paddingRight: space(2), transform: [{ translateY: -8 }] },
+    hourRule: { height: StyleSheet.hairlineWidth, backgroundColor: c.line, flex: 1, marginRight: CALENDAR_SIDE },
+    timelineEvent: {
+      position: "absolute",
+      left: 72,
+      right: CALENDAR_SIDE,
+      minHeight: 52,
+      borderLeftWidth: 4,
+      borderRadius: radius.sm,
+      paddingHorizontal: space(2),
+      paddingVertical: space(1),
+    },
+    timelineEventTitle: { ...type.small, color: c.text, fontWeight: "700" },
+    timelineEventMeta: { ...type.micro, color: c.textHint },
+    nowLine: { position: "absolute", left: 61, right: CALENDAR_SIDE, flexDirection: "row", alignItems: "center", zIndex: 3 },
+    nowDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: c.danger },
+    nowRule: { height: 1.5, backgroundColor: c.danger, flex: 1 },
 
     // Loading skeleton (CalendarSkeleton) — mirrors monthListBody/yearGrid's own
     // rhythm so the placeholder settles into the exact spot the real grid lands in.
@@ -1006,32 +1432,44 @@ const createStyles = (c: ThemeColors) =>
     arrow: { fontSize: 26, lineHeight: 30, color: c.text2, paddingHorizontal: space(2) },
     dayNavLabel: { ...type.h2, color: c.text },
 
-    eventCard: { flexDirection: "row", alignItems: "flex-start", gap: space(3), marginBottom: space(1.5) },
-    kindDot: { width: 8, height: 8, borderRadius: 4, marginTop: 7 },
+    eventCard: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: space(3),
+      paddingVertical: space(2),
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+    },
+    kindDot: { width: 4, height: 38, borderRadius: 2, marginTop: 1 },
     eventText: { flex: 1, minWidth: 0, gap: 2 },
     eventTitle: { ...type.bodyStrong, color: c.text },
     eventMeta: { ...type.small, color: c.text2 },
     eventNote: { ...type.small, color: c.text3 },
     emptyWrap: { paddingTop: space(10) },
 
-    // Lower-left liquid-glass view switcher.
-    fabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },
-    fab: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line },
-    fabInner: { flexDirection: "row", alignItems: "center", gap: space(1.5), height: FAB_HEIGHT, paddingHorizontal: space(3.5) },
-    fabLabel: { ...type.small, fontWeight: "600", color: c.text },
+    bottomDock: {
+      position: "absolute",
+      left: CALENDAR_SIDE,
+      right: CALENDAR_SIDE,
+      zIndex: 30,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    todayGlass: { borderRadius: radius.pill },
+    todayButton: { height: FAB_HEIGHT, minWidth: 92, paddingHorizontal: space(4), alignItems: "center", justifyContent: "center" },
+    todayText: { ...type.title, color: c.text, fontWeight: "600" },
+    bottomActionsGlass: { borderRadius: radius.pill },
+    bottomActions: { height: FAB_HEIGHT, flexDirection: "row", alignItems: "center" },
+    bottomAction: { width: 58, height: FAB_HEIGHT, alignItems: "center", justifyContent: "center" },
 
-    menuPanelWrap: { position: "absolute", left: space(4), width: 180 },
-    menuPanel: { borderRadius: radius.md, borderWidth: 1, borderColor: c.line, paddingVertical: space(1) },
+    menuPanelWrap: { position: "absolute", right: CALENDAR_SIDE, width: 184, zIndex: 40 },
+    menuPanel: { borderRadius: radius.lg, paddingVertical: space(1) },
     menuItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: space(2.75), paddingHorizontal: space(3.5) },
     menuItemPressed: { backgroundColor: c.surface2 },
     menuItemText: { ...type.body, color: c.text2, fontWeight: "600" },
     menuItemTextActive: { color: c.accent },
     menuItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.accent },
-
-    // Bottom-right "+" — opposite the ViewSwitcher's bottom-left button.
-    addFabWrap: { position: "absolute", right: space(4), alignItems: "flex-end" },
-    addFab: { width: FAB_HEIGHT, height: FAB_HEIGHT, borderRadius: FAB_HEIGHT / 2, borderWidth: 1, borderColor: c.line },
-    addFabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
 
     // Event view sheet (agent-authored, read-only).
     viewRow: { flexDirection: "row", alignItems: "baseline", gap: space(2), paddingVertical: space(1.5) },

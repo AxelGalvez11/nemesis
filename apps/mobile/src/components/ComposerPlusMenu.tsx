@@ -12,6 +12,10 @@ import { radius, space, type } from "@/theme/tokens";
 // screen's composer pill; GlassSurface `opaque` for the same page-bleed-through
 // fix). Two rows:
 //  - "Attach from Library" opens AttachLibrarySheet.tsx.
+//  - "Take photo" opens PhotoCaptureSheet.tsx — the shot is uploaded, read by
+//    the server, and lands in the SAME one-shot attachment chip the Library
+//    picker fills, because a photograph and an attached note are the same thing
+//    once they are text (owner 2026-07-24).
 //  - "Deep research" is a PERSISTENT toggle (checkmark on the right when on) —
 //    stays on across sends until the student turns it off again, unlike the
 //    attach flow's one-shot chip (owner spec calls it a "toggle row", which
@@ -38,6 +42,7 @@ export function ComposerPlusMenu({
   onClose,
   bottomOffset,
   onAttach,
+  onTakePhoto,
   deepResearchOn,
   onToggleDeepResearch,
 }: {
@@ -48,6 +53,7 @@ export function ComposerPlusMenu({
    *  row itself renders with (see Composer.tsx's COMPOSER_PILL_HEIGHT). */
   bottomOffset: number;
   onAttach: () => void;
+  onTakePhoto: () => void;
   deepResearchOn: boolean;
   onToggleDeepResearch: () => void;
 }) {
@@ -90,6 +96,15 @@ export function ComposerPlusMenu({
             <Text style={styles.rowLabel}>Attach from Library</Text>
           </Pressable>
           <Pressable
+            testID="composer-plus-camera"
+            onPress={() => pickAndClose(onTakePhoto)}
+            style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+          >
+            <CameraIcon size={17} color={c.text2} />
+            <Text style={styles.rowLabel}>Take photo</Text>
+          </Pressable>
+          <Pressable
             testID="composer-plus-deep-research"
             onPress={() => pickAndClose(onToggleDeepResearch)}
             style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
@@ -104,6 +119,23 @@ export function ComposerPlusMenu({
         </GlassSurface>
       </Animated.View>
     </View>
+  );
+}
+
+/** Local camera glyph — same rule as CheckIcon below: components/icons.tsx has
+ *  no camera, and a one-off glyph stays in the file that needs it. */
+function CameraIcon({ size = 17, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinejoin="round"
+      />
+      <Path d="M12 16a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" fill="none" stroke={color} strokeWidth={1.7} />
+    </Svg>
   );
 }
 

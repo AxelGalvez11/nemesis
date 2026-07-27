@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { InputAccessoryView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { GlassSurface } from "./GlassSurface";
+import { accessoryPillWidth } from "@/lib/accessory-bar";
 import {
   addColumn,
   addRow,
@@ -40,6 +42,7 @@ export function NoteTableEditor({
   body,
   onChange,
   onInteract,
+  accessoryViewID,
   testID,
 }: {
   /** The block's markdown, read ONCE — see the note above. */
@@ -50,10 +53,22 @@ export function NoteTableEditor({
    *  block — otherwise moving between cells reads as leaving it, and the grid
    *  folds back into rendered markdown mid-sentence. */
   onInteract: () => void;
+  /** iOS accessory-view id for the cells, so the grid's own +/- controls ride
+   *  ABOVE THE KEYBOARD as well as sitting under the table (owner 2026-07-24:
+   *  "editing toolbar should always be present when keyboard it up"). With a
+   *  cell focused, the inline controls are usually behind the keyboard.
+   *
+   *  It is deliberately the grid's OWN toolbar and not the note editor's
+   *  formatting pill: those buttons write markdown into the block's raw source,
+   *  which for a table means dropping `**` in among the pipes the grid exists
+   *  to hide. */
+  accessoryViewID?: string;
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const pillWidth = accessoryPillWidth(windowWidth, space(3));
   // The caller only mounts this for a block that parses, so the fallback is
   // purely defensive — a one-cell table is still something you can type in.
   const [table, setTable] = useState<MarkdownTable>(
@@ -67,6 +82,27 @@ export function NoteTableEditor({
   };
 
   const columns = table.header.length;
+
+  // One definition, rendered twice (inline and in the keyboard accessory) so
+  // the two can never drift apart.
+  const sizeControls = (
+    <>
+      <GridButton label="+ Row" onPress={() => commit(addRow(table))} testID="note-table-add-row" />
+      <GridButton label="+ Column" onPress={() => commit(addColumn(table))} testID="note-table-add-column" />
+      <GridButton
+        label="− Row"
+        disabled={table.rows.length === 0}
+        onPress={() => commit(removeRow(table, table.rows.length - 1))}
+        testID="note-table-remove-row"
+      />
+      <GridButton
+        label="− Column"
+        disabled={columns <= 1}
+        onPress={() => commit(removeColumn(table, columns - 1))}
+        testID="note-table-remove-column"
+      />
+    </>
+  );
 
   return (
     <View style={styles.wrap} testID={testID ?? "note-table-editor"}>
@@ -85,8 +121,9 @@ export function NoteTableEditor({
                 value={cell}
                 onChangeText={(value) => commit(setCell(table, -1, column, value))}
                 onFocus={onInteract}
+                inputAccessoryViewID={Platform.OS === "ios" ? accessoryViewID : undefined}
                 placeholder="Column"
-                placeholderTextColor={c.text3}
+                placeholderTextColor={c.textHint}
                 multiline
                 scrollEnabled={false}
                 testID={`note-table-header-${column}`}
@@ -102,6 +139,7 @@ export function NoteTableEditor({
                   value={cells[column] ?? ""}
                   onChangeText={(value) => commit(setCell(table, row, column, value))}
                   onFocus={onInteract}
+                  inputAccessoryViewID={Platform.OS === "ios" ? accessoryViewID : undefined}
                   multiline
                   scrollEnabled={false}
                   testID={`note-table-cell-${row}-${column}`}
@@ -113,23 +151,22 @@ export function NoteTableEditor({
       </ScrollView>
 
       {/* Grid size. `−` takes the last row/column: a phone has no room for a
-          delete control on every row, and adding one back is a single tap. */}
-      <View style={styles.controls}>
-        <GridButton label="+ Row" onPress={() => commit(addRow(table))} testID="note-table-add-row" />
-        <GridButton label="+ Column" onPress={() => commit(addColumn(table))} testID="note-table-add-column" />
-        <GridButton
-          label="− Row"
-          disabled={table.rows.length === 0}
-          onPress={() => commit(removeRow(table, table.rows.length - 1))}
-          testID="note-table-remove-row"
-        />
-        <GridButton
-          label="− Column"
-          disabled={columns <= 1}
-          onPress={() => commit(removeColumn(table, columns - 1))}
-          testID="note-table-remove-column"
-        />
-      </View>
+          delete control on every row, and adding one back is a single tap.
+          Kept inline as well as in the keyboard accessory below — this is the
+          version you use with the keyboard down, and Android's only one. */}
+      <View style={styles.controls}>{sizeControls}</View>
+
+      {/* The same controls above the keyboard, for when a cell has the caret
+          and the inline row is behind it. */}
+      {Platform.OS === "ios" && accessoryViewID ? (
+        <InputAccessoryView nativeID={accessoryViewID} backgroundColor="transparent">
+          <View style={styles.accessoryRail} pointerEvents="box-none">
+            <GlassSurface style={[styles.accessoryPill, { maxWidth: pillWidth }]} fallbackColor={c.glassMenu} opaque shadow>
+              <View style={styles.accessoryRow}>{sizeControls}</View>
+            </GlassSurface>
+          </View>
+        </InputAccessoryView>
+      ) : null}
     </View>
   );
 }
@@ -164,6 +201,17 @@ function GridButton({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     wrap: { marginVertical: space(1) },
+    // The keyboard accessory: the same floating glass pill the note toolbar
+    // uses, so the two bars are visibly the same kind of thing.
+    accessoryRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
+    // These controls sit in a plain row, so the pill measures itself from its
+    // children and has never collapsed the way the two scrolling toolbars did
+    // (lib/accessory-bar.ts). The old `maxWidth: "100%"` is gone all the same: a
+    // percentage of a parent with no width clamps nothing, so it was a guard
+    // that read as real and wasn't. maxWidth comes from the window instead, and
+    // now genuinely keeps a wide row from running off the screen edge.
+    accessoryPill: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    accessoryRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(2), paddingVertical: space(1) },
     gridInner: { paddingRight: space(4) },
     grid: { borderWidth: 1, borderColor: c.line, borderRadius: radius.sm, overflow: "hidden" },
     row: { flexDirection: "row" },

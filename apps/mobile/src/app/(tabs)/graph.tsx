@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import Svg, { Line } from "react-native-svg";
+import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Svg, { Path } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
@@ -14,8 +14,7 @@ import { SettingsIcon } from "@/components/icons";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { capGraphNotes, DEFAULT_FORCES, fitScaleFor, isSmallGraph, type LabelMode, shouldShowLabel } from "@/lib/graph-settings";
-import { buildNoteGraph, createLayoutSim, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
-import type { GraphNode } from "@/lib/note-graph";
+import { buildNoteGraph, createLayoutSim, type GraphNode, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import type { ThemeColors } from "@/theme/palette";
 import { radius, space, type } from "@/theme/tokens";
@@ -36,6 +35,25 @@ import { radius, space, type } from "@/theme/tokens";
 // carry its own drag/tap gesture, and the whole canvas pans/zooms as a cheap
 // UI-thread transform (reanimated shared values) — no per-frame JS work
 // while idle.
+//
+// NOTHING RE-RENDERS WHILE THE GRAPH MOVES (owner 2026-07-24, second report:
+// the graph was "still slow"). The loop below used to push sim.snapshot() into
+// React state every frame, so every frame re-rendered 200 node Views and every
+// edge, and each node rebuilt three gesture objects in its own render body.
+// Measured (a throwaway Deno bench over this very module): the physics is 43ms
+// of JS for a whole 200-node settle — never the cost — but a settle is 45
+// frames and ONE node drag holds the sim warm for about 1,400, so a single drag
+// meant ~1,400 full reconciliations and on the order of 840,000 gesture
+// allocations. The earlier fix stopped a drag running FOREVER; it did not make
+// the frames cheap.
+//
+// Now positions live in a reanimated shared value (a flat [x0,y0,x1,y1,…]
+// array, LayoutSim.readPositions) that the loop assigns once per frame. Nodes
+// read their two slots in a useAnimatedStyle transform and the edges are ONE
+// <Path> whose `d` is built in a useAnimatedProps worklet — so motion happens
+// entirely on the UI thread and React re-renders only when the LIBRARY changes.
+// Everything React still draws (a node's size, color, label) is a function of
+// the graph's structure, not of where it currently is.
 //
 // One requestAnimationFrame loop (tick, below) steps the sim (a
 // settle-and-stop cooling schedule) and stops scheduling itself the instant
@@ -67,6 +85,10 @@ const STEPS_PER_FRAME = 2;
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 
+/** Every edge as one path — see the top-of-file note on why edges are a single
+ *  animated element rather than one <Line> per edge. */
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
 type Status = "loading" | "signin" | "empty" | "ready";
 
 /** Stable per-note signature (id + updated_at, order-independent) — lets a
@@ -90,7 +112,6 @@ export default function GraphScreen() {
   const win = useWindowDimensions();
   const [status, setStatus] = useState<Status>("loading");
   const [builtGraph, setBuiltGraph] = useState<NoteGraph | null>(null);
-  const [graph, setGraph] = useState<NoteGraph | null>(null);
   const [emptyRefreshing, setEmptyRefreshing] = useState(false);
   const [gravity, setGravity] = useState(DEFAULT_FORCES.gravity);
   const [repulsion, setRepulsion] = useState(DEFAULT_FORCES.repulsion);
@@ -118,6 +139,19 @@ export default function GraphScreen() {
   // fitToContent. Not a state: reading it inside the rAF loop must never
   // re-render, and setting it must never restart the loop.
   const pendingFitRef = useRef(true);
+  // Has the student moved the camera themselves since this layout was seeded?
+  //
+  // A big graph takes a couple of seconds to settle, and the fit fires when it
+  // does. If you spent those seconds pinching into a corner, the fit arrives
+  // late and hauls you back out — which is exactly what the owner reported as
+  // "zooms out after 3 seconds, annoying" (2026-07-24). A deliberate camera
+  // move outranks an automatic one, so the first pinch/pan/node-drag cancels
+  // the pending fit for good.
+  //
+  // A shared value rather than a ref because the gesture callbacks that set it
+  // are worklets on the UI thread; `.value` still reads correctly from the JS
+  // thread, which is where the rAF loop checks it.
+  const userAdjusted = useSharedValue(false);
   // The seeding effect below reads this once per (re)seed instead of depending
   // on gravity/repulsion/linkDistance state directly — depending on them would
   // reseed the spiral (and jump every node's position) on every slider drag.
@@ -138,6 +172,11 @@ export default function GraphScreen() {
   // Whole-canvas pinch/pan transform (2D mode only). `saved*` hold the value
   // the gesture started from, so each new pinch/pan composes on top of
   // wherever the canvas already was instead of jumping back to identity.
+  // Every node's live position, flat: [x0, y0, x1, y1, …]. The ONE thing the
+  // animation loop writes each frame, and the only channel node transforms and
+  // the edge path read from. See the top-of-file note.
+  const positions = useSharedValue<number[]>([]);
+
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -209,19 +248,26 @@ export default function GraphScreen() {
     const sim = sim2DRef.current;
     if (!sim) return;
     for (let i = 0; i < STEPS_PER_FRAME && !sim.settled; i++) sim.step();
-    const snap = sim.snapshot();
-    setGraph(snap);
+    // The ONLY per-frame work: one array assignment into a shared value. No
+    // setState, so React does not run — the nodes' transforms and the edge
+    // path pick this up on the UI thread. See the top-of-file note.
+    positions.value = sim.readPositions();
     if (!sim.settled) {
       rafRef.current = requestAnimationFrame(tick);
       return;
     }
     // Settled. Fit ONCE per seed/reset — refitting after every slider nudge
     // would yank the view out from under someone who had panned deliberately.
+    // snapshot() is fine HERE (once, at rest) where it was ruinous per frame.
+    //
+    // …and not at all if the student already framed the graph themselves while
+    // it was settling. Clearing the flag either way means a cancelled fit stays
+    // cancelled rather than firing on the next reheat.
     if (pendingFitRef.current) {
       pendingFitRef.current = false;
-      fitToContent(snap);
+      if (!userAdjusted.value) fitToContent(sim.snapshot());
     }
-  }, [fitToContent]);
+  }, [fitToContent, positions, userAdjusted]);
 
   const ensureTicking = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -311,10 +357,13 @@ export default function GraphScreen() {
     (index: number) => {
       const sim = sim2DRef.current;
       if (!sim) return;
+      // Moving a node is as deliberate as moving the camera: whatever you drag
+      // into view stays there instead of being reframed when the sim settles.
+      userAdjusted.value = true;
       sim.startDrag(index);
       ensureTicking();
     },
-    [ensureTicking],
+    [ensureTicking, userAdjusted],
   );
 
   const handleNodeDragTo = useCallback(
@@ -323,9 +372,11 @@ export default function GraphScreen() {
       if (!sim) return;
       sim.pin(index, x, y);
       ensureTicking();
-      setGraph(sim.snapshot());
+      // Write straight through so the dragged node tracks the finger on the
+      // very next frame rather than waiting for the loop's own tick.
+      positions.value = sim.readPositions();
     },
-    [ensureTicking],
+    [ensureTicking, positions],
   );
 
   const handleNodeDragEnd = useCallback(() => {
@@ -333,8 +384,8 @@ export default function GraphScreen() {
     if (!sim) return;
     sim.endDrag();
     ensureTicking();
-    setGraph(sim.snapshot());
-  }, [ensureTicking]);
+    positions.value = sim.readPositions();
+  }, [ensureTicking, positions]);
 
   // Apply a fresh notes list: rebuilds the graph (and reseeds the layout — see the
   // seeding effect below) only when librarySignature actually changed, so a
@@ -348,7 +399,6 @@ export default function GraphScreen() {
       lastSignatureRef.current = "";
       setStatus("empty");
       setBuiltGraph(null);
-      setGraph(null);
       return;
     }
     const signature = librarySignature(notes);
@@ -443,11 +493,14 @@ export default function GraphScreen() {
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
-    // A fresh layout earns a fresh zoom-to-fit once it settles.
+    // A fresh layout earns a fresh zoom-to-fit once it settles — and a clean
+    // slate on whether the student has framed it themselves, since the camera
+    // just went back to identity above.
     pendingFitRef.current = true;
+    userAdjusted.value = false;
     if (!builtGraph || builtGraph.nodes.length === 0) {
       sim2DRef.current = null;
-      setGraph(null);
+      positions.value = [];
       return;
     }
     const sim = createLayoutSim(builtGraph, {
@@ -459,7 +512,9 @@ export default function GraphScreen() {
       width: canvasW,
     });
     sim2DRef.current = sim;
-    setGraph(sim.snapshot());
+    // Seed the shared value so the spiral is on screen from the first frame,
+    // exactly as the old synchronous snapshot() did.
+    positions.value = sim.readPositions();
     ensureTicking();
 
     return () => {
@@ -472,12 +527,14 @@ export default function GraphScreen() {
     canvasH,
     ensureTicking,
     stopTicking,
+    positions,
     scale,
     savedScale,
     translateX,
     translateY,
     savedTranslateX,
     savedTranslateY,
+    userAdjusted,
     // Not read inside the effect body (initialForces.current is, instead) —
     // bumped purely to force a reseed on Reset; see reseedNonce's declaration
     // above for why it's the only thing that does.
@@ -495,6 +552,8 @@ export default function GraphScreen() {
       Gesture.Pinch()
         .onStart(() => {
           savedScale.value = scale.value;
+          // You framed it yourself — no automatic fit is going to override that.
+          userAdjusted.value = true;
         })
         .onUpdate((event) => {
           scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedScale.value * event.scale));
@@ -502,7 +561,7 @@ export default function GraphScreen() {
         .onEnd(() => {
           savedScale.value = scale.value;
         }),
-    [scale, savedScale],
+    [scale, savedScale, userAdjusted],
   );
 
   const canvasPanGesture = useMemo(
@@ -513,6 +572,7 @@ export default function GraphScreen() {
         .onStart(() => {
           savedTranslateX.value = translateX.value;
           savedTranslateY.value = translateY.value;
+          userAdjusted.value = true;
         })
         .onUpdate((event) => {
           translateX.value = savedTranslateX.value + event.translationX;
@@ -522,7 +582,7 @@ export default function GraphScreen() {
           savedTranslateX.value = translateX.value;
           savedTranslateY.value = translateY.value;
         }),
-    [translateX, translateY, savedTranslateX, savedTranslateY],
+    [translateX, translateY, savedTranslateX, savedTranslateY, userAdjusted],
   );
 
   const canvasGesture = useMemo(
@@ -533,6 +593,54 @@ export default function GraphScreen() {
   const canvasAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
   }));
+
+  // Edge endpoints as a flat list of node indices — [a0, b0, a1, b1, …] — so
+  // the worklet below indexes plain numbers instead of walking edge objects.
+  // Rebuilt only when the graph itself changes.
+  const edgePairs = useMemo(() => {
+    const out: number[] = [];
+    for (const edge of builtGraph?.edges ?? []) out.push(edge.a, edge.b);
+    return out;
+  }, [builtGraph]);
+
+  // EVERY edge in one path, rebuilt on the UI thread each frame. One animated
+  // element for the whole edge set rather than one <Line> per edge: the old
+  // per-edge elements each needed a React render and a native prop update every
+  // frame (400 of them on a full graph), which is half of what made the screen
+  // slow. A "M x y L x y" run per edge is the cheapest possible d-string.
+  //
+  // COORDINATES ARE ROUNDED TO 0.1pt, and that is the point of this pass (owner
+  // 2026-07-24: "still feels laggy not smooth like obsidian"). Measured on the
+  // real library shape — 74 notes, 148 edges — the JS half of a settle frame is
+  // 0.57ms, about 3% of the 16.7ms budget, and building this string is 0.02ms of
+  // that. So the simulation was never the problem and neither was this loop.
+  // What IS per-frame work is what happens to the string AFTERWARDS: it crosses
+  // to native and react-native-svg parses it into path segments, every frame,
+  // and both of those scale with its length. Unrounded floats print as
+  // "M182.43871293144226 305.9982071..." — 10.7KB per frame. Rounded, the same
+  // path is 3.3KB: 69% less to marshal and re-parse. Building it costs 0.02ms
+  // more, which buys a 7.4KB reduction in the part we don't control.
+  //
+  // 0.1pt is invisible: a point is 3 physical pixels on this hardware, so the
+  // worst-case error is a third of a pixel on a 1pt hairline.
+  const edgeProps = useAnimatedProps(() => {
+    const p = positions.value;
+    if (p.length === 0 || edgePairs.length === 0) return { d: "" };
+    let d = "";
+    for (let i = 0; i < edgePairs.length; i += 2) {
+      const a = edgePairs[i] * 2;
+      const b = edgePairs[i + 1] * 2;
+      const ax = p[a];
+      const ay = p[a + 1];
+      const bx = p[b];
+      const by = p[b + 1];
+      // A node index with no position yet (a frame between reseed and first
+      // write) would otherwise put "NaN" into the path and blank the whole set.
+      if (ax === undefined || ay === undefined || bx === undefined || by === undefined) continue;
+      d += `M${Math.round(ax * 10) / 10} ${Math.round(ay * 10) / 10}L${Math.round(bx * 10) / 10} ${Math.round(by * 10) / 10}`;
+    }
+    return { d };
+  }, [edgePairs]);
 
   // Graph-shape aggregates (max degree, "is this a small graph") are
   // properties of builtGraph itself, computed once here.
@@ -605,36 +713,42 @@ export default function GraphScreen() {
           style={[styles.canvasClip, { width: canvasW, height: canvasH, marginTop: contentTop }]}
           testID="graph-canvas"
         >
-          {graph ? (
-            <GestureDetector gesture={canvasGesture}>
-              <Animated.View style={[{ width: canvasW, height: canvasH }, canvasAnimatedStyle]}>
-                <Svg width={canvasW} height={canvasH}>
-                  {graph.edges.map((edge, i) => {
-                    const a = graph.nodes[edge.a];
-                    const b = graph.nodes[edge.b];
-                    return <Line key={`e${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c.lineMuted} strokeWidth={1} />;
-                  })}
-                </Svg>
-                {graph.nodes.map((node, i) => (
-                  <GraphNodeView
-                    key={node.pathHash}
-                    c={c}
-                    canvasPanGesture={canvasPanGesture}
-                    index={i}
-                    maxDegree={maxDegree}
-                    node={node}
-                    onDragEnd={handleNodeDragEnd}
-                    onDragStart={handleNodeDragStart}
-                    onDragTo={handleNodeDragTo}
-                    onOpen={openNode}
-                    scale={scale}
-                    showLabel={showLabelFor(node)}
-                    sizeMultiplier={nodeSize}
-                  />
-                ))}
-              </Animated.View>
-            </GestureDetector>
-          ) : null}
+          {/* Rendered from builtGraph — the STRUCTURE — not from a per-frame
+              positions snapshot. This subtree re-renders when the library
+              changes and at essentially no other time; movement is carried by
+              the shared `positions` array underneath it. */}
+          <GestureDetector gesture={canvasGesture}>
+            <Animated.View style={[{ width: canvasW, height: canvasH }, canvasAnimatedStyle]}>
+              <Svg width={canvasW} height={canvasH}>
+                {/* Edges sit UNDER the nodes, not beside them (owner 2026-07-24:
+                    "node connections need to be fainter"). Opacity rather than a
+                    paler token: every edge shares this one Path, so the lines
+                    cross each other constantly, and a pale solid stroke still
+                    reads as a dense web wherever they pile up. At 0.4 a single
+                    edge is a hint and a bundle of them is a soft shadow, which
+                    is the Obsidian look. */}
+                <AnimatedPath animatedProps={edgeProps} stroke={c.lineMuted} strokeOpacity={0.4} strokeWidth={1} fill="none" />
+              </Svg>
+              {builtGraph.nodes.map((node, i) => (
+                <GraphNodeView
+                  key={node.pathHash}
+                  c={c}
+                  canvasPanGesture={canvasPanGesture}
+                  index={i}
+                  maxDegree={maxDegree}
+                  node={node}
+                  onDragEnd={handleNodeDragEnd}
+                  onDragStart={handleNodeDragStart}
+                  onDragTo={handleNodeDragTo}
+                  onOpen={openNode}
+                  positions={positions}
+                  scale={scale}
+                  showLabel={showLabelFor(node)}
+                  sizeMultiplier={nodeSize}
+                />
+              ))}
+            </Animated.View>
+          </GestureDetector>
         </View>
       ) : null}
 

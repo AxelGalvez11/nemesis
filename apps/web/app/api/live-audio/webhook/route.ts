@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { reportVoiceCost } from "@/lib/cost-report";
 import { adminClient, json } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -58,7 +59,27 @@ export async function POST(request: Request) {
     return json({ error: "Reconciliation failed" }, 503);
   }
 
-  const result = (data ?? {}) as { ok?: boolean; reason?: string };
+  const result = (data ?? {}) as { ok?: boolean; reason?: string; actual_seconds?: number };
   if (!result.ok) return json({ error: "Unauthorized" }, 401);
+
+  // Report what the window cost us — but ONLY on the reconciling delivery. A
+  // provider retry answers "already_completed" with the same seconds, and charging
+  // those twice would inflate the voice bill on every redelivery.
+  if (result.reason !== "already_completed" && typeof result.actual_seconds === "number") {
+    const { data: reservation } = await adminClient()
+      .from("live_audio_reservations")
+      .select("user_id")
+      .eq("id", reservationId)
+      .maybeSingle();
+    if (reservation?.user_id) {
+      await reportVoiceCost({
+        lane: "live",
+        provider: "assemblyai_streaming",
+        seconds: result.actual_seconds,
+        userId: reservation.user_id,
+      });
+    }
+  }
+
   return json({ ok: true, reason: result.reason ?? "completed" });
 }

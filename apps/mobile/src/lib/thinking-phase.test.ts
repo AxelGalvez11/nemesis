@@ -1,6 +1,6 @@
 // Deno unit tests (repo convention) for the chat thinking-preview phrases.
 // Run: deno test --no-check apps/mobile/src/lib/thinking-phase.test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertStrictEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { phaseLabel, settledLabel, shortQuery } from "./thinking-phase.ts";
 
 Deno.test("each phase reads as a plain-English line", () => {
@@ -58,4 +58,26 @@ Deno.test("settled label rounds seconds and stays quiet on instant turns", () =>
   assertEquals(settledLabel(400), "");
   assertEquals(settledLabel(1000), "Thought for 1s");
   assertEquals(settledLabel(6400), "Thought for 6s");
+});
+
+// ── the workspace-tool phase ─────────────────────────────────────────────────
+
+Deno.test("a running tool says what it is doing, in the student's words", () => {
+  assertStrictEquals(phaseLabel({ kind: "acting", tools: ["add_flashcards"] }), "Making your flashcards");
+  assertStrictEquals(phaseLabel({ kind: "acting", tools: ["add_practice_test"] }), "Writing your practice test");
+  assertStrictEquals(phaseLabel({ kind: "acting", tools: ["search_library"] }), "Looking through your library");
+});
+
+Deno.test("several tools at once get one honest line, not three stacked phrases", () => {
+  // Naming only the first would imply it is the only thing happening; naming all
+  // three would not fit on the line.
+  assertStrictEquals(
+    phaseLabel({ kind: "acting", tools: ["search_library", "add_flashcards"] }),
+    "Working in your workspace",
+  );
+});
+
+Deno.test("an unrecognised or missing tool never shows a function name", () => {
+  assertStrictEquals(phaseLabel({ kind: "acting", tools: [] }), "Working in your workspace");
+  assertStrictEquals(phaseLabel({ kind: "acting", tools: ["some_new_tool"] }), "Working in your workspace");
 });

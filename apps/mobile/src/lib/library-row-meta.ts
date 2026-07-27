@@ -34,8 +34,21 @@ export function fileKindOf(path: string): FileKind {
  * set the screen seeds as fully-collapsed on a fresh open, since a folder that
  * holds notes and a folder that should start collapsed are exactly the same
  * set. */
-export function folderNoteCounts(paths: string[]): Map<string, number> {
+export function folderNoteCounts(paths: string[], folders: readonly string[] = []): Map<string, number> {
   const counts = new Map<string, number>();
+  // Explicit folders first, at zero. Two reasons, and the second is the one
+  // that bites: an empty folder should read "0" rather than blank, AND this
+  // map's keys double as "every folder that exists" for the screen's
+  // start-collapsed seed — so a folder missing from here is a folder the tree
+  // forgets to collapse. Counts are additive below, so seeding 0 changes
+  // nothing for a folder that does hold notes.
+  for (const folder of folders) {
+    let acc = "";
+    for (const segment of folder.split("/").filter(Boolean)) {
+      acc = acc === "" ? segment : `${acc}/${segment}`;
+      counts.set(acc, counts.get(acc) ?? 0);
+    }
+  }
   for (const path of paths) {
     const segments = path.split("/").filter(Boolean);
     segments.pop(); // drop the filename — remaining segments are ancestor folders

@@ -3,19 +3,20 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle } from "react-native-svg";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronIcon, FolderIcon } from "@/components/icons";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { StudyArtifactsPanel } from "@/components/StudyArtifactsPanel";
 import { SkeletonDeckList } from "@/components/Skeleton";
 import { GlassSurface } from "@/components/GlassSurface";
-import { SlideUpSheet } from "@/components/StudySheet";
 import { TOP_BAR_BUTTON, TOP_BAR_PAD_TOP } from "@/components/TopBar";
 import { StudyAddSheet, type StudyAddStep } from "@/components/StudyAddSheet";
 import { StudyBrowseSheet } from "@/components/StudyBrowseSheet";
+import { StudyImportSheet } from "@/components/StudyImportSheet";
 import {
   StudyModeMenu,
   StudyModePopup,
@@ -32,6 +33,7 @@ import {
   deleteStudyDeck,
   deleteStudyGroup,
   fetchCloudStudy,
+  loadCachedStudy,
   moveStudyDeck,
   moveStudyGroup,
   renameStudyDeck,
@@ -42,7 +44,6 @@ import {
 } from "@/api/cloudStudy";
 import { allGroupPaths, buildDeckTree, flattenDeckTree, type DeckSort, type DeckTreeRow } from "@/lib/deck-tree";
 import { decksInGroup, isWithinGroup, pathLeaf, pathParent } from "@/lib/study-tree";
-import { deckRetention } from "@/lib/study-progress";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -90,8 +91,11 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the control stays one tap wide. It IS this screen's header: it's published
 // into the TopBar's center slot, where the word "Study" used to sit (same
 // owner, later the same day), so the list gets that whole row back.
-// Tests/Mindmaps aren't built yet, so selecting them swaps the deck list for
-// an inline "coming soon" panel rather than routing anywhere. Stats rides in
+// Tests and Mindmaps are REAL as of 2026-07-24 (they said "coming soon" for
+// weeks while the artifacts already existed in the account, written from the web
+// or by chat, and were invisible here): selecting either swaps the deck list for
+// StudyArtifactsPanel, which reads study_artifacts — the same rows the web
+// workspace writes. Stats rides in
 // the same menu as a trailing row; tapping it still opens the same
 // numbers-only SlideUpSheet as before (due/new/total/decks — no invented
 // streak metric).
@@ -104,8 +108,6 @@ interface DeckRow {
   deck: CloudStudyDeck;
   leaf: string;
   counts: DeckCounts;
-  /** Percent of reviews answered correctly (0..1), null before any review. */
-  retention: number | null;
   cardCount: number;
 }
 
@@ -118,11 +120,6 @@ const INDENT_STEP = 14;
  *  its actions fan out across every deck beneath it (see lib/study-tree.ts). */
 type StudyRowTarget = { kind: "deck"; id: string; name: string } | { kind: "folder"; path: string; label: string };
 
-const COMING_SOON_LABEL: Record<Exclude<StudyModeKey, "cards">, string> = {
-  tests: "Tests",
-  mindmaps: "Mindmaps",
-};
-
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 export default function StudyScreen() {
@@ -133,6 +130,8 @@ export default function StudyScreen() {
   const { setHeaderCenter, setHeaderRight } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const params = useLocalSearchParams<{ section?: string }>();
+  const requestedSection = Array.isArray(params.section) ? params.section[0] : params.section;
 
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -160,13 +159,19 @@ export default function StudyScreen() {
   // reads out the current section; `activeMode` decides which content area
   // below renders.
   const [activeMode, setActiveMode] = useState<StudyModeKey>("cards");
+  useEffect(() => {
+    if (requestedSection === "cards" || requestedSection === "tests" || requestedSection === "mindmaps") {
+      setActiveMode(requestedSection);
+    }
+  }, [requestedSection]);
 
   // The top-right "…" menu (owner 2026-07-23, replacing the lower-left "+")
   // opens these. StudyAddSheet now opens straight to a step (Create folder /
   // New card); Browse is its own full sheet.
   const [addSheetOpen, setAddSheetOpen] = useState(false);
-  const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("menu");
+  const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("new-cards");
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [importSource, setImportSource] = useState<"anki" | "quizlet" | null>(null);
   // The header "…" actions dropdown.
   const [actionsOpen, setActionsOpen] = useState(false);
   // Deck ordering (owner 2026-07-23 → Sorting) and its picker sheet.
@@ -184,9 +189,6 @@ export default function StudyScreen() {
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  // Stats — moved off its own FAB into the toggle's trailing icon-segment;
-  // the sheet's own content is unchanged.
-  const [statsOpen, setStatsOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
 
   // The section dropdown IS this screen's header (owner 2026-07-22: "remove
@@ -243,11 +245,37 @@ export default function StudyScreen() {
     setSelectedKeys(new Set());
   }, []);
 
+  /** True once a real fetch has landed this session — the guard that stops a
+   *  slow cache read from painting stale decks over fresh ones. A ref, not
+   *  state: the check has to be synchronous at the moment the read resolves,
+   *  and it must never itself cause a render. */
+  const fetchLandedRef = useRef(false);
+  useEffect(() => {
+    // A different account has a different cache; let it seed again.
+    fetchLandedRef.current = false;
+  }, [userId]);
+
+  /** Seed from the disk cache — the whole reason Study stops showing skeletons
+   *  on every open (owner 2026-07-24: "why does study page take long to load
+   *  always"). It only ever fills a screen the network hasn't answered for yet. */
+  const seedFromCache = useCallback(async (uid: string) => {
+    const cached = await loadCachedStudy(uid);
+    if (fetchLandedRef.current || cached.decks.length === 0) return;
+    setDecks(cached.decks);
+    setCards(cached.cards);
+    setStatus("loaded");
+    if (!appliedDefaultCollapseRef.current) {
+      appliedDefaultCollapseRef.current = true;
+      setCollapsedFolders(new Set(allGroupPaths(cached.decks.map((deck) => deck.name))));
+    }
+  }, []);
+
   const load = useCallback(async (uid: string) => {
     setStatus((prev) => (prev === "loaded" ? prev : "loading"));
     setLoadError(null);
     try {
       const { decks: nextDecks, cards: nextCards } = await fetchCloudStudy(uid);
+      fetchLandedRef.current = true;
       setDecks(nextDecks);
       setCards(nextCards);
       setStatus("loaded");
@@ -267,10 +295,17 @@ export default function StudyScreen() {
     }
   }, []);
 
+  // Cache first (instant), then the cloud refresh behind it — the same
+  // "paint what we know, then reconcile" policy the Library and Graph tabs
+  // already use. Both start together: the cache read is local and wins the
+  // race in practice, and seedFromCache no-ops if the fetch somehow lands
+  // first.
   useFocusEffect(
     useCallback(() => {
-      if (userId) void load(userId);
-    }, [load, userId]),
+      if (!userId) return;
+      void seedFromCache(userId);
+      void load(userId);
+    }, [load, seedFromCache, userId]),
   );
 
   // --- long-press row actions (owner 2026-07-22) ----------------------------
@@ -522,10 +557,23 @@ export default function StudyScreen() {
   // Unsorted on purpose: buildDeckTree owns ordering now (folders alphabetical,
   // decks due-first within their own level), so sorting here would just be
   // thrown away a line later.
+  //
+  // Bucket the cards by deck ONCE. This used to be `cards.filter(...)` inside
+  // the map, i.e. a full scan of every card for every deck — on the Captain
+  // Hook starter deck that is 6,487 cards read once per deck, tens of thousands
+  // of comparisons on every single render of this screen, which is a large part
+  // of why the list felt slow to arrive (owner 2026-07-24: "loading time is
+  // still slow everytime"). One grouping pass is O(cards + decks) instead.
+  const cardsByDeck = new Map<string, typeof cards>();
+  for (const card of cards) {
+    const bucket = cardsByDeck.get(card.deckId);
+    if (bucket) bucket.push(card);
+    else cardsByDeck.set(card.deckId, [card]);
+  }
   const deckRows: DeckRow[] = decks.map((deck) => {
     const { leaf } = deckGroupInfo(deck.name);
-    const deckCards = cards.filter((card) => card.deckId === deck.id);
-    return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
+    const deckCards = cardsByDeck.get(deck.id) ?? [];
+    return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf };
   });
 
   // Row-action derivations. Every folder is a move destination; for a FOLDER
@@ -552,8 +600,6 @@ export default function StudyScreen() {
     return pathLeaf(decks.find((d) => d.id === rest)?.name ?? "");
   })();
 
-  const totalActionable = deckRows.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0);
-  const totalNew = deckRows.reduce((sum, d) => sum + d.counts.newCount, 0);
   const rows: DeckTreeRow<DeckRow>[] = flattenDeckTree(
     buildDeckTree(
       deckRows.map((row) => ({
@@ -566,16 +612,6 @@ export default function StudyScreen() {
     ),
     collapsedFolders,
   );
-
-  // Stats sheet numbers: every one is summed from data this screen already
-  // fetched — nothing here is guessed. "Streak" has no source of truth yet,
-  // so it says so instead of inventing a number.
-  const statTiles: { label: string; value: string; color: string }[] = [
-    { label: "Due now", value: String(totalActionable), color: c.accent },
-    { label: "New", value: String(totalNew), color: c.text },
-    { label: "Total cards", value: String(cards.length), color: c.text },
-    { label: "Decks", value: String(decks.length), color: c.text },
-  ];
 
   return (
     <View style={styles.flex} testID="study-screen">
@@ -606,7 +642,7 @@ export default function StudyScreen() {
             <View style={styles.emptyWrap}>
               <EmptyBlock
                 title="No decks yet"
-                body="Use the … menu in the top right to start a new group or add cards — or create decks on the Nemesis web app and they'll show up here automatically."
+                body="Use the … menu in the top right to create a folder or add cards. Everything stays synced with Nemesis on the web."
               />
             </View>
           ) : (
@@ -696,13 +732,15 @@ export default function StudyScreen() {
                     ]}
                   >
                     {selectMode ? <SelectDot on={selectedKeys.has(`deck:${item.deck.deck.id}`)} /> : null}
+                    {/* Just the name (owner 2026-07-24: "make the deck cards
+                        slight smaller (remove 'no reviews' text)"). The second
+                        line used to carry retention, which on a deck you have
+                        not studied yet is the words "No reviews yet" — a whole
+                        row of card height spent saying nothing happened. The
+                        due/new counts to the right are the numbers that actually
+                        decide what you tap. */}
                     <View style={styles.deckText}>
                       <Text style={styles.deckName} numberOfLines={1}>{item.deck.leaf}</Text>
-                      {/* Real retention (deckRetention: correct reviews / total reviews),
-                          or an honest "No reviews yet" — never a fake 0%. */}
-                      <Text style={styles.deckRetention} numberOfLines={1}>
-                        {item.deck.retention === null ? "No reviews yet" : `${Math.round(item.deck.retention * 100)}% retention`}
-                      </Text>
                     </View>
                     {/* Anki's own color language (owner picked it over brand colors):
                         due stacked over new, green over blue, zeros included. */}
@@ -721,10 +759,16 @@ export default function StudyScreen() {
           )}
         </ScrollView>
       ) : (
-        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={[styles.comingSoonWrap, { paddingTop: contentTop }]} testID={`study-mode-panel-${activeMode}`}>
-          <EmptyBlock
-            title={COMING_SOON_LABEL[activeMode]}
-            body={`${COMING_SOON_LABEL[activeMode]} mode is coming soon. Cards has your due decks covered for now.`}
+        // Tests and Mindmaps are real now (owner 2026-07-24). Both segments said
+        // "coming soon" while the artifacts they refer to were already in the
+        // student's account — written on the web, or by chat — and invisible on
+        // the device they study on.
+        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={styles.flex} testID={`study-mode-panel-${activeMode}`}>
+          <StudyArtifactsPanel
+            kind={activeMode === "tests" ? "test" : "mindmap"}
+            contentTop={contentTop}
+            contentBottom={contentBottom}
+            onError={(message) => Alert.alert("Couldn't do that", message)}
           />
         </Animated.View>
       )}
@@ -733,10 +777,15 @@ export default function StudyScreen() {
           suffix is "" — the empty group moveStudyDeck/moveStudyGroup already
           read as top level — so it needs no special case in onRowDrop. */}
       <RootDropZone
-        ref={rowDrag.registerRow("root:", true)}
+        // `true` twice: droppable, and a FALLBACK target. The zone spans the
+        // whole list now, so it contains every folder row — without the
+        // fallback flag a first-match hit test would send nearly every drop to
+        // the top level. See useRowDrag's RegisteredRow.fallback.
+        ref={rowDrag.registerRow("root:", true, true)}
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
         top={contentTop}
+        bottom={contentBottom}
       />
 
       {/* Rides the finger during a drag; the row itself stays put and dims. */}
@@ -775,6 +824,11 @@ export default function StudyScreen() {
         currentFolder={rowCurrentGroup}
         disabledPaths={moveDisabled}
         rootLabel="Top level"
+        // Move can invent its destination (owner 2026-07-24). A Study folder is
+        // only ever a prefix on a deck's name, so moving something into a folder
+        // that doesn't exist yet is what CREATES it — onMovePick already does
+        // the rename either way.
+        allowCreate
         onPick={onMovePick}
         onClose={closeRowSheets}
         testID="study-move-picker"
@@ -790,7 +844,7 @@ export default function StudyScreen() {
         topOffset={insets.top + TOP_BAR_PAD_TOP + TOP_BAR_BUTTON + space(1.5)}
         onCreateFolder={() => {
           setActionsOpen(false);
-          setAddSheetStep("new-group");
+          setAddSheetStep("new-folder");
           setAddSheetOpen(true);
         }}
         onNewCard={() => {
@@ -818,6 +872,14 @@ export default function StudyScreen() {
           setActionsOpen(false);
           setBrowseOpen(true);
         }}
+        onImportAnki={() => {
+          setActionsOpen(false);
+          setImportSource("anki");
+        }}
+        onImportQuizlet={() => {
+          setActionsOpen(false);
+          setImportSource("quizlet");
+        }}
       />
 
       {/* Multi-select action bar — the selection's Move to / Delete, plus Cancel.
@@ -826,9 +888,12 @@ export default function StudyScreen() {
       {selectMode && !selectMoveOpen ? (
         <View style={[styles.selectBar, { paddingBottom: insets.bottom + space(2) }]} testID="study-select-bar">
           <Text style={styles.selectCount}>{selectedKeys.size} selected</Text>
+          {/* Delete, Move, Cancel — the owner's order (2026-07-24), matching the
+              Library's strip. Cancel keeps no `disabled`: leaving select mode has
+              to work even with nothing ticked. */}
           <View style={styles.selectActions}>
-            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="study-select-cancel">
-              <Text style={styles.selectBtnText}>Cancel</Text>
+            <Pressable onPress={deleteSelected} disabled={selectedKeys.size === 0} hitSlop={6} style={styles.selectBtn} testID="study-select-delete">
+              <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Delete</Text>
             </Pressable>
             <Pressable
               onPress={() => selectedKeys.size > 0 && setSelectMoveOpen(true)}
@@ -839,8 +904,8 @@ export default function StudyScreen() {
             >
               <Text style={[styles.selectBtnText, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Move to…</Text>
             </Pressable>
-            <Pressable onPress={deleteSelected} disabled={selectedKeys.size === 0} hitSlop={6} style={styles.selectBtn} testID="study-select-delete">
-              <Text style={[styles.selectBtnText, styles.selectBtnDanger, selectedKeys.size === 0 && styles.selectBtnDisabled]}>Delete</Text>
+            <Pressable onPress={exitSelect} hitSlop={6} style={styles.selectBtn} testID="study-select-cancel">
+              <Text style={styles.selectBtnText}>Cancel</Text>
             </Pressable>
           </View>
         </View>
@@ -855,7 +920,7 @@ export default function StudyScreen() {
         // bar's own exported numbers so the two can't drift apart.
         topOffset={insets.top + TOP_BAR_PAD_TOP + (TOP_BAR_BUTTON + TRIGGER_HEIGHT) / 2 + space(1.5)}
         onSelect={setActiveMode}
-        onStats={() => setStatsOpen(true)}
+        onStats={() => router.push("/study-stats")}
         onClose={() => setModeMenuOpen(false)}
       />
 
@@ -876,6 +941,16 @@ export default function StudyScreen() {
         cards={cards}
         onChanged={() => void load(userId)}
       />
+
+      {importSource ? (
+        <StudyImportSheet
+          visible
+          onClose={() => setImportSource(null)}
+          onImported={() => void load(userId)}
+          source={importSource}
+          userId={userId}
+        />
+      ) : null}
 
       {/* Sorting picker (owner 2026-07-23). Reuses the row-actions sheet chrome;
           a "✓" marks the current mode. */}
@@ -900,25 +975,12 @@ export default function StudyScreen() {
         folders={groupOptions}
         currentFolder={" __multi__"}
         rootLabel="Top level"
+        allowCreate
         onPick={moveSelected}
         onClose={() => setSelectMoveOpen(false)}
         testID="study-select-move-picker"
       />
 
-      <SlideUpSheet visible={statsOpen} onClose={() => setStatsOpen(false)} title="Study stats" testID="study-stats-sheet">
-        <View style={styles.statGrid}>
-          {statTiles.map((tile) => (
-            <View key={tile.label} style={styles.statTile}>
-              <Text style={[styles.statValue, { color: tile.color }]}>{tile.value}</Text>
-              <Text style={styles.statLabel}>{tile.label}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.streakRow}>
-          <Text style={styles.streakLabel}>Streak</Text>
-          <Text style={styles.streakValue}>Not tracked yet</Text>
-        </View>
-      </SlideUpSheet>
     </View>
   );
 }
@@ -938,6 +1000,8 @@ function StudyActionsPopup({
   onMoveTo,
   onSorting,
   onBrowse,
+  onImportAnki,
+  onImportQuizlet,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -948,6 +1012,8 @@ function StudyActionsPopup({
   onMoveTo: () => void;
   onSorting: () => void;
   onBrowse: () => void;
+  onImportAnki: () => void;
+  onImportQuizlet: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -955,6 +1021,8 @@ function StudyActionsPopup({
   const rows: { key: string; label: string; onPress: () => void }[] = [
     { key: "create-folder", label: "Create folder", onPress: onCreateFolder },
     { key: "new-card", label: "New card", onPress: onNewCard },
+    { key: "import-anki", label: "Import from Anki", onPress: onImportAnki },
+    { key: "import-quizlet", label: "Import from Quizlet", onPress: onImportQuizlet },
     { key: "select", label: "Select", onPress: onSelect },
     { key: "move-to", label: "Move to…", onPress: onMoveTo },
     { key: "sorting", label: "Sorting", onPress: onSorting },
@@ -1011,10 +1079,13 @@ const createStyles = (c: ThemeColors) =>
     listBody: { padding: space(4), flexGrow: 1 },
     // Anki-style deck CARD (owner 2026-07-21): a soft rounded surface holding
     // title + retention on the left, stacked due/new counts on the right.
+    // Tightened with the retention line's removal (owner 2026-07-24) — a
+    // one-line card does not need two-line padding, and more decks fit on
+    // screen without the list feeling cramped.
     row: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2),
-      paddingVertical: space(3), paddingHorizontal: space(3.5),
-      borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(2),
+      paddingVertical: space(2.5), paddingHorizontal: space(3.5),
+      borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(1.5),
     },
     // Tree indent is applied inline per row (depth * INDENT_STEP) rather than
     // as a style, since it varies with how deep the folder nests.
@@ -1026,7 +1097,6 @@ const createStyles = (c: ThemeColors) =>
     rowDragging: { opacity: 0.4 },
     deckText: { flex: 1, minWidth: 0, gap: 2 },
     deckName: { ...type.body, color: c.text },
-    deckRetention: { ...type.micro, color: c.text2 },
     // The trailing cluster: the due-over-new stack, then the '›' affordance.
     // Anki's colors on purpose (owner 2026-07-21): green due, blue new — the
     // palette's contrast-guarded good/info, so both read on either mode.
@@ -1050,10 +1120,6 @@ const createStyles = (c: ThemeColors) =>
     folderTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
     folderTotal: { ...type.small, fontWeight: "600", color: c.text3, fontVariant: ["tabular-nums"] },
     folderDue: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
-
-    // Inline Tests/Mindmaps placeholder (owner ask 1) — replaces the deck list
-    // area while one of those two is the active segment.
-    comingSoonWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6) },
 
     // The "…" header actions button + its dropdown (owner 2026-07-23).
     kebabBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },

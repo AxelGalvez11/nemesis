@@ -7,20 +7,17 @@ import { useAuth } from "@/auth/AuthProvider";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
+import { setStudyReminder } from "@/lib/push";
 
-// Notifications — phone half of the cloud-first settings port (build spec
-// §11). Same two toggles as web's Settings > Notifications
-// (apps/web/components/SettingsSurface.tsx): study reminders, product
-// updates. Stored on-device only, per signed-in account — Nemesis doesn't
-// actually SEND anything yet on either platform (push delivery is a follow-
-// up), so the copy says that plainly instead of implying it's live.
+// Notifications are deliberately small and real: the student can schedule a
+// private on-device daily study reminder. We do not expose product-update
+// controls until a delivery preference is actually wired behind them.
 
 interface NotificationPrefs {
-  productUpdates: boolean;
   studyReminders: boolean;
 }
 
-const DEFAULT_PREFS: NotificationPrefs = { productUpdates: false, studyReminders: true };
+const DEFAULT_PREFS: NotificationPrefs = { studyReminders: false };
 
 const storeKeyFor = (uid: string) => `nemesis_notification_prefs_v1_${uid}`;
 
@@ -28,7 +25,6 @@ function parsePrefs(raw: string | null): NotificationPrefs {
   try {
     const parsed = raw ? (JSON.parse(raw) as Partial<NotificationPrefs>) : null;
     return {
-      productUpdates: typeof parsed?.productUpdates === "boolean" ? parsed.productUpdates : DEFAULT_PREFS.productUpdates,
       studyReminders: typeof parsed?.studyReminders === "boolean" ? parsed.studyReminders : DEFAULT_PREFS.studyReminders,
     };
   } catch {
@@ -43,6 +39,7 @@ export default function NotificationsScreen() {
   const uid = session?.user.id ?? null;
 
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -67,6 +64,14 @@ export default function NotificationsScreen() {
     });
   };
 
+  const changeStudyReminder = async (enabled: boolean) => {
+    if (!uid) return;
+    setError(null);
+    const result = await setStudyReminder(uid, enabled);
+    update({ studyReminders: result.enabled });
+    setError(result.error);
+  };
+
   return (
     <View style={styles.root} testID="notifications-screen">
       <View style={[styles.header, { paddingTop: insets.top + space(2) }]}>
@@ -77,32 +82,26 @@ export default function NotificationsScreen() {
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space(6) }]}>
         <Text style={styles.title}>Notifications</Text>
         <Text style={styles.subtitle}>
-          Choose what deserves your attention. Saved on this device — Nemesis doesn't send notifications yet, so
-          nothing arrives until a future update turns delivery on.
+          Choose what deserves your attention. Study reminders are scheduled privately on this device.
         </Text>
 
         {!uid ? (
           <Text style={styles.guest} testID="notifications-guest">You're not signed in.</Text>
         ) : (
-          <View style={styles.card}>
-            <ToggleRow
-              styles={styles}
-              label="Study reminders"
-              description="Due cards, upcoming tests, and scheduled work."
-              value={prefs.studyReminders}
-              onChange={(studyReminders) => update({ studyReminders })}
-              testID="toggle-study-reminders"
-            />
-            <ToggleRow
-              styles={styles}
-              label="Product updates"
-              description="Occasional notes about meaningful Nemesis changes."
-              value={prefs.productUpdates}
-              onChange={(productUpdates) => update({ productUpdates })}
-              last
-              testID="toggle-product-updates"
-            />
-          </View>
+          <>
+            {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
+            <View style={styles.card}>
+              <ToggleRow
+                styles={styles}
+                label="Daily study reminder"
+                description="A quiet reminder at 7:00 PM to review due cards and scheduled work."
+                value={prefs.studyReminders}
+                onChange={(studyReminders) => void changeStudyReminder(studyReminders)}
+                last
+                testID="toggle-study-reminders"
+              />
+            </View>
+          </>
         )}
       </ScrollView>
     </View>
@@ -132,18 +131,29 @@ function ToggleRow({
         <Text style={styles.rowLabel}>{label}</Text>
         <Text style={styles.rowDescription}>{description}</Text>
       </View>
-      <Toggle value={value} onChange={onChange} testID={testID} />
+      <Toggle value={value} onChange={onChange} label={label} testID={testID} />
     </View>
   );
 }
 
-function Toggle({ value, onChange, testID }: { value: boolean; onChange: (next: boolean) => void; testID: string }) {
+function Toggle({
+  value,
+  onChange,
+  label,
+  testID,
+}: {
+  value: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  testID: string;
+}) {
   const { colors: c } = useTheme();
   return (
     <Pressable
       testID={testID}
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
       hitSlop={8}
       onPress={() => onChange(!value)}
       style={{
@@ -173,6 +183,14 @@ const createStyles = (c: ThemeColors) =>
     title: { ...type.h1, color: c.text, marginBottom: space(1), marginTop: space(1) },
     subtitle: { fontSize: type.micro.fontSize, lineHeight: 19, color: c.text3, marginBottom: space(4) },
     guest: { fontSize: type.small.fontSize, color: c.text2, marginTop: space(4) },
+    error: {
+      ...type.small,
+      color: c.danger,
+      backgroundColor: c.surface2,
+      borderRadius: radius.md,
+      padding: space(3),
+      marginBottom: space(3),
+    },
 
     card: { backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(3.5), paddingVertical: space(3.25), minHeight: 60 },

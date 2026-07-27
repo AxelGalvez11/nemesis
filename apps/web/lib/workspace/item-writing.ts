@@ -29,10 +29,11 @@ export const EXAM_ITEM_RULES = [
   "Keep every option in the same category (all drugs, or all diagnoses, or all mechanisms) and about the same length. The longest, most hedged, most detailed option must not be the correct one — that is the single most common giveaway in real exams.",
   "Build wrong options from mistakes students actually make: the drug this one gets confused with, a step of the mechanism out of order, a value off by a factor, the right answer to a neighbouring question. Never write permutations of the correct answer, and never an option nobody would pick.",
   "Never use: 'all of the above', 'none of the above', a negative stem ('which is NOT', 'all EXCEPT'), absolutes ('always', 'never'), vague quantifiers ('usually', 'may', 'often') inside the options, or options that overlap or contain one another.",
+  "Vary which position holds the correct answer, and never in a repeating cycle. Refer to options by their TEXT, never by letter — the app re-seats them afterwards, so 'option B' would become wrong.",
   "Give the correct answer and explain what makes each wrong option wrong — name the specific misunderstanding it represents, so a miss teaches something.",
   "Never invent a lab value, dose, or clinical detail to make a case work. Take the specifics from the student's own material, or write the stem so it does not need them.",
 ].join("\n");
 
 /** One-line version for prompts that only have room for a pointer. */
 export const EXAM_ITEM_RULES_SHORT =
-  "One-best-answer only; a short scenario stem answerable before the options are read; options homogeneous and of similar length with the correct one never the longest; distractors drawn from real student confusions; no 'all/none of the above', no negative stems, no absolutes.";
+  "One-best-answer only; a short scenario stem answerable before the options are read; options homogeneous and of similar length with the correct one never the longest; distractors drawn from real student confusions; no 'all/none of the above', no negative stems, no absolutes; refer to options by text, never by letter.";

@@ -20,7 +20,7 @@
 // upsert/insert-with-conflict-ignore keyed on `id`, so a message can safely be
 // re-sent after a dropped connection without ever duplicating a row.
 
-import type { ChatMsg, ChatOutput, ChatRole, ChatSource } from "./chat-thread.ts";
+import type { ChatMsg, ChatOutput, ChatRole, ChatSource, MessageThinking } from "./chat-thread.ts";
 
 export interface ChatThread {
   id: string;
@@ -369,17 +369,15 @@ function sourcesFromMeta(meta: unknown): ChatSource[] {
 /** The kinds SessionOutput/ChatOutput allows — mirrors web's toSessionOutput
  *  validation set exactly (sessions-cloud.ts) so a malformed/future kind never
  *  round-trips into a value the UI doesn't know how to render. */
-const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
 
 /** Tolerant parse of the `meta` jsonb column's `{ outputs?: [...] }` shape —
  *  used for BOTH `chat_messages.meta.outputs` (per-turn deliverables) and
  *  `chat_threads.meta.outputs` (session-level artifacts, e.g. recordings) —
  *  same field shape as web's SessionOutput (sessions-store.ts), ported from
- *  its toSessionOutput row parser. The phone Chat surface never WRITES one of
- *  these itself (no recording composer, and api/chat.ts's postChatCompletion
- *  never sends `tools` to the valve, so no tool-created artifact ever exists
- *  locally either) — this is a read-only mirror of whatever web already
- *  synced into the shared cloud tables. */
+ *  its toSessionOutput row parser. Tool-created iOS deliverables are written
+ *  here too, including a native Expo route that opens the artifact in Study,
+ *  Library, or a full-screen slide viewer. */
 export function outputsFromMeta(meta: unknown): ChatOutput[] {
   if (typeof meta !== "object" || meta === null) return [];
   const raw = (meta as Record<string, unknown>).outputs;
@@ -387,13 +385,14 @@ export function outputsFromMeta(meta: unknown): ChatOutput[] {
   const outputs: ChatOutput[] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { id, title, kind, url, transcript, notes, durationSeconds, createdAt, polish } = entry as Record<string, unknown>;
+    const { id, title, kind, url, route, transcript, notes, durationSeconds, createdAt, polish } = entry as Record<string, unknown>;
     if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !OUTPUT_KINDS.has(kind)) continue;
     outputs.push({
       id,
       kind: kind as ChatOutput["kind"],
       title,
       ...(typeof url === "string" ? { url } : {}),
+      ...(typeof route === "string" ? { route } : {}),
       ...(typeof transcript === "string" ? { transcript } : {}),
       ...(typeof notes === "string" ? { notes } : {}),
       ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
@@ -419,6 +418,7 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
   const at = parsed.toISOString();
   const sources = sourcesFromMeta(row.meta);
   const outputs = outputsFromMeta(row.meta);
+  const thinking = thinkingFromMeta(row.meta);
   return {
     at,
     content: row.content,
@@ -426,7 +426,22 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
     role: row.role,
     ...(sources.length ? { sources } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(thinking ? { thinking } : {}),
   };
+}
+
+/** Tolerant parse of the `meta` jsonb column's `{ thinking?: { ms, text } }`
+ *  shape. Same posture as sourcesFromMeta: a row written by an older build, or
+ *  by the web app which does not set this, simply has none — never a throw. */
+export function thinkingFromMeta(meta: unknown): MessageThinking | null {
+  if (typeof meta !== "object" || meta === null) return null;
+  const raw = (meta as Record<string, unknown>).thinking;
+  if (typeof raw !== "object" || raw === null) return null;
+  const row = raw as Record<string, unknown>;
+  const text = typeof row.text === "string" ? row.text.trim() : "";
+  if (!text) return null;
+  const ms = Number(row.ms);
+  return { ms: Number.isFinite(ms) && ms >= 0 ? ms : 0, text };
 }
 
 /** Merge a thread's local + cloud message lists: de-duplicated by stable id

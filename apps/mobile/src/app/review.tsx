@@ -8,6 +8,7 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { MessageBody } from "@/components/MessageBody";
 import { ChevronIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
+import { OcclusionCardView } from "@/components/OcclusionCardView";
 import {
   fetchCloudStudy,
   gradeStudyCard,
@@ -21,6 +22,7 @@ import {
   EMPTY_PROGRESS,
   sessionCounts,
   sessionQueue,
+  shouldEmitGrade,
   type SessionProgress,
 } from "@/lib/review-queue";
 import { confirmHoldRemaining, gradeButtonState } from "@/lib/grade-confirm";
@@ -129,6 +131,17 @@ export default function ReviewScreen() {
   // sitting as it stood before the grade plus the card's own fields before the
   // server rescheduled it. A ref rather than state because nothing renders from
   // it — and because the gesture that reads it must see the value synchronously.
+  // What each card's `repetitions` was the first time this sitting showed it.
+  // Written once per card, never updated — see activeCloze below for why.
+  const sittingRepsRef = useRef(new Map<string, number>());
+  const sittingReps = (row: { id: string; repetitions: number } | null | undefined): number => {
+    if (!row) return 0;
+    const seen = sittingRepsRef.current.get(row.id);
+    if (seen !== undefined) return seen;
+    sittingRepsRef.current.set(row.id, row.repetitions);
+    return row.repetitions;
+  };
+
   const undoRef = useRef<{ progress: SessionProgress; card: CloudStudyCard }[]>([]);
   // The back button is hidden until pulled for (owner 2026-07-23), then goes
   // away on its own — see BACK_VISIBLE_MS.
@@ -150,6 +163,8 @@ export default function ReviewScreen() {
         setCards(found ? allCards.filter((card) => card.deckId === found.id) : []);
         setProgress(EMPTY_PROGRESS);
         undoRef.current = [];
+        // A new sitting: let the cloze rotation move on to the next deletion.
+        sittingRepsRef.current.clear();
         setRevealed(false);
         setGradeError(null);
       } catch {
@@ -195,7 +210,17 @@ export default function ReviewScreen() {
   // and rendered the garbage through a plain <Text>, which is also why the
   // images and *emphasis* stayed literal. Anything with {{c}} skips it.
   const ankiCloze = hasCloze(front);
-  const activeCloze = ankiCloze ? activeClozeNumber(front, current?.repetitions ?? 0) : null;
+  // WHICH blank is hidden is pinned for the sitting, not read off the live row.
+  //
+  // A multi-deletion card rotates its blank by `repetitions`, and the grade RPC
+  // bumps repetitions on every call — a value this screen deliberately writes
+  // back so the footer stops tallying stale scheduling. Reading it here meant
+  // that when the learning ladder brought a card round again in the SAME
+  // sitting, it came back asking a different blank: you answered c1, pressed
+  // Good, and were shown c2, a deletion you had never seen. On the Again path
+  // it was worse — the whole point of that re-look is to re-ask what you just
+  // failed. Day-to-day rotation is unaffected: the pin lasts one sitting.
+  const activeCloze = ankiCloze ? activeClozeNumber(front, sittingReps(current)) : null;
   // What the prompt actually renders — markdown either way, so images and
   // emphasis work. Never a bare <Text>: the answer to one of these blanks is
   // itself usually an image.
@@ -239,13 +264,22 @@ export default function ReviewScreen() {
     const before = current;
     const beforeProgress = progressRef.current;
     const startedAt = Date.now();
-    const result = await gradeStudyCard(current.id, value);
+
+    // ONLY THE FIRST PRESS OF A CARD REACHES THE SERVER (owner 2026-07-24 — a
+    // new card now takes two "Good"s to graduate and comes back in between).
+    // grade_study_card applies every call as an independent review, so sending
+    // each rung of the learning ladder would advance one card's real interval
+    // two or three times for a single sitting and push it weeks out. The later
+    // presses are a second LOOK, not a second review — they stay on the phone.
+    // See review-queue.ts's SessionProgress.gradedIds.
+    const emit = shouldEmitGrade(beforeProgress, before.id);
+    const result = emit ? await gradeStudyCard(before.id, value) : null;
     const remaining = confirmHoldRemaining(Date.now() - startedAt, CONFIRM_HOLD_MS);
     if (remaining > 0) await wait(remaining);
     gradingRef.current = false;
     setGrading(false);
     setFlashGrade(null);
-    if (!result.ok) {
+    if (result && !result.ok) {
       // Stay put — revealed, ungraded — so the student can retry once online.
       setGradeError(result.message);
       return;
@@ -253,21 +287,23 @@ export default function ReviewScreen() {
     // Write the server's answer back into the local card. It used to be
     // discarded, which meant the footer was tallying stale scheduling fields
     // for the rest of the sitting.
-    setCards((rows) =>
-      rows.map((row) =>
-        row.id === before.id
-          ? {
-              ...row,
-              dueAt: result.dueAt,
-              intervalDays: result.intervalDays,
-              lapses: result.lapses,
-              repetitions: result.repetitions,
-            }
-          : row,
-      ),
-    );
+    if (result?.ok) {
+      setCards((rows) =>
+        rows.map((row) =>
+          row.id === before.id
+            ? {
+                ...row,
+                dueAt: result.dueAt,
+                intervalDays: result.intervalDays,
+                lapses: result.lapses,
+                repetitions: result.repetitions,
+              }
+            : row,
+        ),
+      );
+    }
     undoRef.current = [...undoRef.current, { card: before, progress: beforeProgress }];
-    setProgress(applyGrade(beforeProgress, before.id, value === "again"));
+    setProgress(applyGrade(beforeProgress, before, value));
     setRevealed(false);
   }
 
@@ -288,9 +324,14 @@ export default function ReviewScreen() {
     setCards((rows) => rows.map((row) => (row.id === last.card.id ? last.card : row)));
     setProgress(last.progress);
     setGradeError(null);
-    // Revealed, because you have just seen this card's answer — hiding it again
-    // would make undo feel like a fresh card rather than a correction.
-    setRevealed(true);
+    // Back to the FRONT of the card, not the answer (owner 2026-07-24). This
+    // shipped the other way round on the reasoning that you had just seen the
+    // answer, so undo should feel like a correction rather than a fresh card.
+    // The owner wants the question — which is the more useful of the two: the
+    // reason to undo is usually that you graded before you had really answered,
+    // and landing on the answer denies you the second attempt you took the card
+    // back for.
+    setRevealed(false);
     hapticHoldRegistered();
   }, []);
 
@@ -438,13 +479,23 @@ export default function ReviewScreen() {
                 testID="review-card"
                 style={styles.cardPressable}
               >
-                {current.cardType === "image_occlusion" ? (
-                  // Graceful fallback — image occlusion cards don't render on the
-                  // phone in v1 (do NOT attempt image rendering). Still gradable:
-                  // the student can recall-and-grade from memory, or skip to web.
+                {current.cardType === "image_occlusion" && current.occlusion ? (
+                  // Image cloze now RENDERS on the phone (owner 2026-07-24).
+                  // This used to be a text-only fallback saying "open on web",
+                  // because the phone had no way to make or show these; it can
+                  // do both now. The card's own prompt sits under the picture —
+                  // it is the box's label, which is a hint, not the answer.
+                  <View testID="review-occlusion-card">
+                    <OcclusionCardView payload={current.occlusion} revealed={revealed} />
+                    {front ? <Text style={styles.occlusionPrompt}>{front}</Text> : null}
+                  </View>
+                ) : current.cardType === "image_occlusion" ? (
+                  // Reached only when the payload failed validation — a card
+                  // written by an older client, or a corrupt row. Still gradable
+                  // from memory rather than becoming a dead end mid-session.
                   <View testID="review-image-fallback">
                     <Text style={promptStyles.body as object}>{front || "Image card"}</Text>
-                    <Text style={styles.imageFallbackNote}>Open on web for image cards.</Text>
+                    <Text style={styles.imageFallbackNote}>This image card is missing its picture.</Text>
                   </View>
                 ) : clozeSplit ? (
                   <>
@@ -588,6 +639,9 @@ const createStyles = (c: ThemeColors) =>
     backChevron: { transform: [{ rotate: "180deg" }] },
     answerBlock: { marginTop: space(2) },
     imageFallbackNote: { ...type.small, color: c.text2, textAlign: "center", marginTop: space(3) },
+    // The box's own label, under the picture. Muted because it is a hint about
+    // WHICH box is being asked about, not the answer.
+    occlusionPrompt: { ...type.small, color: c.textHint, textAlign: "center", marginTop: space(3) },
     // Cloze sentence: same size/centering as the prompt markdown, one sentence
     // throughout. `clozeHit` does double duty — accent/bold on the blank
     // marker pre-reveal, then the same accent/bold treatment on the revealed

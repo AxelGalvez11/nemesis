@@ -249,8 +249,29 @@ export interface LayoutSim {
   step(): void;
   /** Current positions, normalized and clamped into the canvas — a fresh
    * NoteGraph every call (never mutates previous snapshots), safe to hand
-   * straight to React state. */
+   * straight to React state.
+   *
+   * Called ONCE per (re)seed and once per settle now, never per frame — see
+   * readPositions below for what the animation loop uses instead. */
   snapshot(): NoteGraph;
+  /** Positions as a flat `[x0, y0, x1, y1, …]` array, clamped exactly as
+   * snapshot() clamps.
+   *
+   * This exists because snapshot() is the wrong shape for an animation loop.
+   * graph.tsx used to call snapshot() every frame and push the result into
+   * React state, which re-rendered every node and every edge — and each node
+   * rebuilt three gesture objects in its render body. Measured on a 200-note
+   * graph: a settle is 45 frames, but ONE node drag holds the simulation warm
+   * for ~1,400 frames, so a single drag cost roughly 840,000 gesture
+   * allocations and 1,400 full reconciliations. The physics was never the
+   * problem — the whole settle is 43ms of JS.
+   *
+   * A flat number array is what a reanimated shared value can carry to the UI
+   * thread, so nodes and edges now move as animated transforms with React not
+   * re-rendering at all. Numbers rather than objects on purpose: it is one
+   * allocation per frame instead of one per node, and worklets index it
+   * directly. */
+  readPositions(): number[];
   /** True once the cooling schedule has run its course and step() is a no-op. */
   readonly settled: boolean;
   /** Live force multipliers step() reads on its next call — mutate directly
@@ -558,6 +579,16 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
 
     snapshot() {
       return snapshotPositions(graph, nodes, bounds);
+    },
+
+    readPositions() {
+      const out = new Array<number>(n * 2);
+      for (let i = 0; i < n; i++) {
+        const node = nodes[i];
+        out[i * 2] = clampToBounds(node?.x ?? bounds.cx, bounds.cx, bounds.halfWidth);
+        out[i * 2 + 1] = clampToBounds(node?.y ?? bounds.cy, bounds.cy, bounds.halfHeight);
+      }
+      return out;
     },
 
     reheat() {

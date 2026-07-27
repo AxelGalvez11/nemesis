@@ -5,10 +5,66 @@ import { deviceKey } from "@/lib/workspace/chat-api";
 const MAX_ATTACHMENT_CHARS = 12_000;
 const MAX_TOTAL_CHARS = 22_000;
 export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
+/** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
+ *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
+ *  is still a HEIC. */
+export const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
 
-export function isDocument(file: File) {
+export interface ChatAttachmentGroup {
+  /** Stable for the lifetime of the selected File objects. */
+  key: string;
+  label: string;
+  kind: "file" | "folder";
+  files: readonly File[];
+}
+
+function relativePath(file: File): string {
+  return file.webkitRelativePath.trim().replace(/^\/+/, "");
+}
+
+/**
+ * Browser folder selection returns one File per descendant. Group those files
+ * by root directory so the composer and sent message show the directory once,
+ * while the model still receives the readable files inside it.
+ */
+export function groupChatAttachments(files: readonly File[]): ChatAttachmentGroup[] {
+  const groups: ChatAttachmentGroup[] = [];
+  const folders = new Map<string, File[]>();
+
+  for (const [index, file] of files.entries()) {
+    const path = relativePath(file);
+    const slash = path.indexOf("/");
+    if (slash > 0) {
+      const folder = path.slice(0, slash);
+      const existing = folders.get(folder);
+      if (existing) existing.push(file);
+      else {
+        const children = [file];
+        folders.set(folder, children);
+        groups.push({ key: `folder:${folder}`, kind: "folder", label: folder, files: children });
+      }
+      continue;
+    }
+    groups.push({ key: `file:${index}:${file.name}:${file.lastModified}`, kind: "file", label: file.name, files: [file] });
+  }
+
+  return groups;
+}
+
+export function isImage(file: File) {
   const name = file.name.toLowerCase();
-  return DOCUMENT_EXTENSIONS.some((extension) => name.endsWith(extension));
+  if (IMAGE_EXTENSIONS.some((extension) => name.endsWith(extension))) return true;
+  // A browser that reports the type but a filename without an extension (a
+  // pasted screenshot) is still an image.
+  return /^image\/(png|jpe?g|webp|heic|heif)$/.test(file.type.toLowerCase());
+}
+
+/** Anything the server-side extractor can turn into text: a document, or now a
+ *  photograph. Named for what it does rather than for documents alone, because
+ *  a picture of a page is not a document and is extracted the same way. */
+export function isExtractable(file: File) {
+  const name = file.name.toLowerCase();
+  return DOCUMENT_EXTENSIONS.some((extension) => name.endsWith(extension)) || isImage(file);
 }
 
 function isReadableText(file: File) {
@@ -16,7 +72,18 @@ function isReadableText(file: File) {
   return /\.(md|mdx|txt|csv|json|ts|tsx|js|jsx|py|java|c|cpp|h|css|html|xml|yaml|yml|sql)$/i.test(file.name);
 }
 
-export async function extractDocument(file: File, uid: string | null): Promise<string> {
+export interface ExtractedFile {
+  text: string;
+  /** The server's best title — for a picture this comes from what was read, not
+   *  from the filename, because "IMG_4821.HEIC" is not a title. */
+  title: string | null;
+  /** The vision model, present only when the file had to be READ as pixels. */
+  readBy?: string;
+}
+
+/** Send one file to the extract chokepoint and get its text back. Throws with a
+ *  student-readable message — the route writes those, so they surface as-is. */
+export async function extractFile(file: File, uid: string | null): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key) throw new Error("Sign in to read this attachment.");
   const form = new FormData();
@@ -26,14 +93,20 @@ export async function extractDocument(file: File, uid: string | null): Promise<s
     headers: { Authorization: `Bearer ${key}` },
     body: form,
   });
-  const body = (await response.json().catch(() => null)) as { text?: string; error?: string } | null;
+  const body = (await response.json().catch(() => null)) as {
+    text?: string;
+    title?: string;
+    readBy?: string;
+    error?: string;
+  } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? `Couldn't read ${file.name}.`);
-  return body.text;
+  return { readBy: body.readBy, text: body.text, title: body.title ?? null };
 }
 
 function attachmentSummary(files: readonly File[]) {
   if (!files.length) return "";
-  return `\n\nAttachments: ${files.map((file) => file.name).join(", ")}`;
+  const labels = groupChatAttachments(files).map((group) => group.kind === "folder" ? `${group.label}/` : group.label);
+  return `\n\nAttachments: ${labels.join(", ")}`;
 }
 
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
@@ -47,18 +120,18 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     let content = "";
     try {
       if (isReadableText(file)) content = await file.text();
-      else if (isDocument(file)) content = await extractDocument(file, uid);
-      else if (file.type.startsWith("image/")) {
-        content = "Image attached. The current text model can identify the filename and media type, but image pixels are not yet sent to the model.";
-      } else {
-        content = "File attached; no text extractor is available for this format.";
-      }
+      // A picture goes to the same extractor as a document now: the server reads it with a
+      // multimodal model and hands back a transcript (or, for a picture with no text in it, a
+      // description). This is what used to be the "image pixels are not yet sent to the model"
+      // apology — the pixels still never reach the chat model, but what is IN them does.
+      else if (isExtractable(file)) content = (await extractFile(file, uid)).text;
+      else content = "File attached; no text extractor is available for this format.";
     } catch (cause) {
       content = cause instanceof Error ? cause.message : "This attachment could not be read.";
     }
     const remaining = MAX_TOTAL_CHARS - used;
     const clipped = content.trim().slice(0, Math.min(MAX_ATTACHMENT_CHARS, remaining));
-    blocks.push(`### Attachment: ${file.name}\nType: ${file.type || "unknown"}\n\n${clipped}`);
+    blocks.push(`### Attachment: ${relativePath(file) || file.name}\nType: ${file.type || "unknown"}\n\n${clipped}`);
     used += clipped.length;
   }
 

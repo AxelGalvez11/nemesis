@@ -361,7 +361,7 @@ function TitlePromptSheet({
         value={value}
         onChangeText={setValue}
         placeholder={placeholder}
-        placeholderTextColor={c.text3}
+        placeholderTextColor={c.textHint}
         maxLength={200}
         returnKeyType="done"
         onSubmitEditing={() => value.trim() && onSubmit(value.trim())}

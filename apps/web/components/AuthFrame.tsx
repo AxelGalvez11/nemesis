@@ -10,48 +10,37 @@ interface AuthFrameProps {
   footer?: ReactNode;
 }
 
-/**
- * Auth shell shared by /sign-in and /sign-up: a split layout — a dark type-only
- * panel on the left (the notebook art was removed with the rest of the site
- * photography, 2026-07-20), and on the right a glass card whose
- * traveling border beams + glow treatment are adapted from 21st.dev "Sign In
- * Card" (jatin-yadav05), rebuilt as pure CSS in auth.css (no framer-motion)
- * and re-tuned to the Nemesis crimson. Pages own the copy + form logic; this
- * owns only the chrome.
- */
+/** Shared, deliberately minimal /sign-in and /sign-up shell. Pages own the
+ * copy and auth logic; this component owns only the presentation. */
 export function AuthFrame({ eyebrow, title, description, children, footer }: AuthFrameProps) {
   return (
     <main className="nemesis-auth-shell">
-      <div className="nemesis-auth-scanlines" aria-hidden="true" />
       <a className="nemesis-auth-brand" href={landingUrl} aria-label="Nemesis home">
-        <Image src="/nemesis/logo-white.png" alt="" width={30} height={30} priority />
+        <Image src="/nemesis/logo.png" alt="" width={30} height={30} priority />
         <span>NEMESIS</span>
       </a>
 
       <section className="nemesis-auth-field" aria-hidden="true">
         <div className="nemesis-auth-field-copy">
-          <p className="nemesis-auth-status"><span /> Your AI study agent</p>
+          <p className="nemesis-auth-status">Your AI study agent</p>
           <h2>Your whole semester, in one quiet place.</h2>
           <p>
             Notes, flashcards, practice tests, and a calendar that keeps deadlines
             honest. It gets sharper the longer you use it.
           </p>
+          <div className="nemesis-auth-capabilities">
+            <span><b>01</b> Capture</span>
+            <span><b>02</b> Connect</span>
+            <span><b>03</b> Recall</span>
+          </div>
         </div>
       </section>
 
       <section className="nemesis-auth-panel-wrap">
-        <div className="nemesis-auth-atmo" aria-hidden="true" />
-        <div className="nemesis-auth-noise" aria-hidden="true" />
         <div className="nemesis-auth-card">
-          <div className="nemesis-auth-beams" aria-hidden="true">
-            <i className="beam beam-top" />
-            <i className="beam beam-right" />
-            <i className="beam beam-bottom" />
-            <i className="beam beam-left" />
-          </div>
           <div className="nemesis-auth-card-in">
             <div className="nemesis-auth-mark" aria-hidden="true">
-              <Image src="/nemesis/logo-white.png" alt="" width={22} height={22} priority />
+              <Image src="/nemesis/logo.png" alt="" width={22} height={22} priority />
             </div>
             <p className="nemesis-auth-eyebrow">{eyebrow}</p>
             <h1>{title}</h1>

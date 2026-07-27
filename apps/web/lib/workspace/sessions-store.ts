@@ -512,6 +512,7 @@ export const sessionsStore = {
     content: string,
     sources?: SessionSource[],
     persistNow = true,
+    outputs?: SessionOutput[],
   ) {
     ensureHydrated();
     setState({
@@ -525,10 +526,16 @@ export const sessionsStore = {
           role: "assistant",
           ...(index < 0 ? { id: newId() } : {}),
           ...(sources?.length ? { sources } : {}),
+          ...(outputs?.length ? { outputs } : {}),
         };
         const messages = index >= 0
           ? session.messages.map((existing, messageIndex) => messageIndex === index
-            ? { ...existing, ...message, ...(sources === undefined && existing.sources ? { sources: existing.sources } : {}) }
+            ? {
+                ...existing,
+                ...message,
+                ...(sources === undefined && existing.sources ? { sources: existing.sources } : {}),
+                ...(outputs === undefined && existing.outputs ? { outputs: existing.outputs } : {}),
+              }
             : existing)
           : [...session.messages, message].slice(-MAX_MESSAGES_PER_SESSION);
         return { ...session, messages, updatedAt: nowIso() };

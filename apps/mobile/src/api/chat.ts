@@ -36,8 +36,17 @@ import {
   type ChatSource,
   type WireMsg,
 } from "@/lib/chat-thread";
-import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
-import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
+import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
+import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
+import { AGENT_TOOLS } from "@/lib/agent-tools";
+import { executeAgentTool, type AgentToolCall } from "./agentTools";
+import {
+  formatLibraryContext,
+  notesUsed,
+  shouldSearchLibrary,
+  type LibraryHit,
+} from "@/lib/library-context";
+import { searchLibrarySemantic } from "./librarySearch";
 import {
   buildLiveNotesMessages,
   FINAL_NOTES_MAX_KEPT,
@@ -49,8 +58,13 @@ import {
   shouldReplaceNotes,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
-import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
+import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
+import {
+  generalPrefsInstruction,
+  generalPrefsStoreKey,
+  parseGeneralPrefs,
+} from "@/lib/general-prefs";
 import {
   chatMsgFromCloudRow,
   deriveMessageId,
@@ -80,10 +94,24 @@ import {
 } from "@/lib/chat-threads";
 
 const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-llm`;
+
+// Cost attribution: tells the metering valve WHICH app spent the tokens. Until a build
+// carrying this ships, the valve reads the device-key label ("Nemesis iPhone") instead,
+// so phone spend is attributed either way.
+const CLIENT_HEADER = { "X-Nemesis-Client": "ios" } as const;
 const SEARCH_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-search/v2/search`;
 
 // SecureStore keys allow [A-Za-z0-9._-]; uuids fit as-is.
 const deviceKeyStoreFor = (uid: string) => `nemesis_device_key_v1_${uid}`;
+
+async function learnerProfileForChat(uid: string): Promise<string> {
+  try {
+    const raw = await SecureStore.getItemAsync(generalPrefsStoreKey(uid));
+    return generalPrefsInstruction(parseGeneralPrefs(raw));
+  } catch {
+    return generalPrefsInstruction(parseGeneralPrefs(null));
+  }
+}
 
 /** Mint a device key for the CURRENT session, only if it belongs to `uid` —
  *  a stale screen from a previous account must never mint under the new one. */
@@ -107,7 +135,10 @@ async function mintDeviceKey(uid: string): Promise<string | null> {
   }
 }
 
-async function deviceKey(uid: string): Promise<string | null> {
+/** The device key this phone talks to the app's own API with. Exported for
+ *  api/photos.ts, which posts a photograph to the same extract endpoint the web
+ *  app uses and needs the same `nmk_` bearer that route gates on. */
+export async function deviceKey(uid: string): Promise<string | null> {
   try {
     const stored = await SecureStore.getItemAsync(deviceKeyStoreFor(uid));
     if (stored?.startsWith("nmk_")) return stored;
@@ -153,7 +184,7 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
   try {
     const res = await fetch(SEARCH_URL, {
       body: JSON.stringify({ limit: 5, query }),
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };
@@ -175,6 +206,11 @@ export interface ChatReply {
    *  upgrade sheet's reset line). */
   budgetReset: BudgetResetKind | null;
   sources: ChatSource[];
+  /** Saved deliverables created by workspace tools on this turn. */
+  outputs?: ChatOutput[];
+  /** Workspace tools the model asked for on this round. Present only inside
+   *  sendChat's agent loop; a reply handed back to the screen never has any. */
+  toolCalls?: AgentToolCall[];
 }
 
 /** One completion turn over expo/fetch's streaming Response.body (SDK 56, no
@@ -189,6 +225,7 @@ async function postChatCompletion(
   decision: ChatRouteDecision,
   onDelta?: CompletionDeltaHandler,
   onReasoning?: CompletionDeltaHandler,
+  tools?: readonly unknown[],
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
   if (!key) return { budgetReset: null, errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
@@ -198,11 +235,14 @@ async function postChatCompletion(
     model: decision.model,
     ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
     stream: true,
+    // The valve forwards `tools` to the provider verbatim. `tool_choice` is never
+    // sent: DeepSeek's thinking mode rejects a forced choice.
+    ...(tools?.length ? { tools } : {}),
   });
   const call = (bearer: string) =>
     expoFetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
-      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
 
@@ -227,10 +267,23 @@ async function postChatCompletion(
         text: null,
       };
     }
-    const text = await readCompletionStream(res.body, onDelta, onReasoning);
-    return text
-      ? { budgetReset: null, errorKind: null, errorText: null, sources: [], text }
-      : { budgetReset: null, errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
+    const streamed = await readCompletionStreamFull(res.body, onDelta, onReasoning);
+    // A TOOL ROUND HAS NO TEXT AT ALL — the model's whole output is the tool call.
+    // So "empty" only counts as a failure when nothing came back either way;
+    // treating no-text as an error here would have reported "the answer came back
+    // empty" on the first round of every save and broken out of the loop before a
+    // single tool ran.
+    if (streamed.text || streamed.toolCalls.length > 0) {
+      return {
+        budgetReset: null,
+        errorKind: null,
+        errorText: null,
+        sources: [],
+        text: streamed.text || null,
+        ...(streamed.toolCalls.length > 0 ? { toolCalls: streamed.toolCalls } : {}),
+      };
+    }
+    return { budgetReset: null, errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch {
     return {
       budgetReset: null,
@@ -270,13 +323,28 @@ export interface SendChatOptions {
   effort?: ChatEffort;
 }
 
+/** Most tool rounds one turn may run before we force a plain answer. Same cap the
+ *  web uses. Four is enough for "read my notes, then build me a deck from them";
+ *  without a cap, a model that keeps re-reading the same note would spend the
+ *  student's credits going round in a circle. */
+const AGENT_MAX_TOOL_ROUNDS = 4;
+
 /** One routed completion turn for the signed-in user `uid`: classifies the
  *  request (model + whether it needs live search) — or, when the composer's
- *  Deep research toggle forced it, always research — optionally folds in an
- *  attached Library document's text, grounds with a nemesis-search call when
- *  the route calls for it, then streams the reply. `options.onDelta` is
- *  called with each chunk as it arrives so the screen can render into the
- *  assistant bubble live. Never throws. */
+ *  Deep research toggle forced it, research, unless the student asked us to save
+ *  something (see routeForTurn) — optionally folds in an attached Library
+ *  document's text, grounds with a nemesis-search call when the route calls for
+ *  it, then streams the reply. `options.onDelta` is called with each chunk as it
+ *  arrives so the screen can render into the assistant bubble live.
+ *
+ *  Runs the WORKSPACE AGENT LOOP (owner 2026-07-24: the phone chat must be able to
+ *  make flashcards, tests and mind maps, and manipulate the Library). The model may
+ *  call the tools in lib/agent-tools.ts; each result is fed back and it keeps going
+ *  until it answers in words. Tools are withheld on thinking-model turns, which
+ *  have to echo `reasoning_content` back on a tool round — something the stream does
+ *  not retain (see toolsAllowed).
+ *
+ *  Never throws. */
 export async function sendChat(
   uid: string,
   history: ChatMsg[],
@@ -286,11 +354,23 @@ export async function sendChat(
   const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning } = options;
   onPhase?.({ kind: "routing" });
   // Route first (what KIND of question is this), then let the student's own
-  // dial override how hard to think about it — never the other way round.
-  const decision = applyChatEffort(forceResearch ? forcedResearchDecision() : classifyChatRequest(userText), effort);
+  // dial override how hard to think about it — never the other way round. Both
+  // steps make one exception, for a request to SAVE something into the student's
+  // own workspace: that write happens through a tool call, and both the research
+  // toggle and the High dial would otherwise switch the tools off and turn the
+  // save into an essay. See routeForTurn and applyChatEffort.
+  const decision = applyChatEffort(routeForTurn(userText, forceResearch ? forcedResearchDecision() : null), effort);
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
+  const outputs: ChatOutput[] = [];
+  // The student's own notes, looked up by meaning. Started HERE, before the web
+  // search, and awaited after it: the two are independent lookups, so running
+  // them at the same time costs one wait instead of two. Never rejects — an
+  // empty list is the normal outcome for a topic they have no notes on.
+  const libraryLookup: Promise<LibraryHit[]> = shouldSearchLibrary(userText)
+    ? searchLibrarySemantic(userText)
+    : Promise.resolve([]);
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     // The phase echoes the student's OWN words, not `query` — the "current"
@@ -304,7 +384,21 @@ export async function sendChat(
       ? `${groundedText}\n\n${result.context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
+  // The Library goes in LAST, after any web results, so the closest thing to hand
+  // when the model starts writing is the student's own course material.
+  const libraryHits = await libraryLookup;
+  const libraryContext = formatLibraryContext(libraryHits);
+  if (libraryContext) {
+    onPhase?.({ kind: "recalling", notes: notesUsed(libraryHits) });
+    groundedText = `${groundedText}\n\n${libraryContext}`;
+  }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
+
+  // Text already streamed by EARLIER rounds of this turn. Each round's stream
+  // accumulates from empty, so without this prefix a model that says "Let me check
+  // your notes." and then calls a tool would have that sentence wiped out by the
+  // first word of the next round — the bubble would visibly jump backwards.
+  let carried = "";
   // The preview's job ends the moment real words appear, so the first delta
   // flips it to "writing" and the screen drops the line.
   let announcedWriting = false;
@@ -315,11 +409,108 @@ export async function sendChat(
             announcedWriting = true;
             onPhase?.({ kind: "writing" });
           }
-          onDelta?.(delta, accumulated);
+          // Once a tool has created a deliverable, the transcript becomes an
+          // artifact-only turn: the clickable card is the answer. Do not stream
+          // the model's prose copy of the deck/test/slides back into chat.
+          if (outputs.length === 0) onDelta?.(delta, carried + accumulated);
         }
       : undefined;
-  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, relayDelta, onReasoning);
-  return { ...reply, sources };
+
+  const toolsEnabled = toolsAllowed(decision);
+  const learnerProfile = await learnerProfileForChat(uid);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile);
+  let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
+  for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
+    // The last permitted round goes out WITHOUT tools, so the model has no choice
+    // but to answer in words. Otherwise a turn that hits the cap ends on a tool
+    // call and the student is left looking at an empty bubble.
+    const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
+    reply = await postChatCompletion(
+      uid,
+      messages,
+      decision,
+      relayDelta,
+      onReasoning,
+      offerTools ? AGENT_TOOLS : undefined,
+    );
+    const calls = reply.toolCalls ?? [];
+    if (calls.length === 0 || reply.errorKind) break;
+
+    // Saving a deck takes long enough that the line has to say so; leaving it on
+    // "Putting this together" while thirty cards are written reads as hung. And the
+    // next round starts a fresh stream, so "writing" has to be re-armed.
+    onPhase?.({ kind: "acting", tools: calls.map((call) => call.name) });
+    announcedWriting = false;
+    if (reply.text) carried = `${carried}${reply.text}\n\n`;
+
+    // SEQUENTIAL, not Promise.all. Two calls in one round can depend on each
+    // other's writes: two add_flashcards naming the same NEW deck would both run
+    // the does-this-deck-exist lookup before either insert landed, both miss, and
+    // both create it — the duplicate-deck outcome matchDeckName exists to prevent,
+    // handed straight back by the parallelism. A round almost never has more than
+    // two calls and the wall-clock here is dominated by the model, so there is
+    // nothing to win by overlapping them.
+    const results: { call: AgentToolCall; result: unknown }[] = [];
+    for (const call of calls) {
+      const result = await executeAgentTool(uid, call);
+      results.push({ call, result });
+      if (result && typeof result === "object") {
+        const artifact = (result as Record<string, unknown>).artifact;
+        if (artifact && typeof artifact === "object") {
+          const row = artifact as Record<string, unknown>;
+          const kind = row.kind;
+          if (
+            typeof row.id === "string" &&
+            typeof row.title === "string" &&
+            typeof kind === "string" &&
+            ["flashcards", "slides", "test", "mindmap", "report", "recording", "other"].includes(kind)
+          ) {
+            outputs.push({
+              id: row.id,
+              kind: kind as ChatOutput["kind"],
+              title: row.title,
+              ...(typeof row.route === "string" ? { route: row.route } : {}),
+              ...(typeof row.url === "string" ? { url: row.url } : {}),
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+    // The assistant's tool request and each result are appended to THIS TURN'S wire
+    // array only. None of it is persisted: a ChatMsg has no tool role, and the web
+    // renderer reads the same `chat_messages` rows (see WireMsg's doc comment).
+    messages = [
+      ...messages,
+      {
+        content: reply.text ?? "",
+        role: "assistant",
+        tool_calls: calls.map((call) => ({
+          function: { arguments: call.arguments, name: call.name },
+          id: call.id,
+          type: "function" as const,
+        })),
+      },
+      ...results.map(({ call, result }) => ({
+        content: JSON.stringify(result).slice(0, 20_000),
+        role: "tool" as const,
+        tool_call_id: call.id,
+      })),
+    ];
+  }
+
+  // Built field by field rather than spread from `reply`, so `toolCalls` cannot
+  // ride out of here: it is internal to this turn, and the screen persists whatever
+  // it is handed. `carried` is prepended so the saved message holds everything the
+  // student watched arrive, not just the final round's share of it.
+  return {
+    budgetReset: reply.budgetReset,
+    errorKind: reply.errorKind,
+    errorText: reply.errorText,
+    sources,
+    ...(outputs.length ? { outputs } : {}),
+    text: outputs.length ? null : carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
+  };
 }
 
 // --- local cache file (instant open + offline read) -------------------------
@@ -411,8 +602,15 @@ async function withOneRetry<T extends SupabaseResult>(fn: () => PromiseLike<T>):
  *  has no UPDATE grant, so an existing row is never overwritten — see
  *  syncThreadToCloud's ignoreDuplicates upsert below). */
 function cloudMessageRow(uid: string, threadId: string, message: ChatMsg & { id: string }) {
-  const meta = message.sources?.length || message.outputs?.length
-    ? { ...(message.sources?.length ? { sources: message.sources } : {}), ...(message.outputs?.length ? { outputs: message.outputs } : {}) }
+  const thinking = message.thinking?.text ? { ms: message.thinking.ms, text: message.thinking.text.slice(0, 40_000) } : null;
+  const meta = message.sources?.length || message.outputs?.length || thinking
+    ? {
+        ...(message.sources?.length ? { sources: message.sources } : {}),
+        ...(message.outputs?.length ? { outputs: message.outputs } : {}),
+        // Clamped well under the content column's own limit: reasoning on a deep
+        // turn runs long, and this rides in a jsonb column alongside sources.
+        ...(thinking ? { thinking } : {}),
+      }
     : null;
   return {
     content: message.content.slice(0, 60_000),
@@ -736,7 +934,9 @@ export async function requestLiveNotes(uid: string, transcript: string, previous
   return parseLiveNotes(reply.text);
 }
 
-const APP_API_BASE = "https://app.enternemesis.com";
+/** The Next.js app that hosts the shared HTTP API (transcription, file and
+ *  photo extraction). Exported for api/photos.ts. */
+export const APP_API_BASE = "https://app.enternemesis.com";
 
 /** Rewrite one recording's chip entry on the thread (same merge the save path
  *  uses) — how the enhance pass below publishes its polish state and, at the

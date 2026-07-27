@@ -1,8 +1,14 @@
 "use client";
 
-// /auth/desktop — the browser half of DESKTOP app sign-in.
+// /auth/desktop — the browser half of NATIVE app sign-in (Mac app and iPhone).
 //
-// The Nemesis Mac app opens  /auth/desktop?provider=google|apple&state=<nonce>.
+// The route keeps its "desktop" name because the shipped Mac app hard-codes it;
+// the iPhone app opens the same URL (see apps/mobile/src/lib/oauth-deeplink.ts).
+// Which device is asking only changes the wording — pass ?client=phone and the
+// copy stops talking about a Mac. Everything else is identical, which is the
+// point: one reviewed hand-off, not two.
+//
+// The native app opens  /auth/desktop?provider=google|apple&state=<nonce>.
 // Leg 1 (no session yet): run the normal Supabase OAuth flow; the provider
 //   round-trips through /auth/callback back to /auth/desktop?state=<nonce>.
 // Leg 2 (session present): hand the session's refresh token to the app through
@@ -29,6 +35,9 @@ export default function DesktopAuthPage() {
   const { loading, session, signInWithOAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  // Which device started this, for wording only — never for anything the flow
+  // depends on, so a missing or forged value can only make the copy say "device".
+  const [isPhone, setIsPhone] = useState(false);
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -36,9 +45,11 @@ export default function DesktopAuthPage() {
 
     const query = new URLSearchParams(window.location.search);
     const state = query.get("state") ?? "";
+    const phoneClient = query.get("client") === "phone";
+    setIsPhone(phoneClient);
 
     if (!STATE_PATTERN.test(state)) {
-      setError("This sign-in link is missing its security code. Start again from the Nemesis app on your Mac.");
+      setError("This sign-in link is missing its security code. Start again from the Nemesis app.");
       return;
     }
     if (isPreviewMode) {
@@ -96,7 +107,8 @@ export default function DesktopAuthPage() {
       return;
     }
     startedRef.current = true;
-    void signInWithOAuth(provider, `/auth/desktop?state=${state}`).then((err) => {
+    const returnPath = `/auth/desktop?state=${state}${phoneClient ? "&client=phone" : ""}`;
+    void signInWithOAuth(provider, returnPath).then((err) => {
       if (err) {
         startedRef.current = false;
         setError(err);
@@ -106,14 +118,28 @@ export default function DesktopAuthPage() {
 
   return (
     <AuthFrame
-      eyebrow={error ? "Desktop sign-in failed" : "Desktop sign-in"}
-      title={error ? "The perimeter stayed closed." : deepLink ? "One click to finish." : "Connecting your Mac."}
+      eyebrow={error ? "Sign-in failed" : isPhone ? "Phone sign-in" : "Desktop sign-in"}
+      title={
+        error
+          ? "The perimeter stayed closed."
+          : deepLink
+            ? isPhone
+              ? "One tap to finish."
+              : "One click to finish."
+            : isPhone
+              ? "Connecting your phone."
+              : "Connecting your Mac."
+      }
       description={
         error
           ? error
           : deepLink
-            ? "You're signed in. Press Open Nemesis below — your browser may ask permission to open the app; choose Open."
-            : "Nemesis is finishing sign-in in your browser and handing the session to the desktop app."
+            ? (isPhone
+                ? "You're signed in. Tap Open Nemesis below — your browser may ask permission to open the app; choose Open."
+                : "You're signed in. Press Open Nemesis below — your browser may ask permission to open the app; choose Open.")
+            : (isPhone
+                ? "Nemesis is finishing sign-in in your browser and handing the session to the app."
+                : "Nemesis is finishing sign-in in your browser and handing the session to the desktop app.")
       }
       footer={
         error ? (
@@ -127,7 +153,7 @@ export default function DesktopAuthPage() {
     >
       {error ? (
         <p className="nemesis-auth-error" role="alert">
-          Open the Nemesis app and press Continue with Google or Apple again.
+          {isPhone ? "Open the Nemesis app and tap Continue with Google or Apple again." : "Open the Nemesis app and press Continue with Google or Apple again."}
         </p>
       ) : deepLink ? (
         <>
@@ -135,8 +161,9 @@ export default function DesktopAuthPage() {
             Open Nemesis
           </a>
           <p className="nemesis-auth-notice" role="status">
-            Nothing happening? Make sure the Nemesis app is installed and open, then press the button again. You can
-            close this tab once the app shows your account.
+            {isPhone
+              ? "Nothing happening? Make sure the Nemesis app is installed, then tap the button again. You can close this tab once the app shows your account."
+              : "Nothing happening? Make sure the Nemesis app is installed and open, then press the button again. You can close this tab once the app shows your account."}
           </p>
         </>
       ) : (

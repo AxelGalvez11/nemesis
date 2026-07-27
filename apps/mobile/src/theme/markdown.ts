@@ -57,9 +57,21 @@ export const createMarkdownStyles = (c: ThemeColors) =>
       fontFamily: "Menlo",
       fontSize: 14.5,
     },
-    table: { borderColor: c.line, borderWidth: 1, borderRadius: radius.sm },
-    th: { padding: 8, color: c.text, fontWeight: "700" as const },
-    td: { padding: 8, color: c.text },
+    // A real grid, not a stack of underlined rows (owner 2026-07-24: "tables
+    // need to have better column and cell borders"). Until now `tr` drew a
+    // hairline under each row and `table` drew a frame around the lot, and
+    // NOTHING drew a line between two columns — so a three-column table read as
+    // three words that happened to sit near each other.
+    //
+    // Each cell paints its own RIGHT edge and the table gives up its own, so the
+    // last cell's border becomes the table's right edge: one hairline
+    // everywhere instead of a doubled 2pt seam down one side. overflow keeps the
+    // corners inside the radius now that lines actually reach them. The header
+    // gets the same wash the tap-to-edit grid uses (NoteTableEditor's
+    // headerCell) so the two views of one table look like one table.
+    table: { borderColor: c.line, borderWidth: 1, borderRightWidth: 0, borderRadius: radius.sm, overflow: "hidden" as const },
+    th: { padding: 8, color: c.text, fontWeight: "700" as const, backgroundColor: c.surface, borderColor: c.line, borderRightWidth: 1 },
+    td: { padding: 8, color: c.text, borderColor: c.line, borderRightWidth: 1 },
     tr: { borderColor: c.line, borderBottomWidth: 1 },
     bullet_list_icon: { color: c.text2 },
     ordered_list_icon: { color: c.text2 },

@@ -4,8 +4,9 @@
 // (shell spec §B2). v1: plain scrollTop auto-follow instead of the
 // use-stick-to-bottom package (not an approved dependency for this build).
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ArrowDown } from "@/lib/workspace/icons";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,12 @@ interface ThreadProps {
   onEditMessage: (at: string, content: string) => void;
   onOpenSources?: () => void;
 }
+
+/** How far from the end the transcript has to be, in pixels, before the
+ *  jump-to-bottom button appears. Roughly a line of prose plus the composer fade:
+ *  far enough that a small overscroll never flashes it, near enough that it shows
+ *  as soon as there is genuinely unread answer below. */
+const JUMP_TO_BOTTOM_AT = 160;
 
 function turnDurationSeconds(turn: ThreadTurn): number | null {
   if (!turn.assistant) return null;
@@ -53,12 +60,37 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [assistantScrollKey, lastTurn?.assistant]);
 
+  // Jump to the newest message (owner 2026-07-24). Absent, not disabled, while
+  // the transcript is already at the end — a control that cannot do anything
+  // should not be on screen. The threshold keeps it from blinking on the tail of
+  // a momentum scroll or a rubber-band.
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const onViewportScroll = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    setAwayFromBottom(el.scrollHeight - (el.scrollTop + el.clientHeight) > JUMP_TO_BOTTOM_AT);
+  }, []);
+
+  // Re-check whenever the content grows: a streaming answer lengthens the page
+  // under a reader who has scrolled up, and a scroll event never fires for that.
+  useEffect(() => {
+    onViewportScroll();
+  }, [assistantScrollKey, turns.length, onViewportScroll]);
+
+  const jumpToBottom = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    el.scrollTo({ behavior: "smooth", top: el.scrollHeight });
+    setAwayFromBottom(false);
+  }, []);
+
   return (
     <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
       <div className="relative min-h-0 max-w-full overflow-hidden contain-[layout_paint]" style={{ height: "100%" }}>
         <div
           className="size-full overflow-x-hidden overflow-y-auto overscroll-contain"
           data-slot="aui_thread-viewport"
+          onScroll={onViewportScroll}
           ref={viewportRef}
         >
           {isEmpty ? (
@@ -101,6 +133,22 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
             </div>
           )}
         </div>
+        {/* Sits just above the composer, whose height the shell already publishes
+            as --composer-measured-height — so the button follows a growing draft
+            instead of guessing at a fixed offset. Not rendered at all when the
+            transcript is at the end or empty. */}
+        {!isEmpty && awayFromBottom ? (
+          <button
+            aria-label="Jump to the newest message"
+            className="absolute left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-card p-2 text-muted-foreground shadow-md transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            data-slot="aui_thread-jump-to-bottom"
+            onClick={jumpToBottom}
+            style={{ bottom: "calc(var(--composer-measured-height) + 1rem)" }}
+            type="button"
+          >
+            <ArrowDown aria-hidden className="size-4" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
