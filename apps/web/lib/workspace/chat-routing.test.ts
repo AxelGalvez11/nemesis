@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
-import { classifyChatRequest, detectsSaveRequest, routeInstruction } from "./chat-routing";
+import { classifyChatRequest, detectsSaveRequest, promptWithoutAttachments, routeInstruction } from "./chat-routing";
+import { shouldSearchWeb } from "./chat-web-search";
 
 // Ordinary conversation stays on the least expensive lane.
 assert.deepEqual(classifyChatRequest("hello"), {
@@ -89,5 +90,19 @@ for (const prompt of [
 }
 // The reasoner routes those still resolve to are untouched by the save gate.
 assert.equal(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
+
+// The regression that raising the attachment budget amplified: a lecture slide
+// citing a recent year tripped the web-search matcher, buying a paid search on
+// every upload. Routing reads what the student TYPED; skills still read it all.
+{
+  const wireText = "summarise this\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024. Updated guidance.";
+  assert.equal(promptWithoutAttachments(wireText), "summarise this");
+  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
+  // The raw wire text is exactly what used to trip it.
+  assert.equal(shouldSearchWeb(wireText), true);
+}
+// A message with no attachment is untouched, and a real live-info question still searches.
+assert.equal(promptWithoutAttachments("what is the latest guidance"), "what is the latest guidance");
+assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidance")), true);
 
 console.log("chat-routing.test.ts OK");

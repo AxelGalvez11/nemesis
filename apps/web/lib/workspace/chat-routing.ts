@@ -101,3 +101,27 @@ export function routeInstruction(route: ChatRoute): string {
       return "Respond directly and naturally. Keep simple questions concise, but do not omit details the user needs.";
   }
 }
+
+/** The header prepareChatAttachments puts above each attached file's text.
+ *  Defined here rather than beside the builder because chat-attachments imports
+ *  chat-api, so the reverse import would close a cycle. */
+export const ATTACHMENT_BLOCK_MARKER = "### Attachment: ";
+
+/**
+ * What the student actually TYPED, with attached file contents removed.
+ *
+ * The routing and web-search matchers were reading the whole wire text, so a
+ * lecture deck decided them: one slide citing "Smith et al., 2024" matches the
+ * recent-year pattern and bought a live web search on every upload — paid for,
+ * and then pasted into a prompt already carrying the deck. Raising the
+ * attachment budget to 90k made that strictly likelier, which is what turned a
+ * long-standing quirk into a regression worth fixing.
+ *
+ * Skill selection deliberately still sees the FULL text: whether a deck is
+ * attached is exactly what lecture-intake needs to know. What a turn IS comes
+ * from the student; what craft it needs can come from the attachment.
+ */
+export function promptWithoutAttachments(wireText: string): string {
+  const marker = wireText.indexOf(`\n\n${ATTACHMENT_BLOCK_MARKER}`);
+  return (marker === -1 ? wireText : wireText.slice(0, marker)).trim();
+}

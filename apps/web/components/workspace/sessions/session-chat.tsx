@@ -23,9 +23,6 @@ import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialo
 import { requestRecordingNote } from "@/lib/workspace/live-audio-insights";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 
-/** Where a recording's notes are filed. Its own folder so a semester of
- *  lectures stays browsable next to the student's typed notes. */
-const RECORDINGS_FOLDER = "Nemesis/Recordings";
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
@@ -34,6 +31,10 @@ import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace } from "./record-workspace";
+
+/** Where a recording's notes are filed. Its own folder so a semester of
+ *  lectures stays browsable next to the student's typed notes. */
+const RECORDINGS_FOLDER = "Nemesis/Recordings";
 
 function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
   const turns: ThreadTurn[] = [];

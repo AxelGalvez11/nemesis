@@ -10,7 +10,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { classifyChatRequest, promptWithoutAttachments, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
@@ -369,8 +369,12 @@ export async function sendChatTurn(
   onDelta?: CompletionDeltaHandler,
   effort: ChatEffort = DEFAULT_CHAT_EFFORT,
 ): Promise<ChatReply> {
-  const classified = classifyChatRequest(userText);
-  const needsWeb = classified.searchWeb || shouldSearchWeb(userText);
+  // Route and search on what the student TYPED. Reading the attached deck too
+  // meant one slide citing a recent year bought a paid web search on every
+  // upload. Skills below still see the full text, deliberately.
+  const askText = promptWithoutAttachments(userText);
+  const classified = classifyChatRequest(askText);
+  const needsWeb = classified.searchWeb || shouldSearchWeb(askText);
   const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
@@ -379,7 +383,7 @@ export async function sendChatTurn(
   let groundedText = userText;
   let sources: ChatWebResult[] = [];
   if (needsWeb) {
-    const result = await searchWebContext(uid, buildFreshSearchQuery(userText), signal);
+    const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
     sources = result.sources;
     groundedText = result.context
       ? `${userText}\n\n${result.context}`
