@@ -30,6 +30,8 @@ export interface AnkiImportResult {
   mediaCount: number;
   /** Cards whose ANSWER was a picture — imported, but tagged needs-image. */
   needsImageCount: number;
+  /** Cards arriving suspended, exactly as Anki had them. */
+  suspendedCount: number;
 }
 
 // The slice of sql.js we depend on — kept minimal so the loader can vend the
@@ -141,15 +143,36 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: Pa
     // A note renders as one card here even when Anki fans it out (cloze
     // blanks, reversed pairs) — our review flow cycles blanks itself. The
     // lowest-ordinal card decides the deck; extra ordinals mark "reversed".
+    // `queue` and `flags` join the projection so a shared deck arrives in the
+    // state its owner left it in. Anki: queue -1 is suspended (-2/-3 are buried,
+    // a temporary state not worth carrying); the flag colour is the low 3 bits
+    // of `flags`. A note fans out to several cards, so it counts as suspended
+    // only when EVERY card of it is — one unsuspended cloze means the student
+    // is studying that note.
     const noteHome = new Map<number, { did: number; ord: number }>();
     const noteOrdinals = new Map<number, number>();
-    const cardRows = db.exec("select nid, did, ord from cards")[0];
-    for (const [rawNid, rawDid, rawOrd] of cardRows?.values ?? []) {
+    const noteSuspended = new Map<number, boolean>();
+    const noteFlag = new Map<number, number>();
+    // Every real Anki collection has queue and flags. A hand-built or damaged
+    // export might not, and losing the parked/marked state is far better than
+    // refusing to import the deck at all — so fall back rather than throw.
+    const cardRows = (() => {
+      try {
+        return db.exec("select nid, did, ord, queue, flags from cards")[0];
+      } catch {
+        return db.exec("select nid, did, ord, 0 as queue, 0 as flags from cards")[0];
+      }
+    })();
+    for (const [rawNid, rawDid, rawOrd, rawQueue, rawFlags] of cardRows?.values ?? []) {
       const nid = Number(rawNid);
       const ord = Number(rawOrd);
       const existing = noteHome.get(nid);
       if (!existing || ord < existing.ord) noteHome.set(nid, { did: Number(rawDid), ord });
       noteOrdinals.set(nid, (noteOrdinals.get(nid) ?? 0) + 1);
+      const suspended = Number(rawQueue) === -1;
+      noteSuspended.set(nid, (noteSuspended.get(nid) ?? true) && suspended);
+      const flag = Number(rawFlags) & 7;
+      if (flag > 0 && !noteFlag.get(nid)) noteFlag.set(nid, flag);
     }
 
     const decks = new Map<string, AnkiImportCard[]>();
@@ -157,6 +180,7 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: Pa
     let skippedNotes = 0;
     let imageFields = 0;
     let needsImageCount = 0;
+    let suspendedCount = 0;
     const noteRows = db.exec("select id, flds, tags from notes")[0];
     for (const [rawId, rawFlds, rawTags] of noteRows?.values ?? []) {
       const nid = Number(rawId);
@@ -168,7 +192,13 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: Pa
         continue;
       }
       imageFields += countImageTags(flds);
-      const card = ankiNoteToCard(splitAnkiFields(flds), typeof rawTags === "string" ? rawTags : "", (noteOrdinals.get(nid) ?? 1) > 1, options?.resolveImage);
+      const card = ankiNoteToCard(
+        splitAnkiFields(flds),
+        typeof rawTags === "string" ? rawTags : "",
+        (noteOrdinals.get(nid) ?? 1) > 1,
+        options?.resolveImage,
+        { flag: noteFlag.get(nid) ?? 0, suspended: noteSuspended.get(nid) === true },
+      );
       if (!card) {
         skippedNotes += 1;
         continue;
@@ -178,6 +208,7 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: Pa
       else decks.set(deckName, [card]);
       cardCount += 1;
       if (card.needsImage) needsImageCount += 1;
+      if (card.suspended) suspendedCount += 1;
     }
     if (cardCount === 0) throw new Error("That export has no text cards Nemesis can import.");
     // The legacy stub database contains exactly one "please upgrade" note.
@@ -194,6 +225,7 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: Pa
       mediaCount: Math.max(mediaEntryCount(files, skippedMediaEntries), imageFields > 0 ? 1 : 0),
       needsImageCount,
       skippedNotes,
+      suspendedCount,
     };
   } finally {
     db.close();

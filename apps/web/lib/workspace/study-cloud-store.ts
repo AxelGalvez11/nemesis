@@ -515,7 +515,9 @@ export interface UpdateArtifactPatch {
 export interface ImportDeckInput {
   name: string;
   source?: "Anki" | "Quizlet";
-  cards: { front: string; back: string; cardType: StudyCardType; tags: string[] }[];
+  // suspended/flag are optional because Quizlet has neither concept — only an
+  // Anki package can say a card was parked or marked.
+  cards: { front: string; back: string; cardType: StudyCardType; tags: string[]; suspended?: boolean; flag?: number }[];
 }
 
 export interface ImportDecksSummary {
@@ -774,8 +776,8 @@ export function useCloudStudy(): UseCloudStudyApi {
               intervalDays: 0,
               repetitions: 0,
               lapses: 0,
-              suspended: false,
-              flag: 0,
+              suspended: card.suspended === true,
+              flag: card.flag ?? 0,
               tags: normalizeStudyTags(card.tags),
               payload: null,
               createdAt: timestamp,
@@ -804,6 +806,10 @@ export function useCloudStudy(): UseCloudStudyApi {
             back: card.back,
             card_type: card.cardType,
             source_path: null,
+            // Carried so a shared deck arrives in the state its owner left it
+            // in: importing 35,000 suspended cards as active is unusable.
+            suspended: card.suspended === true,
+            flag: card.flag ?? 0,
             tags: normalizeStudyTags(card.tags),
           }));
           const inserted = await supabase.from("study_cards").insert(rows).select(CARD_COLUMNS);
