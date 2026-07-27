@@ -208,7 +208,13 @@ const PREVIEW_CARDS: StudyCard[] = [
   },
 ];
 const PREVIEW_TEST_CONTENT = {
-  attempts: [],
+  // Two sittings of the same test, so /dev-preview can exercise the Stats page's
+  // practice-test section — including the retake case, where the second attempt
+  // must read as its own result rather than replacing the first.
+  attempts: [
+    { at: "2026-07-21T18:04:00.000Z", missed: [{ picked: 0, questionIndex: 1 }, { picked: 3, questionIndex: 2 }], score: 2, total: 4 },
+    { at: "2026-07-26T09:30:00.000Z", missed: [{ picked: 2, questionIndex: 3 }], score: 3, total: 4 },
+  ],
   questions: [
     {
       answer: 1,
