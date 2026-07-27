@@ -8,7 +8,7 @@
 // review step to show; only the student pressing "Add these" writes anything.
 
 import { postChatCompletion } from "@/lib/workspace/chat-api";
-import { extractDocument } from "@/lib/workspace/chat-attachments";
+import { extractFile } from "@/lib/workspace/chat-attachments";
 import { jsonSlice } from "@/lib/workspace/study-artifact-content";
 import {
   buildSyllabusPrompt,
@@ -73,7 +73,13 @@ export async function readSyllabus(options: ReadSyllabusOptions): Promise<Verifi
   // an empty text layer; the extract route falls back to reading the pages
   // with vision when that is configured, and otherwise returns its own
   // "no selectable text" error, which surfaces to the student unchanged.
-  const fullText = await extractDocument(file, uid);
+  //
+  // extractFile REPLACED extractDocument when photographs became readable: it
+  // takes an image as happily as a PDF, so a syllabus the student photographed
+  // now imports by the same path. Only `.text` is wanted here — the title it
+  // also returns describes the FILE, and the course name is read from the
+  // content by verifySyllabus instead.
+  const { text: fullText } = await extractFile(file, uid);
 
   // The model sees this slice, and verification checks quotes against THIS
   // SAME slice. Verifying against the full text instead would accept a quote
