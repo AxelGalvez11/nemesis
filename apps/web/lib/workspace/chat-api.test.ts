@@ -109,6 +109,16 @@ test("a handful of writes still get a card each, and kinds do not merge", () => 
   assert.equal(shown[1]?.title, "A note");
 });
 
+// Only kinds whose items share ONE destination may collapse. Every calendar
+// event opens the calendar, so nothing is lost. Four decks have four different
+// destinations, and folding them would leave three unreachable from the chat.
+test("decks and notes are never collapsed, however many there are", () => {
+  const decks = Array.from({ length: 6 }, (_, i) => ({ id: `d${i}`, kind: "flashcards" as const, title: `Deck ${i}`, url: `/study?section=cards&deck=${i}` }));
+  assert.deepEqual(collapseOutputs(decks), decks);
+  const notes = Array.from({ length: 5 }, (_, i) => ({ id: `n${i}`, kind: "note" as const, title: `Note ${i}`, url: `/library?note=n${i}` }));
+  assert.deepEqual(collapseOutputs(notes), notes);
+});
+
 test("the user's message is still the last thing sent", () => {
   const wire = buildWireMessages([], "calculate the dose");
   const last = wire.at(-1);

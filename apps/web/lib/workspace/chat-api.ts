@@ -408,11 +408,17 @@ function outputFromToolResult(result: unknown): SessionOutput | null {
  *  you made and becomes a wall to scroll past. */
 export const OUTPUT_COLLAPSE_THRESHOLD = 3;
 
+/**
+ * Only kinds whose items all open the SAME place may collapse.
+ *
+ * Calendar events qualify: every one of them lands on the calendar, so a single
+ * card loses nothing. Decks, notes and tests do NOT — each has its own
+ * destination, and folding four decks into one card would leave three of them
+ * unreachable from the transcript. Better a short list of real links than one
+ * tidy card that hides them.
+ */
 const COLLAPSED_NOUN: Partial<Record<SessionOutput["kind"], string>> = {
   event: "calendar events",
-  flashcards: "decks",
-  note: "notes",
-  test: "practice tests",
 };
 
 /**
@@ -434,7 +440,7 @@ export function collapseOutputs(outputs: readonly SessionOutput[], threshold = O
   const done = new Set<SessionOutput["kind"]>();
   for (const output of outputs) {
     const total = counts.get(output.kind) ?? 0;
-    if (total <= threshold) {
+    if (total <= threshold || !COLLAPSED_NOUN[output.kind]) {
       collapsed.push(output);
       continue;
     }
