@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { deleteAccount } from "@/api/account";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
@@ -18,6 +19,7 @@ export default function DeleteAccountScreen() {
   const { signOut } = useAuth();
   const common = useCommon();
   const styles = useThemedStyles(createStyles);
+  const insets = useSafeAreaInsets();
   const [confirmed, setConfirmed] = useState(false);
 
   const del = useMutation({
@@ -29,7 +31,20 @@ export default function DeleteAccountScreen() {
   });
 
   return (
-    <ScrollView contentContainerStyle={styles.body} testID="delete-account-screen">
+    <ScrollView
+      contentContainerStyle={[styles.body, { paddingTop: insets.top + space(2), paddingBottom: insets.bottom + space(5) }]}
+      testID="delete-account-screen"
+    >
+      <Pressable
+        onPress={() => (router.canGoBack() ? router.back() : router.replace("/settings"))}
+        hitSlop={10}
+        style={styles.back}
+        accessibilityRole="button"
+        accessibilityLabel="Back to Settings"
+        testID="delete-account-back"
+      >
+        <Text style={styles.backText}>‹ Settings</Text>
+      </Pressable>
       <Text style={common.h1}>Delete account</Text>
       <Text style={common.body}>
         This permanently deletes your Nemesis account and everything tied to it — your chats, notes,
@@ -58,6 +73,8 @@ export default function DeleteAccountScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
+    back: { alignSelf: "flex-start", paddingVertical: space(1) },
+    backText: { ...type.small, color: c.accent, fontWeight: "600" },
     confirmRow: { flexDirection: "row", gap: space(2.5), alignItems: "flex-start", paddingVertical: space(1) },
     checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: c.danger, alignItems: "center", justifyContent: "center" },
     checkboxOn: { backgroundColor: c.danger },

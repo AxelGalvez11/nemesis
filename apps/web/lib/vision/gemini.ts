@@ -18,10 +18,11 @@
  * Everything except the single fetch is pure and unit-tested.
  */
 
-/** Google retires fixed model ids for new keys (learned 2026-07-14 with
- *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
- *  404 exactly like supabase/functions/nemesis-media does. */
-export const VISION_MODEL_LADDER = ["gemini-2.5-flash", "gemini-2.0-flash"] as const;
+/** Walk a current, production-priced ladder on a 404 exactly like
+ * supabase/functions/nemesis-media does. Gemini 2.0 Flash was shut down on
+ * 2026-06-01, so it must not remain the recovery path for camera or slide OCR.
+ * Flash-Lite is the lower-cost fallback and is still multimodal. */
+export const VISION_MODEL_LADDER = ["gemini-2.5-flash", "gemini-2.5-flash-lite"] as const;
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 

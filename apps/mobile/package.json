@@ -37,6 +37,7 @@
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "expo-updates": "~56.0.22",
+    "expo-web-browser": "~56.0.6",
     "punycode": "^2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -55,6 +56,8 @@
     "@playwright/test": "^1.60.0",
     "@types/d3-force": "^3.0.10",
     "@types/react": "~19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "^56.0.4",
     "tsx": "^4.22.4",
     "typescript": "~6.0.3"
   }

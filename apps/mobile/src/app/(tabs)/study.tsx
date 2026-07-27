@@ -3,7 +3,7 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle } from "react-native-svg";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronIcon, FolderIcon } from "@/components/icons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -13,10 +13,10 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { StudyArtifactsPanel } from "@/components/StudyArtifactsPanel";
 import { SkeletonDeckList } from "@/components/Skeleton";
 import { GlassSurface } from "@/components/GlassSurface";
-import { SlideUpSheet } from "@/components/StudySheet";
 import { TOP_BAR_BUTTON, TOP_BAR_PAD_TOP } from "@/components/TopBar";
 import { StudyAddSheet, type StudyAddStep } from "@/components/StudyAddSheet";
 import { StudyBrowseSheet } from "@/components/StudyBrowseSheet";
+import { StudyImportSheet } from "@/components/StudyImportSheet";
 import {
   StudyModeMenu,
   StudyModePopup,
@@ -130,6 +130,8 @@ export default function StudyScreen() {
   const { setHeaderCenter, setHeaderRight } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const params = useLocalSearchParams<{ section?: string }>();
+  const requestedSection = Array.isArray(params.section) ? params.section[0] : params.section;
 
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -157,6 +159,11 @@ export default function StudyScreen() {
   // reads out the current section; `activeMode` decides which content area
   // below renders.
   const [activeMode, setActiveMode] = useState<StudyModeKey>("cards");
+  useEffect(() => {
+    if (requestedSection === "cards" || requestedSection === "tests" || requestedSection === "mindmaps") {
+      setActiveMode(requestedSection);
+    }
+  }, [requestedSection]);
 
   // The top-right "…" menu (owner 2026-07-23, replacing the lower-left "+")
   // opens these. StudyAddSheet now opens straight to a step (Create folder /
@@ -164,6 +171,7 @@ export default function StudyScreen() {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("new-cards");
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [importSource, setImportSource] = useState<"anki" | "quizlet" | null>(null);
   // The header "…" actions dropdown.
   const [actionsOpen, setActionsOpen] = useState(false);
   // Deck ordering (owner 2026-07-23 → Sorting) and its picker sheet.
@@ -181,9 +189,6 @@ export default function StudyScreen() {
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  // Stats — moved off its own FAB into the toggle's trailing icon-segment;
-  // the sheet's own content is unchanged.
-  const [statsOpen, setStatsOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
 
   // The section dropdown IS this screen's header (owner 2026-07-22: "remove
@@ -595,8 +600,6 @@ export default function StudyScreen() {
     return pathLeaf(decks.find((d) => d.id === rest)?.name ?? "");
   })();
 
-  const totalActionable = deckRows.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0);
-  const totalNew = deckRows.reduce((sum, d) => sum + d.counts.newCount, 0);
   const rows: DeckTreeRow<DeckRow>[] = flattenDeckTree(
     buildDeckTree(
       deckRows.map((row) => ({
@@ -609,16 +612,6 @@ export default function StudyScreen() {
     ),
     collapsedFolders,
   );
-
-  // Stats sheet numbers: every one is summed from data this screen already
-  // fetched — nothing here is guessed. "Streak" has no source of truth yet,
-  // so it says so instead of inventing a number.
-  const statTiles: { label: string; value: string; color: string }[] = [
-    { label: "Due now", value: String(totalActionable), color: c.accent },
-    { label: "New", value: String(totalNew), color: c.text },
-    { label: "Total cards", value: String(cards.length), color: c.text },
-    { label: "Decks", value: String(decks.length), color: c.text },
-  ];
 
   return (
     <View style={styles.flex} testID="study-screen">
@@ -649,7 +642,7 @@ export default function StudyScreen() {
             <View style={styles.emptyWrap}>
               <EmptyBlock
                 title="No decks yet"
-                body="Use the … menu in the top right to start a new folder or add cards — or create decks on the Nemesis web app and they'll show up here automatically."
+                body="Use the … menu in the top right to create a folder or add cards. Everything stays synced with Nemesis on the web."
               />
             </View>
           ) : (
@@ -879,6 +872,14 @@ export default function StudyScreen() {
           setActionsOpen(false);
           setBrowseOpen(true);
         }}
+        onImportAnki={() => {
+          setActionsOpen(false);
+          setImportSource("anki");
+        }}
+        onImportQuizlet={() => {
+          setActionsOpen(false);
+          setImportSource("quizlet");
+        }}
       />
 
       {/* Multi-select action bar — the selection's Move to / Delete, plus Cancel.
@@ -919,7 +920,7 @@ export default function StudyScreen() {
         // bar's own exported numbers so the two can't drift apart.
         topOffset={insets.top + TOP_BAR_PAD_TOP + (TOP_BAR_BUTTON + TRIGGER_HEIGHT) / 2 + space(1.5)}
         onSelect={setActiveMode}
-        onStats={() => setStatsOpen(true)}
+        onStats={() => router.push("/study-stats")}
         onClose={() => setModeMenuOpen(false)}
       />
 
@@ -940,6 +941,16 @@ export default function StudyScreen() {
         cards={cards}
         onChanged={() => void load(userId)}
       />
+
+      {importSource ? (
+        <StudyImportSheet
+          visible
+          onClose={() => setImportSource(null)}
+          onImported={() => void load(userId)}
+          source={importSource}
+          userId={userId}
+        />
+      ) : null}
 
       {/* Sorting picker (owner 2026-07-23). Reuses the row-actions sheet chrome;
           a "✓" marks the current mode. */}
@@ -970,20 +981,6 @@ export default function StudyScreen() {
         testID="study-select-move-picker"
       />
 
-      <SlideUpSheet visible={statsOpen} onClose={() => setStatsOpen(false)} title="Study stats" testID="study-stats-sheet">
-        <View style={styles.statGrid}>
-          {statTiles.map((tile) => (
-            <View key={tile.label} style={styles.statTile}>
-              <Text style={[styles.statValue, { color: tile.color }]}>{tile.value}</Text>
-              <Text style={styles.statLabel}>{tile.label}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.streakRow}>
-          <Text style={styles.streakLabel}>Streak</Text>
-          <Text style={styles.streakValue}>Not tracked yet</Text>
-        </View>
-      </SlideUpSheet>
     </View>
   );
 }
@@ -1003,6 +1000,8 @@ function StudyActionsPopup({
   onMoveTo,
   onSorting,
   onBrowse,
+  onImportAnki,
+  onImportQuizlet,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -1013,6 +1012,8 @@ function StudyActionsPopup({
   onMoveTo: () => void;
   onSorting: () => void;
   onBrowse: () => void;
+  onImportAnki: () => void;
+  onImportQuizlet: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -1020,6 +1021,8 @@ function StudyActionsPopup({
   const rows: { key: string; label: string; onPress: () => void }[] = [
     { key: "create-folder", label: "Create folder", onPress: onCreateFolder },
     { key: "new-card", label: "New card", onPress: onNewCard },
+    { key: "import-anki", label: "Import from Anki", onPress: onImportAnki },
+    { key: "import-quizlet", label: "Import from Quizlet", onPress: onImportQuizlet },
     { key: "select", label: "Select", onPress: onSelect },
     { key: "move-to", label: "Move to…", onPress: onMoveTo },
     { key: "sorting", label: "Sorting", onPress: onSorting },

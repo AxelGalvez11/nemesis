@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { mergeLibraryHits } from "./library-search-merge";
+import { AGENT_TOOL_NAMES, AGENT_TOOLS } from "./agent-tools";
+
+test("web advertises the canonical cross-client workspace tool set", () => {
+  assert.deepEqual(
+    AGENT_TOOLS.map((tool) => tool.function.name).sort(),
+    [...AGENT_TOOL_NAMES].sort(),
+  );
+});
 
 // The tool's contract under a dead semantic arm: an empty semantic list must
 // still yield today's substring results, in today's shape. This is the guarantee

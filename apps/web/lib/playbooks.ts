@@ -52,7 +52,7 @@ export const SKILLS: readonly Skill[] = [
   {
     id: "slides",
     title: "Slides",
-    desc: "deep research → PowerPoint",
+    desc: "cited research → PowerPoint",
     action: "slides",
   },
   {

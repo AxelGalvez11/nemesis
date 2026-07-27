@@ -52,6 +52,8 @@ for (const prompt of [
   "build me a mind map of the RAAS pathway",
   "turn this into a mind map",
   "generate a practice test on ACE inhibitors",
+  "create a slide deck about ACE inhibitors",
+  "make me lecture notes for tomorrow",
   "add these to my deck",
   "save this as a note",
   "save this to my library",

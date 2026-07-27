@@ -374,7 +374,7 @@ export function NoteBlockEditor({
         </GlassSurface>
       </View>
     ),
-    [styles, c, applyTool],
+    [styles, c, applyTool, pillWidth],
   );
 
   return (

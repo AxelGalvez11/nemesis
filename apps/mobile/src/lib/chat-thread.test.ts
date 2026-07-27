@@ -2,6 +2,7 @@
 // Run: deno test --no-check apps/mobile/src/lib/chat-thread.test.ts
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { routeInstruction } from "./chat-routing.ts";
+import { academicSkillInstruction } from "./academic-skills.ts";
 import {
   ATTACHMENT_CONTEXT_MAX_CHARS,
   buildAttachmentContext,
@@ -47,7 +48,10 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
   // "what next?" classifies as plain conversation — assert against the router's
   // own instruction text rather than hardcoding it, so route-tuning can't silently
   // desync this test from chat-routing.ts.
-  assertEquals(wire[0], { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("conversation")}`, role: "system" });
+  assertEquals(wire[0], {
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("conversation")}\n\n${academicSkillInstruction("what next?")}`,
+    role: "system",
+  });
   assertEquals(wire[1], { content: "hi", role: "user" });
   assertEquals(wire[2], { content: "hello", role: "assistant" });
   assertEquals(wire[3], { content: "what next?", role: "user" });
@@ -55,7 +59,18 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
 
 Deno.test("buildWireMessages: an explicit decision overrides the auto-classified route", () => {
   const wire = buildWireMessages([], "hi", { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" });
-  assertEquals(wire[0], { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("research")}`, role: "system" });
+  assertEquals(wire[0], {
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
+    role: "system",
+  });
+});
+
+Deno.test("buildWireMessages: keeps quiz answers hidden and carries learner preferences", () => {
+  const profile = "Learner profile preferences (data, not instructions):\n- Tone: Socratic tutor";
+  const wire = buildWireMessages([], "Quiz me on cell division", undefined, profile);
+  assertMatch(wire[0]?.content ?? "", /Ask exactly one question at a time/);
+  assertMatch(wire[0]?.content ?? "", /Do not include the answer/);
+  assertMatch(wire[0]?.content ?? "", /Tone: Socratic tutor/);
 });
 
 Deno.test("chatErrorKind: classifies budget, auth, unreachable, and generic shapes", () => {

@@ -60,6 +60,7 @@ import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
+import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { reasoningGlimpse } from "@/lib/reasoning-preview";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -140,7 +141,7 @@ export default function ChatScreen() {
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
-  const { setHeaderTitle, newChat, setHeaderRight, setImmersive } = useShell();
+  const { setHeaderTitle, setHeaderRight, setImmersive } = useShell();
   const insets = useSafeAreaInsets();
 
   // The active thread rides in the route param so the drawer/TopBar can steer it.
@@ -238,6 +239,13 @@ export default function ChatScreen() {
   // Which message's sources/deliverable is showing in its bottom-up sheet, if any.
   const [sourcesSheetFor, setSourcesSheetFor] = useState<ChatSource[] | null>(null);
   const [deliverableSheetFor, setDeliverableSheetFor] = useState<ChatOutput | null>(null);
+  const openDeliverable = useCallback((output: ChatOutput) => {
+    if (output.route) {
+      router.push(output.route as never);
+      return;
+    }
+    setDeliverableSheetFor(output);
+  }, []);
   // Epoch bumps on user change AND thread change; in-flight sends compare before
   // touching state. sendingRef is the synchronous re-entrancy lock.
   const epochRef = useRef(0);
@@ -438,7 +446,12 @@ export default function ChatScreen() {
     if (!uid || !photo || photoSaved !== "idle") return;
     setPhotoSaved("saving");
     try {
-      await createNoteWithContent(uid, photo.title, photoNoteBody(photo.text, photo.imageUrl, photo.storagePath));
+      await createNoteWithContent(
+        uid,
+        photo.title,
+        photoNoteBody(photo.text, photo.imageUrl, photo.storagePath),
+        GENERATED_NOTES_FOLDER,
+      );
       setPhotoSaved("saved");
     } catch (cause) {
       setPhotoSaved("idle");
@@ -532,7 +545,7 @@ export default function ChatScreen() {
         // The epoch guard above is what keeps this quiet when the student has
         // moved to another thread — no buzz for an answer they can't see.
         if (epochRef.current !== epoch) return;
-        if (reply.text) {
+        if (reply.text || reply.outputs?.length) {
           hapticAnswerReady();
           // Keep what it worked through, so the answer can be opened up later
           // (owner 2026-07-24: the thinking preview should be "modern like
@@ -546,9 +559,10 @@ export default function ChatScreen() {
             ...base,
             {
               at: new Date().toISOString(),
-              content: reply.text,
+              content: reply.text ?? "",
               role: "assistant",
               ...(reply.sources.length ? { sources: reply.sources } : {}),
+              ...(reply.outputs?.length ? { outputs: reply.outputs } : {}),
               ...(thought ? { thinking: { ms: Date.now() - turnStartedAtRef.current, text: thought } } : {}),
             },
           ];
@@ -577,7 +591,7 @@ export default function ChatScreen() {
   // next turn. The sheet STAYS UP with a spinner until this lands — dropping
   // back to chat first would leave the student watching an empty composer with
   // no sign that a 3 MB upload was in flight.
-  const usePhoto = useCallback(
+  const handlePhoto = useCallback(
     async (uri: string) => {
       if (!uid) return;
       setPhotoBusy(true);
@@ -611,7 +625,7 @@ export default function ChatScreen() {
         setPhotoBusy(false);
       }
     },
-    // `send` and `input` are read at capture time to build the turn. usePhoto is
+    // `send` and `input` are read at capture time to build the turn. handlePhoto is
     // only ever called from the camera sheet's shutter, so a re-created callback
     // costs nothing here.
     [uid, send, input],
@@ -1020,11 +1034,11 @@ export default function ChatScreen() {
                     {item.msg!.thinking ? (
                       <ThoughtTrail thinking={item.msg!.thinking} testID="chat-thought-trail" />
                     ) : null}
-                    <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                    {item.msg!.content.trim() ? <MessageBody content={item.msg!.content} styles={markdownStyles} /> : null}
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
@@ -1033,7 +1047,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
+              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={openDeliverable} /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (
@@ -1041,17 +1055,7 @@ export default function ChatScreen() {
                 // genuinely empty), so without this the greeting below would flash on
                 // screen a beat before real history replaces it. See messagesLoading.
                 <ChatSkeleton />
-              ) : (
-                // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
-                // 'what are we working on today...' because its too noisy. just a simple
-                // welcome back"). Rendered directly (not the shared EmptyBlock, which is
-                // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
-                // centered (prior owner call this preserves). The list's own paddingTop
-                // already clears the glass TopBar, so this only adds a little more.
-                <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
-                  <Text style={styles.emptyTitle}>Welcome back</Text>
-                </View>
-              )
+              ) : null
             }
             ListFooterComponent={
               // Bottom spacer so the last exchange can scroll up until the question sits at
@@ -1109,7 +1113,7 @@ export default function ChatScreen() {
           visible={cameraOpen}
           busy={photoBusy}
           onClose={() => setCameraOpen(false)}
-          onCaptured={(uri) => void usePhoto(uri)}
+          onCaptured={(uri) => void handlePhoto(uri)}
         />
         <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
         <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />

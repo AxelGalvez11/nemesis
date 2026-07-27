@@ -187,6 +187,39 @@ export async function fetchLibrary(uid: string): Promise<CloudLibrarySnapshot> {
   return { folders, notes };
 }
 
+/**
+ * Listen for cross-device Library writes. The web app and iOS both write
+ * `readable_library_documents`; this is the small bridge that makes an edit on
+ * either surface appear on the other without waiting for a tab change or pull
+ * to refresh. The callback intentionally re-fetches through the normal RLS
+ * query instead of trusting a Realtime payload, so the cache and the visible
+ * snapshot always receive the same validated shape.
+ */
+export function subscribeLibraryChanges(uid: string, onChange: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const channel = supabase
+    .channel(`mobile-library-${uid}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        filter: `user_id=eq.${uid}`,
+        schema: "public",
+        table: "readable_library_documents",
+      },
+      () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(onChange, 180);
+      },
+    )
+    .subscribe();
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    void supabase.removeChannel(channel);
+  };
+}
+
 /** Fetch one note's latest content by id or path. Throws on a network failure so
  *  the caller can fall back to the cache; returns null when the row genuinely
  *  isn't there (deleted, wrong id, or a folder/other kind). On success, upserts

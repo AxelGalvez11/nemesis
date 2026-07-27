@@ -6,7 +6,7 @@
 
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
@@ -235,6 +235,9 @@ export interface ChatReply {
   errorText: string | null;
   errorKind: ChatErrorKind | null;
   sources: ChatWebResult[];
+  /** Workspace artifacts created during tool rounds. Rendered as destination
+   *  cards instead of dumping the deliverable body into chat. */
+  outputs?: SessionOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
 }
@@ -325,6 +328,22 @@ export async function postChatCompletion(
 /** Most tool rounds a single turn may run before we force a plain answer. */
 const AGENT_MAX_TOOL_ROUNDS = 4;
 
+function outputFromToolResult(result: unknown): SessionOutput | null {
+  if (!result || typeof result !== "object") return null;
+  const artifact = (result as Record<string, unknown>).artifact;
+  if (!artifact || typeof artifact !== "object") return null;
+  const row = artifact as Record<string, unknown>;
+  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
+  if (typeof row.id !== "string" || typeof row.title !== "string" || typeof row.kind !== "string") return null;
+  if (!kinds.has(row.kind as SessionOutput["kind"])) return null;
+  return {
+    id: row.id,
+    kind: row.kind as SessionOutput["kind"],
+    title: row.title,
+    ...(typeof row.url === "string" ? { url: row.url } : {}),
+  };
+}
+
 /** One routed completion turn for the signed-in user `uid` on the main Sessions chat.
  *  Runs the workspace agent loop (owner 2026-07-20): the model can call the
  *  Library/Study/Calendar tools; results are fed back until it answers in text.
@@ -358,6 +377,7 @@ export async function sendChatTurn(
   const toolsEnabled = toolsAllowed(decision);
   let messages: WireMsg[] = buildWireMessages(history, groundedText, decision);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
+  const outputs: SessionOutput[] = [];
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
@@ -370,6 +390,10 @@ export async function sendChatTurn(
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
     const results = await Promise.all(calls.map(async (call) => ({ call, result: await executeAgentTool(call) })));
+    for (const { result } of results) {
+      const output = outputFromToolResult(result);
+      if (output && !outputs.some((existing) => existing.id === output.id)) outputs.push(output);
+    }
     messages = [
       ...messages,
       {
@@ -384,7 +408,7 @@ export async function sendChatTurn(
       })),
     ];
   }
-  return { ...reply, sources };
+  return { ...reply, sources, ...(outputs.length ? { outputs } : {}) };
 }
 
 export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {

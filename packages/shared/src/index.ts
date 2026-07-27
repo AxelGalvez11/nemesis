@@ -167,3 +167,7 @@ export * from "./relative-time.ts";
 // Visible credits (Manus-style usage surface): PURE display model over the existing entitlement + usage
 // + watch/mission counts. Display-only — reads what the backend reports, never enforces or charges.
 export * from "./credits.ts";
+// Cross-client Anki text / Quizlet paste import. Kept pure so web and iOS
+// accept the exact same rows and quality bounds.
+export * from "./study-import.ts";
+export * from "./workspace-agent-tools.ts";

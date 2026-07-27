@@ -54,7 +54,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Nemesis uses the camera only to scan the pairing code shown on your Mac."
+          "cameraPermission": "Nemesis uses the camera only when you choose to photograph study material, a slide, diagram, page, or whiteboard."
         }
       ],
       [
@@ -63,7 +63,8 @@
           "microphonePermission": "Nemesis uses the microphone only when you tap the mic to dictate a message.",
           "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

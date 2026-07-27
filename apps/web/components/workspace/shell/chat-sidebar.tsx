@@ -1,7 +1,7 @@
 "use client";
 
 // ChatSidebar — desktop app/chat/sidebar/index.tsx, student-build render path.
-// Nav (New session / Study / Library / Graph / Calendar), search, Pinned +
+// Nav (New chat / Study / Library / Calendar), search, Pinned +
 // Sessions sections, account footer. Class strings are verbatim transplants.
 
 import { usePathname, useRouter } from "next/navigation";
@@ -66,11 +66,6 @@ const SIDEBAR_NAV: NavItem[] = [
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
-];
-
-const MORE_NAV: NavItem[] = [
-  { id: "graph", label: "Graph", codicon: "type-hierarchy-sub", route: "/graph" },
-  { id: "plugins", label: "Plugins", codicon: "extensions", route: "/plugins" },
 ];
 
 interface ChatSidebarProps {
@@ -190,28 +185,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                   </SidebarMenuItem>
                 );
               })}
-              <SidebarMenuItem className="flex items-center gap-0.5">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <SidebarMenuButton
-                      className={cn(
-                        "flex h-7 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 hover:bg-(--ui-control-hover-background) hover:text-foreground",
-                        MORE_NAV.some((item) => item.route && (pathname === `${navigationRoot}${item.route}` || pathname.startsWith(`${navigationRoot}${item.route}/`))) && "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground",
-                      )}
-                    >
-                      <Codicon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" name="ellipsis" size="1em" />
-                      <span className="min-w-0 flex-1 truncate">More</span>
-                    </SidebarMenuButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-40" side="right" sideOffset={8}>
-                    {MORE_NAV.map((item) => (
-                      <DropdownMenuItem key={item.id} onSelect={() => item.route && navigate(`${navigationRoot}${item.route}`)}>
-                        <Codicon name={item.codicon} size="0.85rem" /> {item.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

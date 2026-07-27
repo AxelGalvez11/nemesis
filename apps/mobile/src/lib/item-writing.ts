@@ -19,8 +19,33 @@
 // offers tools — so this is the version that earns its tokens. If the phone ever
 // gains the skills system, port the long form then, not before.
 //
-// Pure data. No imports.
+import { usableQuestions, type TestQuestion } from "./study-artifact-content.ts";
 
 /** The craft rules, compressed to one line, addressed to a model. */
 export const EXAM_ITEM_RULES_SHORT =
   "One-best-answer only; a short scenario stem answerable before the options are read; options homogeneous and of similar length with the correct one never the longest; distractors drawn from real student confusions; no 'all/none of the above', no negative stems, no absolutes; refer to options by text, never by letter.";
+
+const FLAWED_OPTION = /\b(?:all|none) of the above\b/i;
+const NEGATIVE_STEM = /\b(?:not|except|least likely|false)\b/i;
+
+/**
+ * A stricter gate for tests created by the AI tool.
+ *
+ * The shared artifact reader stays permissive so it can open older and manually
+ * authored tests. New AI tests have a higher bar: enough plausible choices,
+ * unique options, a rationale, no negative stem, and no duplicate question.
+ */
+export function qualityPracticeQuestions(raw: unknown): TestQuestion[] {
+  const seen = new Set<string>();
+  return usableQuestions(raw).filter((question) => {
+    const questionKey = question.q.toLocaleLowerCase().replace(/\s+/g, " ");
+    const optionKeys = question.options.map((option) => option.toLocaleLowerCase().replace(/\s+/g, " "));
+    if (seen.has(questionKey)) return false;
+    if (question.options.length < 3 || new Set(optionKeys).size !== optionKeys.length) return false;
+    if (!question.why.trim() || NEGATIVE_STEM.test(question.q) || question.options.some((option) => FLAWED_OPTION.test(option))) {
+      return false;
+    }
+    seen.add(questionKey);
+    return true;
+  });
+}

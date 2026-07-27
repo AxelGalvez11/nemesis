@@ -22,6 +22,7 @@ import { radius, space, type } from "@/theme/tokens";
 
 const OUTPUT_CHIP_LABEL: Record<ChatOutput["kind"], string> = {
   flashcards: "Deck created",
+  mindmap: "Mind map created",
   other: "Output",
   recording: "Recording",
   report: "Report",
@@ -31,6 +32,7 @@ const OUTPUT_CHIP_LABEL: Record<ChatOutput["kind"], string> = {
 
 const OUTPUT_KIND_LABEL: Record<ChatOutput["kind"], string> = {
   flashcards: "Flashcards",
+  mindmap: "Mind map",
   other: "Output",
   recording: "Recording",
   report: "Report",
@@ -116,13 +118,13 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
         ) : null}
         {output && !output.notes && !output.transcript ? <Text style={styles.mutedText}>No content preview for this deliverable.</Text> : null}
         <View style={styles.buttons}>
-          {output?.kind === "flashcards" ? (
+          {output?.route ? (
             <MissionButton
-              label="Open Study"
+              label={output.kind === "slides" ? "Open slides" : output.kind === "other" ? "Open note" : "Open Study"}
               variant="primary"
               onPress={() => {
                 onClose();
-                router.push("/study");
+                router.push(output.route as never);
               }}
               testID="chat-deliverable-open-study"
             />

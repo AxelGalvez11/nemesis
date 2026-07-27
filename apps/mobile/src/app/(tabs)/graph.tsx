@@ -14,8 +14,7 @@ import { SettingsIcon } from "@/components/icons";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { capGraphNotes, DEFAULT_FORCES, fitScaleFor, isSmallGraph, type LabelMode, shouldShowLabel } from "@/lib/graph-settings";
-import { buildNoteGraph, createLayoutSim, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
-import type { GraphNode } from "@/lib/note-graph";
+import { buildNoteGraph, createLayoutSim, type GraphNode, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import type { ThemeColors } from "@/theme/palette";
 import { radius, space, type } from "@/theme/tokens";
@@ -535,6 +534,7 @@ export default function GraphScreen() {
     translateY,
     savedTranslateX,
     savedTranslateY,
+    userAdjusted,
     // Not read inside the effect body (initialForces.current is, instead) —
     // bumped purely to force a reseed on Reset; see reseedNonce's declaration
     // above for why it's the only thing that does.
@@ -561,7 +561,7 @@ export default function GraphScreen() {
         .onEnd(() => {
           savedScale.value = scale.value;
         }),
-    [scale, savedScale],
+    [scale, savedScale, userAdjusted],
   );
 
   const canvasPanGesture = useMemo(
@@ -582,7 +582,7 @@ export default function GraphScreen() {
           savedTranslateX.value = translateX.value;
           savedTranslateY.value = translateY.value;
         }),
-    [translateX, translateY, savedTranslateX, savedTranslateY],
+    [translateX, translateY, savedTranslateX, savedTranslateY, userAdjusted],
   );
 
   const canvasGesture = useMemo(

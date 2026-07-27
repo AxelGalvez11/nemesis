@@ -10,7 +10,7 @@ import type { ChatEffort } from "@/lib/chat-effort";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, radius, space, type } from "@/theme/tokens";
+import { control, space, type } from "@/theme/tokens";
 
 // The one composer — a ChatGPT-style card (owner 2026-07-21, "exactly like
 // ChatGPT"). Opaque surface card (not glass): ChatGPT's composer is a plain

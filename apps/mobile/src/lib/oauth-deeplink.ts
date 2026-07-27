@@ -1,4 +1,4 @@
-// Google / Apple sign-in on the phone, without a new native module.
+// Google / Apple sign-in on the phone, using iOS's in-app authentication sheet.
 //
 // WHY NOT THE NATIVE SHEET. expo-apple-authentication and expo-auth-session are
 // native modules, and adding one changes the Expo runtime fingerprint — which
@@ -7,7 +7,7 @@
 //
 // HOW IT WORKS. The phone never talks to the provider itself:
 //
-//   1. phone  -> Safari:  app.enternemesis.com/auth/desktop?provider=google&state=<nonce>
+//   1. phone sheet -> app.enternemesis.com/auth/desktop?provider=google&state=<nonce>
 //   2. that page runs the ordinary Supabase OAuth flow (so Supabase only ever
 //      sees a WEB redirect it already allows — nothing has to be added to its
 //      redirect list, and no cloud setting changes)
@@ -30,13 +30,13 @@ export const AUTH_STATE_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 /** The deep link the web page sends back. Matched case-insensitively on the
  *  scheme and host because iOS does not promise to preserve their case. */
-const CALLBACK_PREFIX = "nemesis://auth/callback";
+export const AUTH_CALLBACK_URL = "nemesis://auth/callback";
 
 export function isValidAuthState(value: unknown): boolean {
   return typeof value === "string" && AUTH_STATE_RE.test(value);
 }
 
-/** Where to send Safari to start a provider sign-in.
+/** Where to send the in-app authentication sheet to start provider sign-in.
  *
  *  Throws on a bad state rather than returning a URL the web page will refuse:
  *  a caller that skipped generating a nonce is a programming error, and the
@@ -72,7 +72,7 @@ export function parseAuthCallback(url: string): AuthCallback | null {
   if (typeof url !== "string") return null;
   const queryAt = url.indexOf("?");
   if (queryAt < 0) return null;
-  if (url.slice(0, queryAt).toLowerCase() !== CALLBACK_PREFIX) return null;
+  if (url.slice(0, queryAt).toLowerCase() !== AUTH_CALLBACK_URL) return null;
 
   let refreshToken = "";
   let state = "";

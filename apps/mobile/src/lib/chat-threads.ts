@@ -369,17 +369,15 @@ function sourcesFromMeta(meta: unknown): ChatSource[] {
 /** The kinds SessionOutput/ChatOutput allows — mirrors web's toSessionOutput
  *  validation set exactly (sessions-cloud.ts) so a malformed/future kind never
  *  round-trips into a value the UI doesn't know how to render. */
-const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
 
 /** Tolerant parse of the `meta` jsonb column's `{ outputs?: [...] }` shape —
  *  used for BOTH `chat_messages.meta.outputs` (per-turn deliverables) and
  *  `chat_threads.meta.outputs` (session-level artifacts, e.g. recordings) —
  *  same field shape as web's SessionOutput (sessions-store.ts), ported from
- *  its toSessionOutput row parser. The phone Chat surface never WRITES one of
- *  these itself (no recording composer, and api/chat.ts's postChatCompletion
- *  never sends `tools` to the valve, so no tool-created artifact ever exists
- *  locally either) — this is a read-only mirror of whatever web already
- *  synced into the shared cloud tables. */
+ *  its toSessionOutput row parser. Tool-created iOS deliverables are written
+ *  here too, including a native Expo route that opens the artifact in Study,
+ *  Library, or a full-screen slide viewer. */
 export function outputsFromMeta(meta: unknown): ChatOutput[] {
   if (typeof meta !== "object" || meta === null) return [];
   const raw = (meta as Record<string, unknown>).outputs;
@@ -387,13 +385,14 @@ export function outputsFromMeta(meta: unknown): ChatOutput[] {
   const outputs: ChatOutput[] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { id, title, kind, url, transcript, notes, durationSeconds, createdAt, polish } = entry as Record<string, unknown>;
+    const { id, title, kind, url, route, transcript, notes, durationSeconds, createdAt, polish } = entry as Record<string, unknown>;
     if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !OUTPUT_KINDS.has(kind)) continue;
     outputs.push({
       id,
       kind: kind as ChatOutput["kind"],
       title,
       ...(typeof url === "string" ? { url } : {}),
+      ...(typeof route === "string" ? { route } : {}),
       ...(typeof transcript === "string" ? { transcript } : {}),
       ...(typeof notes === "string" ? { notes } : {}),
       ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),

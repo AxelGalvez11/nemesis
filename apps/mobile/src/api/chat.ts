@@ -51,8 +51,13 @@ import {
   shouldReplaceNotes,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
-import { readCompletionStream, readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
+import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
+import {
+  generalPrefsInstruction,
+  generalPrefsStoreKey,
+  parseGeneralPrefs,
+} from "@/lib/general-prefs";
 import {
   chatMsgFromCloudRow,
   deriveMessageId,
@@ -91,6 +96,15 @@ const SEARCH_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/n
 
 // SecureStore keys allow [A-Za-z0-9._-]; uuids fit as-is.
 const deviceKeyStoreFor = (uid: string) => `nemesis_device_key_v1_${uid}`;
+
+async function learnerProfileForChat(uid: string): Promise<string> {
+  try {
+    const raw = await SecureStore.getItemAsync(generalPrefsStoreKey(uid));
+    return generalPrefsInstruction(parseGeneralPrefs(raw));
+  } catch {
+    return generalPrefsInstruction(parseGeneralPrefs(null));
+  }
+}
 
 /** Mint a device key for the CURRENT session, only if it belongs to `uid` —
  *  a stale screen from a previous account must never mint under the new one. */
@@ -185,6 +199,8 @@ export interface ChatReply {
    *  upgrade sheet's reset line). */
   budgetReset: BudgetResetKind | null;
   sources: ChatSource[];
+  /** Saved deliverables created by workspace tools on this turn. */
+  outputs?: ChatOutput[];
   /** Workspace tools the model asked for on this round. Present only inside
    *  sendChat's agent loop; a reply handed back to the screen never has any. */
   toolCalls?: AgentToolCall[];
@@ -340,6 +356,7 @@ export async function sendChat(
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
+  const outputs: ChatOutput[] = [];
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     // The phase echoes the student's OWN words, not `query` — the "current"
@@ -370,12 +387,16 @@ export async function sendChat(
             announcedWriting = true;
             onPhase?.({ kind: "writing" });
           }
-          onDelta?.(delta, carried + accumulated);
+          // Once a tool has created a deliverable, the transcript becomes an
+          // artifact-only turn: the clickable card is the answer. Do not stream
+          // the model's prose copy of the deck/test/slides back into chat.
+          if (outputs.length === 0) onDelta?.(delta, carried + accumulated);
         }
       : undefined;
 
   const toolsEnabled = toolsAllowed(decision);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision);
+  const learnerProfile = await learnerProfileForChat(uid);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile);
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice
@@ -409,7 +430,30 @@ export async function sendChat(
     // nothing to win by overlapping them.
     const results: { call: AgentToolCall; result: unknown }[] = [];
     for (const call of calls) {
-      results.push({ call, result: await executeAgentTool(uid, call) });
+      const result = await executeAgentTool(uid, call);
+      results.push({ call, result });
+      if (result && typeof result === "object") {
+        const artifact = (result as Record<string, unknown>).artifact;
+        if (artifact && typeof artifact === "object") {
+          const row = artifact as Record<string, unknown>;
+          const kind = row.kind;
+          if (
+            typeof row.id === "string" &&
+            typeof row.title === "string" &&
+            typeof kind === "string" &&
+            ["flashcards", "slides", "test", "mindmap", "report", "recording", "other"].includes(kind)
+          ) {
+            outputs.push({
+              id: row.id,
+              kind: kind as ChatOutput["kind"],
+              title: row.title,
+              ...(typeof row.route === "string" ? { route: row.route } : {}),
+              ...(typeof row.url === "string" ? { url: row.url } : {}),
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
     }
     // The assistant's tool request and each result are appended to THIS TURN'S wire
     // array only. None of it is persisted: a ChatMsg has no tool role, and the web
@@ -442,7 +486,8 @@ export async function sendChat(
     errorKind: reply.errorKind,
     errorText: reply.errorText,
     sources,
-    text: carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
+    ...(outputs.length ? { outputs } : {}),
+    text: outputs.length ? null : carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
   };
 }
 

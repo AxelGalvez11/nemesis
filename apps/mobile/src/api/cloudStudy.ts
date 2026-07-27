@@ -13,6 +13,7 @@
 // cloud Study — a network failure returns a friendly blocking message instead
 // of silently queuing (see gradeStudyCard below).
 import * as FileSystem from "expo-file-system/legacy";
+import type { StudyTextImportCard, StudyTextImportSource } from "@nemesis/shared";
 import {
   decksInGroup,
   isWithinGroup,
@@ -155,8 +156,6 @@ interface StudyDiskCache {
   decks: CloudStudyDeck[];
   cards: CloudStudyCard[];
 }
-
-const EMPTY_STUDY_CACHE: StudyDiskCache = { v: 1, cards: [], decks: [] };
 
 const studyCachePathFor = (uid: string) => `${FileSystem.documentDirectory ?? ""}cloud-study-cache-v1-${uid}.json`;
 
@@ -320,6 +319,66 @@ export async function createStudyDeck(userId: string, name: string): Promise<Clo
   const deck = toDeck(data);
   if (!deck) throw new Error("The folder was saved but returned an invalid response.");
   return deck;
+}
+
+/** Import a pasted Anki-text or Quizlet export with the same parser the web
+ * app uses. One deck row plus chunked card inserts keeps the request count
+ * bounded; if any card chunk fails, the newly-created deck is removed so a
+ * partial import never masquerades as complete. */
+export async function importStudyTextDeck(
+  userId: string,
+  name: string,
+  cards: readonly StudyTextImportCard[],
+  source: StudyTextImportSource,
+): Promise<{ cardCount: number; deck: CloudStudyDeck }> {
+  const baseName = name.trim().slice(0, 120);
+  if (!baseName) throw new Error("Enter a deck name.");
+  if (cards.length === 0) throw new Error("There are no valid cards to import.");
+
+  const { data: existing, error: listError } = await supabase.from("study_decks").select("name").eq("user_id", userId);
+  if (listError) throw new Error(listError.message);
+  const taken = new Set((existing ?? []).map((row) => text(row.name).toLocaleLowerCase()));
+  let deckName = baseName;
+  for (let suffix = 2; taken.has(deckName.toLocaleLowerCase()); suffix += 1) deckName = `${baseName} ${suffix}`;
+
+  const { data, error } = await supabase
+    .from("study_decks")
+    .insert({
+      description: `Imported from ${source === "anki" ? "Anki" : "Quizlet"}`,
+      name: deckName,
+      source_path: null,
+      user_id: userId,
+    })
+    .select("id,name,description,source_path,created_at,updated_at")
+    .single();
+  if (error) throw new Error(error.message);
+  const deck = toDeck(data);
+  if (!deck) throw new Error("The deck was saved but returned an invalid response.");
+
+  try {
+    for (let index = 0; index < cards.length; index += 250) {
+      const chunk = cards.slice(index, index + 250);
+      const { error: cardError } = await supabase.from("study_cards").insert(
+        chunk.map((card) => ({
+          back: card.back,
+          card_type: card.cardType,
+          deck_id: deck.id,
+          front: card.front,
+          source_path: null,
+          tags: normalizeStudyTags(card.tags),
+          user_id: userId,
+        })),
+      );
+      if (cardError) throw new Error(cardError.message);
+    }
+  } catch (cause) {
+    await supabase.from("study_decks").delete().eq("id", deck.id).eq("user_id", userId);
+    throw cause;
+  }
+
+  // Reconcile the instant-open cache now, not on the next visit.
+  await fetchCloudStudy(userId);
+  return { cardCount: cards.length, deck };
 }
 
 /** Adds one basic front/back card to an existing deck. Mirrors the web

@@ -46,7 +46,7 @@ const TIERS: Tier[] = [
     features: [
       "Everything in Student, plus the autopilot",
       "The agent runs your whole semester end-to-end",
-      "Deep research reports with real citations",
+      "Web-grounded answers with real citations",
       "Live copilot — 90 transcription minutes each month",
     ],
     id: "pro",

@@ -125,7 +125,16 @@ export function SessionChat() {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
       }, effort);
       if (reply.text) {
-        sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources);
+        sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources, true, reply.outputs);
+      } else if (reply.outputs?.length) {
+        sessionsStore.upsertAssistantMessage(
+          targetId,
+          assistantAt,
+          "Created and saved to your workspace.",
+          reply.sources,
+          true,
+          reply.outputs,
+        );
       } else if (reply.errorText && reply.errorKind) {
         setError({ kind: reply.errorKind, sessionId: targetId, text: reply.errorText });
       }

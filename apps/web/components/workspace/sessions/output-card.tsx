@@ -6,6 +6,7 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { openOutputViewer } from "@/lib/workspace/output-viewer";
 import type { SessionOutput } from "@/lib/workspace/sessions-store";
+import { useRouter } from "next/navigation";
 
 const KIND_LABEL: Record<SessionOutput["kind"], string> = {
   flashcards: "Flashcards",
@@ -45,10 +46,14 @@ export function outputMetaLine(output: SessionOutput): string {
 }
 
 export function OutputCard({ output }: { output: SessionOutput }) {
+  const router = useRouter();
   return (
     <button
       className="flex w-full max-w-md items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-background px-3.5 py-3 text-left shadow-[0_2px_8px_rgba(0,0,0,0.035)] transition-colors hover:bg-(--ui-control-hover-background)"
-      onClick={() => openOutputViewer(output)}
+      onClick={() => {
+        if (output.url?.startsWith("/")) router.push(output.url);
+        else openOutputViewer(output);
+      }}
       type="button"
     >
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] text-(--ui-text-secondary)">

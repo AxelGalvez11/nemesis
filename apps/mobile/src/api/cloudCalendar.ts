@@ -37,6 +37,12 @@ export interface CalendarEventInput {
   note?: string;
 }
 
+export interface CalendarRange {
+  /** Inclusive yyyy-mm-dd bounds. */
+  from: string;
+  to: string;
+}
+
 function fromRow(row: unknown): CloudCalendarEvent | null {
   if (!row || typeof row !== "object") return null;
   const value = row as Record<string, unknown>;
@@ -112,24 +118,47 @@ export async function loadCachedCalendarEvents(uid: string): Promise<CloudCalend
   return (await readDiskCache(uid)).events;
 }
 
-/** Every one of the caller's events, date-ascending — lib/agenda.ts's own
- *  sorters (time-within-day, untimed-last) handle actual display order.
- *  Throws on failure (a student-readable message) so the caller can fall back
- *  to loadCachedCalendarEvents(); on success, replaces the cached list
- *  wholesale — the right behavior for a fresh pull, since it must also
- *  reflect edits/deletes made on the web app. */
-export async function listCalendarEvents(userId: string): Promise<CloudCalendarEvent[]> {
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .select(EVENT_COLUMNS)
-    .eq("user_id", userId)
-    .order("date", { ascending: true });
-  if (error) throw new Error(error.message);
-  const events = (data ?? []).flatMap((row) => {
-    const event = fromRow(row);
-    return event ? [event] : [];
-  });
-  await writeDiskCache(userId, { events, v: 1 });
+/** Fetch one bounded calendar window. The `(user_id, date)` index serves this
+ *  shape directly, so opening Calendar remains proportional to one user's
+ *  visible year rather than to the lifetime size of the table. Pagination
+ *  avoids PostgREST's per-response row ceiling for unusually busy calendars. */
+export async function listCalendarEvents(
+  userId: string,
+  range: CalendarRange,
+): Promise<CloudCalendarEvent[]> {
+  const pageSize = 500;
+  const events: CloudCalendarEvent[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("calendar_events")
+      .select(EVENT_COLUMNS)
+      .eq("user_id", userId)
+      .gte("date", range.from)
+      .lte("date", range.to)
+      .order("date", { ascending: true })
+      .order("time", { ascending: true, nullsFirst: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message);
+
+    const page = (data ?? []).flatMap((row) => {
+      const event = fromRow(row);
+      return event ? [event] : [];
+    });
+    events.push(...page);
+    if ((data?.length ?? 0) < pageSize) break;
+  }
+
+  // Keep offline data from other viewed years, while replacing this exact
+  // range so edits/deletes made on web are reflected on the phone.
+  const cached = await readDiskCache(userId);
+  const merged = [
+    ...cached.events.filter((event) => event.date < range.from || event.date > range.to),
+    ...events,
+  ]
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? ""))
+    .slice(-10_000);
+  await writeDiskCache(userId, { events: merged, v: 1 });
   return events;
 }
 
