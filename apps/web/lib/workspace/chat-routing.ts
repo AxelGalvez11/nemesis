@@ -116,6 +116,17 @@ export function detectsSaveRequest(text: string, priorAssistantText = ""): boole
   return offersToCreate(priorAssistantText) && acceptsOffer(compact);
 }
 
+/**
+ * A turn whose only content is an attachment — the student typed nothing, so
+ * there is no question to classify.
+ *
+ * Still a learning turn on the thinking model, because that is what reads a
+ * lecture well. But never a web-search turn: the only text that could have
+ * asked for one is the file itself, and a slide citing a recent year is not a
+ * student asking for today's news.
+ */
+export const ATTACHMENT_ONLY_DECISION: ChatRouteDecision = { model: "deepseek-reasoner", route: "learning", searchWeb: false };
+
 export function classifyChatRequest(text: string, priorAssistantText = ""): ChatRouteDecision {
   const compact = text.trim();
   // A save request wins over every reasoner route below so its tools can fire.
@@ -177,6 +188,13 @@ export const ATTACHMENT_BLOCK_MARKER = "### Attachment: ";
  * from the student; what craft it needs can come from the attachment.
  */
 export function promptWithoutAttachments(wireText: string): string {
+  // Attached with NOTHING typed — the commonest case, and the one a
+  // hand-written fixture keeps missing. prepareChatAttachments trims the wire
+  // text, so the blank line before the first header is GONE and the header
+  // starts the string. Matching only "\n\n### Attachment: " returned the entire
+  // lecture as though the student had typed it, which is how a bare upload kept
+  // buying a paid web search off a slide reading "Smith et al., 2024".
+  if (wireText.trimStart().startsWith(ATTACHMENT_BLOCK_MARKER)) return "";
   const marker = wireText.indexOf(`\n\n${ATTACHMENT_BLOCK_MARKER}`);
   return (marker === -1 ? wireText : wireText.slice(0, marker)).trim();
 }

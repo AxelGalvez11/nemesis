@@ -111,6 +111,21 @@ assert.equal(classifyChatRequest("explain how beta blockers work").model, "deeps
   // The raw wire text is exactly what used to trip it.
   assert.equal(shouldSearchWeb(wireText), true);
 }
+// The same regression, in the case that actually happens most: files attached
+// with NOTHING typed. prepareChatAttachments trims the wire text, so the blank
+// line before the first header is gone and the header STARTS the string —
+// matching only "\n\n### Attachment: " handed the whole lecture back as though
+// the student had typed it, and the bare upload kept buying a paid search.
+// This shape is copied from prepareChatAttachments, not invented: a fixture with
+// an imaginary leading blank line is what let the first fix pass its test and
+// still do nothing on screen.
+{
+  const wireText = `${"".trim()}\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024.`.trim();
+  assert.ok(wireText.startsWith("### Attachment: "), "the real shape has no leading blank line");
+  assert.equal(promptWithoutAttachments(wireText), "");
+  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
+}
+
 // A message with no attachment is untouched, and a real live-info question still searches.
 assert.equal(promptWithoutAttachments("what is the latest guidance"), "what is the latest guidance");
 assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidance")), true);

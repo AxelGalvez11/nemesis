@@ -10,7 +10,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { classifyChatRequest, promptWithoutAttachments, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
@@ -426,7 +426,10 @@ export async function sendChatTurn(
   // build them, and the reply that accepts the offer carries no save verb.
   // (copied before reversing — findLast is ES2023 and this project targets ES2022)
   const priorAssistant = [...history].reverse().find((message) => message.role === "assistant" && message.content.trim())?.content ?? "";
-  const classified = classifyChatRequest(askText, priorAssistant);
+  // An empty ask alongside a non-empty wire text means files and nothing typed.
+  const classified = !askText && userText.trim()
+    ? ATTACHMENT_ONLY_DECISION
+    : classifyChatRequest(askText, priorAssistant);
   const needsWeb = classified.searchWeb || shouldSearchWeb(askText);
   const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
