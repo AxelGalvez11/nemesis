@@ -9,6 +9,19 @@
 import { supabase } from "@/lib/supabase";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { writeLibraryNote } from "./library-write";
+import {
+  buildDailyNote,
+  dailyNotePath,
+  localDayKey,
+  summarizeDay,
+  type DayCardRow,
+  type DayDeckRow,
+  type DayEventRow,
+  type DayNoteRow,
+  type DayRecordingRow,
+  type DayReviewRow,
+} from "./daily-note";
+import { applyNoteRevision, noteHeadings, REVISION_MODES } from "./note-revise";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
 import {
   summarizePerformance,
@@ -144,6 +157,43 @@ export const AGENT_TOOLS = [
           title: { description: "Mind map title, e.g. 'RAAS pathway'", type: "string" },
         },
         required: ["title", "outline"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Revise a Library note the student already has — use this instead of creating a second note when you explain something again, correct it, or add to it. " +
+        "Read the note first so you know its headings. Prefer 'append' to add, 'replace_section' to rewrite one section by its heading. " +
+        "'replace_all' rewrites everything and requires expected_length from the note you just read. Tell the student what you changed.",
+      name: "update_library_note",
+      parameters: {
+        properties: {
+          content: { description: "The markdown to write", type: "string" },
+          expected_length: { description: "For replace_all only: the length of the note you read", type: "number" },
+          mode: { description: "append, prepend, replace_section, or replace_all", type: "string" },
+          path: { description: "The note's path, from search_library or read_library_note", type: "string" },
+          section: { description: "For replace_section only: the heading to replace, e.g. 'Mechanism'", type: "string" },
+        },
+        required: ["path", "mode", "content"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Write the student's daily study log to Library > Daily. Every number in it (cards reviewed, pass rate, lectures recorded, notes touched) is computed from their real data — you do not supply counts and must not estimate any. " +
+        "Pass a short 'reflection' with what to focus on tomorrow, grounded in what the numbers show. Re-running for the same day refreshes that day's note rather than adding a second one.",
+      name: "write_daily_note",
+      parameters: {
+        properties: {
+          day: { description: "Which day, YYYY-MM-DD. Defaults to today.", type: "string" },
+          reflection: { description: "A short paragraph on what to focus on next", type: "string" },
+        },
         type: "object",
       },
     },
@@ -298,6 +348,130 @@ async function createLibraryNote(title: string, content: string, folder: string)
   }
 }
 
+/**
+ * Revise an existing note. Reads the current body, applies the revision through the
+ * pure rules in note-revise.ts, and writes back only when those rules approve — so
+ * every refusal there (missing heading, unread note, no-op) is enforced on the real
+ * data path and not just in tests.
+ *
+ * The update is scoped by path AND user_id even though RLS already scopes it: an
+ * UPDATE that matched nothing would otherwise report success having written nothing.
+ */
+async function updateLibraryNote(args: Record<string, unknown>) {
+  const path = str(args.path).trim();
+  if (!path) return { error: "Which note? Pass the path from search_library." };
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to edit a note." };
+
+  const { data, error } = await supabase
+    .from("readable_library_documents")
+    .select("path,title,content")
+    .eq("deleted", false)
+    .eq("path", path)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: `No note at '${path}'. Use search_library to find the right path.` };
+
+  const existing = str(data.content);
+  const modeRaw = str(args.mode).trim().toLowerCase();
+  const mode = REVISION_MODES.find((candidate) => candidate === modeRaw);
+  if (!mode) return { error: `Unknown mode '${modeRaw}'. Use one of: ${REVISION_MODES.join(", ")}.` };
+
+  const revision = applyNoteRevision(existing, {
+    content: str(args.content),
+    mode,
+    ...(typeof args.expected_length === "number" ? { expectedLength: args.expected_length } : {}),
+    ...(str(args.section) ? { section: str(args.section) } : {}),
+  });
+  // A refusal is returned to the model, headings included, so it can retry with a
+  // real heading instead of guessing again.
+  if (!revision.ok) return { error: revision.error, headings: noteHeadings(existing) };
+
+  const { error: writeError } = await supabase
+    .from("readable_library_documents")
+    .update({ content: revision.content, updated_at: new Date().toISOString() })
+    .eq("path", path)
+    .eq("user_id", userId);
+  if (writeError) return { error: writeError.message };
+  return { changed: revision.summary, path, title: str(data.title), updated: true };
+}
+
+/**
+ * Write (or refresh) the student's daily note.
+ *
+ * The counts come from summarizeDay — real rows, computed in code — and the model
+ * may only add a closing paragraph. That split is deliberate: a study log the
+ * student trusts has to be right, and "roughly forty cards" from a model that never
+ * saw the review table is the kind of wrong that quietly reshapes how someone plans
+ * their week.
+ *
+ * One note per day at Daily/YYYY-MM-DD.md. Re-running replaces the generated body
+ * rather than appending, so asking twice does not produce two conflicting logs.
+ */
+async function writeDailyNote(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to save a note." };
+
+  const requested = str(args.day).trim();
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : localDayKey(new Date());
+  // A local day starts up to a day earlier in UTC, so widen the fetch window and let
+  // summarizeDay do the exact local-time filtering.
+  const since = new Date(new Date(`${day}T00:00:00`).getTime() - 86_400_000).toISOString();
+  const until = new Date(new Date(`${day}T00:00:00`).getTime() + 2 * 86_400_000).toISOString();
+
+  const [decksRes, cardsRes, logsRes, recordingsRes, eventsRes, notesRes] = await Promise.all([
+    supabase.from("study_decks").select("id,name").limit(MAX_LIST * 4),
+    supabase.from("study_cards").select("id,deck_id").limit(PERF_MAX_CARDS),
+    supabase.from("study_review_logs").select("card_id,grade,reviewed_at").gte("reviewed_at", since).lte("reviewed_at", until).limit(PERF_MAX_LOGS),
+    supabase.from("chat_recording_artifacts").select("title,created_at,duration_seconds").gte("created_at", since).lte("created_at", until).limit(MAX_LIST),
+    supabase.from("calendar_events").select("title,date,kind,time").eq("date", day).limit(MAX_LIST),
+    supabase.from("readable_library_documents").select("title,path,updated_at").eq("deleted", false).gte("updated_at", since).lte("updated_at", until).limit(MAX_LIST),
+  ]);
+  const failure = decksRes.error ?? cardsRes.error ?? logsRes.error ?? recordingsRes.error ?? eventsRes.error ?? notesRes.error;
+  if (failure) return { error: failure.message };
+
+  const path = dailyNotePath(day);
+  const summary = summarizeDay({
+    cards: (cardsRes.data ?? []) as DayCardRow[],
+    day,
+    decks: (decksRes.data ?? []) as DayDeckRow[],
+    events: (eventsRes.data ?? []) as DayEventRow[],
+    // The daily note itself is written into the Library, so it would otherwise list
+    // itself as a note worked on today.
+    notes: ((notesRes.data ?? []) as DayNoteRow[]).filter((row) => row.path !== path),
+    recordings: (recordingsRes.data ?? []) as DayRecordingRow[],
+    reviews: (logsRes.data ?? []) as DayReviewRow[],
+  });
+
+  const reflection = str(args.reflection).trim().slice(0, 2_000);
+  const body = reflection ? `${buildDailyNote(summary)}\n\n## Looking ahead\n\n${reflection}` : buildDailyNote(summary);
+
+  const existing = await supabase
+    .from("readable_library_documents")
+    .select("path")
+    .eq("deleted", false)
+    .eq("path", path)
+    .maybeSingle();
+  if (existing.error) return { error: existing.error.message };
+
+  if (existing.data) {
+    const { error } = await supabase
+      .from("readable_library_documents")
+      .update({ content: body, updated_at: new Date().toISOString() })
+      .eq("path", path)
+      .eq("user_id", userId);
+    if (error) return { error: error.message };
+    return { day, path, stats: summary, updated: true };
+  }
+
+  try {
+    const saved = await writeLibraryNote({ content: body, folder: "Daily", title: day, userId });
+    return { created: true, day, path: saved.path, stats: summary };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't save the daily note." };
+  }
+}
+
 async function addPracticeTest(args: Record<string, unknown>) {
   const title = str(args.title).trim().slice(0, 160);
   if (!title) return { error: "A test title is required." };
@@ -444,6 +618,8 @@ export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
       case "search_library": return await searchLibrary(str(args.query));
       case "read_library_note": return await readLibraryNote(str(args.path));
       case "create_library_note": return await createLibraryNote(str(args.title), str(args.content), str(args.folder));
+      case "update_library_note": return await updateLibraryNote(args);
+      case "write_daily_note": return await writeDailyNote(args);
       case "list_study_decks": return await listStudyDecks();
       case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as { front: string; back: string }[]) : []);
       case "add_practice_test": return await addPracticeTest(args);

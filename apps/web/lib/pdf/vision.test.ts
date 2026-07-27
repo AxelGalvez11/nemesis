@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
+  VISION_MAX_BYTES,
+  VISION_MODEL_LADDER,
+  buildFigureRequest,
   buildVisionRequest,
+  describeFiguresWithVision,
+  parseFigureDescriptions,
   parseVisionText,
   readPdfWithVision,
   visionConfigured,
   visionModels,
-  VISION_MAX_BYTES,
-  VISION_MODEL_LADDER,
   withinVisionLimit,
 } from "./vision";
 
@@ -64,6 +67,49 @@ assert.equal(parseVisionText({ candidates: [{ content: { parts: [{ inline_data: 
 assert.equal(parseVisionText({ candidates: [{ content: { parts: [{ text: "   " }] } }] }), "");
 
 const KEYED = { GEMINI_API_KEY: "k" };
+
+
+// --- reading slide figures ---------------------------------------------------
+// A batched reply is matched to its images BY ORDER, so the parse either lines up
+// exactly or is thrown away. A description pinned to the wrong diagram would be a
+// confident, wrong caption on an unrelated figure — worse than having none.
+
+assert.deepEqual(parseFigureDescriptions("1. A flow chart of the RAAS pathway.\n2. A dose-response curve.", 2), [
+  "A flow chart of the RAAS pathway.",
+  "A dose-response curve.",
+]);
+
+// A wrapped description is one entry, not two.
+{
+  const parsed = parseFigureDescriptions("1. A flow chart\nshowing renin acting on angiotensinogen.\n2. A curve.", 2);
+  assert.equal(parsed?.length, 2);
+  assert.match(parsed![0]!, /A flow chart showing renin/);
+}
+
+// "none" is how a logo that slipped past the size filter contributes nothing.
+assert.deepEqual(parseFigureDescriptions("1. none\n2. A labelled nephron.", 2), ["", "A labelled nephron."]);
+
+// Wrong count in either direction: discard, never match up optimistically.
+assert.equal(parseFigureDescriptions("1. Only one description.", 3), null);
+assert.equal(parseFigureDescriptions("1. One\n2. Two\n3. Three\n4. Four", 3), null);
+assert.equal(parseFigureDescriptions("Here are the figures you asked about.", 2), null);
+// Asking about nothing succeeds with nothing; it is not a failure.
+assert.deepEqual(parseFigureDescriptions("", 0), []);
+// Both numbering styles models actually emit.
+assert.equal(parseFigureDescriptions("1) First figure here.\n2) Second figure here.", 2)?.length, 2);
+
+{
+  const body = JSON.parse(buildFigureRequest([
+    { base64: "AAA", mime: "image/png" },
+    { base64: "BBB", mime: "image/jpeg" },
+  ])) as { contents: Array<{ parts: Array<Record<string, unknown>> }>; generationConfig: { temperature: number } };
+  const parts = body.contents[0]!.parts;
+  assert.equal(parts.length, 3, "two images and one instruction");
+  assert.equal((parts[1]!.inline_data as { mime_type: string }).mime_type, "image/jpeg");
+  assert.match(String(parts[2]!.text), /numbered list/i);
+  // Descriptions must not drift between imports of the same deck.
+  assert.equal(body.generationConfig.temperature, 0);
+}
 
 void (async () => {
   {
@@ -132,6 +178,45 @@ void (async () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({ candidates: [] }), { status: 200 })) as unknown as typeof fetch;
     try {
       assert.equal(await readPdfWithVision(new Uint8Array([1]), { env: KEYED }), null);
+    } finally {
+      globalThis.fetch = before;
+    }
+  }
+
+  {
+    // Unconfigured and empty-input both yield no descriptions rather than throwing,
+    // so a deck still imports with exactly its old text-only behaviour.
+    assert.equal((await describeFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a.png" }], { env: {} })).size, 0);
+    assert.equal((await describeFiguresWithVision([], { env: KEYED })).size, 0);
+  }
+
+  {
+    // One failed batch loses its own descriptions and nothing else.
+    const before = globalThis.fetch;
+    globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
+    try {
+      const out = await describeFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a.png" }], { env: KEYED });
+      assert.equal(out.size, 0);
+    } finally {
+      globalThis.fetch = before;
+    }
+  }
+
+  {
+    // A good reply is keyed by the caller's own image names, not by position.
+    const before = globalThis.fetch;
+    const reply = { candidates: [{ content: { parts: [{ text: "1. A nephron diagram.\n2. none" }] } }] };
+    globalThis.fetch = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
+    try {
+      const out = await describeFiguresWithVision(
+        [
+          { bytes: new Uint8Array([1]), mime: "image/png", name: "ppt/media/image1.png" },
+          { bytes: new Uint8Array([2]), mime: "image/png", name: "ppt/media/image2.png" },
+        ],
+        { env: KEYED },
+      );
+      assert.equal(out.get("ppt/media/image1.png"), "A nephron diagram.");
+      assert.equal(out.has("ppt/media/image2.png"), false, "a 'none' figure adds nothing");
     } finally {
       globalThis.fetch = before;
     }

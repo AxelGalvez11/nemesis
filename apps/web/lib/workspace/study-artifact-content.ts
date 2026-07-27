@@ -6,6 +6,7 @@
 // builders, mermaid conversion, and attempt scoring all live here for tests.
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+import { findLearningObjectives, objectivesPromptBlock } from "@/lib/workspace/learning-objectives";
 
 export interface TestQuestion {
   q: string;
@@ -39,7 +40,6 @@ export interface MindmapContent {
 const MAX_QUESTIONS = 25;
 const MAX_OPTIONS = 6;
 const MAX_TEXT = 500;
-const MATERIAL_CHAR_LIMIT = 9_000;
 
 function cleanText(value: unknown, maxLength = MAX_TEXT): string | null {
   if (typeof value !== "string") return null;
@@ -135,20 +135,37 @@ export interface StudyMaterial {
   /** Where the material came from — shown to the model for context. */
   label: string;
   text: string;
+  /** The instructor's stated learning objectives, pulled from the FULL source before
+   *  it is broken into chunks. Kept separate for exactly that reason: they belong at
+   *  the head of EVERY chunk, not only the one that happened to contain them. */
+  objectives?: string[];
 }
 
-/** Deck cards flattened into generation material. */
+/** Deck cards flattened into generation material. Long decks are not cut here —
+ *  study-generate reads them in chunks (lib/workspace/material-chunks.ts). */
 export function deckMaterial(deckTitle: string, cards: Array<{ front: string; back: string }>): StudyMaterial {
-  const text = cards
-    .map((card, index) => `${index + 1}. ${card.front.trim()} — ${card.back.trim()}`)
-    .join("\n")
-    .slice(0, MATERIAL_CHAR_LIMIT);
+  const text = cards.map((card, index) => `${index + 1}. ${card.front.trim()} — ${card.back.trim()}`).join("\n");
   return { label: `flashcard deck "${deckTitle}"`, text };
 }
 
-/** A library note flattened into generation material. */
+/** A library note flattened into generation material. The objectives are read from
+ *  the whole note and travel separately, so they lead every chunk rather than
+ *  belonging to whichever chunk happened to contain them. */
 export function noteMaterial(noteTitle: string, content: string): StudyMaterial {
-  return { label: `note "${noteTitle}"`, text: content.trim().slice(0, MATERIAL_CHAR_LIMIT) };
+  const full = content.trim();
+  const objectives = findLearningObjectives(full).objectives;
+  return {
+    label: `note "${noteTitle}"`,
+    text: full,
+    ...(objectives.length > 0 ? { objectives } : {}),
+  };
+}
+
+/** The objectives preamble shared by every generator, placed AHEAD of the material
+ *  so it survives regardless of how much of the source fitted. */
+function objectivesPreamble(material: StudyMaterial): string {
+  const block = objectivesPromptBlock({ heading: null, objectives: material.objectives ?? [] });
+  return block ? `${block}\n\n` : "";
 }
 
 const GENERATION_SYSTEM =
@@ -167,6 +184,7 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
         'Return JSON shaped {"questions":[{"q":"…","options":["…","…","…","…"],"answer":0,"why":"…"}]} — ' +
         "4 options per question, answer is the 0-based index of the correct option, why is a one-sentence explanation " +
         "grounded in the material. If the material is too thin for that many questions, write fewer.\n\n" +
+        objectivesPreamble(material) +
         `Material:\n${material.text}`,
       role: "user",
     },
@@ -182,6 +200,7 @@ export function buildMindmapGenMessages(material: StudyMaterial): WireMsg[] {
         'Return JSON shaped {"outline":"…"} where outline is markdown: one "# Topic" root heading, ' +
         "then nested bullets (2-space indents, at most 3 levels deep, at most 35 nodes total). " +
         "Short node labels (2-6 words), organized by concept — mechanisms, classes, contrasts, applications.\n\n" +
+        objectivesPreamble(material) +
         `Material:\n${material.text}`,
       role: "user",
     },

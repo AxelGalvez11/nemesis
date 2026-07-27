@@ -11,11 +11,17 @@
 // with no key the route behaves exactly as it did before (see lib/pdf/vision.ts).
 import { NextResponse } from "next/server";
 
-import { extractDocxText, extractPptxText } from "@/lib/notebooks/office";
-import { extractPdfText, guessTitle } from "@/lib/pdf/extract";
-import { readPdfWithVision } from "@/lib/pdf/vision";
+import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
+import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
+import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
+import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 
 export const runtime = "nodejs";
+/** A picture-heavy lecture now costs several transcription calls in waves of
+ *  three. The worst file in a real 83-PDF course needs 26 pages read — four
+ *  requests, two waves — so the old implicit budget is no longer obviously
+ *  enough to state by omission. */
+export const maxDuration = 300;
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB upload ceiling.
 
@@ -29,6 +35,28 @@ function kindFor(name: string, type: string): FileKind | null {
   if (lower.endsWith(".pdf") || type === "application/pdf") return "pdf";
   if (lower.endsWith(".docx") || type === DOCX_MIME) return "docx";
   if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
+  return null;
+}
+
+/**
+ * What a file IS, when its name no longer says.
+ *
+ * A real course folder had two lecture PDFs whose long filenames had been truncated
+ * past the ".pdf" — the app refused both, and the student would have had no idea why
+ * a file that opens fine everywhere else could not be added. The contents are
+ * unambiguous, so read them: a PDF opens with "%PDF", and the Office formats are zips
+ * whose first entry names say which one they are. PURE.
+ */
+export function sniffKind(bytes: Uint8Array): FileKind | null {
+  if (bytes.length < 4) return null;
+  if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (!isZip) return null;
+  // Only the entry names are needed, and they are plain ASCII in the headers, so a
+  // scan beats unpacking a 25 MB archive to answer one question.
+  const window = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 512 * 1024))).toString("latin1");
+  if (window.includes("ppt/slides/")) return "pptx";
+  if (window.includes("word/document.xml")) return "docx";
   return null;
 }
 
@@ -55,7 +83,15 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "That file is too large (25 MB max)." }, { status: 413 });
   }
 
-  const kind = kindFor(file.name, file.type);
+  // ONE defensive copy, here, at the door. pdf.js detaches whatever ArrayBuffer it
+  // is handed, so every later reader of these bytes — the page slicer, a second
+  // sniff — would silently see zeros. Copying at each call site instead would work
+  // right up until the next reader was added and forgot.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const original = new Uint8Array(bytes);
+  // Name first (cheap and right almost always), contents second (right when a name
+  // has lost its extension). Refusing only after both have failed.
+  const kind = kindFor(file.name, file.type) ?? sniffKind(bytes);
   if (!kind) {
     return NextResponse.json(
       { error: "Unsupported file. Add a PDF, Word (.docx), or PowerPoint (.pptx)." },
@@ -63,16 +99,85 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
   try {
     let result: { title: string | null; text: string };
+    let readBy: string | undefined;
+    let skippedFigures = 0;
+    let coverage: Record<string, number | boolean> | undefined;
     if (kind === "pdf") {
-      const r = await extractPdfText(bytes);
+      const r = await extractPdfText(original);
       result = { title: r.meta.title, text: r.text };
+      // Pages whose content is a picture. The old fallback below only fires when the
+      // WHOLE file comes back empty, so a lecture with a readable contents page and
+      // forty pictures of slides counted as fully read. Measured on the owner's real
+      // course: 308 such pages across 83 files that all "read" fine before.
+      const plan = planPdfRead(r.pageTexts);
+      // Every page is a picture: readPdfWithVision reads the whole document in one
+      // request, with no per-document page cap. Slicing is the fallback for that
+      // shape, never the upgrade.
+      if (plan.kind === "whole") {
+        const whole = await readPdfWithVision(original);
+        if (whole?.text.trim()) {
+          const { text: capped, truncated } = capText(whole.text.trim(), TEXT_CAP);
+          result = { title: result.title ?? guessTitle(capped), text: capped };
+          readBy = whole.model;
+          coverage = { pages: r.meta.pages, pagesFromText: 0, pagesRead: r.meta.pages, pagesUnread: 0, truncated };
+        }
+      }
+      if (plan.kind !== "text" && !readBy) {
+        const thin = thinPages(r.pageTexts);
+        // A "whole" document that vision could not take (over the inline limit, or
+        // the request failed) still gets its pages read one slice at a time.
+        const needed = plan.kind === "pages" ? plan.needed : unreadPages(r.pageTexts);
+        const seen = await readPdfPagesWithVision(original, needed);
+        const read = finishPdfPages(r.pageTexts, seen, thin, TEXT_CAP);
+        if (seen.size > 0) {
+          result = { ...result, text: read.text };
+          readBy = "pages";
+        }
+        coverage = {
+          pages: r.meta.pages,
+          pagesFromText: r.meta.pages - thin.length,
+          pagesRead: seen.size,
+          // Counted against EVERY picture-page, not just the ones that were sent —
+          // a page dropped to the per-document cap is unread too, and rolling it
+          // into pagesFromText would make the cap invisible.
+          pagesUnread: thin.length - seen.size,
+          truncated: seen.size > 0 ? read.truncated : r.meta.truncated,
+        };
+      } else if (plan.kind === "text" && r.meta.truncated) {
+        // Nothing to read as a picture, but the tail was still dropped at TEXT_CAP.
+        // That was computed and thrown away; say it, so a clipped source is never
+        // presented as a whole one.
+        coverage = { pages: r.meta.pages, truncated: true };
+      }
     } else if (kind === "docx") {
       result = extractDocxText(bytes);
     } else {
-      result = extractPptxText(bytes);
+      // A lecture deck's content is often a picture — a pathway, a curve, a labelled
+      // figure — and the text extractor cannot see any of it. Read the figures the
+      // slide-media plan judges to be content, then fold their descriptions in under
+      // the slides they came from. When vision is unconfigured or fails,
+      // describeFiguresWithVision returns an empty map and this is exactly the old
+      // text-only extraction. readPptxSlides also brings the deck's speaker notes,
+      // SmartArt and chart labels, which live outside ppt/slides/ entirely.
+      const deck = readPptxSlides(bytes);
+      const figures = deck.media.images.length
+        ? await describeFiguresWithVision(
+            deck.media.images.flatMap((image) => {
+              const data = deck.imageBytes.get(image.name);
+              return data ? [{ bytes: data, mime: image.mime, name: image.name }] : [];
+            }),
+          )
+        : new Map<string, string>();
+      result = pptxTextWithFigures(deck, figures);
+      if (figures.size > 0) readBy = "figures";
+      // Reading only some of a deck is allowed; presenting it as a full read is not.
+      // The whole tally travels with the text: how many slides, notes pages, charts
+      // and diagrams were read, how many pictures were found, and for each picture
+      // that was NOT described, which reason applied.
+      if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
+      coverage = { ...deck.coverage, imagesDescribed: figures.size };
     }
 
     let text = result.text.trim();
@@ -81,9 +186,8 @@ export async function POST(req: Request): Promise<Response> {
     // configured we read the pages instead; when it is not, or the file is too
     // big, or the provider fails, readPdfWithVision returns null and the original
     // 422 stands unchanged. See lib/pdf/vision.ts.
-    let readBy: string | undefined;
     if (!text && kind === "pdf") {
-      const seen = await readPdfWithVision(bytes);
+      const seen = await readPdfWithVision(original);
       if (seen) {
         text = seen.text.trim();
         readBy = seen.model;
@@ -115,6 +219,13 @@ export async function POST(req: Request): Promise<Response> {
       // Present only when the pages had to be read as images, so a caller (and
       // the student) can tell a transcription apart from an exact text layer.
       ...(readBy ? { readBy } : {}),
+      // Present only when a deck had more figures than the per-deck cap, so a
+      // partial read is never presented as a complete one.
+      ...(skippedFigures > 0 ? { skippedFigures } : {}),
+      // The full account of what was read and what was not: slides, notes, charts
+      // and figures for a deck; pages read from text, read as pictures, and left
+      // unread for a PDF.
+      ...(coverage ? { coverage } : {}),
     });
   } catch (err) {
     return NextResponse.json(

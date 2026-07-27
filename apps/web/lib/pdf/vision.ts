@@ -16,13 +16,24 @@
  * this on; nothing else changes. That is deliberate — a half-wired vision path
  * that throws at request time would be worse than one that is simply off.
  *
- * Scope, stated plainly: this reads pages that have NO text layer. Diagrams and
- * figures embedded in a PDF that already has readable text are a different job
- * (they need an image extractor to pull the figure out first) and are not
- * handled here.
+ * Scope, stated plainly. Two doors, and they answer different questions:
+ *   readPdfWithVision  — the WHOLE file has no text layer. One call, one document.
+ *   readPdfPagesWithVision — SOME pages have no usable text inside a file that is
+ *     otherwise readable. This is the common case in real lecture material and was
+ *     missed entirely until 2026-07-24; see lib/pdf/pages.ts for the measurements.
+ *     Those pages are cut out with pdf-lib and sent on their own, which is both
+ *     cheaper than resending the file and the ONLY way to reach a page of a
+ *     2,116-page book that could never go inline whole.
  *
- * Everything except the single fetch is pure and unit-tested.
+ * A figure sitting on a page that already has plenty of text is still not read.
+ * The page-level rule reaches a page whose content IS the picture, not a chart
+ * beside three paragraphs; the coverage numbers report which pages were read so
+ * that limit is visible rather than assumed away.
+ *
+ * Everything except the fetches is pure and unit-tested.
  */
+
+import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
 
 /** Google retires fixed model ids for new keys (learned 2026-07-14 with
  *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
@@ -45,9 +56,54 @@ export const VISION_PROMPT =
   "Do not summarise, do not add commentary, and do not invent text that is not visible. " +
   "If a page is genuinely blank, write nothing for it.";
 
+/**
+ * Reading FIGURES, which is a different job from reading pages of text and needs a
+ * different instruction. A diagram's value to a student is what it asserts — what
+ * causes what, which line is higher, what the labels are — so this asks for the
+ * content of the figure rather than a caption of it. One numbered answer per image,
+ * because a single batched call is far cheaper than one call per picture.
+ */
+export const FIGURE_PROMPT =
+  "These are figures taken from a lecture slide deck, in order. For EACH image, in one to three sentences, " +
+  "say what it shows and state the relationships or values it conveys — labels, axes, directions, groupings, " +
+  "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
+  "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
+  "Answer as a numbered list with one entry per image and nothing else.";
+
+/**
+ * Reading PAGES whose content is a picture — a slide exported as an image, a
+ * screenshot of a drug monograph, a scanned handout inside an otherwise digital
+ * file. Unlike FIGURE_PROMPT this asks for the words, because on these pages the
+ * words ARE the picture; and unlike VISION_PROMPT it must label each page, since
+ * the slice being read is a handful of pages pulled out of a longer document and
+ * the transcripts have to go back where they came from.
+ */
+export const PAGE_PROMPT =
+  "Each page of this PDF is a page of course material whose text could not be extracted. " +
+  "Transcribe every word you can see on each page, in reading order, preserving headings, lists and table structure as plain markdown. " +
+  "For a diagram, figure, chart or screenshot, write what it shows and the relationships or values it conveys, then every label and line of text printed in it. " +
+  "Do not summarise, do not add commentary, and do not invent text that is not visible. " +
+  "Begin each page with a line containing only [[page N]], numbering from 1 in the order the pages appear, " +
+  "and include that line for every page even if the page is blank.";
+
+/** How many figures to put in one request. Gemini handles more, but a smaller batch
+ *  keeps any single failure from costing the whole deck's descriptions. */
+export const FIGURE_BATCH_SIZE = 8;
+/** How many figure batches are in flight at once. Small on purpose: each request
+ *  carries megabytes of image data, and the provider rate-limits per key. */
+export const FIGURE_CONCURRENCY = 3;
+
 export interface VisionResult {
   text: string;
   model: string;
+}
+
+export interface VisionImage {
+  /** Caller's own key — the zip entry name — returned untouched so descriptions can
+   *  be matched back without relying on array position. */
+  name: string;
+  mime: string;
+  bytes: Uint8Array;
 }
 
 /** The environment this module reads, as a plain string bag rather than
@@ -105,6 +161,233 @@ export function buildVisionRequest(base64: string): string {
     // Transcription must not drift; temperature 0 keeps it literal.
     generationConfig: { temperature: 0 },
   });
+}
+
+/** The generateContent body for a batch of figures. PURE. */
+export function buildFigureRequest(images: readonly { mime: string; base64: string }[]): string {
+  return JSON.stringify({
+    contents: [
+      {
+        parts: [
+          ...images.map((image) => ({ inline_data: { data: image.base64, mime_type: image.mime } })),
+          { text: FIGURE_PROMPT },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0 },
+  });
+}
+
+/**
+ * Split a numbered reply back into one description per image.
+ *
+ * Order is the only link between a batched reply and its inputs, so a reply with
+ * the wrong NUMBER of entries is discarded entirely rather than matched up
+ * optimistically — a description attached to the wrong figure is worse than none,
+ * because it becomes a confident caption on an unrelated diagram. "none" answers
+ * are dropped, which is how a logo that slipped through the size filter stops here.
+ * PURE.
+ */
+export function parseFigureDescriptions(reply: string, expected: number): string[] | null {
+  if (expected <= 0) return [];
+  const entries: string[] = [];
+  let current: string[] = [];
+  for (const line of reply.split(/\r?\n/)) {
+    const started = /^\s*(\d{1,3})[.)]\s+(.*)$/.exec(line);
+    if (started) {
+      if (current.length > 0) entries.push(current.join(" ").trim());
+      current = [started[2] ?? ""];
+      continue;
+    }
+    if (current.length > 0 && line.trim()) current.push(line.trim());
+  }
+  if (current.length > 0) entries.push(current.join(" ").trim());
+  if (entries.length !== expected) return null;
+  return entries.map((entry) => (/^none\b/i.test(entry.trim()) ? "" : entry.trim()));
+}
+
+/**
+ * Describe slide figures with Gemini, keyed by the caller's own names. Returns an
+ * empty map — never throws — when vision is unconfigured or the provider fails, so
+ * a deck still imports with its text exactly as before.
+ */
+export async function describeFiguresWithVision(
+  images: readonly VisionImage[],
+  options: { env?: VisionEnv; signal?: AbortSignal } = {},
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const env = options.env ?? process.env;
+  const key = (env.GEMINI_API_KEY ?? "").trim();
+  if (!key || images.length === 0) return out;
+
+  const usable = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  const batches: VisionImage[][] = [];
+  for (let start = 0; start < usable.length; start += FIGURE_BATCH_SIZE) {
+    batches.push(usable.slice(start, start + FIGURE_BATCH_SIZE));
+  }
+
+  // A slide-heavy lecture can hold two dozen figures, which is four or five calls.
+  // Run a few at once so importing a real deck is a wait, not a coffee break —
+  // but only a few, because each request carries megabytes of image data and the
+  // provider rate-limits per key.
+  const describeBatch = async (batch: VisionImage[]) => {
+    const body = buildFigureRequest(
+      batch.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
+    );
+    const reply = await callGemini(body, key, env, options.signal);
+    // One failed batch loses its own descriptions and nothing else.
+    if (!reply) return;
+    const parsed = parseFigureDescriptions(reply, batch.length);
+    if (!parsed) return;
+    parsed.forEach((description, index) => {
+      const image = batch[index];
+      if (image && description) out.set(image.name, description);
+    });
+  };
+
+  let next = 0;
+  const workers = Array.from({ length: Math.min(FIGURE_CONCURRENCY, batches.length) }, async () => {
+    while (next < batches.length) {
+      const batch = batches[next++];
+      if (batch) await describeBatch(batch);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/** One generateContent call, walking the model ladder. Returns null on any failure. */
+async function callGemini(body: string, key: string, env: VisionEnv, signal?: AbortSignal): Promise<string | null> {
+  for (const model of visionModels(env)) {
+    let response: Response;
+    try {
+      response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+        body,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        method: "POST",
+        signal,
+      });
+    } catch {
+      continue;
+    }
+    if (response.status === 404) {
+      await response.body?.cancel();
+      continue;
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const payload = (await response.json().catch(() => null)) as unknown;
+    return parseVisionText(payload) || null;
+  }
+  return null;
+}
+
+/**
+ * Cut `indices` (0-based, in page order) out of a PDF into a fresh one-file-per-
+ * batch document. `ignoreEncryption` because a student's file is often protected
+ * against editing rather than against opening, and refusing to read a page they
+ * can see on screen would be the wrong call. Returns null if the pages cannot be
+ * copied at all.
+ */
+async function slicePages(
+  source: import("pdf-lib").PDFDocument,
+  indices: readonly number[],
+): Promise<Uint8Array | null> {
+  try {
+    // pdf-lib is already a dependency (apps/web/package.json) — no new install.
+    const { PDFDocument } = await import("pdf-lib");
+    const slice = await PDFDocument.create();
+    const copied = await slice.copyPages(source, [...indices]);
+    for (const page of copied) slice.addPage(page);
+    return await slice.save();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the given pages of a PDF, keyed by their ORIGINAL 0-based page index.
+ *
+ * Batches are sliced, sent, and spliced back by the [[page N]] markers the model
+ * is asked for, so a page it skips costs that page alone. A batch too large to
+ * send inline is halved and retried; a SINGLE page too large is left out, and the
+ * caller reports it as unread rather than pretending otherwise.
+ *
+ * Returns an empty map — never throws — when vision is unconfigured or every
+ * request fails, so a PDF still imports with exactly the text it has today.
+ */
+export async function readPdfPagesWithVision(
+  bytes: Uint8Array,
+  indices: readonly number[],
+  options: { env?: VisionEnv; signal?: AbortSignal } = {},
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const env = options.env ?? process.env;
+  const key = (env.GEMINI_API_KEY ?? "").trim();
+  if (!key || indices.length === 0) return out;
+
+  // Parse the source ONCE. pdf-lib re-reads the whole document on every load, and
+  // a picture-heavy lecture is both large and split across several batches — the
+  // worst file in a real course is 7.6 MB and four batches, i.e. four full parses
+  // of the same bytes for no reason.
+  let source: import("pdf-lib").PDFDocument;
+  try {
+    const { PDFDocument } = await import("pdf-lib");
+    source = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  } catch {
+    return out;
+  }
+
+  const readBatch = async (batch: number[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const sliced = await slicePages(source, batch);
+    if (!sliced) return;
+    if (!withinVisionLimit(sliced.byteLength)) {
+      // One page that is itself too big cannot be split any further; leave it out
+      // and let the caller count it. Anything larger splits and retries.
+      if (batch.length === 1) return;
+      const half = Math.ceil(batch.length / 2);
+      await readBatch(batch.slice(0, half));
+      await readBatch(batch.slice(half));
+      return;
+    }
+    const body = JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { inline_data: { data: Buffer.from(sliced).toString("base64"), mime_type: "application/pdf" } },
+            { text: PAGE_PROMPT },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0 },
+    });
+    const reply = await callGemini(body, key, env, options.signal);
+    if (!reply) return;
+    const parsed = parsePageTranscripts(reply, batch.length);
+    if (!parsed) return;
+    parsed.forEach((text, position) => {
+      const page = batch[position];
+      if (page !== undefined && text) out.set(page, text);
+    });
+  };
+
+  const batches: number[][] = [];
+  for (let start = 0; start < indices.length; start += PAGE_BATCH_SIZE) {
+    batches.push([...indices.slice(start, start + PAGE_BATCH_SIZE)]);
+  }
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(PAGE_CONCURRENCY, batches.length) }, async () => {
+      while (next < batches.length) {
+        const batch = batches[next++];
+        if (batch) await readBatch(batch);
+      }
+    }),
+  );
+  return out;
 }
 
 /**
