@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fitAttachmentBlocks, groupChatAttachments, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { fitAttachmentBlocks, groupChatAttachments, partitionImportables, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -74,4 +74,24 @@ test("different selected folders remain separate", () => {
     { key: "folder:Cardiology", label: "Cardiology" },
     { key: "folder:Neurology", label: "Neurology" },
   ]);
+});
+
+// An .apkg is a zip around a SQLite database, so the text extractor has nothing
+// to say about it. Before this split, chat answered "no text extractor is
+// available for this format" while the app carried a whole importer for it.
+test("a deck goes to the importer while everything else still reaches the model", () => {
+  const { decks, rest } = partitionImportables([
+    attachment("AnKing-Step1.apkg"),
+    attachment("lecture.pdf"),
+    attachment("collection.colpkg"),
+  ]);
+
+  assert.deepEqual(decks.map((file) => file.name), ["AnKing-Step1.apkg", "collection.colpkg"]);
+  assert.deepEqual(rest.map((file) => file.name), ["lecture.pdf"]);
+});
+
+test("an ordinary attachment selection is left entirely alone", () => {
+  const { decks, rest } = partitionImportables([attachment("notes.md"), attachment("slides.pptx")]);
+  assert.equal(decks.length, 0);
+  assert.equal(rest.length, 2);
 });

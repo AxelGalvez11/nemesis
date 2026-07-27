@@ -62,6 +62,27 @@ export function groupChatAttachments(files: readonly File[]): ChatAttachmentGrou
   return groups;
 }
 
+/** Anki exports. Not text, and never will be — a .apkg is a zip around a
+ *  SQLite database, so the extractor has nothing to say about it. Dropping one
+ *  into chat used to answer "no text extractor is available for this format",
+ *  which is true and useless: the app has a whole reviewed importer for exactly
+ *  this file. The composer routes these there instead. */
+export const DECK_PACKAGE_EXTENSIONS = [".apkg", ".colpkg"];
+
+export function isDeckPackage(file: File) {
+  const name = file.name.toLowerCase();
+  return DECK_PACKAGE_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
+/** Split a selection into the decks that go to the Study importer and the rest
+ *  that go to the model as text. Pure, so the routing rule is testable. */
+export function partitionImportables(files: readonly File[]): { decks: File[]; rest: File[] } {
+  const decks: File[] = [];
+  const rest: File[] = [];
+  for (const file of files) (isDeckPackage(file) ? decks : rest).push(file);
+  return { decks, rest };
+}
+
 export function isImage(file: File) {
   const name = file.name.toLowerCase();
   if (IMAGE_EXTENSIONS.some((extension) => name.endsWith(extension))) return true;

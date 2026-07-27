@@ -14,11 +14,12 @@ import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
-import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
 import { requestRecordingNote } from "@/lib/workspace/live-audio-insights";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 
@@ -90,6 +91,10 @@ export function SessionChat() {
   // and re-rendering the thread because a dropdown moved would be waste.
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
+  // A deck handed over from the composer. Held here so the Study importer —
+  // deck picker, progress, and error copy all already reviewed — is what runs,
+  // rather than a second import path invented for chat.
+  const [deckToImport, setDeckToImport] = useState<File | null>(null);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -190,6 +195,20 @@ export function SessionChat() {
   const handleSubmit = useCallback(
     async (text: string, files: File[]) => {
       if (!uid) return;
+
+      // An Anki deck dropped into chat is an IMPORT, not a question. The text
+      // extractor has nothing to say about a zipped SQLite database, so this
+      // used to answer "no text extractor is available for this format" while
+      // the app carried a whole reviewed importer for exactly this file.
+      // Hand it there; anything else attached alongside still goes to the model.
+      const { decks, rest } = partitionImportables(files);
+      const [deck] = decks;
+      if (deck) {
+        setDeckToImport(deck);
+        if (!text.trim() && rest.length === 0) return;
+        files = rest;
+      }
+
       if (projectId && !preview) {
         await submitIntoProject(projectId, text, files);
         return;
@@ -214,7 +233,7 @@ export function SessionChat() {
       sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
       void runTurn(uid, targetId, history, prepared.wireText);
     },
-    [preview, runTurn, selectedId, uid],
+    [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
   );
 
   const handleStop = useCallback(() => {
@@ -344,6 +363,11 @@ export function SessionChat() {
         </div>
       </div>
       {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
+      <AnkiImportDialog
+        initialFile={deckToImport}
+        onOpenChange={(next) => { if (!next) setDeckToImport(null); }}
+        open={deckToImport !== null}
+      />
     </div>
   );
 }
