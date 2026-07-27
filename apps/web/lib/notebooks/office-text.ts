@@ -207,7 +207,8 @@ const CHROME_FIELD_RE = /<a:fld\b[^>]*type="(?:slidenum|datetime[^"]*)"[\s\S]*?<
 function paragraphsOf(shapeXml: string, markBold: boolean): SlideParagraph[] {
   const cleaned = shapeXml.replace(CHROME_FIELD_RE, "");
   const out: SlideParagraph[] = [];
-  for (const [, inner] of cleaned.matchAll(/<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g)) {
+  for (const match of cleaned.matchAll(/<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g)) {
+    const inner = match[1] ?? "";
     const level = Number(inner.match(/<a:pPr\b[^>]*\blvl="(\d+)"/)?.[1] ?? 0);
     const text = runsToMarkdown(inner, markBold);
     if (text) out.push({ level, text });
@@ -233,7 +234,8 @@ function runsToMarkdown(paragraphXml: string, markBold: boolean): string {
   // keeps the boundary without inventing a newline inside a bullet.
   const withBreaks = paragraphXml.replace(/<a:br\b[^>]*\/?>/g, "<a:r><a:t> </a:t></a:r>");
   const segments: { text: string; bold: boolean; italic: boolean; underline: boolean }[] = [];
-  for (const [, inner] of withBreaks.matchAll(/<a:r>([\s\S]*?)<\/a:r>/g)) {
+  for (const match of withBreaks.matchAll(/<a:r>([\s\S]*?)<\/a:r>/g)) {
+    const inner = match[1] ?? "";
     const raw = inner.match(/<a:t>([\s\S]*?)<\/a:t>/)?.[1];
     if (raw === undefined) continue;
     const rPr = inner.match(/<a:rPr\b[^>]*>/)?.[0] ?? "";
