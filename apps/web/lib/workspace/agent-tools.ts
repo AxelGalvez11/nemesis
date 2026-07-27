@@ -771,10 +771,17 @@ async function addFlashcards(deckName: string, cards: { front: string; back: str
     deckId = created.id as string;
     createdDeck = true;
   }
-  const { error: insertError } = await supabase.from("study_cards").insert(cleanCards.map((card) => ({ back: card.back, deck_id: deckId, front: card.front })));
+  // .select() so `added` is what LANDED, not what we tried to send. Without it
+  // the tool reported its own intent, the model repeated that number to the
+  // student, and the artifact card corroborated it — three confident sources
+  // for one unchecked assumption.
+  const { data: inserted, error: insertError } = await supabase
+    .from("study_cards")
+    .insert(cleanCards.map((card) => ({ back: card.back, deck_id: deckId, front: card.front })))
+    .select("id");
   if (insertError) return { error: insertError.message };
   return {
-    added: cleanCards.length,
+    added: (inserted ?? []).length,
     artifact: { id: deckId, kind: "flashcards", title: matchedName ?? name, url: "/study?section=cards" },
     created_deck: createdDeck,
     deck: matchedName ?? name,

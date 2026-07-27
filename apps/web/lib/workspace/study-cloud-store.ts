@@ -363,53 +363,93 @@ function toArtifact(raw: unknown): StudyArtifact | null {
   return { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, content: "content" in raw ? raw.content : null, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
 }
 
+/**
+ * PostgREST caps every response at a server-side row limit (1,000 on this
+ * project) whether or not the query asks for one. A collection larger than that
+ * came back SILENTLY TRUNCATED — no error, no flag, just a short array.
+ *
+ * Found live 2026-07-27: this account has 6,504 cards, so exactly 1,000 reached
+ * the browser. Because the card query sorts by due_at ascending and a new card
+ * is due now, every newly created card sorted past the cut — a deck created
+ * from chat showed 0 cards on the Study page and Browse could not find them,
+ * while the rows were sitting in the database the whole time. That is every
+ * new card from every source: chat, import, and the Add card button.
+ *
+ * So: page until a short page comes back. The caller must supply a sort ending
+ * in a UNIQUE column — paging an ambiguous sort skips and duplicates rows,
+ * because Postgres is free to order ties differently on each request.
+ */
+const PAGE_SIZE = 1_000;
+
+async function fetchAllRows<Row>(
+  page: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const batch = data ?? [];
+    rows.push(...batch);
+    // A short page means there is nothing after it. An exactly-full last page
+    // costs one extra empty request, which is the cheap side of the trade.
+    if (batch.length < PAGE_SIZE) return rows;
+  }
+}
+
 async function loadStudy(userId: string) {
   loadedForUserId = userId;
   setState({ ...EMPTY_STATE, status: "loading" });
   try {
     const reviewFloor = new Date();
     reviewFloor.setFullYear(reviewFloor.getFullYear() - 1);
-    const [deckResult, cardResult, reviewResult, artifactResult] = await Promise.all([
-      supabase
+    // Every sort ends in `id` so the page boundaries are stable: due_at is not
+    // unique (16 cards inserted in one statement share the same now()), and an
+    // unstable sort loses rows across pages instead of truncating visibly.
+    const [deckRows, cardRows, reviewRows, artifactRows] = await Promise.all([
+      fetchAllRows((from, to) => supabase
         .from("study_decks")
         .select("id,name,description,source_path,created_at,updated_at")
         .eq("user_id", userId)
-        .order("updated_at", { ascending: false }),
-      supabase
+        .order("updated_at", { ascending: false })
+        .order("id")
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
         .from("study_cards")
         .select(CARD_COLUMNS)
         .eq("user_id", userId)
-        .order("due_at", { ascending: true }),
-      supabase
+        .order("due_at", { ascending: true })
+        .order("id")
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
         .from("study_review_logs")
         .select("id,card_id,grade,reviewed_at")
         .eq("user_id", userId)
         .gte("reviewed_at", reviewFloor.toISOString())
-        .order("reviewed_at", { ascending: false }),
-      supabase
+        .order("reviewed_at", { ascending: false })
+        .order("id")
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
         .from("study_artifacts")
         .select("id,kind,group_name,title,status,content,created_at,updated_at")
         .eq("user_id", userId)
-        .order("updated_at", { ascending: false }),
+        .order("updated_at", { ascending: false })
+        .order("id")
+        .range(from, to)),
     ]);
-    if (deckResult.error) throw new Error(deckResult.error.message);
-    if (cardResult.error) throw new Error(cardResult.error.message);
-    if (reviewResult.error) throw new Error(reviewResult.error.message);
-    if (artifactResult.error) throw new Error(artifactResult.error.message);
 
-    const decks = (deckResult.data ?? []).flatMap((row) => {
+    const decks = (deckRows ?? []).flatMap((row) => {
       const deck = toDeck(row);
       return deck ? [deck] : [];
     });
-    const cards = (cardResult.data ?? []).flatMap((row) => {
+    const cards = (cardRows ?? []).flatMap((row) => {
       const card = toCard(row);
       return card ? [card] : [];
     });
-    const reviews = (reviewResult.data ?? []).flatMap((row) => {
+    const reviews = (reviewRows ?? []).flatMap((row) => {
       const review = toReview(row);
       return review ? [review] : [];
     });
-    const artifacts = (artifactResult.data ?? []).flatMap((row) => {
+    const artifacts = (artifactRows ?? []).flatMap((row) => {
       const artifact = toArtifact(row);
       return artifact ? [artifact] : [];
     });
