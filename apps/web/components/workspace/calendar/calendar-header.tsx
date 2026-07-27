@@ -4,7 +4,7 @@
 
 import { Button } from "@/components/desktop-ui/button";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
-import { ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
+import { ChevronLeft, ChevronRight, FileText, Plus } from "@/lib/workspace/icons";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
 import { VIEW_OPTIONS, VIEW_UNIT_LABEL, viewLabel, type CalendarViewMode } from "./format";
@@ -16,9 +16,10 @@ interface CalendarHeaderProps {
   onChangeView: (view: CalendarViewMode) => void;
   onStep: (delta: 1 | -1) => void;
   onAddEvent: (dateKeyStr: string) => void;
+  onImportSyllabus: () => void;
 }
 
-export function CalendarHeader({ view, cursor, today, onChangeView, onStep, onAddEvent }: CalendarHeaderProps) {
+export function CalendarHeader({ view, cursor, today, onChangeView, onStep, onAddEvent, onImportSyllabus }: CalendarHeaderProps) {
   return (
     <header className="workspace-page-header flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5 max-sm:px-4">
       <div>
@@ -45,6 +46,9 @@ export function CalendarHeader({ view, cursor, today, onChangeView, onStep, onAd
             <ChevronRight size={14} />
           </Button>
         </div>
+        <Button onClick={onImportSyllabus} size="sm" variant="outline">
+          <FileText size={14} /> Import syllabus
+        </Button>
         <Button onClick={() => onAddEvent(dateKey(today))} size="sm">
           <Plus size={14} /> Add event
         </Button>

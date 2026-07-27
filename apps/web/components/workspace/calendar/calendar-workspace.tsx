@@ -17,7 +17,7 @@ import {
   addWeeks,
   addYears,
   type CalendarEvent,
-  dayEvents,
+  dateKey,
   deleteCalendarEvent,
   eventsByDate,
   loadCalendarEvents,
@@ -29,11 +29,11 @@ import {
 
 import { Agenda } from "./agenda";
 import { CalendarHeader } from "./calendar-header";
-import { DayPanel } from "./day-panel";
 import { EventFormDialog, EventViewDialog } from "./event-dialogs";
 import { AGENDA_WINDOW_DAYS, CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
-import { WeekGrid } from "./week-grid";
+import { SyllabusDialog } from "./syllabus-dialog";
+import { TimeGridView } from "./time-grid-view";
 import { YearGrid } from "./year-grid";
 
 type DialogState =
@@ -59,6 +59,7 @@ export function CalendarWorkspace() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [syllabusOpen, setSyllabusOpen] = useState(false);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   useEffect(() => {
@@ -92,6 +93,11 @@ export function CalendarWorkspace() {
   const upcoming = useMemo(() => upcomingEvents(events, today, AGENDA_WINDOW_DAYS), [events, today]);
   const monthDays = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth(), today), [cursor, today]);
   const weekDays = useMemo(() => weekGrid(cursor, today), [cursor, today]);
+  // Day view is the same grid with one column, so it takes the same shape.
+  const dayColumn = useMemo(
+    () => [{ date: cursor, inMonth: true, isToday: dateKey(cursor) === dateKey(today), key: dateKey(cursor) }],
+    [cursor, today],
+  );
 
   function goStep(delta: 1 | -1) {
     setCursor((prev) => {
@@ -129,6 +135,38 @@ export function CalendarWorkspace() {
     setDialog(null);
   }
 
+  // Syllabus import goes through the SAME per-event save path as a hand-made
+  // event, so imported rows get identical validation and land as source:
+  // 'manual' — editable and deletable, unlike agent-written events which the
+  // UI routes to a read-only dialog with no way out (see event-dialogs.tsx).
+  // Written one at a time so a single bad row cannot lose the whole import.
+  async function handleImport(imported: CalendarEvent[]) {
+    // Refuse here rather than trusting the disabled button in SyllabusDialog.
+    // In preview, saveCalendarEvent writes to the UNSCOPED legacy localStorage
+    // key — the one migrateLocalCalendarToCloud claims and uploads for the
+    // first account that later signs in on this browser. A guard two
+    // components away is not where that should be prevented.
+    if (preview || !userId) throw new Error("Sign in to import a syllabus.");
+
+    const saved: CalendarEvent[] = [];
+    const failures: string[] = [];
+    for (const event of imported) {
+      try {
+        saved.push(await saveCalendarEvent(event, { userId, preview }));
+      } catch {
+        failures.push(event.title);
+      }
+    }
+    if (saved.length > 0) {
+      setEvents((prev) => [...prev.filter((e) => !saved.some((row) => row.id === e.id)), ...saved]);
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `Added ${saved.length}, but couldn't add: ${failures.slice(0, 3).join(", ")}${failures.length > 3 ? "…" : ""}`,
+      );
+    }
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) pt-(--titlebar-height)">
       <div className="flex h-full min-h-0 flex-col overflow-y-auto">
@@ -136,22 +174,20 @@ export function CalendarWorkspace() {
           cursor={cursor}
           onAddEvent={openAdd}
           onChangeView={setView}
+          onImportSyllabus={() => setSyllabusOpen(true)}
           onStep={goStep}
           today={today}
           view={view}
         />
         <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 max-sm:px-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          {/* Day and Week are the same time grid with a different column count
+              — they were near-duplicate components before, so every fix had to
+              be made twice. */}
           {view === "day" && (
-            <DayPanel
-              date={cursor}
-              events={dayEvents(events, cursor)}
-              onAddOnDate={openAdd}
-              onOpenEvent={openEvent}
-              today={today}
-            />
+            <TimeGridView days={dayColumn} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
           )}
           {view === "week" && (
-            <WeekGrid days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
+            <TimeGridView days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
           )}
           {view === "month" && (
             <MonthGrid days={monthDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
@@ -162,6 +198,10 @@ export function CalendarWorkspace() {
           <Agenda events={upcoming} hasAnyEvents={events.length > 0} loaded={loaded} onOpenEvent={openEvent} />
         </div>
       </div>
+
+      {syllabusOpen && (
+        <SyllabusDialog onClose={() => setSyllabusOpen(false)} onImport={handleImport} uid={preview ? null : userId} />
+      )}
 
       {dialog?.mode === "view" && <EventViewDialog event={dialog.event} onClose={() => setDialog(null)} />}
       {dialog?.mode === "add" && (
