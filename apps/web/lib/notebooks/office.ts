@@ -180,7 +180,11 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
     // signal, and it is unreadable once the slides run together. An empty slide
     // stays empty: mergeImageDescriptions aligns slide N to index N-1, and a bare
     // heading would turn a picture-only slide into content it does not have.
-    const content = blocks.filter((block) => block.trim().length > 0).join("\n");
+    // Blank line between blocks, not a single newline. The slide body is now a bullet
+    // list, and one newline after a list item is a CONTINUATION of that item — on a
+    // real deck the speaker notes rendered as part of the last bullet on the phone
+    // instead of standing on their own.
+    const content = blocks.filter((block) => block.trim().length > 0).join("\n\n");
     const heading = md.title ? `## Slide ${slides.length + 1}: ${md.title}` : `## Slide ${slides.length + 1}`;
     slides.push(content ? `${heading}\n${content}` : "");
   }
