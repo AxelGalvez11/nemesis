@@ -9,7 +9,10 @@ import {
   firstLine,
   orderSlideFiles,
   pptxNotesXmlToText,
+  pptxSlideTitle,
+  pptxSlideXmlToMarkdown,
   pptxSlideXmlToText,
+  slideBoldIsUniform,
 } from "./office-text";
 
 // decodeXmlEntities: named + numeric (decimal and hex).
@@ -130,3 +133,103 @@ import {
 }
 
 console.log("notebooks/office-text.test.ts: all assertions passed");
+
+// --- Emphasis fidelity: what the lecturer marked as important survives ---------------
+// These shapes mirror what PowerPoint actually writes, verified by reading a real
+// 316-slide course rather than by assuming: bold sits on 61% of its slides, a title
+// placeholder on 63%, indent levels on 31%, and <a:highlight> on 1 slide in 316.
+
+const sp = (inner: string) => `<p:sp><p:nvSpPr><p:nvPr>${inner}</p:nvPr></p:nvSpPr></p:sp>`;
+const run = (text: string, rPr = "") => `<a:r><a:rPr lang="en-US"${rPr}/><a:t>${text}</a:t></a:r>`;
+const para = (runs: string, lvl?: number) =>
+  `<a:p>${lvl === undefined ? "" : `<a:pPr lvl="${lvl}"/>`}${runs}</a:p>`;
+
+// The title comes from the title placeholder, NOT the first line of a flat blob.
+// On a real lecture that bug made the deck title the professor's name.
+{
+  const xml =
+    sp(`<p:ph type="title"/>` + para(run("Rate kinetics and primary variables"))) +
+    sp(para(run("FRANK PARK, Ph.d.")));
+  const md = pptxSlideXmlToMarkdown(xml);
+  assert.equal(md.title, "Rate kinetics and primary variables");
+  assert.match(md.body, /FRANK PARK/);
+  // ctrTitle is the placeholder an actual title slide uses.
+  assert.equal(pptxSlideTitle(sp(`<p:ph type="ctrTitle"/>` + para(run("Pharmacokinetics 1")))), "Pharmacokinetics 1");
+  // No placeholder means no title — never a guess.
+  assert.equal(pptxSlideTitle(sp(para(run("just a text box")))), null);
+}
+
+// Bold survives as markdown, so "know this" stops reading like body text.
+{
+  const xml = sp(para(run("Normal ") + run("know this", ' b="1"') + run(" tail")));
+  assert.match(pptxSlideXmlToMarkdown(xml).body, /Normal \*\*know this\*\* tail/);
+}
+
+// Delimiters hug the word: "** bold **" would render as literal asterisks, so a
+// run's own padding has to be carried outside the markers.
+{
+  const body = pptxSlideXmlToMarkdown(sp(para(run(" spaced ", ' b="1"')))).body;
+  assert.match(body, /\*\*spaced\*\*/);
+  assert.doesNotMatch(body, /\*\* spaced \*\*/);
+}
+
+// Italic and underline map to the marks BOTH renderers already support.
+{
+  const body = pptxSlideXmlToMarkdown(sp(para(run("em", ' i="1"') + run("under", ' u="sng"')))).body;
+  assert.match(body, /\*em\*/);
+  assert.match(body, /<u>under<\/u>/);
+}
+
+// Indent level becomes nesting, so a sub-point stops outranking a main point.
+{
+  const xml = sp(para(run("Main point"), 0) + para(run("Sub point"), 1) + para(run("Deeper"), 2));
+  assert.equal(pptxSlideXmlToMarkdown(xml).body, "- Main point\n  - Sub point\n    - Deeper");
+}
+
+// Emphasis is DIFFERENTIAL. An all-bold slide is using bold as its body font, and
+// marking it would wrap the whole slide in ** for no signal at all.
+{
+  const allBold = sp(para(run("one", ' b="1"') + run("two", ' b="1"')));
+  const mixed = sp(para(run("one", ' b="1"') + run("two")));
+  assert.equal(slideBoldIsUniform(allBold), true);
+  assert.equal(slideBoldIsUniform(mixed), false);
+  assert.doesNotMatch(pptxSlideXmlToMarkdown(allBold, false).body, /\*\*/);
+}
+
+// The automatic slide-number field must not become a junk bullet on every slide.
+{
+  const xml = sp(`<a:p><a:fld id="x" type="slidenum"><a:t>12</a:t></a:fld></a:p>` + para(run("Real content")));
+  const body = pptxSlideXmlToMarkdown(xml).body;
+  assert.match(body, /Real content/);
+  assert.doesNotMatch(body, /12/);
+}
+
+// Entities are decoded inside an emphasised run.
+{
+  assert.match(pptxSlideXmlToMarkdown(sp(para(run("Cmax &amp; t&#189;", ' b="1"')))).body, /\*\*Cmax & t½\*\*/);
+}
+
+// Adjacent runs with the SAME formatting merge before any marker is emitted.
+// Found on a real slide: PowerPoint stores "Cmax" as <a:t>C</a:t> + <a:t>max</a:t>
+// (the subscript), which marked run-by-run produced "**C****max**" -- four asterisks,
+// not valid emphasis, and a term neither search nor a flashcard can match.
+{
+  const xml = sp(para(run("C", ' b="1"') + run("max", ' b="1"') + run(": maximum concentration")));
+  const body = pptxSlideXmlToMarkdown(xml).body;
+  assert.match(body, /\*\*Cmax\*\*: maximum concentration/);
+  assert.doesNotMatch(body, /\*\*\*/);
+}
+
+// A table's cells are paragraphs inside <p:graphicFrame>, NOT inside <p:sp>. Walking
+// shapes alone silently dropped them -- 38 distinct words on one real lecture.
+{
+  const xml =
+    sp(para(run("Body text"))) +
+    `<p:graphicFrame><a:graphic><a:tbl><a:tr><a:tc><a:txBody>${para(run("CYP3A4"))}</a:txBody></a:tc>` +
+    `<a:tc><a:txBody>${para(run("Renal clearance"))}</a:txBody></a:tc></a:tr></a:tbl></a:graphic></p:graphicFrame>`;
+  const body = pptxSlideXmlToMarkdown(xml).body;
+  assert.match(body, /CYP3A4/);
+  assert.match(body, /Renal clearance/);
+}
+
+console.log("notebooks/office-text.test.ts: emphasis fidelity assertions passed");

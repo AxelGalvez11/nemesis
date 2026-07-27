@@ -27,7 +27,8 @@ import {
   firstLine,
   orderSlideFiles,
   pptxNotesXmlToText,
-  pptxSlideXmlToText,
+  pptxSlideXmlToMarkdown,
+  slideBoldIsUniform,
   type OfficeExtract,
 } from "./office-text";
 import {
@@ -51,9 +52,11 @@ export function extractDocxText(bytes: Uint8Array): OfficeExtract {
 
 /** Extract text from .pptx bytes (every slide, in order, with its notes, charts and SmartArt). */
 export function extractPptxText(bytes: Uint8Array): OfficeExtract {
-  const { slides } = readPptxSlides(bytes);
+  const { slides, deckTitle } = readPptxSlides(bytes);
   const text = collapseBlankLines(slides.filter((s) => s.length > 0).join("\n\n"));
-  return { title: firstLine(text), text };
+  // The title placeholder beats firstLine: on a real lecture the first line of slide 1
+  // is the lecturer's name and address block, so the deck filed itself under "FRANK PARK".
+  return { title: deckTitle ?? firstLine(text), text };
 }
 
 /** What was found in a deck and what became of it. Reported so a partial read is never
@@ -84,6 +87,10 @@ export interface PptxContents {
   /** One entry per slide, in order. Blank entries are kept so slide N is index N-1
    *  — mergeImageDescriptions relies on that alignment. */
   slides: string[];
+  /** Slide N's own title-placeholder text, or null. Index N-1, same alignment as `slides`. */
+  slideTitles: (string | null)[];
+  /** The first title placeholder in the deck — the deck's real name. */
+  deckTitle: string | null;
   media: SlideMediaPlan;
   /** Zip entry name → bytes to send. For a metafile that turned out to hold a
    *  bitmap, these are the UNWRAPPED PNG bytes, not the original file. */
@@ -125,6 +132,8 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
   const slides: string[] = [];
   const slideXml = new Map<string, string>();
   const relsXml = new Map<string, string>();
+  const slideTitles: (string | null)[] = [];
+  let deckTitle: string | null = null;
   let notesPages = 0;
   let charts = 0;
   let diagrams = 0;
@@ -139,8 +148,15 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
     if (rels) relsXml.set(relsName, rels);
     const targets = rels ? [...parseSlideRels(rels).values()] : [];
 
+    // The slide's own words, with the lecturer's emphasis intact. Bold marking is
+    // switched off for a slide that is bold throughout, where bold is the body font
+    // rather than a signal about what matters.
+    const md = pptxSlideXmlToMarkdown(xml, !slideBoldIsUniform(xml));
+    if (deckTitle === null && md.title) deckTitle = md.title;
+    slideTitles.push(md.title);
+
     // Everything this slide points at, gathered under the slide that uses it.
-    const blocks: string[] = [pptxSlideXmlToText(xml)];
+    const blocks: string[] = [md.body];
     for (const target of targets) {
       if (/^ppt\/charts\/chart\d+\.xml$/.test(target)) {
         const text = chartXmlToText(read(target) ?? "");
@@ -158,7 +174,14 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
         }
       }
     }
-    slides.push(blocks.filter((block) => block.trim().length > 0).join("\n"));
+    // A slide marker gives the model a boundary it can cite and makes relative
+    // airtime visible — six slides on one topic and one on another is itself a
+    // signal, and it is unreadable once the slides run together. An empty slide
+    // stays empty: mergeImageDescriptions aligns slide N to index N-1, and a bare
+    // heading would turn a picture-only slide into content it does not have.
+    const content = blocks.filter((block) => block.trim().length > 0).join("\n");
+    const heading = md.title ? `## Slide ${slides.length + 1}: ${md.title}` : `## Slide ${slides.length + 1}`;
+    slides.push(content ? `${heading}\n${content}` : "");
   }
 
   // What the pictures are, before deciding which to read. A metafile is opened here
@@ -211,8 +234,10 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
       notesPages,
       slides: slides.length,
     },
+    deckTitle,
     imageBytes,
     media: plan,
+    slideTitles,
     slides,
   };
 }
@@ -221,5 +246,5 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
 export function pptxTextWithFigures(contents: PptxContents, descriptions: ReadonlyMap<string, string>): OfficeExtract {
   const merged = mergeImageDescriptions(contents.slides, descriptions, contents.media.images);
   const text = collapseBlankLines(merged.filter((s) => s.length > 0).join("\n\n"));
-  return { title: firstLine(text), text };
+  return { title: contents.deckTitle ?? firstLine(text), text };
 }
