@@ -45,6 +45,43 @@ export function utterancesOf(value: unknown): Utterance[] {
 }
 
 /**
+ * The same utterances, from a provider that labels WORDS rather than turns.
+ *
+ * xAI's STT returns `words[].speaker` (docs.x.ai, speech-to-text, checked
+ * 2026-07-28) instead of AssemblyAI's ready-made utterances. Grouping runs of
+ * consecutive words by the same speaker turns one shape into the other, so both
+ * providers meet the same merge-and-drop rules above rather than each growing
+ * its own transcript formatter.
+ *
+ * Never throws: an unrecognised shape returns [], which degrades to the flat
+ * text exactly like a provider that sent no diarization at all.
+ */
+export function utterancesFromWords(value: unknown): Utterance[] {
+  if (!Array.isArray(value)) return [];
+  const out: Utterance[] = [];
+  for (const row of value) {
+    if (typeof row !== "object" || row === null) continue;
+    const { speaker, word, text } = row as Record<string, unknown>;
+    // `word` is xAI's field; `text` is accepted too so a provider that renames
+    // it does not silently produce an empty transcript.
+    const token = typeof word === "string" ? word.trim() : typeof text === "string" ? text.trim() : "";
+    if (!token) continue;
+    const who = typeof speaker === "string"
+      ? speaker.trim()
+      : typeof speaker === "number"
+        ? String(speaker)
+        : "";
+    const last = out[out.length - 1];
+    if (last && last.speaker === who) {
+      last.text = `${last.text} ${token}`;
+      continue;
+    }
+    out.push({ speaker: who, text: token });
+  }
+  return out;
+}
+
+/**
  * The transcript to store, given diarized utterances and the provider's own
  * flat `text`. Falls back to `text` whenever the utterances are missing, empty,
  * or all one speaker — see the two rules in this file's header.

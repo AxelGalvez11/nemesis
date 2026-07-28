@@ -26,7 +26,7 @@
 //
 // The service role lives ONLY in the function env, never in an app bundle.
 
-import { formatDiarizedTranscript, utterancesOf } from "../_shared/transcript-speakers.ts";
+import { formatDiarizedTranscript, utterancesFromWords, utterancesOf } from "../_shared/transcript-speakers.ts";
 import { batchCostUsd, batchProviderFor, PRICE_REV } from "../_shared/voice-cost.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -42,6 +42,17 @@ const ASSEMBLYAI_KEY = Deno.env.get("ASSEMBLY_API_KEY") ?? Deno.env.get("ASSEMBL
 // present key buys a guaranteed failed round trip and its latency before every
 // AssemblyAI fallback. Set it only if Groq billing is ever enabled.
 const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
+
+// Owner added these to the Supabase secrets on 2026-07-28 as `modulate_api_key`
+// and `xai_api_key`. Deno.env.get IS case-sensitive and Supabase stores secret
+// names verbatim, so both spellings are read: a case mismatch fails EXACTLY like
+// a missing key, which is the failure that cost an afternoon on ASSEMBLY_API_KEY
+// vs ASSEMBLYAI_API_KEY.
+const XAI_KEY = Deno.env.get("XAI_API_KEY") ?? Deno.env.get("xai_api_key") ?? "";
+// MODULATE_API_KEY is in the Supabase secrets too, and nothing reads it yet — on
+// purpose. Declaring the const before there is a provider to use it would read as
+// "wired" to the next person. See the provider-order comment in handleSubmit for
+// what is still missing from their published docs.
 
 // Project-scoped write-only key — not a secret. Override with POSTHOG_KEY.
 const POSTHOG_KEY = Deno.env.get("POSTHOG_KEY") ?? "phc_xcEjfTB3a2ftyzsw7oEAkpiBXRThWWjA3D5BcPBj36ht";
@@ -108,7 +119,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
   if (!SB_URL || !SERVICE_KEY || !ANON_KEY) return json({ error: "function not configured" }, 500, req);
-  if (!ASSEMBLYAI_KEY && !GROQ_KEY) {
+  if (!ASSEMBLYAI_KEY && !GROQ_KEY && !XAI_KEY) {
     return json({ error: "Transcript enhancement is not configured yet." }, 503, req);
   }
 
@@ -177,6 +188,29 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   if (!signedUrl) {
     await finalize({ p_error: "missing audio object", p_job_id: jobId, p_status: "error" });
     return json({ error: "The uploaded audio could not be found." }, 404, req);
+  }
+
+  // PROVIDER ORDER, cheapest-that-works first. Each returns null on any failure,
+  // so an outage at one falls through to the next rather than failing the job;
+  // AssemblyAI below is the backstop because it is the one we have run in
+  // production. Whichever answers is the one billed — reportVoiceCost is called
+  // on the branch that actually produced the transcript, never on the one we
+  // hoped would.
+  //
+  // Modulate is NOT in this ladder yet, deliberately. Its endpoint and auth are
+  // published (api.modulate.ai/v1/transcription, bearer) but how audio is
+  // delivered and how diarization is switched on are not, and writing a provider
+  // against a guessed request shape is how a field gets silently ignored. They
+  // give 400 free hours; wire it once it has been run against a real lecture.
+  if (XAI_KEY) {
+    const xai = await transcribeWithXai(signedUrl);
+    if (xai) {
+      await patchJob(jobId, xai.text ? { provider: "xai", transcript: xai.text } : { provider: "xai" });
+      await finalize({ p_actual_seconds: xai.seconds || seconds, p_job_id: jobId, p_status: "done" });
+      await reportVoiceCost(userId, "xai_grok_stt", xai.seconds || seconds);
+      await removeObject(storagePath);
+      return json({ jobId, usage }, 200, req);
+    }
   }
 
   if (GROQ_KEY) {
@@ -341,6 +375,57 @@ async function handleStatus(req: Request, userId: string, body: Record<string, u
 
   if (!transcript) return json({ error: "The recording contained no recognizable speech.", status: "error" }, 200, req);
   return json({ status: "done", transcript }, 200, req);
+}
+
+/**
+ * One synchronous xAI Grok STT pass over a remote audio URL.
+ *
+ * Shape read off docs.x.ai/developers/model-capabilities/audio/speech-to-text on
+ * 2026-07-28: POST /v1/stt, bearer auth, and — the reason this lane is cheap to
+ * add — a `url` parameter that makes xAI fetch the audio itself. The signed URL
+ * we already mint for AssemblyAI works unchanged, so no audio is streamed through
+ * this function.
+ *
+ * `diarize` is asked for because xAI's $0.10/hr INCLUDES speaker labels; unlike
+ * AssemblyAI there is no add-on to weigh. It returns speakers per WORD rather
+ * than per turn, which utterancesFromWords regroups so both providers produce an
+ * identically-formatted transcript.
+ *
+ * Returns null on any failure so the caller falls through to the next provider —
+ * never throws.
+ */
+async function transcribeWithXai(audioUrl: string): Promise<{ text: string; seconds: number } | null> {
+  try {
+    const form = new FormData();
+    form.set("url", audioUrl);
+    form.set("language", "en");
+    form.set("diarize", "true");
+    const res = await fetch("https://api.x.ai/v1/stt", {
+      body: form,
+      headers: { Authorization: `Bearer ${XAI_KEY}` },
+      method: "POST",
+    });
+    const body = await res.json().catch(() => null) as {
+      text?: unknown;
+      words?: unknown;
+      duration?: unknown;
+      error?: unknown;
+    } | null;
+    if (!res.ok || typeof body?.text !== "string") {
+      console.warn("xAI transcription unavailable, falling through", res.status, JSON.stringify(body?.error ?? null));
+      return null;
+    }
+    const flat = body.text.trim();
+    // Regrouped words when they carry speakers; the flat text otherwise. A
+    // provider that stops sending `words` degrades to plain text rather than
+    // to an empty transcript.
+    const text = formatDiarizedTranscript(utterancesFromWords(body.words), flat);
+    if (!text) return null;
+    return { seconds: Math.max(0, Math.round(Number(body.duration) || 0)), text };
+  } catch (err) {
+    console.warn("xAI transcription threw, falling through", (err as Error)?.message);
+    return null;
+  }
 }
 
 /** One synchronous Groq Whisper pass over a remote audio URL. Returns null on
