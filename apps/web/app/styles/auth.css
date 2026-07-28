@@ -7,7 +7,12 @@
   --auth-faint: #a2a39f;
   --auth-line: #e6e6e2;
   --auth-soft: #f7f7f4;
-  --auth-red: #e52b42;
+  /* Was #e52b42 — the sign-in page has its own stylesheet and never read the
+     theme tokens, so it survived the accent retirement (2026-07-28) and was
+     still showing a red "WELCOME BACK" on an otherwise monochrome app. Renamed
+     to --auth-accent because it is not red any more; the error style below
+     keeps its own red, which is a warning, not an accent. */
+  --auth-accent: #404040;
   background: #fff;
   color: var(--auth-ink);
   display: grid;
@@ -63,7 +68,7 @@
   z-index: 1;
 }
 .nemesis-auth-status {
-  color: var(--auth-red);
+  color: var(--auth-accent);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.19em;
@@ -151,7 +156,7 @@
 }
 .nemesis-auth-mark img { height: 21px; width: 21px; }
 .nemesis-auth-eyebrow {
-  color: var(--auth-red);
+  color: var(--auth-accent);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -249,7 +254,7 @@
   text-transform: uppercase;
   transition: background 0.15s ease, transform 0.15s ease;
 }
-.nemesis-auth-submit:hover:not(:disabled) { background: var(--auth-red); transform: translateY(-1px); }
+.nemesis-auth-submit:hover:not(:disabled) { background: var(--auth-accent); transform: translateY(-1px); }
 .nemesis-auth-submit:disabled { cursor: not-allowed; opacity: 0.42; }
 
 .nemesis-auth-error,
@@ -261,7 +266,7 @@
   margin: 12px 0 0;
   padding: 10px 12px;
 }
-.nemesis-auth-error { background: #fff3f4; border-left: 2px solid var(--auth-red); color: #8a2130; }
+.nemesis-auth-error { background: #fff3f4; border-left: 2px solid #c0392b; color: #8a2130; }
 .nemesis-auth-success { background: #f1f7f1; border-left: 2px solid #4f7654; color: #36563a; }
 .nemesis-auth-notice { background: var(--auth-soft); border-left: 2px solid #bdbeb9; color: var(--auth-muted); }
 
@@ -313,7 +318,7 @@
   text-decoration-color: #c8c9c4;
   text-underline-offset: 3px;
 }
-.nemesis-auth-link:hover { color: var(--auth-red); text-decoration-color: var(--auth-red); }
+.nemesis-auth-link:hover { color: var(--auth-accent); text-decoration-color: var(--auth-accent); }
 .nemesis-auth-footer {
   border-top: 1px solid var(--auth-line);
   color: var(--auth-muted);
@@ -331,14 +336,14 @@
   text-align: center;
   text-transform: uppercase;
 }
-.nemesis-auth-trust span { color: var(--auth-red); }
+.nemesis-auth-trust span { color: var(--auth-accent); }
 
 .nemesis-auth-mode a:focus-visible,
 .nemesis-auth-oauth-btn:focus-visible,
 .nemesis-auth-submit:focus-visible,
 .nemesis-auth-link:focus-visible,
 .nemesis-auth-brand:focus-visible {
-  outline: 2px solid var(--auth-red);
+  outline: 2px solid var(--auth-accent);
   outline-offset: 3px;
 }
 

@@ -53,6 +53,31 @@ const SAVE_ARTIFACT =
 const SAVE_VERB = /\b(?:make|create|build|generate|add|save|put together|whip up|draft|prep(?:are)?|turn\s+(?:this|that|these|it)\s+into|give me|set up)\b/i;
 const SAVE_TO_WORKSPACE = /\b(?:to|in|into|on)\s+my\s+(?:deck|library|notes?|calendar|study(?:\s+(?:deck|list))?)\b|\bon my calendar\b|\bas a (?:library )?note\b|\b(?:add|put|save|schedule)\b[^.?!]{0,40}\bcalendar\b/i;
 
+// Owner 2026-07-28: "i asked the chat to create test and instead of creating it
+// in the test page it just dumped it into chat".
+//
+// SAVE_ARTIFACT above only knows "practice test" and "mock exam", so a bare
+// "create a test" — which is how anyone actually asks — matched no artifact,
+// was not a save, and went out on the tool-less reasoner. The model then wrote
+// the whole test into the conversation because writing it was the only thing it
+// could do. Same for "quiz" and "exam".
+//
+// A bare test/quiz/exam cannot join SAVE_ARTIFACT, because SAVE_VERB includes
+// "prep" and "help me prepare for my test" is studying, not creating. So this
+// requires the create verb to govern the noun DIRECTLY: "create a test" counts,
+// "prepare for my test" does not, and "quiz me on the top 100 drugs" — a request
+// to BE quizzed, not for a saved artifact — does not either, because nothing
+// creates there.
+//
+// "write" is deliberately absent, matching SAVE_VERB: "write a test for this
+// function" is a coding request and the suite has pinned that since long before
+// this. CODE_TEST catches the rest of the programming sense, which a create verb
+// otherwise walks straight into.
+const CREATE_ASSESSMENT =
+  /\b(?:make|create|build|generate|draft|whip up|put together|give me|set up)\s+(?:me\s+)?(?:an?|another|some|\d+)?\s*(?:new\s+)?(?:practice\s+|mock\s+)?(?:tests?|quiz(?:zes)?|exams?|question\s+banks?)\b/i;
+const CODE_TEST =
+  /\b(?:unit|integration|e2e|end-to-end|regression|snapshot)\s+tests?\b|\btests?\s+(?:for|of)\s+(?:this|that|the|my)\s+(?:function|method|class|component|module|code|file|endpoint)\b|\btest\s+(?:suite|case|file|harness)s?\b/i;
+
 // ── accepting an offer the app itself made ───────────────────────────────────
 // The lecture-intake skill ends every deck upload with "Want me to turn this
 // into notes, flashcards, a practice test, or all three?" — and the student
@@ -117,6 +142,7 @@ export function detectsSaveRequest(text: string, priorAssistantText = ""): boole
   // a bare imperative, none of which start this way.
   if (ASKS_ABOUT.test(compact)) return false;
   if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  if (CREATE_ASSESSMENT.test(compact) && !CODE_TEST.test(compact)) return true;
   if (SAVE_TO_WORKSPACE.test(compact)) return true;
   return offersToCreate(priorAssistantText) && acceptsOffer(compact);
 }
@@ -163,6 +189,23 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
   }
   return { route: "conversation", model: "deepseek-chat", searchWeb: false };
 }
+
+/**
+ * The extra line a SAVE turn carries, on top of its route instruction.
+ *
+ * Routing the turn correctly only buys the tools; it does not make the model
+ * reach for them. Owner 2026-07-28 asked that "anytime user asked for
+ * flashcards or tests it should automatically create in the study page", and a
+ * model handed both a tool and a blank page will often just write the artifact
+ * out — which is what a student sees as "it went into the chat instead".
+ *
+ * Only sent when the tools are actually attached: a turn that promises to save
+ * and cannot is worse than one that never offered (see CHAT_NO_TOOLS_PROMPT).
+ */
+export const SAVE_INSTRUCTION =
+  "This turn asks you to CREATE something in the student's workspace. Do it with the tools — add_practice_test for a test or quiz, add_flashcards for cards, create_library_note for notes — and do it in this turn, not after asking permission. " +
+  "Never write the flashcards or the test questions out in your reply as a substitute for saving them: the student is looking for it on their Study page, and a copy in the chat is not there. " +
+  "Once it is saved, say in one short line what you made and where it went.";
 
 export function routeInstruction(route: ChatRoute): string {
   switch (route) {

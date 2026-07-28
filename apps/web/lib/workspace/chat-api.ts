@@ -10,7 +10,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
@@ -166,7 +166,16 @@ export function buildWireMessages(
   // recent instruction the model reads before the conversation itself.
   const skills = buildSkillMessage(selectChatSkills(userText));
   return [
-    { content: `${chatSystemPrompt(toolsEnabled)}\n\n${routeInstruction(decision.route)}\n\n${liveClock}`, role: "system" },
+    {
+      content: [
+        chatSystemPrompt(toolsEnabled),
+        routeInstruction(decision.route),
+        // Only when the tools are really riding — see SAVE_INSTRUCTION.
+        ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
+        liveClock,
+      ].join("\n\n"),
+      role: "system",
+    },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
     ...(skills ? [{ content: skills, role: "system" as const }] : []),
     ...kept.map((msg) => ({ content: msg.content, role: msg.role })),

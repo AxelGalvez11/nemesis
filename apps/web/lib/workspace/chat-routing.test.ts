@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 
 import { applyChatEffort, toolsAllowed } from "./chat-effort";
-import { acceptsOffer, classifyChatRequest, detectsSaveRequest, offersToCreate, promptWithoutAttachments, routeInstruction } from "./chat-routing";
+import { acceptsOffer, classifyChatRequest, detectsSaveRequest, offersToCreate, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION } from "./chat-routing";
+import { buildWireMessages } from "./chat-api";
 import { shouldSearchWeb } from "./chat-web-search";
 
 // Ordinary conversation stays on the least expensive lane.
@@ -54,6 +55,14 @@ for (const prompt of [
   "build me a mind map of the RAAS pathway",
   "turn this into a mind map",
   "generate a practice test on ACE inhibitors",
+  // Owner 2026-07-28, verbatim: this returned FALSE, so the turn went out on the
+  // tool-less reasoner and the model wrote the whole test into the chat.
+  // SAVE_ARTIFACT only knew "practice test" — nobody types that.
+  "create a test on brand generic of top 100 drugs",
+  "create a quiz on the krebs cycle",
+  "build an exam for pharmacology",
+  "make me a test on the top 100 drugs",
+  "generate 2 quizzes on renal dosing",
   "create a slide deck about ACE inhibitors",
   "make me lecture notes for tomorrow",
   "add these to my deck",
@@ -202,6 +211,46 @@ assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidan
   assert.equal(offersToCreate("I can turn this into flashcards."), false);
   assert.equal(acceptsOffer("flashcards"), true);
   assert.equal(acceptsOffer(""), false);
+}
+
+// ── what a bare test/quiz/exam must NOT drag in ──────────────────────────────
+// The reason these three nouns cannot simply join SAVE_ARTIFACT: SAVE_VERB
+// includes "prep", and studying FOR a test is not creating one. The create verb
+// has to govern the noun directly.
+for (const prompt of [
+  "help me prepare for my test",
+  "I have an exam tomorrow, where should I start?",
+  "quiz me on the top 100 drugs",
+  "test my understanding of the Krebs cycle",
+  // The programming sense of "test", which a create verb walks straight into.
+  "write a test for this function",
+  "generate unit tests for the parser",
+  "create a test suite for this module",
+  "what will be on the exam?",
+  "how do I make good flashcards?",
+]) {
+  assert.equal(detectsSaveRequest(prompt), false, prompt);
+}
+
+// ── a save turn must be TOLD to use the tool ─────────────────────────────────
+// Routing correctly only buys the tools; it does not make the model reach for
+// them. Without this line a model handed a tool and a blank page writes the
+// test out in prose, which is exactly what the student reported.
+{
+  const saveTurn = buildWireMessages([], "create a test on brand generic of top 100 drugs");
+  assert.ok(saveTurn[0]?.content.includes(SAVE_INSTRUCTION), "a save turn carries the save instruction");
+
+  const plainTurn = buildWireMessages([], "explain how beta blockers lower blood pressure");
+  assert.ok(!plainTurn[0]?.content.includes(SAVE_INSTRUCTION), "an ordinary question does not");
+}
+
+// A save turn on the High dial keeps its tools (applyChatEffort) — and must
+// therefore still carry the instruction that tells it to use them.
+{
+  const decision = applyChatEffort(classifyChatRequest("create a test on the krebs cycle"), "high");
+  assert.equal(toolsAllowed(decision), true, "High must not strip a save's tools");
+  const messages = buildWireMessages([], "create a test on the krebs cycle", decision);
+  assert.ok(messages[0]?.content.includes(SAVE_INSTRUCTION));
 }
 
 console.log("chat-routing.test.ts OK");
