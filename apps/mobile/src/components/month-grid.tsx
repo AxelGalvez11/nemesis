@@ -205,8 +205,26 @@ function DayCell({
     other: styles.otherPill.backgroundColor as string,
     rotation: styles.rotationPill.backgroundColor as string,
   };
+  const cellStyle = [mini ? styles.dayCellMini : styles.dayCellLarge, !mini && rowHeight ? { height: rowHeight } : null];
+  // The neighbouring month's days are PREVIEWED, greyed, rather than left as
+  // holes (owner 2026-07-28) — Apple does this so a week always reads as seven
+  // consecutive days instead of a run that stops mid-row.
+  //
+  // Preview means exactly that: number only. No dot, no event pill, and not
+  // tappable. A pad date is ALSO rendered by its own month's grid, so anything
+  // stateful here draws twice — the reason `selected` is already guarded on
+  // inMonth upstream. Mini months stay blank: at year scale twelve grids of
+  // grey numbers is noise, and Apple leaves them out too.
   if (!cell.inMonth) {
-    return <View style={[mini ? styles.dayCellMini : styles.dayCellLarge, !mini && rowHeight ? { height: rowHeight } : null]} />;
+    return (
+      <View style={cellStyle}>
+        {mini ? null : (
+          <View style={styles.dayInnerLarge}>
+            <Text style={[styles.dayNumLarge, styles.dayOut]}>{cell.day}</Text>
+          </View>
+        )}
+      </View>
+    );
   }
   const inner = (
     <>
@@ -219,7 +237,6 @@ function DayCell({
         <Text
           style={[
             mini ? styles.dayNumMini : styles.dayNumLarge,
-            !cell.inMonth && styles.dayOut,
             cell.isToday && !filled && styles.dayTodayText,
             filled && (cell.isToday ? styles.dayTodayNum : styles.daySelectedNum),
           ]}
@@ -252,7 +269,6 @@ function DayCell({
       ) : null}
     </>
   );
-  const cellStyle = [mini ? styles.dayCellMini : styles.dayCellLarge, !mini && rowHeight ? { height: rowHeight } : null];
   if (!onSelectDay) return <View style={cellStyle}>{inner}</View>;
   return (
     <Pressable
@@ -349,7 +365,13 @@ const createStyles = (c: ThemeColors) =>
     // Owner 2026-07-22: no faded text anywhere. Neighbouring-month days used to
     // sit at 50% opacity; they now read at full strength like every other
     // number, so the month boundary shows through position alone.
-    dayOut: { color: c.text3 },
+    // The previewed neighbouring-month dates. OPACITY, not a colour: this theme
+    // deliberately has no grey text tier left (owner 2026-07-21 — text, text2
+    // and text3 are all pure black on white and pure white on black), so the
+    // `color: c.text3` this used to carry rendered these EXACTLY as dark as a
+    // real date and the greying never happened. Dimming the glyph instead lands
+    // the same everywhere and needs no new token.
+    dayOut: { opacity: 0.16 },
     dayTodayNum: { color: c.onAccent, fontWeight: "700" },
     dayDot: { borderRadius: 3, marginTop: 2 },
     dayDotLarge: { width: 6, height: 6 },
