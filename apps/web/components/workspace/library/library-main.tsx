@@ -50,6 +50,10 @@ import { LibraryLiveEditor, type LibraryEditorApi } from "./library-live-editor"
 type EditorMode = "edit" | "read";
 type RightPanel = "links" | "backlinks" | "contents" | "tags";
 
+/** Remembers whether the formatting bar is showing. Server render has no
+ *  localStorage, so the value is restored after mount rather than in useState. */
+const EDITING_BAR_KEY = "nemesis.library.editing-bar";
+
 const EDITOR_MODES = [
   { id: "edit", label: "Edit" },
   { id: "read", label: "Read" },
@@ -100,7 +104,11 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const note = selectedPath ? (notes.find((item) => item.path === selectedPath) ?? null) : null;
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [mode, setMode] = useState<EditorMode>("edit");
-  const [editingBarOpen, setEditingBarOpen] = useState(false);
+  // Visible by default (owner 2026-07-28 asked for "commands for bold
+  // italicize etc." — the buttons existed but defaulted OFF behind a dropdown,
+  // which is indistinguishable from not having them). Persisted, because a
+  // preference that resets on every note is not a preference.
+  const [editingBarOpen, setEditingBarOpen] = useState(true);
   const [rightPanel, setRightPanel] = useState<RightPanel>("links");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -114,6 +122,14 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const draftRef = useRef<NoteDraft | null>(null);
   const replaceTabPathRef = useRef<string | null>(null);
   const editorApiRef = useRef<LibraryEditorApi | null>(null);
+
+  useEffect(() => {
+    try {
+      // Only an explicit "hidden" overrides the default — a first-time student
+      // should meet the buttons, not have to find them in a menu.
+      if (window.localStorage.getItem(EDITING_BAR_KEY) === "0") setEditingBarOpen(false);
+    } catch { /* private mode */ }
+  }, []);
 
   useEffect(() => {
     if (!selectedPath) return;
@@ -373,7 +389,11 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => {
                 setMode("edit");
-                setEditingBarOpen((open) => !open);
+                setEditingBarOpen((open) => {
+                  const next = !open;
+                  try { window.localStorage.setItem(EDITING_BAR_KEY, next ? "1" : "0"); } catch { /* private mode */ }
+                  return next;
+                });
               }}><IconTextSize /> {editingBarOpen ? "Hide editing bar" : "Show editing bar"}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setConfirmDelete(true)} variant="destructive"><IconTrash /> Delete note</DropdownMenuItem>

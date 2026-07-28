@@ -7,9 +7,15 @@ import { supabase } from "@/lib/supabase";
 export type RecordingSurface = "sessions" | "notebook";
 
 export interface RecordingArtifactDraft {
+  /** Seconds of audio actually captured — the silence gate's quiet is not in
+   *  here, and neither is it in the file, the upload, or the bill. */
   durationSeconds: number;
   notes: string;
   transcript: string;
+  /** A ready-made line like "12 minutes of quiet skipped", when there was
+   *  enough to be worth saying. Not persisted — it belongs in the chat message
+   *  that announces the recording, not in the artifact row. */
+  silenceSkipped?: string;
 }
 
 export interface RecordingArtifact extends RecordingArtifactDraft {

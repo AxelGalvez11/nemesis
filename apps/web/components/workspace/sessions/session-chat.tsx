@@ -305,11 +305,17 @@ export function SessionChat() {
       if (!targetId) return;
       sessionsStore.appendMessage(targetId, {
         at: new Date().toISOString(),
-        content: libraryPath
-          ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
-          : notes.trim()
-            ? "Recording captured — transcript and notes are ready."
-            : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
+        // The silence gate's saving is reported, not hidden: the student's
+        // allowance was charged for the shorter audio, so they should be able
+        // to reconcile a 60-minute lecture reading as 45 minutes.
+        content: [
+          libraryPath
+            ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
+            : notes.trim()
+              ? "Recording captured — transcript and notes are ready."
+              : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
+          draft.silenceSkipped ? `\n\n${draft.silenceSkipped}.` : "",
+        ].join(""),
         outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
         role: "assistant",
       });
