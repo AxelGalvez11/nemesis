@@ -60,6 +60,10 @@ interface PlanCardSpec {
   recommended?: boolean;
 }
 
+// Recording hours must match plan_entitlements.transcription_seconds_month_limit and
+// the same lines on app/pricing/page.tsx — three copies of one number, and they had
+// already drifted apart by more than 3x. "Live copilot" was also stale: there is no
+// live lane, a recording is written up once after it stops.
 const PLAN_CARDS: PlanCardSpec[] = [
   {
     tier: "plus",
@@ -69,7 +73,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
     features: [
       "Higher limits for answers, notes, and study decks",
       "Turn lectures into organized study material",
-      "30 live transcription minutes each month",
+      "20 hours of lecture recording each month",
       "Scheduled school portal and email sync",
     ],
   },
@@ -82,17 +86,17 @@ const PLAN_CARDS: PlanCardSpec[] = [
     features: [
       "Web-grounded answers with source citations",
       "Higher desktop-agent automation limits",
-      "90 live copilot minutes each month",
+      "80 hours of lecture recording each month",
     ],
   },
   {
     tier: "max",
     name: "Max",
-    tagline: "Everything in Agent Pro, plus:",
+    tagline: "Everything in Agent Pro, five times over:",
     cta: "Upgrade to Max",
     features: [
       "Highest usage limits across the agent",
-      "4,000 live copilot minutes each month",
+      "200 hours of lecture recording each month",
       "First access to new capabilities",
     ],
   },

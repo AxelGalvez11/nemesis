@@ -92,6 +92,31 @@ export function netRevenueUsd(priceUsd: number): number {
 //   select plan_code, entitlement_key, value_json from plan_entitlements;
 export const PLAN_LIMITS_CHECKED = "2026-07-28";
 
+/**
+ * The ladder was RESHAPED on 2026-07-28 (owner: "it should increase linearly, plus
+ * should get 20 hours, max gets 200 hours"). Before that write, three meters ran
+ * backwards — Max allowed 60 recording hours where Pro allowed 83, and Free
+ * out-searched both paid student plans. The old values, kept as the revert recipe:
+ *
+ *   transcription seconds  plus 36,000    max 216,000  professional 216,000
+ *   live audio seconds     free 1,800  plus 3,600  max 240,000  professional 240,000
+ *   llm monthly tokens     plus 5,000,000   max 30,000,000
+ *   llm daily tokens       plus 1,500,000   max 10,000,000
+ *   search monthly units   free 300  plus 100   max 300
+ *   search daily units     max 120
+ *   ask daily              plus 100   max 500
+ *   evidence brief daily   plus 5     max 50
+ *   deep research daily    max 10
+ *   mission limit          max 20
+ *   watch limit            plus 10    max 200
+ *   watchlist limit        max 250
+ *
+ * Pro's recording allowance was deliberately NOT touched: 300,000s is 83 hours, it
+ * already covers the advertised 80, and cutting a live allowance to make a table
+ * tidier is never worth it.
+ */
+export const LADDER_RESHAPED = "2026-07-28";
+
 export type PlanCode = "free" | "plus" | "pro" | "max";
 
 export interface Plan {
@@ -113,9 +138,10 @@ export interface Plan {
   premiumAnswerLane: boolean;
 }
 
-/** Live values, queried 2026-07-28. Note what these say: on the two meters a heavy
- *  student actually spends — recording minutes and monthly tokens — MAX IS NOT ABOVE
- *  PRO. `planCapInversions()` exists to keep that from happening again unnoticed. */
+/** Live values, read back out of plan_entitlements after the 2026-07-28 reshape.
+ *  Plus is half of Pro and Max is 5x Pro on every meter EXCEPT recording, where the
+ *  owner set the three numbers directly: 20 / 80 / 200 hours. `planCapInversions()`
+ *  now returns empty, and a test asserts that so the next stray row fails CI. */
 export const PLANS: Readonly<Record<PlanCode, Plan>> = {
   free: {
     askDaily: 10,
@@ -124,28 +150,28 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     monthlyTokens: 2_000_000,
     premiumAnswerLane: false,
     priceUsd: 0,
-    searchMonthly: 300,
+    searchMonthly: 60,
     transcriptionMinutes: 120,
   },
   max: {
-    askDaily: 500,
+    askDaily: 1_250,
     code: "max",
-    dailyTokens: 10_000_000,
-    monthlyTokens: 30_000_000,
+    dailyTokens: 20_000_000,
+    monthlyTokens: 125_000_000,
     premiumAnswerLane: true,
     priceUsd: 99,
-    searchMonthly: 300,
-    transcriptionMinutes: 3_600,
+    searchMonthly: 750,
+    transcriptionMinutes: 12_000,
   },
   plus: {
-    askDaily: 100,
+    askDaily: 125,
     code: "plus",
-    dailyTokens: 1_500_000,
-    monthlyTokens: 5_000_000,
+    dailyTokens: 2_000_000,
+    monthlyTokens: 12_500_000,
     premiumAnswerLane: false,
     priceUsd: 9.99,
-    searchMonthly: 100,
-    transcriptionMinutes: 600,
+    searchMonthly: 75,
+    transcriptionMinutes: 1_200,
   },
   pro: {
     askDaily: 250,
@@ -155,6 +181,7 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     premiumAnswerLane: true,
     priceUsd: 19.99,
     searchMonthly: 150,
+    // 300,000s. Reads as "80 hours" in marketing with three hours of slack.
     transcriptionMinutes: 5_000,
   },
 };

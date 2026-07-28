@@ -91,8 +91,11 @@ export default function PricingPage() {
               <div className="plan-price">$19.99<span className="per">/mo</span></div>
               <h3>Agent Pro</h3>
               <p className="plan-desc">For a full course load, every week.</p>
+              {/* Recording hours mirror plan_entitlements.transcription_seconds_month_limit
+                  and the app's own pricing page. Two repos, one number. */}
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
+                <li><IconCheck size={13} />80 hours of lecture recording a month</li>
                 <li><IconCheck size={13} />Deep research with cited reports</li>
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
@@ -104,10 +107,10 @@ export default function PricingPage() {
             <div className="plan">
               <div className="plan-price">$99<span className="per">/mo</span></div>
               <h3>Max</h3>
-              <p className="plan-desc">Real-time AI for the heaviest study and research weeks.</p>
+              <p className="plan-desc">For the heaviest study and research weeks.</p>
               <ul className="plan-features">
-                <li><IconCheck size={13} />Highest limits across the agent</li>
-                <li><IconCheck size={13} />Live copilot — 4,000 transcription minutes a month</li>
+                <li><IconCheck size={13} />Everything in Agent Pro, five times over</li>
+                <li><IconCheck size={13} />200 hours of lecture recording a month</li>
                 <li><IconCheck size={13} />First access to new features</li>
               </ul>
               <div className="plan-cta">

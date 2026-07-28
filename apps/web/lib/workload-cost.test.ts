@@ -104,67 +104,56 @@ test("the diarization add-on is inside the AssemblyAI rates, not forgotten", () 
 
 // ── The plan ladder ──────────────────────────────────────────────────────────
 
-// THE FINDING, 2026-07-28: paying 5x more buys LESS recording. Caps are edited one
-// database row at a time and nothing compares them across plans, so a raise applied
-// to Pro on 2026-07-24 and not to Max inverted the ladder with no screen saying so.
-// This test is written to FAIL once that is fixed — it is a standing alarm, not a
-// description. When the caps are corrected, replace it with the assertion below it.
-test("KNOWN BROKEN: the plan ladder is inverted — paying more buys less", () => {
-  const inversions = planCapInversions();
+// Until 2026-07-28 this read "KNOWN BROKEN": paying 5x more bought LESS recording
+// (Max 3,600 minutes against Pro's 5,000) and Free out-searched both paid plans. Caps
+// are edited one database row at a time and nothing compared them across plans, so a
+// raise applied to Pro and not to Max inverted the ladder with no screen saying so.
+// The ladder has been reshaped; this is now the standing alarm against the next one.
+test("the plan ladder never runs backwards", () => {
   assert.deepEqual(
-    inversions.map((row) => `${row.meter}: ${row.dearer} ${row.dearerValue} < ${row.cheaper} ${row.cheaperValue}`),
-    [
-      // The headline: Max ($99) allows 60 hours of recording a month, Pro ($19.99)
-      // allows 83. A student who records heavily is better off on the cheaper plan.
-      "recording minutes: max 3600 < pro 5000",
-      // And FREE outsearches both paid student plans.
-      "monthly searches: plus 100 < free 300",
-      "monthly searches: pro 150 < free 300",
-    ],
-    "FIXED? Correct this list — or delete the test if there are no inversions left",
+    planCapInversions().map((row) => `${row.meter}: ${row.dearer} ${row.dearerValue} < ${row.cheaper} ${row.cheaperValue}`),
+    [],
+    "a dearer plan is offering less than a cheaper one — fix plan_entitlements, not this test",
   );
 });
 
-// SHAPE, NOT RECOMMENDED VALUES. This fixture exists to prove the checker reports a
-// clean ladder as clean. Do not read the search numbers as a proposal: at ~$0.008 a
-// unit, Pro at 600 searches permits $4.80 of spend against $3.85 of headroom, which
-// would put Pro underwater if anyone used it. The cheap way to clear the search
-// inversion is to bring FREE down (nobody spends near it — 39 searches across every
-// user in 30 days), not to raise the paid plans up.
-test("a corrected ladder reports no inversions", () => {
-  const fixed = {
-    ...PLANS,
-    max: { ...PLANS.max, monthlyTokens: 125_000_000, searchMonthly: 1_500, transcriptionMinutes: 25_000 },
-    plus: { ...PLANS.plus, searchMonthly: 300 },
-    pro: { ...PLANS.pro, searchMonthly: 600 },
-  };
-  assert.deepEqual(planCapInversions(fixed), []);
-});
-
-// The cheap fix, modelled: lower Free instead of raising the plans that pay.
-test("lowering Free's search cap clears the search inversion without spending anything", () => {
-  const fixed = { ...PLANS, free: { ...PLANS.free, searchMonthly: 50 } };
-  assert.deepEqual(
-    planCapInversions(fixed).map((row) => row.meter),
-    ["recording minutes"],
-    "only the recording inversion should be left",
-  );
-});
-
-// A Max subscriber doing exactly what Pro subscribers are PROMISED is stopped by
-// their own plan. This is the user-visible face of the inverted ladder.
-test("a Max subscriber cannot record the 80 hours Pro advertises", () => {
-  const onMax = modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" });
-  const onPro = modelStudentMonth(HEAVY_STUDENT);
-  assert.equal(onPro.withinTranscriptionCap, true);
-  assert.equal(onMax.withinTranscriptionCap, false, "4,800 minutes against Max's 3,600");
-});
-
-test("Max costs 5x Pro but does not currently offer 5x of anything", () => {
-  assert.equal(round(PLANS.max.priceUsd / PLANS.pro.priceUsd, 1), 5);
-  for (const meter of ["monthlyTokens", "transcriptionMinutes", "searchMonthly", "askDaily"] as const) {
-    assert.ok(PLANS.max[meter] < PLANS.pro[meter] * 5, `${meter} is already 5x — update this test`);
+test("Plus is half of Pro and Max is 5x Pro on the meters that scale", () => {
+  for (const meter of ["monthlyTokens", "dailyTokens", "searchMonthly", "askDaily"] as const) {
+    assert.equal(PLANS.max[meter], PLANS.pro[meter] * 5, `max ${meter}`);
+    assert.equal(PLANS.plus[meter], PLANS.pro[meter] / 2, `plus ${meter}`);
   }
+});
+
+// Recording is the exception, and deliberately so. Owner 2026-07-28 set the three
+// numbers directly — 20 / 80 / 200 hours — because a literal 5x would be 400 hours
+// (about 100 hours of lecture a week) and would cost 58 points of margin.
+test("recording follows the owner's three numbers, not the 5x rule", () => {
+  assert.equal(PLANS.plus.transcriptionMinutes, 20 * 60);
+  assert.equal(PLANS.max.transcriptionMinutes, 200 * 60);
+  // Pro keeps its existing 300,000-second row: 83 hours, covering the advertised 80
+  // with slack. Cutting a live allowance to make the table tidier is never worth it.
+  assert.equal(PLANS.pro.transcriptionMinutes, 5_000);
+  assert.ok(PLANS.pro.transcriptionMinutes >= 80 * 60, "the 80-hour promise must stay funded");
+  assert.ok(PLANS.max.transcriptionMinutes < PLANS.pro.transcriptionMinutes * 5, "and 5x recording was rejected");
+});
+
+// The search inversion was cleared by bringing FREE down, not by raising the plans
+// that pay: at ~$0.008 a unit, Pro at 600 searches would permit $4.80 of spend
+// against $3.85 of headroom. Free at 60 is still ~35x what anyone spends (39
+// searches across every user in 30 days).
+test("free never out-searches a paid plan, and the paid caps stayed affordable", () => {
+  assert.ok(PLANS.free.searchMonthly < PLANS.plus.searchMonthly);
+  const proSearchWorstCaseUsd = PLANS.pro.searchMonthly * 0.008;
+  assert.ok(proSearchWorstCaseUsd < modelStudentMonth(HEAVY_STUDENT).headroomUsd, `${proSearchWorstCaseUsd} of search`);
+});
+
+// A Max subscriber used to be stopped by their own plan while doing exactly what Pro
+// subscribers are promised. That was the user-visible face of the inverted ladder.
+test("every plan can record what it advertises, and Max can carry a Pro workload", () => {
+  assert.equal(modelStudentMonth(HEAVY_STUDENT).withinTranscriptionCap, true);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" }).withinTranscriptionCap, true);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, plan: "plus" }).withinTranscriptionCap, true);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 200, plan: "max" }).withinTranscriptionCap, true);
 });
 
 // ── The two ledgers ──────────────────────────────────────────────────────────
@@ -337,10 +326,16 @@ test("half of Pro's workload on half of Pro's price is a WORSE margin, not the s
   assert.equal(halfOfPro.profitable, true);
 });
 
-test("40 hours does not fit Plus's own recording allowance anyway", () => {
-  const halfOfPro = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 40, plan: "plus" });
-  assert.equal(halfOfPro.transcriptionCap, 600, "Plus allows 10 hours a month, not 40");
-  assert.equal(halfOfPro.withinTranscriptionCap, false);
+// Which is why Plus got a QUARTER of Pro's hours rather than half. Recording is both
+// the expensive line and the best reason to upgrade; spending margin on 40 hours
+// would have bought away the upgrade reason as well as the profit.
+test("Plus at 20 hours keeps a real margin where 40 hours would not", () => {
+  const at20 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
+  const at40 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 40, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
+  assert.ok(at20.grossMarginPct > 45, `20h on Plus is ${at20.grossMarginPct}%`);
+  assert.ok(at40.grossMarginPct < 15, `40h on Plus is ${at40.grossMarginPct}%`);
+  assert.equal(at20.withinTranscriptionCap, true);
+  assert.equal(at40.withinTranscriptionCap, false, "and 40 hours is past what Plus allows");
 });
 
 // 5x on the recording meter is the one place "5x everything" breaks down. Not because

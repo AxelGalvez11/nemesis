@@ -23,6 +23,15 @@ interface Tier {
 // Nemesis tiers — freemium: the free plan works every day with no card, and these
 // paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro" |
 // "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the $ shown here must match those prices.
+//
+// RECORDING HOURS MUST MATCH plan_entitlements.transcription_seconds_month_limit
+// (2026-07-28: plus 72,000s, pro 300,000s, max 720,000s). These had drifted badly —
+// the page offered Plus 30 minutes against a real allowance of 20 HOURS, and Max
+// 4,000 minutes against 200 hours — which undersells the plans by more than 3x and
+// is the kind of error nothing fails on. Recheck both together.
+//
+// The old copy also said "live copilot". There is no live lane any more: a recording
+// is transcribed and written up once, after it stops.
 const TIERS: Tier[] = [
   {
     cta: "Get Student",
@@ -30,7 +39,7 @@ const TIERS: Tier[] = [
     features: [
       "Cited answers and research support for any field",
       "Turn your lectures into notes + exam-ready flashcards",
-      "30 minutes of live transcription each month",
+      "20 hours of lecture recording each month",
       "Higher daily limits for answers, notes & decks",
       "Sync your school portal + email on a schedule",
     ],
@@ -47,7 +56,8 @@ const TIERS: Tier[] = [
       "Everything in Student, plus the autopilot",
       "The agent runs your whole semester end-to-end",
       "Web-grounded answers with real citations",
-      "Live copilot — 90 transcription minutes each month",
+      "80 hours of lecture recording each month",
+      "Deep research, and the highest answer quality",
     ],
     id: "pro",
     name: "Agent Pro",
@@ -57,16 +67,19 @@ const TIERS: Tier[] = [
   {
     cta: "Get Max",
     cadence: "/ month",
+    // Only claims that are true of the plan TODAY. Speaker-labels-as-a-Max-feature
+    // and a metered High mode are proposals, not shipped behaviour — they belong
+    // here once they are built, and not one day before.
     features: [
-      "Everything in Agent Pro, with the highest limits",
-      "Live copilot — 4,000 transcription minutes each month",
+      "Everything in Agent Pro, five times over",
+      "200 hours of lecture recording each month",
       "The highest daily limits on everything",
       "First access to every new power we ship",
     ],
     id: "max",
     name: "Max",
     price: "$99",
-    tagline: "Real-time AI for your heaviest study and research.",
+    tagline: "For the heaviest study and research loads.",
   },
 ];
 
