@@ -303,7 +303,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       <Dialog onOpenChange={setGroupOpen} open={groupOpen}>
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={createGroup}>
-            <DialogHeader><DialogTitle>New {label.toLowerCase()} folder</DialogTitle><DialogDescription>Group related {label.toLowerCase()} by course, unit, or topic.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>New {label.toLowerCase()} folder</DialogTitle><DialogDescription>Keep related {label.toLowerCase()} together by course, unit, or topic.</DialogDescription></DialogHeader>
             <label className="grid gap-1.5 text-xs font-medium">Folder name<Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Exam 7" value={groupName} /></label>
             <DialogFooter><Button onClick={() => setGroupOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(groupName)} type="submit" variant="secondary">Create folder</Button></DialogFooter>
           </form>
