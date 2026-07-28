@@ -157,6 +157,11 @@ class BlockDragPlugin implements PluginValue {
 
   private onMove = (event: MouseEvent) => {
     if (this.dragging) return;
+    // Once the pointer is ON the handle, stop re-running the hit test. The
+    // handle is aligned with its block's TOP edge, so the pointer resting on
+    // its upper half reads as "no block here" and would hide the handle at the
+    // exact moment it is being reached for.
+    if (event.target instanceof Node && this.handle.contains(event.target)) return;
     const block = this.blockAt(event.clientY);
     this.hovered = block;
     if (!block) {
@@ -170,8 +175,14 @@ class BlockDragPlugin implements PluginValue {
     this.handle.style.top = `${coords.top - host.top}px`;
   };
 
-  private onLeave = () => {
-    if (!this.dragging) this.handle.style.display = "none";
+  private onLeave = (event: MouseEvent) => {
+    if (this.dragging) return;
+    // Leaving the editor FOR the handle is not leaving. mouseleave does not fire
+    // for descendants, but the handle overhangs the editor's left edge, so a
+    // pointer travelling to it can still trip this on a sub-pixel boundary.
+    const to = event.relatedTarget;
+    if (to instanceof Node && this.handle.contains(to)) return;
+    this.handle.style.display = "none";
   };
 
   private onDown = (event: PointerEvent) => {
@@ -217,7 +228,14 @@ export const blockDragTheme = EditorView.theme({
   [`.${HANDLE_CLASS}`]: {
     position: "absolute",
     left: "-1.15rem",
-    width: "1rem",
+    // 1.15rem, not 1rem, and this is the whole bug. At 1rem the handle spanned
+    // -18.4px to -2.4px while the editor's edge is at 0 — a 2.4px strip of
+    // nothing between them. Reaching for the handle crossed that strip, which
+    // is a real mouseleave on the editor, so the handle hid itself at the
+    // instant it was grabbed for and the drag could never start. Widening it to
+    // meet the edge removes the dead zone; onLeave/onMove above guard the
+    // sub-pixel case. Measured on localhost, not reasoned about.
+    width: "1.15rem",
     cursor: "grab",
     color: "var(--ui-text-quaternary)",
     fontSize: "0.8rem",
@@ -226,7 +244,11 @@ export const blockDragTheme = EditorView.theme({
     opacity: "0",
     transition: "opacity 120ms ease",
   },
-  ".cm-content:hover ~ .cm-block-handle, .cm-block-handle:hover": { opacity: "1" },
+  // `.cm-content:hover ~ .cm-block-handle` used to be here and could never
+  // match: the handle is a child of .cm-editor while .cm-content lives inside
+  // .cm-scroller, so they are not siblings (verified in the DOM). Only the
+  // editor-hover rule below was ever doing anything.
+  // (the `:hover` rule that reveals it fully is the HANDLE_CLASS one below)
   "&:hover .cm-block-handle": { opacity: "0.55" },
   [`.${HANDLE_CLASS}:hover`]: { opacity: "1 !important" },
   "&.cm-block-dragging": { cursor: "grabbing" },
