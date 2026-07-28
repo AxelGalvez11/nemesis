@@ -7,17 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ArrowDown } from "@/lib/workspace/icons";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { ThreadTurn } from "@/lib/workspace/session-turns";
 import { cn } from "@/lib/utils";
 
 import { AssistantMessage, type TurnError } from "./assistant-message";
 import { Intro } from "./intro";
 import { UserMessage } from "./user-message";
 
-export interface ThreadTurn {
-  user: SessionMessage;
-  assistant: SessionMessage | null;
-}
+export type { ThreadTurn };
 
 interface ThreadProps {
   turns: ThreadTurn[];
@@ -35,8 +32,11 @@ interface ThreadProps {
  *  as soon as there is genuinely unread answer below. */
 const JUMP_TO_BOTTOM_AT = 160;
 
+// Null for a turn with no question in it (a recording the app posted by
+// itself): there is no "asked at" to measure from, and subtracting a missing
+// timestamp would put NaN seconds into the activity strip.
 function turnDurationSeconds(turn: ThreadTurn): number | null {
-  if (!turn.assistant) return null;
+  if (!turn.assistant || !turn.user) return null;
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
@@ -111,12 +111,12 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                 const isLast = index === turns.length - 1;
 
                 return (
-                  <div className="flex min-w-0 flex-col gap-(--conversation-turn-gap) pb-(--conversation-turn-gap)" data-turn-pair key={turn.user.at}>
+                  <div className="flex min-w-0 flex-col gap-(--conversation-turn-gap) pb-(--conversation-turn-gap)" data-turn-pair key={turn.user?.at ?? turn.assistant?.at ?? String(index)}>
                     <div
                       className="composer-human-ai-pair-container relative flex min-w-0 flex-col gap-(--conversation-turn-gap)"
                       data-slot="aui_turn-pair"
                     >
-                      <UserMessage message={turn.user} onEdit={onEditMessage} />
+                      {turn.user && <UserMessage message={turn.user} onEdit={onEditMessage} />}
                       <AssistantMessage
                         durationSeconds={turnDurationSeconds(turn)}
                         error={isLast ? error : null}
