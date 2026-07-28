@@ -118,7 +118,11 @@ const INTENTS = new Set([
 const GRADES = new Set([
   "very_strong", "strong", "moderate", "weak", "very_weak", "unknown", "not_applicable",
 ]);
-const PLANS = new Set(["free", "pro"]);
+// All FOUR ladder rungs. This was ["free","pro"], predating Plus and Max, so a
+// Plus or Max subscriber's plan failed validation and was dropped from the
+// event — silently making the paying tiers invisible in analytics, which is
+// exactly where you would look to find out whether they sell.
+const PLANS = new Set(["free", "plus", "pro", "max"]);
 
 const isFiniteNum = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v);
 const isBool = (v: unknown): boolean => typeof v === "boolean";

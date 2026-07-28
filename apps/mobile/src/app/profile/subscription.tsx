@@ -1,40 +1,59 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PLAN_CATALOG, planByCode, type CatalogPlan } from "@nemesis/shared";
+import { fetchEntitlements } from "@/api/billing";
 import { MissionButton } from "@/components/mission-ui";
 import { openPricingPage } from "@/lib/pricing";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Subscription — its own page (owner call), pushed from the Settings sheet. Shows
-// the current plan, what Nemesis Pro adds, and how to get it.
+// Subscription — its own page (owner call), pushed from the Settings sheet.
 //
-// This page used to end on "In-app upgrades are coming soon", which was both
-// stale and self-contradicting: the out-of-credits sheet has always offered a
-// working Upgrade button, so the one screen actually CALLED "Subscription" was
-// the only place claiming you could not subscribe. Unfinished-looking copy is
-// its own App Store rejection reason, and a reviewer who reads this and then
-// finds the other button has been told two different things.
+// Owner 2026-07-28: "make sure all plans are visible". This page used to show
+// exactly two cards, Free and "Nemesis Pro", so Plus and Max — half the ladder,
+// including the cheapest paid step — did not exist as far as a phone user knew.
+// Worse, every line was an adjective ("Higher daily usage limits") rather than
+// the number the student is actually held to, so nothing on the page could be
+// checked against what they get.
 //
-// Both entry points now go through lib/pricing's openPricingPage — read the
-// note there for the US-storefront condition this depends on.
-
-const FREE_INCLUDES = [
-  "Cloud chat with citations",
-  "Library, Study & Calendar in your account — same on phone and web",
-  "Flashcards, notes & the knowledge graph",
-];
-
-const PRO_ADDS = [
-  "Higher daily usage limits",
-  "Priority answers",
-  "Private Vault (end-to-end encrypted library)",
-];
+// It also used to end on "In-app upgrades are coming soon", which contradicted
+// the out-of-credits sheet's working Upgrade button — the one screen CALLED
+// "Subscription" was the only place saying you could not subscribe.
+//
+// The numbers come from @nemesis/shared's PLAN_CATALOG, the same table the web
+// app prints, so a re-price cannot land on one surface and miss the other.
+//
+// The CURRENT plan is read from the server (get_my_entitlements, auth.uid()
+// scoped) rather than assumed to be Free — a Pro subscriber opening this page
+// and being told they are on Free is the kind of thing that generates a refund
+// request. While it loads, no card claims to be current.
 
 export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const styles = useThemedStyles(createStyles);
+  const [currentCode, setCurrentCode] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    fetchEntitlements()
+      .then((result) => {
+        if (alive) setCurrentCode(planByCode(result?.plan).code);
+      })
+      // A failed read leaves currentCode null, so NO card is marked current.
+      // Silently defaulting to Free would tell a paying student they are on the
+      // free plan, which is worse than showing no badge at all.
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <View style={styles.root} testID="subscription-screen">
@@ -44,44 +63,80 @@ export default function SubscriptionScreen() {
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space(6) }]}>
-        <Text style={styles.title}>Subscription</Text>
+        <Text style={styles.title}>Plans</Text>
+        <Text style={styles.subtitle}>
+          Every plan keeps your Library, Study and Calendar in your account, on both phone and web.
+        </Text>
+        {loading ? <ActivityIndicator style={styles.loading} testID="subscription-loading" /> : null}
 
-        <View style={styles.planCard}>
-          <View style={styles.planTop}>
-            <Text style={styles.planName}>Free</Text>
-            <View style={styles.currentPill}>
-              <Text style={styles.currentPillText}>Current plan</Text>
-            </View>
-          </View>
-          {FREE_INCLUDES.map((line) => (
-            <Feature key={line} styles={styles} text={line} />
-          ))}
-        </View>
+        {PLAN_CATALOG.map((plan) => (
+          <PlanCard
+            key={plan.code}
+            plan={plan}
+            isCurrent={plan.code === currentCode}
+            styles={styles}
+          />
+        ))}
 
-        <View style={[styles.planCard, styles.proCard]}>
-          <Text style={styles.proName}>Nemesis Pro</Text>
-          <Text style={styles.proSub}>Everything in Free, plus:</Text>
-          {PRO_ADDS.map((line) => (
-            <Feature key={line} styles={styles} text={line} accent />
-          ))}
-          <View style={styles.soonRow}>
-            {/* The app's own primary button rather than a local one, so this
-                matches the Upgrade button in the out-of-credits sheet — the two
-                places that do the same thing should not look like two
-                different affordances. */}
-            <MissionButton
-              label="Upgrade to Pro"
-              onPress={openPricingPage}
-              variant="primary"
-              testID="subscription-upgrade"
-            />
-            {/* Says where the button goes BEFORE it is tapped. Leaving the app is
-                the one thing a button should never do silently, and it also
-                explains why a plan bought here shows up on every device. */}
-            <Text style={styles.soonText}>Opens your account on the web. Your plan applies everywhere you sign in.</Text>
-          </View>
-        </View>
+        <Text style={styles.footnote}>
+          Upgrading opens your account on the web. Your plan applies everywhere you sign in.
+        </Text>
       </ScrollView>
+    </View>
+  );
+}
+
+/** One plan. Paid plans get the accent treatment; the plan you are ON gets the
+ *  badge and no button, because "Upgrade" on the plan you already hold is the
+ *  clearest way to make someone think they have been charged twice. */
+function PlanCard({
+  plan,
+  isCurrent,
+  styles,
+}: {
+  plan: CatalogPlan;
+  isCurrent: boolean;
+  styles: Styles;
+}) {
+  const paid = plan.priceUsd > 0;
+  return (
+    <View
+      style={[styles.planCard, paid && styles.paidCard, isCurrent && styles.currentCard]}
+      testID={`plan-card-${plan.code}`}
+    >
+      <View style={styles.planTop}>
+        <Text style={[styles.planName, paid && styles.paidName]}>{plan.name}</Text>
+        {isCurrent ? (
+          <View style={styles.currentPill}>
+            <Text style={styles.currentPillText}>Current plan</Text>
+          </View>
+        ) : (
+          // "Free" rather than "$0/mo" — a price of zero reads as an error.
+          <Text style={styles.price}>{paid ? `$${plan.priceUsd}/mo` : "Free"}</Text>
+        )}
+      </View>
+
+      <Feature styles={styles} accent={paid} text={`${plan.askDaily.toLocaleString()} questions a day`} />
+      <Feature
+        styles={styles}
+        accent={paid}
+        text={`${plan.recordingHours} ${plan.recordingHours === 1 ? "hour" : "hours"} of recorded lectures a month`}
+      />
+      <Feature styles={styles} accent={paid} text={`${plan.searchMonthly.toLocaleString()} web searches a month`} />
+      {plan.premiumAnswers ? (
+        <Feature styles={styles} accent={paid} text="Deeper answers on hard questions" />
+      ) : null}
+
+      {isCurrent || !paid ? null : (
+        <View style={styles.buttonRow}>
+          <MissionButton
+            label={`Get ${plan.name}`}
+            onPress={openPricingPage}
+            variant="primary"
+            testID={`plan-upgrade-${plan.code}`}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -102,24 +157,36 @@ const createStyles = (c: ThemeColors) =>
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
     backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1, gap: space(4) },
-    title: { ...type.h1, color: c.text, marginBottom: space(1), marginTop: space(1) },
+    title: { ...type.h1, color: c.text, marginTop: space(1) },
+    subtitle: { fontSize: type.small.fontSize, lineHeight: 21, color: c.text2, marginTop: -space(2) },
+    loading: { marginTop: space(2) },
 
-    planCard: { backgroundColor: c.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, padding: space(4), gap: space(2.5) },
-    proCard: { borderColor: c.accentLine, backgroundColor: c.accentFaint },
+    planCard: {
+      backgroundColor: c.surface,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.line,
+      padding: space(4),
+      gap: space(2.5),
+    },
+    paidCard: { borderColor: c.accentLine, backgroundColor: c.accentFaint },
+    // The plan you hold is outlined rather than tinted differently, so it reads
+    // as "this one" without competing with the paid cards' accent.
+    currentCard: { borderWidth: 2, borderColor: c.accent },
     planTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space(1) },
     planName: { ...type.title, fontWeight: "700", color: c.text },
+    paidName: { color: c.accent },
+    price: { ...type.body, fontWeight: "700", color: c.text2 },
     currentPill: { backgroundColor: c.surface2, borderRadius: radius.pill, paddingHorizontal: space(2.5), paddingVertical: space(1) },
     currentPillText: { ...type.micro, color: c.text2 },
-    proName: { ...type.title, fontWeight: "700", color: c.accent },
-    proSub: { fontSize: type.micro.fontSize, color: c.text2, marginBottom: space(1) },
 
     feature: { flexDirection: "row", alignItems: "flex-start", gap: space(2.5) },
     check: { fontSize: type.small.fontSize, color: c.good, fontWeight: "700", marginTop: 1 },
     checkAccent: { color: c.accent },
     featureText: { flex: 1, fontSize: type.small.fontSize, lineHeight: 21, color: c.text },
 
-    soonRow: { marginTop: space(2), paddingTop: space(3), borderTopWidth: 1, borderTopColor: c.accentLine, gap: space(2) },
-    soonText: { fontSize: type.micro.fontSize, color: c.text2, textAlign: "center" },
+    buttonRow: { marginTop: space(2) },
+    footnote: { fontSize: type.micro.fontSize, color: c.text2, textAlign: "center", marginTop: -space(1) },
   });
 
 type Styles = ReturnType<typeof createStyles>;

@@ -29,6 +29,9 @@ export * from "./health-context.ts";
 export * from "./compare.ts";
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
+// The four plans as a student sees them (2026-07-28). Both apps print from this
+// one table so a re-price cannot land on the web and miss the phone.
+export * from "./plan-catalog.ts";
 // Missions (scheduled background deep-research runs): types + cadence math + entitlement + labels (pure).
 // The cadence math is here so the edge function and mobile clients can advance next_run_at identically.
 export * from "./missions.ts";
