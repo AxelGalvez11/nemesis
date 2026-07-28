@@ -59,6 +59,7 @@ import {
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import { base64ToBytes, bytesToBase64, readWav, trimWavSilence } from "@/lib/wav-trim";
+import { encodeToM4A } from "../../modules/nemesis-audio-encoder";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
   generalPrefsInstruction,
@@ -1042,19 +1043,19 @@ export async function enhanceRecordingArtifact(
 
     const pieces: string[] = [];
     for (const uri of uris) {
-      const path = `${uid}/${generateUuidV4()}.wav`;
-      // Cut the dead air before we pay for it — AssemblyAI bills submitted
-      // duration. `prepareAudioForUpload` returns the ORIGINAL uri untouched
-      // whenever trimming is not safe or not worth it, so a recording can never
-      // be lost to a trimming bug; the worst case is the bill we already have.
+      // Trim the dead air, then compress — see prepareAudioForUpload for why
+      // that order, and why the two steps solve different problems.
       const prepared = await prepareAudioForUpload(uri);
-      // uploadAsync streams straight from disk — a 100MB lecture never has to
-      // fit in JS memory the way a base64 round-trip would force.
+      // The bucket enforces BOTH the extension's implied type and the header, so
+      // they come from the same place rather than being written out twice.
+      const path = `${uid}/${generateUuidV4()}.${prepared.extension}`;
+      // uploadAsync streams straight from disk — a lecture never has to fit in
+      // JS memory the way a base64 round-trip would force.
       const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, prepared.uri, {
-        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": "audio/wav" },
+        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": prepared.contentType },
         httpMethod: "POST",
       });
-      if (prepared.uri !== uri) await deleteLocalAudio([prepared.uri]);
+      if (prepared.temporary) await deleteLocalAudio([prepared.uri]);
       if (upload.status !== 200) throw new Error(`audio upload failed (${upload.status})`);
       const submitRes = await fetch(`${APP_API_BASE}/api/transcription/submit`, {
         // WALL-CLOCK, deliberately — not the trimmed length we just uploaded.
@@ -1156,47 +1157,109 @@ export async function enhanceRecordingArtifact(
 const MAX_TRIM_BYTES = 32 * 1024 * 1024;
 
 interface PreparedAudio {
-  /** What to upload — the trimmed copy if we made one, else the original. */
+  /** What to upload — the compressed copy if we made one, the trimmed copy if
+   *  compression was unavailable, else the original. */
   uri: string;
-  /** The recording's REAL length, read from its WAV header. Null when the file
-   *  could not be parsed, in which case the caller falls back to its estimate. */
+  /** The recording's REAL length before trimming. Null when it could not be
+   *  determined, in which case the caller falls back to its estimate. */
   wallClockSeconds: number | null;
+  /** Drives the object's extension and Content-Type — the bucket enforces both. */
+  extension: "wav" | "m4a";
+  contentType: string;
+  /** True when WE created this file and must delete it after the upload. */
+  temporary: boolean;
 }
 
 /**
- * Cut sustained silence out of one recorded file before it is uploaded.
+ * Get one recorded file ready to upload: TRIM the silence, then COMPRESS it.
  *
- * Every failure path returns the ORIGINAL uri: unreadable file, unparseable
- * header, not 16-bit PCM, too big to hold in memory, nothing worth cutting, or
- * any thrown error. Trimming is an optimisation, and an optimisation must never
- * be able to cost a student their lecture.
+ * The order is the whole design. Trimming needs raw PCM (slicing samples is
+ * arithmetic; slicing AAC is not), so it has to happen while the audio is still
+ * a WAV. Compression has to happen after, or there is nothing cheap left to cut.
+ *
+ * The two do different jobs and it is worth not confusing them:
+ *   TRIM     cuts the transcription BILL   (providers charge by duration)
+ *   COMPRESS makes the UPLOAD POSSIBLE     (the bucket refuses wav, and caps
+ *                                           a file at 40MB vs ~115MB/hr of PCM)
+ *
+ * Every failure path falls back to something uploadable rather than throwing:
+ * unreadable file, unparseable header, not 16-bit PCM, too big to hold in
+ * memory, no native encoder in this build, or any thrown error. Neither step may
+ * ever cost a student their lecture.
  */
 async function prepareAudioForUpload(uri: string): Promise<PreparedAudio> {
+  const original: PreparedAudio = {
+    contentType: "audio/wav",
+    extension: "wav",
+    temporary: false,
+    uri,
+    wallClockSeconds: null,
+  };
+
   try {
     const info = await FileSystem.getInfoAsync(uri);
-    if (!info.exists || info.size === undefined || info.size > MAX_TRIM_BYTES) {
-      return { uri, wallClockSeconds: null };
+    if (!info.exists) return original;
+
+    let working = uri;
+    let workingTemporary = false;
+    let didTrim = false;
+    let wallClockSeconds: number | null = null;
+
+    // 1. TRIM — only for files small enough to hold in memory. A base64 round
+    //    trip costs roughly 2.3x the file size in RAM, and a phone that has just
+    //    recorded for an hour is the worst place to find that out.
+    if (info.size !== undefined && info.size <= MAX_TRIM_BYTES) {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const bytes = base64ToBytes(base64);
+      const parsed = readWav(bytes);
+      // Even when there is nothing to trim, the header is the file's true
+      // duration — better than dividing the elapsed clock by the file count.
+      if (parsed) {
+        wallClockSeconds = Math.max(1, Math.round(parsed.dataLength / 2 / parsed.channels / parsed.sampleRate));
+      }
+
+      const trimmed = trimWavSilence(bytes);
+      if (trimmed) {
+        const target = `${FileSystem.cacheDirectory ?? ""}trimmed-${generateUuidV4()}.wav`;
+        await FileSystem.writeAsStringAsync(target, bytesToBase64(trimmed.bytes), {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        working = target;
+        workingTemporary = true;
+        didTrim = true;
+      }
     }
 
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-    const bytes = base64ToBytes(base64);
-    const parsed = readWav(bytes);
-    // Header first: even when there is nothing to trim, this is the file's true
-    // duration, which beats dividing the elapsed clock by the file count.
-    const wallClockSeconds = parsed
-      ? Math.max(1, Math.round(parsed.dataLength / 2 / parsed.channels / parsed.sampleRate))
-      : null;
+    // 2. COMPRESS. Native and streaming, so unlike the trim it runs even for a
+    //    file too large to read into JS — which is exactly the file that most
+    //    needs it.
+    const encoded = await encodeToM4A(working, `${FileSystem.cacheDirectory ?? ""}lecture-${generateUuidV4()}.m4a`);
+    if (encoded) {
+      if (workingTemporary) await deleteLocalAudio([working]);
+      return {
+        contentType: "audio/m4a",
+        extension: "m4a",
+        temporary: true,
+        uri: encoded.uri,
+        // The encoder measured whatever it was handed: the ORIGINAL duration if
+        // we never trimmed, the trimmed one if we did. Only the former is the
+        // wall-clock number the student's cap is charged.
+        wallClockSeconds: wallClockSeconds ?? (didTrim ? null : Math.max(1, Math.round(encoded.seconds))),
+      };
+    }
 
-    const trimmed = trimWavSilence(bytes);
-    if (!trimmed) return { uri, wallClockSeconds };
-
-    const target = `${FileSystem.cacheDirectory ?? ""}trimmed-${generateUuidV4()}.wav`;
-    await FileSystem.writeAsStringAsync(target, bytesToBase64(trimmed.bytes), {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return { uri: target, wallClockSeconds };
+    // No encoder (Android, Expo Go, or an encode failure). Upload what we have —
+    // the bucket will refuse a wav today, which is the pre-existing state, not a
+    // regression introduced here.
+    return {
+      contentType: "audio/wav",
+      extension: "wav",
+      temporary: workingTemporary,
+      uri: working,
+      wallClockSeconds,
+    };
   } catch {
-    return { uri, wallClockSeconds: null };
+    return original;
   }
 }
 
