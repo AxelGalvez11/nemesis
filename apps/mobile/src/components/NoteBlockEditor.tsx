@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
+  Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   useWindowDimensions,
   View,
@@ -50,8 +53,9 @@ import {
 import { MessageBody } from "./MessageBody";
 import { NoteTableEditor } from "./NoteTableEditor";
 import { isTableBlock } from "@/lib/markdown-table";
+import { markdownSpans } from "@/lib/markdown-spans";
 import { createMarkdownStyles } from "@/theme/markdown";
-import type { ThemeColors } from "@/theme/palette";
+import { rgba, type ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
 
@@ -67,24 +71,32 @@ import { control, radius, space, type } from "@/theme/tokens";
 // it into real blocks.
 //
 // THE UNIT IS AS SMALL AS IT CAN HONESTLY BE (owner 2026-07-24: "markdown
-// syntax should only be present when cursor is next to it"). Character-level
-// hiding — the `**` disappearing while the caret is three words away — is not
-// reachable in React Native at all: there is no way to render a text field
-// whose displayed text differs from its value, and nested <Text> children can
-// style characters but never omit them. What IS reachable is shrinking the
-// unit, so a heading, a list item and a quote line are each their own block
-// (splitLineOriented) and tapping one item of a six-item list no longer reveals
-// all six items' dashes. Prose and wrapped list items stay whole, because a
-// continuation line rendered alone would lose the item it belongs to.
+// syntax should only be present when cursor is next to it"): a heading, a list
+// item and a quote line are each their own block (splitLineOriented), so tapping
+// one item of a six-item list no longer reveals all six items' dashes. Prose and
+// wrapped list items stay whole, because a continuation line rendered alone
+// would lose the item it belongs to.
+//
+// AND THE SYNTAX ON THAT LINE IS NOW DIMMED, NOT SHOWN RAW (2026-07-28).
+// This paragraph used to say character-level hiding was "not reachable in React
+// Native at all". Half of that was right and half was load-bearing and wrong:
+// a text field genuinely cannot display text different from its value, but
+// nested <Text> children CAN style characters — and a probe on the simulator
+// confirmed an EDITABLE TextInput honours them. So the markers stay in the
+// buffer, where every offset lib/note-edit.ts computes is still true, and are
+// painted in the hint colour while the words they wrap take the emphasis they
+// describe. lib/markdown-spans.ts does the splitting and is tested to reproduce
+// the source exactly — if it ever did not, the editor would be showing something
+// other than what it saves.
 //
 // Smaller units mean more boundaries, which is why Backspace at offset 0 now
 // merges with the block above (onActiveKeyPress) — joining two bullets is an
 // everyday edit and must not read as a stuck keyboard.
 //
 // The formatting toolbar is the floating PILL riding above the keyboard
-// (owner: "show a pill component above keyboard with editing toolbar") — an
-// InputAccessoryView on iOS, pinned under the editor on Android (which has
-// no accessory-view equivalent). Its buttons run the same pure transforms
+// (owner: "show a pill component above keyboard with editing toolbar"), pinned
+// to the editor's bottom edge on BOTH platforms — see the note beside
+// `toolbarDock` for why it is no longer an InputAccessoryView. Its buttons run the same pure transforms
 // the web toolbar exposes (lib/note-edit.ts): heading cycle, bold, italic,
 // underline, highlight, strikethrough, inline code, bullet/numbered list,
 // quote, wikilink, link, divider, table — all toggle-aware where the web's
@@ -95,8 +107,8 @@ import { control, radius, space, type } from "@/theme/tokens";
 // note.tsx's existing draftRef + debounced autosave), so save semantics are
 // byte-identical to the old single-TextInput editor.
 
-// (The old `note-block-toolbar` accessory id is gone — the pill is a keyboard-
-// tracking view now. See the note beside useAnimatedKeyboard for why.)
+// (The old `note-block-toolbar` accessory id is gone — the pill is a docked view
+// now. See the note beside `toolbarDock` for why.)
 
 // lib/accessory-bar.ts writes its height out as a literal so it can stay
 // import-free and therefore testable. This line is what keeps that literal
@@ -168,6 +180,38 @@ export function NoteBlockEditor({
   // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
   const { width: windowWidth } = useWindowDimensions();
   const pillWidth = accessoryPillWidth(windowWidth, space(3));
+
+  // An InputAccessoryView came and went WITH the keyboard for free. A docked
+  // view does not, so a dismissed keyboard used to leave the pill stranded at
+  // the bottom of the page with nothing to format into. Tracked explicitly.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    // "…Will…" on iOS so the pill leaves with the keyboard's animation rather
+    // than a beat after it; Android only emits the "…Did…" pair.
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const shown = Keyboard.addListener(showEvent, () => setKeyboardUp(true));
+    const hidden = Keyboard.addListener(hideEvent, () => setKeyboardUp(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
+  /** SpanKind -> style, so the render is a lookup rather than a switch. */
+  const spanStyles = useMemo(
+    () => ({
+      code: styles.spanCode,
+      em: styles.spanEm,
+      mark: styles.spanMark,
+      marker: styles.spanMarker,
+      strike: styles.spanStrike,
+      strong: styles.spanStrong,
+      text: styles.spanText,
+      underline: styles.spanUnderline,
+    }),
+    [styles],
+  );
 
   // The pill rides the keyboard from JS instead of being an InputAccessoryView.
   //
@@ -428,7 +472,6 @@ export function NoteBlockEditor({
             <TextInput
               key={`active-${focusEpochRef.current}`}
               style={styles.activeBlock}
-              value={block.body}
               onChangeText={onEditActive}
               onSelectionChange={(e) => {
                 selRef.current = e.nativeEvent.selection;
@@ -447,7 +490,18 @@ export function NoteBlockEditor({
               placeholder={nb.blocks.length <= 1 && block.body === "" ? "Start writing" : undefined}
               placeholderTextColor={c.textHint}
               testID="note-block-input"
-            />
+            >
+              {/* The source, painted rather than shown raw: markers in the faint
+                  hint colour, the words they wrap in the emphasis they describe.
+                  Children instead of `value` — that IS the value to a TextInput,
+                  and lib/markdown-spans.ts is tested to reproduce the source
+                  exactly, so what is displayed and what is saved cannot drift. */}
+              {markdownSpans(block.body).map((span, spanIndex) => (
+                <Text key={spanIndex} style={spanStyles[span.kind]}>
+                  {span.text}
+                </Text>
+              ))}
+            </TextInput>
           ) : (
             <Pressable
               key={`block-${i}`}
@@ -486,7 +540,7 @@ export function NoteBlockEditor({
           source, which for a table would mean dropping `**` into the middle of
           the pipes the grid is hiding. The grid's own +/− controls are its
           toolbar. */}
-      {activeIdx !== null && !activeIsTable ? (
+      {activeIdx !== null && !activeIsTable && keyboardUp ? (
         <View style={styles.toolbarDock} pointerEvents="box-none">
           {toolbar}
         </View>
@@ -501,6 +555,28 @@ const createStyles = (c: ThemeColors) =>
     // flexGrow so the tail below can stretch to the bottom of the screen — see
     // `tail`. paddingTop comes from the topInset prop, applied inline.
     scrollBody: { paddingHorizontal: space(5), paddingBottom: space(4), flexGrow: 1 },
+    // How each run of the caret's line is painted (lib/markdown-spans.ts).
+    //
+    // `marker` is the point of the exercise: the syntax stays in the buffer, so
+    // every offset the toolbar's transforms rely on is still true, but at the
+    // hint colour it reads as faint punctuation rather than as code. The rest
+    // give the words the emphasis their markers describe, so the line you are
+    // editing looks like the line you will read.
+    //
+    // Deliberately NOT font-size tricks. Shrinking a marker to nothing would
+    // hide it completely and put the caret somewhere the eye cannot follow —
+    // tapping "between" two invisible asterisks is a cursor that appears to
+    // stick. Dimming keeps the character's width honest.
+    spanMarker: { color: c.textHint },
+    spanStrong: { fontWeight: "700" },
+    spanEm: { fontStyle: "italic" },
+    // The same 24% accent wash the reader uses for ==marks== (theme/markdown.ts),
+    // so a highlight does not change colour the moment you tap into its line.
+    spanMark: { backgroundColor: rgba(c.accent, 0.24) },
+    spanCode: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+    spanStrike: { textDecorationLine: "line-through" },
+    spanUnderline: { textDecorationLine: "underline" },
+    spanText: {},
     // The revealed (raw-source) block. Owner 2026-07-22: editing "should work
     // like any other notetaking app (like a notepad)" — so the block that holds
     // the caret is styled EXACTLY like the prose around it. It used to carry an
