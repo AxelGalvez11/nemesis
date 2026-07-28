@@ -43,6 +43,18 @@ export const SILENCE_HOLD_MS = 1_500;
  *  from before it is allowed to act on them. */
 export const WARMUP_MS = 3_000;
 
+/**
+ * A gap longer than this means the browser throttled the sampler — a hidden tab
+ * can drop it to once a second, or in a fully backgrounded one, once a MINUTE.
+ *
+ * One sample cannot speak for a minute of audio. Acting on it would let a single
+ * unlucky quiet reading pause the recorder mid-sentence, with no second sample
+ * to resume it until the next tick — losing the very thing we are recording. So
+ * an untrusted gap can RESUME capture but can never stop it: the same direction
+ * every other default here leans.
+ */
+export const MAX_TRUSTED_STEP_MS = 1_000;
+
 export interface SilenceGate {
   /** Rolling estimate of room tone, 0..1. */
   noiseFloor: number;
@@ -96,7 +108,10 @@ export function stepSilenceGate(gate: SilenceGate, level: number, elapsedMs: num
   if (isSound) return { capturing: true, noiseFloor, quietMs: 0, totalMs };
 
   const quietMs = gate.quietMs + step;
-  const mayPause = totalMs >= WARMUP_MS;
+  // A throttled gap cannot be trusted to have been quiet just because the one
+  // sample at the end of it was — keep capturing and wait for a real reading.
+  const trusted = step <= MAX_TRUSTED_STEP_MS;
+  const mayPause = trusted && totalMs >= WARMUP_MS;
   return { capturing: !(mayPause && quietMs >= SILENCE_HOLD_MS), noiseFloor, quietMs, totalMs };
 }
 

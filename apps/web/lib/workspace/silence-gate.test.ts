@@ -87,6 +87,22 @@ test("room tone is learned, so a noisy hall still gates", () => {
   assert.equal(stepSilenceGate(gate, 0.3, TICK).capturing, true, "a voice over the hiss resumes it");
 });
 
+// A hidden tab throttles the sampler to ~1 Hz, and a fully backgrounded one can
+// drop to once a MINUTE. One sample cannot speak for a minute of audio: acting
+// on it would pause the recorder mid-sentence with nothing to resume it until
+// the next tick, losing the lecture. Untrusted gaps may resume, never stop.
+test("a throttled gap never pauses the recorder", () => {
+  const warm = run(createSilenceGate(), 0.4, WARMUP_MS);
+  const throttled = stepSilenceGate(stepSilenceGate(warm, 0, 60_000), 0, 60_000);
+  assert.equal(throttled.capturing, true, "two minutes of gap, on two samples, must not stop capture");
+});
+
+test("but a throttled gap can still resume capture", () => {
+  const paused = run(run(createSilenceGate(), 0.4, WARMUP_MS), 0, SILENCE_HOLD_MS + TICK);
+  assert.equal(paused.capturing, false);
+  assert.equal(stepSilenceGate(paused, 0.5, 60_000).capturing, true, "sound resumes however long the gap");
+});
+
 test("garbage samples cannot break the gate", () => {
   const gate = createSilenceGate();
   for (const bad of [Number.NaN, Infinity, -1, 5]) {
