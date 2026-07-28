@@ -2,43 +2,40 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-na
 import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
+import { CalendarIcon, ChevronIcon, FileIcon, LibraryIcon, MicIcon, StudyIcon } from "./icons";
+import { artifactCard } from "@/lib/artifact-card";
 import type { ChatOutput } from "@/lib/chat-thread";
 import { polishState } from "@/lib/recording";
 import type { ThemeColors } from "@/theme/palette";
-import { useThemedStyles } from "@/theme/ThemeProvider";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Deliverable chips (chat.tsx) — a thread-level row at the top of the
+// Deliverable cards (chat.tsx) — a thread-level row at the top of the
 // transcript for chat_threads.meta.outputs (session artifacts, e.g. a
 // Record-mode recording) and a per-message row under any assistant turn that
-// carries chat_messages.meta.outputs — plus the bottom-up sheet either kind
-// of chip opens. SCOPE NOTE: the phone Chat surface does not execute tools,
-// so outputs here come from web's Record mode OR the phone's own Record
-// screen (app/record.tsx via api/chat.ts saveRecordingArtifact) — today
-// that's effectively only kind:"recording" (web's flashcards/slides/test/
-// report kinds are declared in the shared type but not yet produced by any
-// chat surface; see lib/chat-thread.ts's ChatOutput doc). This component
-// itself stays a display layer.
+// carries chat_messages.meta.outputs — plus the bottom-up sheet a card with
+// nowhere to navigate opens instead.
+//
+// Outputs reach here from THREE places: the phone's own chat tools
+// (api/agentTools.ts, since the tool lane landed), the phone's Record screen
+// (api/chat.ts saveRecordingArtifact), and web's Record mode, synced down.
+//
+// Owner 2026-07-27: a created deck used to render as a bare pill reading "Deck
+// created" — no name, no destination, and identical to every other deck the
+// student had ever made. The wording now comes from lib/artifact-card.ts,
+// which is pure and tested; this file stays a display layer.
 
-const OUTPUT_CHIP_LABEL: Record<ChatOutput["kind"], string> = {
-  flashcards: "Deck created",
-  mindmap: "Mind map created",
-  other: "Output",
-  recording: "Recording",
-  report: "Report",
-  slides: "Slides created",
-  test: "Test created",
-};
-
-const OUTPUT_KIND_LABEL: Record<ChatOutput["kind"], string> = {
-  flashcards: "Flashcards",
-  mindmap: "Mind map",
-  other: "Output",
-  recording: "Recording",
-  report: "Report",
-  slides: "Slides",
-  test: "Test",
-};
+/** The icon says WHERE the card goes, matching its destination line, rather
+ *  than what kind of object it is — the card's whole job is the routing. A
+ *  recording is the exception: it has no page to land on, so it keeps the mic
+ *  that says what it is. */
+function ArtifactIcon({ kind, where, color }: { kind: ChatOutput["kind"]; where: string; color: string }) {
+  if (kind === "recording") return <MicIcon size={18} color={color} />;
+  if (where.startsWith("Study")) return <StudyIcon size={18} color={color} />;
+  if (where === "Library") return <LibraryIcon size={18} color={color} />;
+  if (where === "Calendar") return <CalendarIcon size={18} color={color} />;
+  return <FileIcon size={18} color={color} />;
+}
 
 function formatCreatedAt(iso: string | undefined): string {
   if (!iso) return "";
@@ -54,29 +51,66 @@ function formatDuration(seconds: number | undefined): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-/** A horizontal row of deliverable chips — used BOTH as the thread-level
+/** A stack of deliverable cards — used BOTH as the thread-level
  *  ListHeaderComponent (chat_threads.meta.outputs) and under a single message
  *  (chat_messages.meta.outputs), so the two call sites in chat.tsx share one
- *  rendering + one wording. */
-export function DeliverableChipRow({ outputs, onSelect }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void }) {
+ *  rendering + one wording.
+ *
+ *  Full width and stacked rather than a wrapping pill row: the card now carries
+ *  a name and a destination, and a pill that has to hold both either truncates
+ *  the name or leaves an orphan on the next line.
+ *
+ *  `compact` is for the THREAD-LEVEL header, where every row is a recording the
+ *  student made in this conversation. A three-line card is right under a single
+ *  answer and wrong as a header: a thread with four recordings would open on
+ *  ~360pt of chrome before the first message. One line each keeps it to a
+ *  quarter of that, and the kicker/destination earn their space least there —
+ *  the rows are all the same kind, and a recording has nowhere to route to. */
+export function DeliverableCardStack(
+  { outputs, onSelect, compact = false }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void; compact?: boolean },
+) {
   const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   if (!outputs.length) return null;
   return (
-    <View style={styles.chipRow} testID="chat-deliverables-row">
-      {outputs.map((output) => (
-        <Pressable
-          key={output.id}
-          style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
-          onPress={() => onSelect(output)}
-          testID={`chat-deliverable-chip-${output.id}`}
-        >
-          <Text style={styles.chipText} numberOfLines={1}>
-            {polishState(output, new Date()) === "pending"
-              ? `${OUTPUT_CHIP_LABEL[output.kind]} · Polishing…`
-              : OUTPUT_CHIP_LABEL[output.kind]}
-          </Text>
-        </Pressable>
-      ))}
+    <View style={styles.cardStack} testID="chat-deliverables-row">
+      {outputs.map((output) => {
+        const card = artifactCard(output);
+        // A recording being re-transcribed says so IN PLACE of its destination:
+        // the text it holds is about to be replaced, so "tap to read" would be
+        // pointing at something that is still changing.
+        const polishing = polishState(output, new Date()) === "pending";
+        return (
+          <Pressable
+            key={output.id}
+            style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && styles.cardPressed]}
+            onPress={() => onSelect(output)}
+            accessibilityRole="button"
+            accessibilityLabel={`${card.kicker}: ${card.title}. ${card.where}`}
+            testID={`chat-deliverable-card-${output.id}`}
+          >
+            <View style={styles.cardIcon}>
+              <ArtifactIcon kind={output.kind} where={card.where} color={colors.accent} />
+            </View>
+            <View style={styles.cardText}>
+              {compact ? null : (
+                <Text style={styles.cardKicker} numberOfLines={1}>
+                  {card.kicker.toUpperCase()}
+                </Text>
+              )}
+              <Text style={styles.cardTitle} numberOfLines={compact ? 1 : 2}>
+                {card.title}
+              </Text>
+              {compact && !polishing ? null : (
+                <Text style={styles.cardWhere} numberOfLines={1}>
+                  {polishing ? "Polishing transcript…" : card.where}
+                </Text>
+              )}
+            </View>
+            <ChevronIcon size={18} color={colors.text3} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -88,7 +122,9 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
   // together), and SlideUpSheet is designed to stay mounted through its own
   // close fade (see its doc — "no first-open flicker"). Optional-chain every
   // field instead, same posture as UpgradeSheet's message fallback.
-  const kindLabel = output ? OUTPUT_KIND_LABEL[output.kind] : "";
+  // Same wording table the card uses, so the sheet's heading cannot disagree
+  // with the card the student just tapped.
+  const kindLabel = output ? artifactCard(output).kicker : "";
   const polish = output ? polishState(output, new Date()) : "none";
   const meta = output
     ? [kindLabel, formatDuration(output.durationSeconds), formatCreatedAt(output.createdAt), polish === "done" ? "Polished" : ""]
@@ -120,7 +156,9 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
         <View style={styles.buttons}>
           {output?.route ? (
             <MissionButton
-              label={output.kind === "slides" ? "Open slides" : output.kind === "other" ? "Open note" : "Open Study"}
+              // Named off the same routing table the card uses, so the sheet
+              // cannot promise "Open note" for a saved calendar event.
+              label={artifactCard(output).place ? `Open in ${artifactCard(output).place}` : "Open"}
               variant="primary"
               onPress={() => {
                 onClose();
@@ -146,10 +184,23 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5), marginTop: space(1.5), paddingHorizontal: space(0.5) },
-    chip: { paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint },
-    chipPressed: { backgroundColor: c.surface2 },
-    chipText: { ...type.small, color: c.accent, fontWeight: "600" },
+    cardStack: { gap: space(1.5), marginTop: space(2), paddingHorizontal: space(0.5) },
+    card: {
+      flexDirection: "row", alignItems: "center", gap: space(2.5),
+      paddingVertical: space(2), paddingHorizontal: space(2.5),
+      borderRadius: radius.md, borderCurve: "continuous",
+      borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint,
+    },
+    cardCompact: { paddingVertical: space(1.25) },
+    cardPressed: { backgroundColor: c.surface2 },
+    // Fixed so the three text lines start on the same x whatever the glyph is.
+    cardIcon: { width: 22, alignItems: "center" },
+    // minWidth:0 is what lets numberOfLines truncate instead of pushing the
+    // chevron off the card — a flex child's default min-width is its content.
+    cardText: { flex: 1, minWidth: 0, gap: space(0.25) },
+    cardKicker: { ...type.micro, color: c.accent, letterSpacing: 1.1, fontWeight: "600" },
+    cardTitle: { ...type.small, color: c.text, fontWeight: "600" },
+    cardWhere: { ...type.micro, color: c.text3 },
     // Height is owned by SlideUpSheet's body (collapsed cap + drag-up-to-
     // expand, owner 2026-07-21); flexShrink lets the scroll area compress to
     // that animated cap instead of overflowing it.

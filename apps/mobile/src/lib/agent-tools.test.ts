@@ -11,6 +11,7 @@ import {
   AGENT_TOOL_NAMES,
   AGENT_TOOLS,
   clip,
+  deckNameParts,
   isAgentToolName,
   matchDeckName,
   MAX_CARDS_PER_CALL,
@@ -202,6 +203,32 @@ Deno.test("an unknown or empty name means make a new deck", () => {
   assertEquals(matchDeckName("Neurology", ["Cardiology"]), null);
   assertEquals(matchDeckName("   ", ["Cardiology"]), null);
   assertEquals(matchDeckName("Cardiology", []), null);
+});
+
+Deno.test("a deck name is split into words a person would say, keeping the exact string for tools", () => {
+  // The model leaked "Biochemistry::Krebs cycle" into a saved chat message on
+  // device; it can only say back what it is handed.
+  assertEquals(deckNameParts("Biochemistry::Krebs cycle"), {
+    folder: "Biochemistry",
+    full: "Biochemistry::Krebs cycle",
+    name: "Krebs cycle",
+  });
+  assertEquals(deckNameParts("Pharm::Cardio::Beta blockers").folder, "Pharm / Cardio");
+});
+
+Deno.test("a top-level deck has no folder, and the name is left alone", () => {
+  assertEquals(deckNameParts("Krebs cycle"), { folder: "", full: "Krebs cycle", name: "Krebs cycle" });
+});
+
+Deno.test("a malformed deck name still yields something sayable", () => {
+  assertEquals(deckNameParts("A :: :: B").name, "B");
+  assertEquals(deckNameParts("").name, "");
+});
+
+Deno.test("the deck-listing tool tells the model not to show the '::' encoding", () => {
+  // Pinned wiring: the split above only helps if the instruction rides along.
+  const list = AGENT_TOOLS.find((schema) => schema.function.name === "list_study_decks");
+  assertEquals(list?.function.description.includes("NEVER show"), true);
 });
 
 Deno.test("the test-writing tool carries the item-writing rules", () => {

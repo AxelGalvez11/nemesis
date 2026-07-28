@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
-import { LibraryIcon, SearchIcon } from "./icons";
+import { FileIcon, LibraryIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -12,14 +12,13 @@ import { radius, space, type } from "@/theme/tokens";
 // screen's composer pill; GlassSurface `opaque` for the same page-bleed-through
 // fix). Two rows:
 //  - "Attach from Library" opens AttachLibrarySheet.tsx.
+//  - "Add a file" opens the system picker for a lecture the student was given
+//    (PDF / Word / PowerPoint). It fills the SAME one-shot chip: a deck and an
+//    attached note are the same thing once they are text.
 //  - "Take photo" opens PhotoCaptureSheet.tsx — the shot is uploaded, read by
 //    the server, and lands in the SAME one-shot attachment chip the Library
 //    picker fills, because a photograph and an attached note are the same thing
 //    once they are text (owner 2026-07-24).
-//  - "Deep research" is a PERSISTENT toggle (checkmark on the right when on) —
-//    stays on across sends until the student turns it off again, unlike the
-//    attach flow's one-shot chip (owner spec calls it a "toggle row", which
-//    reads as a mode rather than a per-message action).
 //
 // A third row briefly opened Record from here (owner 2026-07-22, morning).
 // Record moved OUT the same day: it's the round accent button on the composer
@@ -32,19 +31,17 @@ import { radius, space, type } from "@/theme/tokens";
 // intelligence picker out of the '+' menu, it should have its own pill box").
 // It's ComposerEffortMenu.tsx now — a pill on the composer row itself. Don't
 // re-add it here; the menu is for one-off actions, not the standing dial.
-// Mirrors web's own "+" AddMenu (apps/web/components/workspace/sessions/
-// composer.tsx) in spirit — same two concepts, "Files"→"Attach from Library"
-// and "Deep research" verbatim (right down to reusing a search-glyph icon for
-// it, same as web's Codicon "search") — but WORKING here, where web's own
-// "Deep research" item turned out to be an unwired stub with no onSelect.
+// The "Deep research" row was removed 2026-07-27 (owner). The CONTROL only:
+// research itself is untouched, because routeForTurn already sends a question
+// that needs current sources down the research lane on its own — which is what
+// the toggle was forcing by hand.
 export function ComposerPlusMenu({
   visible,
   onClose,
   bottomOffset,
   onAttach,
+  onAddFile,
   onTakePhoto,
-  deepResearchOn,
-  onToggleDeepResearch,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -53,9 +50,9 @@ export function ComposerPlusMenu({
    *  row itself renders with (see Composer.tsx's COMPOSER_PILL_HEIGHT). */
   bottomOffset: number;
   onAttach: () => void;
+  /** Opens the system file picker for a PDF / Word / PowerPoint (api/documents.ts). */
+  onAddFile: () => void;
   onTakePhoto: () => void;
-  deepResearchOn: boolean;
-  onToggleDeepResearch: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -71,9 +68,8 @@ export function ComposerPlusMenu({
   }, [visible, progress]);
 
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
-  // Deep research is a toggle — stays open after picking it (only "Attach" and
-  // an outside tap close the menu); Attach always closes it (it hands off to a
-  // full-screen sheet next).
+  // Every row hands off to a sheet or a system picker, so every row closes the
+  // menu on the way out.
   const pickAndClose = (fn: () => void) => {
     onClose();
     fn();
@@ -96,6 +92,15 @@ export function ComposerPlusMenu({
             <Text style={styles.rowLabel}>Attach from Library</Text>
           </Pressable>
           <Pressable
+            testID="composer-plus-file"
+            onPress={() => pickAndClose(onAddFile)}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+          >
+            <FileIcon size={17} color={c.text2} />
+            <Text style={styles.rowLabel}>Add a file</Text>
+          </Pressable>
+          <Pressable
             testID="composer-plus-camera"
             onPress={() => pickAndClose(onTakePhoto)}
             style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
@@ -104,25 +109,13 @@ export function ComposerPlusMenu({
             <CameraIcon size={17} color={c.text2} />
             <Text style={styles.rowLabel}>Take photo</Text>
           </Pressable>
-          <Pressable
-            testID="composer-plus-deep-research"
-            onPress={() => pickAndClose(onToggleDeepResearch)}
-            style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
-            accessibilityRole="button"
-            accessibilityState={{ checked: deepResearchOn }}
-          >
-            <SearchIcon size={17} color={c.text2} />
-            <Text style={styles.rowLabel}>Deep research</Text>
-            <View style={styles.rowSpacer} />
-            {deepResearchOn ? <CheckIcon size={16} color={c.accent} /> : null}
-          </Pressable>
         </GlassSurface>
       </Animated.View>
     </View>
   );
 }
 
-/** Local camera glyph — same rule as CheckIcon below: components/icons.tsx has
+/** Local camera glyph — components/icons.tsx has
  *  no camera, and a one-off glyph stays in the file that needs it. */
 function CameraIcon({ size = 17, color }: { size?: number; color: string }) {
   return (
@@ -139,16 +132,6 @@ function CameraIcon({ size = 17, color }: { size?: number; color: string }) {
   );
 }
 
-/** Local checkmark glyph — the "Deep research" row's active indicator. No
- *  check icon exists in components/icons.tsx, and new glyphs stay local to the
- *  file that needs them rather than growing the shared set. */
-function CheckIcon({ size = 16, color }: { size?: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M4.5 12.5 9.5 17.5 19.5 6.5" fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
@@ -164,5 +147,4 @@ const createStyles = (c: ThemeColors) =>
     rowDivider: { borderTopWidth: 1, borderTopColor: c.line },
     rowPressed: { backgroundColor: c.surface },
     rowLabel: { ...type.body, color: c.text },
-    rowSpacer: { flex: 1 },
   });

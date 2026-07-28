@@ -65,6 +65,32 @@ const SKILL_INSTRUCTIONS: Record<AcademicSkill, string> = {
     `Academic skill: Slides Builder. You MUST call create_slide_deck so the slide deck appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_SLIDES_FOLDER}". Make each slide serve one purpose, keep bullets concise, include speaker notes only when they add teaching value, and finish with retrieval questions rather than a decorative summary.`,
 };
 
-export function academicSkillInstruction(text: string): string {
-  return SKILL_INSTRUCTIONS[detectAcademicSkill(text)];
+/**
+ * What to do when the student has handed over course material — a lecture deck, a
+ * reading, a photographed page — WITHOUT saying what they want made from it.
+ *
+ * Attaching a lecture is not a question, so the general skill would answer it as
+ * one and produce a summary. A summary is the least useful thing to do with a
+ * lecture: the student already has the lecture. What they cannot get from it
+ * quickly is what the lecturer marked as important, and study material built from
+ * it. So: pull out the signal, then ASK which artifact to build.
+ *
+ * It deliberately does NOT create anything unprompted — that stays true to the
+ * general skill's rule, and creating a 60-card deck nobody asked for is worse than
+ * asking one short question.
+ */
+const MATERIAL_OFFER = [
+  "The student has attached course material and has not said what to make from it.",
+  "First, extract the signal rather than summarising: state the learning objectives if the material names any (they are often on a slide titled Objectives or Outcomes), then the key content a student is expected to be able to use, and say what any figure, diagram or table is actually showing.",
+  "Follow the material's own emphasis. Headings, bold text and how many slides a topic is given are the lecturer telling you what matters; administrative slides, contact details, acknowledgements and reading lists are not content.",
+  "Do not pad this into a summary of everything, and do not restate the material in its own order just to be complete.",
+  "Then ask which they want built from it: study notes, flashcards, a practice test, or all three. Ask once, in one short sentence, and do not create any of them until they answer.",
+].join(" ");
+
+export function academicSkillInstruction(text: string, hasMaterial = false): string {
+  const skill = detectAcademicSkill(text);
+  // Only when they have NOT asked for something specific. "Make flashcards from
+  // this" already names the artifact, and asking again would be a stall.
+  if (hasMaterial && skill === "general") return `${SKILL_INSTRUCTIONS.general}\n\n${MATERIAL_OFFER}`;
+  return SKILL_INSTRUCTIONS[skill];
 }

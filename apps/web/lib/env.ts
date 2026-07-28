@@ -78,12 +78,14 @@ export const emailFrom = process.env.EMAIL_FROM ?? "Nemesis <support@enternemesi
 // (Vercel sends it as a Bearer token on cron invocations). Alerts email the owner.
 export const cronSecret = process.env.CRON_SECRET ?? "";
 export const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+// The LIVE (streaming) lane only. The batch enhance-transcript lane moved to
+// supabase/functions/nemesis-transcribe on 2026-07-27, and reads its own
+// ASSEMBLYAI_API_KEY and GROQ_API_KEY from Supabase's function secrets — this
+// app no longer needs either for that lane. Keeping GROQ_API_KEY set here has
+// no effect; set it on the FUNCTION.
 export const assemblyAiApiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
 export const assemblyAiSpeechModel =
   process.env.ASSEMBLYAI_SPEECH_MODEL ?? "universal-streaming-multilingual";
-// Primary engine for the enhance-transcript pass (batch Whisper at ~1/4 the
-// AssemblyAI price); unset key => AssemblyAI handles everything.
-export const groqApiKey = process.env.GROQ_API_KEY ?? "";
 export const balanceAlertEmail = process.env.BALANCE_ALERT_EMAIL ?? "axelgalvez1121@gmail.com";
 const rawBalanceThreshold = Number(process.env.DEEPSEEK_BALANCE_ALERT_USD ?? "5");
 export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? rawBalanceThreshold : 5;

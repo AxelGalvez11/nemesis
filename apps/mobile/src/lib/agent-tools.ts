@@ -151,6 +151,25 @@ export function usableSlides(raw: unknown): UsableSlide[] {
  * creates the deck exactly as named, which is the only outcome that cannot put
  * cards somewhere the student did not ask for.
  */
+/**
+ * A stored deck name split into the parts a PERSON would say.
+ *
+ * "Pharmacology::Cardiology" is storage, not language, and a model handed that
+ * string says it back to the student verbatim — the raw encoding turned up in
+ * a saved chat message on device (2026-07-27), the same class of leak as the
+ * Supabase URL that used to show when editing a card. Handing back `name` and
+ * `folder` separately removes the temptation instead of instructing against it,
+ * while `full` keeps the exact string the other tools need.
+ */
+export function deckNameParts(full: string): { name: string; folder: string; full: string } {
+  const parts = full.split("::").map((part) => part.trim()).filter(Boolean);
+  return {
+    folder: parts.length > 1 ? parts.slice(0, -1).join(" / ") : "",
+    full,
+    name: parts.length ? (parts[parts.length - 1] as string) : full,
+  };
+}
+
 export function matchDeckName(wanted: string, existing: readonly string[]): string | null {
   const name = wanted.trim();
   if (!name) return null;
@@ -309,7 +328,8 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "List the student's flashcard decks with card counts. Folders show as 'Folder::Deck'.",
+      description:
+        "List the student's flashcard decks with card counts. Each deck gives `name`, its `folder` if it is in one, and `full_name`. Pass `full_name` to other tools; when writing to the student say the name and the folder in words (\"your Cardiology deck in Pharmacology\") and NEVER show the 'Folder::Deck' form — that is storage, not something they typed.",
       name: "list_study_decks",
       parameters: { properties: {}, type: "object" },
     },
@@ -375,7 +395,7 @@ export const AGENT_TOOLS = [
           },
           deck_name: {
             description:
-              "Deck name. To put it inside a folder, use 'Folder::Deck'. Check list_study_decks first so you add to a deck they already have instead of making a near-duplicate.",
+              "Deck name. To put it inside a folder, use 'Folder::Deck' — that encoding is for THIS field only; never write it in your reply to the student. Check list_study_decks first so you add to a deck they already have instead of making a near-duplicate.",
             type: "string",
           },
         },

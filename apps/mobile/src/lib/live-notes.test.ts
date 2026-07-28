@@ -1,4 +1,4 @@
-// Deno unit tests (repo convention) for the Record screen's live-notes logic.
+// Deno unit tests (repo convention) for a recording's notes logic.
 // Run: deno test --no-check apps/mobile/src/lib/live-notes.test.ts
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
@@ -7,42 +7,13 @@ import {
   FINAL_NOTES_MAX_KEPT,
   FINAL_NOTES_MAX_WINDOWS,
   FINAL_NOTES_WINDOW_CHARS,
-  LIVE_NOTES_INTERVAL_MS,
   LIVE_NOTES_MIN_CHARS,
   LIVE_NOTES_TRANSCRIPT_CHARS,
   liveNotesText,
   mergeLiveNotes,
   parseLiveNotes,
   planFinalNotesWindows,
-  shouldReplaceNotes,
-  shouldRequestLiveNotes,
 } from "./live-notes.ts";
-
-const openGate = {
-  inFlight: false,
-  lastAt: 0,
-  lastLength: 0,
-  now: 1_000_000,
-  transcriptLength: LIVE_NOTES_MIN_CHARS + 200,
-};
-
-Deno.test("gate opens immediately once the transcript is long enough", () => {
-  assert(shouldRequestLiveNotes(openGate));
-});
-
-Deno.test("gate stays shut for short transcripts, in-flight calls, and the cooldown", () => {
-  assert(!shouldRequestLiveNotes({ ...openGate, transcriptLength: LIVE_NOTES_MIN_CHARS - 1 }));
-  assert(!shouldRequestLiveNotes({ ...openGate, inFlight: true }));
-  assert(!shouldRequestLiveNotes({ ...openGate, lastAt: openGate.now - LIVE_NOTES_INTERVAL_MS + 1 }));
-  assert(shouldRequestLiveNotes({ ...openGate, lastAt: openGate.now - LIVE_NOTES_INTERVAL_MS }));
-});
-
-Deno.test("a silent stretch (no transcript growth) never spends a call", () => {
-  const length = LIVE_NOTES_MIN_CHARS + 500;
-  assert(!shouldRequestLiveNotes({ ...openGate, transcriptLength: length, lastLength: length }));
-  assert(!shouldRequestLiveNotes({ ...openGate, transcriptLength: length, lastLength: length - 10 }));
-  assert(shouldRequestLiveNotes({ ...openGate, transcriptLength: length, lastLength: length - 400 }));
-});
 
 Deno.test("messages carry prior notes and clip the transcript tail", () => {
   const messages = buildLiveNotesMessages("x".repeat(9_000), ["alpha", "beta"], "Pharmacology lecture");
@@ -126,7 +97,7 @@ Deno.test("an absurdly long transcript is capped at the window budget", () => {
   assertEquals(windows.length, FINAL_NOTES_MAX_WINDOWS);
 });
 
-Deno.test("the rebuild keeps more notes than one live pass, still deduped", () => {
+Deno.test("the end-of-recording pass keeps more notes than one window would, still deduped", () => {
   const previous = Array.from({ length: 38 }, (_, i) => `note ${i}`);
   const merged = mergeLiveNotes(previous, ["note 0", "fresh a", "fresh b"], FINAL_NOTES_MAX_KEPT);
   assertEquals(merged.length, FINAL_NOTES_MAX_KEPT);
@@ -134,7 +105,7 @@ Deno.test("the rebuild keeps more notes than one live pass, still deduped", () =
   assertEquals(merged[merged.length - 1], "fresh b");
 });
 
-Deno.test("the live pass ceiling is unchanged when no cap is passed", () => {
+Deno.test("the default merge ceiling is unchanged when no cap is passed", () => {
   const previous = Array.from({ length: 30 }, (_, i) => `note ${i}`);
   assertEquals(mergeLiveNotes(previous, ["fresh"]).length, 18);
 });
@@ -209,7 +180,7 @@ Deno.test("the window budget spans a longer recording than the server will accep
   );
 });
 
-Deno.test("the rebuild's note ceiling is actually reachable", () => {
+Deno.test("the note ceiling is actually reachable", () => {
   // A ceiling below what the windows can produce is a dead constant, and the
   // test pinning it would be validating a state production never enters.
   assert(FINAL_NOTES_MAX_WINDOWS * 6 >= FINAL_NOTES_MAX_KEPT);
@@ -245,27 +216,6 @@ Deno.test("countNotes counts bullets in a saved notes blob", () => {
   assertEquals(countNotes(null), 0);
 });
 
-Deno.test("a thinner rebuild never replaces fuller saved notes", () => {
-  const existing = Array.from({ length: 18 }, (_, i) => `live ${i}`).join("\n");
-  assertEquals(shouldReplaceNotes(["sharp 1", "sharp 2"], existing), false);
-});
-
-Deno.test("an equal or fuller rebuild does replace", () => {
-  const existing = "live 1\nlive 2";
-  assertEquals(shouldReplaceNotes(["sharp 1", "sharp 2"], existing), true);
-  assertEquals(shouldReplaceNotes(["a", "b", "c"], existing), true);
-});
-
-Deno.test("an empty rebuild never replaces, even against no saved notes", () => {
-  assertEquals(shouldReplaceNotes([], undefined), false);
-  assertEquals(shouldReplaceNotes([], "live 1"), false);
-});
-
-Deno.test("a rebuild replaces when there were no saved notes at all", () => {
-  assertEquals(shouldReplaceNotes(["sharp 1"], undefined), true);
-  assertEquals(shouldReplaceNotes(["sharp 1"], ""), true);
-});
-
 Deno.test("a window never starts on an orphaned separator", () => {
   // The sentence break is the case that matters: trim() quietly hides a
   // newline that lands at the head of a window, but a stray "." would sit
@@ -278,5 +228,32 @@ Deno.test("a window never starts on an orphaned separator", () => {
       /^[\p{L}\p{N}]/u.test(window),
       `window began on a separator: ${JSON.stringify(window.slice(0, 12))}`,
     );
+  }
+});
+
+Deno.test("a SPEAKER-LABELLED transcript plans the same number of windows as a plain one", () => {
+  // Diarization (2026-07-27) means the server's transcript can now arrive as
+  // "Speaker A: …" blocks separated by blank lines instead of paragraphs. Those
+  // blank lines are break marks, so a naive planner could cut on the first one
+  // in every window and explode the window count — which is the notes spend per
+  // lecture, the exact thing this change is optimizing.
+  const sentence = `${"word ".repeat(24)}. `;
+  const plain = sentence.repeat(120);
+  const labelled = Array.from({ length: 120 }, (_, i) => `Speaker ${i % 2 === 0 ? "A" : "B"}: ${sentence}`).join("\n\n");
+  const plainWindows = planFinalNotesWindows(plain).length;
+  const labelledWindows = planFinalNotesWindows(labelled).length;
+  // Labels add characters, so a window or two more is expected; an explosion is not.
+  assert(
+    labelledWindows <= plainWindows + 3,
+    `labelled ${labelledWindows} vs plain ${plainWindows} — speaker blocks should not multiply the passes`,
+  );
+  assert(labelledWindows >= plainWindows, "labelled text is longer, so never fewer windows");
+});
+
+Deno.test("no speaker block is cut mid-label", () => {
+  const labelled = Array.from({ length: 60 }, (_, i) => `Speaker ${i % 2 === 0 ? "A" : "B"}: ${"word ".repeat(30)}.`).join("\n\n");
+  for (const window of planFinalNotesWindows(labelled)) {
+    assert(!/^[AB]:/.test(window), `window starts on a severed label: ${window.slice(0, 40)}`);
+    assert(!window.endsWith("Speaker"), `window ends on a severed label: ${window.slice(-40)}`);
   }
 });
