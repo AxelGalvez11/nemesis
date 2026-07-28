@@ -40,19 +40,25 @@ function parseColor(value: string): { r: number; g: number; b: number } | null {
   return null;
 }
 
-/** Hue (0-360) of a resolved accent color — falls back to crimson (351),
- * same fallback web uses (both ship a crimson default accent). Accepts any
- * `rgb()`/`rgba()`/hex string — exactly what ThemeColors.accent already is. */
-export function accentHue(color: string): number {
+/** Hue (0-360) of a resolved accent color, or null when there is no hue to
+ * borrow — an unreadable value, or a grey. Null matters: the Default accent is
+ * a neutral graphite now, and answering "351" for anything achromatic would
+ * leave the graph red after the red came out of everything else. Same rule as
+ * the web's graph-palette.ts. Accepts any `rgb()`/`rgba()`/hex string — exactly
+ * what ThemeColors.accent already is. */
+export function accentHue(color: string): number | null {
   const rgb = parseColor(color);
-  if (!rgb) return 351;
+  if (!rgb) return null;
   const r = rgb.r / 255;
   const g = rgb.g / 255;
   const b = rgb.b / 255;
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
+  // Not `delta === 0`. A faintly cool grey has more blue than red and would
+  // sail through an exact test, painting the whole graph blue. Nothing this
+  // washed out is ever a deliberate accent.
   const delta = max - min;
-  if (delta === 0) return 351;
+  if (delta < 0.06) return null;
   let hue: number;
   if (max === r) hue = ((g - b) / delta) % 6;
   else if (max === g) hue = (b - r) / delta + 2;
@@ -88,9 +94,18 @@ export function hslToHex(hue: number, saturation: number, lightness: number): st
  * Verbatim algorithm from web's graph-palette.ts graphNodeColor. */
 export function graphNodeColor(node: GraphNodeLike, accentColor: string, maxDegree: number): string {
   const hue = accentHue(accentColor);
-  if (node.ghost) return hslToHex(hue, 0.05, 0.72);
   const degree = node.degree ?? 0;
-  if (degree <= 0) return hslToHex(hue, 0.05, 0.62);
   const t = maxDegree > 1 ? Math.min(1, (degree - 1) / (maxDegree - 1)) : 1;
+
+  // Saturation cannot carry the heatmap without a hue, so lightness does:
+  // saturation 0 over the old 0.56→0.64 ramp would make every node identical.
+  if (hue === null) {
+    if (node.ghost) return hslToHex(0, 0, 0.74);
+    if (degree <= 0) return hslToHex(0, 0, 0.68);
+    return hslToHex(0, 0, 0.66 - 0.3 * t);
+  }
+
+  if (node.ghost) return hslToHex(hue, 0.05, 0.72);
+  if (degree <= 0) return hslToHex(hue, 0.05, 0.62);
   return hslToHex(hue, 0.45 + 0.5 * t, 0.56 + 0.08 * t);
 }

@@ -1,6 +1,6 @@
 // Nemesis mobile design tokens — the phone's half of the shared visual identity with the
 // desktop app. Values mirror theme/tokens.json (the desktop dark-mode seeds, owner-specified
-// 2026-07-16): monochrome near-black surfaces, ONE crimson accent, tight radii. React Native
+// 2026-07-16): monochrome near-black surfaces, ONE accent, tight radii. React Native
 // has no CSS variables, so these are plain typed constants consumed by StyleSheet. If
 // tokens.json is regenerated from the desktop export, re-derive these values to match.
 
@@ -19,10 +19,14 @@ export const c = {
   text2: "#9a9da6",
   text3: "#6f7278",
 
-  // Nemesis accent — the one crimson, reserved for primary actions
-  accent: "#ff2740",
-  accentDim: "#ff5165",
-  accentDeep: "#cc1f33",
+  // Nemesis accent, reserved for primary actions. Neutral graphite since
+  // 2026-07-28 (the owner retired the crimson) — these are the dark-mode values
+  // from NEUTRAL_ACCENT in theme/palette.ts, which is the live, themed source.
+  // This static set is the fallback for screens not wrapped in ThemeProvider,
+  // so the two must not drift.
+  accent: "#6e6e6e",
+  accentDim: "#8b8b8b",
+  accentDeep: "#585858",
   onAccent: "#ffffff",
 
   // status

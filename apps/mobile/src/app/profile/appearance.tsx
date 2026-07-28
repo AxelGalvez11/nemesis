@@ -6,8 +6,8 @@ import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 // Appearance — its own page (owner call), pushed from the Settings sheet. Holds
-// the theme mode (System / Light / Dark) and the ten accent swatches; both apply
-// live and persist per-device (ThemeProvider).
+// the theme mode (System / Light / Dark) and the seven accent swatches; both
+// apply live and persist per-device (ThemeProvider).
 
 const THEME_MODES: { id: ThemeMode; label: string }[] = [
   { id: "system", label: "System" },
@@ -57,7 +57,7 @@ export default function AppearanceScreen() {
               <View
                 style={[
                   styles.swatch,
-                  { backgroundColor: swatch.id === "crimson" ? "#ff2740" : accentSwatchHex(swatch.hue) },
+                  { backgroundColor: accentSwatchHex(swatch.hue) },
                   accentId === swatch.id && styles.swatchActive,
                 ]}
               />

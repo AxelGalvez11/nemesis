@@ -1,12 +1,14 @@
 // Nemesis phone theme engine — the pure half (no react-native imports, so it
-// Deno-tests like lib/library-sync.ts). Mirrors the desktop's appearance model
-// (src/themes/accent-tint.ts + color.ts in nemesis-desktop): ONE monochrome
-// identity per mode, and the student picks an accent HUE from the same curated
-// ten swatches; every accent is synthesized at fixed saturation with mode-tuned
-// lightness and contrast-guarded against the surface so it always reads.
-// Crimson (the default) is the designer-approved brand hex verbatim — in dark
-// mode the whole accent family matches the pre-theming constants byte-for-byte,
-// so "default look" means "exactly the shipped look".
+// Deno-tests like lib/library-sync.ts). ONE monochrome identity per mode, and
+// the student picks an accent from a curated set; every accent is synthesized at
+// fixed saturation with mode-tuned lightness and contrast-guarded against the
+// surface so it always reads.
+//
+// Owner 2026-07-28 replaced the ten desktop hues with the same seven the web app
+// now offers — Default, Blue, Green, Yellow, Pink, Orange, Purple — and RETIRED
+// THE CRIMSON: Default is a neutral grey. That is why AccentSwatch.hue is
+// nullable. A null hue is not "missing", it means achromatic, and the synthesis
+// below builds it at saturation 0 rather than borrowing a hue from anywhere.
 
 export type ThemeMode = "dark" | "light" | "system";
 export type ResolvedMode = "dark" | "light";
@@ -14,25 +16,46 @@ export type ResolvedMode = "dark" | "light";
 export interface AccentSwatch {
   id: string;
   label: string;
-  hue: number;
+  /** null = achromatic. Only "default" has this. */
+  hue: number | null;
 }
 
-// Same ten swatches, same hues, same default as the desktop app.
+// The web app's seven, same order, hues taken from its hex values so a student
+// with both surfaces sees one colour.
 export const ACCENT_SWATCHES: readonly AccentSwatch[] = [
-  { hue: 353, id: "crimson", label: "Crimson" },
-  { hue: 12, id: "ember", label: "Ember" },
-  { hue: 32, id: "amber", label: "Amber" },
-  { hue: 265, id: "violet", label: "Violet" },
-  { hue: 224, id: "indigo", label: "Indigo" },
-  { hue: 205, id: "azure", label: "Azure" },
-  { hue: 180, id: "teal", label: "Teal" },
-  { hue: 158, id: "jade", label: "Jade" },
-  { hue: 320, id: "magenta", label: "Magenta" },
-  { hue: 20, id: "copper", label: "Copper" },
+  { hue: null, id: "default", label: "Default" },
+  { hue: 223, id: "blue", label: "Blue" },
+  { hue: 123, id: "green", label: "Green" },
+  { hue: 42, id: "yellow", label: "Yellow" },
+  { hue: 328, id: "pink", label: "Pink" },
+  { hue: 25, id: "orange", label: "Orange" },
+  { hue: 258, id: "purple", label: "Purple" },
 ];
 
-export const DEFAULT_ACCENT_ID = "crimson";
-const BRAND_CRIMSON = "#ff2740";
+export const DEFAULT_ACCENT_ID = "default";
+
+// The ten hues that shipped before. A phone that has been sitting on "teal"
+// since June must not wake up on a value that no longer exists — map the old
+// ids onto the nearest survivor, and anything unrecognised onto Default.
+const RETIRED_ACCENT_IDS: Readonly<Record<string, string>> = {
+  amber: "yellow",
+  azure: "blue",
+  copper: "orange",
+  crimson: "default",
+  ember: "orange",
+  indigo: "blue",
+  jade: "green",
+  magenta: "pink",
+  teal: "green",
+  violet: "purple",
+};
+
+/** Resolve a stored accent id to one that still exists. */
+export function normalizeAccentId(stored: string | null | undefined): string {
+  if (!stored) return DEFAULT_ACCENT_ID;
+  if (ACCENT_SWATCHES.some((swatch) => swatch.id === stored)) return stored;
+  return RETIRED_ACCENT_IDS[stored] ?? DEFAULT_ACCENT_ID;
+}
 // Owner 2026-07-22: "the colors in appearance settings should be bright colors
 // not darkish colors." Saturation and lightness both went up, but the real
 // culprit was the contrast floor: forcing every accent past 4.5:1 on white
@@ -123,7 +146,10 @@ export function rgba(hex: string, alpha: number): string {
 /** Vivid, mode-independent chip color for the accent picker (desktop parity).
  *  Brightened 2026-07-22 alongside the applied accent — the old 0.74/0.52 pair
  *  read deep rather than bright in the picker. */
-export function accentSwatchHex(hue: number): string {
+export function accentSwatchHex(hue: number | null): string {
+  // The dot for Default. What it applies is a light/dark pair one dot cannot
+  // show, so this is the mid-grey that reads against either.
+  if (hue === null) return "#8e8e8e";
   return hslToHex(hue, 0.85, 0.6);
 }
 
@@ -259,26 +285,39 @@ const LIGHT_BASE = {
 
 const STATUS_BASE = { warn: "#f5b23b", danger: "#ff5c4d", info: "#7fb2ff", good: "#7ee081" } as const;
 
-// The exact pre-theming crimson family (dark mode): keeping these verbatim makes
-// the default theme byte-identical to what shipped before appearance settings.
-const CRIMSON_DARK = {
-  accent: "#ff2740",
-  accentDim: "#ff5165",
-  accentDeep: "#cc1f33",
-  onAccent: "#ffffff",
-  accentFaint: "rgba(255,39,64,0.12)",
-  accentLine: "rgba(255,39,64,0.35)",
+// The neutral Default family. Pinned rather than synthesized so it matches the
+// web app's --theme-primary exactly (#404040 light / #6e6e6e dark) — the same
+// value in both places is the whole point of one palette across surfaces.
+const NEUTRAL_ACCENT = {
+  dark: {
+    accent: "#6e6e6e",
+    accentDim: "#8b8b8b",
+    accentDeep: "#585858",
+    onAccent: "#ffffff",
+    accentFaint: "rgba(110,110,110,0.12)",
+    accentLine: "rgba(110,110,110,0.35)",
+  },
+  light: {
+    accent: "#404040",
+    accentDim: "#363636",
+    accentDeep: "#333333",
+    onAccent: "#ffffff",
+    accentFaint: "rgba(64,64,64,0.12)",
+    accentLine: "rgba(64,64,64,0.35)",
+  },
 } as const;
 
 function accentFamily(accentId: string, dark: boolean, bg: string): Pick<
   ThemeColors,
   "accent" | "accentDim" | "accentDeep" | "onAccent" | "accentFaint" | "accentLine"
 > {
-  if (accentId === DEFAULT_ACCENT_ID && dark) return { ...CRIMSON_DARK };
+  const swatch = ACCENT_SWATCHES.find((entry) => entry.id === normalizeAccentId(accentId)) ?? ACCENT_SWATCHES[0];
+  // A null hue is achromatic, so there is nothing to synthesize from — and
+  // running it through hslToHex with some stand-in hue is exactly how a "no
+  // colour" accent ends up faintly coloured.
+  if (swatch.hue === null) return { ...(dark ? NEUTRAL_ACCENT.dark : NEUTRAL_ACCENT.light) };
 
-  const swatch = ACCENT_SWATCHES.find((entry) => entry.id === accentId) ?? ACCENT_SWATCHES[0];
-  const base =
-    swatch.id === DEFAULT_ACCENT_ID ? BRAND_CRIMSON : hslToHex(swatch.hue, ACCENT_SAT, dark ? ACCENT_DARK_L : ACCENT_LIGHT_L);
+  const base = hslToHex(swatch.hue, ACCENT_SAT, dark ? ACCENT_DARK_L : ACCENT_LIGHT_L);
   const accent = ensureContrast(base, bg, MIN_ACCENT_CONTRAST);
   const onAccent = contrastRatio("#ffffff", accent) >= contrastRatio("#1a1a1a", accent) ? "#ffffff" : "#1a1a1a";
 
