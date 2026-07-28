@@ -2,50 +2,21 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 
-/**
- * Cursor-following card glow (adapted from 21st.dev "Spotlight Card" by easemize).
- * One rAF-throttled pointermove listener writes the viewport cursor position into
- * two CSS variables on <html>; the cards' ::after overlays use a fixed-attachment
- * radial gradient, so every card lights up under the real cursor with no per-card
- * math. Desktop-only via the (hover:hover) media block in globals.css. Lives in
- * the shared chrome so every marketing page gets it.
- */
-function useCursorGlow() {
-  useEffect(() => {
-    let frame = 0;
-    let x = -999;
-    let y = -999;
-
-    const apply = () => {
-      frame = 0;
-      document.documentElement.style.setProperty("--cx", x.toFixed(1));
-      document.documentElement.style.setProperty("--cy", y.toFixed(1));
-    };
-
-    const onMove = (e: PointerEvent) => {
-      x = e.clientX;
-      y = e.clientY;
-      if (!frame) frame = window.requestAnimationFrame(apply);
-    };
-
-    document.addEventListener("pointermove", onMove, { passive: true });
-    return () => {
-      document.removeEventListener("pointermove", onMove);
-      if (frame) window.cancelAnimationFrame(frame);
-    };
-  }, []);
-}
+// The cursor-following card glow lived here until 2026-07-28: a rAF-throttled
+// pointermove listener wrote the cursor position into two CSS variables that fed a
+// red radial gradient under every card. It went with the accent — "focus not noise"
+// (owner) rules out an effect whose entire purpose is to draw the eye to wherever
+// the eye already is. Removing it also takes a global pointermove listener off
+// every marketing page.
 
 /** Shared marketing chrome: sticky nav on top, footer below, page content between. */
 export function SiteChrome({ children }: { children: ReactNode }) {
-  useCursorGlow();
-
   return (
     <>
       <nav className="nav">

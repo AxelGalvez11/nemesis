@@ -16,10 +16,13 @@ export default function AboutPage() {
       </div>
       <h1>About Nemesis</h1>
 
+      {/* "lives on your Mac" until 2026-07-28. Nemesis is a browser app with an
+          iPhone companion; the desktop app is deferred. */}
       <p className="legal-lead">
-        Nemesis is a study agent that lives on your Mac. You give it your course
-        files, and it gives you back notes, flashcards, practice tests, and a
-        calendar that knows your deadlines.
+        Nemesis is a study agent that runs in your browser, with an iPhone app for
+        when you are in the lecture hall. You give it your course files, and it gives
+        you back notes, flashcards, practice tests, and a calendar that knows your
+        deadlines.
       </p>
 
       <h2>Why it exists</h2>
@@ -46,9 +49,9 @@ export default function AboutPage() {
 
       <h2>Your files are yours</h2>
       <p>
-        The library is plain, portable files on your Mac, readable in any editor
-        and yours to keep. No ads, no selling your data, no training on your
-        content. Leave anytime and take everything with you.
+        The library is plain markdown, exportable at any time and readable in any
+        editor. No ads, no selling your data, no training on your content. Leave
+        anytime and take everything with you.
       </p>
 
       <h2>Contact</h2>

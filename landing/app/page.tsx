@@ -40,8 +40,8 @@ export default function Home() {
             <div className="feature">
               <div className="feature-icon"><IconCalendar /></div>
               <div className="k">Semester</div>
-              <h3>It reads your semester</h3>
-              <p>Connects to Canvas or Blackboard and builds your calendar: classes, deadlines, exams.</p>
+              <h3>It reads your syllabus</h3>
+              <p>Drop in a syllabus and it builds your calendar: classes, deadlines, exams.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconSplit /></div>
@@ -133,7 +133,7 @@ export default function Home() {
         <div className="wrap">
           <div className="band-in">
             <p className="eyebrow">Order</p>
-            <h2>Files, calendar, inbox. Kept in order.</h2>
+            <h2>Notes, decks, calendar. Kept in order.</h2>
             <p>Everything the agent touches is logged and filed where you expect it.</p>
           </div>
         </div>
@@ -158,10 +158,12 @@ export default function Home() {
               </p>
             </details>
             <details>
-              <summary>Which schools does it work with?</summary>
+              <summary>What can it make from my course files?</summary>
               <p>
-                Canvas and Blackboard work out of the box. Other school portals
-                can be set up from a chat.
+                Notes, flashcard decks, and practice tests, from slides, PDFs, or a
+                lecture you recorded. Give it a syllabus and it fills in your
+                calendar too &mdash; and because it all sits in one library, a deck
+                knows which lecture it came from and which exam it is for.
               </p>
             </details>
             <details>
@@ -182,8 +184,9 @@ export default function Home() {
             <details>
               <summary>Do I need to install anything?</summary>
               <p>
-                No. Nemesis runs in your browser. A Mac desktop app is planned,
-                but nothing is required to start.
+                No. Nemesis runs in your browser, on any computer. There is also an
+                iPhone app for recording lectures and studying between classes, but
+                nothing is required to start.
               </p>
             </details>
             <details>

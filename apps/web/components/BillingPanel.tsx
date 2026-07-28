@@ -214,7 +214,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
                 app/pricing/page.tsx and workspace/shell/billing-settings.tsx. Four copies
                 of one number; they had drifted apart by more than 3x by 2026-07-28. */}
             <li style={billingItem}><span style={billingTick}>✓</span>20 hours of lecture recording each month</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Scheduled school portal and email sync</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>A calendar built from your syllabus</li>
           </ul>
           {planCta("plus", "Upgrade to Student")}
           {currentRank === 0 ? (

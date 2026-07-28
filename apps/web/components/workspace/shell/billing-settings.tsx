@@ -74,7 +74,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
       "Higher limits for answers, notes, and study decks",
       "Turn lectures into organized study material",
       "20 hours of lecture recording each month",
-      "Scheduled school portal and email sync",
+      "A calendar built from your syllabus",
     ],
   },
   {

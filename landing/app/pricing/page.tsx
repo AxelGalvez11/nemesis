@@ -14,8 +14,9 @@ export const metadata: Metadata = {
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
-  { label: "Scheduled school sync", values: ["yes", "yes", "yes"] },
-  { label: "Deep research with cited reports", values: ["no", "yes", "yes"] },
+  { label: "Lecture recording each month", values: ["20 hours", "80 hours", "200 hours"] },
+  { label: "Calendar built from your syllabus", values: ["yes", "yes", "yes"] },
+  { label: "Web-grounded answers with real citations", values: ["no", "yes", "yes"] },
   { label: "Daily limits", values: ["Standard", "Higher", "Highest"] },
   { label: "First access to new features", values: ["no", "no", "yes"] },
 ] as const;
@@ -79,7 +80,8 @@ export default function PricingPage() {
               <ul className="plan-features">
                 <li><IconCheck size={13} />Higher limits on answers and study decks</li>
                 <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
-                <li><IconCheck size={13} />Scheduled school sync</li>
+                <li><IconCheck size={13} />20 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />A calendar built from your syllabus</li>
               </ul>
               <div className="plan-cta">
                 <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Student</a>
