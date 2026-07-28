@@ -7,8 +7,8 @@
    - Token VALUES are the SHIPPED runtime reality: styles.css baseline with the
      `applyTheme('nemesis')` + default-crimson `applyAccentTint` inline overrides
      baked in as static CSS (the desktop sets those via JS at boot; web bakes
-     them). Light mode = synthLightColors(nemesis) + crimson tint (#cc1f33,
-     contrast-guarded); dark mode = nemesis skin verbatim (#ff2740).
+     them). Light mode = synthLightColors(nemesis) + a neutral graphite tint
+     (#404040); dark mode = nemesis skin verbatim with #6e6e6e.
    - `--radius-scalar: 1` — a web-specific softer corner treatment that
      keeps the desktop density without its near-square Backdrop override.
    - Dark selector is `:root[data-theme="dark"]` (web theme mechanism), not
@@ -163,23 +163,30 @@
 }
 
 /* ── Token cascade: --theme-* seeds → --ui-* derived → --dt-* aliases.
-   LIGHT = synthLightColors(nemesis skin) + default-crimson accent tint,
+   LIGHT = synthLightColors(nemesis skin) + neutral graphite accent tint,
    values baked from the desktop's applyTheme()/applyAccentTint() runtime.
    Declared in @layer base (like the desktop) so unlayered portal CSS is
    unaffected in precedence; names are disjoint from the portal token set. */
 @layer base {
   :root {
     --theme-foreground: #000000;
-    --theme-primary: #cc1f33;
-    --theme-secondary: #fbeff1;
-    --theme-accent-soft: #fae9eb;
-    --theme-midground: #cc1f33;
-    --theme-warm: #cc1f33;
+    /* DEFAULT ACCENT = NEUTRAL GRAPHITE (owner 2026-07-28: retire the red).
+       These six were #cc1f33 and its pink tints, which is why every fill,
+       stroke and row hover derived from --ui-accent carried a faint pink.
+       Graphite keeps the same token cascade and makes the untouched app
+       monochrome; the seven-colour picker in Settings overrides primary,
+       midground and warm for anyone who wants a colour. Light theme takes a
+       dark graphite so white button text stays legible on it. */
+    --theme-primary: #404040;
+    --theme-secondary: #f2f2f2;
+    --theme-accent-soft: #ededed;
+    --theme-midground: #404040;
+    --theme-warm: #404040;
     --theme-background-seed: #ffffff;
     --theme-sidebar-seed: #fafafa;
     --theme-card-seed: #ffffff;
     --theme-elevated-seed: #ffffff;
-    --theme-bubble-seed: #ffeeef;
+    --theme-bubble-seed: #f4f4f4;
     --theme-neutral-chrome: #f3f3f3;
     --theme-neutral-sidebar: #f3f3f3;
     --theme-neutral-card: #fcfcfc;
@@ -323,7 +330,7 @@
     --dt-secondary: var(--theme-secondary);
     --dt-secondary-foreground: #72393d;
     --dt-accent: var(--theme-accent-soft);
-    --dt-accent-foreground: #cc1f33;
+    --dt-accent-foreground: var(--theme-primary);
     --dt-border: #e4e4e7;
     --dt-input: #d9d9de;
     /* THE single knob for input-field borders: the resting alpha (% of the ring
@@ -430,19 +437,22 @@
     --dock-glow-scale: 0.55;
   }
 
-  /* DARK — the nemesis skin verbatim (crimson tint is a no-op on #0e0e0e). */
+  /* DARK — the nemesis skin verbatim (the graphite tint is near a no-op on #0e0e0e). */
   :root[data-theme='dark'] {
     --theme-foreground: #ffffff;
-    --theme-primary: #ff2740;
-    --theme-secondary: #1f1012;
-    --theme-accent-soft: #261113;
-    --theme-midground: #ff2740;
-    --theme-warm: #ff2740;
+    /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
+       background is almost invisible, and this still carries white button text
+       at ~4.3:1. Same reasoning as the light block above. */
+    --theme-primary: #6e6e6e;
+    --theme-secondary: #161616;
+    --theme-accent-soft: #1c1c1c;
+    --theme-midground: #6e6e6e;
+    --theme-warm: #6e6e6e;
     --theme-background-seed: #000000;
     --theme-sidebar-seed: #000000;
     --theme-card-seed: #141414;
     --theme-elevated-seed: #181818;
-    --theme-bubble-seed: #1f1717;
+    --theme-bubble-seed: #1b1b1b;
     --theme-mix-chrome: 74%;
     --theme-mix-card: 38%;
     --theme-mix-elevated: 46%;
@@ -459,7 +469,7 @@
     --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;
     --dt-secondary-foreground: #c8c8c8;
-    --dt-accent-foreground: #ff2740;
+    --dt-accent-foreground: var(--theme-primary);
     --dt-border: #2a2a2a;
     --dt-input: #2a2a2a;
     --dt-ring: #8f8f98;
@@ -490,8 +500,9 @@
        almost no edge — boxes and pills bled into the page. 14% still reads as
        a hairline, just a visible one. Light mode keeps 8%; it sits on white
        and never had the problem. Kept as the plain base mix, NOT the accent
-       mix used a few blocks down for the sidebar: folding --ui-accent
-       (#ff2740) in here tints every box edge pink. */
+       mix used a few blocks down for the sidebar: folding --ui-accent in here
+       tinted every box edge pink back when the accent was crimson, and would
+       do the same for anyone who picks Pink from the palette. */
     --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 14%, transparent);
   }
 }

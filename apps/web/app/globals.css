@@ -58,13 +58,14 @@
    Nemesis design tokens — the DESKTOP APP'S visual identity, worn by the web
    app (owner call 2026-07-17: "make the webapp look exactly like the desktop").
    Canonical source: nemesis-desktop-public design-tokens/tokens.json, theme
-   "nemesis" ("Monochrome with a neon-red edge") — near-black grayscale
-   surfaces, ONE crimson accent (#ff2740) with red-tinted hover surfaces and
-   warmed user bubbles, system sans + JetBrains Mono, tight radii.
+   "nemesis" — near-black grayscale surfaces, ONE accent, hover surfaces tinted
+   from it, system sans + JetBrains Mono, tight radii. The accent was a neon red
+   until 2026-07-28, when the owner retired it: --theme-primary is now a neutral
+   graphite by default and the Settings picker offers six colours over it.
 
    DARK is the identity anchor (desktop skin values verbatim); LIGHT mirrors
-   the desktop/phone light palette (paper #f8faff family, crimson darkened to
-   #cc1f33 so it clears WCAG on paper). LIGHT stays the bare :root for
+   the desktop/phone light palette (paper #f8faff family, with a darker accent
+   so it clears WCAG on paper). LIGHT stays the bare :root for
    backwards compatibility, but layout.tsx now defaults NEW visitors to dark.
 
    The hex tokens drive the custom shell/chat CSS; the shadcn HSL triplets
@@ -86,18 +87,24 @@
   --text: #000000; --text-2: #5a5e68; --text-3: #8b8f99;
   --rail-bg: #eef0f6;
   /* hover/active fills — accent-tinted at desktop accentMixes strengths (rowHover 4 / rowActive 8). */
-  --fill-hover: rgba(204, 31, 51, 0.05); --fill-active: rgba(204, 31, 51, 0.08);
+  --fill-hover: color-mix(in srgb, var(--theme-primary) 5%, transparent); --fill-active: color-mix(in srgb, var(--theme-primary) 8%, transparent);
   --composer-border: rgba(22, 24, 29, 0.22); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.02);
 
   /* Brand mark color — now the SAME crimson as the accent (the green-orb era is
      over; one identity across desktop/phone/web). Kept as its own token so the
      mark could diverge again deliberately, never accidentally. */
-  --orb-color: #cc1f33; --orb-rgb: 204, 31, 51;
+  --orb-color: #404040; --orb-rgb: 64, 64, 64;
 
   /* Nemesis crimson, darkened for paper (contrast-guarded like desktop/phone
      light mode). --acid is the historical token name; it carries the brand. */
-  --acid: #cc1f33; --acid-dim: #e01732; --acid-deep: #a81929; --on-acid: #fff5f3;
-  --acid-rgb: 204, 31, 51;
+  /* --acid now FOLLOWS the accent picker (owner 2026-07-28). It used to be a
+     hardcoded crimson while the picker only moved --theme-primary, so choosing
+     Blue left 114 shell.css rules red. One accent, one source. Default resolves
+     to the neutral graphite in desktop-ui.css. */
+  --acid: var(--theme-primary); --acid-dim: color-mix(in srgb, var(--theme-primary) 88%, #000);
+  --acid-deep: color-mix(in srgb, var(--theme-primary) 74%, #000); --on-acid: #ffffff;
+  /* Channel form, for the few rgba() call sites that cannot take a colour. */
+  --acid-rgb: 64, 64, 64;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
   /* Success is its OWN token — never the brand accent (see header). */
   --success: #177245; --line-success: rgba(23, 114, 69, 0.28);
@@ -114,13 +121,13 @@
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
   --glow: 0.12;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
-  --shadow-acid: 0 6px 22px -8px rgba(204, 31, 51, 0.30);
+  --shadow-acid: 0 6px 22px -8px color-mix(in srgb, var(--theme-primary) 30%, transparent);
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
 
   /* legacy aliases (pre-existing pages reference these) */
   --muted: var(--text-2); --muted-2: var(--text-3);
   --accent: var(--acid); --accent-2: var(--acid-dim); --accent-mid: var(--acid-deep); --accent-dark: var(--acid-dim);
-  --line-acid: rgba(204, 31, 51, 0.26); --placeholder: var(--text-3); --button-text: var(--on-acid);
+  --line-acid: color-mix(in srgb, var(--theme-primary) 26%, transparent); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
   /* shadcn HSL triplets (same colors as the hex tokens above) */
   --background: 220 100% 99%; --foreground: 0 0% 0%;
@@ -147,14 +154,14 @@
   --text: #ffffff; --text-2: #9a9a9a; --text-3: #808080;
   --rail-bg: #000000;
   /* Accent-tinted hover/active fills (desktop accentMixes rowHover 4 / rowActive 8). */
-  --fill-hover: rgba(255, 39, 64, 0.06); --fill-active: rgba(255, 39, 64, 0.09);
+  --fill-hover: color-mix(in srgb, var(--theme-primary) 6%, transparent); --fill-active: color-mix(in srgb, var(--theme-primary) 9%, transparent);
   --composer-border: #2a2a2a; --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   /* Brand mark = the same crimson as everything else (see :root comment). */
-  --orb-color: #ff2740; --orb-rgb: 255, 39, 64;
+  --orb-color: #d4d4d4; --orb-rgb: 212, 212, 212;
 
-  /* Desktop primary/ring/deep, verbatim: #ff2740 / #ff5563 / #cc1f33 on #fff5f3. */
-  --acid: #ff2740; --acid-dim: #ff5563; --acid-deep: #cc1f33; --on-acid: #fff5f3;
-  --acid-rgb: 255, 39, 64;
+  --acid: var(--theme-primary); --acid-dim: color-mix(in srgb, var(--theme-primary) 82%, #fff);
+  --acid-deep: color-mix(in srgb, var(--theme-primary) 78%, #000); --on-acid: #ffffff;
+  --acid-rgb: 110, 110, 110;
   /* Danger = the desktop-account lighter crimson tint, kept distinct from brand. */
   --warn: #f5b23b; --danger: #ff6678; --info: #7fb2ff;
   --success: #7ee081; --line-success: rgba(126, 224, 129, 0.30);
@@ -163,9 +170,9 @@
 
   --glow: 0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
-  --shadow-acid: 0 8px 28px -8px rgba(255, 39, 64, 0.35);
+  --shadow-acid: 0 8px 28px -8px color-mix(in srgb, var(--theme-primary) 35%, transparent);
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
-  --line-acid: rgba(255, 39, 64, 0.28);
+  --line-acid: color-mix(in srgb, var(--theme-primary) 28%, transparent);
 
   --background: 0 0% 0%; --foreground: 0 0% 100%;
   --card: 0 0% 8%; --card-foreground: 0 0% 92%;

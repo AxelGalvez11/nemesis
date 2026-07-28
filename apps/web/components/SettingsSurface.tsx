@@ -7,7 +7,7 @@ import { BillingSettings } from "@/components/workspace/shell/billing-settings";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
-import { useTheme, type AccentPreference, type ThemePreference } from "@/components/theme-provider";
+import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type ThemePreference } from "@/components/theme-provider";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -71,12 +71,18 @@ const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "System" },
 ];
 
+// Order and names come from the owner's screenshot (2026-07-28). The swatches
+// are the same values the accent actually applies, so the dot never lies about
+// what you are picking — except "Default", whose real accent is a light/dark
+// pair of greys that one dot cannot show.
 const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] = [
-  { id: "crimson", label: "Crimson", color: "#e11d48" },
-  { id: "blue", label: "Blue", color: "#2563eb" },
-  { id: "green", label: "Green", color: "#16865c" },
-  { id: "orange", label: "Orange", color: "#d26324" },
-  { id: "purple", label: "Purple", color: "#7c4dca" },
+  { id: "default", label: "Default", color: DEFAULT_ACCENT_SWATCH },
+  { id: "blue", label: "Blue", color: ACCENT_COLORS.blue },
+  { id: "green", label: "Green", color: ACCENT_COLORS.green },
+  { id: "yellow", label: "Yellow", color: ACCENT_COLORS.yellow },
+  { id: "pink", label: "Pink", color: ACCENT_COLORS.pink },
+  { id: "orange", label: "Orange", color: ACCENT_COLORS.orange },
+  { id: "purple", label: "Purple", color: ACCENT_COLORS.purple },
 ];
 
 const SELECT_CLASS = "h-9 min-w-44 rounded-lg border border-(--ui-stroke-secondary) bg-background px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)";

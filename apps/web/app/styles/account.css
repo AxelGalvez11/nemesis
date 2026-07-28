@@ -7,13 +7,17 @@
   --raised: #111114;
   --line: rgba(255,255,255,.08);
   --line-2: rgba(255,255,255,.14);
-  --line-acid: rgba(255,39,64,.32);
+  --line-acid: rgba(142,142,142,.32);
   --text: #e7e9ed;
   --text-2: #9a9da4;
   --text-3: #5a5c63;
-  --acid: #ff2740;
-  --acid-dim: #e01732;
-  --acid-deep: #ff6678;
+  /* Was #ff2740 and its shades — the accent retired 2026-07-28. This page
+     has its own stylesheet and never read the theme tokens, so it needed the
+     same change by hand or it would be the one red screen left. --danger
+     stays red: that is a warning colour, not an accent. */
+  --acid: #8e8e8e;
+  --acid-dim: #6e6e6e;
+  --acid-deep: #b4b4b4;
   --on-acid: #fff;
   --danger: #ff6678;
   --shadow: none;
