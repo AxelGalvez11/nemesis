@@ -125,6 +125,12 @@ test("KNOWN BROKEN: the plan ladder is inverted — paying more buys less", () =
   );
 });
 
+// SHAPE, NOT RECOMMENDED VALUES. This fixture exists to prove the checker reports a
+// clean ladder as clean. Do not read the search numbers as a proposal: at ~$0.008 a
+// unit, Pro at 600 searches permits $4.80 of spend against $3.85 of headroom, which
+// would put Pro underwater if anyone used it. The cheap way to clear the search
+// inversion is to bring FREE down (nobody spends near it — 39 searches across every
+// user in 30 days), not to raise the paid plans up.
 test("a corrected ladder reports no inversions", () => {
   const fixed = {
     ...PLANS,
@@ -133,6 +139,25 @@ test("a corrected ladder reports no inversions", () => {
     pro: { ...PLANS.pro, searchMonthly: 600 },
   };
   assert.deepEqual(planCapInversions(fixed), []);
+});
+
+// The cheap fix, modelled: lower Free instead of raising the plans that pay.
+test("lowering Free's search cap clears the search inversion without spending anything", () => {
+  const fixed = { ...PLANS, free: { ...PLANS.free, searchMonthly: 50 } };
+  assert.deepEqual(
+    planCapInversions(fixed).map((row) => row.meter),
+    ["recording minutes"],
+    "only the recording inversion should be left",
+  );
+});
+
+// A Max subscriber doing exactly what Pro subscribers are PROMISED is stopped by
+// their own plan. This is the user-visible face of the inverted ladder.
+test("a Max subscriber cannot record the 80 hours Pro advertises", () => {
+  const onMax = modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" });
+  const onPro = modelStudentMonth(HEAVY_STUDENT);
+  assert.equal(onPro.withinTranscriptionCap, true);
+  assert.equal(onMax.withinTranscriptionCap, false, "4,800 minutes against Max's 3,600");
 });
 
 test("Max costs 5x Pro but does not currently offer 5x of anything", () => {
@@ -230,6 +255,20 @@ test("the cheaper AssemblyAI tier is worth more than the add-on, and Groq more t
   // If the pinned model is ever ignored, the month costs $4.80 more and nothing warns
   // us except a console line in nemesis-transcribe.
   assert.equal(round(pro - universal2, 2), 4.8);
+});
+
+// THE UNGUARDED RISK. `speech_models` is a priority LIST whose default is
+// ["universal-3-5-pro", "universal-2"] — a request field that is renamed or moved is
+// accepted and ignored, not rejected. If that pin ever stops being honoured, Pro does
+// not merely get thinner: it goes underwater at 80 hours, and the only signal is a
+// console.warn inside an edge function that nobody reads.
+test("Pro LOSES MONEY at 80 hours if the cheaper AssemblyAI tier is not honoured", () => {
+  const pinned = modelStudentMonth(HEAVY_STUDENT);
+  const ignored = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-pro" });
+  assert.equal(pinned.profitable, true);
+  assert.equal(ignored.profitable, false, "a silently ignored request field costs the whole margin and more");
+  assert.ok(ignored.headroomUsd < 0, `headroom was ${ignored.headroomUsd}`);
+  assert.ok(ignored.grossMarginPct < 0, `margin was ${ignored.grossMarginPct}%`);
 });
 
 // The silence gate is the largest UNMEASURED lever in the product. No recording has
