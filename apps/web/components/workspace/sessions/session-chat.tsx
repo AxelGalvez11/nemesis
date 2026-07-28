@@ -20,7 +20,7 @@ import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effor
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
-import { requestRecordingNote } from "@/lib/workspace/live-audio-insights";
+import { requestRecordingNote } from "@/lib/workspace/recording-note";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 
 
@@ -279,13 +279,11 @@ export function SessionChat() {
     setRightRailOpen(true);
     const targetId = selectedId;
     void (async () => {
-      // What the student watched being written during the recording is a stream
-      // of short live points. This composes the note they actually keep, from
-      // the whole transcript at once. On failure it falls back to those live
-      // points — a failed model call must never cost someone their lecture.
-      const liveNotes = draft.notes.split("\n").filter(Boolean);
-      const composed = uid ? await requestRecordingNote({ liveNotes, transcript: draft.transcript, uid }) : "";
-      const notes = composed || draft.notes;
+      // ONE compose pass over the whole transcript (owner 2026-07-27). There are
+      // no live notes to fall back on any more — nothing is written during the
+      // recording — so when this fails the transcript is what the student keeps,
+      // and the message below has to say so rather than claim notes exist.
+      const notes = uid ? await requestRecordingNote({ transcript: draft.transcript, uid }) : "";
       const artifact = await createArtifact({ ...draft, notes });
 
       // The third destination (owner ask 2026-07-27). Until now a recording
@@ -309,7 +307,9 @@ export function SessionChat() {
         at: new Date().toISOString(),
         content: libraryPath
           ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
-          : "Recording captured — transcript and notes are ready.",
+          : notes.trim()
+            ? "Recording captured — transcript and notes are ready."
+            : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
         outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
         role: "assistant",
       });
@@ -331,9 +331,6 @@ export function SessionChat() {
               accessToken={authSession?.access_token ?? null}
               active={recording}
               className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3"
-              context="A live study, research, class, meeting, or interview session. Infer the subject only from what is spoken."
-              contextId={selectedId}
-              surface="sessions"
               uid={uid}
               onFinished={handleRecordingFinished}
             />
