@@ -1026,6 +1026,11 @@ export async function enhanceRecordingArtifact(
   // header), so neither the cap nor the arithmetic is guesswork.
   const uris = audioUris;
   if (uris.length === 0) return;
+  // Trimmed/compressed copies WE created. Tracked outside the try so the finally
+  // sweeps them even when the loop throws part-way: without this, a lecture that
+  // lost the network mid-upload would strand a compressed copy of every file
+  // uploaded so far in the cache directory.
+  const derived: string[] = [];
   try {
     const { data } = await supabase.auth.getSession();
     const session = data.session;
@@ -1046,6 +1051,7 @@ export async function enhanceRecordingArtifact(
       // Trim the dead air, then compress — see prepareAudioForUpload for why
       // that order, and why the two steps solve different problems.
       const prepared = await prepareAudioForUpload(uri);
+      if (prepared.temporary) derived.push(prepared.uri);
       // The bucket enforces BOTH the extension's implied type and the header, so
       // they come from the same place rather than being written out twice.
       const path = `${uid}/${generateUuidV4()}.${prepared.extension}`;
@@ -1139,13 +1145,13 @@ export async function enhanceRecordingArtifact(
       console.warn("fallback notes skipped:", notesCause instanceof Error ? notesCause.message : notesCause);
     }
   } finally {
-    await deleteLocalAudio(uris);
+    // Originals AND the trimmed/compressed copies we made from them. Both lists
+    // are swept here because the loop can throw between creating a derived file
+    // and uploading it, and deleteLocalAudio is idempotent.
+    await deleteLocalAudio([...uris, ...derived]);
   }
 }
 
-/** Drop the phone's copies of a recording's audio. Idempotent and never
- *  throws, so it is safe to call the moment the audio stops being needed AND
- *  again from the enhance pass's finally block. */
 /**
  * How big a file we are willing to pull into JS memory to trim it. A base64
  * round trip costs roughly 2.3x the file size in RAM, so this is the line
@@ -1233,7 +1239,11 @@ async function prepareAudioForUpload(uri: string): Promise<PreparedAudio> {
     // 2. COMPRESS. Native and streaming, so unlike the trim it runs even for a
     //    file too large to read into JS — which is exactly the file that most
     //    needs it.
-    const encoded = await encodeToM4A(working, `${FileSystem.cacheDirectory ?? ""}lecture-${generateUuidV4()}.m4a`);
+    const encodeTarget = `${FileSystem.cacheDirectory ?? ""}lecture-${generateUuidV4()}.m4a`;
+    const encoded = await encodeToM4A(working, encodeTarget);
+    // A failed encode can leave a partial file behind; the caller never learns
+    // this path, so it is swept here or not at all.
+    if (!encoded) await deleteLocalAudio([encodeTarget]);
     if (encoded) {
       if (workingTemporary) await deleteLocalAudio([working]);
       return {
@@ -1263,6 +1273,9 @@ async function prepareAudioForUpload(uri: string): Promise<PreparedAudio> {
   }
 }
 
+/** Drop the phone's copies of a recording's audio. Idempotent and never
+ *  throws, so it is safe to call the moment the audio stops being needed AND
+ *  again from the enhance pass's finally block. */
 async function deleteLocalAudio(uris: string[]): Promise<void> {
   for (const uri of uris) {
     try {
