@@ -56,6 +56,17 @@ export function utterancesOf(value: unknown): Utterance[] {
  * Never throws: an unrecognised shape returns [], which degrades to the flat
  * text exactly like a provider that sent no diarization at all.
  */
+/** xAI numbers its speakers from ZERO; AssemblyAI letters them from "A". Both
+ *  end up in the same `Speaker <who>:` prefix, so without this the two providers
+ *  print differently and, worse, a student reading an xAI transcript is told the
+ *  lecturer is "Speaker 0" — an off-by-one that only looks like a bug. Past Z
+ *  the raw number is kept: a 27-speaker recording is not a lecture, and inventing
+ *  "AA" would be guessing at a case that has never occurred. */
+function speakerLetter(index: number): string {
+  if (!Number.isInteger(index) || index < 0 || index > 25) return String(index);
+  return String.fromCharCode(65 + index);
+}
+
 export function utterancesFromWords(value: unknown): Utterance[] {
   if (!Array.isArray(value)) return [];
   const out: Utterance[] = [];
@@ -69,7 +80,7 @@ export function utterancesFromWords(value: unknown): Utterance[] {
     const who = typeof speaker === "string"
       ? speaker.trim()
       : typeof speaker === "number"
-        ? String(speaker)
+        ? speakerLetter(speaker)
         : "";
     const last = out[out.length - 1];
     if (last && last.speaker === who) {

@@ -79,6 +79,31 @@ Deno.test("word-level speakers group into the same utterances AssemblyAI would s
   ]);
 });
 
+Deno.test("xAI's NUMERIC speakers become letters, so no student reads 'Speaker 0'", () => {
+  // The shape xAI actually sends: `speaker` is a zero-based integer, not a
+  // letter. Every other test here uses strings, which is how the raw
+  // "Speaker 0:" prefix went unnoticed.
+  const words = [
+    { speaker: 0, word: "Glycolysis" }, { speaker: 0, word: "is" }, { speaker: 0, word: "cytosolic." },
+    { speaker: 1, word: "Mitochondrial?" },
+  ];
+  assertEquals(utterancesFromWords(words), [
+    { speaker: "A", text: "Glycolysis is cytosolic." },
+    { speaker: "B", text: "Mitochondrial?" },
+  ]);
+  const out = formatDiarizedTranscript(utterancesFromWords(words), "flat");
+  assert(out.includes("Speaker A:"));
+  assert(out.includes("Speaker B:"));
+  assert(!out.includes("Speaker 0"));
+});
+
+Deno.test("a speaker index past Z keeps its number rather than inventing a letter", () => {
+  assertEquals(utterancesFromWords([{ speaker: 26, word: "hi" }]), [{ speaker: "26", text: "hi" }]);
+  // Negative or fractional indices are not letters either — they pass through
+  // rather than wrapping to a wrong letter via arithmetic.
+  assertEquals(utterancesFromWords([{ speaker: -1, word: "hi" }]), [{ speaker: "-1", text: "hi" }]);
+});
+
 Deno.test("a word-labelled solo lecture still gets no labels", () => {
   const flat = "One voice, start to finish.";
   const words = [{ speaker: "A", word: "One" }, { speaker: "A", word: "voice" }];
@@ -103,9 +128,10 @@ Deno.test("utterancesFromWords survives anything the provider might send", () =>
   // `text` is accepted as well as `word`, so a renamed field cannot silently
   // produce an empty transcript.
   assertEquals(utterancesFromWords([{ speaker: "A", text: "hi" }]), [{ speaker: "A", text: "hi" }]);
-  // A numeric speaker id is normal for word-level diarization.
+  // A numeric speaker id is normal for word-level diarization, and is lettered
+  // so it prints the same way AssemblyAI's already does.
   assertEquals(utterancesFromWords([{ speaker: 0, word: "hi" }, { speaker: 1, word: "there" }]), [
-    { speaker: "0", text: "hi" },
-    { speaker: "1", text: "there" },
+    { speaker: "A", text: "hi" },
+    { speaker: "B", text: "there" },
   ]);
 });

@@ -206,8 +206,7 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
     const xai = await transcribeWithXai(signedUrl);
     if (xai) {
       await patchJob(jobId, xai.text ? { provider: "xai", transcript: xai.text } : { provider: "xai" });
-      await finalize({ p_actual_seconds: xai.seconds || seconds, p_job_id: jobId, p_status: "done" });
-      await reportVoiceCost(userId, "xai_grok_stt", xai.seconds || seconds);
+      await settleSynchronousJob(jobId, userId, "xai_grok_stt", xai.seconds, seconds);
       await removeObject(storagePath);
       return json({ jobId, usage }, 200, req);
     }
@@ -220,8 +219,7 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
       // failed the student would still get their text (status serves any parked
       // transcript) while the meter keeps the conservative reservation.
       await patchJob(jobId, groq.text ? { provider: "groq", transcript: groq.text } : { provider: "groq" });
-      await finalize({ p_actual_seconds: groq.seconds || seconds, p_job_id: jobId, p_status: "done" });
-      await reportVoiceCost(userId, "groq_whisper_turbo", groq.seconds || seconds);
+      await settleSynchronousJob(jobId, userId, "groq_whisper_turbo", groq.seconds, seconds);
       await removeObject(storagePath);
       return json({ jobId, usage }, 200, req);
     }
@@ -378,6 +376,42 @@ async function handleStatus(req: Request, userId: string, body: Record<string, u
 }
 
 /**
+ * Close out a job a SYNCHRONOUS provider already answered: settle the student's
+ * meter, then report what we paid. Two numbers, two destinations — the same
+ * split handleStatus documents at length for the AssemblyAI path, which is the
+ * only place it used to be applied.
+ *
+ * 🔴 THE `Math.max` IS THE WHOLE POINT, and leaving it out is invisible.
+ * `finalize_transcription_job` does `used += p_actual_seconds - audio_seconds`,
+ * so a provider duration SMALLER than the reservation REFUNDS the difference to
+ * the student. The phone trims sustained silence before uploading
+ * (apps/mobile/src/lib/wav-trim.ts), so the provider's number is systematically
+ * smaller — meaning the un-maxed form hands our own saving back to the student
+ * on every recording. That is precisely the option the owner rejected on
+ * 2026-07-27: the meter settles UP (the client under-estimated, charge the
+ * truth) but never DOWN.
+ *
+ * The cost report gets the provider's REAL duration, because that is the audio
+ * we are billed for. Only the meter is floored.
+ *
+ * Extracted so this cannot drift between providers again: both the xAI and Groq
+ * branches previously inlined `provider.seconds || seconds`, which had this bug
+ * in both copies.
+ */
+async function settleSynchronousJob(
+  jobId: string,
+  userId: string,
+  provider: Parameters<typeof batchCostUsd>[0],
+  providerSeconds: number,
+  reservedSeconds: number,
+): Promise<void> {
+  const paidFor = Math.max(0, Math.round(Number(providerSeconds) || 0));
+  const reserved = Math.max(0, Math.round(Number(reservedSeconds) || 0));
+  await finalize({ p_actual_seconds: Math.max(paidFor, reserved), p_job_id: jobId, p_status: "done" });
+  await reportVoiceCost(userId, provider, paidFor || reserved);
+}
+
+/**
  * One synchronous xAI Grok STT pass over a remote audio URL.
  *
  * Shape read off docs.x.ai/developers/model-capabilities/audio/speech-to-text on
@@ -399,6 +433,16 @@ async function transcribeWithXai(audioUrl: string): Promise<{ text: string; seco
     const form = new FormData();
     form.set("url", audioUrl);
     form.set("language", "en");
+    // `language` ALONE DOES NOTHING — the docs define it as "used with
+    // format=true to enable text formatting", so sending it without `format`
+    // was an inert field. `format` turns on Inverse Text Normalization, which
+    // is what writes "fifty milligrams" as "50 mg" and "one hundred dollars" as
+    // "$100". That matters here more than it looks: a lecture transcript is the
+    // input to notes and flashcards, and a dose or a figure spelled out in words
+    // is one the student cannot skim or search for.
+    // (The 400 in the docs is format=true WITHOUT language — never the reverse —
+    // so the pair has to be set together, as it is here.)
+    form.set("format", "true");
     form.set("diarize", "true");
     const res = await fetch("https://api.x.ai/v1/stt", {
       body: form,
