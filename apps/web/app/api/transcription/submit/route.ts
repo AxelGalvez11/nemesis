@@ -123,6 +123,22 @@ export async function POST(request: Request) {
       audio_url: signed.data.signedUrl,
       format_text: true,
       punctuate: true,
+      // Owner 2026-07-27, on the cheaper async tier: "just do it for now."
+      //
+      // This is a LIST, in priority order, and omitting it is NOT the same as
+      // omitting a default — AssemblyAI's own default is
+      // ["universal-3-5-pro", "universal-2"], so sending nothing was quietly
+      // buying the $0.21/hr Pro model on every recording. Pinning Universal-2
+      // is $0.15/hr, ~29% off the transcription line.
+      //
+      // (`speech_model`, singular, is the deprecated spelling — it would be
+      // accepted and ignored, which is the failure that looks like a saving on
+      // the invoice and isn't.)
+      //
+      // The trade is accuracy: Universal-2 is the older model. Reverting is
+      // deleting this one line, and lib/cost-report.ts's rate must move back
+      // with it.
+      speech_models: ["universal-2"],
       // Owner 2026-07-27. +$0.02/hr on top of this lane's async rate — a tenth
       // of the transcription line, not a new engine — and it buys the one thing
       // that matters for a lecture: a classmate's question, and especially a

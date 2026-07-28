@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     p_status: "done",
   });
   // The AssemblyAI batch lane — reached only when Groq declined the job, so it is
-  // reported under its own (roughly 6x pricier, diarization included) provider
+  // reported under its own (roughly 4x pricier, diarization included) provider
   // rather than folded in with Groq.
   await reportVoiceCost({
     lane: "recording",
