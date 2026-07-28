@@ -98,6 +98,10 @@ interface JobRow {
   status: string;
   error: string | null;
   transcript: string | null;
+  /** What was RESERVED against the student's monthly cap: the recording's real
+   *  wall-clock length. Not necessarily what the provider was sent — see the
+   *  settle rule in handleStatus. */
+  audio_seconds: number | null;
 }
 
 Deno.serve(async (req) => {
@@ -296,7 +300,31 @@ async function handleStatus(req: Request, userId: string, body: Record<string, u
     typeof polledBody.text === "string" ? polledBody.text : "",
   );
   const actualSeconds = Math.max(0, Math.round(Number(polledBody.audio_duration) || 0));
-  await finalize({ p_actual_seconds: actualSeconds, p_job_id: job.id, p_status: "done" });
+
+  // TWO DIFFERENT NUMBERS, TWO DIFFERENT DESTINATIONS. Read this before
+  // changing either.
+  //
+  // The phone cuts sustained silence out of a lecture before uploading
+  // (apps/mobile/src/lib/wav-trim.ts), so the provider is billed for LESS audio
+  // than the student actually recorded. Owner 2026-07-27 chose that saving to be
+  // OURS, not the student's — their monthly cap keeps counting real recorded
+  // time, exactly as before.
+  //
+  //   what we PAID          -> actualSeconds (trimmed)  -> reportVoiceCost
+  //   what the STUDENT owes -> wall-clock (reserved)    -> finalize
+  //
+  // finalize_transcription_job does `used += p_actual_seconds - audio_seconds`,
+  // so handing it the provider's number REFUNDS the trimmed minutes to the
+  // student — the option the owner rejected. Settling UP is still right (the
+  // client under-estimated, and we should charge the truth); settling DOWN is
+  // never right, because the only thing that makes the provider's number smaller
+  // is our own trimming.
+  const reservedSeconds = Math.max(0, Math.round(Number(job.audio_seconds) || 0));
+  await finalize({
+    p_actual_seconds: Math.max(actualSeconds, reservedSeconds),
+    p_job_id: job.id,
+    p_status: "done",
+  });
 
   // WHICH batch rate comes from the model the finished job reports, not from the
   // one the submit asked for: an ignored request field would otherwise show up
@@ -398,7 +426,7 @@ async function readJob(jobId: string): Promise<JobRow | null> {
   try {
     const url = `${SB_URL}/rest/v1/transcription_jobs` +
       `?id=eq.${encodeURIComponent(jobId)}` +
-      `&select=id,user_id,storage_path,provider_job_id,status,error,transcript&limit=1`;
+      `&select=id,user_id,storage_path,provider_job_id,status,error,transcript,audio_seconds&limit=1`;
     const res = await fetch(url, { headers: restHeaders });
     if (!res.ok) return null;
     const rows = await res.json().catch(() => null) as JobRow[] | null;

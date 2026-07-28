@@ -58,6 +58,7 @@ import {
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
+import { base64ToBytes, bytesToBase64, readWav, trimWavSilence } from "@/lib/wav-trim";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
   generalPrefsInstruction,
@@ -1016,7 +1017,13 @@ export async function enhanceRecordingArtifact(
   audioUris: string[],
   elapsedSeconds: number,
 ): Promise<void> {
-  const uris = audioUris.slice(0, 8);
+  // Every file, not the first eight. `audioUris.slice(0, 8)` silently DROPPED
+  // the rest of a long lecture, and because the per-file estimate divided the
+  // elapsed clock by the SLICED length, the student was still metered the whole
+  // hour — billed in full, transcribed in part, with nothing in any log saying
+  // so. Each file now carries its own real duration (read out of its WAV
+  // header), so neither the cap nor the arithmetic is guesswork.
+  const uris = audioUris;
   if (uris.length === 0) return;
   try {
     const { data } = await supabase.auth.getSession();
@@ -1030,20 +1037,32 @@ export async function enhanceRecordingArtifact(
     await writeChipEntry(uid, threadId, { ...artifact, polish: "pending" });
     const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
     const storageBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/storage/v1/object/recordings`;
-    const perFileSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
+    // Fallback only, for a file whose header will not parse: the old estimate.
+    const fallbackSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
 
     const pieces: string[] = [];
     for (const uri of uris) {
       const path = `${uid}/${generateUuidV4()}.wav`;
+      // Cut the dead air before we pay for it — AssemblyAI bills submitted
+      // duration. `prepareAudioForUpload` returns the ORIGINAL uri untouched
+      // whenever trimming is not safe or not worth it, so a recording can never
+      // be lost to a trimming bug; the worst case is the bill we already have.
+      const prepared = await prepareAudioForUpload(uri);
       // uploadAsync streams straight from disk — a 100MB lecture never has to
       // fit in JS memory the way a base64 round-trip would force.
-      const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, uri, {
+      const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, prepared.uri, {
         headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": "audio/wav" },
         httpMethod: "POST",
       });
+      if (prepared.uri !== uri) await deleteLocalAudio([prepared.uri]);
       if (upload.status !== 200) throw new Error(`audio upload failed (${upload.status})`);
       const submitRes = await fetch(`${APP_API_BASE}/api/transcription/submit`, {
-        body: JSON.stringify({ seconds: perFileSeconds, storagePath: path }),
+        // WALL-CLOCK, deliberately — not the trimmed length we just uploaded.
+        // This is what the student's monthly cap is charged; the saving from
+        // trimming is ours (owner 2026-07-27). The server keeps it that way by
+        // refusing to settle the meter downward — see the comment in
+        // supabase/functions/nemesis-transcribe/index.ts.
+        body: JSON.stringify({ seconds: prepared.wallClockSeconds ?? fallbackSeconds, storagePath: path }),
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         method: "POST",
       });
@@ -1126,6 +1145,61 @@ export async function enhanceRecordingArtifact(
 /** Drop the phone's copies of a recording's audio. Idempotent and never
  *  throws, so it is safe to call the moment the audio stops being needed AND
  *  again from the enhance pass's finally block. */
+/**
+ * How big a file we are willing to pull into JS memory to trim it. A base64
+ * round trip costs roughly 2.3x the file size in RAM, so this is the line
+ * between "worth the saving" and "risk an out-of-memory crash on a phone that
+ * has just recorded for an hour". At 16kHz/16-bit this is about 16 minutes of
+ * audio; a longer single file uploads untrimmed, which is exactly today's
+ * behaviour, not a regression.
+ */
+const MAX_TRIM_BYTES = 32 * 1024 * 1024;
+
+interface PreparedAudio {
+  /** What to upload — the trimmed copy if we made one, else the original. */
+  uri: string;
+  /** The recording's REAL length, read from its WAV header. Null when the file
+   *  could not be parsed, in which case the caller falls back to its estimate. */
+  wallClockSeconds: number | null;
+}
+
+/**
+ * Cut sustained silence out of one recorded file before it is uploaded.
+ *
+ * Every failure path returns the ORIGINAL uri: unreadable file, unparseable
+ * header, not 16-bit PCM, too big to hold in memory, nothing worth cutting, or
+ * any thrown error. Trimming is an optimisation, and an optimisation must never
+ * be able to cost a student their lecture.
+ */
+async function prepareAudioForUpload(uri: string): Promise<PreparedAudio> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists || info.size === undefined || info.size > MAX_TRIM_BYTES) {
+      return { uri, wallClockSeconds: null };
+    }
+
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const bytes = base64ToBytes(base64);
+    const parsed = readWav(bytes);
+    // Header first: even when there is nothing to trim, this is the file's true
+    // duration, which beats dividing the elapsed clock by the file count.
+    const wallClockSeconds = parsed
+      ? Math.max(1, Math.round(parsed.dataLength / 2 / parsed.channels / parsed.sampleRate))
+      : null;
+
+    const trimmed = trimWavSilence(bytes);
+    if (!trimmed) return { uri, wallClockSeconds };
+
+    const target = `${FileSystem.cacheDirectory ?? ""}trimmed-${generateUuidV4()}.wav`;
+    await FileSystem.writeAsStringAsync(target, bytesToBase64(trimmed.bytes), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return { uri: target, wallClockSeconds };
+  } catch {
+    return { uri, wallClockSeconds: null };
+  }
+}
+
 async function deleteLocalAudio(uris: string[]): Promise<void> {
   for (const uri of uris) {
     try {
