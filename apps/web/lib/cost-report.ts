@@ -10,8 +10,14 @@
 
 import { phServerCapture } from "@/lib/posthog-server";
 
-/** Voice providers we actually pay, by the lane they serve. */
-export type VoiceProvider = "assemblyai_batch" | "assemblyai_streaming" | "groq_whisper_turbo";
+/** Voice providers we actually pay, by the lane they serve. The batch lane is
+ *  split by MODEL because the two differ by 40% an hour and which one ran is
+ *  decided by AssemblyAI, not by us — see batchProviderFor. */
+export type VoiceProvider =
+  | "assemblyai_batch"
+  | "assemblyai_batch_universal2"
+  | "assemblyai_streaming"
+  | "groq_whisper_turbo";
 
 /**
  * USD per HOUR of audio, read off each provider's own pricing page on PRICE_REV:
@@ -19,18 +25,42 @@ export type VoiceProvider = "assemblyai_batch" | "assemblyai_streaming" | "groq_
  * $0.15/hr and Universal-3.5 Pro $0.21/hr; standard speaker diarization
  * +$0.02/hr on async) and groq.com/pricing (whisper-large-v3-turbo $0.04/hr).
  *
- * The batch rate is Universal-2 PLUS diarization ($0.15 + $0.02), because that
- * is exactly what the batch lane asks for — see the `speech_models` and
- * `speaker_labels` fields in app/api/transcription/submit. A rate that left out
- * an add-on we always buy would under-report every recording; a rate still
- * quoting the Pro model would over-report every one. Change the request and
- * this number moves with it, or the cost report becomes fiction.
+ * Both batch rates INCLUDE the +$0.02 diarization add-on, because the batch
+ * lane always asks for speaker labels (app/api/transcription/submit). A rate
+ * that left out an add-on we always buy would under-report every recording.
  */
 export const VOICE_USD_PER_HOUR: Readonly<Record<VoiceProvider, number>> = {
-  assemblyai_batch: 0.17,
+  assemblyai_batch: 0.23,
+  assemblyai_batch_universal2: 0.17,
   assemblyai_streaming: 0.15,
   groq_whisper_turbo: 0.04,
 };
+
+/**
+ * Which batch rate to bill, from the model AssemblyAI says it actually ran.
+ *
+ * The submit asks for Universal-2, the cheaper tier. Whether it GETS it is not
+ * something this codebase can assert: the request field was taken from the
+ * provider's docs, and a field name that is wrong or has moved is accepted and
+ * ignored rather than rejected — the failure that looks like a saving on the
+ * invoice and is not one. So the price is read back off the completed job
+ * instead of assumed from what we asked for.
+ *
+ * ANYTHING unrecognised bills at the Pro rate. Guessing wrong in the cheap
+ * direction makes the cost report quietly understate every recording, which is
+ * the one error a margin figure must not make; guessing wrong in the expensive
+ * direction is visible and safe.
+ */
+export function batchProviderFor(model: unknown): VoiceProvider {
+  const named = typeof model === "string"
+    ? model
+    : Array.isArray(model) && typeof model[0] === "string"
+      ? model[0]
+      : "";
+  return named.toLowerCase().replace(/[^a-z0-9]/g, "") === "universal2"
+    ? "assemblyai_batch_universal2"
+    : "assemblyai_batch";
+}
 
 /** Price list revision, stamped on every event so a later price change cannot
  *  retroactively rewrite what an earlier month cost. A re-price is a NEW rev,

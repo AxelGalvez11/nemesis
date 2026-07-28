@@ -1,4 +1,4 @@
-import { reportVoiceCost } from "@/lib/cost-report";
+import { batchProviderFor, reportVoiceCost } from "@/lib/cost-report";
 import { assemblyAiApiKey, groqApiKey } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { formatDiarizedTranscript, utterancesOf } from "@/lib/transcript-speakers";
@@ -70,6 +70,11 @@ export async function POST(request: Request) {
     text?: unknown;
     utterances?: unknown;
     audio_duration?: unknown;
+    // Whichever spelling this account's API echoes — the completed job is the
+    // only place that says which model actually ran, and the two batch tiers
+    // differ by 40% an hour. See batchProviderFor.
+    speech_model?: unknown;
+    speech_models?: unknown;
     error?: unknown;
   } | null;
   if (!polled.ok || typeof polledBody?.status !== "string") {
@@ -100,11 +105,21 @@ export async function POST(request: Request) {
     p_status: "done",
   });
   // The AssemblyAI batch lane — reached only when Groq declined the job, so it is
-  // reported under its own (roughly 4x pricier, diarization included) provider
-  // rather than folded in with Groq.
+  // reported under its own (several times pricier, diarization included)
+  // provider rather than folded in with Groq. WHICH batch rate comes from the
+  // model the finished job reports, not from the one the submit asked for: an
+  // ignored request field would otherwise show up as a saving that never
+  // happened. Unrecognised bills at the dearer tier — see batchProviderFor.
+  const ranModel = polledBody.speech_models ?? polledBody.speech_model;
+  const batchProvider = batchProviderFor(ranModel);
+  if (batchProvider === "assemblyai_batch") {
+    // Loud on purpose: this is the tell that the pinned cheaper tier is not
+    // being honoured, and it is otherwise invisible until the invoice arrives.
+    console.warn("transcription billed at the Pro batch rate; model reported as", JSON.stringify(ranModel ?? null));
+  }
   await reportVoiceCost({
     lane: "recording",
-    provider: "assemblyai_batch",
+    provider: batchProvider,
     seconds: actualSeconds,
     userId: job.user_id,
   });
