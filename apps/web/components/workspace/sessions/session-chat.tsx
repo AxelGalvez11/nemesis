@@ -17,6 +17,7 @@ import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
+import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
@@ -27,7 +28,7 @@ import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
 import { ProjectPill } from "./project-pill";
-import { Thread, type ThreadTurn } from "./thread";
+import { Thread } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace } from "./record-workspace";
@@ -35,21 +36,6 @@ import { RecordWorkspace } from "./record-workspace";
 /** Where a recording's notes are filed. Its own folder so a semester of
  *  lectures stays browsable next to the student's typed notes. */
 const RECORDINGS_FOLDER = "Nemesis/Recordings";
-
-function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
-  const turns: ThreadTurn[] = [];
-  for (const message of messages) {
-    if (message.role === "user") {
-      turns.push({ assistant: null, user: message });
-      continue;
-    }
-    const open = turns[turns.length - 1];
-    if (open && open.assistant === null) open.assistant = message;
-    // else: an assistant message with no open user turn — dropped defensively;
-    // the submit flow below never produces this shape.
-  }
-  return turns;
-}
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
@@ -275,20 +261,17 @@ export function SessionChat() {
     setRecording(false);
     setComposerMode("chat");
     if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
-    // Deliberately NOT opening the Outputs panel any more (owner 2026-07-28:
-    // "recorded session did not save into chat as part of the conversation as
-    // artifact, it only saved in the outputs section").
+    // Deliberately NOT opening the Outputs panel (owner 2026-07-28: "recorded
+    // session did not save into chat as part of the conversation as artifact,
+    // it only saved in the outputs section"). Leaving the panel alone keeps the
+    // student in the conversation, where the artifact belongs.
     //
-    // The card was always posted into the thread — assistant-message.tsx renders
-    // message.outputs, and appendMessageCloud persists them under meta.outputs,
-    // so it survives a reload. What went wrong was navigational: finishing a
-    // recording slid the right rail open on Outputs, which puts the student in
-    // front of the Outputs list at the exact moment the chat card appears
-    // behind it. The recording looked like it had gone only there because that
-    // is the one place they were shown.
-    //
-    // Leaving the panel alone keeps them in the conversation, which is where
-    // the artifact belongs and where every other saved thing already lands.
+    // That alone did not fix it, and the earlier note here — blaming the rail
+    // sliding open — was wrong. The card was posted and persisted every time
+    // (chat_messages holds it with the artifact under meta.outputs); the THREAD
+    // was throwing it away, because grouping dropped any assistant message with
+    // no unanswered question above it, which is every recording. See
+    // lib/workspace/session-turns.ts.
     const targetId = selectedId;
     void (async () => {
       // ONE compose pass over the whole transcript (owner 2026-07-27). There are

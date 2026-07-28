@@ -22,24 +22,33 @@ import { outputMetaLine } from "./output-card";
 type ViewerTab = "notes" | "transcript";
 
 const VIEWER_TABS = [
-  { id: "transcript" as const, label: "Transcript" },
   { id: "notes" as const, label: "Notes" },
+  { id: "transcript" as const, label: "Transcript" },
 ];
 
 export function OutputViewerDialog() {
   const state = useSyncExternalStore(subscribeOutputViewer, outputViewerSnapshot, outputViewerServerSnapshot);
-  const [tab, setTab] = useState<ViewerTab>("transcript");
+  const [tab, setTab] = useState<ViewerTab>("notes");
   const output = state.output;
 
-  // Start on Transcript when there is one, otherwise Notes.
+  // Open on the NOTES (owner 2026-07-28: "clicking on the artifact should open
+  // a popup to view the note") — the write-up is the thing a student keeps; the
+  // raw transcript is there to check it against. Falls back to the transcript
+  // when the write-up failed, so the popup is never blank while there is
+  // something to read.
+  //
+  // Keyed on the output's id, not the object: a store snapshot with a fresh
+  // identity would otherwise snap the toggle back to Notes mid-read.
+  const outputId = output?.id ?? null;
   useEffect(() => {
-    if (state.open) setTab(output?.transcript?.trim() ? "transcript" : "notes");
-  }, [output, state.open]);
+    if (state.open) setTab(output?.notes?.trim() ? "notes" : "transcript");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity of `output` churns; the id is what changes meaningfully.
+  }, [outputId, state.open]);
 
   const transcript = output?.transcript?.trim() ?? "";
   const notes = output?.notes?.trim() ?? "";
   const showToggle = Boolean(transcript && notes);
-  const activeTab: ViewerTab = showToggle ? tab : transcript ? "transcript" : "notes";
+  const activeTab: ViewerTab = showToggle ? tab : notes ? "notes" : "transcript";
 
   return (
     <Dialog onOpenChange={(open) => { if (!open) closeOutputViewer(); }} open={state.open}>

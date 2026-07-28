@@ -89,6 +89,32 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
     ],
   },
   {
+    // The exact shape a finished recording leaves behind: a session with no
+    // question in it at all, holding one assistant message and its artifact.
+    // Seeded so this case is on the screenshot harness — it is what the thread
+    // used to throw away (see lib/workspace/session-turns.ts).
+    id: "preview-recording",
+    title: "Recorded session",
+    createdAt: minutesAgo(20),
+    updatedAt: minutesAgo(18),
+    messages: [
+      {
+        role: "assistant",
+        content: "Recording captured. The notes are saved in your Library at Nemesis/Recordings/Recording · Lecture 4.md. Want me to link them to your existing notes on this topic?",
+        at: minutesAgo(18),
+        outputs: [{
+          id: "preview-recording-output",
+          kind: "recording",
+          title: "Recording · Lecture 4",
+          durationSeconds: 2_640,
+          createdAt: minutesAgo(18),
+          notes: "## What this covered\n\nThe lecture worked through how a statute is read when its plain wording and its stated purpose pull apart.\n\n### The plain-meaning rule\n\nStart with the ordinary sense of the words. The lecturer flagged this as **examinable**: courts only reach for purpose once the text is genuinely ambiguous.\n\n### Open questions\n\n- Whether the 1998 amendment displaces the earlier test.",
+          transcript: "Right, so if you look at section twelve, the wording is doing all the work here...",
+        }],
+      },
+    ],
+  },
+  {
     id: "preview-anki",
     title: "Anki deck from cardio lecture",
     createdAt: minutesAgo(2000),
@@ -106,8 +132,16 @@ export default function WorkspacePreviewPage() {
 
   // Seed after mount so the external-store notification never fires while a
   // different component is rendering (React treats that as an invalid update).
+  //
+  // ?session=<id> picks which seeded thread opens. The sidebar rows are real
+  // links into /sessions, which is behind the auth gate, so inside this harness
+  // they bounce to sign-in — the query string is the only way to screenshot a
+  // thread other than the default one. Read off window rather than
+  // useSearchParams so this page needs no Suspense boundary to prerender.
   useEffect(() => {
-    sessionsStore.injectPreview(PREVIEW_SESSIONS, "preview-pharmacology");
+    const requested = new URLSearchParams(window.location.search).get("session");
+    const selected = PREVIEW_SESSIONS.some((session) => session.id === requested) ? requested : "preview-pharmacology";
+    sessionsStore.injectPreview(PREVIEW_SESSIONS, selected ?? "preview-pharmacology");
   }, []);
 
   const Surface = SURFACES[surface];
