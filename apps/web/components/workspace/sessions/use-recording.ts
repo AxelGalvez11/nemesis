@@ -33,6 +33,8 @@ import {
   type TranscriptionUsage,
 } from "@/lib/workspace/recording-capture";
 import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { createSilenceGate, describeSilenceSkipped, stepSilenceGate, type SilenceGate } from "@/lib/workspace/silence-gate";
+import { emptyWaveform, pushWaveBar, WAVEFORM_SAMPLE_MS, type WaveBar } from "@/lib/workspace/waveform-history";
 
 interface UseRecordingOptions {
   active: boolean;
@@ -51,7 +53,10 @@ interface CaptureNodes {
   recorder: MediaRecorder;
 }
 
-const LEVEL_INTERVAL_MS = 90;
+/** One tick drives the meter, the waveform AND silence detection. It is set by
+ *  the strictest of the three: lag here is lost audio at the front of a word,
+ *  not a stuttery bar. */
+const LEVEL_INTERVAL_MS = WAVEFORM_SAMPLE_MS;
 
 /** Loudness of one analyser frame, 0..1, from bytes centred on 128. */
 function frameLevel(bytes: Uint8Array): number {
@@ -82,6 +87,16 @@ export function useRecordingSession(options: UseRecordingOptions) {
   const startedAtRef = useRef(0);
   const completeRef = useRef(options.onComplete);
   completeRef.current = options.onComplete;
+
+  // Silence gating. `capturedMs` is the audio we will actually be billed for
+  // and metered on; wall-clock time is the timer the student watches. The two
+  // diverge by exactly the quiet we skipped, which is the number worth knowing.
+  const gateRef = useRef<SilenceGate>(createSilenceGate());
+  const capturedMsRef = useRef(0);
+  const [gateOpen, setGateOpen] = useState(true);
+  // Held in a ref, not state: the canvas reads it from an animation frame, and
+  // pushing 10 array updates a second through React would re-render the chat.
+  const waveformRef = useRef<WaveBar[]>(emptyWaveform());
 
   /** Close the microphone and every timer. Never touches the transcription in
    *  flight — the audio is already captured by the time this runs. */
@@ -121,6 +136,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
       // A recorder that never fires "stop" must not hang the lecture forever.
       window.setTimeout(resolve, 3_000);
     });
+    // Resume first if the silence gate had it paused: a paused recorder is not
+    // required to deliver its final chunk on stop, and the tail of the lecture
+    // is the part with the summary in it.
+    if (recorder.state === "paused") {
+      try { recorder.resume(); } catch { /* about to stop anyway */ }
+    }
     try { recorder.stop(); } catch { /* already stopping */ }
     await stopped;
     return chunksRef.current.length ? new Blob(chunksRef.current, { type: recorder.mimeType }) : null;
@@ -186,7 +207,14 @@ export function useRecordingSession(options: UseRecordingOptions) {
     // Measured from the start timestamp, not from `elapsedSeconds` state: that
     // changes every second, and depending on it would rebuild this callback —
     // and therefore re-run the start/stop effect — once a second while recording.
-    const seconds = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1_000) : 0;
+    const wallClockSeconds = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1_000) : 0;
+    // What the file actually contains, and therefore what we are billed for and
+    // what the student's monthly allowance is charged (owner 2026-07-27 chose
+    // the saving goes to the student). The gate never lets this exceed the
+    // wall clock, but clamp anyway — a number that meters someone must not be
+    // able to run away.
+    const capturedSeconds = Math.min(wallClockSeconds, Math.round(capturedMsRef.current / 1_000));
+    const skipped = describeSilenceSkipped(wallClockSeconds * 1_000, capturedSeconds * 1_000);
 
     let blob: Blob | null = null;
     try {
@@ -195,19 +223,29 @@ export function useRecordingSession(options: UseRecordingOptions) {
       releaseMedia();
     }
 
-    if (!blob || blob.size === 0 || seconds <= 0) {
-      if (mountedRef.current) setStatus("idle");
+    if (!blob || blob.size === 0 || capturedSeconds <= 0) {
+      if (mountedRef.current) {
+        // A recording that captured nothing is a real outcome worth naming —
+        // a muted mic looks exactly like a quiet room to the gate.
+        if (wallClockSeconds > 5) {
+          setStatus("error");
+          setError("Nemesis did not hear anything. Check the microphone is not muted and try again.");
+          finishingRef.current = false;
+          return;
+        }
+        setStatus("idle");
+      }
       finishingRef.current = false;
       completeRef.current?.({ durationSeconds: 0, notes: "", transcript: "" });
       return;
     }
 
     try {
-      const transcript = await transcribe(blob, seconds);
+      const transcript = await transcribe(blob, capturedSeconds);
       if (!mountedRef.current) return;
       setStatus("idle");
       finishingRef.current = false;
-      completeRef.current?.({ durationSeconds: seconds, notes: "", transcript });
+      completeRef.current?.({ durationSeconds: capturedSeconds, notes: "", transcript, ...(skipped ? { silenceSkipped: skipped } : {}) });
     } catch (caught) {
       const failure = caught as Error & { quota?: boolean };
       if (!mountedRef.current) return;
@@ -236,6 +274,10 @@ export function useRecordingSession(options: UseRecordingOptions) {
     setUsage(null);
     setElapsedSeconds(0);
     chunksRef.current = [];
+    gateRef.current = createSilenceGate();
+    capturedMsRef.current = 0;
+    waveformRef.current = emptyWaveform();
+    setGateOpen(true);
     capturingRef.current = true;
     setStatus("recording");
 
@@ -275,6 +317,27 @@ export function useRecordingSession(options: UseRecordingOptions) {
         // Same reading, published to the composer's waveform, which is a sibling
         // of this recorder rather than a child — see lib/workspace/mic-level.ts.
         publishMicLevel(next);
+
+        // Silence gate. Decided BEFORE the recorder is touched so the bar drawn
+        // for this slice matches what the recorder actually did with it.
+        const gate = stepSilenceGate(gateRef.current, next, LEVEL_INTERVAL_MS);
+        gateRef.current = gate;
+        if (gate.capturing) capturedMsRef.current += LEVEL_INTERVAL_MS;
+        waveformRef.current = pushWaveBar(waveformRef.current, { captured: gate.capturing, level: next });
+
+        // pause()/resume() are the whole mechanism: paused, MediaRecorder simply
+        // stops adding bytes, so the quiet never enters the file and is never
+        // uploaded or billed. Guarded by state so a steady room is not calling
+        // into the recorder ten times a second.
+        const live = nodesRef.current?.recorder;
+        if (live) {
+          if (!gate.capturing && live.state === "recording") {
+            try { live.pause(); } catch { /* a recorder mid-stop cannot pause */ }
+          } else if (gate.capturing && live.state === "paused") {
+            try { live.resume(); } catch { /* likewise */ }
+          }
+        }
+        if (mountedRef.current) setGateOpen(gate.capturing);
       }, LEVEL_INTERVAL_MS);
 
       startedAtRef.current = Date.now();
@@ -312,8 +375,14 @@ export function useRecordingSession(options: UseRecordingOptions) {
     elapsedLabel: formatLiveDuration(elapsedSeconds),
     elapsedSeconds,
     error,
+    /** False while the silence gate has the recorder paused. Drives the "quiet
+     *  — not recording" label, so the pause is visible rather than mysterious. */
+    gateOpen,
     level,
     status,
     usage,
+    /** Read from an animation frame by the canvas. A ref, not state: ten array
+     *  updates a second through React would re-render the whole chat screen. */
+    waveformRef,
   };
 }

@@ -14,6 +14,7 @@ import { formatLiveDuration } from "@/lib/workspace/recording-note";
 import { isCapturing, isFinishing, recordingStatusCopy } from "@/lib/workspace/recording-capture";
 import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
+import { RecordingWaveform } from "./recording-waveform";
 import { useRecordingSession } from "./use-recording";
 
 interface RecordWorkspaceProps {
@@ -24,23 +25,6 @@ interface RecordWorkspaceProps {
   onFinished?: (draft: RecordingArtifactDraft) => void;
 }
 
-function AudioMeter({ level, active }: { level: number; active: boolean }) {
-  return (
-    <div aria-hidden className="flex h-9 items-end justify-center gap-[3px]">
-      {Array.from({ length: 24 }, (_, index) => {
-        const emphasis = 0.3 + (1 - Math.abs(index - 11.5) / 12) * 0.7;
-        const height = active ? Math.max(4, 5 + level * 34 * emphasis) : 4;
-        return (
-          <span
-            className="w-[3px] rounded-full bg-current transition-[height,opacity] duration-100"
-            key={index}
-            style={{ height, opacity: active ? 0.4 + level * 0.55 : 0.22 }}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 /** Recording canvas for Sessions and active Notebook recordings. */
 export function RecordWorkspace({
@@ -84,8 +68,10 @@ export function RecordWorkspace({
             )}
           </div>
         ) : finishing ? (
-          <div className="max-w-sm text-center">
-            <div className="mb-4 text-(--ui-text-tertiary)"><AudioMeter active={false} level={0} /></div>
+          <div className="w-full max-w-md text-center">
+            <div className="mx-auto mb-5 h-16 w-full opacity-50">
+              <RecordingWaveform active={false} bars={recording.waveformRef} />
+            </div>
             <p className="text-sm font-medium text-foreground">{recordingStatusCopy(recording.status)}</p>
             <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">
               Nemesis is transcribing the whole recording in one pass, then writing your notes. This takes a moment and is worth
@@ -93,12 +79,20 @@ export function RecordWorkspace({
             </p>
           </div>
         ) : capturing ? (
-          <div className="max-w-sm text-center">
-            <div className="mb-4 text-foreground"><AudioMeter active level={recording.level} /></div>
+          <div className="w-full max-w-md text-center">
+            <div className="mx-auto mb-5 h-16 w-full">
+              <RecordingWaveform active={recording.gateOpen} bars={recording.waveformRef} />
+            </div>
             <p className="font-mono text-2xl tabular-nums text-foreground">{recording.elapsedLabel}</p>
+            <p className={cn(
+              "mt-2 text-[0.6875rem] font-medium transition-colors",
+              recording.gateOpen ? "text-[var(--theme-primary)]" : "text-(--ui-text-quaternary)",
+            )}>
+              {recording.gateOpen ? "Picking up audio" : "Quiet — paused"}
+            </p>
             <p className="mt-3 text-xs leading-relaxed text-(--ui-text-quaternary)">
-              Recording. Nothing is transcribed until you stop — then the whole lecture is read in one high-quality pass and your
-              notes are written from all of it at once.
+              Quiet stretches are skipped, so only real audio is recorded and transcribed. Nothing is transcribed until you stop —
+              then the whole lecture is read in one high-quality pass and your notes are written from all of it at once.
             </p>
           </div>
         ) : (
