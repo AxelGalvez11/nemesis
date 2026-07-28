@@ -37,11 +37,41 @@ export interface ModelPrice {
 /** Price list revision, mirrored from _shared/llm-cost.ts. */
 export const PRICE_REV = "2026-07-24";
 
-export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
+/** Models the valve can actually route to. A test asserts every row here still
+ *  matches _shared/llm-cost.ts, so this table may only hold WIRED models. */
+export const LIVE_MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
   "deepseek-v4-flash": { cachedInputPerM: 0.0028, inputPerM: 0.14, outputPerM: 0.28 },
   "deepseek-v4-pro": { cachedInputPerM: 0.003625, inputPerM: 0.435, outputPerM: 0.87 },
   "glm-5.2": { cachedInputPerM: 0.26, inputPerM: 1.4, outputPerM: 4.4 },
 };
+
+/**
+ * Models we do NOT run, priced only so "should we move to a better model?" can be
+ * answered with a number instead of a feeling. Kept apart from LIVE_MODEL_PRICES so
+ * the drift guard can stay strict: a survey price has no canonical file to match.
+ *
+ * kimi-k3 read off platform.kimi.ai/docs/pricing/chat-k3 on SURVEY_CHECKED. See
+ * KIMI_REASONS_ALWAYS — the output rate is the whole story, and it is charged on
+ * internal reasoning too.
+ */
+export const SURVEYED_MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
+  "kimi-k3": { cachedInputPerM: 0.3, inputPerM: 3, outputPerM: 15 },
+};
+
+/** Everything the model can cost, live or surveyed. */
+export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
+  ...LIVE_MODEL_PRICES,
+  ...SURVEYED_MODEL_PRICES,
+};
+
+/**
+ * K3 always reasons at maximum effort — there is no cheaper non-thinking mode, and
+ * every internal reasoning token bills as OUTPUT at $15/M. So a K3 cost estimate
+ * built from visible completion length alone understates the bill by however much
+ * the model thought, which is exactly the error a "the AI is cheap" argument would
+ * make. `chatCompletionMultiple` exists so that has to be stated, not forgotten.
+ */
+export const KIMI_REASONS_ALWAYS = true;
 
 /** Voice price revision, mirrored from _shared/voice-cost.ts and lib/cost-report.ts. */
 export const VOICE_PRICE_REV = "2026-07-27";
@@ -327,20 +357,52 @@ export function tokensFromChars(chars: number): number {
  *  • ios-parakeet — on-device Parakeet (PR #273, shipped in iOS build 22, still not
  *    device-verified). Nothing leaves the phone, so there is no per-minute cost.
  */
-export type RecorderLane = "web-batch" | "web-batch-pro" | "web-batch-groq" | "ios-parakeet";
+export type RecorderLane =
+  | "web-batch"
+  | "web-batch-pro"
+  | "web-batch-groq"
+  | "web-batch-xai"
+  | "web-batch-modulate"
+  | "ios-parakeet";
+
+/**
+ * Batch rates for providers we do NOT use yet, surveyed 2026-07-28. These are here
+ * so a switch can be argued with a number; none of them is wired.
+ *
+ *  • xai_grok_stt — $0.10/hr batch, speaker diarization INCLUDED, read off x.ai's own
+ *    announcement page. The only survey figure confirmed at TWO independent sources
+ *    (xAI's page and a competitor's comparison table), which is why it is the one to
+ *    trust most.
+ *  • modulate — $0.03/hr batch, diarization included, read off modulate.ai's own
+ *    comparison table. VENDOR-MARKETED AND UNVERIFIED: it is the seller's own number
+ *    on the seller's own page, and the same table prices AssemblyAI at $0.21 (the
+ *    dearer tier) rather than the $0.15 tier we actually buy — so the table is
+ *    arranged to flatter. Treat as a lead to test, not a price to plan on.
+ */
+export const SURVEYED_USD_PER_HOUR = {
+  modulate: 0.03,
+  xai_grok_stt: 0.1,
+} as const;
+
+/** When the survey above was taken. Provider prices move; re-read before quoting. */
+export const SURVEY_CHECKED = "2026-07-28";
 
 const LANE_USD_PER_HOUR: Readonly<Record<RecorderLane, number>> = {
   "ios-parakeet": 0,
   "web-batch": BATCH_USD_PER_HOUR.assemblyai_batch_universal2,
   "web-batch-groq": BATCH_USD_PER_HOUR.groq_whisper_turbo,
+  "web-batch-modulate": SURVEYED_USD_PER_HOUR.modulate,
   "web-batch-pro": BATCH_USD_PER_HOUR.assemblyai_batch,
+  "web-batch-xai": SURVEYED_USD_PER_HOUR.xai_grok_stt,
 };
 
 const LANE_NOTES: Readonly<Record<RecorderLane, string>> = {
   "ios-parakeet": "nothing leaves the phone — built (PR #273, build 22), not device-verified",
   "web-batch": "AssemblyAI Universal-2 + speaker labels — the live default",
   "web-batch-groq": "Groq whisper-large-v3-turbo — wired and first in line, but no PAYG access",
+  "web-batch-modulate": "Modulate — cheapest surveyed, diarization included, but VENDOR-CLAIMED and untested",
   "web-batch-pro": "AssemblyAI Universal-3.5 Pro — what we pay if the pinned model is ignored",
+  "web-batch-xai": "xAI Grok STT — diarization included, price confirmed at two sources, not wired",
 };
 
 export interface StudentMonth {
@@ -374,6 +436,15 @@ export interface StudentMonth {
   chatModel: string;
   /** Share of prompt tokens the provider reports as cache hits on the chat lane. */
   chatCacheHitRate: number;
+  /**
+   * Multiplies the chat lane's completion tokens to account for INTERNAL REASONING,
+   * which providers bill as output at the full output rate.
+   *
+   * 1 for a non-thinking model. A reasoning model routinely thinks several times the
+   * length of what it shows, so pricing one at 1x is the mistake that makes an
+   * expensive model look affordable. Kimi K3 has no non-thinking mode at all.
+   */
+  chatReasoningMultiple: number;
   /** Per-slide vision calls for figures and diagrams. Not built; Gemini is not in
    *  MODEL_PRICES, so these report UNPRICED rather than $0. */
   visionImagesPerDeck: number;
@@ -396,6 +467,7 @@ export const HEAVY_STUDENT: StudentMonth = {
   audioHours: 80,
   chatCacheHitRate: MEASURED_CHAT.cacheHitRate,
   chatModel: "deepseek-v4-flash",
+  chatReasoningMultiple: 1,
   chatTurnsPerDay: 40,
   dailyNotes: true,
   decks: 70,
@@ -597,18 +669,20 @@ function visionLine(input: StudentMonth): CostLine | null {
 function chatLine(input: StudentMonth): CostLine {
   const calls = input.chatTurnsPerDay * input.schoolDays;
   const promptTokens = MEASURED_CHAT.promptTokens;
-  const completionTokens = MEASURED_CHAT.completionTokens;
+  const reasoning = Math.max(1, input.chatReasoningMultiple);
+  const completionTokens = Math.round(MEASURED_CHAT.completionTokens * reasoning);
   const split = {
     cacheHitTokens: Math.round(promptTokens * clamp01(input.chatCacheHitRate)),
     completionTokens,
     promptTokens,
   };
+  const thinking = reasoning > 1 ? `, ${reasoning}x completion for internal reasoning` : "";
   return {
     basis: "measured",
     calls,
     metered: meteredTokens(split) * calls,
     name: "Chat: concepts, library edits, planning",
-    note: `${promptTokens.toLocaleString()} prompt / ${completionTokens} completion tokens, ${Math.round(clamp01(input.chatCacheHitRate) * 100)}% cached — measured over ${MEASURED_CHAT.sampleSize} production calls`,
+    note: `${promptTokens.toLocaleString()} prompt / ${completionTokens} completion tokens, ${Math.round(clamp01(input.chatCacheHitRate) * 100)}% cached${thinking} — measured over ${MEASURED_CHAT.sampleSize} production calls`,
     usd: multiply(completionUsd(input.chatModel, split), calls),
   };
 }

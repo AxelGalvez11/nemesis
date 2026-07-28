@@ -11,6 +11,8 @@ import {
   DIARIZATION_USD_PER_HOUR,
   HEAVY_STUDENT,
   HOUSE_MARGIN,
+  KIMI_REASONS_ALWAYS,
+  LIVE_MODEL_PRICES,
   MATERIAL_CHAR_LIMIT,
   meteredTokens,
   modelStudentMonth,
@@ -22,6 +24,8 @@ import {
   PRICE_REV,
   RECORDING_NOTE_TRANSCRIPT_CHARS,
   STREAMING_USD_PER_HOUR,
+  SURVEYED_MODEL_PRICES,
+  SURVEYED_USD_PER_HOUR,
   VOICE_PRICE_REV,
   type PlanCode,
   type StudentMonth,
@@ -34,14 +38,26 @@ const repoFile = (path: string) => readFileSync(new URL(`../../../${path}`, impo
 // stale silently is worse than no model at all: it would keep answering confidently
 // with last month's prices. These read the real files and fail on divergence.
 
-test("model prices match the valve's canonical price list", () => {
+test("live model prices match the valve's canonical price list", () => {
   const source = repoFile("supabase/functions/_shared/llm-cost.ts");
   assert.match(source, new RegExp(`PRICE_REV = "${PRICE_REV}"`), "price revision drifted");
-  for (const [model, price] of Object.entries(MODEL_PRICES)) {
+  for (const [model, price] of Object.entries(LIVE_MODEL_PRICES)) {
     const line = new RegExp(
       `"${model}":\\s*\\{\\s*cachedInputPerM:\\s*${price.cachedInputPerM},\\s*inputPerM:\\s*${price.inputPerM},\\s*outputPerM:\\s*${price.outputPerM}`,
     );
     assert.match(source, line, `${model} price drifted from _shared/llm-cost.ts`);
+  }
+});
+
+// A surveyed model has no canonical file to match, which is exactly why it must not
+// sit in the table the guard above checks — it would either break the guard or force
+// it to be loosened, and a loosened guard is how a stale price survives.
+test("surveyed models are kept out of the live price table", () => {
+  const source = repoFile("supabase/functions/_shared/llm-cost.ts");
+  for (const model of Object.keys(SURVEYED_MODEL_PRICES)) {
+    assert.ok(!(model in LIVE_MODEL_PRICES), `${model} is surveyed, not live`);
+    assert.doesNotMatch(source, new RegExp(`"${model}"`), `${model} is now wired — move it to LIVE_MODEL_PRICES`);
+    assert.ok(MODEL_PRICES[model], "but it must still be costable");
   }
 });
 
@@ -258,6 +274,63 @@ test("Pro LOSES MONEY at 80 hours if the cheaper AssemblyAI tier is not honoured
   assert.equal(ignored.profitable, false, "a silently ignored request field costs the whole margin and more");
   assert.ok(ignored.headroomUsd < 0, `headroom was ${ignored.headroomUsd}`);
   assert.ok(ignored.grossMarginPct < 0, `margin was ${ignored.grossMarginPct}%`);
+});
+
+// ── Would a different provider or a better model help? ──────────────────────
+// Surveyed 2026-07-28 because the owner asked. Every figure here is a comparison
+// against what we pay today, and none of these lanes is wired.
+
+test("xAI Grok STT would more than double Pro's margin, and throws in the add-on", () => {
+  const live = modelStudentMonth(HEAVY_STUDENT);
+  const xai = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-xai" });
+  assert.equal(xai.audioUsd, 8);
+  assert.ok(xai.grossMarginPct > live.grossMarginPct * 2, `${live.grossMarginPct}% -> ${xai.grossMarginPct}%`);
+  // And its $0.10 INCLUDES speaker diarization, which we currently pay $0.02/hr for
+  // on top — so the real gap is wider than the sticker difference suggests.
+  assert.ok(SURVEYED_USD_PER_HOUR.xai_grok_stt < BATCH_USD_PER_HOUR.assemblyai_batch_universal2);
+});
+
+test("the cheapest surveyed lane is the least trustworthy one", () => {
+  // Modulate's $0.03 is the seller's own number on the seller's own page, and the
+  // same table prices AssemblyAI at the tier we do not buy. Best margin on paper,
+  // least evidence behind it — so it is a lead to test, not a plan.
+  const modulate = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-modulate" });
+  const xai = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-xai" });
+  assert.ok(modulate.grossMarginPct > xai.grossMarginPct);
+  assert.ok(SURVEYED_USD_PER_HOUR.modulate < SURVEYED_USD_PER_HOUR.xai_grok_stt / 3);
+});
+
+// "The AI is cheap, so can we use a better model?" — true of the model we run, and
+// it stops being true fast. The audio lane decides the answer, not the AI budget.
+test("a better chat model is affordable only once the audio lane comes down", () => {
+  const glmOnLiveAudio = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2" });
+  const glmOnXai = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", recorder: "web-batch-xai" });
+  assert.ok(glmOnLiveAudio.grossMarginPct < 10, `GLM on today's audio is ${glmOnLiveAudio.grossMarginPct}%`);
+  assert.ok(glmOnXai.grossMarginPct > 35, `GLM on cheaper audio is ${glmOnXai.grossMarginPct}%`);
+});
+
+// Kimi K3 is $3/$0.30/$15 per 1M and has NO non-thinking mode, so every reasoning
+// token bills as output. Pricing it off visible completion length alone is the error
+// that makes it look affordable; at 3x thinking it is not close, on any audio lane.
+test("Kimi K3 loses money on Pro even with free audio, and it is the OUTPUT rate", () => {
+  const noThinking = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3" });
+  const thinking = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3 });
+  assert.equal(noThinking.profitable, false, "even the flattering assumption is underwater");
+  assert.ok(thinking.aiUsd > noThinking.aiUsd * 2, "reasoning tokens are most of the bill");
+  // Give it free transcription and it STILL misses the house margin on Pro.
+  const free = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3, recorder: "ios-parakeet" });
+  assert.equal(free.meetsHouseMargin, false, `${free.grossMarginPct}% with $0 audio`);
+  assert.equal(KIMI_REASONS_ALWAYS, true);
+});
+
+// Which makes the premium model a MAX feature rather than a product-wide upgrade —
+// the plan with $80 of headroom can carry what the $19.99 plan cannot.
+test("Max can afford the model Pro cannot, which is what makes it a Max feature", () => {
+  const onMax = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3, plan: "max" });
+  const onPro = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3 });
+  assert.equal(onPro.profitable, false);
+  assert.ok(onMax.grossMarginPct > 65, `Max carries it at ${onMax.grossMarginPct}%`);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", plan: "max" }).meetsHouseMargin, true);
 });
 
 // The silence gate is the largest UNMEASURED lever in the product. No recording has
