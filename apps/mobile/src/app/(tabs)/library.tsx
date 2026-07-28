@@ -114,6 +114,8 @@ const SORT_OPTIONS = [
 
 function sortLabel(key: SortKey): string {
   switch (key) {
+    case "manual":
+      return "Your order";
     case "za":
       return "Sorted · Z–A";
     case "mod-asc":
@@ -718,7 +720,17 @@ export default function LibraryScreen() {
       [...sortNotes(filtered.slice(0, filtered.length - found.byMeaning), sort), ...filtered.slice(filtered.length - found.byMeaning)]
         .map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
     : buildLibraryRows(
-        notes.map((d) => ({ path: d.path, title: d.title, updatedAt: d.updatedAt, createdAt: d.createdAt })),
+        // `position` is load-bearing here and easy to drop: the tree builder
+        // silently treats a missing one as "never arranged", so leaving it out
+        // makes "My order" sort every note equal and do visibly nothing — the
+        // arrangement is saved and simply never shown.
+        notes.map((d) => ({
+          createdAt: d.createdAt,
+          path: d.path,
+          position: d.position,
+          title: d.title,
+          updatedAt: d.updatedAt,
+        })),
         collapsed,
         sort,
         snapshot.folders,
