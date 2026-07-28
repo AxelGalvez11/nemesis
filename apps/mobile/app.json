@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nemesis",
     "slug": "nemesis",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "nemesis",
@@ -15,7 +15,7 @@
       "url": "https://u.expo.dev/b35d0bf1-8ca8-41a9-97e8-d2420987745c"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.enternemesis.mobile",
       "buildNumber": "24",
       "infoPlist": {
