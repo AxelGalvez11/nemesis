@@ -6,7 +6,7 @@
 // study decks. Media (images/audio) is counted and reported, not imported.
 
 import { IconFileUpload } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
@@ -24,9 +24,13 @@ type Step = "pick" | "parsing" | "preview" | "importing" | "done";
 interface AnkiImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** A deck the student already chose somewhere else — dropping one into chat
+   *  opens this dialog straight at the preview instead of asking them to pick
+   *  the same file a second time. */
+  initialFile?: File | null;
 }
 
-export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) {
+export function AnkiImportDialog({ open, onOpenChange, initialFile = null }: AnkiImportDialogProps) {
   const { importAnkiDecks } = useCloudStudy();
   const [step, setStep] = useState<Step>("pick");
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +77,18 @@ export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) 
       if (fileRef.current) fileRef.current.value = "";
     }
   }
+
+  // Parse a handed-in deck once, when the dialog opens with one. Keyed on the
+  // File itself so re-renders do not re-parse a 250 MB package, and guarded on
+  // `step` so it cannot restart a parse already running.
+  const parsedFileRef = useRef<File | null>(null);
+  useEffect(() => {
+    if (!open || !initialFile || parsedFileRef.current === initialFile) return;
+    parsedFileRef.current = initialFile;
+    void handleFile(initialFile);
+    // handleFile is stable for this purpose: it only closes over setState.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile, open]);
 
   function toggleDeck(name: string) {
     setExcluded((current) => {

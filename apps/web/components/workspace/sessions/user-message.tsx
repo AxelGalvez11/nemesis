@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { splitAttachmentSummary } from "@/lib/workspace/chat-attachments";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +17,46 @@ const USER_BUBBLE_BASE_CLASS =
 const USER_BUBBLE_READ_CLASS =
   "cursor-default text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)";
 
+/** What kind of thing this is, from its name alone — the File object is long
+ *  gone by the time a transcript is re-rendered from storage. */
+function attachmentKind(name: string): { label: string; icon: string } {
+  if (name.endsWith("/")) return { icon: "folder", label: "Folder" };
+  const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  if (["png", "jpg", "jpeg", "webp", "heic", "heif"].includes(extension)) return { icon: "file-media", label: "Image" };
+  if (extension === "pdf") return { icon: "file-pdf", label: "PDF" };
+  if (["pptx", "ppt"].includes(extension)) return { icon: "preview", label: "Slides" };
+  if (["docx", "doc"].includes(extension)) return { icon: "file", label: "Document" };
+  if (["apkg", "colpkg"].includes(extension)) return { icon: "library", label: "Anki deck" };
+  if (["md", "mdx", "txt"].includes(extension)) return { icon: "file", label: "Note" };
+  return { icon: "file", label: extension ? extension.toUpperCase() : "File" };
+}
+
+/** Attachments as cards rather than a line of prose (owner 2026-07-27). */
+function AttachmentCards({ names }: { names: string[] }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {names.map((name) => {
+        const kind = attachmentKind(name);
+        return (
+          <div
+            className="flex min-w-0 max-w-64 items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2.5 py-1.5 text-left"
+            key={name}
+            title={name}
+          >
+            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={kind.icon} size="0.9rem" />
+            <div className="min-w-0">
+              <p className="truncate text-[0.75rem] leading-tight">{name.replace(/\/$/, "")}</p>
+              <p className="text-[0.625rem] leading-tight text-(--ui-text-quaternary)">{kind.label}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UserMessage({ message, onEdit }: { message: SessionMessage; onEdit: (at: string, content: string) => void }) {
+  const { attachments, body } = splitAttachmentSummary(message.content);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
 
@@ -37,11 +77,12 @@ export function UserMessage({ message, onEdit }: { message: SessionMessage; onEd
         </div>
       ) : (
         <>
-          <div
-            className={cn(USER_BUBBLE_BASE_CLASS, USER_BUBBLE_READ_CLASS, "text-center")}
-          >
-            <div className="min-h-[1.25rem] w-full">{message.content}</div>
-          </div>
+          {attachments.length > 0 && <AttachmentCards names={attachments} />}
+          {body && (
+            <div className={cn(USER_BUBBLE_BASE_CLASS, USER_BUBBLE_READ_CLASS, "text-center", attachments.length > 0 && "mt-1.5")}>
+              <div className="min-h-[1.25rem] w-full">{body}</div>
+            </div>
+          )}
           <Button className="ml-auto mt-1 h-5 gap-1 px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) opacity-0 transition-opacity group-hover/user-message:opacity-100 focus-visible:opacity-100" onClick={() => setEditing(true)} size="xs" variant="ghost"><Codicon name="edit" size="0.7rem" /> Edit</Button>
         </>
       )}

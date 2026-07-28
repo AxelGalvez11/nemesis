@@ -2,7 +2,7 @@ import { IconChartBar } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
 import type { StudyReview } from "@/lib/workspace/study-cloud-store";
-import { retentionRate, retentionSeries } from "@/lib/workspace/study-stats";
+import { retentionRate, retentionSeries, testPerformance, type AttemptedTest } from "@/lib/workspace/study-stats";
 
 import { AgentEmptyState } from "./agent-empty-state";
 import { StudyHeatmap } from "./heatmap";
@@ -42,13 +42,53 @@ function RetentionGraph({ reviews }: { reviews: StudyReview[] }) {
   );
 }
 
-export function StatsTab({ reviews, onStartReview }: { reviews: StudyReview[]; onStartReview: () => void }) {
-  if (reviews.length === 0) {
+/** Practice-test results, beside the card retention above. Attempts were always
+ *  being recorded; until now nothing on this page read them. */
+function TestScores({ tests }: { tests: readonly AttemptedTest[] }) {
+  const { averagePercent, sittings, testsSat } = testPerformance(tests);
+  if (sittings.length === 0) return null;
+
+  return (
+    <section className="rounded-3xl bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-6 py-7 sm:px-8">
+      <div className="mb-5 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Practice tests</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Every attempt counts separately, so a retake shows as its own result.</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-semibold tabular-nums">{averagePercent === null ? "—" : `${averagePercent}%`}</p>
+          <p className="text-[0.6875rem] text-(--ui-text-tertiary)">{sittings.length} attempt{sittings.length === 1 ? "" : "s"} across {testsSat} test{testsSat === 1 ? "" : "s"}</p>
+        </div>
+      </div>
+      <ul className="flex flex-col divide-y divide-(--ui-stroke-tertiary) rounded-2xl border border-(--ui-stroke-tertiary) bg-background">
+        {sittings.map((sitting) => (
+          <li className="flex items-center justify-between gap-4 px-4 py-2.5" key={`${sitting.title}-${sitting.at}`}>
+            <div className="min-w-0">
+              <p className="truncate text-sm">{sitting.title}</p>
+              <p className="text-[0.6875rem] text-(--ui-text-quaternary)">{new Date(sitting.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+            </div>
+            <p className="shrink-0 text-sm tabular-nums">
+              <span className="font-semibold">{sitting.percent}%</span>
+              <span className="ml-2 text-(--ui-text-quaternary)">{sitting.score}/{sitting.total}</span>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function StatsTab({ reviews, tests = [], onStartReview }: { reviews: StudyReview[]; tests?: readonly AttemptedTest[]; onStartReview: () => void }) {
+  // Sitting a test is studying too. Gating this page on card reviews alone left
+  // a student who revises by testing looking at an empty history.
+  const hasTestResults = testPerformance(tests).sittings.length > 0;
+
+  if (reviews.length === 0 && !hasTestResults) {
     return (
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-10">
         <AgentEmptyState
           action={<Button onClick={onStartReview} variant="secondary">Go to cards</Button>}
-          description="This page charts review activity and recall—not cards you have merely created. Complete a card review and your first day will appear here."
+          description="This page charts what you have actually reviewed and sat—not material you have merely created. Complete a card review or take a practice test and your first result will appear here."
           icon={<IconChartBar size={20} />}
           title="Your study history starts after one review"
         />
@@ -59,14 +99,17 @@ export function StatsTab({ reviews, onStartReview }: { reviews: StudyReview[]; o
   return (
     <main className="scrollbar-study flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-6 py-10">
       <div className="grid w-full max-w-4xl gap-5">
-        <section className="rounded-3xl bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-6 py-7 sm:px-8">
-          <div className="mb-7">
-            <h2 className="text-base font-semibold tracking-tight">Study activity</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Every review adds to your activity map, so consistency stays visible over time.</p>
-          </div>
-          <StudyHeatmap reviews={reviews} />
-        </section>
-        <RetentionGraph reviews={reviews} />
+        {reviews.length > 0 && (
+          <section className="rounded-3xl bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-6 py-7 sm:px-8">
+            <div className="mb-7">
+              <h2 className="text-base font-semibold tracking-tight">Study activity</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Every review adds to your activity map, so consistency stays visible over time.</p>
+            </div>
+            <StudyHeatmap reviews={reviews} />
+          </section>
+        )}
+        {reviews.length > 0 && <RetentionGraph reviews={reviews} />}
+        <TestScores tests={tests} />
       </div>
     </main>
   );

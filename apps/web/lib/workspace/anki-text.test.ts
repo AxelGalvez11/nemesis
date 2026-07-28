@@ -77,11 +77,25 @@ test("deck names normalize both separator styles", () => {
 
 test("notes become cards with the right type", () => {
   const basic = ankiNoteToCard(["Warfarin", "Vitamin K antagonist"], " cardio  anticoag ", false);
-  assert.deepEqual(basic, { back: "Vitamin K antagonist", cardType: "basic", front: "Warfarin", needsImage: false, tags: ["cardio", "anticoag"] });
+  assert.deepEqual(basic, { back: "Vitamin K antagonist", cardType: "basic", flag: 0, front: "Warfarin", needsImage: false, suspended: false, tags: ["cardio", "anticoag"] });
   assert.equal(ankiNoteToCard(["Warfarin", "Vitamin K antagonist"], "", true)?.cardType, "reversed");
   assert.equal(ankiNoteToCard(["{{c1::Lisinopril}} causes cough", "bradykinin"], "", true)?.cardType, "cloze");
   assert.equal(ankiNoteToCard(["<br>", "back only"], "", false), null);
   assert.equal(ankiNoteToCard(["front", "", "second extra"], "", false)?.back, "second extra");
+});
+
+// Carried so a shared deck arrives in the state its owner left it in: AnKing
+// ships mostly suspended, and importing 35,000 cards as active buries a student.
+test("a card keeps the parked and marked state Anki had for it", () => {
+  const parked = ankiNoteToCard(["Warfarin", "VKA"], "", false, undefined, { flag: 3, suspended: true });
+  assert.equal(parked?.suspended, true);
+  assert.equal(parked?.flag, 3);
+  // Absent state is the safe default — Quizlet has neither concept.
+  const plain = ankiNoteToCard(["Warfarin", "VKA"], "", false);
+  assert.equal(plain?.suspended, false);
+  assert.equal(plain?.flag, 0);
+  // Anki stores the colour in the low 3 bits, and only 1-7 are real colours.
+  assert.equal(ankiNoteToCard(["a", "b"], "", false, undefined, { flag: 99 })?.flag, 7);
 });
 
 test("picture-answer cards import flagged instead of blank", () => {

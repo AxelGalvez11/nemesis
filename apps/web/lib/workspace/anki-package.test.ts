@@ -34,7 +34,7 @@ async function legacyApkgDb(): Promise<Uint8Array> {
     create table col (decks text);
     insert into col values ('{"1":{"name":"Default"},"1001":{"name":"Pharm::Cardio"}}');
     create table notes (id integer, flds text, tags text);
-    create table cards (nid integer, did integer, ord integer);
+    create table cards (nid integer, did integer, ord integer, queue integer, flags integer);
     insert into notes values
       (1, '<b>Metoprolol</b><br>Class?${U}Beta&nbsp;blocker &amp; antihypertensive <img src="x.jpg"> [sound:beep.mp3]', ' cardio  pharm '),
       (2, '{{c1::Lisinopril}} causes dry cough${U}Because bradykinin builds up', ''),
@@ -42,11 +42,11 @@ async function legacyApkgDb(): Promise<Uint8Array> {
       (4, '<br>${U}back only', ''),
       (5, 'orphan note${U}never carded', '');
     insert into cards values
-      (1, 1001, 0),
-      (2, 1001, 0),
-      (3, 1, 0),
-      (3, 1, 1),
-      (4, 1001, 0);
+      (1, 1001, 0, 0, 0),
+      (2, 1001, 0, 0, 1),
+      (3, 1, 0, -1, 0),
+      (3, 1, 1, -1, 0),
+      (4, 1001, 0, 0, 0);
     `,
   );
 }
@@ -86,9 +86,9 @@ test("new-schema exports read the decks table and its separators", async () => {
     create table decks (id integer, name text);
     insert into decks values (1, 'Default'), (1002, 'Pharm' || char(31) || 'Respiratory');
     create table notes (id integer, flds text, tags text);
-    create table cards (nid integer, did integer, ord integer);
+    create table cards (nid integer, did integer, ord integer, queue integer, flags integer);
     insert into notes values (10, 'Albuterol${U}Short-acting beta-2 agonist', 'respiratory');
-    insert into cards values (10, 1002, 0);
+    insert into cards values (10, 1002, 0, 0, 0);
     `,
   );
   const result = parseAnkiPackage(zipSync({ "collection.anki21": bytes }), SQL);
@@ -108,9 +108,9 @@ test("the modern zstd database wins over a legacy upgrade-stub", async () => {
     create table col (decks text);
     insert into col values ('{"1":{"name":"Default"}}');
     create table notes (id integer, flds text, tags text);
-    create table cards (nid integer, did integer, ord integer);
+    create table cards (nid integer, did integer, ord integer, queue integer, flags integer);
     insert into notes values (1, 'Please update to the latest Anki version, then import the .colpkg/.apkg file again.${U}', '');
-    insert into cards values (1, 1, 0);
+    insert into cards values (1, 1, 0, 0, 0);
     `,
   );
   const real = buildDb(
@@ -119,9 +119,9 @@ test("the modern zstd database wins over a legacy upgrade-stub", async () => {
     create table decks (id integer, name text);
     insert into decks values (5, 'MCAT::Biochem');
     create table notes (id integer, flds text, tags text);
-    create table cards (nid integer, did integer, ord integer);
+    create table cards (nid integer, did integer, ord integer, queue integer, flags integer);
     insert into notes values (7, 'What is the electron transport chain?${U}Enzymes in the inner mitochondrial membrane', 'biochem');
-    insert into cards values (7, 5, 0);
+    insert into cards values (7, 5, 0, 0, 0);
     `,
   );
   const result = parseAnkiPackage(zipSync({ "collection.anki2": stub, "collection.anki21b": zstdCompress(real) }), SQL);
@@ -146,4 +146,21 @@ test("junk input fails with a friendly message", async () => {
   assert.throws(() => parseAnkiPackage(strToU8("not a zip at all"), SQL), /doesn't look like an Anki deck export/);
   const emptyZip = zipSync({ "readme.txt": strToU8("hello") });
   assert.throws(() => parseAnkiPackage(emptyZip, SQL), /doesn't look like an Anki deck export/);
+});
+
+// The AnKing footgun: a shared deck ships almost entirely suspended and the
+// student unsuspends lecture by lecture. Importing it all as active would bury
+// them under tens of thousands of due cards on day one.
+test("a suspended note arrives suspended, and a flagged one keeps its colour", async () => {
+  const SQL = await enginePromise;
+  const result = parseAnkiPackage(await legacyApkg(), SQL);
+  const cards = result.decks.flatMap((deck) => deck.cards);
+
+  const warfarin = cards.find((card) => card.front === "Warfarin");
+  assert.equal(warfarin?.suspended, true, "both of its cards had queue -1");
+  assert.equal(result.suspendedCount, 1);
+
+  const lisinopril = cards.find((card) => card.front.includes("Lisinopril"));
+  assert.equal(lisinopril?.flag, 1, "flags & 7 == 1 is Anki's red");
+  assert.equal(lisinopril?.suspended, false);
 });

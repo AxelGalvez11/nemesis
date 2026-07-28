@@ -28,6 +28,7 @@ import { toggleInlineFormat, type ToggleFormat } from "@/lib/workspace/library-i
 
 import { liveProperties } from "./library-properties-widget";
 import { livePreview, liveTables } from "./library-preview-decorations";
+import { blockDrag } from "./library-block-drag";
 
 /** Imperative surface the parent uses to drive the editor (TOC clicks). */
 export interface LibraryEditorApi {
@@ -405,6 +406,7 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
         livePreview,
         liveTables,
         liveProperties,
+        blockDrag,
         editorTheme,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString());

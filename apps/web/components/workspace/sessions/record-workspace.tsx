@@ -1,49 +1,40 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+// The recording panel (owner decision 2026-07-27: "Drop live transcript
+// entirely, one live high quality pass").
+//
+// This used to be two panes — a scrolling live transcript and a column of AI
+// notes written every 45 seconds. Both are gone. Nothing is transcribed while
+// you speak, so there is nothing to show; what replaces them is an honest
+// statement of what is happening and what will exist when you stop.
 
-import { MessageResponse } from "@/components/ai-elements/message";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
-import { formatLiveDuration } from "@/lib/workspace/live-audio-contract";
+import { formatLiveDuration } from "@/lib/workspace/recording-note";
+import { isCapturing, isFinishing, recordingStatusCopy } from "@/lib/workspace/recording-capture";
 import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
-import { useLiveAudioSession } from "./use-live-audio";
+import { useRecordingSession } from "./use-recording";
 
 interface RecordWorkspaceProps {
   accessToken?: string | null;
   active?: boolean;
   className?: string;
-  context?: string;
-  contextId?: string | null;
-  keyterms?: string[];
-  surface?: "sessions" | "notebook";
   uid?: string | null;
   onFinished?: (draft: RecordingArtifactDraft) => void;
 }
 
-function statusCopy(status: ReturnType<typeof useLiveAudioSession>["status"]) {
-  switch (status) {
-    case "connecting": return "Connecting";
-    case "listening": return "Listening";
-    case "stopping": return "Finishing";
-    case "quota": return "Monthly limit reached";
-    case "error": return "Unavailable";
-    default: return "Ready";
-  }
-}
-
 function AudioMeter({ level, active }: { level: number; active: boolean }) {
   return (
-    <div aria-hidden className="flex h-5 items-center gap-[2px]">
-      {Array.from({ length: 12 }, (_, index) => {
-        const emphasis = 0.35 + (1 - Math.abs(index - 5.5) / 6) * 0.65;
-        const height = active ? Math.max(3, 4 + level * 16 * emphasis) : 3;
+    <div aria-hidden className="flex h-9 items-end justify-center gap-[3px]">
+      {Array.from({ length: 24 }, (_, index) => {
+        const emphasis = 0.3 + (1 - Math.abs(index - 11.5) / 12) * 0.7;
+        const height = active ? Math.max(4, 5 + level * 34 * emphasis) : 4;
         return (
           <span
-            className="w-[2px] rounded-full bg-current transition-[height,opacity] duration-100"
+            className="w-[3px] rounded-full bg-current transition-[height,opacity] duration-100"
             key={index}
-            style={{ height, opacity: active ? 0.45 + level * 0.5 : 0.28 }}
+            style={{ height, opacity: active ? 0.4 + level * 0.55 : 0.22 }}
           />
         );
       })}
@@ -51,112 +42,78 @@ function AudioMeter({ level, active }: { level: number; active: boolean }) {
   );
 }
 
-/** Full live transcription canvas shared by Sessions and active Notebook recordings. */
+/** Recording canvas for Sessions and active Notebook recordings. */
 export function RecordWorkspace({
   accessToken = null,
   active = false,
   className,
-  context,
-  contextId,
-  keyterms,
-  surface = "sessions",
   uid = null,
   onFinished,
 }: RecordWorkspaceProps) {
-  const live = useLiveAudioSession({ accessToken, active, context, contextId, keyterms, surface, uid });
-  const activeListening = live.status === "listening";
-  const used = live.usage?.usedSeconds ?? 0;
-  const limit = live.usage?.limitSeconds ?? 0;
-  const wasActiveRef = useRef(false);
-  const finishedRef = useRef(false);
-  const latestRef = useRef({ durationSeconds: live.elapsedSeconds, notes: live.insights.notes.join("\n"), transcript: live.transcript });
-  latestRef.current = { durationSeconds: live.elapsedSeconds, notes: live.insights.notes.join("\n"), transcript: live.transcript };
-
-  useEffect(() => {
-    if (active) {
-      wasActiveRef.current = true;
-      finishedRef.current = false;
-      return;
-    }
-    if (!wasActiveRef.current || finishedRef.current) return;
-    finishedRef.current = true;
-    const timer = window.setTimeout(() => {
-      wasActiveRef.current = false;
-      onFinished?.(latestRef.current);
-    }, 550);
-    return () => window.clearTimeout(timer);
-  }, [active, onFinished]);
+  const recording = useRecordingSession({ accessToken, active, onComplete: onFinished, uid });
+  const capturing = isCapturing(recording.status);
+  const finishing = isFinishing(recording.status);
+  const used = recording.usage?.usedSeconds ?? 0;
+  const limit = recording.usage?.limitSeconds ?? 0;
 
   return (
     <section
-      aria-label="Live transcription workspace"
+      aria-label="Recording"
       className={cn(
-        "record-workspace-enter grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.75rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,transparent)] shadow-lg backdrop-blur-xl max-sm:grid-cols-1 max-sm:divide-x-0 max-sm:divide-y",
+        "record-workspace-enter flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,transparent)] shadow-lg backdrop-blur-xl",
         className,
       )}
       data-slot="record-workspace"
     >
-      <div className="flex min-h-0 flex-col">
-        <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
-          <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Transcript</h2>
-          <div className={cn("ml-auto flex items-center gap-2 text-(--ui-text-quaternary)", activeListening && "text-foreground")}>
-            <span className="text-[0.6875rem]">{statusCopy(live.status)}</span>
-            <AudioMeter active={activeListening} level={live.level} />
-            <span className="min-w-10 text-right font-mono text-[0.6875rem] tabular-nums">{live.elapsedLabel}</span>
-          </div>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" aria-live="polite">
-          {live.segments.length ? (
-            <div className="space-y-3 text-[length:var(--conversation-text-font-size)] leading-relaxed text-foreground">
-              {live.segments.map((segment) => (
-                <p className={cn("transition-opacity", !segment.final && "text-(--ui-text-tertiary)")} key={segment.id}>
-                  {segment.text}
-                </p>
-              ))}
-            </div>
-          ) : live.error ? (
-            <div className="grid h-full min-h-40 place-items-center text-center">
-              <div className="max-w-xs">
-                <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
-                <p className="text-sm leading-relaxed text-(--ui-text-secondary)">{live.error}</p>
-                {live.status === "quota" && <a className="mt-3 inline-block text-xs text-[var(--theme-primary)] underline underline-offset-4" href="/pricing">View plans</a>}
-              </div>
-            </div>
-          ) : (
-            <div className="grid h-full min-h-40 place-items-center text-center">
-              <div className="max-w-64">
-                <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="mic" size="1.25rem" />
-                <p className="text-xs leading-relaxed text-(--ui-text-quaternary)">
-                  {active ? "Start speaking. Committed transcript turns will collect here." : "Press record to begin live transcription."}
-                </p>
-              </div>
-            </div>
-          )}
+      <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Recording</h2>
+        <div className={cn("ml-auto flex items-center gap-2.5 text-(--ui-text-quaternary)", (capturing || finishing) && "text-foreground")}>
+          {capturing && <span aria-hidden className="size-2 animate-pulse rounded-full bg-[var(--theme-primary)]" />}
+          <span className="text-[0.6875rem]">{recordingStatusCopy(recording.status)}</span>
+          <span className="min-w-10 text-right font-mono text-[0.6875rem] tabular-nums">{recording.elapsedLabel}</span>
         </div>
+      </header>
 
-        {live.usage && (
-          <footer className="shrink-0 border-t border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] text-(--ui-text-quaternary)">
-            Up to {formatLiveDuration(used)} of {formatLiveDuration(limit)} reserved this month · {live.usage.plan}
-          </footer>
+      <div className="grid min-h-0 flex-1 place-items-center px-6 py-8" aria-live="polite">
+        {recording.error ? (
+          <div className="max-w-sm text-center">
+            <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
+            <p className="text-sm leading-relaxed text-(--ui-text-secondary)">{recording.error}</p>
+            {recording.status === "quota" && (
+              <a className="mt-3 inline-block text-xs text-[var(--theme-primary)] underline underline-offset-4" href="/pricing">View plans</a>
+            )}
+          </div>
+        ) : finishing ? (
+          <div className="max-w-sm text-center">
+            <div className="mb-4 text-(--ui-text-tertiary)"><AudioMeter active={false} level={0} /></div>
+            <p className="text-sm font-medium text-foreground">{recordingStatusCopy(recording.status)}</p>
+            <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">
+              Nemesis is transcribing the whole recording in one pass, then writing your notes. This takes a moment and is worth
+              more than a running transcript would have been.
+            </p>
+          </div>
+        ) : capturing ? (
+          <div className="max-w-sm text-center">
+            <div className="mb-4 text-foreground"><AudioMeter active level={recording.level} /></div>
+            <p className="font-mono text-2xl tabular-nums text-foreground">{recording.elapsedLabel}</p>
+            <p className="mt-3 text-xs leading-relaxed text-(--ui-text-quaternary)">
+              Recording. Nothing is transcribed until you stop — then the whole lecture is read in one high-quality pass and your
+              notes are written from all of it at once.
+            </p>
+          </div>
+        ) : (
+          <div className="max-w-sm text-center">
+            <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="mic" size="1.25rem" />
+            <p className="text-xs leading-relaxed text-(--ui-text-quaternary)">Press record to begin.</p>
+          </div>
         )}
       </div>
 
-      {/* Notes-only panel (owner 2026-07-21): the Explore/suggestions tab was
-          meeting-copilot UX, not lecture UX — cut, and the insight prompt now
-          generates notes only. */}
-      <div className="flex min-h-0 flex-col">
-        <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
-          <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Live notes</h2>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {live.insights.notes.length ? (
-            <MessageResponse className="text-sm leading-relaxed">{live.insights.notes.map((note) => `- ${note}`).join("\n")}</MessageResponse>
-          ) : (
-            <div className="grid h-full min-h-40 place-items-center text-center"><p className="max-w-64 text-xs leading-relaxed text-(--ui-text-quaternary)">Nemesis will build concise live notes once enough context has been spoken.</p></div>
-          )}
-        </div>
-      </div>
+      {recording.usage && limit > 0 && (
+        <footer className="shrink-0 border-t border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] text-(--ui-text-quaternary)">
+          {formatLiveDuration(used)} of {formatLiveDuration(limit)} used this month · {recording.usage.plan}
+        </footer>
+      )}
     </section>
   );
 }
