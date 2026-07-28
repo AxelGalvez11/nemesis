@@ -108,7 +108,7 @@ function toSessionSource(raw: unknown): SessionSource | null {
 function toSessionOutput(raw: unknown): SessionOutput | null {
   if (!isRecord(raw)) return null;
   const { id, title, kind, url, transcript, notes, durationSeconds, createdAt } = raw;
-  const kinds = new Set(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
+  const kinds = new Set(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
   if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !kinds.has(kind)) return null;
   return {
     id,

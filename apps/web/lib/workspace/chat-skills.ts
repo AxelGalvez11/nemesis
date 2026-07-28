@@ -61,7 +61,9 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
     "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
     "Keep answers short enough to recall in one breath. A back longer than a sentence or two is a sign the card should be split.",
-    "State plainly how many cards you made and what each one covers.",
+    // Was "state ... what each one covers", which contradicted the line above
+    // and produced exactly the prose dump it forbids.
+    "Say how many cards you saved and which deck they went to. One line. The card the app shows opens the deck; the cards themselves do not belong in chat.",
   ].join("\n"),
   match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|(?:flashcard|study) deck)\b/i,
   name: "Flashcard craft",
@@ -192,6 +194,54 @@ const SOCRATIC_TUTORING: ChatSkill = {
   name: "Socratic tutoring",
 };
 
+/** A syllabus is not a lecture: its value is its DATES, not its concepts, so it
+ *  excludes LECTURE_INTAKE outright rather than letting both packets argue over
+ *  whether to mine concepts or offer a calendar import. */
+const SYLLABUS_INTAKE: ChatSkill = {
+  id: "syllabus-intake",
+  instructions: [
+    "SKILL — a syllabus or course schedule the student uploaded:",
+    "What matters in this document is its DATES. Read every dated item: exams, quizzes, assignment and project deadlines, presentations, rotations, and recurring class meetings.",
+    "List what you found in date order, earliest first, as a compact table: date, what it is, and the course.",
+    "Take every date from the document itself. Never guess a year — if it says a bare 'Oct 14', use the year the surrounding schedule implies and say which year you assumed.",
+    "Quote the line each date came from so the student can check you against their own copy.",
+    "THEN ask, in these words: 'Want me to add these to your calendar?' Stop and wait. Write nothing until they say yes.",
+    "When they agree, call add_calendar_event for every item, issuing the calls together in one round rather than one date per reply. Put the quoted source line in each event's note.",
+    "Classify each one: exam for tests, assignment for anything due, rotation for placements, class for recurring meetings, other for the rest.",
+    "Afterwards say how many were added, and name anything that was not.",
+  ].join("\n"),
+  match: /\b(syllabus|syllabi|course schedule|course outline|grading policy|office hours|class schedule|rotation schedule)\b/i,
+  name: "Syllabus intake",
+  excludes: ["lecture-intake"],
+};
+
+/** Reading uploaded course material.
+ *
+ *  This one matches on the ATTACHMENT BLOCK rather than on anything the student
+ *  typed, which works because prepareChatAttachments' wireText — headers and all
+ *  — is what reaches selectChatSkills. So it fires on a bare upload with no
+ *  message, which is exactly how students attach a deck.
+ *
+ *  It sits BEHIND the builder skills on purpose: if the student already said
+ *  "make flashcards from this", that instruction should win the first slot and
+ *  this packet must not ask them again — hence the last line. */
+const LECTURE_INTAKE: ChatSkill = {
+  id: "lecture-intake",
+  instructions: [
+    "SKILL — reading uploaded course material, and what to do next:",
+    "The student attached course material. Do NOT summarise it slide by slide and do not narrate what each page contains. Mine it for what is worth learning.",
+    "Lead with the learning objectives. If the material states them, quote them as given. If it does not, infer what the student should be able to DO after this material and say plainly that you inferred them.",
+    "Then pull only what is examinable: definitions, mechanisms, classifications, numbers with their units, named entities with the detail that distinguishes them from the ones they get confused with, decision rules, and worked examples.",
+    "Drop the fluff: title and outline pages, 'any questions', acknowledgements, course admin, reference lists, and any page that only restates another.",
+    "Call out the figures, diagrams, and tables the student must be able to read, and say what each one is FOR. If a figure was described to you rather than shown, say so rather than inventing its contents.",
+    "If a truncation notice says part of the file did not reach you, say so plainly. Never imply you read all of it.",
+    "END your reply by offering the deliverables in exactly these words: 'Want me to turn this into notes, flashcards, a practice test, or all three?' Then stop and wait — create nothing until they answer.",
+    "If the student ALREADY said what they want in this same message, skip that question entirely and build what they asked for.",
+  ].join("\n"),
+  match: /### Attachment: [^\n]+\.(?:pptx|pdf|docx)\b/i,
+  name: "Lecture intake",
+};
+
 /** Order matters: earlier skills win the budget when several match, and only
  *  MAX_ACTIVE_SKILLS get a slot.
  *
@@ -209,6 +259,8 @@ export const CHAT_SKILLS: ChatSkill[] = [
   NOTES_BUILDER,
   FLASHCARD_CRAFT,
   TEST_CRAFT,
+  SYLLABUS_INTAKE,
+  LECTURE_INTAKE,
   SOCRATIC_TUTORING,
   TEACHING,
   QUANTITATIVE_CHECK,

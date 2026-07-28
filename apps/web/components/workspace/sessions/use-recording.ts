@@ -1,0 +1,319 @@
+"use client";
+
+// The recorder (owner decision 2026-07-27: "Drop live transcript entirely, one
+// live high quality pass").
+//
+// Replaces the streaming recorder. That one opened a WebSocket to AssemblyAI
+// and sent PCM as you spoke — which is what put words on screen, and is also
+// what made a clean second pass cost double: the live transcript IS a paid
+// transcription. It additionally called the model every 45 seconds to write
+// interim notes, which the owner never asked for.
+//
+// Now the microphone only ever writes a file. Nothing is transcribed and no
+// model is called until you stop, and then exactly once, through the batch
+// route that already existed for the phone. Roughly $0.06 an hour against
+// ~$0.23, and the transcript is better: a model that sees the whole recording
+// beats one guessing a word at a time.
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { supabase } from "@/lib/supabase";
+import { formatLiveDuration } from "@/lib/workspace/recording-note";
+import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
+import {
+  describeRecordingBlob,
+  pickRecordingFormat,
+  POLL_TIMEOUT_MS,
+  pollDelayMs,
+  RECORDING_BITS_PER_SECOND,
+  RECORDING_CHUNK_MS,
+  RECORDING_MAX_BYTES,
+  recordingStoragePath,
+  type RecordingStatus,
+  type TranscriptionUsage,
+} from "@/lib/workspace/recording-capture";
+import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+
+interface UseRecordingOptions {
+  active: boolean;
+  accessToken: string | null;
+  uid: string | null;
+  /** Called once, when the transcript is back — not when the microphone closes.
+   *  The caller keeps the recording panel mounted until this fires. */
+  onComplete?: (draft: RecordingArtifactDraft) => void;
+}
+
+interface CaptureNodes {
+  context: AudioContext;
+  analyser: AnalyserNode;
+  source: MediaStreamAudioSourceNode;
+  stream: MediaStream;
+  recorder: MediaRecorder;
+}
+
+const LEVEL_INTERVAL_MS = 90;
+
+/** Loudness of one analyser frame, 0..1, from bytes centred on 128. */
+function frameLevel(bytes: Uint8Array): number {
+  let squares = 0;
+  for (const byte of bytes) {
+    const centred = (byte - 128) / 128;
+    squares += centred * centred;
+  }
+  return Math.min(1, Math.sqrt(squares / Math.max(1, bytes.length)) * 4);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+export function useRecordingSession(options: UseRecordingOptions) {
+  const [status, setStatus] = useState<RecordingStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [level, setLevel] = useState(0);
+  const [usage, setUsage] = useState<TranscriptionUsage | null>(null);
+
+  const mountedRef = useRef(true);
+  const capturingRef = useRef(false);
+  const finishingRef = useRef(false);
+  const nodesRef = useRef<CaptureNodes | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const levelTimerRef = useRef<number | null>(null);
+  const elapsedTimerRef = useRef<number | null>(null);
+  const startedAtRef = useRef(0);
+  const completeRef = useRef(options.onComplete);
+  completeRef.current = options.onComplete;
+
+  /** Close the microphone and every timer. Never touches the transcription in
+   *  flight — the audio is already captured by the time this runs. */
+  const releaseMedia = useCallback(() => {
+    if (levelTimerRef.current !== null) window.clearInterval(levelTimerRef.current);
+    if (elapsedTimerRef.current !== null) window.clearInterval(elapsedTimerRef.current);
+    levelTimerRef.current = null;
+    elapsedTimerRef.current = null;
+
+    const nodes = nodesRef.current;
+    nodesRef.current = null;
+    if (nodes) {
+      if (nodes.recorder.state !== "inactive") {
+        try { nodes.recorder.stop(); } catch { /* already stopping */ }
+      }
+      nodes.source.disconnect();
+      nodes.analyser.disconnect();
+      for (const track of nodes.stream.getTracks()) track.stop();
+      void nodes.context.close().catch(() => undefined);
+    }
+    // Outside any mounted guard: a waveform holding the last reading would keep
+    // drawing bars for a microphone that is already closed.
+    resetMicLevel();
+    if (mountedRef.current) setLevel(0);
+  }, []);
+
+  /** Wait for MediaRecorder to flush its final chunk, then hand back one blob. */
+  const closeRecording = useCallback(async (): Promise<Blob | null> => {
+    const nodes = nodesRef.current;
+    if (!nodes) return null;
+    const { recorder } = nodes;
+    if (recorder.state === "inactive") {
+      return chunksRef.current.length ? new Blob(chunksRef.current, { type: recorder.mimeType }) : null;
+    }
+    const stopped = new Promise<void>((resolve) => {
+      recorder.addEventListener("stop", () => resolve(), { once: true });
+      // A recorder that never fires "stop" must not hang the lecture forever.
+      window.setTimeout(resolve, 3_000);
+    });
+    try { recorder.stop(); } catch { /* already stopping */ }
+    await stopped;
+    return chunksRef.current.length ? new Blob(chunksRef.current, { type: recorder.mimeType }) : null;
+  }, []);
+
+  const transcribe = useCallback(async (blob: Blob, seconds: number): Promise<string> => {
+    const { accessToken, uid } = options;
+    if (!accessToken || !uid) throw new Error("Sign in to save this recording.");
+
+    setStatus("uploading");
+    // The bucket rejects anything past this, so say so in terms a student can
+    // act on rather than letting storage return a bare error.
+    if (blob.size > RECORDING_MAX_BYTES) {
+      throw new Error("That recording is too long to upload in one piece. Record in shorter sessions and they will still join up in your Library.");
+    }
+    const { contentType, extension } = describeRecordingBlob(blob.type);
+    const path = recordingStoragePath(uid, crypto.randomUUID(), extension);
+    const uploaded = await supabase.storage.from("recordings").upload(path, blob, { contentType, upsert: false });
+    if (uploaded.error) throw new Error("Your recording could not be uploaded. Check your connection and try again.");
+
+    setStatus("transcribing");
+    const authorization = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+    const submitted = await fetch("/api/transcription/submit", {
+      body: JSON.stringify({ seconds, storagePath: path }),
+      headers: authorization,
+      method: "POST",
+    });
+    const submitBody = await submitted.json().catch(() => null) as
+      | { jobId?: string; usage?: TranscriptionUsage; error?: string; limitSeconds?: number; plan?: string; usedSeconds?: number }
+      | null;
+    if (submitted.status === 429) {
+      setUsage({ limitSeconds: submitBody?.limitSeconds ?? 0, plan: submitBody?.plan ?? "free", usedSeconds: submitBody?.usedSeconds ?? 0 });
+      const quota = new Error(submitBody?.error ?? "You have reached this month's transcription limit.") as Error & { quota?: boolean };
+      quota.quota = true;
+      throw quota;
+    }
+    if (!submitted.ok || !submitBody?.jobId) throw new Error(submitBody?.error ?? "The transcription service is unavailable. Try again in a moment.");
+    if (submitBody.usage && mountedRef.current) setUsage(submitBody.usage);
+
+    // Poll. Groq finishes inside the submit request and parks its text, so the
+    // first poll usually already has it; AssemblyAI is the slow fallback lane.
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+    for (let attempt = 1; Date.now() < deadline; attempt += 1) {
+      await sleep(pollDelayMs(attempt));
+      const polled = await fetch("/api/transcription/status", {
+        body: JSON.stringify({ jobId: submitBody.jobId }),
+        headers: authorization,
+        method: "POST",
+      });
+      const pollBody = await polled.json().catch(() => null) as { status?: string; transcript?: string | null; error?: string } | null;
+      if (!polled.ok) continue;
+      if (pollBody?.status === "error") throw new Error(pollBody.error ?? "The recording could not be transcribed.");
+      if (pollBody?.status === "done") return (pollBody.transcript ?? "").trim();
+    }
+    throw new Error("The transcription is taking longer than expected. Your recording is safe — try again shortly.");
+  }, [options.accessToken, options.uid]);
+
+  /** Stop the microphone, then run the single pass. */
+  const finish = useCallback(async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    capturingRef.current = false;
+    // Measured from the start timestamp, not from `elapsedSeconds` state: that
+    // changes every second, and depending on it would rebuild this callback —
+    // and therefore re-run the start/stop effect — once a second while recording.
+    const seconds = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1_000) : 0;
+
+    let blob: Blob | null = null;
+    try {
+      blob = await closeRecording();
+    } finally {
+      releaseMedia();
+    }
+
+    if (!blob || blob.size === 0 || seconds <= 0) {
+      if (mountedRef.current) setStatus("idle");
+      finishingRef.current = false;
+      completeRef.current?.({ durationSeconds: 0, notes: "", transcript: "" });
+      return;
+    }
+
+    try {
+      const transcript = await transcribe(blob, seconds);
+      if (!mountedRef.current) return;
+      setStatus("idle");
+      finishingRef.current = false;
+      completeRef.current?.({ durationSeconds: seconds, notes: "", transcript });
+    } catch (caught) {
+      const failure = caught as Error & { quota?: boolean };
+      if (!mountedRef.current) return;
+      setStatus(failure.quota ? "quota" : "error");
+      setError(failure.message);
+      finishingRef.current = false;
+      // Deliberately NOT calling onComplete: the caller unmounts this panel when
+      // it fires, and a student whose transcription failed needs to read why.
+    }
+  }, [closeRecording, releaseMedia, transcribe]);
+
+  const start = useCallback(async () => {
+    if (capturingRef.current || finishingRef.current) return;
+    if (!options.accessToken || !options.uid) {
+      setStatus("error");
+      setError("Sign in to record.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setStatus("error");
+      setError("This browser cannot record audio. Try Chrome, Edge, or Safari.");
+      return;
+    }
+
+    setError(null);
+    setUsage(null);
+    setElapsedSeconds(0);
+    chunksRef.current = [];
+    capturingRef.current = true;
+    setStatus("recording");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { autoGainControl: true, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+      if (!capturingRef.current) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+
+      const format = pickRecordingFormat((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, {
+        audioBitsPerSecond: RECORDING_BITS_PER_SECOND,
+        ...(format.mimeType ? { mimeType: format.mimeType } : {}),
+      });
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.start(RECORDING_CHUNK_MS);
+
+      // Audio graph exists only to draw the meter — nothing leaves the browser.
+      const context = new AudioContext();
+      await context.resume();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1_024;
+      source.connect(analyser);
+      nodesRef.current = { analyser, context, recorder, source, stream };
+
+      const bytes = new Uint8Array(analyser.fftSize);
+      levelTimerRef.current = window.setInterval(() => {
+        analyser.getByteTimeDomainData(bytes);
+        const next = frameLevel(bytes);
+        if (mountedRef.current) setLevel(next);
+        // Same reading, published to the composer's waveform, which is a sibling
+        // of this recorder rather than a child — see lib/workspace/mic-level.ts.
+        publishMicLevel(next);
+      }, LEVEL_INTERVAL_MS);
+
+      startedAtRef.current = Date.now();
+      elapsedTimerRef.current = window.setInterval(() => {
+        if (mountedRef.current) setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1_000));
+      }, 1_000);
+    } catch (caught) {
+      capturingRef.current = false;
+      releaseMedia();
+      setStatus("error");
+      setError(caught instanceof DOMException && caught.name === "NotAllowedError"
+        ? "Microphone access was denied. Allow it in browser settings and try again."
+        : "Nemesis could not open the microphone.");
+    }
+  }, [options.accessToken, options.uid, releaseMedia]);
+
+  useEffect(() => {
+    if (options.active) {
+      void start();
+      return;
+    }
+    // Only finish a recording that actually started — `active` is false on the
+    // very first render too, and finishing then would fire onComplete for a
+    // session that never existed.
+    if (capturingRef.current) void finish();
+  }, [finish, options.active, start]);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    capturingRef.current = false;
+    releaseMedia();
+  }, [releaseMedia]);
+
+  return {
+    elapsedLabel: formatLiveDuration(elapsedSeconds),
+    elapsedSeconds,
+    error,
+    level,
+    status,
+    usage,
+  };
+}

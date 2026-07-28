@@ -62,9 +62,16 @@ export function CalendarWorkspace() {
   const [syllabusOpen, setSyllabusOpen] = useState(false);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
+  // Also honour ?date= — the link every agent-written event carries. Without
+  // this the calendar always opened on the current month, so the artifact card
+  // for a Spring syllabus dropped the student four months away from the events
+  // it claimed to link to (owner 2026-07-27: the card must route to the thing).
   useEffect(() => {
     setMounted(true);
     setView(loadStoredView());
+    const requested = new URLSearchParams(window.location.search).get("date");
+    const parsed = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? new Date(`${requested}T12:00:00`) : null;
+    if (parsed && !Number.isNaN(parsed.getTime())) setCursor(parsed);
   }, []);
 
   useEffect(() => {

@@ -14,11 +14,15 @@ import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
-import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
+import { requestRecordingNote } from "@/lib/workspace/recording-note";
+import { writeLibraryNote } from "@/lib/workspace/library-write";
+
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
@@ -27,6 +31,10 @@ import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace } from "./record-workspace";
+
+/** Where a recording's notes are filed. Its own folder so a semester of
+ *  lectures stays browsable next to the student's typed notes. */
+const RECORDINGS_FOLDER = "Nemesis/Recordings";
 
 function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
   const turns: ThreadTurn[] = [];
@@ -84,6 +92,10 @@ export function SessionChat() {
   // and re-rendering the thread because a dropdown moved would be waste.
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
+  // A deck handed over from the composer. Held here so the Study importer —
+  // deck picker, progress, and error copy all already reviewed — is what runs,
+  // rather than a second import path invented for chat.
+  const [deckToImport, setDeckToImport] = useState<File | null>(null);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -184,6 +196,20 @@ export function SessionChat() {
   const handleSubmit = useCallback(
     async (text: string, files: File[]) => {
       if (!uid) return;
+
+      // An Anki deck dropped into chat is an IMPORT, not a question. The text
+      // extractor has nothing to say about a zipped SQLite database, so this
+      // used to answer "no text extractor is available for this format" while
+      // the app carried a whole reviewed importer for exactly this file.
+      // Hand it there; anything else attached alongside still goes to the model.
+      const { decks, rest } = partitionImportables(files);
+      const [deck] = decks;
+      if (deck) {
+        setDeckToImport(deck);
+        if (!text.trim() && rest.length === 0) return;
+        files = rest;
+      }
+
       if (projectId && !preview) {
         await submitIntoProject(projectId, text, files);
         return;
@@ -208,7 +234,7 @@ export function SessionChat() {
       sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
       void runTurn(uid, targetId, history, prepared.wireText);
     },
-    [preview, runTurn, selectedId, uid],
+    [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
   );
 
   const handleStop = useCallback(() => {
@@ -252,20 +278,43 @@ export function SessionChat() {
     setRightPanel("outputs");
     setRightRailOpen(true);
     const targetId = selectedId;
-    void createArtifact(draft)
-      .then((artifact) => {
-        // The artifact also lands in the chat itself as a clickable card
-        // (owner ask 2026-07-20) — message outputs sync to cloud meta.
-        if (!targetId) return;
-        sessionsStore.appendMessage(targetId, {
-          at: new Date().toISOString(),
-          content: "Recording captured — transcript and notes are ready.",
-          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-          role: "assistant",
-        });
-      })
-      .catch(() => undefined);
-  }, [createArtifact, selectedId]);
+    void (async () => {
+      // ONE compose pass over the whole transcript (owner 2026-07-27). There are
+      // no live notes to fall back on any more — nothing is written during the
+      // recording — so when this fails the transcript is what the student keeps,
+      // and the message below has to say so rather than claim notes exist.
+      const notes = uid ? await requestRecordingNote({ transcript: draft.transcript, uid }) : "";
+      const artifact = await createArtifact({ ...draft, notes });
+
+      // The third destination (owner ask 2026-07-27). Until now a recording
+      // reached the Outputs panel and the chat card but never the Library, so
+      // it stayed stranded in one conversation instead of joining the semester.
+      let libraryPath: string | null = null;
+      if (uid && !preview && notes.trim()) {
+        try {
+          libraryPath = (await writeLibraryNote({ content: notes, folder: RECORDINGS_FOLDER, title: artifact.title, userId: uid })).path;
+        } catch {
+          // Saving to the Library is a bonus destination, not the recording
+          // itself — a failure here must not discard the artifact above.
+          libraryPath = null;
+        }
+      }
+
+      // The artifact also lands in the chat itself as a clickable card
+      // (owner ask 2026-07-20) — message outputs sync to cloud meta.
+      if (!targetId) return;
+      sessionsStore.appendMessage(targetId, {
+        at: new Date().toISOString(),
+        content: libraryPath
+          ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
+          : notes.trim()
+            ? "Recording captured — transcript and notes are ready."
+            : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
+        outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
+        role: "assistant",
+      });
+    })().catch(() => undefined);
+  }, [createArtifact, preview, selectedId, uid]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");
@@ -282,9 +331,6 @@ export function SessionChat() {
               accessToken={authSession?.access_token ?? null}
               active={recording}
               className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3"
-              context="A live study, research, class, meeting, or interview session. Infer the subject only from what is spoken."
-              contextId={selectedId}
-              surface="sessions"
               uid={uid}
               onFinished={handleRecordingFinished}
             />
@@ -315,6 +361,11 @@ export function SessionChat() {
         </div>
       </div>
       {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
+      <AnkiImportDialog
+        initialFile={deckToImport}
+        onOpenChange={(next) => { if (!next) setDeckToImport(null); }}
+        open={deckToImport !== null}
+      />
     </div>
   );
 }

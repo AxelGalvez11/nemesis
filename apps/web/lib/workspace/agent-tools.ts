@@ -423,7 +423,8 @@ async function createLibraryNote(title: string, content: string, folder: string)
     return {
       artifact: {
         id: saved.path,
-        kind: "other",
+        // Was "other", which labelled a saved note "Output" in the transcript.
+        kind: "note",
         title: saved.title,
         url: `/library?note=${encodeURIComponent(saved.path)}`,
       },
@@ -770,10 +771,17 @@ async function addFlashcards(deckName: string, cards: { front: string; back: str
     deckId = created.id as string;
     createdDeck = true;
   }
-  const { error: insertError } = await supabase.from("study_cards").insert(cleanCards.map((card) => ({ back: card.back, deck_id: deckId, front: card.front })));
+  // .select() so `added` is what LANDED, not what we tried to send. Without it
+  // the tool reported its own intent, the model repeated that number to the
+  // student, and the artifact card corroborated it — three confident sources
+  // for one unchecked assumption.
+  const { data: inserted, error: insertError } = await supabase
+    .from("study_cards")
+    .insert(cleanCards.map((card) => ({ back: card.back, deck_id: deckId, front: card.front })))
+    .select("id");
   if (insertError) return { error: insertError.message };
   return {
-    added: cleanCards.length,
+    added: (inserted ?? []).length,
     artifact: { id: deckId, kind: "flashcards", title: matchedName ?? name, url: "/study?section=cards" },
     created_deck: createdDeck,
     deck: matchedName ?? name,
@@ -808,14 +816,20 @@ async function addCalendarEvent(args: Record<string, unknown>) {
     date,
     kind: EVENT_KINDS.has(kindRaw) ? kindRaw : "other",
     note: str(args.note).trim().slice(0, 4000) || null,
-    source: "agent",
+    // "manual", not "agent", and this is load-bearing: calendar-workspace routes
+    // source === "agent" to EventViewDialog, which takes only onClose — no edit,
+    // no delete. Every event chat wrote was therefore permanent, while the dialog
+    // told the student to "ask it to change this" with no update or delete tool
+    // in AGENT_TOOLS to change it with. The student asked for this event, so it
+    // is theirs to correct. Provenance stays readable in `note`.
+    source: "manual",
     time: str(args.time).trim().slice(0, 40) || null,
     title,
   }).select("id").single();
   if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
   return {
     added: true,
-    artifact: { id: str(data.id), kind: "other", title, url: `/calendar?date=${encodeURIComponent(date)}` },
+    artifact: { id: str(data.id), kind: "event", title, url: `/calendar?date=${encodeURIComponent(date)}` },
     date,
     title,
   };

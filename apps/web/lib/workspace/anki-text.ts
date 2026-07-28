@@ -109,6 +109,12 @@ export interface AnkiImportCard {
   /** True when the card's ANSWER was a picture we can't carry over, so the
    *  card arrives flagged instead of silently blank. */
   needsImage: boolean;
+  /** Anki had this card suspended. Carried because a shared deck ships mostly
+   *  suspended and the student unsuspends lecture by lecture — importing it all
+   *  as active buries them under tens of thousands of due cards on day one. */
+  suspended: boolean;
+  /** Anki's coloured flag, 0-7, matching STUDY_FLAG_COLORS. */
+  flag: number;
 }
 
 /** Tag applied to picture-answer cards so students can find them in one
@@ -123,7 +129,13 @@ function hasEmptyCloze(text: string): boolean {
 
 /** Turn one note's fields into an importable card. First field = front, the
  *  rest join into the back. Returns null when the front is empty. */
-export function ankiNoteToCard(fields: string[], rawTags: string, reversed: boolean, resolveImage?: ResolveImage): AnkiImportCard | null {
+export function ankiNoteToCard(
+  fields: string[],
+  rawTags: string,
+  reversed: boolean,
+  resolveImage?: ResolveImage,
+  state: { suspended?: boolean; flag?: number } = {},
+): AnkiImportCard | null {
   const [rawFront, ...rest] = fields;
   const front = ankiFieldToText(rawFront ?? "", resolveImage);
   if (!front) return null;
@@ -136,8 +148,10 @@ export function ankiNoteToCard(fields: string[], rawTags: string, reversed: bool
   return {
     back: lostToImage && !back ? NEEDS_IMAGE_NOTE : back,
     cardType,
+    flag: Math.min(7, Math.max(0, Math.trunc(state.flag ?? 0))),
     front,
     needsImage: lostToImage,
+    suspended: state.suspended === true,
     tags: lostToImage ? [...tags, NEEDS_IMAGE_TAG] : tags,
   };
 }

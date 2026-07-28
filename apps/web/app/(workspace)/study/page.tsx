@@ -7,7 +7,9 @@ import { CardsTab } from "@/components/workspace/study/cards-tab";
 import { GroupedStudyTab } from "@/components/workspace/study/grouped-study-tab";
 import { StudyChrome, type StudyReviewSettings, type StudyTabId } from "@/components/workspace/study/study-chrome";
 import { StatsTab } from "@/components/workspace/study/stats-tab";
+import { parseTestContent } from "@/lib/workspace/study-artifact-content";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import type { AttemptedTest } from "@/lib/workspace/study-stats";
 
 export default function StudyPage() {
   const [activeTab, setActiveTab] = useState<StudyTabId>("cards");
@@ -19,6 +21,12 @@ export default function StudyPage() {
   const sourcePath = searchParams.get("source");
   const requestedSection = searchParams.get("section");
   const { artifacts, cards, reviews } = useCloudStudy();
+
+  // Test attempts live inside the artifact's jsonb payload, so Stats has to
+  // parse them out — they were being recorded all along with nothing reading them.
+  const attemptedTests: AttemptedTest[] = artifacts
+    .filter((item) => item.kind === "test")
+    .map((item) => ({ attempts: parseTestContent(item.content)?.attempts ?? [], title: item.title }));
 
   useEffect(() => {
     if (requestedSection === "cards" || requestedSection === "tests" || requestedSection === "stats") {
@@ -43,7 +51,7 @@ export default function StudyPage() {
       {activeTab === "cards" && <CardsTab reviewSettings={reviewSettings} sourcePath={sourcePath} />}
       {activeTab === "tests" && <GroupedStudyTab kind="tests" />}
       {activeTab === "maps" && <GroupedStudyTab kind="mindmaps" />}
-      {activeTab === "stats" && <StatsTab onStartReview={() => setActiveTab("cards")} reviews={reviews} />}
+      {activeTab === "stats" && <StatsTab onStartReview={() => setActiveTab("cards")} reviews={reviews} tests={attemptedTests} />}
     </div>
   );
 }

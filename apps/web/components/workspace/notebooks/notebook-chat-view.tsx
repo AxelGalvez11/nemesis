@@ -155,10 +155,6 @@ export function NotebookChatView() {
               accessToken={session?.access_token ?? null}
               active
               className="mb-2 mt-4 min-h-0 flex-1"
-              context={[selected.name, instructions].filter(Boolean).join(" · ")}
-              contextId={activeChatId}
-              keyterms={[selected.name, ...sources.map((source) => source.name)]}
-              surface="notebook"
               uid={uid}
               onFinished={handleRecordingFinished}
             />
