@@ -93,6 +93,13 @@ export function useRecordingSession(options: UseRecordingOptions) {
   // diverge by exactly the quiet we skipped, which is the number worth knowing.
   const gateRef = useRef<SilenceGate>(createSilenceGate());
   const capturedMsRef = useRef(0);
+  // When the recorder last STARTED capturing, so captured time is measured from
+  // pause/resume transitions rather than counted a tick at a time. A background
+  // tab throttles setInterval to about 1 Hz, so counting a fixed slice per tick
+  // undercounts a lecture by up to 10x — and a student switching tabs to take
+  // notes is the normal case, not the edge one.
+  const captureSinceRef = useRef(0);
+  const lastTickRef = useRef(0);
   const [gateOpen, setGateOpen] = useState(true);
   // Held in a ref, not state: the canvas reads it from an animation frame, and
   // pushing 10 array updates a second through React would re-render the chat.
@@ -208,6 +215,13 @@ export function useRecordingSession(options: UseRecordingOptions) {
     // changes every second, and depending on it would rebuild this callback —
     // and therefore re-run the start/stop effect — once a second while recording.
     const wallClockSeconds = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1_000) : 0;
+    // Close the capture window that is still open — without this, a recording
+    // stopped while the gate was open would count only the time up to its last
+    // pause, which for a lecture with no long silences is zero.
+    if (captureSinceRef.current) {
+      capturedMsRef.current += Math.max(0, performance.now() - captureSinceRef.current);
+      captureSinceRef.current = 0;
+    }
     // What the file actually contains, and therefore what we are billed for and
     // what the student's monthly allowance is charged (owner 2026-07-27 chose
     // the saving goes to the student). The gate never lets this exceed the
@@ -276,6 +290,8 @@ export function useRecordingSession(options: UseRecordingOptions) {
     chunksRef.current = [];
     gateRef.current = createSilenceGate();
     capturedMsRef.current = 0;
+    captureSinceRef.current = 0;
+    lastTickRef.current = 0;
     waveformRef.current = emptyWaveform();
     setGateOpen(true);
     capturingRef.current = true;
@@ -318,11 +334,18 @@ export function useRecordingSession(options: UseRecordingOptions) {
         // of this recorder rather than a child — see lib/workspace/mic-level.ts.
         publishMicLevel(next);
 
+        // REAL elapsed, not the nominal interval: a background tab throttles
+        // this timer to roughly 1 Hz, and a hold measured in ticks would then
+        // mean fifteen seconds instead of one and a half.
+        const now = performance.now();
+        const delta = lastTickRef.current ? Math.min(now - lastTickRef.current, 30_000) : LEVEL_INTERVAL_MS;
+        lastTickRef.current = now;
+
         // Silence gate. Decided BEFORE the recorder is touched so the bar drawn
         // for this slice matches what the recorder actually did with it.
-        const gate = stepSilenceGate(gateRef.current, next, LEVEL_INTERVAL_MS);
+        const gate = stepSilenceGate(gateRef.current, next, delta);
+        const wasCapturing = gateRef.current.capturing;
         gateRef.current = gate;
-        if (gate.capturing) capturedMsRef.current += LEVEL_INTERVAL_MS;
         waveformRef.current = pushWaveBar(waveformRef.current, { captured: gate.capturing, level: next });
 
         // pause()/resume() are the whole mechanism: paused, MediaRecorder simply
@@ -337,10 +360,22 @@ export function useRecordingSession(options: UseRecordingOptions) {
             try { live.resume(); } catch { /* likewise */ }
           }
         }
+
+        // Captured time is measured across the pause/resume transition, not
+        // accumulated per tick, so it stays exact however badly the browser
+        // throttles this timer. This is the number the student is metered on.
+        if (wasCapturing && !gate.capturing) {
+          capturedMsRef.current += Math.max(0, now - captureSinceRef.current);
+          captureSinceRef.current = 0;
+        } else if (!wasCapturing && gate.capturing) {
+          captureSinceRef.current = now;
+        }
         if (mountedRef.current) setGateOpen(gate.capturing);
       }, LEVEL_INTERVAL_MS);
 
       startedAtRef.current = Date.now();
+      // The gate opens capturing, so the first capture window starts here.
+      captureSinceRef.current = performance.now();
       elapsedTimerRef.current = window.setInterval(() => {
         if (mountedRef.current) setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1_000));
       }, 1_000);

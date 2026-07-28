@@ -58,7 +58,10 @@ export function RecordWorkspace({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 place-items-center px-6 py-8" aria-live="polite">
+      {/* flex, not `grid place-items-center`: justify-items:center shrink-wraps
+          the item, so `w-full` on the waveform resolved to the width of the
+          paragraph under it rather than the panel. */}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-8" aria-live="polite">
         {recording.error ? (
           <div className="max-w-sm text-center">
             <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
@@ -68,8 +71,8 @@ export function RecordWorkspace({
             )}
           </div>
         ) : finishing ? (
-          <div className="w-full max-w-md text-center">
-            <div className="mx-auto mb-5 h-16 w-full opacity-50">
+          <div className="w-full max-w-lg text-center">
+            <div className="mx-auto mb-5 h-20 w-full opacity-50">
               <RecordingWaveform active={false} bars={recording.waveformRef} />
             </div>
             <p className="text-sm font-medium text-foreground">{recordingStatusCopy(recording.status)}</p>
@@ -79,8 +82,8 @@ export function RecordWorkspace({
             </p>
           </div>
         ) : capturing ? (
-          <div className="w-full max-w-md text-center">
-            <div className="mx-auto mb-5 h-16 w-full">
+          <div className="w-full max-w-lg text-center">
+            <div className="mx-auto mb-5 h-20 w-full">
               <RecordingWaveform active={recording.gateOpen} bars={recording.waveformRef} />
             </div>
             <p className="font-mono text-2xl tabular-nums text-foreground">{recording.elapsedLabel}</p>
