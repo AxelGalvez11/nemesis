@@ -116,6 +116,11 @@ const MENU_GAP = space(3);
 const FAB_CLEARANCE = 82;
 const DAY_HOUR_HEIGHT = 68;
 const CALENDAR_SIDE = space(4);
+/** How far a month starts off-centre when it slides in. Deliberately about one
+ *  week-row rather than a full grid height: a whole-height throw reads as a page
+ *  turn and leaves the card empty for most of the animation, where a short
+ *  travel keeps the dates legible the whole way in. */
+const MONTH_SLIDE = 64;
 
 function selectedDayForMonth(month: MonthKey): string {
   const now = new Date();
@@ -181,6 +186,17 @@ export default function CalendarScreen() {
   const contentAnimStyle = useAnimatedStyle(() => ({
     opacity: fade.value,
     transform: [{ scale: zoom.value }],
+  }));
+
+  // Monthly's own paging animation, separate from the mode-change zoom above so
+  // that stepping month to month never re-plays the whole-view transition.
+  // Driven by stepVisibleMonth; the grid's wrapper clips it (monthGridFill has
+  // overflow hidden) so a sliding month cannot spill over the weekday stripe.
+  const monthSlide = useSharedValue(0);
+  const monthFade = useSharedValue(1);
+  const monthSlideStyle = useAnimatedStyle(() => ({
+    opacity: monthFade.value,
+    transform: [{ translateY: monthSlide.value }],
   }));
 
   const visibleYear =
@@ -265,13 +281,31 @@ export default function CalendarScreen() {
     setView("monthly");
   }, []);
 
-  const stepVisibleMonth = useCallback((delta: number) => {
-    setMonthAnchor((current) => {
-      const next = stepMonth(current.year, current.month, delta);
-      setShownDay(selectedDayForMonth(next));
-      return next;
-    });
-  }, []);
+  const stepVisibleMonth = useCallback(
+    (delta: number) => {
+      // The new month SLIDES in from the side you swiped towards (owner
+      // 2026-07-28) instead of hard-cutting. Swiping up asks for the next
+      // month, so it enters from below; swiping down brings the previous one
+      // down from above. Direction follows the hand, which is what makes a
+      // pager feel like paper rather than a slideshow.
+      //
+      // Set-then-animate on the same shared value is the file's existing idiom
+      // (see the mode-change zoom above): the assignment places the grid
+      // off-centre for the frame React commits the new month on, and the
+      // withTiming carries it home. Opacity floors at 0.4 rather than 0 so the
+      // outgoing and incoming months overlap instead of blinking.
+      monthSlide.value = delta > 0 ? MONTH_SLIDE : -MONTH_SLIDE;
+      monthFade.value = 0.4;
+      monthSlide.value = withTiming(0, { duration: 240, easing: ReEasing.out(ReEasing.cubic) });
+      monthFade.value = withTiming(1, { duration: 200, easing: ReEasing.out(ReEasing.cubic) });
+      setMonthAnchor((current) => {
+        const next = stepMonth(current.year, current.month, delta);
+        setShownDay(selectedDayForMonth(next));
+        return next;
+      });
+    },
+    [monthSlide, monthFade],
+  );
 
   // Opens the add sheet for a brand-new event on the given date (the FAB passes
   // "today"; a day cell passes its own date).
@@ -487,16 +521,21 @@ export default function CalendarScreen() {
                 <WeekdayStripe flush />
               </View>
               <GestureDetector gesture={monthSwipe}>
+                {/* The gesture stays on the OUTER view, which never moves: a
+                    detector on the sliding child would be chasing a target that
+                    is mid-animation when the next swipe starts. */}
                 <View style={styles.monthGridFill} testID="calendar-month-card">
-                  <MonthGrid
-                    month={monthView}
-                    size="large"
-                    events={events}
-                    rowHeight={monthRowHeight}
-                    showLabel={false}
-                    showWeekdays={false}
-                    onSelectDay={goToDay}
-                  />
+                  <Reanimated.View style={[styles.flex, monthSlideStyle]}>
+                    <MonthGrid
+                      month={monthView}
+                      size="large"
+                      events={events}
+                      rowHeight={monthRowHeight}
+                      showLabel={false}
+                      showWeekdays={false}
+                      onSelectDay={goToDay}
+                    />
+                  </Reanimated.View>
                 </View>
               </GestureDetector>
             </View>
@@ -1314,7 +1353,9 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
     },
     monthWeekdays: { paddingHorizontal: CALENDAR_SIDE, height: 24, justifyContent: "center" },
-    monthGridFill: { flex: 1, paddingHorizontal: CALENDAR_SIDE },
+    // overflow hidden CLIPS the paging slide (monthSlideStyle) — without it the
+    // incoming month is visible riding up over the weekday stripe.
+    monthGridFill: { flex: 1, overflow: "hidden", paddingHorizontal: CALENDAR_SIDE },
     monthPager: {
       flexDirection: "row",
       alignItems: "center",
