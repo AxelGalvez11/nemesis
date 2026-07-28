@@ -37,14 +37,25 @@ export const RECORDING_MIME_PREFERENCE = [
  * which matches the submit route's own 3-hour cap. Left to its default a
  * browser may pick 128 kbps, where a 40 MB file is only 43 minutes — i.e. an
  * ordinary lecture would fail to upload.
+ *
+ * UNVERIFIED on Safari: `audioBitsPerSecond` is a hint, and Safari's AAC
+ * encoder has historically ignored it. If it does, an ordinary lecture trips
+ * the size guard below. Not worked around blind — the guard fails with
+ * something actionable, and the real rate is worth measuring before guessing.
  */
 export const RECORDING_BITS_PER_SECOND = 32_000;
 
 /** What the bucket will store. Mirrors storage.buckets.file_size_limit. */
 export const RECORDING_MAX_BYTES = 40 * 1024 * 1024;
 
-/** How often MediaRecorder hands us a chunk. Frequent enough that a tab crash
- *  costs seconds rather than the lecture, cheap enough to ignore. */
+/**
+ * How often MediaRecorder hands us a chunk.
+ *
+ * This bounds memory spikes and proves data is still flowing. It does NOT make
+ * a crash survivable — the chunks accumulate in memory, so a closed tab loses
+ * all of them whatever the timeslice. Surviving a crash would mean writing each
+ * chunk to IndexedDB, which is real work and not what this number does.
+ */
 export const RECORDING_CHUNK_MS = 5_000;
 
 export interface RecordingFormat {
