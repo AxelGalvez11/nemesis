@@ -32,7 +32,15 @@ import { batchCostUsd, batchProviderFor, PRICE_REV } from "../_shared/voice-cost
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-const ASSEMBLYAI_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") ?? "";
+// ASSEMBLY_API_KEY is the name the secret actually has in this project (owner
+// 2026-07-27); ASSEMBLYAI_API_KEY is the spelling the Vercel env uses for the
+// streaming lane. Both are read, longer-name-last, so a rename in either place
+// cannot silently turn the whole lane into a 503 — the failure mode of getting
+// this wrong is invisible until a student's recording never comes back.
+const ASSEMBLYAI_KEY = Deno.env.get("ASSEMBLY_API_KEY") ?? Deno.env.get("ASSEMBLYAI_API_KEY") ?? "";
+// Deliberately UNSET on this function: the account has no pay-as-you-go, so a
+// present key buys a guaranteed failed round trip and its latency before every
+// AssemblyAI fallback. Set it only if Groq billing is ever enabled.
 const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 
 // Project-scoped write-only key — not a secret. Override with POSTHOG_KEY.
