@@ -29,6 +29,7 @@ import {
   safeLibraryTitle,
   uniqueNotePath,
 } from "@/lib/library-paths";
+import { positionForDrop, renumbered } from "@/lib/library-order";
 import { supabase } from "./supabase";
 
 /** One library document as the phone consumes it — same shape as the web's
@@ -40,6 +41,9 @@ export interface CloudLibraryNote {
   content: string;
   updatedAt: string;
   createdAt: string;
+  /** Hand-arranged order within the note's folder. Null for anything never
+   *  dragged, which is most of a library — see lib/library-order.ts. */
+  position: number | null;
 }
 
 export interface CloudLibrarySnapshot {
@@ -79,6 +83,7 @@ function toNote(raw: unknown): CloudLibraryNote | null {
     createdAt: typeof raw.created_at === "string" ? raw.created_at : updatedAt,
     id,
     path,
+    position: typeof raw.position === "number" ? raw.position : null,
     title: rawTitle || titleFromPath(path),
     updatedAt,
   };
@@ -161,7 +166,7 @@ export function findCachedNote(
 export async function fetchLibrary(uid: string): Promise<CloudLibrarySnapshot> {
   const { data, error } = await supabase
     .from("readable_library_documents")
-    .select("id,path,kind,title,content,created_at,updated_at")
+    .select("id,path,kind,title,content,created_at,updated_at,position")
     .eq("user_id", uid)
     .eq("deleted", false)
     .in("kind", ["note", "folder"])
@@ -233,7 +238,7 @@ export async function fetchNote(
   if (!key.id && !key.path) return null;
   let query = supabase
     .from("readable_library_documents")
-    .select("id,path,kind,title,content,created_at,updated_at")
+    .select("id,path,kind,title,content,created_at,updated_at,position")
     .eq("user_id", uid)
     .eq("deleted", false)
     .eq("kind", "note");
@@ -278,7 +283,7 @@ export async function createNote(uid: string): Promise<CloudLibraryNote> {
     const { data, error } = await supabase
       .from("readable_library_documents")
       .insert({ user_id: uid, path: `${title}.md`, kind: "note", title, content: "", deleted: false, updated_at: now })
-      .select("id,path,kind,title,content,created_at,updated_at")
+      .select("id,path,kind,title,content,created_at,updated_at,position")
       .single();
     if (isUniquePathViolation(error)) continue;
     if (error) throw new Error(error.message);
@@ -358,7 +363,7 @@ export async function createNoteWithContent(
     const { data, error } = await supabase
       .from("readable_library_documents")
       .insert({ user_id: uid, path, kind: "note", title: name, content, deleted: false, updated_at: now })
-      .select("id,path,kind,title,content,created_at,updated_at")
+      .select("id,path,kind,title,content,created_at,updated_at,position")
       .single();
     if (isUniquePathViolation(error)) continue;
     if (error) throw new Error(error.message);
@@ -391,7 +396,7 @@ export async function updateNoteContent(uid: string, noteId: string, content: st
     .eq("user_id", uid)
     .eq("kind", "note")
     .eq("deleted", false)
-    .select("id,path,kind,title,content,created_at,updated_at")
+    .select("id,path,kind,title,content,created_at,updated_at,position")
     .maybeSingle();
   if (error) throw new Error(error.message);
   const note = toNote(data);
@@ -498,6 +503,66 @@ export async function moveNote(
   const cached = cache.notes[noteId];
   if (cached) await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [noteId]: { ...cached, path } } });
   return path;
+}
+
+/**
+ * Put `noteId` at `toIndex` among its folder's notes, in their current display
+ * order (owner 2026-07-28: drag to rearrange).
+ *
+ * ONE ROW, normally. The new position is the midpoint of the neighbours it
+ * lands between (lib/library-order.ts), so a reorder does not renumber the
+ * folder — a partly-applied renumber would leave the list in an order the
+ * student never chose, which is worse than the precision limit it would avoid.
+ *
+ * The exception is the rare folder whose midpoints ARE exhausted, which
+ * `positionForDrop` reports: that folder is renumbered evenly, once, and the
+ * moved note placed within the fresh spacing. Even then the writes are one
+ * request.
+ *
+ * `folderNotes` must be the folder's notes in DISPLAY order INCLUDING the note
+ * being moved; this removes it before measuring, so `toIndex` means "become the
+ * (toIndex+1)th note", which is what the finger did.
+ *
+ * `updated_at` is deliberately NOT touched: rearranging is not editing, and
+ * bumping it would shuffle the Recently-modified sort every time someone tidies
+ * their list.
+ */
+export async function reorderNote(
+  uid: string,
+  noteId: string,
+  folderNotes: readonly CloudLibraryNote[],
+  toIndex: number,
+): Promise<void> {
+  const without = folderNotes.filter((note) => note.id !== noteId);
+  const { position, renumber } = positionForDrop(without, toIndex);
+
+  if (!renumber) {
+    const { error } = await supabase
+      .from("readable_library_documents")
+      .update({ position })
+      .eq("id", noteId)
+      .eq("user_id", uid);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  // Rebuild this folder's spacing with the note already in its new slot, so the
+  // student's arrangement survives the renumber rather than being reset to A–Z.
+  const moved = folderNotes.find((note) => note.id === noteId);
+  if (!moved) throw new Error("That note is no longer in your library.");
+  const ordered = [...without];
+  ordered.splice(Math.max(0, Math.min(toIndex, ordered.length)), 0, moved);
+
+  const rows = renumbered(ordered.map((note) => note.path));
+  await Promise.all(
+    ordered.map((note, index) =>
+      supabase
+        .from("readable_library_documents")
+        .update({ position: rows[index]?.position ?? index })
+        .eq("id", note.id)
+        .eq("user_id", uid),
+    ),
+  );
 }
 
 /** Soft-delete one note — same `deleted: true` flag the web app sets, so the
