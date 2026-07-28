@@ -1,6 +1,6 @@
 "use client";
 
-import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
+import { IconChevronRight, IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -65,6 +65,9 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [explainFor, setExplainFor] = useState<string | null>(null);
   const [explainText, setExplainText] = useState("");
   const [explainBusy, setExplainBusy] = useState(false);
+  // Open on request — asking for an explanation is asking to read it. The
+  // header can fold it away again without discarding it.
+  const [explainOpen, setExplainOpen] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -209,6 +212,9 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       setExplainFor(null);
       return;
     }
+    // Every fresh request opens the window: a student who folded it away on the
+    // last card is asking to READ this one, not to be handed a closed box.
+    setExplainOpen(true);
     const cached = explainCacheRef.current.get(current.id);
     if (cached) {
       setExplainText(cached);
@@ -412,14 +418,33 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                     <AssistantMarkdown className="text-lg leading-8 text-foreground" htmlSubSup obsidianUnderline text={current.back} />
                   </div>
                 )}
+                {/* A small collapsible window rather than a block that shoves the
+                    card up the page (owner 2026-07-28). It opens on request —
+                    the student just asked for it — and the header collapses it
+                    back to one line so the card is readable again without
+                    throwing the explanation away. */}
                 {explainFor === current.id && (
-                  <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-(--ui-stroke-secondary) bg-[rgb(247_247_248)] p-5 text-left dark:bg-[rgb(29_29_31)]" data-testid="explain-panel">
-                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Nemesis explains</p>
-                    <div className="mt-2">
-                      {explainBusy
-                        ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
-                        : <AssistantMarkdown className="text-sm leading-relaxed" htmlSubSup obsidianUnderline text={explainText} />}
-                    </div>
+                  <div className="mx-auto mt-6 max-w-xl overflow-hidden rounded-xl border border-(--ui-stroke-secondary) bg-[rgb(247_247_248)] text-left dark:bg-[rgb(29_29_31)]" data-testid="explain-panel">
+                    <button
+                      aria-expanded={explainOpen}
+                      className="flex w-full items-center gap-1.5 px-3.5 py-2 text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                      onClick={() => setExplainOpen((open) => !open)}
+                      type="button"
+                    >
+                      <IconChevronRight
+                        className={cn("shrink-0 text-(--ui-text-quaternary) transition-transform", explainOpen && "rotate-90")}
+                        size={13}
+                      />
+                      <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Nemesis explains</span>
+                      {explainBusy && <span className="ml-auto text-[0.65rem] text-(--ui-text-quaternary)">thinking…</span>}
+                    </button>
+                    {explainOpen && (
+                      <div className="max-h-64 overflow-y-auto px-3.5 pb-3">
+                        {explainBusy
+                          ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
+                          : <AssistantMarkdown className="text-[0.8125rem] leading-relaxed" htmlSubSup obsidianUnderline text={explainText} />}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
