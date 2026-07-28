@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
-  InputAccessoryView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -97,7 +95,8 @@ import { control, radius, space, type } from "@/theme/tokens";
 // note.tsx's existing draftRef + debounced autosave), so save semantics are
 // byte-identical to the old single-TextInput editor.
 
-const TOOLBAR_ID = "note-block-toolbar";
+// (The old `note-block-toolbar` accessory id is gone — the pill is a keyboard-
+// tracking view now. See the note beside useAnimatedKeyboard for why.)
 
 // lib/accessory-bar.ts writes its height out as a literal so it can stay
 // import-free and therefore testable. This line is what keeps that literal
@@ -169,6 +168,33 @@ export function NoteBlockEditor({
   // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
   const { width: windowWidth } = useWindowDimensions();
   const pillWidth = accessoryPillWidth(windowWidth, space(3));
+
+  // The pill rides the keyboard from JS instead of being an InputAccessoryView.
+  //
+  // WHY, measured on the simulator 2026-07-28 (iPhone 17, iOS 26.5, RN 0.85,
+  // newArchEnabled): an `InputAccessoryView` renders NOTHING in this build. Not
+  // "renders at zero size" — nothing at all. The note title's own Done bar, a
+  // plain row of buttons that this file's own notes cite as the proof that
+  // accessory views work here, is equally absent with the keyboard up. That is
+  // the discriminating test, and it means the two previous fixes (an explicit
+  // height in batch 13, an explicit width in batch 14) were both sizing a
+  // component that was never going to appear. The geometry they added is still
+  // correct and still required — a horizontal scroller has no intrinsic size —
+  // so lib/accessory-bar.ts stays exactly as it is; it just was not the bug.
+  //
+  // The pill is simply pinned to the BOTTOM of the editor, with no keyboard
+  // maths of its own. The host already wraps this component in a
+  // KeyboardAvoidingView (app/note.tsx), and Android resizes the window by
+  // default, so on both platforms the editor's bottom edge IS the top of the
+  // keyboard — and it animates with it for free.
+  //
+  // A first attempt did translate by `useAnimatedKeyboard().height`, and the
+  // toolbar appeared over the note's TITLE: the container had already been
+  // shortened by the keyboard, so lifting it again moved it a second full
+  // keyboard height up the page. Worth stating because "track the keyboard"
+  // sounds more correct than "do nothing" and is, here, exactly one keyboard
+  // too many. It also collapses the old platform split — Android never had an
+  // accessory view, and now neither platform needs one.
 
   const [nb, setNb] = useState<NoteBlocks>(() => splitBlocks(content));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -420,7 +446,6 @@ export function NoteBlockEditor({
               // writing — the "text box" look the owner called out (2026-07-22).
               placeholder={nb.blocks.length <= 1 && block.body === "" ? "Start writing" : undefined}
               placeholderTextColor={c.textHint}
-              inputAccessoryViewID={Platform.OS === "ios" ? TOOLBAR_ID : undefined}
               testID="note-block-input"
             />
           ) : (
@@ -456,19 +481,15 @@ export function NoteBlockEditor({
         <Pressable style={styles.tail} onPress={onTailPress} testID="note-block-tail" accessibilityLabel="Continue writing" />
       </ScrollView>
 
-      {/* The formatting pill: rides the keyboard on iOS; Android pins it at the
-          editor's bottom edge (no accessory-view equivalent there). */}
-      {/* Not over a table: the toolbar writes markdown into the block's raw
+      {/* The formatting pill, pinned just above the keyboard on BOTH platforms.
+          Not over a table: the toolbar writes markdown into the block's raw
           source, which for a table would mean dropping `**` into the middle of
           the pipes the grid is hiding. The grid's own +/− controls are its
-          toolbar. (On iOS this is automatic — the grid's cells don't claim the
-          accessory view, so it simply doesn't appear.) */}
-      {Platform.OS === "ios" ? (
-        <InputAccessoryView nativeID={TOOLBAR_ID} backgroundColor="transparent">
+          toolbar. */}
+      {activeIdx !== null && !activeIsTable ? (
+        <View style={styles.toolbarDock} pointerEvents="box-none">
           {toolbar}
-        </InputAccessoryView>
-      ) : activeIdx !== null && !activeIsTable ? (
-        toolbar
+        </View>
       ) : null}
     </View>
   );
@@ -498,6 +519,10 @@ const createStyles = (c: ThemeColors) =>
     // be a number — the `maxWidth: "100%"` that used to live here was a
     // percentage of a parent that had no width of its own, so it clamped nothing
     // and left the pill with no width to give the scroller inside it.
+    // Pinned to the editor's bottom edge; the animated translateY lifts it by
+    // the keyboard's height. Anchored bottom-left-right rather than given a
+    // height, so the pill's own size still decides how tall the dock is.
+    toolbarDock: { bottom: 0, left: 0, position: "absolute", right: 0 },
     toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
     toolbarPill: {
       borderRadius: radius.pill,
