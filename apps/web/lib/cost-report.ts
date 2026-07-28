@@ -4,35 +4,37 @@
 // _shared/llm-cost.ts). This is the web app's half: voice — the single biggest
 // non-token cost, and the one that decides whether the Max plan makes money.
 //
-// Phone recordings transcribe ON-DEVICE and cost $0, so every event this file emits
-// is genuinely web spend; the `client` property still says so explicitly rather than
-// leaving a reader to infer it.
+// SCOPE, since 2026-07-27: the STREAMING lane only. The batch (upload-and-
+// enhance) lane moved to supabase/functions/nemesis-transcribe along with the
+// AssemblyAI key, and its rate table went with it —
+// supabase/functions/_shared/voice-cost.ts. Deliberately not duplicated here:
+// one table per lane, in the process that pays the bill, so a re-price cannot
+// land in one copy and miss the other.
 
 import { phServerCapture } from "@/lib/posthog-server";
 
-/** Voice providers we actually pay, by the lane they serve. */
-export type VoiceProvider = "assemblyai_batch" | "assemblyai_streaming" | "groq_whisper_turbo";
+/** Voice providers this app still pays directly. */
+export type VoiceProvider = "assemblyai_streaming";
 
 /**
- * USD per HOUR of audio, read off each provider's own pricing page on PRICE_REV:
- * assemblyai.com/pricing (streaming $0.15/hr, async $0.21/hr) and groq.com/pricing
- * (whisper-large-v3-turbo $0.04/hr).
+ * USD per HOUR of audio, read off the provider's own pricing page on PRICE_REV:
+ * assemblyai.com/pricing (Universal-Streaming $0.15/hr).
  */
 export const VOICE_USD_PER_HOUR: Readonly<Record<VoiceProvider, number>> = {
-  assemblyai_batch: 0.21,
   assemblyai_streaming: 0.15,
-  groq_whisper_turbo: 0.04,
 };
 
 /** Price list revision, stamped on every event so a later price change cannot
- *  retroactively rewrite what an earlier month cost. */
-export const PRICE_REV = "2026-07-24";
+ *  retroactively rewrite what an earlier month cost. A re-price is a NEW rev,
+ *  never an edit. Kept in step with _shared/voice-cost.ts's PRICE_REV so the
+ *  two lanes' events stay comparable in one query. */
+export const PRICE_REV = "2026-07-27";
 
 /** Dollar cost of transcribing `seconds` of audio with `provider`. */
 export function voiceCostUsd(provider: VoiceProvider, seconds: number): number {
   const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
   const usd = (safeSeconds / 3600) * VOICE_USD_PER_HOUR[provider];
-  // Nine decimals — a few seconds of Groq audio is worth millionths of a dollar.
+  // Nine decimals — a few seconds of audio is worth millionths of a dollar.
   return Math.round(usd * 1e9) / 1e9;
 }
 

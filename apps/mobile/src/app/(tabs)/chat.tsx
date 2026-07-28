@@ -39,9 +39,10 @@ import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
+import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
-import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
+import { DeliverableCardStack, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
 import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { ThoughtTrail } from "@/components/ThoughtTrail";
@@ -193,6 +194,27 @@ export default function ChatScreen() {
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  // "Add a file": the entry point the phone never had. Everything downstream already
+  // existed -- the reader handles PDF/Word/PowerPoint, and the result is the same
+  // one-shot attachment a Library note or a photograph makes. A refusal (wrong kind,
+  // too big, unreadable) arrives already written for the student, so it is shown
+  // verbatim rather than wrapped in a second sentence.
+  const [fileLoading, setFileLoading] = useState(false);
+  const addFileFromDevice = useCallback(async () => {
+    if (!uid || fileLoading) return;
+    setFileLoading(true);
+    try {
+      const doc = await pickAndReadDocument(uid);
+      if (doc) setAttachedDoc({ content: doc.text, title: doc.title });
+    } catch (cause) {
+      Alert.alert(
+        "Couldn't add that file",
+        cause instanceof DocumentError ? cause.message : "Something went wrong reading it. Try again.",
+      );
+    } finally {
+      setFileLoading(false);
+    }
+  }, [fileLoading, uid]);
   // The camera (owner 2026-07-24). A photograph becomes an attachment through
   // exactly the lane above — once the server has read it, a picture of a slide
   // and an attached Library note are the same thing: text for one turn.
@@ -207,7 +229,6 @@ export default function ChatScreen() {
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [deepResearchOn, setDeepResearchOn] = useState(false);
   // Instant/Medium/High — the composer's intelligence dial. A per-USER working
   // preference (owner 2026-07-23: "the chat should remember which intelligence
   // mode has been picked because it always defaults to medium"): remembered
@@ -315,10 +336,8 @@ export default function ChatScreen() {
     setPlusMenuOpen(false);
     setLibraryPickerOpen(false);
     setAttachedDoc(null);
-    setDeepResearchOn(false);
     // NB: effort is intentionally NOT reset here — it's a per-user preference
-    // remembered across chats (see the hydrate/persist effects below), unlike
-    // deep research, which is a per-thread toggle that starts off each thread.
+    // remembered across chats (see the hydrate/persist effects below).
     setEffortMenuOpen(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
@@ -484,7 +503,10 @@ export default function ChatScreen() {
     // off themselves (NOT cleared here). Both ride into sendChat's options,
     // never into the persisted/displayed ChatMsg.content itself.
     const doc = override?.doc ?? attachedDoc;
-    const research = deepResearchOn;
+    // No Deep research control any more (owner removed the row 2026-07-27). The
+    // router still picks the research lane by itself when a question needs current
+    // sources; nothing here forces it.
+    const research = false;
     const chosenEffort = effort;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
     const base = [...history, userMsg];
@@ -585,7 +607,7 @@ export default function ChatScreen() {
           setStreamingText("");
         }
       });
-  }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
+  }, [input, messages, uid, threadId, attachedDoc, effort]);
 
   // A shot the student accepted: store it, read it, and hand the words to the
   // next turn. The sheet STAYS UP with a spinner until this lands — dropping
@@ -1038,7 +1060,7 @@ export default function ChatScreen() {
                     {item.msg!.sources?.length ? (
                       <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
+                    {item.msg!.outputs?.length ? <DeliverableCardStack outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
@@ -1047,7 +1069,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={openDeliverable} /> : null
+              threadOutputs.length ? <DeliverableCardStack outputs={threadOutputs} onSelect={openDeliverable} compact /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (
@@ -1270,9 +1292,8 @@ export default function ChatScreen() {
           onClose={() => setPlusMenuOpen(false)}
           bottomOffset={composerMenuOffset}
           onAttach={() => setLibraryPickerOpen(true)}
+          onAddFile={() => void addFileFromDevice()}
           onTakePhoto={() => setCameraOpen(true)}
-          deepResearchOn={deepResearchOn}
-          onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
         {/* The intelligence pill's dropdown — anchored above the composer off
             the same measurements the "+" menu uses, so the two hang at exactly

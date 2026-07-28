@@ -30,6 +30,7 @@ import {
 import { createStudyMindmap, createStudyTest } from "./studyArtifacts";
 import {
   clip,
+  deckNameParts,
   isAgentToolName,
   matchDeckName,
   MAX_LIST,
@@ -248,7 +249,18 @@ async function listStudyDecks(_context: ToolContext) {
       .limit(2000);
     for (const card of cards ?? []) counts.set(str(card.deck_id), (counts.get(str(card.deck_id)) ?? 0) + 1);
   }
-  return { decks: decks.map((deck) => ({ cards: counts.get(str(deck.id)) ?? 0, name: str(deck.name) })) };
+  // name/folder/full_name rather than the raw "Folder::Deck": see deckNameParts.
+  return {
+    decks: decks.map((deck) => {
+      const parts = deckNameParts(str(deck.name));
+      return {
+        cards: counts.get(str(deck.id)) ?? 0,
+        full_name: parts.full,
+        name: parts.name,
+        ...(parts.folder ? { folder: parts.folder } : {}),
+      };
+    }),
+  };
 }
 
 async function readStudyDeck({ args }: ToolContext) {
@@ -272,8 +284,11 @@ async function readStudyDeck({ args }: ToolContext) {
     .order("created_at")
     .range(offset, offset + limit - 1);
   if (error) return { error: error.message };
+  const deckParts = deckNameParts(matched);
   return {
-    deck: matched,
+    deck: deckParts.name,
+    ...(deckParts.folder ? { folder: deckParts.folder } : {}),
+    full_name: deckParts.full,
     cards: (cards ?? []).map((card) => ({
       back: clip(str(card.back), 600),
       card_type: str(card.card_type),
@@ -369,13 +384,25 @@ async function addFlashcards({ args, uid }: ToolContext) {
     })),
   );
   if (insertError) return { error: insertError.message };
-  const deckName = matched ?? wanted;
+  const parts = deckNameParts(matched ?? wanted);
   return {
     added: cards.length,
-    artifact: { id: deckId, kind: "flashcards", route: "/study?section=cards", title: deckName },
+    // The artifact keeps the FULL name; the card splits it for display itself
+    // (lib/artifact-card.ts), which is also what makes the folder show up as
+    // the destination line rather than as part of the deck's name.
+    artifact: { id: deckId, kind: "flashcards", route: "/study?section=cards", title: parts.full },
     created_deck: createdDeck,
-    deck: deckName,
+    deck: parts.name,
+    ...(parts.folder ? { folder: parts.folder } : {}),
   };
+}
+
+/** Where a saved Study artifact lives, as a route. The folder is a query param
+ *  the Study page is free to ignore; its job here is to reach the chat card,
+ *  which otherwise has no way to know a test went anywhere but "Tests". */
+function studyRoute(section: "tests" | "mindmaps", group: string): string {
+  const folder = group.trim();
+  return folder ? `/study?section=${section}&group=${encodeURIComponent(folder)}` : `/study?section=${section}`;
 }
 
 async function addPracticeTest({ args, uid }: ToolContext) {
@@ -395,7 +422,10 @@ async function addPracticeTest({ args, uid }: ToolContext) {
   const title = str(args.title).trim();
   return {
     added: true,
-    artifact: { id: saved.id, kind: "test", route: "/study?section=tests", title },
+    // The folder rides in the ROUTE rather than a new ChatOutput field: the
+    // card reads it back to name its destination, and `meta.outputs` is shared
+    // with web, so a field only the phone writes is a schema web has to learn.
+    artifact: { id: saved.id, kind: "test", route: studyRoute("tests", groupName), title },
     group: groupName,
     kind: "test",
     questions: saved.questions.length,
@@ -410,10 +440,11 @@ async function addMindmap({ args, uid }: ToolContext) {
     title: str(args.title),
   });
   const title = str(args.title).trim();
+  const group = str(args.group_name).trim();
   return {
     added: true,
-    artifact: { id: saved.id, kind: "mindmap", route: "/study?section=mindmaps", title },
-    group: str(args.group_name).trim() || null,
+    artifact: { id: saved.id, kind: "mindmap", route: studyRoute("mindmaps", group), title },
+    group: group || null,
     kind: "mindmap",
     title,
   };
@@ -495,6 +526,15 @@ const HANDLERS: Record<AgentToolName, ToolHandler> = {
   search_library: searchLibrary,
 };
 
+/** Handed back with every result that created something, because the model
+ *  cannot see the screen and does not otherwise know a card is already there.
+ *  Without it the natural next move is to write the deck out in the reply — the
+ *  wall of text the card exists to replace (owner 2026-07-27). It is phrased as
+ *  a permission as well as a prohibition: a turn that also asked a question
+ *  still has to get its answer. */
+const SAVED_NOTE =
+  "Saved. The student already sees a card in the chat with this item's name and a link that opens it, so do NOT list, repeat, or preview the content you just saved. Say in one short sentence what you added and which deck or folder it went into, in plain words and never using the '::' form. If they asked a question as well, answer that too.";
+
 /**
  * Run one tool call. ALWAYS resolves to something JSON-stringifiable.
  *
@@ -506,7 +546,13 @@ const HANDLERS: Record<AgentToolName, ToolHandler> = {
 export async function executeAgentTool(uid: string, call: AgentToolCall): Promise<unknown> {
   if (!isAgentToolName(call.name)) return { error: `Unknown tool '${call.name}'.` };
   try {
-    return await HANDLERS[call.name]({ args: parseToolArgs(call.arguments), uid });
+    const result = await HANDLERS[call.name]({ args: parseToolArgs(call.arguments), uid });
+    // Attached HERE rather than in each of the six creating handlers, so a tool
+    // added later cannot forget it: "did it produce an artifact" is the exact
+    // condition, and it is already in the shape of the result.
+    return result && typeof result === "object" && "artifact" in result
+      ? { ...result, note_to_assistant: SAVED_NOTE }
+      : result;
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "That didn't work." };
   }

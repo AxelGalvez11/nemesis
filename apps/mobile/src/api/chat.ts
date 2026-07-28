@@ -55,10 +55,11 @@ import {
   mergeLiveNotes,
   parseLiveNotes,
   planFinalNotesWindows,
-  shouldReplaceNotes,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
+import { base64ToBytes, bytesToBase64, readWav, trimWavSilence } from "@/lib/wav-trim";
+import { encodeToM4A } from "../../modules/nemesis-audio-encoder";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
   generalPrefsInstruction,
@@ -409,16 +410,22 @@ export async function sendChat(
             announcedWriting = true;
             onPhase?.({ kind: "writing" });
           }
-          // Once a tool has created a deliverable, the transcript becomes an
-          // artifact-only turn: the clickable card is the answer. Do not stream
-          // the model's prose copy of the deck/test/slides back into chat.
-          if (outputs.length === 0) onDelta?.(delta, carried + accumulated);
+          // Everything the model writes is relayed, INCLUDING on a turn that
+          // saved something. This used to stop dead the moment a deliverable
+          // existed, on the theory that the card was the whole answer — but
+          // "explain X in three sentences AND make me cards" writes the
+          // explanation in the same round as the tool call, so that rule threw
+          // the answer away (reproduced on device 2026-07-27). What keeps the
+          // deck itself out of the transcript is the instruction handed back
+          // with the tool result — see SAVED_NOTE in api/agentTools.ts — which
+          // is the model's job to follow, not something to fix by deletion.
+          onDelta?.(delta, carried + accumulated);
         }
       : undefined;
 
   const toolsEnabled = toolsAllowed(decision);
   const learnerProfile = await learnerProfileForChat(uid);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile, Boolean(attachedDoc));
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice
@@ -503,13 +510,21 @@ export async function sendChat(
   // ride out of here: it is internal to this turn, and the screen persists whatever
   // it is handed. `carried` is prepended so the saved message holds everything the
   // student watched arrive, not just the final round's share of it.
+  //
+  // This used to return `null` for the whole message whenever a tool had
+  // created something, so that the card would be the only answer. That is right
+  // for "make me a deck" and wrong for everything else: "explain X in three
+  // sentences AND make me cards" saved the cards and silently threw the
+  // explanation away (reproduced on device, 2026-07-27). The deck itself is
+  // kept out of the transcript by SAVED_NOTE (api/agentTools.ts) instead — an
+  // instruction the model follows, rather than deleting words it was asked for.
   return {
     budgetReset: reply.budgetReset,
     errorKind: reply.errorKind,
     errorText: reply.errorText,
     sources,
     ...(outputs.length ? { outputs } : {}),
-    text: outputs.length ? null : carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
+    text: carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
   };
 }
 
@@ -956,38 +971,36 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
   }
 }
 
-/** Rebuild a finished recording's notes from the ENHANCED transcript (owner
- *  2026-07-23: "we need live notes to come from enhanced audio for better
- *  notes"). During the lecture the live pass could only summarize the phone's
- *  on-device text; once the server returns the sharper transcript, those
- *  bullets are the best notes we could write from the worse words. Walks the
- *  finished transcript in order — each window told what's already on the board
- *  and not to repeat it, the same contract the live pass runs on — and returns
- *  the joined result, or null when nothing came back so the existing notes
- *  stand. Never throws: requestLiveNotes already resolves null on failure, and
- *  a window that comes back empty just contributes nothing. */
-async function rebuildNotesFromTranscript(
-  uid: string,
-  transcript: string,
-  existingNotes: string | undefined,
-): Promise<string | null> {
+/** Write a finished recording's notes, in one pass over its final transcript
+ *  (owner 2026-07-27 — see lib/live-notes.ts for why this is now the ONLY pass).
+ *  Walks the transcript in order, each window told what is already on the board
+ *  and not to repeat it, and returns the joined bullets or null if nothing came
+ *  back. Never throws: requestLiveNotes resolves null on failure, and a window
+ *  that comes back empty just contributes nothing. */
+async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
   const windows = planFinalNotesWindows(transcript);
   if (windows.length === 0) return null;
   if (windows.length === FINAL_NOTES_MAX_WINDOWS) {
-    console.warn(`notes rebuild hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
+    console.warn(`notes pass hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
   }
   let notes: string[] = [];
+  let failed = 0;
   for (const window of windows) {
     const fresh = await requestLiveNotes(uid, window, notes);
-    // ALL OR NOTHING. A failed window means this pass never saw that slice of
-    // the lecture, so finishing would hand back bullets covering only part of
-    // it — strictly worse than the live pass's notes, which at least span the
-    // whole recording. Bail and let the existing notes stand. (An empty-but-
-    // successful window is fine and contributes nothing; see requestLiveNotes.)
-    if (!fresh) return null;
+    // KEEP GOING past a failed window. This used to bail on the first failure,
+    // because notes covering only part of a lecture were worse than the live
+    // pass's notes, which at least spanned all of it. There is no live pass to
+    // fall back to any more, so bailing would hand the student NOTHING — and
+    // bullets for four fifths of a lecture beat none. (An empty-but-successful
+    // window is not a failure; see requestLiveNotes.)
+    if (!fresh) {
+      failed += 1;
+      continue;
+    }
     notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
   }
-  return shouldReplaceNotes(notes, existingNotes) ? liveNotesText(notes) : null;
+  if (failed) console.warn(`notes pass: ${failed}/${windows.length} windows failed; notes may have gaps`);
+  return notes.length ? liveNotesText(notes) : null;
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -1005,8 +1018,19 @@ export async function enhanceRecordingArtifact(
   audioUris: string[],
   elapsedSeconds: number,
 ): Promise<void> {
-  const uris = audioUris.slice(0, 8);
+  // Every file, not the first eight. `audioUris.slice(0, 8)` silently DROPPED
+  // the rest of a long lecture, and because the per-file estimate divided the
+  // elapsed clock by the SLICED length, the student was still metered the whole
+  // hour — billed in full, transcribed in part, with nothing in any log saying
+  // so. Each file now carries its own real duration (read out of its WAV
+  // header), so neither the cap nor the arithmetic is guesswork.
+  const uris = audioUris;
   if (uris.length === 0) return;
+  // Trimmed/compressed copies WE created. Tracked outside the try so the finally
+  // sweeps them even when the loop throws part-way: without this, a lecture that
+  // lost the network mid-upload would strand a compressed copy of every file
+  // uploaded so far in the cache directory.
+  const derived: string[] = [];
   try {
     const { data } = await supabase.auth.getSession();
     const session = data.session;
@@ -1019,20 +1043,33 @@ export async function enhanceRecordingArtifact(
     await writeChipEntry(uid, threadId, { ...artifact, polish: "pending" });
     const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
     const storageBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/storage/v1/object/recordings`;
-    const perFileSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
+    // Fallback only, for a file whose header will not parse: the old estimate.
+    const fallbackSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
 
     const pieces: string[] = [];
     for (const uri of uris) {
-      const path = `${uid}/${generateUuidV4()}.wav`;
-      // uploadAsync streams straight from disk — a 100MB lecture never has to
-      // fit in JS memory the way a base64 round-trip would force.
-      const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, uri, {
-        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": "audio/wav" },
+      // Trim the dead air, then compress — see prepareAudioForUpload for why
+      // that order, and why the two steps solve different problems.
+      const prepared = await prepareAudioForUpload(uri);
+      if (prepared.temporary) derived.push(prepared.uri);
+      // The bucket enforces BOTH the extension's implied type and the header, so
+      // they come from the same place rather than being written out twice.
+      const path = `${uid}/${generateUuidV4()}.${prepared.extension}`;
+      // uploadAsync streams straight from disk — a lecture never has to fit in
+      // JS memory the way a base64 round-trip would force.
+      const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, prepared.uri, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": prepared.contentType },
         httpMethod: "POST",
       });
+      if (prepared.temporary) await deleteLocalAudio([prepared.uri]);
       if (upload.status !== 200) throw new Error(`audio upload failed (${upload.status})`);
       const submitRes = await fetch(`${APP_API_BASE}/api/transcription/submit`, {
-        body: JSON.stringify({ seconds: perFileSeconds, storagePath: path }),
+        // WALL-CLOCK, deliberately — not the trimmed length we just uploaded.
+        // This is what the student's monthly cap is charged; the saving from
+        // trimming is ours (owner 2026-07-27). The server keeps it that way by
+        // refusing to settle the meter downward — see the comment in
+        // supabase/functions/nemesis-transcribe/index.ts.
+        body: JSON.stringify({ seconds: prepared.wallClockSeconds ?? fallbackSeconds, storagePath: path }),
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         method: "POST",
       });
@@ -1062,10 +1099,10 @@ export async function enhanceRecordingArtifact(
 
     // Sharper transcript, sharper notes. Deliberately AFTER the transcript is
     // durable and inside its own try: this costs several model calls and can
-    // fail on its own (offline, out of tokens), and losing better notes must
-    // never cost the better transcript — or reset the chip out of "done".
+    // fail on its own (offline, out of tokens), and losing the notes must never
+    // cost the better transcript — or reset the chip out of "done".
     try {
-      const notes = await rebuildNotesFromTranscript(uid, enhanced, artifact.notes);
+      const notes = await rebuildNotesFromTranscript(uid, enhanced);
       if (notes) {
         const { error: notesError } = await supabase
           .from("chat_recording_artifacts")
@@ -1085,8 +1122,154 @@ export async function enhanceRecordingArtifact(
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
     // Clear the "polishing" flag — the on-device transcript is what stands.
     await writeChipEntry(uid, threadId, { ...artifact });
+    // …and write the notes from THAT, because nothing else will. Notes used to
+    // be written live during the lecture, so a failed accuracy pass still left
+    // the student with bullets; the single end-of-recording pass above is now
+    // the only one, and it runs inside the success branch. Without this, a
+    // student who recorded a lecture offline, or past their monthly allowance,
+    // would open the recording to a raw transcript and no notes at all.
+    // Best-effort and separately guarded: this is already the failure path.
+    try {
+      const notes = await rebuildNotesFromTranscript(uid, artifact.transcript ?? "");
+      if (notes) {
+        const { error } = await supabase
+          .from("chat_recording_artifacts")
+          .update({ notes })
+          .eq("id", artifact.id)
+          .eq("user_id", uid);
+        // Same rule as the success path: the artifact row is what web's rail
+        // reads, so the chip never publishes bullets the row does not have.
+        if (!error) await writeChipEntry(uid, threadId, { ...artifact, notes });
+      }
+    } catch (notesCause) {
+      console.warn("fallback notes skipped:", notesCause instanceof Error ? notesCause.message : notesCause);
+    }
   } finally {
-    await deleteLocalAudio(uris);
+    // Originals AND the trimmed/compressed copies we made from them. Both lists
+    // are swept here because the loop can throw between creating a derived file
+    // and uploading it, and deleteLocalAudio is idempotent.
+    await deleteLocalAudio([...uris, ...derived]);
+  }
+}
+
+/**
+ * How big a file we are willing to pull into JS memory to trim it. A base64
+ * round trip costs roughly 2.3x the file size in RAM, so this is the line
+ * between "worth the saving" and "risk an out-of-memory crash on a phone that
+ * has just recorded for an hour". At 16kHz/16-bit this is about 16 minutes of
+ * audio; a longer single file uploads untrimmed, which is exactly today's
+ * behaviour, not a regression.
+ */
+const MAX_TRIM_BYTES = 32 * 1024 * 1024;
+
+interface PreparedAudio {
+  /** What to upload — the compressed copy if we made one, the trimmed copy if
+   *  compression was unavailable, else the original. */
+  uri: string;
+  /** The recording's REAL length before trimming. Null when it could not be
+   *  determined, in which case the caller falls back to its estimate. */
+  wallClockSeconds: number | null;
+  /** Drives the object's extension and Content-Type — the bucket enforces both. */
+  extension: "wav" | "m4a";
+  contentType: string;
+  /** True when WE created this file and must delete it after the upload. */
+  temporary: boolean;
+}
+
+/**
+ * Get one recorded file ready to upload: TRIM the silence, then COMPRESS it.
+ *
+ * The order is the whole design. Trimming needs raw PCM (slicing samples is
+ * arithmetic; slicing AAC is not), so it has to happen while the audio is still
+ * a WAV. Compression has to happen after, or there is nothing cheap left to cut.
+ *
+ * The two do different jobs and it is worth not confusing them:
+ *   TRIM     cuts the transcription BILL   (providers charge by duration)
+ *   COMPRESS makes the UPLOAD POSSIBLE     (the bucket refuses wav, and caps
+ *                                           a file at 40MB vs ~115MB/hr of PCM)
+ *
+ * Every failure path falls back to something uploadable rather than throwing:
+ * unreadable file, unparseable header, not 16-bit PCM, too big to hold in
+ * memory, no native encoder in this build, or any thrown error. Neither step may
+ * ever cost a student their lecture.
+ */
+async function prepareAudioForUpload(uri: string): Promise<PreparedAudio> {
+  const original: PreparedAudio = {
+    contentType: "audio/wav",
+    extension: "wav",
+    temporary: false,
+    uri,
+    wallClockSeconds: null,
+  };
+
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return original;
+
+    let working = uri;
+    let workingTemporary = false;
+    let didTrim = false;
+    let wallClockSeconds: number | null = null;
+
+    // 1. TRIM — only for files small enough to hold in memory. A base64 round
+    //    trip costs roughly 2.3x the file size in RAM, and a phone that has just
+    //    recorded for an hour is the worst place to find that out.
+    if (info.size !== undefined && info.size <= MAX_TRIM_BYTES) {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const bytes = base64ToBytes(base64);
+      const parsed = readWav(bytes);
+      // Even when there is nothing to trim, the header is the file's true
+      // duration — better than dividing the elapsed clock by the file count.
+      if (parsed) {
+        wallClockSeconds = Math.max(1, Math.round(parsed.dataLength / 2 / parsed.channels / parsed.sampleRate));
+      }
+
+      const trimmed = trimWavSilence(bytes);
+      if (trimmed) {
+        const target = `${FileSystem.cacheDirectory ?? ""}trimmed-${generateUuidV4()}.wav`;
+        await FileSystem.writeAsStringAsync(target, bytesToBase64(trimmed.bytes), {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        working = target;
+        workingTemporary = true;
+        didTrim = true;
+      }
+    }
+
+    // 2. COMPRESS. Native and streaming, so unlike the trim it runs even for a
+    //    file too large to read into JS — which is exactly the file that most
+    //    needs it.
+    const encodeTarget = `${FileSystem.cacheDirectory ?? ""}lecture-${generateUuidV4()}.m4a`;
+    const encoded = await encodeToM4A(working, encodeTarget);
+    // A failed encode can leave a partial file behind; the caller never learns
+    // this path, so it is swept here or not at all.
+    if (!encoded) await deleteLocalAudio([encodeTarget]);
+    if (encoded) {
+      if (workingTemporary) await deleteLocalAudio([working]);
+      return {
+        contentType: "audio/m4a",
+        extension: "m4a",
+        temporary: true,
+        uri: encoded.uri,
+        // The encoder measured whatever it was handed: the ORIGINAL duration if
+        // we never trimmed, the trimmed one if we did. Only the former is the
+        // wall-clock number the student's cap is charged.
+        wallClockSeconds: wallClockSeconds ?? (didTrim ? null : Math.max(1, Math.round(encoded.seconds))),
+      };
+    }
+
+    // No encoder (Android, Expo Go, or an encode failure). Upload what we have —
+    // the bucket will refuse a wav today, which is the pre-existing state, not a
+    // regression introduced here.
+    return {
+      contentType: "audio/wav",
+      extension: "wav",
+      temporary: workingTemporary,
+      uri: working,
+      wallClockSeconds,
+    };
+  } catch {
+    return original;
   }
 }
 
