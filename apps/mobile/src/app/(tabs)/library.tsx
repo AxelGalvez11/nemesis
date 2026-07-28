@@ -28,6 +28,7 @@ import { FolderPickerSheet, TextPromptSheet, type RowAction } from "@/components
 import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
 import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
+import { compareManual } from "@/lib/library-order";
 import {
   createFolder,
   createNote,
@@ -37,6 +38,7 @@ import {
   loadCachedLibrary,
   moveFolder,
   moveNote,
+  reorderNote,
   renameFolder,
   renameNote,
   subscribeLibraryChanges,
@@ -44,7 +46,7 @@ import {
   type CloudLibrarySnapshot,
 } from "@/api/cloudLibrary";
 import { searchLibrarySemantic } from "@/api/librarySearch";
-import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
+import { buildLibraryRows, type LibraryRow, type LibrarySortKey } from "@/lib/library-sync";
 import { findNotes, findSummary } from "@/lib/library-find";
 import {
   allFolderPaths,
@@ -91,9 +93,16 @@ import { control, radius, space, type } from "@/theme/tokens";
 // A–Z / Z–A by title; Modified by the row's updated_at; Created by its created_at —
 // the cloud table carries both, so every ordering the owner specced has honest data
 // to stand on (unlike the old Mac-paired mirror, which only ever had mtime).
-type SortKey = "az" | "za" | "mod-asc" | "mod-desc" | "created-asc" | "created-desc";
+// Mirrors LibrarySortKey in lib/library-sync.ts, which is what actually does the
+// sorting — this alias exists so the screen's state is typed. They must stay in
+// step; "manual" was added to both.
+type SortKey = LibrarySortKey;
 
 const SORT_OPTIONS = [
+  // First, because it is the only order a rearrangement survives in — picking
+  // any other one hides the arrangement rather than deleting it, and this entry
+  // is how you get it back.
+  { key: "manual", label: "My order" },
   { key: "az", label: "A–Z" },
   { key: "za", label: "Z–A" },
   { key: "mod-asc", label: "Modified (old → new)" },
@@ -585,7 +594,44 @@ export default function LibraryScreen() {
     [userId, snapshot, applyRowChange],
   );
 
-  const rowDrag = useRowDrag({ onDrop: onRowDrop, onHold: openRowMenu });
+  /**
+   * A note released between two rows rather than onto a folder.
+   *
+   * `beforeKey` is the row it should land above, or "" for the end of the list.
+   * Only notes inside the SAME folder take part — positions mean nothing across
+   * folders (lib/library-order.ts), and a drag that crosses one is a move, which
+   * onRowDrop already handles.
+   *
+   * Switches the view to "My order" on the first rearrange. Without that the
+   * note would jump straight back to its alphabetical slot, and the student
+   * would reasonably conclude dragging does not work.
+   */
+  const onRowReorder = useCallback(
+    (sourceKey: string, beforeKey: string) => {
+      if (!userId || !sourceKey.startsWith("note:")) return;
+      const sourcePath = sourceKey.slice(sourceKey.indexOf(":") + 1);
+      const note = snapshot.notes.find((n) => n.path === sourcePath);
+      if (!note) return;
+
+      const folderOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+      const folder = folderOf(note.path);
+      const siblings = snapshot.notes
+        .filter((n) => folderOf(n.path) === folder)
+        .sort((a, b) => compareManual(a, b));
+
+      const beforePath = beforeKey ? beforeKey.slice(beforeKey.indexOf(":") + 1) : "";
+      const target = beforePath ? siblings.findIndex((n) => n.path === beforePath) : siblings.length;
+      // A gap belonging to another folder: not a rearrange, so do nothing
+      // rather than guess at an index.
+      if (beforePath && target === -1) return;
+
+      setSort("manual");
+      void applyRowChange(() => reorderNote(userId, note.id, siblings, target));
+    },
+    [userId, snapshot, applyRowChange],
+  );
+
+  const rowDrag = useRowDrag({ onDrop: onRowDrop, onHold: openRowMenu, onReorder: onRowReorder });
 
   // Every time this screen regains focus: render the cached snapshot instantly
   // (offline-friendly), then refresh from the cloud behind that.
@@ -782,7 +828,7 @@ export default function LibraryScreen() {
             </Text>
           ) : null
         }
-        renderItem={({ item }) => {
+        renderItem={({ index, item }) => {
           const indent = item.depth > 0 ? { paddingLeft: space(2) + item.depth * space(4) } : null;
           const rowKey = `${item.type}:${item.path}`;
           const isOver = rowDrag.overKey === rowKey;
@@ -836,12 +882,21 @@ export default function LibraryScreen() {
           const parent = flat ? folderOf(item.path) : "";
           const note = notesByPath.get(item.path);
           const kind: FileKind = note ? fileKindOf(note.path) : "note";
+          // The end-of-list insertion marker hangs off the last NOTE row, since
+          // insertBeforeKey has no row to name for "past the end".
+          const isLastNote = index === rows.length - 1;
           return (
             <GestureDetector gesture={rowDrag.gestureFor(rowKey, { canDropOn, draggable: !selectMode, holdForMenu: !selectMode })}>
+            <View>
+            {/* Where the dragged note would land. Drawn ABOVE this row, which is
+                what `insertBeforeKey` names; the end-of-list case rides on the
+                last row's own marker below. */}
+            {rowDrag.insertBeforeKey === rowKey ? <View style={styles.insertLine} testID="library-insert-line" /> : null}
             <Pressable
               // A note is never a drop TARGET — you drop onto folders — but it
-              // still registers so the drag can pick it up.
-              ref={rowDrag.registerRow(rowKey, false)}
+              // still registers so the drag can pick it up, and as REORDERABLE
+              // so another note can be dropped into the gap beside it.
+              ref={rowDrag.registerRow(rowKey, false, false, true)}
               style={({ pressed }) => [
                 styles.row,
                 indent,
@@ -873,6 +928,10 @@ export default function LibraryScreen() {
                 {parent ? <Text style={styles.rowMeta} numberOfLines={1}>{parent}</Text> : null}
               </View>
             </Pressable>
+            {rowDrag.insertBeforeKey === "" && isLastNote ? (
+              <View style={styles.insertLine} testID="library-insert-line-end" />
+            ) : null}
+            </View>
             </GestureDetector>
           );
         }}
@@ -1364,6 +1423,10 @@ const createStyles = (c: ThemeColors) =>
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(3), marginBottom: space(1.5) },
     // Notes: still no cards (owner call) — title only, no leading icon (owner
     // 2026-07-20); pdf/doc attachments alone keep a small identity glyph.
+    // The drop indicator: a hairline in the accent colour, sitting in the gap
+    // the note would land in. Deliberately not a gap that opens up — reflowing
+    // the list under a moving finger makes the target move as you aim at it.
+    insertLine: { backgroundColor: c.accent, borderRadius: 1, height: 2, marginHorizontal: space(4) },
     row: {
       flexDirection: "row",
       alignItems: "flex-start",

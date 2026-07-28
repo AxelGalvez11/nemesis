@@ -48,6 +48,10 @@ interface RowRect {
 
 interface RegisteredRow {
   node: View | null;
+  /** Whether the dragged row may be dropped BETWEEN this one and its
+   *  neighbours — i.e. this row takes part in hand-arranged order. Notes do;
+   *  folder headings do not. */
+  reorderable: boolean;
   /** Whether a dragged row may be dropped ONTO this one (folders only). */
   droppable: boolean;
   /** A LAST-RESORT target, only used when no ordinary one is under the finger.
@@ -63,7 +67,12 @@ export interface RowDrag {
   /** Ref callback for a row's outermost View. `droppable` marks folders;
    *  `fallback` marks a catch-all zone that only wins when nothing else is
    *  under the finger (see RegisteredRow.fallback). */
-  registerRow: (key: string, droppable: boolean, fallback?: boolean) => (node: View | null) => void;
+  registerRow: (
+    key: string,
+    droppable: boolean,
+    fallback?: boolean,
+    reorderable?: boolean,
+  ) => (node: View | null) => void;
   /** The gesture for one row. `draggable` false still gives hold-for-menu unless
    *  `holdForMenu` is also false. */
   gestureFor: (
@@ -83,6 +92,11 @@ export interface RowDrag {
   activeKey: string | null;
   /** The droppable row under the finger, or null. */
   overKey: string | null;
+  /** While reordering: the reorderable row the dragged one would land ABOVE,
+   *  or "" for "past the last row". Null when not reordering — i.e. the finger
+   *  is over a folder, or has not left the row it picked up. Drives the
+   *  insertion line the screen draws. */
+  insertBeforeKey: string | null;
   /** Finger position in window coordinates — drives the floating drag chip. */
   fingerX: SharedValue<number>;
   fingerY: SharedValue<number>;
@@ -91,6 +105,7 @@ export interface RowDrag {
 export function useRowDrag({
   onDrop,
   onHold,
+  onReorder,
 }: {
   /** Fired when a dragged row is released over a valid folder. */
   onDrop: (sourceKey: string, targetKey: string) => void;
@@ -99,6 +114,10 @@ export function useRowDrag({
    *  touch-anchored MiniMenu positions from. Callers that open a fixed sheet
    *  (Study) just ignore them. */
   onHold: (key: string, x: number, y: number) => void;
+  /** Fired when a dragged row is released BETWEEN rows rather than onto a
+   *  folder. `beforeKey` is the row it should land above, or "" for the end of
+   *  the list. Omit to leave reordering off — Study does, for now. */
+  onReorder?: (sourceKey: string, beforeKey: string) => void;
 }): RowDrag {
   const rows = useRef(new Map<string, RegisteredRow>());
   const rects = useRef(new Map<string, RowRect>());
@@ -107,12 +126,16 @@ export function useRowDrag({
   // Every row's rect, droppable or not — the dragged row's own rectangle is
   // what tells a drifted hold apart from a deliberate drop (see hitTest).
   const allRects = useRef(new Map<string, RowRect>());
+  // Rows that take part in hand-arranged order, for the insertion hit test.
+  const reorderRects = useRef(new Map<string, RowRect>());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
   // Read inside gesture callbacks, which close over the value at construction
   // time — the gesture is rebuilt on every render, but a drag in flight keeps
   // the closure it started with, so the live value has to come from a ref.
   const overKeyRef = useRef<string | null>(null);
+  const [insertBeforeKey, setInsertBeforeKey] = useState<string | null>(null);
+  const insertBeforeRef = useRef<string | null>(null);
   const fingerX = useSharedValue(0);
   const fingerY = useSharedValue(0);
 
@@ -124,7 +147,7 @@ export function useRowDrag({
   // lifted a row. A stable callback per key means React leaves them alone.
   const refCallbacks = useRef(new Map<string, (node: View | null) => void>());
 
-  const registerRow = useCallback((key: string, droppable: boolean, fallback = false) => {
+  const registerRow = useCallback((key: string, droppable: boolean, fallback = false, reorderable = false) => {
     const existing = refCallbacks.current.get(key);
     if (existing) {
       // Keep `droppable` current without changing the callback's identity — a
@@ -133,11 +156,12 @@ export function useRowDrag({
       if (row) {
         row.droppable = droppable;
         row.fallback = fallback;
+        row.reorderable = reorderable;
       }
       return existing;
     }
     const callback = (node: View | null) => {
-      if (node) rows.current.set(key, { droppable, fallback, node });
+      if (node) rows.current.set(key, { droppable, fallback, node, reorderable });
       else {
         rows.current.delete(key);
         refCallbacks.current.delete(key);
@@ -159,11 +183,13 @@ export function useRowDrag({
     rects.current.clear();
     fallbackRects.current.clear();
     allRects.current.clear();
+    reorderRects.current.clear();
     for (const [key, row] of rows.current) {
       if (!row.node) continue;
       const droppableInto = row.fallback ? fallbackRects.current : rects.current;
       row.node.measureInWindow((_x, y, _width, height) => {
         allRects.current.set(key, { height, y });
+        if (row.reorderable) reorderRects.current.set(key, { height, y });
         if (row.droppable) droppableInto.set(key, { height, y });
       });
     }
@@ -212,6 +238,41 @@ export function useRowDrag({
     [],
   );
 
+  /**
+   * Which gap the finger is in, among the reorderable rows.
+   *
+   * Compared against each row's MIDPOINT, not its top edge: the half of a row
+   * you are over is what decides whether you land above or below it, and that
+   * is what makes a drag feel like it snaps to the nearer gap rather than
+   * lagging a row behind the finger.
+   *
+   * Returns the key to land ABOVE, or "" for past the last row. Null means the
+   * finger is above the whole list, where there is nothing to reorder against.
+   */
+  const insertionTest = useCallback((windowY: number, sourceKey: string): string | null => {
+    let best: string | null = null;
+    // Smallest y wins, so this starts high. (It started at -Infinity in a first
+    // pass, which made the comparison always false and left the result riding
+    // on Map iteration order — right by accident, wrong the moment rows are
+    // registered in any other order.)
+    let bestY = Infinity;
+    let sawAny = false;
+    for (const [key, rect] of reorderRects.current) {
+      if (key === sourceKey) continue;
+      sawAny = true;
+      const middle = rect.y + rect.height / 2;
+      if (windowY < middle) {
+        // The topmost row whose midpoint is still below the finger wins.
+        if (best === null || rect.y < bestY) {
+          best = key;
+          bestY = rect.y;
+        }
+      }
+    }
+    if (!sawAny) return null;
+    return best ?? "";
+  }, []);
+
   const gestureFor = useCallback(
     (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean; holdForMenu?: boolean }) => {
       return Gesture.Pan()
@@ -238,11 +299,23 @@ export function useRowDrag({
             overKeyRef.current = next;
             setOverKey(next);
           }
+          // Reordering is what happens when the finger is NOT over a folder:
+          // dropping ONTO something and dropping BETWEEN things are the same
+          // gesture, told apart by where it ends. A folder under the finger
+          // always wins, so aiming at a folder never leaves a stray line behind.
+          const gap = onReorder && next === null ? insertionTest(event.absoluteY, key) : null;
+          if (gap !== insertBeforeRef.current) {
+            insertBeforeRef.current = gap;
+            setInsertBeforeKey(gap);
+          }
         })
         .onEnd((event) => {
           const moved = Math.hypot(event.translationX, event.translationY) > MOVE_SLOP;
           const target = overKeyRef.current;
+          const gap = insertBeforeRef.current;
           if (opts.draggable && moved && target) onDrop(key, target);
+          // No folder under the finger, but a gap was: a rearrange.
+          else if (opts.draggable && moved && gap !== null && onReorder) onReorder(key, gap);
           // Held and let go without going anywhere: that's the menu — unless the
           // caller suppressed it (multi-select owns taps there). The release
           // point (window coords) rides along so a MiniMenu can open right where
@@ -253,12 +326,14 @@ export function useRowDrag({
         // or lost the race, so the lifted-row styling can never get stuck on.
         .onFinalize(() => {
           overKeyRef.current = null;
+          insertBeforeRef.current = null;
           setActiveKey(null);
           setOverKey(null);
+          setInsertBeforeKey(null);
         });
     },
-    [measureRows, hitTest, onDrop, onHold, fingerX, fingerY],
+    [measureRows, hitTest, insertionTest, onDrop, onHold, onReorder, fingerX, fingerY],
   );
 
-  return { activeKey, fingerX, fingerY, gestureFor, overKey, registerRow };
+  return { activeKey, fingerX, fingerY, gestureFor, insertBeforeKey, overKey, registerRow };
 }
