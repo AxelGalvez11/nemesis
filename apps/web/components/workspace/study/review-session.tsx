@@ -429,6 +429,13 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                       aria-expanded={explainOpen}
                       className="flex w-full items-center gap-1.5 px-3.5 py-2 text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                       onClick={() => setExplainOpen((open) => !open)}
+                      // The window keydown handler below binds Space to "Show
+                      // answer" and 1-4 to grading, and it only ignores inputs
+                      // and textareas — not buttons. Once this header has focus,
+                      // Space would toggle the panel AND reveal the card in the
+                      // same press. Stopping the native event here keeps the
+                      // button's own activation and hides it from that listener.
+                      onKeyDown={(event) => { if (event.key === " " || event.key === "Enter") event.stopPropagation(); }}
                       type="button"
                     >
                       <IconChevronRight
