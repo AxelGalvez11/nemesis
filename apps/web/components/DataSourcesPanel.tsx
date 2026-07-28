@@ -2,7 +2,7 @@
 
 import { DATA_SOURCES, type DataSource } from "@/lib/data-sources";
 
-// A modal that shows what powers PharmaOrb's answers: live sources (fetched per question) and the
+// A modal that shows what powers Nemesis's answers: live sources (fetched per question) and the
 // embedded library (ingested corpus). Honest — it names sources and how they're used, never ranking
 // internals; and it re-states that news sits OUTSIDE the cited evidence.
 export function DataSourcesPanel({ open, onClose }: { open: boolean; onClose: () => void }) {

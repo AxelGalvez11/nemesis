@@ -1,4 +1,4 @@
-// The PharmaOrb mark: a halftone dot lattice — a square grid of dots clipped to a circle, each
+// The Nemesis mark: a halftone dot lattice — a square grid of dots clipped to a circle, each
 // dot largest at the center and shrinking toward the edge (classic halftone, like the reference).
 // A pulse ripples outward from the center (delay ∝ radius) and speeds up when `busy`. The lattice
 // is generated once at module load; all motion is CSS (app/styles/shell.css), so React does no

@@ -3,9 +3,9 @@
 import posthog from "posthog-js";
 import { isPreviewMode, posthogHost, posthogKey } from "./env";
 
-// PharmaOrb product analytics — browser client.
+// Nemesis product analytics — browser client.
 //
-// Privacy: PharmaOrb answers health-related questions, so this is deliberately minimal —
+// Privacy: Nemesis handles students' own coursework and questions, so this is deliberately minimal —
 // autocapture and session recording are OFF and we never send question text. Only the explicit
 // events fired from the app (signup, ask_*, research_*, checkout_started) plus pageviews flow,
 // and page URLs carry UUIDs, never query content. The phc_ project key is a write-only ingestion

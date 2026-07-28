@@ -124,7 +124,7 @@ export function createOpenAlexAdapter(): PaperSourceAdapter {
       url.searchParams.set("search", query);
       url.searchParams.set("per-page", String(limit));
       url.searchParams.set("sort", "relevance_score:desc");
-      url.searchParams.set("mailto", process.env.UNPAYWALL_EMAIL ?? "support@pharmaorb.app");
+      url.searchParams.set("mailto", process.env.UNPAYWALL_EMAIL ?? "support@enternemesis.com");
 
       const response = await fetchImpl(url, { signal: options.signal });
       if (!response.ok) {

@@ -1,4 +1,4 @@
-// The registry of sources that power PharmaOrb answers — shown to users in the Data sources panel so
+// The registry of sources that power Nemesis answers — shown to users in the Data sources panel so
 // they can see exactly what the engine draws on. Honest and non-secret: it names the sources and how
 // they're used (live per-question vs embedded corpus), never any ranking/weighting internals. News is
 // deliberately absent from cited evidence (walled off; see the panel footer).
