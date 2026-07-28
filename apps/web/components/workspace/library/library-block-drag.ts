@@ -11,6 +11,10 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { EditorView, ViewPlugin, type PluginValue, type ViewUpdate } from "@codemirror/view";
 
+/** Whether a block is one item of a list, which decides how much whitespace
+ *  goes between it and its neighbour when the document is rebuilt. */
+export type BlockKind = "block" | "list-item";
+
 export interface DocBlock {
   /** Document offset of the block's first character. */
   from: number;
@@ -18,12 +22,21 @@ export interface DocBlock {
   to: number;
   /** 0-based position among the document's blocks. */
   index: number;
+  kind: BlockKind;
 }
 
 /**
- * The document's top-level blocks — a paragraph, heading, list, quote, code
- * fence or table each count as one, and a list moves as a whole rather than
- * shedding its items.
+ * The document's draggable blocks — a paragraph, heading, quote, code fence or
+ * table each count as one, and a list contributes ONE BLOCK PER ITEM rather
+ * than moving as a lump (owner 2026-07-28: "the dragability of note components
+ * is not applicable to individual bullet points. it groups bullet points
+ * together").
+ *
+ * A nested sub-list lives inside its parent ListItem's range, so dragging a
+ * bullet takes its children with it and sub-bullets get no handle of their own.
+ * That is deliberate: an independent sub-bullet dropped next to a heading would
+ * have to be re-indented to stay valid markdown, and silently rewriting a
+ * student's indentation is a worse bug than the one being fixed here.
  *
  * Frontmatter is deliberately excluded: YAML properties belong at the top of
  * the file, and letting someone drag a paragraph above them would produce a
@@ -31,15 +44,22 @@ export interface DocBlock {
  */
 export function documentBlocks(state: EditorState): DocBlock[] {
   const blocks: DocBlock[] = [];
-  const tree = syntaxTree(state);
-  tree.iterate({
+  const push = (from: number, to: number, kind: BlockKind) => {
+    if (state.doc.sliceString(from, to).trim()) blocks.push({ from, index: blocks.length, kind, to });
+  };
+  syntaxTree(state).iterate({
     enter: (node) => {
-      if (node.node.parent?.name !== "Document") return;
       if (node.name === "Document") return true;
+      if (node.node.parent?.name !== "Document") return false;
       // Frontmatter stays pinned to the top of the file.
       if (node.name === "FrontMatter") return false;
-      const text = state.doc.sliceString(node.from, node.to).trim();
-      if (text) blocks.push({ from: node.from, index: blocks.length, to: node.to });
+      if (node.name === "BulletList" || node.name === "OrderedList") {
+        for (let item = node.node.firstChild; item; item = item.nextSibling) {
+          if (item.name === "ListItem") push(item.from, item.to, "list-item");
+        }
+        return false;
+      }
+      push(node.from, node.to, "block");
       return false;
     },
   });
@@ -61,17 +81,33 @@ export function reorderBlocks(doc: string, blocks: readonly DocBlock[], fromInde
   if (toIndex === fromIndex || toIndex === fromIndex + 1) return null;
   if (toIndex < 0 || toIndex > blocks.length) return null;
 
-  const texts = blocks.map((block) => doc.slice(block.from, block.to));
-  const [lifted] = texts.splice(fromIndex, 1);
+  const pieces = blocks.map((block) => ({ kind: block.kind, text: doc.slice(block.from, block.to) }));
+  const [lifted] = pieces.splice(fromIndex, 1);
   if (lifted === undefined) return null;
   // After the splice every later index shifted down by one.
-  texts.splice(toIndex > fromIndex ? toIndex - 1 : toIndex, 0, lifted);
+  pieces.splice(toIndex > fromIndex ? toIndex - 1 : toIndex, 0, lifted);
 
   const head = doc.slice(0, blocks[0]?.from ?? 0);
   const tail = doc.slice(blocks[blocks.length - 1]?.to ?? doc.length);
-  // One blank line between blocks is what markdown needs to keep them separate:
-  // join two paragraphs with a single newline and they become one paragraph.
-  return `${head}${texts.join("\n\n")}${tail}`;
+  // The gap is decided by the pair that ends up ADJACENT, not by where either
+  // piece started — which is what makes a bullet dropped between two paragraphs
+  // become its own one-item list, and a paragraph dropped mid-list split that
+  // list in two, both without any special-casing.
+  const body = pieces
+    .map((piece, index) => (index === 0 ? piece.text : `${separatorBetween(pieces[index - 1]!, piece)}${piece.text}`))
+    .join("");
+  return `${head}${body}${tail}`;
+}
+
+/**
+ * How much whitespace goes between two adjacent pieces.
+ *
+ * One blank line is what markdown needs to keep two paragraphs from merging
+ * into one. Two list items are the opposite case: a blank line between them
+ * makes the list "loose", and every item picks up its own paragraph spacing.
+ */
+function separatorBetween(before: { kind: BlockKind }, after: { kind: BlockKind }): string {
+  return before.kind === "list-item" && after.kind === "list-item" ? "\n" : "\n\n";
 }
 
 /**
