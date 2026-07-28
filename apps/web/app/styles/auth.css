@@ -108,13 +108,27 @@
   margin-right: 8px;
 }
 
+/* Owner 2026-07-28: "the sign in should not be scrollable it should be centered."
+ *
+ * It was neither, for one reason: the padding was 92px on top and 48px on the
+ * bottom. That 44px of asymmetry pushed the card BELOW the optical centre, and
+ * because the box is already 100svh tall, the extra top padding is 44px the card
+ * no longer has to fit in — which is what tipped a tall form into scrolling.
+ *
+ * The 92px existed to clear the brand mark, and on desktop it clears nothing:
+ * the mark is absolutely positioned at left:34px, which is the LEFT column. This
+ * panel is the right one. Symmetric padding centres it and hands the 44px back.
+ *
+ * min-height, NOT height + overflow:hidden. On a short window — or with the MFA
+ * step, a captcha and an error all showing at once — clipping would cut off the
+ * submit button, and a form you cannot finish is worse than one that scrolls. */
 .nemesis-auth-panel-wrap {
   align-items: center;
   background: #fff;
   display: flex;
   justify-content: center;
   min-height: 100svh;
-  padding: 92px 36px 48px;
+  padding: 48px 36px;
 }
 .nemesis-auth-card { max-width: 430px; width: 100%; }
 .nemesis-auth-card-in {
@@ -328,14 +342,19 @@
   outline-offset: 3px;
 }
 
+/* Single column below 900px, so here the brand mark DOES sit over the panel and
+ * real clearance is needed. Still symmetric: the mark ends at ~58px (top 30 +
+ * 28 high), so 64px clears it on both counts — the card stays centred instead of
+ * being shunted down, which is the whole complaint. */
 @media (max-width: 900px) {
   .nemesis-auth-shell { display: block; }
   .nemesis-auth-field { display: none; }
-  .nemesis-auth-panel-wrap { min-height: 100svh; padding: 88px 22px 38px; }
+  .nemesis-auth-panel-wrap { min-height: 100svh; padding: 64px 22px; }
 }
 
 @media (max-width: 480px) {
   .nemesis-auth-brand { left: 22px; top: 22px; }
   .nemesis-auth-card-in { border: 0; border-radius: 0; box-shadow: none; padding: 20px 0 8px; }
-  .nemesis-auth-panel-wrap { align-items: center; padding: 76px 24px 28px; }
+  /* Mark ends at ~50px here (top 22 + 28 high); 56px clears it symmetrically. */
+  .nemesis-auth-panel-wrap { align-items: center; padding: 56px 24px; }
 }
