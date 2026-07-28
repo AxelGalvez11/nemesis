@@ -1,18 +1,17 @@
 "use client";
 
-import { IconBooks, IconCards, IconChevronDown, IconChevronRight, IconFileUpload, IconFolderPlus, IconSquarePlus } from "@tabler/icons-react";
+import { IconCards, IconChevronDown, IconChevronRight, IconFileUpload, IconFolderPlus, IconSquarePlus } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { isWithinGroup, normalizeGroupPath, pathLeaf, pathParent, renamedGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { AnkiImportDialog } from "./anki-import-dialog";
-import { StarterDeckDialog } from "./starter-deck-dialog";
 import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
@@ -119,7 +118,6 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [textImportSource, setTextImportSource] = useState<"anki" | "quizlet" | null>(null);
-  const [starterOpen, setStarterOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [dragItem, setDragItem] = useState<DeckDragItem | null>(null);
@@ -355,14 +353,23 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
+          {/* Owner 2026-07-28: "merge import options in study page", "remove
+              starter decks", "remove 'add new deck'", "rename 'group' to
+              folder". The three import rows are now one submenu — same three
+              destinations, one row in the menu — and the deck-creation control
+              lives only in the empty state below, which is the one place a
+              student with nothing yet actually needs it. */}
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={() => setCreateKind("deck")}><IconCards /> New deck</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}><IconFolderPlus /> New group</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}><IconFolderPlus /> New folder</DropdownMenuItem>
             <DropdownMenuItem disabled={decks.length === 0} onSelect={() => setCreateKind("card")}><IconSquarePlus /> New card</DropdownMenuItem>
-            <DropdownMenuItem data-testid="import-anki" onSelect={() => setImportOpen(true)}><IconFileUpload /> Import Anki package</DropdownMenuItem>
-            <DropdownMenuItem data-testid="import-anki-text" onSelect={() => setTextImportSource("anki")}><IconFileUpload /> Import Anki text</DropdownMenuItem>
-            <DropdownMenuItem data-testid="import-quizlet" onSelect={() => setTextImportSource("quizlet")}><IconFileUpload /> Import from Quizlet</DropdownMenuItem>
-            <DropdownMenuItem data-testid="starter-decks" onSelect={() => setStarterOpen(true)}><IconBooks /> Starter decks</DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger><IconFileUpload /> Import cards</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem data-testid="import-anki" onSelect={() => setImportOpen(true)}>Anki package</DropdownMenuItem>
+                <DropdownMenuItem data-testid="import-anki-text" onSelect={() => setTextImportSource("anki")}>Anki text</DropdownMenuItem>
+                <DropdownMenuItem data-testid="import-quizlet" onSelect={() => setTextImportSource("quizlet")}>Quizlet</DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button disabled={decks.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
@@ -371,14 +378,17 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       {decks.length === 0 && extraGroups.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <AgentEmptyState
+            // "Create a deck" survives ONLY here, and deliberately. The owner
+            // removed it from the Add menu; leaving no manual path at all would
+            // strand a student who has no Anki file and no slides yet, since
+            // "New card" needs a deck to put the card in.
             action={
               <>
                 <Button onClick={() => setCreateKind("deck")} variant="secondary">Create a deck</Button>
-                <Button className="bg-background" onClick={() => setImportOpen(true)} variant="outline"><IconFileUpload size={14} /> Import Anki</Button>
-                <Button className="bg-background" onClick={() => setStarterOpen(true)} variant="outline"><IconBooks size={14} /> Browse starters</Button>
+                <Button className="bg-background" onClick={() => setImportOpen(true)} variant="outline"><IconFileUpload size={14} /> Import cards</Button>
               </>
             }
-            description={sourcePath ? "Make a deck for this Library note, then add cards yourself or ask Nemesis to build them." : "Decks keep flashcards together. Create one, import an Anki package, or begin with a curated starter deck."}
+            description={sourcePath ? "Make a deck for this Library note, then add cards yourself or ask Nemesis to build them." : "Decks keep flashcards together. Create one, import from Anki or Quizlet, or ask Nemesis in chat to build a deck from your slides."}
             icon={<IconCards size={20} />}
             title={sourcePath ? "Turn this note into cards" : "Start your first deck"}
           />
@@ -437,7 +447,6 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           source={textImportSource}
         />
       )}
-      <StarterDeckDialog onOpenChange={setStarterOpen} open={starterOpen} />
       <Dialog onOpenChange={(open) => !open && setMerge(null)} open={merge !== null}>
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={mergeIntoGroup}>
@@ -460,7 +469,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       <Dialog onOpenChange={setGroupDialogOpen} open={groupDialogOpen}>
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={createGroup}>
-            <DialogHeader><DialogTitle>New deck group</DialogTitle><DialogDescription>Groups can contain decks or other groups.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>New folder</DialogTitle><DialogDescription>Folders can contain decks or other folders.</DialogDescription></DialogHeader>
             <Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} />
             <DialogFooter><Button onClick={() => setGroupDialogOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(groupName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>

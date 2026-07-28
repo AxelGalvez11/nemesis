@@ -47,7 +47,12 @@ function kindFor(name: string, type: string): FileKind | null {
  * unambiguous, so read them: a PDF opens with "%PDF", and the Office formats are zips
  * whose first entry names say which one they are. PURE.
  */
-export function sniffKind(bytes: Uint8Array): FileKind | null {
+// NOT exported: Next type-checks a route file's exports against its own Route
+// type and rejects any extra one ("sniffKind is not a valid Route export
+// field"), which fails `next build` outright. Nothing imports this — the export
+// keyword was never load-bearing. If it is ever needed elsewhere, move the
+// function to lib/ rather than exporting it from a route.
+function sniffKind(bytes: Uint8Array): FileKind | null {
   if (bytes.length < 4) return null;
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;

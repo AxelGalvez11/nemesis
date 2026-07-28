@@ -5,11 +5,26 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { tableDecorations } from "./library-table-widget";
 
 // Obsidian-grade live preview for the Library editor (owner 2026-07-21):
-// edit mode reads like read mode, and raw markdown syntax appears only for
-// the ELEMENT the cursor is touching — a caret inside one **bold** span
-// reveals that span's asterisks and nothing else on the line. Block dress
-// (quote bars, code-block boxes) stays on even while the cursor is inside;
-// only the marker characters come and go.
+// edit mode reads like read mode. Block dress (quote bars, code-block boxes)
+// stays on even while the cursor is inside; only the marker characters come
+// and go.
+//
+// SYNTAX IS NOW ALWAYS HIDDEN — owner 2026-07-28: "the library still shows
+// markdown language when the cursor is beside it, any markdown language should
+// be hidden."
+//
+// The original rule revealed the markers of whichever ELEMENT the caret was
+// touching, which is what Obsidian does and what an editor-literate user
+// expects. It is the wrong default here: the point of this editor is that a
+// student never learns what `##` means, and a student who has never seen the
+// syntax reads its sudden appearance as the note breaking. The formatting
+// toolbar and the "/" menu are how blocks get made now, so nothing depends on
+// the markers being reachable.
+//
+// Kept as a named switch rather than deleted because every reveal path in this
+// file routes through `touches()`; flipping this back restores the Obsidian
+// behaviour exactly, and leaves the reasoning above with it.
+const REVEAL_SYNTAX_AT_CURSOR = false;
 
 const hiddenSyntax = Decoration.replace({});
 const wikiLink = Decoration.mark({ class: "cm-wiki-link" });
@@ -54,10 +69,13 @@ function previewDecorations(view: EditorView): DecorationSet {
   const ranges: Range<Decoration>[] = [];
   const state = view.state;
   const doc = state.doc;
-  // When the editor isn't focused there is no caret to edit with, so
-  // everything renders — same rule the desktop editor uses.
+  // The single gate every reveal path in this file goes through. With
+  // REVEAL_SYNTAX_AT_CURSOR off it is constant false, so markers are hidden
+  // whether or not the editor has focus and wherever the caret sits.
   const touches = (from: number, to: number): boolean =>
-    view.hasFocus && state.selection.ranges.some((range) => range.to >= from && range.from <= to);
+    REVEAL_SYNTAX_AT_CURSOR
+    && view.hasFocus
+    && state.selection.ranges.some((range) => range.to >= from && range.from <= to);
   const lineTouched = (pos: number): boolean => {
     const line = doc.lineAt(pos);
     return touches(line.from, line.to);

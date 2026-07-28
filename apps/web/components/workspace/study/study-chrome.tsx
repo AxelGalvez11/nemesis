@@ -24,10 +24,14 @@ export interface StudyReviewSettings {
   flashcardOutline: boolean;
 }
 
+// Mindmaps are HIDDEN, not deleted (owner 2026-07-28: "remove mindmaps for now
+// (hide it)"). Dropping the tab takes away the only way in; the surface, the
+// generator and every saved mindmap are untouched, so putting this row back is
+// the whole of restoring the feature. StudyTabId still includes "maps" and
+// study/page.tsx still renders it for exactly that reason.
 const TABS: { id: StudyTabId; label: string; icon: typeof IconCards }[] = [
   { id: "cards", label: "Cards", icon: IconCards },
   { id: "tests", label: "Tests", icon: IconChecklist },
-  { id: "maps", label: "Mindmaps", icon: IconSitemap },
   { id: "stats", label: "Stats", icon: IconChartBar },
 ];
 
