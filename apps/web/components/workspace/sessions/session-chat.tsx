@@ -275,8 +275,20 @@ export function SessionChat() {
     setRecording(false);
     setComposerMode("chat");
     if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
-    setRightPanel("outputs");
-    setRightRailOpen(true);
+    // Deliberately NOT opening the Outputs panel any more (owner 2026-07-28:
+    // "recorded session did not save into chat as part of the conversation as
+    // artifact, it only saved in the outputs section").
+    //
+    // The card was always posted into the thread — assistant-message.tsx renders
+    // message.outputs, and appendMessageCloud persists them under meta.outputs,
+    // so it survives a reload. What went wrong was navigational: finishing a
+    // recording slid the right rail open on Outputs, which puts the student in
+    // front of the Outputs list at the exact moment the chat card appears
+    // behind it. The recording looked like it had gone only there because that
+    // is the one place they were shown.
+    //
+    // Leaving the panel alone keeps them in the conversation, which is where
+    // the artifact belongs and where every other saved thing already lands.
     const targetId = selectedId;
     void (async () => {
       // ONE compose pass over the whole transcript (owner 2026-07-27). There are
@@ -319,7 +331,19 @@ export function SessionChat() {
         outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
         role: "assistant",
       });
-    })().catch(() => undefined);
+    })().catch((cause) => {
+      // Was `.catch(() => undefined)`. Anything that threw between saving the
+      // artifact and posting the card vanished without a trace, which is a
+      // recording that exists in Outputs and nowhere else with no way to tell
+      // why. Say so in the thread instead of dropping it.
+      console.error("recording follow-up failed", cause);
+      if (!targetId) return;
+      sessionsStore.appendMessage(targetId, {
+        at: new Date().toISOString(),
+        content: "Your recording was saved, but writing it up failed. The audio and transcript are safe — ask me to write the notes and I will use them.",
+        role: "assistant",
+      });
+    });
   }, [createArtifact, preview, selectedId, uid]);
 
   const openSources = useCallback(() => {
