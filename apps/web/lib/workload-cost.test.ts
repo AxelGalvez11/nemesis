@@ -290,14 +290,21 @@ test("xAI Grok STT would more than double Pro's margin, and throws in the add-on
   assert.ok(SURVEYED_USD_PER_HOUR.xai_grok_stt < BATCH_USD_PER_HOUR.assemblyai_batch_universal2);
 });
 
-test("the cheapest surveyed lane is the least trustworthy one", () => {
-  // Modulate's $0.03 is the seller's own number on the seller's own page, and the
-  // same table prices AssemblyAI at the tier we do not buy. Best margin on paper,
-  // least evidence behind it — so it is a lead to test, not a plan.
+test("the cheapest surveyed lane is also the one to test first, because testing is free", () => {
+  // Modulate's $0.03 is still the seller's own number, but it comes with 400 free
+  // hours and cites public benchmarks — so the claim can be settled on our own
+  // lectures at zero cost. Cheapest to TEST is a different question from cheapest
+  // to TRUST, and this is the rare case where one answer serves both.
   const modulate = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-modulate" });
   const xai = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-xai" });
+  const live = modelStudentMonth(HEAVY_STUDENT);
   assert.ok(modulate.grossMarginPct > xai.grossMarginPct);
   assert.ok(SURVEYED_USD_PER_HOUR.modulate < SURVEYED_USD_PER_HOUR.xai_grok_stt / 3);
+  // 400 free hours is five months of the heavy student's recording.
+  assert.ok(400 / HEAVY_STUDENT.audioHours >= 5);
+  // Either survey lane roughly triples what Pro keeps.
+  assert.ok(xai.headroomUsd > live.headroomUsd * 2);
+  assert.ok(modulate.headroomUsd > live.headroomUsd * 3);
 });
 
 // "The AI is cheap, so can we use a better model?" — true of the model we run, and

@@ -373,11 +373,14 @@ export type RecorderLane =
  *    announcement page. The only survey figure confirmed at TWO independent sources
  *    (xAI's page and a competitor's comparison table), which is why it is the one to
  *    trust most.
- *  • modulate — $0.03/hr batch, diarization included, read off modulate.ai's own
- *    comparison table. VENDOR-MARKETED AND UNVERIFIED: it is the seller's own number
- *    on the seller's own page, and the same table prices AssemblyAI at $0.21 (the
- *    dearer tier) rather than the $0.15 tier we actually buy — so the table is
- *    arranged to flatter. Treat as a lead to test, not a price to plan on.
+ *  • modulate — $0.03/hr batch ($0.06 streaming), diarization included, no contracts
+ *    or volume minimums, and 400 HOURS FREE to start (modulate.ai/lp/speech-to-text-api,
+ *    read 2026-07-28). Still the seller's own figure, and their comparison table prices
+ *    AssemblyAI at $0.21 — the tier we do NOT buy — so it is arranged to flatter. But
+ *    the accuracy claim cites Earnings-22 and VoxPopuli, which are public benchmarks
+ *    rather than a private test, and 400 free hours means the claim can be settled on
+ *    our OWN lectures for nothing. That makes it the cheapest thing to TEST, which is
+ *    a different question from the cheapest thing to trust.
  */
 export const SURVEYED_USD_PER_HOUR = {
   modulate: 0.03,

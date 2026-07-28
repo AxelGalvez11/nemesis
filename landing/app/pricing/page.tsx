@@ -92,11 +92,15 @@ export default function PricingPage() {
               <h3>Agent Pro</h3>
               <p className="plan-desc">For a full course load, every week.</p>
               {/* Recording hours mirror plan_entitlements.transcription_seconds_month_limit
-                  and the app's own pricing page. Two repos, one number. */}
+                  and the app's own pricing page. Two repos, one number.
+
+                  "Deep research with cited reports" was removed 2026-07-28: it is a
+                  PharmaOrb feature with no route, no nav entry and no chat tool in
+                  Nemesis. Every line here must name something a student can reach. */}
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
                 <li><IconCheck size={13} />80 hours of lecture recording a month</li>
-                <li><IconCheck size={13} />Deep research with cited reports</li>
+                <li><IconCheck size={13} />Web-grounded answers with real citations</li>
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
               <div className="plan-cta">

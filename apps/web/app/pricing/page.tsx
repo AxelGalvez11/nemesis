@@ -32,6 +32,12 @@ interface Tier {
 //
 // The old copy also said "live copilot". There is no live lane any more: a recording
 // is transcribed and written up once, after it stops.
+//
+// EVERY LINE HERE MUST NAME SOMETHING A STUDENT CAN REACH. Deep research, watches,
+// missions, evidence briefs and saved reports are PharmaOrb leftovers: their
+// entitlement rows still exist, but there is no route, no nav entry and no chat tool
+// for any of them, and BrowseTopics / WatchButton / ResearchReportView are rendered
+// by nothing. Do not put them back on this page.
 const TIERS: Tier[] = [
   {
     cta: "Get Student",
@@ -57,7 +63,7 @@ const TIERS: Tier[] = [
       "The agent runs your whole semester end-to-end",
       "Web-grounded answers with real citations",
       "80 hours of lecture recording each month",
-      "Deep research, and the highest answer quality",
+      "The highest answer quality, on every question",
     ],
     id: "pro",
     name: "Agent Pro",
