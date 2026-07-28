@@ -3,13 +3,32 @@
 import { assert, assertEquals, assertMatch, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { accentHue, graphNodeColor, hslToHex } from "./graph-palette.ts";
 
-Deno.test("accentHue reads primary hues off rgb()/hex, and falls back on gray/junk", () => {
+// null, not 351: the Default accent is a neutral graphite now, and answering
+// "crimson" for anything achromatic would have left the graph red after the red
+// came out of everything else.
+Deno.test("accentHue reads primary hues, and answers null when there is none", () => {
   assertEquals(accentHue("#ff0000"), 0);
   assertEquals(accentHue("#00ff00"), 120);
   assertEquals(accentHue("#0000ff"), 240);
   assertEquals(accentHue("rgb(255, 0, 0)"), 0);
-  assertEquals(accentHue("#808080"), 351, "no saturation (delta=0) falls back to crimson");
-  assertEquals(accentHue("not-a-color"), 351, "unparseable input falls back to crimson");
+  assertEquals(accentHue("#808080"), null, "a grey has no hue to borrow");
+  assertEquals(accentHue("#6e6e6e"), null, "the default accent");
+  assertEquals(accentHue("#3f3f46"), null, "and a faintly cool near-grey is still not an accent");
+  assertEquals(accentHue("not-a-color"), null, "unparseable input");
+});
+
+// Saturation cannot carry the heatmap without a hue, so lightness has to.
+Deno.test("a grey accent gives a grey graph that still reads as a heatmap", () => {
+  const channels = (hex: string) => /^#(..)(..)(..)$/.exec(hex)!.slice(1);
+  for (const node of [{ degree: 0, ghost: true }, { degree: 0, ghost: false }, { degree: 5, ghost: false }]) {
+    const [r, g, b] = channels(graphNodeColor(node, "#6e6e6e", 9));
+    assertEquals(r, g);
+    assertEquals(g, b);
+  }
+  const lonely = graphNodeColor({ degree: 1, ghost: false }, "#6e6e6e", 9);
+  const hub = graphNodeColor({ degree: 9, ghost: false }, "#6e6e6e", 9);
+  assertNotEquals(lonely, hub, "every node the same colour is not a heatmap");
+  assert(parseInt(channels(hub)[0], 16) < parseInt(channels(lonely)[0], 16), "hubs go darker");
 });
 
 Deno.test("hslToHex matches known primary/gray conversions", () => {

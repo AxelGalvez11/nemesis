@@ -10,6 +10,7 @@ import * as SecureStore from "expo-secure-store";
 import {
   buildColors,
   DEFAULT_ACCENT_ID,
+  normalizeAccentId,
   type ResolvedMode,
   type ThemeColors,
   type ThemeMode,
@@ -48,7 +49,10 @@ function parsePref(raw: string | null): AppearancePref {
   try {
     const parsed = raw ? (JSON.parse(raw) as Partial<AppearancePref>) : null;
     const mode = parsed?.mode === "light" || parsed?.mode === "dark" || parsed?.mode === "system" ? parsed.mode : "system";
-    const accent = typeof parsed?.accent === "string" && parsed.accent ? parsed.accent : DEFAULT_ACCENT_ID;
+    // normalizeAccentId, not a bare string check: the ten desktop hues were
+    // retired 2026-07-28, so a phone last set to "teal" holds an id that no
+    // longer exists and would otherwise fall through to the first swatch.
+    const accent = normalizeAccentId(typeof parsed?.accent === "string" ? parsed.accent : null);
     return { accent, mode };
   } catch {
     return DEFAULT_PREF;
