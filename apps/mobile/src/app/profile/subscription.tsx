@@ -1,14 +1,24 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MissionButton } from "@/components/mission-ui";
+import { openPricingPage } from "@/lib/pricing";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 // Subscription — its own page (owner call), pushed from the Settings sheet. Shows
-// the current plan and what Nemesis Pro adds. No in-app purchase CTA yet: App
-// Store rules require Apple IAP for digital subscriptions (external buy links get
-// rejected), so this stays informational until IAP is wired.
+// the current plan, what Nemesis Pro adds, and how to get it.
+//
+// This page used to end on "In-app upgrades are coming soon", which was both
+// stale and self-contradicting: the out-of-credits sheet has always offered a
+// working Upgrade button, so the one screen actually CALLED "Subscription" was
+// the only place claiming you could not subscribe. Unfinished-looking copy is
+// its own App Store rejection reason, and a reviewer who reads this and then
+// finds the other button has been told two different things.
+//
+// Both entry points now go through lib/pricing's openPricingPage — read the
+// note there for the US-storefront condition this depends on.
 
 const FREE_INCLUDES = [
   "Cloud chat with citations",
@@ -55,7 +65,20 @@ export default function SubscriptionScreen() {
             <Feature key={line} styles={styles} text={line} accent />
           ))}
           <View style={styles.soonRow}>
-            <Text style={styles.soonText}>In-app upgrades are coming soon.</Text>
+            {/* The app's own primary button rather than a local one, so this
+                matches the Upgrade button in the out-of-credits sheet — the two
+                places that do the same thing should not look like two
+                different affordances. */}
+            <MissionButton
+              label="Upgrade to Pro"
+              onPress={openPricingPage}
+              variant="primary"
+              testID="subscription-upgrade"
+            />
+            {/* Says where the button goes BEFORE it is tapped. Leaving the app is
+                the one thing a button should never do silently, and it also
+                explains why a plan bought here shows up on every device. */}
+            <Text style={styles.soonText}>Opens your account on the web. Your plan applies everywhere you sign in.</Text>
           </View>
         </View>
       </ScrollView>
@@ -95,7 +118,7 @@ const createStyles = (c: ThemeColors) =>
     checkAccent: { color: c.accent },
     featureText: { flex: 1, fontSize: type.small.fontSize, lineHeight: 21, color: c.text },
 
-    soonRow: { marginTop: space(2), paddingTop: space(3), borderTopWidth: 1, borderTopColor: c.accentLine },
+    soonRow: { marginTop: space(2), paddingTop: space(3), borderTopWidth: 1, borderTopColor: c.accentLine, gap: space(2) },
     soonText: { fontSize: type.micro.fontSize, color: c.text2, textAlign: "center" },
   });
 

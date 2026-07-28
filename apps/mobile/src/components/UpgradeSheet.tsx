@@ -1,14 +1,11 @@
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { MissionButton } from "./mission-ui";
 import { SlideUpSheet } from "./StudySheet";
 import { nextDailyReset, type BudgetResetKind } from "@/lib/chat-thread";
+import { openPricingPage } from "@/lib/pricing";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { space, type } from "@/theme/tokens";
-
-/** Where "Upgrade" goes: the web app's plan page (signed-in Stripe checkout).
- *  Purchases stay on the web on purpose — no purchase UI ships in this app. */
-const PRICING_URL = "https://app.enternemesis.com/pricing";
 
 /** Owner-decided freemium moment: credits ran dry → hard stop with exactly two
  *  ways out, "Upgrade" or wait for the reset. The reset line shows a real
@@ -43,7 +40,7 @@ export function UpgradeSheet({
           label="Upgrade"
           onPress={() => {
             onClose();
-            void Linking.openURL(PRICING_URL);
+            openPricingPage();
           }}
           variant="primary"
           testID="upgrade-open-pricing"
