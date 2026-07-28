@@ -1,6 +1,6 @@
 import { assertEquals, assertFalse, assert } from "jsr:@std/assert@1";
 
-import { formatDiarizedTranscript, utterancesOf } from "./transcript-speakers.ts";
+import { formatDiarizedTranscript, utterancesFromWords, utterancesOf } from "./transcript-speakers.ts";
 
 const u = (speaker: string, text: string) => ({ speaker, text });
 
@@ -60,4 +60,52 @@ Deno.test("utterancesOf survives anything the provider might send", () => {
   assertEquals(utterancesOf([{ speaker: " A ", text: " hi " }]), [{ speaker: "A", text: "hi" }]);
   // A non-string speaker is tolerated; the formatter names it.
   assertEquals(utterancesOf([{ speaker: 1, text: "hi" }]), [{ speaker: "", text: "hi" }]);
+});
+
+// ---- word-level diarization (xAI) -----------------------------------------
+// xAI labels WORDS, not turns. Grouping them is what lets one formatter serve
+// both providers instead of each growing its own.
+
+Deno.test("word-level speakers group into the same utterances AssemblyAI would send", () => {
+  const words = [
+    { speaker: "A", word: "The" }, { speaker: "A", word: "matrix" },
+    { speaker: "B", word: "Is" }, { speaker: "B", word: "that" }, { speaker: "B", word: "cytosol?" },
+    { speaker: "A", word: "No." },
+  ];
+  assertEquals(utterancesFromWords(words), [
+    { speaker: "A", text: "The matrix" },
+    { speaker: "B", text: "Is that cytosol?" },
+    { speaker: "A", text: "No." },
+  ]);
+});
+
+Deno.test("a word-labelled solo lecture still gets no labels", () => {
+  const flat = "One voice, start to finish.";
+  const words = [{ speaker: "A", word: "One" }, { speaker: "A", word: "voice" }];
+  assertEquals(formatDiarizedTranscript(utterancesFromWords(words), flat), flat);
+});
+
+Deno.test("a word-labelled question is attributed once grouped", () => {
+  const words = [
+    { speaker: "A", word: "Glycolysis" }, { speaker: "A", word: "is" }, { speaker: "A", word: "cytosolic." },
+    { speaker: "B", word: "Mitochondrial?" },
+  ];
+  const out = formatDiarizedTranscript(utterancesFromWords(words), "Glycolysis is cytosolic. Mitochondrial?");
+  assert(out.includes("Speaker A: Glycolysis is cytosolic."));
+  assert(out.includes("Speaker B: Mitochondrial?"));
+});
+
+Deno.test("utterancesFromWords survives anything the provider might send", () => {
+  assertEquals(utterancesFromWords(undefined), []);
+  assertEquals(utterancesFromWords("not an array"), []);
+  assertEquals(utterancesFromWords([null, 7, { speaker: "A" }]), []);
+  assertEquals(utterancesFromWords([{ speaker: "A", word: "  " }]), []);
+  // `text` is accepted as well as `word`, so a renamed field cannot silently
+  // produce an empty transcript.
+  assertEquals(utterancesFromWords([{ speaker: "A", text: "hi" }]), [{ speaker: "A", text: "hi" }]);
+  // A numeric speaker id is normal for word-level diarization.
+  assertEquals(utterancesFromWords([{ speaker: 0, word: "hi" }, { speaker: 1, word: "there" }]), [
+    { speaker: "0", text: "hi" },
+    { speaker: "1", text: "there" },
+  ]);
 });

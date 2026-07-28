@@ -13,7 +13,9 @@
 export type BatchVoiceProvider =
   | "assemblyai_batch"
   | "assemblyai_batch_universal2"
-  | "groq_whisper_turbo";
+  | "groq_whisper_turbo"
+  | "xai_grok_stt"
+  | "modulate";
 
 /**
  * USD per HOUR of audio, read off each provider's own pricing page on PRICE_REV:
@@ -29,6 +31,20 @@ export const BATCH_USD_PER_HOUR: Readonly<Record<BatchVoiceProvider, number>> = 
   assemblyai_batch: 0.23,
   assemblyai_batch_universal2: 0.17,
   groq_whisper_turbo: 0.04,
+  // Added 2026-07-28. Unlike the AssemblyAI rows, these two need NO diarization
+  // add-on: both include speaker labels in the base rate, which is part of why
+  // they are cheaper than the sticker difference suggests.
+  //
+  // xai_grok_stt — $0.10/hr batch, read off x.ai/news/grok-stt-and-tts-apis and
+  //   corroborated by a competitor's own comparison table. The best-evidenced
+  //   figure in the survey.
+  // modulate — $0.03/hr batch, from modulate.ai/lp/speech-to-text-api. The
+  //   seller's own number, and their comparison table prices AssemblyAI at the
+  //   $0.21 tier we do NOT buy, so the table is arranged to flatter. They give
+  //   400 free hours, so this can be settled on real lectures before it is
+  //   trusted — until then it is a lead, not a rate to plan margins on.
+  modulate: 0.03,
+  xai_grok_stt: 0.1,
 };
 
 /**

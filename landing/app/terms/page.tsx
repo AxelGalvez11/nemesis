@@ -36,10 +36,13 @@ export default function TermsPage() {
         Use Nemesis in the way your school permits.
       </p>
 
-      <h2>Your accounts</h2>
+      {/* Was "you connect your school portals and email by signing in yourself" —
+          Nemesis does not connect to school portals (owner 2026-07-28). */}
+      <h2>Your account</h2>
       <p>
-        You connect your school portals and email by signing in yourself, on your device.
-        You are responsible for having the right to access the accounts you connect.
+        You are responsible for the security of your Nemesis account and for the
+        material you upload to it &mdash; that you have the right to use it, and that
+        using Nemesis with it is permitted by your school.
       </p>
 
       <h2>Subscriptions</h2>

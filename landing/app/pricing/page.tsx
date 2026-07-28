@@ -14,8 +14,9 @@ export const metadata: Metadata = {
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
-  { label: "Scheduled school sync", values: ["yes", "yes", "yes"] },
-  { label: "Deep research with cited reports", values: ["no", "yes", "yes"] },
+  { label: "Lecture recording each month", values: ["20 hours", "80 hours", "200 hours"] },
+  { label: "Calendar built from your syllabus", values: ["yes", "yes", "yes"] },
+  { label: "Web-grounded answers with real citations", values: ["no", "yes", "yes"] },
   { label: "Daily limits", values: ["Standard", "Higher", "Highest"] },
   { label: "First access to new features", values: ["no", "no", "yes"] },
 ] as const;
@@ -79,7 +80,8 @@ export default function PricingPage() {
               <ul className="plan-features">
                 <li><IconCheck size={13} />Higher limits on answers and study decks</li>
                 <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
-                <li><IconCheck size={13} />Scheduled school sync</li>
+                <li><IconCheck size={13} />20 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />A calendar built from your syllabus</li>
               </ul>
               <div className="plan-cta">
                 <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Student</a>
@@ -91,9 +93,16 @@ export default function PricingPage() {
               <div className="plan-price">$19.99<span className="per">/mo</span></div>
               <h3>Agent Pro</h3>
               <p className="plan-desc">For a full course load, every week.</p>
+              {/* Recording hours mirror plan_entitlements.transcription_seconds_month_limit
+                  and the app's own pricing page. Two repos, one number.
+
+                  "Deep research with cited reports" was removed 2026-07-28: it is a
+                  PharmaOrb feature with no route, no nav entry and no chat tool in
+                  Nemesis. Every line here must name something a student can reach. */}
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
-                <li><IconCheck size={13} />Deep research with cited reports</li>
+                <li><IconCheck size={13} />80 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />Web-grounded answers with real citations</li>
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
               <div className="plan-cta">
@@ -104,10 +113,10 @@ export default function PricingPage() {
             <div className="plan">
               <div className="plan-price">$99<span className="per">/mo</span></div>
               <h3>Max</h3>
-              <p className="plan-desc">Real-time AI for the heaviest study and research weeks.</p>
+              <p className="plan-desc">For the heaviest study and research weeks.</p>
               <ul className="plan-features">
-                <li><IconCheck size={13} />Highest limits across the agent</li>
-                <li><IconCheck size={13} />Live copilot — 4,000 transcription minutes a month</li>
+                <li><IconCheck size={13} />Everything in Agent Pro, five times over</li>
+                <li><IconCheck size={13} />200 hours of lecture recording a month</li>
                 <li><IconCheck size={13} />First access to new features</li>
               </ul>
               <div className="plan-cta">
