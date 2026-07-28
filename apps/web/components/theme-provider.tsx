@@ -2,9 +2,14 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+import { ACCENT_COLORS, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
+
+// Re-exported so every existing `from "@/components/theme-provider"` import
+// keeps working; lib/accent.ts is the definition.
+export { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPreference } from "@/lib/accent";
+
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
-export type AccentPreference = "crimson" | "blue" | "green" | "orange" | "purple";
 const STORAGE_KEY = "pharmaorb-theme";
 const ACCENT_STORAGE_KEY = "nemesis.web.accent";
 const SCALE_STORAGE_KEY = "nemesis.web.scale";
@@ -15,13 +20,6 @@ const SCALE_STORAGE_KEY = "nemesis.web.scale";
 // reload. Same shape as theme/accent/scale, which are app-chrome for the same
 // reason. Default true keeps the shipped full-screen behaviour.
 const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
-const ACCENT_COLORS: Record<Exclude<AccentPreference, "crimson">, string> = {
-  blue: "#2563eb",
-  green: "#16865c",
-  orange: "#d26324",
-  purple: "#7c4dca",
-};
-
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark";
 const isPreference = (v: unknown): v is ThemePreference => isTheme(v) || v === "system";
 const systemTheme = (): Theme =>
@@ -49,7 +47,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue>({
   preference: "system",
   theme: "light",
-  accent: "crimson",
+  accent: "default",
   scale: 110,
   libraryFullScreen: true,
   setTheme: () => {},
@@ -59,13 +57,9 @@ const ThemeContext = createContext<ThemeContextValue>({
   toggle: () => {},
 });
 
-function isAccent(value: string | null): value is AccentPreference {
-  return value === "crimson" || value === "blue" || value === "green" || value === "orange" || value === "purple";
-}
-
 function applyAccent(accent: AccentPreference) {
   const root = document.documentElement;
-  if (accent === "crimson") {
+  if (accent === "default") {
     root.style.removeProperty("--theme-primary");
     root.style.removeProperty("--theme-midground");
     root.style.removeProperty("--theme-warm");
@@ -82,7 +76,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // <html data-theme> before paint, so we read it back on mount to sync React state.
   const [theme, setThemeState] = useState<Theme>("light");
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
-  const [accent, setAccentState] = useState<AccentPreference>("crimson");
+  const [accent, setAccentState] = useState<AccentPreference>("default");
   const [scale, setScaleState] = useState(110);
   const [libraryFullScreen, setLibraryFullScreenState] = useState(true);
 
@@ -100,8 +94,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setPreferenceState(pref);
     setThemeState(resolved);
     document.documentElement.dataset.theme = resolved;
-    const storedAccent = localStorage.getItem(ACCENT_STORAGE_KEY);
-    const nextAccent = isAccent(storedAccent) ? storedAccent : "crimson";
+    const storedAccent = normalizeStoredAccent(localStorage.getItem(ACCENT_STORAGE_KEY));
+    const nextAccent = isAccent(storedAccent) ? storedAccent : "default";
     const storedScale = Number(localStorage.getItem(SCALE_STORAGE_KEY));
     const nextScale = Number.isFinite(storedScale) && storedScale >= 50 && storedScale <= 150 ? storedScale : 110;
     setAccentState(nextAccent);

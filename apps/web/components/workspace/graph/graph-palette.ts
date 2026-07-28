@@ -74,17 +74,29 @@ function parseColor(value: string): { r: number; g: number; b: number } | null {
   return null;
 }
 
-/** Hue (0-360) of a resolved accent color — falls back to crimson (351). */
-function accentHue(color: string): number {
+/**
+ * Hue (0-360) of a resolved accent color, or null when there is no hue to
+ * borrow — an unreadable value, or a grey.
+ *
+ * Null matters: the Default accent is a neutral graphite now (owner 2026-07-28
+ * retired the crimson), and this used to answer "351" for anything achromatic.
+ * That would have left the graph rendering in red after the red was taken out
+ * of everything else.
+ */
+function accentHue(color: string): number | null {
   const rgb = parseColor(color);
-  if (!rgb) return 351;
+  if (!rgb) return null;
   const r = rgb.r / 255;
   const g = rgb.g / 255;
   const b = rgb.b / 255;
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
+  // Not `delta === 0`. The shipped greys are true neutrals, but a later tweak to
+  // something faintly cool — zinc-700 #3f3f46, say — has more blue than red and
+  // would sail through an exact test, painting the whole graph blue. Nothing
+  // this washed out is ever a deliberate accent.
   const delta = max - min;
-  if (delta === 0) return 351;
+  if (delta < 0.06) return null;
   let hue: number;
   if (max === r) hue = ((g - b) / delta) % 6;
   else if (max === g) hue = (b - r) / delta + 2;
@@ -116,10 +128,21 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
  * saturation climbs 0.45→0.95 with degree. */
 export function graphNodeColor(node: { ghost: boolean; degree: number }, palette: GraphPalette, maxDegree: number): string {
   const hue = accentHue(palette.accent);
-  if (node.ghost) return hslToHex(hue, 0.05, 0.72);
   const degree = node.degree ?? 0;
-  if (degree <= 0) return hslToHex(hue, 0.05, 0.62);
   const t = maxDegree > 1 ? Math.min(1, (degree - 1) / (maxDegree - 1)) : 1;
+
+  // A grey accent has no hue, so the heatmap has to be carried by LIGHTNESS
+  // instead: saturation 0 with the old 0.56→0.64 ramp would make every node
+  // look identical. Well-connected notes go darker, the same way they go more
+  // saturated under a coloured accent.
+  if (hue === null) {
+    if (node.ghost) return hslToHex(0, 0, 0.74);
+    if (degree <= 0) return hslToHex(0, 0, 0.68);
+    return hslToHex(0, 0, 0.66 - 0.3 * t);
+  }
+
+  if (node.ghost) return hslToHex(hue, 0.05, 0.72);
+  if (degree <= 0) return hslToHex(hue, 0.05, 0.62);
   return hslToHex(hue, 0.45 + 0.5 * t, 0.56 + 0.08 * t);
 }
 

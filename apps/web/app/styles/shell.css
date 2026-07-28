@@ -343,7 +343,7 @@
 
 .num { font-family: var(--mono); color: var(--text); font-weight: 500; }
 .grade-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
+.grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid color-mix(in srgb, var(--acid) 30%, transparent); border-radius: 999px; padding: 2px 8px; }
 .safety-flag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); border-radius: 999px; padding: 2px 8px; }
 .tmpl-note { color: var(--warn); font-size: 12px; }
 .mission-batch { margin-top: 6px; }
@@ -359,7 +359,7 @@
 .qchip .tick svg { width: 10px; height: 10px; stroke: var(--on-acid); opacity: 0; transition: 0.2s; }
 .qchip .cnt { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: auto; }
 .qchip.done { opacity: 1; color: var(--text); }
-.qchip.done .tick { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 10px rgba(var(--acid-rgb), 0.5); }
+.qchip.done .tick { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 10px color-mix(in srgb, var(--acid) 50%, transparent); }
 .qchip.done .tick svg { opacity: 1; }
 .qchip.done .cnt { color: var(--acid-dim); }
 /* the in-progress step: full opacity + a live spinner ring (done = filled check, upcoming = faded) */
@@ -701,7 +701,7 @@
    centered icon off. With padding:0 the 18px icon centers cleanly in the full 36px button. */
 .tool { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: transparent; color: var(--text-2); display: grid; place-items: center; cursor: pointer; flex: none; }
 .tool:hover { color: var(--text); background: var(--fill-hover); }
-.send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); }
+.send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: 0 2px 9px -5px color-mix(in srgb, var(--acid) 45%, transparent); }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 .composer .hint { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; font-family: var(--mono); }
@@ -711,7 +711,7 @@
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Dictation recording state: the mic button glows danger-red with a soft pulse while listening, so
    it reads as clearly "live" without a separate indicator. Uses the same tokens as other alerts. */
-.tool.rec { color: var(--danger); background: rgba(var(--acid-rgb), 0.08); }
+.tool.rec { color: var(--danger); background: color-mix(in srgb, var(--acid) 8%, transparent); }
 .tool.rec svg { animation: dot-pulse 1.15s ease-in-out infinite; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .tool.rec svg { animation: none; } }
@@ -752,7 +752,7 @@
 }
 .ev-head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 58px 0 16px; border-bottom: 1px solid var(--line); }
 .ev-head b { font-size: 13px; font-weight: 600; }
-.live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
+.live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim); border: 1px solid color-mix(in srgb, var(--acid) 30%, transparent); border-radius: 999px; padding: 2px 8px; }
 .live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .ev-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
@@ -783,7 +783,7 @@
 .src { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 13px; margin-bottom: 10px; cursor: pointer; transition: 0.16s; position: relative; display: block; width: 100%; text-align: left; color: inherit; }
 .src:hover { border-color: var(--line-2); transform: translateY(-1px); }
 /* Highlight the card a clicked citation scrolled to. */
-.src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(var(--acid-rgb), 0.18); }
+.src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px color-mix(in srgb, var(--acid) 18%, transparent); }
 .src.src-flash { background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
 /* "Also reviewed" cards: searched + ranked but not cited — dimmer + flatter so the cited set leads. */
 .src.reviewed { opacity: 0.68; background: var(--bg); }
@@ -836,7 +836,7 @@
 .src .cidx { position: absolute; top: 11px; right: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
 .src .since { color: var(--acid-dim); }
 .relv { height: 3px; border-radius: 2px; background: var(--line-2); margin-top: 9px; overflow: hidden; }
-.relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px rgba(var(--acid-rgb), 0.6); }
+.relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px color-mix(in srgb, var(--acid) 60%, transparent); }
 .ref-cite-line { font-size: 10.5px; font-family: var(--mono); color: var(--text-3); margin: 4px 0 0; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* The verbatim sentence in this source that backs the clicked claim — shown only on the active card. */
 .src .src-support { margin: 9px 0 2px; padding: 8px 10px; background: color-mix(in srgb, var(--acid) 9%, transparent); border-left: 2px solid var(--acid); border-radius: 0 8px 8px 0; }
@@ -1015,7 +1015,7 @@
 
 /* verification pill in the grade row */
 .verify-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 2px 8px; }
-.verify-pill.ok { color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); }
+.verify-pill.ok { color: var(--acid-dim); border: 1px solid color-mix(in srgb, var(--acid) 30%, transparent); }
 .verify-pill.warn { color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); }
 
 /* sources list */
@@ -1304,19 +1304,19 @@
 .theme-card-foot svg { color: var(--acid); }
 /* Settings theme-picker preview swatches — kept in sync with the live token values above
    (globals.css :root / [data-theme="dark"]): Nemesis paper light, desktop near-black dark,
-   crimson accent dot. "system" previews as a split light/dark swatch. */
+   neutral graphite accent dot. "system" previews as a split light/dark swatch. */
 [data-theme-preview="system"] { color: #dadada; }
 [data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #eef0f6 0 50%, #000000 50% 100%); }
 [data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #f8faff 0 50%, #000000 50% 100%); }
-[data-theme-preview="system"] .tp-dot { background: #ff2740; }
+[data-theme-preview="system"] .tp-dot { background: #6e6e6e; }
 [data-theme-preview="light"] { color: #16181d; }
 [data-theme-preview="light"] .tp-rail { background: #eef0f6; }
 [data-theme-preview="light"] .tp-page { background: #f8faff; }
-[data-theme-preview="light"] .tp-dot { background: #cc1f33; }
+[data-theme-preview="light"] .tp-dot { background: #404040; }
 [data-theme-preview="dark"] { color: #ffffff; }
 [data-theme-preview="dark"] .tp-rail { background: #000000; }
 [data-theme-preview="dark"] .tp-page { background: #000000; }
-[data-theme-preview="dark"] .tp-dot { background: #ff2740; }
+[data-theme-preview="dark"] .tp-dot { background: #6e6e6e; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
 /* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
@@ -1661,7 +1661,7 @@
 .wp-live {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim);
-  border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--acid) 30%, transparent); border-radius: 999px; padding: 2px 8px;
 }
 .wp-live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
 /* Current-step banner, just under the head — the "using … / creating …" line in Manus's panel. */
