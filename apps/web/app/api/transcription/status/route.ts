@@ -1,6 +1,7 @@
 import { reportVoiceCost } from "@/lib/cost-report";
 import { assemblyAiApiKey, groqApiKey } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
+import { formatDiarizedTranscript, utterancesOf } from "@/lib/transcript-speakers";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
   const polledBody = await polled.json().catch(() => null) as {
     status?: unknown;
     text?: unknown;
+    utterances?: unknown;
     audio_duration?: unknown;
     error?: unknown;
   } | null;
@@ -83,7 +85,14 @@ export async function POST(request: Request) {
 
   if (polledBody.status !== "completed") return json({ status: "processing" });
 
-  const transcript = typeof polledBody.text === "string" ? polledBody.text.trim() : "";
+  // Speaker turns when the recording had more than one voice, the provider's
+  // flat text when it did not — see lib/transcript-speakers.ts. Reading `text`
+  // alone here is what would have made `speaker_labels` on the submit cost
+  // money and change nothing.
+  const transcript = formatDiarizedTranscript(
+    utterancesOf(polledBody.utterances),
+    typeof polledBody.text === "string" ? polledBody.text : "",
+  );
   const actualSeconds = Math.max(0, Math.round(Number(polledBody.audio_duration) || 0));
   await admin.rpc("finalize_transcription_job", {
     p_actual_seconds: actualSeconds,
@@ -91,7 +100,8 @@ export async function POST(request: Request) {
     p_status: "done",
   });
   // The AssemblyAI batch lane — reached only when Groq declined the job, so it is
-  // reported under its own (5x pricier) provider rather than folded in with Groq.
+  // reported under its own (roughly 6x pricier, diarization included) provider
+  // rather than folded in with Groq.
   await reportVoiceCost({
     lane: "recording",
     provider: "assemblyai_batch",

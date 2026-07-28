@@ -123,6 +123,14 @@ export async function POST(request: Request) {
       audio_url: signed.data.signedUrl,
       format_text: true,
       punctuate: true,
+      // Owner 2026-07-27. +$0.02/hr on top of this lane's async rate — a tenth
+      // of the transcription line, not a new engine — and it buys the one thing
+      // that matters for a lecture: a classmate's question, and especially a
+      // classmate's wrong guess, is no longer indistinguishable from what the
+      // lecturer established. lib/transcript-speakers.ts drops the labels again
+      // when the recording turns out to have only one voice, which is the
+      // common case, so a solo lecture is unchanged.
+      speaker_labels: true,
     }),
     cache: "no-store",
     headers: { Authorization: assemblyAiApiKey, "Content-Type": "application/json" },

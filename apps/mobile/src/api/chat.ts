@@ -55,7 +55,6 @@ import {
   mergeLiveNotes,
   parseLiveNotes,
   planFinalNotesWindows,
-  shouldReplaceNotes,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
@@ -970,38 +969,36 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
   }
 }
 
-/** Rebuild a finished recording's notes from the ENHANCED transcript (owner
- *  2026-07-23: "we need live notes to come from enhanced audio for better
- *  notes"). During the lecture the live pass could only summarize the phone's
- *  on-device text; once the server returns the sharper transcript, those
- *  bullets are the best notes we could write from the worse words. Walks the
- *  finished transcript in order — each window told what's already on the board
- *  and not to repeat it, the same contract the live pass runs on — and returns
- *  the joined result, or null when nothing came back so the existing notes
- *  stand. Never throws: requestLiveNotes already resolves null on failure, and
- *  a window that comes back empty just contributes nothing. */
-async function rebuildNotesFromTranscript(
-  uid: string,
-  transcript: string,
-  existingNotes: string | undefined,
-): Promise<string | null> {
+/** Write a finished recording's notes, in one pass over its final transcript
+ *  (owner 2026-07-27 — see lib/live-notes.ts for why this is now the ONLY pass).
+ *  Walks the transcript in order, each window told what is already on the board
+ *  and not to repeat it, and returns the joined bullets or null if nothing came
+ *  back. Never throws: requestLiveNotes resolves null on failure, and a window
+ *  that comes back empty just contributes nothing. */
+async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
   const windows = planFinalNotesWindows(transcript);
   if (windows.length === 0) return null;
   if (windows.length === FINAL_NOTES_MAX_WINDOWS) {
-    console.warn(`notes rebuild hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
+    console.warn(`notes pass hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
   }
   let notes: string[] = [];
+  let failed = 0;
   for (const window of windows) {
     const fresh = await requestLiveNotes(uid, window, notes);
-    // ALL OR NOTHING. A failed window means this pass never saw that slice of
-    // the lecture, so finishing would hand back bullets covering only part of
-    // it — strictly worse than the live pass's notes, which at least span the
-    // whole recording. Bail and let the existing notes stand. (An empty-but-
-    // successful window is fine and contributes nothing; see requestLiveNotes.)
-    if (!fresh) return null;
+    // KEEP GOING past a failed window. This used to bail on the first failure,
+    // because notes covering only part of a lecture were worse than the live
+    // pass's notes, which at least spanned all of it. There is no live pass to
+    // fall back to any more, so bailing would hand the student NOTHING — and
+    // bullets for four fifths of a lecture beat none. (An empty-but-successful
+    // window is not a failure; see requestLiveNotes.)
+    if (!fresh) {
+      failed += 1;
+      continue;
+    }
     notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
   }
-  return shouldReplaceNotes(notes, existingNotes) ? liveNotesText(notes) : null;
+  if (failed) console.warn(`notes pass: ${failed}/${windows.length} windows failed; notes may have gaps`);
+  return notes.length ? liveNotesText(notes) : null;
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -1076,10 +1073,10 @@ export async function enhanceRecordingArtifact(
 
     // Sharper transcript, sharper notes. Deliberately AFTER the transcript is
     // durable and inside its own try: this costs several model calls and can
-    // fail on its own (offline, out of tokens), and losing better notes must
-    // never cost the better transcript — or reset the chip out of "done".
+    // fail on its own (offline, out of tokens), and losing the notes must never
+    // cost the better transcript — or reset the chip out of "done".
     try {
-      const notes = await rebuildNotesFromTranscript(uid, enhanced, artifact.notes);
+      const notes = await rebuildNotesFromTranscript(uid, enhanced);
       if (notes) {
         const { error: notesError } = await supabase
           .from("chat_recording_artifacts")
@@ -1099,6 +1096,28 @@ export async function enhanceRecordingArtifact(
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
     // Clear the "polishing" flag — the on-device transcript is what stands.
     await writeChipEntry(uid, threadId, { ...artifact });
+    // …and write the notes from THAT, because nothing else will. Notes used to
+    // be written live during the lecture, so a failed accuracy pass still left
+    // the student with bullets; the single end-of-recording pass above is now
+    // the only one, and it runs inside the success branch. Without this, a
+    // student who recorded a lecture offline, or past their monthly allowance,
+    // would open the recording to a raw transcript and no notes at all.
+    // Best-effort and separately guarded: this is already the failure path.
+    try {
+      const notes = await rebuildNotesFromTranscript(uid, artifact.transcript ?? "");
+      if (notes) {
+        const { error } = await supabase
+          .from("chat_recording_artifacts")
+          .update({ notes })
+          .eq("id", artifact.id)
+          .eq("user_id", uid);
+        // Same rule as the success path: the artifact row is what web's rail
+        // reads, so the chip never publishes bullets the row does not have.
+        if (!error) await writeChipEntry(uid, threadId, { ...artifact, notes });
+      }
+    } catch (notesCause) {
+      console.warn("fallback notes skipped:", notesCause instanceof Error ? notesCause.message : notesCause);
+    }
   } finally {
     await deleteLocalAudio(uris);
   }

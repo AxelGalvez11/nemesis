@@ -1,46 +1,46 @@
-// Live AI notes for the Record screen (pure logic) — the phone half of web's
-// recorder notes panel. Cadence, prompt, parsing, and merge rules mirror
-// apps/web/lib/workspace/live-audio-contract.ts + use-live-audio.ts so a
-// lecture recorded on either surface produces the same kind of notes; keep the
-// prompt string in sync with the web original. Dependency-free and
-// Deno-testable; the timer and the completion call live in
-// hooks/useLiveNotes.ts and api/chat.ts.
+// AI notes for a recording (pure logic) — the prompt, the parsing, the merge,
+// and how a finished transcript is split into passes. The prompt mirrors
+// apps/web/lib/workspace/live-audio-contract.ts so a lecture recorded on either
+// surface produces the same kind of notes; keep the string in sync with the web
+// original. Dependency-free and Deno-testable; the completion call lives in
+// api/chat.ts.
+//
+// NOTES ARE WRITTEN ONCE, WHEN THE RECORDING ENDS (owner 2026-07-27: "would
+// just recording the audio, showing the live transcript … and waiting until the
+// finished recording be cheaper, so the audio gets a clean high-quality pass …
+// and the AI notes generate the quality notes once?"). Yes, on both counts:
+//
+//   * COST. The old live pass ran every 45s, sending up to 8,000 characters
+//     each time — about 80 model calls for an hour of lecture, ~200k tokens.
+//     Those tokens come out of the STUDENT'S monthly allowance, so one hour of
+//     live notes spent roughly a tenth of a Plus plan's entire month. The
+//     single end-of-recording pass over the same lecture is ~14 calls, ~24k
+//     tokens: about an eighth of the spend, and about 1% of the month.
+//   * QUALITY. The live pass could only ever read the phone's rough on-device
+//     transcript, because that is the only text that exists mid-lecture. The
+//     end pass reads the server's high-accuracy transcript. Better words in,
+//     better notes out — and it was ALREADY running, on top of the live pass,
+//     so the live bullets were being paid for and then thrown away.
+//
+// What the student sees while recording is unchanged and still free: the phone
+// transcribes on-device (SFSpeechRecognizer), costing nothing and no minutes.
 
 import type { WireMsg } from "./chat-thread.ts";
 
-// Web parity: don't summarize until there's something to summarize, and at
-// most one model call per interval. The growth gate is phone-only thrift — a
-// silent stretch (no new words) never spends a call on an unchanged prompt.
+/** Don't summarize until there's something to summarize. Still the floor for a
+ *  window: below this a chunk of transcript is not worth its own model call. */
 export const LIVE_NOTES_MIN_CHARS = 160;
-export const LIVE_NOTES_INTERVAL_MS = 45_000;
-export const LIVE_NOTES_MIN_GROWTH_CHARS = 40;
-/** How much transcript buildLiveNotesMessages actually sends. Exported ONLY so
- *  the rebuild below can size its windows against it — a window bigger than
- *  this is silently truncated by the prompt builder, not summarized. */
+/** How much transcript buildLiveNotesMessages actually sends. Exported so the
+ *  window planner can size against it — a window bigger than this is silently
+ *  truncated by the prompt builder, not summarized. */
 export const LIVE_NOTES_TRANSCRIPT_CHARS = 8_000;
 const MAX_NEW_NOTES = 6;
 const MAX_KEPT_NOTES = 18;
 const MAX_NOTE_LENGTH = 240;
 
-export interface LiveNotesGate {
-  transcriptLength: number;
-  lastLength: number;
-  lastAt: number;
-  inFlight: boolean;
-  now: number;
-}
-
-/** One decision per timer tick: is a notes pass worth a model call yet? */
-export function shouldRequestLiveNotes(gate: LiveNotesGate): boolean {
-  if (gate.inFlight) return false;
-  if (gate.transcriptLength < LIVE_NOTES_MIN_CHARS) return false;
-  if (gate.transcriptLength - gate.lastLength < LIVE_NOTES_MIN_GROWTH_CHARS) return false;
-  if (gate.lastAt && gate.now - gate.lastAt < LIVE_NOTES_INTERVAL_MS) return false;
-  return true;
-}
-
-/** Same messages web's recorder sends (live-audio-contract.ts, notes-only
- *  version) so both surfaces read from one prompt. */
+/** The messages one notes pass sends. Named for web's live contract, which it
+ *  still mirrors verbatim, though on the phone every call now comes from the
+ *  end-of-recording rebuild rather than a timer. */
 export function buildLiveNotesMessages(transcript: string, previousNotes: string[], context?: string): WireMsg[] {
   const clippedTranscript = transcript.slice(-LIVE_NOTES_TRANSCRIPT_CHARS);
   const contextLine = cleanLine(context, 500);
@@ -91,19 +91,19 @@ export function liveNotesText(notes: string[]): string {
   return notes.join("\n");
 }
 
-// --- Post-enhance notes rebuild --------------------------------------------
+// --- The notes pass ---------------------------------------------------------
 //
-// The live pass above summarizes the phone's ON-DEVICE transcript while it
-// grows, because that is the only text that exists during a lecture. When the
-// server's accuracy pass finishes (api/chat.ts enhanceRecordingArtifact) a
-// sharper transcript replaces it — at which point the saved notes are the best
-// bullets we could write from the WORSE text, and nothing rewrote them.
+// Runs once, when a recording is saved and its transcript is final. It walks
+// the transcript in order and runs the prompt above per window; each call sees
+// the notes already on the board and is told not to repeat them, so the bullets
+// accumulate across a lecture the way they would have if written live.
 //
-// So the rebuild walks the finished transcript in order and re-runs the SAME
-// prompt per window: each call sees the notes already on the board and is told
-// not to repeat them, exactly as the live pass sees a growing transcript.
-// ~12 calls for an hour of lecture against the ~80 the live pass already
-// spent — cheap enough to be unconditional.
+// Two transcripts can reach it (api/chat.ts enhanceRecordingArtifact): the
+// server's high-accuracy one, which is the normal case, or — when that pass
+// cannot run at all (offline, upload failure, monthly allowance spent) — the
+// phone's own on-device text. The second is worse, but notes written from a
+// rough transcript beat no notes at all, and it is the reason removing the live
+// pass costs the student nothing when the network is against them.
 
 // A window is deliberately HALF of LIVE_NOTES_TRANSCRIPT_CHARS. The prompt
 // builder keeps only the LAST LIVE_NOTES_TRANSCRIPT_CHARS of whatever it is
@@ -165,17 +165,13 @@ export function countNotes(text: string | undefined | null): number {
   return (text ?? "").split("\n").filter((line) => line.trim()).length;
 }
 
-/** Whether a finished rebuild should REPLACE the notes already saved.
- *
- *  The rebuild's bullets come from the sharper transcript, so they are more
- *  accurate — but the live pass summarized a rolling window every 45s and can
- *  end up denser over a short recording. Handing the student fewer bullets is
- *  a loss of ground covered, however much better the words are, so a thinner
- *  rebuild is discarded and the live notes stand. */
-export function shouldReplaceNotes(rebuilt: string[], existing: string | undefined | null): boolean {
-  if (rebuilt.length === 0) return false;
-  return rebuilt.length >= countNotes(existing);
-}
+// `shouldReplaceNotes` used to live here: it kept the live bullets whenever the
+// rebuilt ones were FEWER, on the theory that ground covered beats wording. In
+// practice that meant a student could be handed the notes written from the
+// rougher transcript purely because there were more of them — the better text
+// losing on a count. With the live pass gone there are no bullets to compare
+// against, so the rule is gone rather than left in place as a guard that can no
+// longer fire.
 
 /** Offset just past the last natural break in the window, or its full length
  *  when it holds none. Breaks in the first half are ignored so a stray early

@@ -15,18 +15,24 @@ export type VoiceProvider = "assemblyai_batch" | "assemblyai_streaming" | "groq_
 
 /**
  * USD per HOUR of audio, read off each provider's own pricing page on PRICE_REV:
- * assemblyai.com/pricing (streaming $0.15/hr, async $0.21/hr) and groq.com/pricing
+ * assemblyai.com/pricing (Universal-Streaming $0.15/hr, Universal-3.5 Pro async
+ * $0.21/hr, standard speaker diarization +$0.02/hr on async) and groq.com/pricing
  * (whisper-large-v3-turbo $0.04/hr).
+ *
+ * The batch rate INCLUDES diarization, because the batch lane always asks for it
+ * (app/api/transcription/submit) — a rate that quietly excluded an add-on we
+ * always buy would under-report every recording by 10%.
  */
 export const VOICE_USD_PER_HOUR: Readonly<Record<VoiceProvider, number>> = {
-  assemblyai_batch: 0.21,
+  assemblyai_batch: 0.23,
   assemblyai_streaming: 0.15,
   groq_whisper_turbo: 0.04,
 };
 
 /** Price list revision, stamped on every event so a later price change cannot
- *  retroactively rewrite what an earlier month cost. */
-export const PRICE_REV = "2026-07-24";
+ *  retroactively rewrite what an earlier month cost. A re-price is a NEW rev,
+ *  never an edit — 2026-07-27 adds the diarization add-on to the batch lane. */
+export const PRICE_REV = "2026-07-27";
 
 /** Dollar cost of transcribing `seconds` of audio with `provider`. */
 export function voiceCostUsd(provider: VoiceProvider, seconds: number): number {
