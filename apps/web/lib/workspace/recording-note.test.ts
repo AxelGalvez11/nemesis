@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildRecordingNoteMessages, formatLiveDuration, RECORDING_NOTE_TRANSCRIPT_CHARS } from "./recording-note";
+import {
+  buildRecordingNoteMessages,
+  formatLiveDuration,
+  RECORDING_NOTE_TRANSCRIPT_CHARS,
+  RECORDING_TITLE_MAX_CHARS,
+  splitRecordingNote,
+} from "./recording-note";
 
 test("duration reads as mm:ss until it passes an hour", () => {
   assert.equal(formatLiveDuration(0), "0:00");
@@ -42,4 +48,75 @@ test("an over-long transcript keeps its ending", () => {
   assert.ok(user);
   assert.match(user.content, /THE CONCLUSION$/);
   assert.ok(user.content.length < transcript.length);
+});
+
+// The title rides on the compose call rather than a second round-trip, so the
+// instruction that produces it belongs in the pinned prompt.
+test("the compose prompt asks for a subject title on the first line", () => {
+  const [system] = buildRecordingNoteMessages("Some lecture text.");
+  assert.ok(system);
+  assert.match(system.content, /Start your reply with one line in exactly this form: Title:/);
+  assert.match(system.content, /never the word 'Recording', never a date/);
+});
+
+test("the title line comes off the front of the note", () => {
+  const { body, title } = splitRecordingNote("Title: Statutory interpretation and plain meaning\n\n## What this covered\n\nThe lecture…");
+  assert.equal(title, "Statutory interpretation and plain meaning");
+  assert.equal(body, "## What this covered\n\nThe lecture…");
+});
+
+test("the decoration models add to that line is stripped too", () => {
+  for (const line of [
+    '**Title:** "Statutory interpretation."',
+    "# Title: *Statutory interpretation.*",
+    "Title:   Statutory   interpretation.  ",
+    "__Title__: `Statutory interpretation`.",
+  ]) {
+    const { title } = splitRecordingNote(`${line}\n\nBody.`);
+    assert.equal(title, "Statutory interpretation", `from ${line}`);
+  }
+});
+
+// The failure to design for is the model ignoring the instruction. Guessing
+// that line one was a heading would silently eat a real first paragraph.
+test("a note with no title line comes back byte-identical", () => {
+  const raw = "## What this covered\n\nThe lecture worked through how a statute is read.\n";
+  const { body, title } = splitRecordingNote(raw);
+  assert.equal(title, "");
+  assert.equal(body, raw);
+});
+
+test("a 'Title:' further down the note is left alone", () => {
+  const raw = "## Slide 3\n\nTitle: the professor's own wording here\n";
+  const { body, title } = splitRecordingNote(raw);
+  assert.equal(title, "");
+  assert.equal(body, raw);
+});
+
+// Matched the label, so the line is scaffolding either way — leaving a bare
+// "Title:" at the top of a Library note would be worse than the dated fallback.
+test("an empty title still loses its line, and falls back to no title", () => {
+  const { body, title } = splitRecordingNote("Title:\n\nBody stays.");
+  assert.equal(title, "");
+  assert.equal(body, "Body stays.");
+});
+
+test("an over-long title clips on a word boundary", () => {
+  const long = `Title: ${"Statutory interpretation and the plain meaning rule as applied by appellate courts since 1998"}\n\nBody.`;
+  const { title } = splitRecordingNote(long);
+  assert.ok(title.length <= RECORDING_TITLE_MAX_CHARS, `${title.length} chars`);
+  assert.doesNotMatch(title, /\s$/);
+  assert.ok(!title.endsWith("appellat"), "clipped mid-word");
+});
+
+// This string becomes a FILENAME. safeLeaf only guards path separators.
+test("a title carries nothing that would wreck a filename", () => {
+  const { title } = splitRecordingNote('Title: **"Kinetics: zero *vs* first order."**\n\nBody.');
+  assert.doesNotMatch(title, /[*_`"'“”‘’]/);
+  assert.doesNotMatch(title, /\.$/);
+});
+
+test("an empty reply is not a title", () => {
+  assert.deepEqual(splitRecordingNote(""), { body: "", title: "" });
+  assert.deepEqual(splitRecordingNote("\n\n  \n"), { body: "\n\n  \n", title: "" });
 });
