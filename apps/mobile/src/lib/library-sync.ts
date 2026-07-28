@@ -6,6 +6,8 @@
 // api/cloudLibrary.ts (public.readable_library_documents); the old E2EE vault mirror
 // and its pairing/crypto modules were removed in the cloud-first-phone pass.
 
+import { compareManual } from "./library-order.ts";
+
 export const PAIRING_PREFIX = "nemsync1.";
 const VAULT_KEY_BYTES = 32;
 
@@ -159,7 +161,14 @@ export type LibraryRow =
 /** The tree view's sort orders (owner 2026-07-21: sorting must KEEP the folder
  * tree — it used to flatten to a folder-less list, which read as "my folders
  * disappeared"). Same six orders the Sort sheet offers. */
-export type LibrarySortKey = "az" | "za" | "mod-asc" | "mod-desc" | "created-asc" | "created-desc";
+export type LibrarySortKey =
+  | "manual"
+  | "az"
+  | "za"
+  | "mod-asc"
+  | "mod-desc"
+  | "created-asc"
+  | "created-desc";
 
 /** A doc as the tree builder consumes it. Timestamps are optional so existing
  * title-only callers (and the A–Z/Z–A orders, which never read them) still work. */
@@ -168,6 +177,8 @@ export interface LibraryTreeDoc {
   title: string;
   updatedAt?: string;
   createdAt?: string;
+  /** Hand-arranged order within the folder; absent for anything never dragged. */
+  position?: number | null;
 }
 
 interface TreeNote {
@@ -175,6 +186,7 @@ interface TreeNote {
   title: string;
   updatedAt: string;
   createdAt: string;
+  position: number | null;
 }
 
 interface FolderNode {
@@ -192,6 +204,11 @@ function folderNode(name: string, path: string): FolderNode {
  * lexicographically; notes with no timestamp sort to the end in title order
  * (same defensive rule the flat list has always used). */
 function compareNotes(a: TreeNote, b: TreeNote, sort: LibrarySortKey): number {
+  // Hand-arranged order. Positions are only meaningful WITHIN a folder, which
+  // is exactly the scope this comparator runs in (flattenFolder sorts one
+  // folder's notes). Notes never dragged have no position and sort last — see
+  // lib/library-order.ts for why last rather than first.
+  if (sort === "manual") return compareManual(a, b);
   if (sort === "az") return a.title.localeCompare(b.title);
   if (sort === "za") return b.title.localeCompare(a.title);
   const field = sort === "created-asc" || sort === "created-desc" ? "createdAt" : "updatedAt";
@@ -318,7 +335,13 @@ export function buildLibraryRows(
       }
       node = child;
     }
-    node.notes.push({ path: doc.path, title: doc.title, updatedAt: doc.updatedAt ?? "", createdAt: doc.createdAt ?? "" });
+    node.notes.push({
+      createdAt: doc.createdAt ?? "",
+      path: doc.path,
+      position: doc.position ?? null,
+      title: doc.title,
+      updatedAt: doc.updatedAt ?? "",
+    });
   }
   return flattenFolder(root, 0, collapsed, sort);
 }
