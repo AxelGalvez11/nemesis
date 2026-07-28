@@ -64,9 +64,5 @@ export function slashCommandSource(context: CompletionContext): CompletionResult
   };
 }
 
-/** Registered on the markdown language so it composes with basicSetup's own
- *  autocompletion rather than replacing it. */
-export const slashCommandsData = { autocomplete: slashCommandSource };
-
 /** Exported for the menu's own smoke test — the catalogue is the contract. */
 export const slashCommandCount = LIBRARY_COMMANDS.length;

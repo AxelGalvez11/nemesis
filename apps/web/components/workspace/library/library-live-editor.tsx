@@ -30,7 +30,7 @@ import { toggleInlineFormat, type ToggleFormat } from "@/lib/workspace/library-i
 import { liveProperties } from "./library-properties-widget";
 import { livePreview, liveTables } from "./library-preview-decorations";
 import { blockDrag } from "./library-block-drag";
-import { slashCommandsData } from "./library-slash-menu";
+import { slashCommandSource } from "./library-slash-menu";
 
 /** Imperative surface the parent uses to drive the editor (TOC clicks). */
 export interface LibraryEditorApi {
@@ -44,6 +44,10 @@ interface LibraryLiveEditorProps {
   showToolbar?: boolean;
   apiRef?: RefObject<LibraryEditorApi | null>;
 }
+
+/** One instance, because the "/" menu registers its completion source on this
+ *  exact Language object — `markdown()` builds a new one on every call. */
+const markdownSupport = markdown({ base: markdownLanguage });
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -424,7 +428,7 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
       extensions: [
         basicSetup,
         // GFM base so pipe tables parse as Table nodes (liveTables renders them).
-        markdown({ base: markdownLanguage }),
+        markdownSupport,
         EditorView.lineWrapping,
         // Prec.high because basicSetup's defaultKeymap already binds some of
         // these — Mod-u is undoSelection there — and in CodeMirror a LATER
@@ -434,9 +438,16 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
           { key: "Tab", run: indentMore },
           { key: "Shift-Tab", run: indentLess },
         ]),
-        // The "/" menu, hung off the markdown language so it shares the
-        // autocompletion basicSetup already installed instead of fighting it.
-        markdownLanguage.data.of(slashCommandsData),
+        // The "/" menu, registered on the language instance ACTUALLY in force.
+        //
+        // Two dead ends first, both found by running it rather than reading it:
+        // `markdownLanguage.data.of(...)` registers on the imported singleton,
+        // but `markdown({base})` builds a NEW Language, so the source was never
+        // asked. Adding a second `autocompletion({override})` DID get the
+        // source called — and still showed nothing, because basicSetup already
+        // installs one and CodeMirror supports exactly one: the second state
+        // field ran the source while the first one owned the tooltip.
+        markdownSupport.language.data.of({ autocomplete: slashCommandSource }),
         livePreview,
         liveTables,
         liveProperties,
