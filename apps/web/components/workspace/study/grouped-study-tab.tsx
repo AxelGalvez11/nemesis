@@ -25,7 +25,7 @@ import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { type StudyArtifact, type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
-import { normalizeGroupPath } from "@/lib/workspace/study-tree";
+import { artifactDropAccepts, normalizeGroupPath, UNGROUPED_LABEL, type ArtifactDrag } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
@@ -37,13 +37,23 @@ interface GroupedStudyTabProps {
 }
 
 /** Display name for items with no folder. Stored as "" on the row itself. */
-const UNGROUPED = "Ungrouped";
+const UNGROUPED = UNGROUPED_LABEL;
 
 function storedGroup(display: string): string {
   return display === UNGROUPED ? "" : display;
 }
 
 const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
+
+// Items file INTO a folder; a folder dragged onto another folder MERGES into it.
+// Merge is the only thing a folder drop can mean here, and that is a property of
+// the data rather than a design choice: a folder on this tab is a flat label in
+// the artifact's `group_name` column, not a "::" path like the Cards tab's deck
+// groups. There is no nesting to drop into, so the source folder's items take
+// the target's label and the source label stops existing.
+//
+// The payload type and the drop rule live in lib/workspace/study-tree.ts —
+// pure, so they are covered by tests that need no pointer and no DOM.
 
 export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const { artifacts, deleteArtifact, updateArtifact } = useCloudStudy();
@@ -64,8 +74,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   // Row key currently renaming: "item:<id>" or "group:<name>".
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
-  const [dragId, setDragId] = useState<string | null>(null);
-  const dragIdRef = useRef<string | null>(null);
+  const [drag, setDrag] = useState<ArtifactDrag | null>(null);
+  const dragRef = useRef<ArtifactDrag | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null);
   const dropGroupRef = useRef<string | null>(null);
   const ignoreClickUntilRef = useRef(0);
@@ -97,7 +107,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   // Pointer-based drag (not HTML5 dnd) so the drop target can be resolved from
   // whatever is under the cursor, matching the Cards tab.
-  function beginDrag(event: React.PointerEvent, artifactId: string) {
+  function beginDrag(event: React.PointerEvent, payload: ArtifactDrag) {
     if (event.button !== 0) return;
     pointerCleanupRef.current?.();
     const origin = { x: event.clientX, y: event.clientY };
@@ -106,12 +116,16 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       if (!dragging && Math.hypot(pointerEvent.clientX - origin.x, pointerEvent.clientY - origin.y) < 5) return;
       if (!dragging) {
         dragging = true;
-        dragIdRef.current = artifactId;
-        setDragId(artifactId);
+        dragRef.current = payload;
+        setDrag(payload);
         document.body.style.userSelect = "none";
       }
       const hit = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY) as HTMLElement | null;
-      const target = hit?.closest<HTMLElement>("[data-artifact-drop-group]")?.dataset.artifactDropGroup ?? null;
+      const over = hit?.closest<HTMLElement>("[data-artifact-drop-group]")?.dataset.artifactDropGroup ?? null;
+      // A folder is not a drop target for itself. Resolving that here rather
+      // than at drop time means the row never lights up as if it would accept
+      // the thing being dragged.
+      const target = over !== null && artifactDropAccepts(payload, over) ? over : null;
       dropGroupRef.current = target;
       setDropGroup(target);
     };
@@ -125,11 +139,14 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     const up = () => {
       if (dragging) {
         const target = dropGroupRef.current;
-        if (target !== null) void fileInto(artifactId, target);
+        if (target !== null) {
+          if (payload.kind === "item") void fileInto(payload.id, target);
+          else void mergeGroup(payload.name, target);
+        }
         ignoreClickUntilRef.current = performance.now() + 250;
       }
-      dragIdRef.current = null;
-      setDragId(null);
+      dragRef.current = null;
+      setDrag(null);
       dropGroupRef.current = null;
       setDropGroup(null);
       cleanup();
@@ -149,6 +166,37 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       await updateArtifact(artifactId, { groupName: next });
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't move that item.");
+    }
+  }
+
+  /**
+   * Merge one folder into another by dragging it there.
+   *
+   * Everything inside takes the target's label and the source label stops
+   * existing — flat labels leave no other meaning for a folder-on-folder drop.
+   * That is not reversible by dragging back (once merged, nothing records which
+   * items came from where), so a non-empty merge asks first, exactly as
+   * removeGroup does. An empty folder just moves without ceremony.
+   *
+   * Failure leaves the source folder in place: extraGroups is only rewritten
+   * after every item has been updated, so a merge that dies halfway is visible
+   * as a half-full folder rather than as items with nowhere to belong.
+   */
+  async function mergeGroup(source: string, targetDisplay: string) {
+    if (!artifactDropAccepts({ kind: "group", name: source }, targetDisplay)) return;
+    const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === source);
+    if (inside.length > 0) {
+      const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
+      const destination = targetDisplay === UNGROUPED ? `${UNGROUPED} (no folder)` : `“${targetDisplay}”`;
+      if (!window.confirm(`Move ${inside.length} ${noun} from “${source}” into ${destination}? The folder “${source}” goes away. Nothing is deleted.`)) return;
+    }
+    setActionError(null);
+    try {
+      const next = storedGroup(targetDisplay);
+      for (const item of inside) await updateArtifact(item.id, { groupName: next });
+      persistGroups(extraGroups.filter((entry) => entry !== source));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't move that folder.");
     }
   }
 
@@ -251,24 +299,28 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
                 <div
                   className={cn(
                     "transition-colors",
-                    dragId && dropGroup === group && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
+                    drag && dropGroup === group && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
+                    // The folder being dragged dims, the same tell an item gives.
+                    drag?.kind === "group" && drag.name === group && "opacity-50",
                   )}
                   data-artifact-drop-group={group}
                   key={group}
                 >
                   <GroupRow
                     count={grouped.length}
+                    dragging={drag?.kind === "group" && drag.name === group}
                     grid={ROW_GRID}
                     label={group}
                     onCancelRename={() => setRenamingId(null)}
                     onCommitRename={(next) => void renameGroup(group, next)}
                     onDelete={() => void removeGroup(group)}
+                    onPointerDragStart={(event) => beginDrag(event, { kind: "group", name: group })}
                     onStartRename={() => setRenamingId(`group:${group}`)}
                     renaming={renamingGroup}
                   />
                   {grouped.map((item) => (
                     <ItemRow
-                      dragging={dragId === item.id}
+                      dragging={drag?.kind === "item" && drag.id === item.id}
                       grid={ROW_GRID}
                       item={item}
                       key={item.id}
@@ -277,7 +329,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
                       onCommitRename={(next) => void renameItem(item, next)}
                       onDelete={() => void removeItem(item)}
                       onOpen={() => setOpenedId(item.id)}
-                      onPointerDragStart={beginDrag}
+                      onPointerDragStart={(event, id) => beginDrag(event, { id, kind: "item" })}
                       onStartRename={() => setRenamingId(`item:${item.id}`)}
                       renaming={renamingId === `item:${item.id}`}
                       suppressClick={() => performance.now() < ignoreClickUntilRef.current}
@@ -303,7 +355,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       <Dialog onOpenChange={setGroupOpen} open={groupOpen}>
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={createGroup}>
-            <DialogHeader><DialogTitle>New {label.toLowerCase()} folder</DialogTitle><DialogDescription>Group related {label.toLowerCase()} by course, unit, or topic.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>New {label.toLowerCase()} folder</DialogTitle><DialogDescription>Keep related {label.toLowerCase()} together by course, unit, or topic.</DialogDescription></DialogHeader>
             <label className="grid gap-1.5 text-xs font-medium">Folder name<Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Exam 7" value={groupName} /></label>
             <DialogFooter><Button onClick={() => setGroupOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(groupName)} type="submit" variant="secondary">Create folder</Button></DialogFooter>
           </form>
@@ -331,19 +383,27 @@ interface GroupRowProps {
   label: string;
   count: number;
   grid: string;
+  dragging: boolean;
   renaming: boolean;
   onStartRename: () => void;
   onCommitRename: (next: string) => void;
   onCancelRename: () => void;
   onDelete: () => void;
+  onPointerDragStart: (event: React.PointerEvent) => void;
 }
 
-function GroupRow({ label, count, grid, renaming, onStartRename, onCommitRename, onCancelRename, onDelete }: GroupRowProps) {
+function GroupRow({ label, count, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart }: GroupRowProps) {
   // "Ungrouped" is a placeholder for "no folder", not a folder anyone made —
-  // renaming or deleting it would be renaming nothing, so it gets no menus.
+  // renaming or deleting it would be renaming nothing, so it gets no menus, and
+  // for the same reason it cannot be picked up and dragged.
   const real = label !== UNGROUPED;
   const row = (
-    <div className={cn("grid items-center px-5 py-2 text-xs", grid)}>
+    <div
+      className={cn("grid items-center px-5 py-2 text-xs", grid, real && "cursor-grab active:cursor-grabbing", dragging && "opacity-50")}
+      // The 5px threshold in beginDrag is what keeps this from stealing clicks
+      // on the row's own "…" menu — a press that never travels is not a drag.
+      onPointerDown={(event) => { if (real && !renaming) onPointerDragStart(event); }}
+    >
       <span className="flex min-w-0 items-center gap-1.5 font-semibold">
         <IconFolder className="shrink-0 text-(--ui-text-tertiary)" size={13} />
         {renaming

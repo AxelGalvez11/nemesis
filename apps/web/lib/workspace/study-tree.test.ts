@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  artifactDropAccepts,
   decksInGroup,
   isWithinGroup,
+  UNGROUPED_LABEL,
   joinGroupPath,
   normalizeGroupPath,
   pathLeaf,
@@ -129,4 +131,28 @@ test("decksInGroup collects every deck beneath a folder, nested included", () =>
   assert.deepEqual(decksInGroup(decks, "Pharm::Exam 1").map((deck) => deck.id), ["a", "b"]);
   assert.deepEqual(decksInGroup(decks, "Pharm").map((deck) => deck.id), ["a", "b", "c"]);
   assert.deepEqual(decksInGroup(decks, "Nope").map((deck) => deck.id), []);
+});
+
+// ── Tests/Mindmaps folder dragging ─────────────────────────────────────────
+// A folder here is a flat label, so a folder-on-folder drop is a MERGE, and a
+// merge cannot be undone by dragging back (nothing records which items came
+// from where). These two rules are what stop that from firing by accident.
+
+test("an item can be dropped on any folder, including Ungrouped", () => {
+  assert.equal(artifactDropAccepts({ id: "a", kind: "item" }, "Exam 7"), true);
+  assert.equal(artifactDropAccepts({ id: "a", kind: "item" }, UNGROUPED_LABEL), true);
+});
+
+test("a folder cannot be dropped on itself", () => {
+  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, "Exam 7"), false);
+  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, "Exam 8"), true);
+});
+
+// Ungrouped is the ABSENCE of a folder, not one. Dragging it would file every
+// loose artifact in a single gesture — nobody means that by picking up a heading.
+test("Ungrouped can never be dragged, but is still a valid target", () => {
+  assert.equal(artifactDropAccepts({ kind: "group", name: UNGROUPED_LABEL }, "Exam 7"), false);
+  assert.equal(artifactDropAccepts({ kind: "group", name: UNGROUPED_LABEL }, UNGROUPED_LABEL), false);
+  // Dropping a real folder ONTO Ungrouped is how a folder gets emptied out.
+  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, UNGROUPED_LABEL), true);
 });
