@@ -94,18 +94,18 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
     // Seeded so this case is on the screenshot harness — it is what the thread
     // used to throw away (see lib/workspace/session-turns.ts).
     id: "preview-recording",
-    title: "Recorded session",
+    title: "Statutory interpretation and plain meaning",
     createdAt: minutesAgo(20),
     updatedAt: minutesAgo(18),
     messages: [
       {
         role: "assistant",
-        content: "Recording captured. The notes are saved in your Library at Nemesis/Recordings/Recording · Lecture 4.md. Want me to link them to your existing notes on this topic?",
+        content: "Recording captured. The notes are saved in your Library at Nemesis/Recordings/Statutory interpretation and plain meaning.md. Want me to link them to your existing notes on this topic?",
         at: minutesAgo(18),
         outputs: [{
           id: "preview-recording-output",
           kind: "recording",
-          title: "Recording · Lecture 4",
+          title: "Statutory interpretation and plain meaning",
           durationSeconds: 2_640,
           createdAt: minutesAgo(18),
           notes: "## What this covered\n\nThe lecture worked through how a statute is read when its plain wording and its stated purpose pull apart.\n\n### The plain-meaning rule\n\nStart with the ordinary sense of the words. The lecturer flagged this as **examinable**: courts only reach for purpose once the text is genuinely ambiguous.\n\n### Open questions\n\n- Whether the 1998 amendment displaces the earlier test.",

@@ -37,6 +37,10 @@ import { RecordWorkspace } from "./record-workspace";
  *  lectures stays browsable next to the student's typed notes. */
 const RECORDINGS_FOLDER = "Nemesis/Recordings";
 
+/** The placeholder name a session gets when the recorder creates it. Only a
+ *  session still carrying this gets renamed to the recording's own title. */
+const RECORDED_SESSION_TITLE = "Recorded session";
+
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
@@ -253,7 +257,7 @@ export function SessionChat() {
   }, [messages, recordingArtifacts, session?.outputs]);
 
   const handleModeChange = useCallback((mode: ComposerMode) => {
-    if (mode === "record" && !sessionsStore.getState().selectedId) sessionsStore.create("Recorded session");
+    if (mode === "record" && !sessionsStore.getState().selectedId) sessionsStore.create(RECORDED_SESSION_TITLE);
     setComposerMode(mode);
   }, []);
 
@@ -278,8 +282,23 @@ export function SessionChat() {
       // no live notes to fall back on any more — nothing is written during the
       // recording — so when this fails the transcript is what the student keeps,
       // and the message below has to say so rather than claim notes exist.
-      const notes = uid ? await requestRecordingNote({ transcript: draft.transcript, uid }) : "";
-      const artifact = await createArtifact({ ...draft, notes });
+      //
+      // The same pass names the recording (owner 2026-07-28: "can the note
+      // title also be renamed instead of being just 'recording'") — a title
+      // costs nothing extra folded in here, and it is what the Library note,
+      // its filename, and the chat card are all called. An empty title is not
+      // an error: createArtifact falls back to the dated name.
+      const { notes, title } = uid
+        ? await requestRecordingNote({ transcript: draft.transcript, uid })
+        : { notes: "", title: "" };
+      const artifact = await createArtifact({ ...draft, notes }, title);
+
+      // A sidebar of identical "Recorded session" rows has the same problem the
+      // title fixes, so borrow it — but only while the session still carries the
+      // name the recorder gave it. A student who renamed it, or who recorded
+      // partway through a real conversation, keeps their own title.
+      const sessionTitle = sessionsStore.getState().sessions.find((entry) => entry.id === targetId)?.title;
+      if (targetId && title && sessionTitle === RECORDED_SESSION_TITLE) sessionsStore.rename(targetId, title);
 
       // The third destination (owner ask 2026-07-27). Until now a recording
       // reached the Outputs panel and the chat card but never the Library, so
