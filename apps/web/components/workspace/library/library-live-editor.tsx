@@ -2,7 +2,8 @@
 
 import { indentLess, indentMore } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { EditorView, keymap } from "@codemirror/view";
+import { Prec } from "@codemirror/state";
+import { EditorView, keymap, type KeyBinding } from "@codemirror/view";
 import {
   IconBlockquote,
   IconBold,
@@ -29,6 +30,7 @@ import { toggleInlineFormat, type ToggleFormat } from "@/lib/workspace/library-i
 import { liveProperties } from "./library-properties-widget";
 import { livePreview, liveTables } from "./library-preview-decorations";
 import { blockDrag } from "./library-block-drag";
+import { slashCommandSource } from "./library-slash-menu";
 
 /** Imperative surface the parent uses to drive the editor (TOC clicks). */
 export interface LibraryEditorApi {
@@ -42,6 +44,10 @@ interface LibraryLiveEditorProps {
   showToolbar?: boolean;
   apiRef?: RefObject<LibraryEditorApi | null>;
 }
+
+/** One instance, because the "/" menu registers its completion source on this
+ *  exact Language object — `markdown()` builds a new one on every call. */
+const markdownSupport = markdown({ base: markdownLanguage });
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -293,6 +299,31 @@ function insertBlock(view: EditorView, block: string) {
   view.focus();
 }
 
+/**
+ * Keyboard shortcuts for the formatting the toolbar already offers.
+ *
+ * The toolbar has had these buttons since 2026-07-20, but a button is something
+ * you find; a shortcut is something you reach for. Owner 2026-07-28 asked for
+ * "commands for bold italicize etc.", which is this plus the "/" menu.
+ *
+ * Mod-k is deliberately absent: AppShell owns it globally for search, and
+ * quietly stealing it inside one editor is worse than having no link shortcut.
+ * Mod-u overrides defaultKeymap's undoSelection — Cmd+U is universally
+ * underline, and a student will reach for it far more often.
+ */
+const formattingKeymap: KeyBinding[] = [
+  { key: "Mod-b", preventDefault: true, run: (view) => { runToggle(view, "bold"); return true; } },
+  { key: "Mod-i", preventDefault: true, run: (view) => { runToggle(view, "italic"); return true; } },
+  { key: "Mod-u", preventDefault: true, run: (view) => { runToggle(view, "underline"); return true; } },
+  { key: "Mod-e", preventDefault: true, run: (view) => { runToggle(view, "code"); return true; } },
+  { key: "Mod-Shift-h", preventDefault: true, run: (view) => { runToggle(view, "highlight"); return true; } },
+  { key: "Mod-Alt-1", preventDefault: true, run: (view) => { applyLinePrefix(view, "# "); return true; } },
+  { key: "Mod-Alt-2", preventDefault: true, run: (view) => { applyLinePrefix(view, "## "); return true; } },
+  { key: "Mod-Alt-3", preventDefault: true, run: (view) => { applyLinePrefix(view, "### "); return true; } },
+  { key: "Mod-Shift-8", preventDefault: true, run: (view) => { applyLinePrefix(view, "- "); return true; } },
+  { key: "Mod-Shift-9", preventDefault: true, run: (view) => { applyLinePrefix(view, "> "); return true; } },
+];
+
 function EditingToolbar({ viewRef }: { viewRef: RefObject<EditorView | null> }) {
   const run = (action: (view: EditorView) => void) => {
     const view = viewRef.current;
@@ -397,12 +428,26 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
       extensions: [
         basicSetup,
         // GFM base so pipe tables parse as Table nodes (liveTables renders them).
-        markdown({ base: markdownLanguage }),
+        markdownSupport,
         EditorView.lineWrapping,
+        // Prec.high because basicSetup's defaultKeymap already binds some of
+        // these — Mod-u is undoSelection there — and in CodeMirror a LATER
+        // extension loses. Without this the shortcuts would silently not fire.
+        Prec.high(keymap.of(formattingKeymap)),
         keymap.of([
           { key: "Tab", run: indentMore },
           { key: "Shift-Tab", run: indentLess },
         ]),
+        // The "/" menu, registered on the language instance ACTUALLY in force.
+        //
+        // Two dead ends first, both found by running it rather than reading it:
+        // `markdownLanguage.data.of(...)` registers on the imported singleton,
+        // but `markdown({base})` builds a NEW Language, so the source was never
+        // asked. Adding a second `autocompletion({override})` DID get the
+        // source called — and still showed nothing, because basicSetup already
+        // installs one and CodeMirror supports exactly one: the second state
+        // field ran the source while the first one owned the tooltip.
+        markdownSupport.language.data.of({ autocomplete: slashCommandSource }),
         livePreview,
         liveTables,
         liveProperties,
