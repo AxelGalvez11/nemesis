@@ -18,6 +18,7 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 
 import { useNotebooks } from "./notebooks-store";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 function formatModified(iso: string): string {
   if (!iso) return "";
@@ -27,6 +28,7 @@ function formatModified(iso: string): string {
 }
 
 export function NotebooksLanding() {
+  const confirm = useConfirm();
   const { status, notebooks, error, select, create, remove, reload } = useNotebooks();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -57,8 +59,11 @@ export function NotebooksLanding() {
     }
   };
 
-  const confirmDelete = (id: string, name: string) => {
-    if (typeof window !== "undefined" && !window.confirm(`Are you sure you want to delete “${name}”? Its sources and chat are removed. This can't be undone.`)) return;
+  const confirmDelete = async (id: string, name: string) => {
+    if (!(await confirm({
+      body: `“${name}” is deleted, along with its sources and chat. This can't be undone.`,
+      title: "Delete this notebook?",
+    }))) return;
     void remove(id);
   };
 

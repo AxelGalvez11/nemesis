@@ -25,6 +25,7 @@ import { Input } from "@/components/desktop-ui/input";
 import { useAuth } from "@/components/AuthProvider";
 import { isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 function friendlyMfaError(cause: unknown, kind: "phone" | "webauthn" | "totp"): string {
   const message = cause instanceof Error ? cause.message : String(cause ?? "");
@@ -55,6 +56,7 @@ interface PhoneEnrollment {
 }
 
 export function SecuritySettings() {
+  const confirm = useConfirm();
   const { session, signOut } = useAuth();
   const router = useRouter();
   const canManage = Boolean(session) && !isPreviewMode;
@@ -227,7 +229,11 @@ export function SecuritySettings() {
   }
 
   async function removeFactor(factor: Factor) {
-    if (!window.confirm(`Remove “${factor.friendly_name || factor.factor_type}” from two-step verification?`)) return;
+    if (!(await confirm({
+      body: "You will no longer be asked for a code from it when you sign in.",
+      confirmLabel: "Remove",
+      title: `Remove “${factor.friendly_name || factor.factor_type}”?`,
+    }))) return;
     setError(null);
     try {
       const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });

@@ -20,6 +20,7 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { sessionsStore, type WorkspaceSession } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 // Borderless band matching the notebooks chat header (owner ask 2026-07-20):
 // no bottom border, no fade shadow — the bar blends into the chat surface.
@@ -28,6 +29,7 @@ const TITLEBAR_HEADER_BASE_CLASS =
 const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 
 export function ChatHeader({ session, onOpenRail, railOpen }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean }) {
+  const confirm = useConfirm();
   const [menuOpen, setMenuOpen] = useState(false);
   const title = session?.title || "New chat";
 
@@ -65,8 +67,13 @@ export function ChatHeader({ session, onOpenRail, railOpen }: { session: Workspa
               Rename
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {/* void(async) rather than an async handler: Radix closes the menu
+                on select and does not await anything, so the promise has to be
+                owned here instead of handed back to it. */}
             <DropdownMenuItem onSelect={() => {
-              if (window.confirm(`Are you sure you want to delete “${title}”? This can't be undone.`)) sessionsStore.remove(session.id);
+              void (async () => {
+                if (await confirm({ body: `“${title}” is deleted. This can't be undone.`, title: "Delete this chat?" })) sessionsStore.remove(session.id);
+              })();
             }} variant="destructive">
               <Codicon name="trash" size="0.875rem" />
               Delete

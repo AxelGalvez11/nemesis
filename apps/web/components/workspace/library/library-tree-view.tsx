@@ -9,6 +9,7 @@ import { rangeSelectionKeys, toggleSelectionKey } from "@/lib/workspace/library-
 import { cn } from "@/lib/utils";
 
 import { SidebarRowBody, SidebarRowLabel, SidebarRowLead, SidebarRowShell, SidebarRowStack } from "../shell/sidebar-primitives";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const INDENT_REM_PER_DEPTH = 0.875;
 type DragItem = { kind: "note"; id: string; path: string; title: string } | { kind: "folder"; path: string; title: string };
@@ -48,6 +49,7 @@ interface LibraryTreeViewProps {
 }
 
 export function LibraryTreeView(props: LibraryTreeViewProps) {
+  const confirm = useConfirm();
   const { folder, onMoveNote, onMoveFolder, depth = 0 } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
@@ -187,12 +189,15 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
     return items;
   }
 
-  function runBulkAction(action: "delete" | "move" | "attach") {
+  async function runBulkAction(action: "delete" | "move" | "attach") {
     const items = selectedItems();
     setContext(null);
     if (items.length === 0) return;
     if (action === "delete") {
-      if (!window.confirm(`Are you sure you want to delete these ${items.length} items? Folders are deleted with everything inside them.`)) return;
+      if (!(await confirm({
+        body: `${items.length} items are deleted, and any folder among them goes with everything inside it. This can't be undone.`,
+        title: `Delete these ${items.length} items?`,
+      }))) return;
       // Notes first so a note inside a selected folder isn't deleted twice.
       for (const item of items) if (item.kind === "note") props.onDeleteNote?.(item.id);
       for (const item of items) if (item.kind === "folder") props.onDeleteFolder?.(item.path);
@@ -211,13 +216,16 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
     setSelectedKeys(new Set());
   }
 
-  function runMenuAction(action: "delete" | "move" | "rename" | "folder" | "attach") {
+  async function runMenuAction(action: "delete" | "move" | "rename" | "folder" | "attach") {
     const item = context?.item;
     if (!item) return;
     setContext(null);
     if (action === "delete") {
       const noun = item.kind === "note" ? "note" : "folder and everything inside it";
-      if (!window.confirm(`Are you sure you want to delete this ${noun}?`)) return;
+      if (!(await confirm({
+        body: `This ${noun} is deleted. This can't be undone.`,
+        title: item.kind === "note" ? "Delete this note?" : "Delete this folder?",
+      }))) return;
       if (item.kind === "note") props.onDeleteNote?.(item.id);
       else props.onDeleteFolder?.(item.path);
       return;

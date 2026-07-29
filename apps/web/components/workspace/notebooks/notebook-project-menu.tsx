@@ -22,10 +22,12 @@ import { searchWebContext } from "@/lib/workspace/chat-api";
 
 import { extractAndAddUrl } from "./notebook-source-actions";
 import { useNotebooks } from "./notebooks-store";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const MAX_FOUND_SOURCES = 3;
 
 export function NotebookProjectMenu() {
+  const confirm = useConfirm();
   const notebooks = useNotebooks();
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -39,8 +41,12 @@ export function NotebookProjectMenu() {
     if (selected && next && next !== selected.name) void notebooks.rename(selected.id, next);
   }
 
-  function remove() {
-    if (!selected || !window.confirm(`Are you sure you want to delete “${selected.name}”? Its sources and chats are removed. This can't be undone.`)) return;
+  async function remove() {
+    if (!selected) return;
+    if (!(await confirm({
+      body: `“${selected.name}” is deleted, along with its sources and chats. This can't be undone.`,
+      title: "Delete this project?",
+    }))) return;
     void notebooks.remove(selected.id);
   }
 

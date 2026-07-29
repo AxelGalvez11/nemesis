@@ -25,6 +25,7 @@ import { NotebookInstructionsDialog } from "./notebook-instructions-dialog";
 import { NotebookProjectMenu } from "./notebook-project-menu";
 import { NotebookSourcesCard } from "./notebook-sources-card";
 import { useNotebooks } from "./notebooks-store";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const PREVIEW_REPLY =
   "This is a preview build — replies here are canned. Sign in on the real app to chat about this notebook.";
@@ -42,6 +43,7 @@ function formatModified(iso: string): string {
 }
 
 export function NotebookHome() {
+  const confirm = useConfirm();
   const { session } = useAuth();
   const preview = Boolean(useWorkspacePreview());
   const uid = preview ? "preview-user" : (session?.user.id ?? null);
@@ -257,7 +259,9 @@ export function NotebookHome() {
                         type="button"
                         aria-label={`Delete ${c.title}`}
                         onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete “${c.title}”? This can't be undone.`)) void notebooks.removeChat(c.id);
+                          void (async () => {
+                            if (await confirm({ body: `“${c.title}” is deleted. This can't be undone.`, title: "Delete this chat?" })) await notebooks.removeChat(c.id);
+                          })();
                         }}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                       >

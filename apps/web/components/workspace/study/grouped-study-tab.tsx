@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { type StudyArtifact, type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
@@ -56,6 +57,7 @@ const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
 // pure, so they are covered by tests that need no pointer and no DOM.
 
 export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
+  const confirm = useConfirm();
   const { artifacts, deleteArtifact, updateArtifact } = useCloudStudy();
   const isTests = kind === "tests";
   const artifactKind: StudyArtifactKind = isTests ? "test" : "mindmap";
@@ -188,7 +190,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     if (inside.length > 0) {
       const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
       const destination = targetDisplay === UNGROUPED ? `${UNGROUPED} (no folder)` : `“${targetDisplay}”`;
-      if (!window.confirm(`Move ${inside.length} ${noun} from “${source}” into ${destination}? The folder “${source}” goes away. Nothing is deleted.`)) return;
+      if (!(await confirm({
+        body: `${inside.length} ${noun} move into ${destination}, and the folder “${source}” goes away. Nothing is deleted.`,
+        confirmLabel: "Merge folders",
+        title: `Merge “${source}” into ${destination}?`,
+      }))) return;
     }
     setActionError(null);
     try {
@@ -211,7 +217,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   }
 
   async function removeItem(item: StudyArtifact) {
-    if (!window.confirm(`Are you sure you want to delete “${item.title}”? This can't be undone.`)) return;
+    if (!(await confirm({ body: `“${item.title}” is deleted. This can't be undone.`, title: "Delete this item?" }))) return;
     setActionError(null);
     try {
       await deleteArtifact(item.id);
@@ -246,7 +252,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === group);
     if (inside.length > 0) {
       const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
-      if (!window.confirm(`Remove the folder “${group}”? Its ${inside.length} ${noun} move to ${UNGROUPED}. Nothing is deleted.`)) return;
+      if (!(await confirm({
+        body: `Its ${inside.length} ${noun} move to ${UNGROUPED}. Nothing is deleted.`,
+        confirmLabel: "Remove folder",
+        title: `Remove the folder “${group}”?`,
+      }))) return;
     }
     setActionError(null);
     try {
