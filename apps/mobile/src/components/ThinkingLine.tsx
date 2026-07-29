@@ -10,7 +10,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { ChevronIcon } from "./icons";
 import { phaseLabel, type ThinkingPhase } from "@/lib/thinking-phase";
-import { EMPTY_TRAIL, pushStep, trailSummary, type StepTrail } from "@/lib/reasoning-steps";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -73,7 +72,6 @@ export function ThinkingLine({
   const { colors: c } = useTheme();
   const label = phaseLabel(phase);
   const [seconds, setSeconds] = useState(0);
-  const [trail, setTrail] = useState<StepTrail>(EMPTY_TRAIL);
   // Open while thinking. `pinned` records a DELIBERATE tap so the auto-collapse
   // cannot overrule a student who opened it on purpose — the "pin it open" half
   // of progressive disclosure.
@@ -87,13 +85,6 @@ export function ThinkingLine({
     return () => clearInterval(timer);
   }, []);
 
-  // pushStep returns the SAME object when the label has not changed, so React
-  // bails out of this setState on the vast majority of renders even though the
-  // label arrives constantly.
-  useEffect(() => {
-    if (label) setTrail((current) => pushStep(current, label));
-  }, [label]);
-
   // Auto-collapse the moment the answer begins — unless the student pinned it.
   useEffect(() => {
     if (answerStarted && !pinned) setOpen(false);
@@ -101,8 +92,7 @@ export function ThinkingLine({
 
   if (!label) return null;
   const thought = reasoning?.trim() ?? "";
-  const summary = trailSummary(trail.count, seconds);
-  const heading = answerStarted ? `Thought for ${seconds}s` : `Thinking… (${seconds}s)`;
+  const badge = answerStarted ? `Thought for ${seconds}s` : seconds >= 1 ? `Thinking… ${seconds}s` : "Thinking…";
 
   return (
     <View style={styles.wrap} testID={testID}>
@@ -118,16 +108,28 @@ export function ThinkingLine({
         style={styles.row}
         testID="chat-thinking-toggle"
       >
-        {answerStarted ? <View style={styles.dotIdle} /> : <PulsingDot color={c.accent} />}
-        <Text style={styles.heading} numberOfLines={1} testID="chat-thinking-heading">
-          {heading}
+        {/* THE SUMMARY PHRASE LEADS (owner 2026-07-29: "just show a summary
+            phrase of what the model is doing or going to do before the dynamic
+            status badges"). It is phaseLabel — a real pipeline stage, never a
+            sentence we invented. That distinction is the whole reason this slot
+            is safe to fill: the plan-writer version of it, where a second model
+            is paid to compose a first-person "here's what I'll do", was
+            considered and rejected as a vanity feature that costs a call and
+            1-2s on the critical path of every turn. This says what is actually
+            happening, for free.
+
+            The step COUNT that used to sit here is gone at the owner's word. */}
+        <Text style={styles.phrase} numberOfLines={1} testID="chat-thinking-phrase">
+          {label}
         </Text>
-        {/* The step it is on, and how many came before. Without this the block
-            only ever says what it is doing NOW, so a turn that searched and read
-            before reasoning looked like it had only ever reasoned. */}
-        <Text style={styles.summary} numberOfLines={1} testID="chat-thinking-summary">
-          {summary ? `${label} · ${summary}` : label}
-        </Text>
+        {/* The badge, after the phrase: state and elapsed time, pulsing while
+            live and still once the answer starts. */}
+        <View style={styles.badge}>
+          {answerStarted ? <View style={styles.dotIdle} /> : <PulsingDot color={c.accent} />}
+          <Text style={styles.badgeText} numberOfLines={1} testID="chat-thinking-badge">
+            {badge}
+          </Text>
+        </View>
         <View style={open ? styles.chevronOpen : styles.chevron}>
           <ChevronIcon size={14} color={c.textHint} />
         </View>
@@ -197,10 +199,14 @@ const createStyles = (c: ThemeColors) =>
     // Settled: the same footprint, no motion, so the row does not shift by a
     // pixel when the pulse stops.
     dotIdle: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: c.line },
-    heading: { ...type.micro, color: c.text2, fontWeight: "600" },
+    // The phrase is the loudest thing in the row — it is the one part a student
+    // reads on purpose. flexShrink so a long stage name gives way to the badge
+    // rather than pushing it off the row.
+    phrase: { ...type.micro, color: c.text2, fontWeight: "600", flexShrink: 1 },
+    badge: { flexDirection: "row", alignItems: "center", gap: space(1.5), marginLeft: "auto" },
     // textHint, NOT text3 — text3 is byte-identical to the body colour on this
     // palette, so it would read as full-strength text pretending to be a hint.
-    summary: { ...type.micro, color: c.textHint, flexShrink: 1, marginLeft: "auto" },
+    badgeText: { ...type.micro, color: c.textHint },
     chevron: { transform: [{ rotate: "0deg" }] },
     chevronOpen: { transform: [{ rotate: "90deg" }] },
     // Set behind a rule the way a quotation is — this is the model talking to
