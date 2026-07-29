@@ -17,6 +17,10 @@ export * from "./search.ts";
 // How the product writes, shared so the web prompt and the phone prompt cannot
 // drift apart. See writing-voice.ts for why this is not a chat skill.
 export * from "./writing-voice.ts";
+// The document-level half of the same source guide, for turns that SAVE
+// something. Separate from the voice because it costs nothing on the turns it
+// does not apply to — see ai-writing-tells.ts for the split.
+export * from "./ai-writing-tells.ts";
 // Where the student's words end and a stranger's document begins. Shared for the
 // same reason as the voice: two prompt strings in two apps, one rule.
 export * from "./untrusted-content.ts";

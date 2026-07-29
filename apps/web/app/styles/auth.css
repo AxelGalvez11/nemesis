@@ -163,15 +163,22 @@
   z-index: 1;
   justify-content: center;
   min-height: 100svh;
-  padding: 48px 36px;
+  /* 48px vertical was costing 96px of a card that had 4px to spare. 28px still
+     lifts the card clear of the window edge on a laptop and hands back 40. */
+  padding: 28px 36px;
 }
-.nemesis-auth-card { max-width: 430px; width: 100%; }
+/* Owner 2026-07-29: "make the component wider so that it fits on one page
+   without having the need for a scroll bar." 430 -> 520. The width is not what
+   was overflowing — height was — but a wider card stops the description and the
+   two OAuth buttons sitting in a narrow ribbon on a 1512px display, and it lets
+   the padding below come down without the form feeling cramped. */
+.nemesis-auth-card { max-width: 520px; width: 100%; }
 .nemesis-auth-card-in {
   background: #fff;
   border: 1px solid var(--auth-line);
   border-radius: 20px;
   box-shadow: 0 24px 70px rgba(20, 20, 20, 0.055);
-  padding: 34px 34px 28px;
+  padding: 30px 38px 26px;
 }
 
 .nemesis-auth-mark {
@@ -358,15 +365,11 @@
   text-align: center;
 }
 .nemesis-auth-footer p { margin: 0; }
-.nemesis-auth-trust {
-  color: var(--auth-faint);
-  font-size: 8px;
-  letter-spacing: 0.1em;
-  margin: 18px 0 0;
-  text-align: center;
-  text-transform: uppercase;
-}
-.nemesis-auth-trust span { color: var(--auth-accent); }
+/* .nemesis-auth-trust — "Activity logged · Never submits for you" — removed
+   2026-07-29 (owner). It was the last 31px of a card that overflowed the window
+   by 4, so the one thing a visitor could not see was the line claiming we log
+   things. Both halves were also stale: "never submits for you" described the
+   old missions feature, which no longer exists. */
 
 .nemesis-auth-mode a:focus-visible,
 .nemesis-auth-oauth-btn:focus-visible,

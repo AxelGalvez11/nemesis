@@ -10,6 +10,11 @@
  * contracts can be tested without React Native or Supabase.
  */
 
+// The same rules the web builders carry (apps/web/lib/workspace/chat-skills.ts).
+// Two apps, two prompt strings, one source — the shape of bug this session has
+// already fixed twice (library `position`, the calendar tool description).
+import { CONSISTENT_NAMING_RULE, SAVED_WRITING_TELLS } from "@nemesis/shared";
+
 export type AcademicSkill =
   | "general"
   | "teach"
@@ -58,11 +63,12 @@ const SKILL_INSTRUCTIONS: Record<AcademicSkill, string> = {
   "test-builder":
     "Academic skill: Test Builder. You MUST call add_practice_test so the result appears in Study; never leave the test only in chat. Unless the learner specifies otherwise, create 10 one-best-answer questions spanning recall, application, and transfer. Each item must test one objective, have one unambiguously best answer, plausible misconception-based distractors, no answer clues, and a concise rationale explaining why the correct option wins. Save it under the Generated tests Study group unless the learner names a course or folder.",
   "flashcard-builder":
-    "Academic skill: Flashcard Builder. You MUST call list_study_decks and then add_flashcards so every card appears in Study; never leave cards only in chat. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing matching deck when possible.",
+    "Academic skill: Flashcard Builder. You MUST call list_study_decks and then add_flashcards so every card appears in Study; never leave cards only in chat. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing matching deck when possible. " +
+    CONSISTENT_NAMING_RULE,
   "notes-builder":
-    `Academic skill: Notes Builder. You MUST call create_library_note so the note appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_NOTES_FOLDER}". Write skimmable markdown with a clear title, learning objectives, concise sections, worked examples where useful, misconceptions, and a short recap.`,
+    `Academic skill: Notes Builder. You MUST call create_library_note so the note appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_NOTES_FOLDER}". Write skimmable markdown with a clear title, learning objectives, concise sections, worked examples where useful, misconceptions, and a short recap.\n\n${SAVED_WRITING_TELLS}`,
   "slides-builder":
-    `Academic skill: Slides Builder. You MUST call create_slide_deck so the slide deck appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_SLIDES_FOLDER}". Make each slide serve one purpose, keep bullets concise, include speaker notes only when they add teaching value, and finish with retrieval questions rather than a decorative summary.`,
+    `Academic skill: Slides Builder. You MUST call create_slide_deck so the slide deck appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_SLIDES_FOLDER}". Make each slide serve one purpose, keep bullets concise, include speaker notes only when they add teaching value, and finish with retrieval questions rather than a decorative summary.\n\n${SAVED_WRITING_TELLS}`,
 };
 
 /**
