@@ -69,6 +69,7 @@ const SAVE_PROMPTS = [
   "Slides about cellular respiration",
   "Study notes on cellular respiration",
   "Practice test on cellular respiration",
+  "Create a test on biochemistry",
   "add these to my deck",
   "save this as a note",
   "save this to my library",
@@ -110,6 +111,15 @@ Deno.test("ordinary learning and research requests are not saves", () => {
   }
   assertEquals(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
   assertEquals(classifyChatRequest("explain how beta blockers work").savesToWorkspace, undefined);
+});
+
+Deno.test("a reply to the test-preference question keeps the original save route", () => {
+  const prior =
+    "Before I build the test: what do you want for how many questions, the difficulty (easy, medium, hard, or mixed), and the question types (multiple choice, true/false, or a mix)?";
+  assertEquals(detectsSaveRequest("20, hard, with a mix", prior), true);
+  const decision = classifyChatRequest("20, hard, with a mix", prior);
+  assertEquals(decision.model, "deepseek-chat");
+  assertEquals(decision.savesToWorkspace, true);
 });
 
 // ── Deep research toggle vs a save ───────────────────────────────────────────

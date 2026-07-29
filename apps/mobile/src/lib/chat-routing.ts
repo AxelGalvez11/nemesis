@@ -1,3 +1,5 @@
+import { isStudyCreationPreferenceReply } from "@nemesis/shared";
+
 /**
  * Zero-cost request routing for Nemesis chat — a FAITHFUL COPY of
  * apps/web/lib/workspace/chat-routing.ts (cloud-first pivot, phone chat §6).
@@ -61,25 +63,33 @@ const DIRECT_ARTIFACT_REQUEST =
   /\b(?:i (?:need|want)|give me|please (?:make|create|prepare)|can you (?:make|create|prepare))\b[^.?!]{0,80}\b(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|slides?|slide decks?|presentations?|study notes?|study guides?)\b/i;
 const BARE_ARTIFACT_REQUEST =
   /^(?:please\s+)?(?:\d+\s+)?(?:flash\s?cards?|mind\s?maps?|practice tests?|mock exams?|question banks?|slides?|slide decks?|presentations?|study notes?|class notes?|lecture notes?|study guides?)\b/i;
+const CREATE_ASSESSMENT =
+  /\b(?:make|create|build|generate|draft|whip up|put together|give me|set up)\s+(?:me\s+)?(?:an?|another|some|\d+)?\s*(?:new\s+)?(?:practice\s+|mock\s+)?(?:tests?|quiz(?:zes)?|exams?|question\s+banks?)\b/i;
+const CODE_TEST =
+  /\b(?:unit|integration|e2e|end-to-end|regression|snapshot)\s+tests?\b|\btests?\s+(?:for|of)\s+(?:this|that|the|my)\s+(?:function|method|class|component|module|code|file|endpoint)\b|\btest\s+(?:suite|case|file|harness)s?\b/i;
+const ASKS_ABOUT = /^(?:what|why|how|when|where|who|which)\b/i;
 
 /** Does this message ask to persist something in the student's workspace? Pure
  *  and exported so the routing tests can pin the real phrasings students use. */
-export function detectsSaveRequest(text: string): boolean {
+export function detectsSaveRequest(text: string, priorAssistantText = ""): boolean {
   const compact = text.trim();
+  if (ASKS_ABOUT.test(compact)) return false;
+  if (isStudyCreationPreferenceReply(compact, priorAssistantText)) return true;
   if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
+  if (CREATE_ASSESSMENT.test(compact) && !CODE_TEST.test(compact)) return true;
   if (DIRECT_ARTIFACT_REQUEST.test(compact)) return true;
   if (BARE_ARTIFACT_REQUEST.test(compact)) return true;
   return SAVE_TO_WORKSPACE.test(compact);
 }
 
-export function classifyChatRequest(text: string): ChatRouteDecision {
+export function classifyChatRequest(text: string, priorAssistantText = ""): ChatRouteDecision {
   const compact = text.trim();
   // A save request wins over every reasoner route below so its tools can fire.
   // Web is kept when the topic needs it (deepseek-chat can still search), and
   // route "conversation" is never emitted for a save — the phone has no web
   // re-promotion step today, but the web copy does, and these two files are meant
   // to classify identically.
-  if (detectsSaveRequest(compact)) {
+  if (detectsSaveRequest(compact, priorAssistantText)) {
     const wantsWeb =
       RESEARCH_PATTERN.test(compact) ||
       CURRENT_PATTERN.test(compact) ||
@@ -132,9 +142,13 @@ export function classifyChatRequest(text: string): ChatRouteDecision {
  * Pure and separate from the caller so this precedence has a test rather than
  * living as one condition inside a 40-line send function.
  */
-export function routeForTurn(text: string, research: ChatRouteDecision | null): ChatRouteDecision {
-  if (research && !detectsSaveRequest(text)) return research;
-  return classifyChatRequest(text);
+export function routeForTurn(
+  text: string,
+  research: ChatRouteDecision | null,
+  priorAssistantText = "",
+): ChatRouteDecision {
+  if (research && !detectsSaveRequest(text, priorAssistantText)) return research;
+  return classifyChatRequest(text, priorAssistantText);
 }
 
 export function routeInstruction(route: ChatRoute): string {

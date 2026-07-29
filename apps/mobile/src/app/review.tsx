@@ -12,6 +12,7 @@ import { OcclusionCardView } from "@/components/OcclusionCardView";
 import {
   fetchCloudStudy,
   gradeStudyCard,
+  loadCachedStudy,
   type CloudStudyCard,
   type CloudStudyDeck,
   type StudyGrade,
@@ -94,7 +95,7 @@ const UNDO_SWIPE_DISTANCE = 60;
  * grade(). The tap zones are invisible by design, so this lit button is the only
  * confirmation of WHICH grade a blind half-screen tap actually registered.
  */
-const CONFIRM_HOLD_MS = 900;
+const CONFIRM_HOLD_MS = 350;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -155,9 +156,25 @@ export default function ReviewScreen() {
     }
     setDeck(undefined);
     void (async () => {
+      const cached = await loadCachedStudy(userId);
+      if (!alive) return;
+      const cachedDeck = cached.decks.find((item) => item.id === deckId) ?? null;
+      if (cachedDeck) {
+        setDeck(cachedDeck);
+        setCards(cached.cards.filter((card) => card.deckId === cachedDeck.id));
+        setProgress(EMPTY_PROGRESS);
+        undoRef.current = [];
+        sittingRepsRef.current.clear();
+        setRevealed(false);
+        setGradeError(null);
+      }
       try {
         const { decks, cards: allCards } = await fetchCloudStudy(userId);
         if (!alive) return;
+        // Once the cached deck is on screen, do not replace the live sitting
+        // underneath a learner who may already have graded its first card. The
+        // fetch still refreshes the disk cache for the next open.
+        if (cachedDeck) return;
         const found = decks.find((item) => item.id === deckId) ?? null;
         setDeck(found);
         setCards(found ? allCards.filter((card) => card.deckId === found.id) : []);
@@ -168,7 +185,7 @@ export default function ReviewScreen() {
         setRevealed(false);
         setGradeError(null);
       } catch {
-        if (alive) setDeck(null);
+        if (alive && !cachedDeck) setDeck(null);
       }
     })();
     return () => {
@@ -426,7 +443,7 @@ export default function ReviewScreen() {
         >
           <GlassSurface style={styles.backBtn} fallbackColor={c.glassMenu} opaque shadow>
             <View style={styles.backChevron}>
-              <ChevronIcon size={18} color={c.text} strokeWidth={2.2} />
+              <ChevronIcon size={20} color={c.text} strokeWidth={2.2} />
             </View>
           </GlassSurface>
         </Pressable>
@@ -634,7 +651,7 @@ const createStyles = (c: ThemeColors) =>
     tapZone: { flex: 1 },
     // The pulled-for way out. Left edge, clear of the card's centered text.
     backFloat: { position: "absolute", left: space(4), zIndex: 10 },
-    backBtn: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
+    backBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center" },
     // ChevronIcon points right by default; a back arrow points the other way.
     backChevron: { transform: [{ rotate: "180deg" }] },
     answerBlock: { marginTop: space(2) },

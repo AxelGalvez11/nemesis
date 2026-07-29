@@ -169,15 +169,18 @@ export function trimHistory(
 export function buildWireMessages(
   history: ChatMsg[],
   userText: string,
-  decision: ChatRouteDecision = classifyChatRequest(userText),
+  decision?: ChatRouteDecision,
   learnerProfile = "",
   /** True when course material rides along with this turn — see MATERIAL_OFFER. */
   hasMaterial = false,
 ): WireMsg[] {
+  const priorAssistantText =
+    [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  const resolvedDecision = decision ?? classifyChatRequest(userText, priorAssistantText);
   const profile = learnerProfile.trim() ? `\n\n${learnerProfile.trim()}` : "";
   return [
     {
-      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${academicSkillInstruction(userText, hasMaterial)}${profile}`,
+      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(resolvedDecision.route)}\n\n${academicSkillInstruction(userText, hasMaterial, priorAssistantText)}${profile}`,
       role: "system",
     },
     ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),

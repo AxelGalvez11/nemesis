@@ -1,3 +1,5 @@
+import { isStudyCreationPreferenceReply } from "@nemesis/shared";
+
 /**
  * Zero-cost request routing for Nemesis chat.
  *
@@ -141,6 +143,7 @@ export function detectsSaveRequest(text: string, priorAssistantText = ""): boole
   // words only ever open a question; a request uses "can you", "could you" or
   // a bare imperative, none of which start this way.
   if (ASKS_ABOUT.test(compact)) return false;
+  if (isStudyCreationPreferenceReply(compact, priorAssistantText)) return true;
   if (SAVE_VERB.test(compact) && SAVE_ARTIFACT.test(compact)) return true;
   if (CREATE_ASSESSMENT.test(compact) && !CODE_TEST.test(compact)) return true;
   if (SAVE_TO_WORKSPACE.test(compact)) return true;
@@ -203,7 +206,7 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
  * and cannot is worse than one that never offered (see CHAT_NO_TOOLS_PROMPT).
  */
 export const SAVE_INSTRUCTION =
-  "This turn asks you to CREATE something in the student's workspace. Do it with the tools — add_practice_test for a test or quiz, add_flashcards for cards, create_library_note for notes — and do it in this turn, not after asking permission. " +
+  "This turn asks you to CREATE something in the student's workspace. The app has already collected any required deck format or test settings in the conversation; follow those exact choices. Do it with the tools — add_practice_test for a test or quiz, add_flashcards for cards, create_library_note for notes — and do it in this turn, not after asking permission. For flashcards, set each card_type to basic, cloze, or reversed as requested. " +
   "Never write the flashcards or the test questions out in your reply as a substitute for saving them: the student is looking for it on their Study page, and a copy in the chat is not there. " +
   "Once it is saved, say in one short line what you made and where it went.";
 

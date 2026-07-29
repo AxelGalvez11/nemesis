@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SlideUpSheet } from "./StudySheet";
 import { MessageBody } from "./MessageBody";
 import { MissionButton } from "./mission-ui";
-import { ChevronIcon, CloseIcon, SearchIcon } from "./icons";
+import { ChevronIcon, CloseIcon, FolderIcon, SearchIcon } from "./icons";
 import {
   deleteStudyCard,
   setStudyCardFlag,
@@ -273,7 +273,7 @@ export function StudyBrowseSheet({
   }
 
   return (
-    <SlideUpSheet visible={visible} onClose={onClose} title="Browse cards" testID="study-browse-sheet">
+    <SlideUpSheet visible={visible} onClose={onClose} title="Browse cards" page testID="study-browse-sheet">
       {/* Search */}
       <View style={styles.searchField}>
         <SearchIcon size={16} color={c.textHint} />
@@ -334,7 +334,7 @@ export function StudyBrowseSheet({
             sections.map((section) => {
               const folded = collapsed.has(section.key);
               return (
-                <View key={section.key} testID={`study-browse-section-${section.key}`}>
+                <View key={section.key} style={styles.sectionCard} testID={`study-browse-section-${section.key}`}>
                   <Pressable
                     onPress={() => toggleSection(section.key)}
                     style={({ pressed }) => [styles.sectionHead, pressed && styles.pressed]}
@@ -363,6 +363,7 @@ export function StudyBrowseSheet({
                             testID={`study-browse-row-${row.id}`}
                           >
                             {row.hex ? <View style={[styles.rowFlagDot, { backgroundColor: row.hex }]} /> : null}
+                            {section.key === "decks" ? <FolderIcon size={20} color={c.text2} strokeWidth={1.8} /> : null}
                             {/* A deck path is carried by the SUBLINE, not by an
                                 indent. A Study folder has no row of its own — it
                                 exists only as a prefix on a deck's name — so
@@ -374,7 +375,9 @@ export function StudyBrowseSheet({
                               <Text style={styles.rowLabel} numberOfLines={1}>{row.label}</Text>
                               {row.parent ? <Text style={styles.rowParent} numberOfLines={1}>{row.parent}</Text> : null}
                             </View>
-                            <Text style={styles.rowCount}>{row.count}</Text>
+                            <View style={styles.rowCountPill}>
+                              <Text style={styles.rowCount}>{row.count}</Text>
+                            </View>
                           </Pressable>
                         ))
                     : null}
@@ -534,10 +537,10 @@ const createStyles = (c: ThemeColors) =>
       // minHeight, not height: the sheet's animated body cap could squeeze a
       // fixed 40 and clip the field along with it. flexShrink:0 for the same
       // reason.
-      minHeight: 40,
+      minHeight: control.lg,
       flexShrink: 0,
-      backgroundColor: c.surface,
-      borderRadius: radius.md,
+      backgroundColor: c.surface2,
+      borderRadius: radius.lg,
       borderWidth: 1,
       borderColor: c.line,
       marginBottom: space(2.5),
@@ -561,46 +564,64 @@ const createStyles = (c: ThemeColors) =>
     pageRow: {
       flexDirection: "row",
       alignSelf: "center",
-      backgroundColor: c.surface,
+      backgroundColor: c.surface2,
       borderRadius: radius.pill,
       padding: 3,
       marginBottom: space(2),
       flexShrink: 0,
     },
     pageTab: { minWidth: 84, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, paddingHorizontal: space(3) },
-    pageTabActive: { backgroundColor: c.bg },
+    pageTabActive: { backgroundColor: c.raised },
     pageTabLabel: { ...type.small, color: c.text3 },
     pageTabLabelActive: { color: c.text, fontWeight: "600" },
     pageTabLabelOff: { color: c.textHint },
 
     // Section headers and rows (page 1).
+    sectionCard: {
+      backgroundColor: c.surface2,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.line,
+      overflow: "hidden",
+      marginBottom: space(3),
+    },
     sectionHead: {
       flexDirection: "row",
       alignItems: "center",
       gap: space(1.5),
-      paddingVertical: space(2),
+      minHeight: control.lg,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2.5),
       borderBottomWidth: 1,
       borderBottomColor: c.line,
     },
     chevronOpen: { transform: [{ rotate: "90deg" }] },
-    sectionTitle: { ...type.small, color: c.text, fontWeight: "600", marginRight: "auto" },
-    sectionCount: { ...type.micro, color: c.textHint },
-    sectionEmpty: { ...type.micro, color: c.textHint, paddingVertical: space(2.5), paddingLeft: space(4) },
+    sectionTitle: { ...type.bodyStrong, color: c.text, fontWeight: "600", marginRight: "auto" },
+    sectionCount: { ...type.small, color: c.text3, fontVariant: ["tabular-nums"] },
+    sectionEmpty: { ...type.small, color: c.textHint, paddingVertical: space(3), paddingHorizontal: space(4) },
     sectionRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: space(1.5),
-      // Slightly tighter than a card row (owner 2026-07-24: "make the deck cards
-      // slight smaller") — these are a table of contents, not content.
-      minHeight: control.md,
-      paddingLeft: space(2),
+      gap: space(2),
+      minHeight: control.lg + space(1),
+      paddingVertical: space(2),
+      paddingHorizontal: space(3),
       borderBottomWidth: 1,
       borderBottomColor: c.line2,
     },
     rowText: { flexShrink: 1, marginRight: "auto", gap: 1 },
-    rowLabel: { ...type.small, color: c.text },
+    rowLabel: { ...type.body, color: c.text },
     rowParent: { ...type.micro, color: c.textHint },
-    rowCount: { ...type.micro, color: c.text3 },
+    rowCountPill: {
+      minWidth: 32,
+      height: 26,
+      paddingHorizontal: space(2),
+      borderRadius: radius.pill,
+      backgroundColor: c.raised,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rowCount: { ...type.micro, color: c.text2, fontWeight: "700", fontVariant: ["tabular-nums"] },
 
     flagRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space(1.5), marginBottom: space(2) },
     flagDotWrap: { padding: 3, borderRadius: 999, borderWidth: 2, borderColor: "transparent", alignSelf: "center" },
@@ -615,26 +636,29 @@ const createStyles = (c: ThemeColors) =>
     count: { ...type.micro, color: c.text3, flexShrink: 1 },
     clearLabel: { ...type.micro, color: c.accent, fontWeight: "600" },
 
-    // flexShrink:1 (NOT a fixed height) so SlideUpSheet's drag-to-expand grows
-    // the list — the app-wide contract for a sheet's scroll body.
-    list: { flexShrink: 1, borderTopWidth: 1, borderTopColor: c.line },
-    listInner: { paddingBottom: space(2) },
+    // This is a full page now, so the list owns all remaining height.
+    list: { flex: 1 },
+    listInner: { paddingTop: space(1), paddingBottom: space(4) },
     empty: { ...type.small, color: c.text3, textAlign: "center", paddingVertical: space(8) },
 
     cardRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: space(2),
-      paddingVertical: space(2.5),
-      paddingHorizontal: space(1),
-      borderBottomWidth: 1,
-      borderBottomColor: c.line,
+      minHeight: control.lg + space(3),
+      paddingVertical: space(3),
+      paddingHorizontal: space(3),
+      backgroundColor: c.surface2,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.line,
+      marginBottom: space(2),
     },
     pressed: { backgroundColor: c.surface },
     cardHeadText: { gap: 2, flexShrink: 1, marginRight: "auto" },
     frontLine: { flexDirection: "row", alignItems: "center", gap: space(1.5) },
     rowFlagDot: { width: 9, height: 9, borderRadius: 5 },
-    front: { ...type.small, color: c.text, flexShrink: 1 },
+    front: { ...type.bodyStrong, color: c.text, flexShrink: 1 },
     deckName: { ...type.micro, color: c.text3 },
 
     cardDeck: { ...type.micro, color: c.text3, marginTop: space(2) },

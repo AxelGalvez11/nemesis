@@ -37,6 +37,10 @@ export function SlideUpSheet({
   title,
   children,
   fullScreen = false,
+  page = false,
+  hideClose = false,
+  compactTitle = false,
+  headerDivider = false,
   testID,
 }: {
   visible: boolean;
@@ -47,6 +51,13 @@ export function SlideUpSheet({
    *  sheets that are really a whole form (owner 2026-07-23: "the add new card
    *  should be full screen"). The grabber still drags it back down. */
   fullScreen?: boolean;
+  /** A real edge-to-edge page surface: no grabber, rounded sheet edge, outside
+   *  tap target, or collapsed resting state. Used by Study flows whose work
+   *  needs the whole phone rather than a taller bottom sheet. */
+  page?: boolean;
+  hideClose?: boolean;
+  compactTitle?: boolean;
+  headerDivider?: boolean;
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -62,7 +73,7 @@ export function SlideUpSheet({
   const { bodyMaxHeight, headerPan } = useSheetExpand({
     visible,
     onClose,
-    startExpanded: fullScreen,
+    startExpanded: fullScreen || page,
     bottomInset: keyboardHeight,
   });
 
@@ -88,6 +99,42 @@ export function SlideUpSheet({
   // Slides off the bottom of the window, not just its own height, so it starts
   // fully offscreen regardless of how tall the content ends up being.
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
+
+  if (page) {
+    return (
+      <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
+        <Animated.View
+          style={[
+            styles.pageWrap,
+            {
+              bottom: keyboardHeight,
+              transform: [{ translateY }],
+            },
+          ]}
+        >
+          <View style={styles.page}>
+            <View style={[styles.pageHeader, { paddingTop: insets.top + space(2) }]}>
+              <Text style={styles.pageTitle}>{title}</Text>
+              {!hideClose ? (
+                <Pressable onPress={onClose} hitSlop={8} style={styles.pageCloseBtn} accessibilityLabel={`Close ${title}`}>
+                  <CloseIcon size={18} color={c.text} />
+                </Pressable>
+              ) : null}
+            </View>
+            <View
+              style={[
+                styles.pageBody,
+                { paddingBottom: keyboardHeight > 0 ? 0 : insets.bottom + space(3) },
+              ]}
+            >
+              {children}
+            </View>
+          </View>
+        </Animated.View>
+      </View>
+    );
+  }
+
   return (
     <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
@@ -100,11 +147,13 @@ export function SlideUpSheet({
               <View style={styles.grabberRow}>
                 <View style={styles.grabber} />
               </View>
-              <View style={styles.header}>
-                <Text style={styles.title}>{title}</Text>
-                <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel={`Close ${title}`}>
-                  <CloseIcon size={14} color={c.text2} />
-                </Pressable>
+              <View style={[styles.header, headerDivider && styles.headerDivider]}>
+                <Text style={compactTitle ? styles.titleCompact : styles.title}>{title}</Text>
+                {!hideClose ? (
+                  <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel={`Close ${title}`}>
+                    <CloseIcon size={14} color={c.text2} />
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           </GestureDetector>
@@ -141,6 +190,27 @@ const createStyles = (c: ThemeColors) =>
     layer: { zIndex: 60 },
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
     sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: c.line, borderBottomWidth: 0 },
+    pageWrap: { position: "absolute", left: 0, right: 0, top: 0 },
+    page: { flex: 1, backgroundColor: c.bg },
+    pageHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: space(4),
+      paddingBottom: space(3),
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
+    },
+    pageTitle: { ...type.title, color: c.text },
+    pageCloseBtn: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      backgroundColor: c.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pageBody: { flex: 1, paddingHorizontal: space(4), paddingTop: space(3) },
     grabberRow: { alignItems: "center", paddingTop: space(2) },
     grabber: { width: 36, height: 4, borderRadius: 2, backgroundColor: c.line2 },
     header: {
@@ -151,7 +221,9 @@ const createStyles = (c: ThemeColors) =>
       paddingTop: space(1.5),
       paddingBottom: space(2),
     },
+    headerDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.line },
     title: { ...type.title, color: c.text },
+    titleCompact: { ...type.small, fontWeight: "600", color: c.textHint },
     closeBtn: { width: control.sm, height: control.sm, borderRadius: control.sm / 2, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
     body: { paddingHorizontal: space(4) },
   });

@@ -13,7 +13,11 @@
 // The same rules the web builders carry (apps/web/lib/workspace/chat-skills.ts).
 // Two apps, two prompt strings, one source — the shape of bug this session has
 // already fixed twice (library `position`, the calendar tool description).
-import { CONSISTENT_NAMING_RULE, SAVED_WRITING_TELLS } from "@nemesis/shared";
+import {
+  CONSISTENT_NAMING_RULE,
+  SAVED_WRITING_TELLS,
+  studyCreationKindFromPreferencePrompt,
+} from "@nemesis/shared";
 
 export type AcademicSkill =
   | "general"
@@ -61,9 +65,9 @@ const SKILL_INSTRUCTIONS: Record<AcademicSkill, string> = {
   quiz:
     "Academic skill: Quiz. Test retrieval without leaking the answer. Ask exactly one question at a time and wait for the learner's response. Do not include the answer, explanation, giveaway heading, or a second question before they answer. If they ask for a hint, give the smallest useful scaffold, not the answer. After they respond, clearly mark correct/incorrect, explain why, adapt difficulty, then ask the next single question. Do not save a test unless they explicitly ask to create one.",
   "test-builder":
-    "Academic skill: Test Builder. You MUST call add_practice_test so the result appears in Study; never leave the test only in chat. Unless the learner specifies otherwise, create 10 one-best-answer questions spanning recall, application, and transfer. Each item must test one objective, have one unambiguously best answer, plausible misconception-based distractors, no answer clues, and a concise rationale explaining why the correct option wins. Save it under the Generated tests Study group unless the learner names a course or folder.",
+    "Academic skill: Test Builder. You MUST call add_practice_test so the result appears in Study; never leave the test only in chat. Follow the question count, difficulty, and question types the learner just selected. Each item must test one objective, have one unambiguously best answer, plausible misconception-based distractors when applicable, no answer clues, and a concise rationale explaining why the correct option wins. Save it under the Generated tests Study group unless the learner names a course or folder.",
   "flashcard-builder":
-    "Academic skill: Flashcard Builder. You MUST call list_study_decks and then add_flashcards so every card appears in Study; never leave cards only in chat. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing matching deck when possible. " +
+    "Academic skill: Flashcard Builder. You MUST call list_study_decks and then add_flashcards so every card appears in Study; never leave cards only in chat. Follow the learner's selected format exactly and set each card_type to basic, cloze, or reversed. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing matching deck when possible. " +
     CONSISTENT_NAMING_RULE,
   "notes-builder":
     `Academic skill: Notes Builder. You MUST call create_library_note so the note appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_NOTES_FOLDER}". Write skimmable markdown with a clear title, learning objectives, concise sections, worked examples where useful, misconceptions, and a short recap.\n\n${SAVED_WRITING_TELLS}`,
@@ -93,8 +97,17 @@ const MATERIAL_OFFER = [
   "Then ask which they want built from it: study notes, flashcards, a practice test, or all three. Ask once, in one short sentence, and do not create any of them until they answer.",
 ].join(" ");
 
-export function academicSkillInstruction(text: string, hasMaterial = false): string {
-  const skill = detectAcademicSkill(text);
+export function academicSkillInstruction(
+  text: string,
+  hasMaterial = false,
+  priorAssistantText = "",
+): string {
+  const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
+  const skill = continuationKind === "test"
+    ? "test-builder"
+    : continuationKind === "flashcards"
+      ? "flashcard-builder"
+      : detectAcademicSkill(text);
   // Only when they have NOT asked for something specific. "Make flashcards from
   // this" already names the artifact, and asking again would be a stall.
   if (hasMaterial && skill === "general") return `${SKILL_INSTRUCTIONS.general}\n\n${MATERIAL_OFFER}`;

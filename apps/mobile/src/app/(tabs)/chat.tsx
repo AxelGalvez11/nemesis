@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { studyCreationPreferencePrompt } from "@nemesis/shared";
 import {
   Alert,
   Animated,
@@ -97,11 +98,6 @@ import { control, radius, space, type } from "@/theme/tokens";
 
 const THINKING_ID = "__thinking__";
 
-/** How often the buffered reasoning is promoted to the screen. Fast enough to
- *  read as live, slow enough that the transcript isn't re-rendered hundreds of
- *  times in the seconds before the answer starts. */
-const REASONING_FLUSH_MS = 220;
-
 /** How far from the end the transcript has to be before the jump-to-bottom arrow
  *  appears, in points. Roughly one line of prose plus the fade: close enough that
  *  a small overscroll or the tail of a momentum fling never flashes the button,
@@ -164,13 +160,9 @@ export default function ChatScreen() {
   // "msg" row shape as a finished answer (owner: streaming §6), so it gets the
   // exact same FadeIn + markdown treatment with no separate render path.
   const [streamingText, setStreamingText] = useState("");
-  // The live thinking preview: the model's own working-out, which streams for
-  // seconds before the first written word. It arrives FAR too fast to render as
-  // it comes (hundreds of chunks in a few seconds), so the raw text lands in a
-  // ref — free, no re-render — and a timer below promotes a readable line of it
-  // into state a few times a second. See lib/reasoning-preview.ts.
+  // Raw reasoning stays in a ref while the quiet phase/timer preview renders.
+  // Once the answer lands it is attached to ThoughtTrail for deliberate review.
   const reasoningRef = useRef("");
-  const [reasoningLine, setReasoningLine] = useState("");
   // When the current turn was sent, and how long it spent working before its
   // first word landed — the "Thought for Xs" note above a streaming answer.
   const turnStartedAtRef = useRef(0);
@@ -319,7 +311,6 @@ export default function ChatScreen() {
     // into reasoningRef until its epoch check fails, and none of that belongs to
     // whatever thread is on screen now.
     reasoningRef.current = "";
-    setReasoningLine("");
     setThoughtMs(0);
     setMessages([]);
     // Uncertain until the load below resolves one way or the other. Starting
@@ -493,6 +484,29 @@ export default function ChatScreen() {
   const send = useCallback((override?: { text?: string; doc?: { content: string; title: string }; keepPhoto?: boolean }) => {
     const text = (override?.text ?? input).trim();
     if (!text || !uid || !threadId || sendingRef.current) return;
+    const doc = override?.doc ?? attachedDoc;
+    const preferenceQuestion = doc ? null : studyCreationPreferencePrompt(text);
+    if (preferenceQuestion) {
+      const userMsg: ChatMsg = {
+        at: new Date().toISOString(),
+        content: text,
+        role: "user",
+      };
+      const next: ChatMsg[] = [
+        ...messages,
+        userMsg,
+        {
+          at: new Date(Date.now() + 1).toISOString(),
+          content: preferenceQuestion,
+          role: "assistant",
+        },
+      ];
+      setMessages(next);
+      setLastError(null);
+      setInput("");
+      void saveThreadMessages(uid, threadId, next);
+      return;
+    }
     sendingRef.current = true;
     const epoch = epochRef.current;
     const history = messages;
@@ -501,7 +515,6 @@ export default function ChatScreen() {
     // same turn), deep research is a persistent toggle the student switches
     // off themselves (NOT cleared here). Both ride into sendChat's options,
     // never into the persisted/displayed ChatMsg.content itself.
-    const doc = override?.doc ?? attachedDoc;
     // No Deep research control any more (owner removed the row 2026-07-27). The
     // router still picks the research lane by itself when a question needs current
     // sources; nothing here forces it.
@@ -532,7 +545,6 @@ export default function ChatScreen() {
     // Clear the last turn's thinking preview, or the new question would open on
     // the previous answer's leftover reasoning.
     reasoningRef.current = "";
-    setReasoningLine("");
     setThoughtMs(0);
     turnStartedAtRef.current = Date.now();
     // The question is away and the model is working — the send's own receipt.
@@ -651,24 +663,6 @@ export default function ChatScreen() {
     // costs nothing here.
     [uid, send, input],
   );
-
-  // Promote the buffered reasoning onto the screen a few times a second while a
-  // turn is in flight. Rendering every chunk would mean hundreds of re-renders
-  // of the whole transcript in the seconds before the answer starts; this holds
-  // the update rate at something a reader can follow anyway. Setting the same
-  // string is a no-op for React, so a pause in the stream costs nothing.
-  useEffect(() => {
-    if (!sending) return;
-    const timer = setInterval(() => {
-      // The FULL accumulated reasoning, promoted on the same throttle. The block
-      // shows the whole stream now rather than a one-line glimpse, and it is the
-      // throttle — not the shortening — that was ever protecting the render
-      // budget: the raw stream fires ~80x/sec, this fires 4-5x.
-      const full = reasoningRef.current;
-      setReasoningLine((prev) => (prev === full ? prev : full));
-    }, REASONING_FLUSH_MS);
-    return () => clearInterval(timer);
-  }, [sending]);
 
   // "…" menu actions.
   const handleDelete = useCallback(() => {
@@ -1030,11 +1024,6 @@ export default function ChatScreen() {
                   <View style={styles.assistantRow} testID="chat-thinking">
                     <ThinkingLine
                       phase={phase}
-                      reasoning={reasoningLine}
-                      // The first word of the real answer is what closes the
-                      // accordion, so the thinking gets out of the way exactly
-                      // when there is something better to read.
-                      answerStarted={streamingText.length > 0}
                       testID="chat-thinking-line"
                     />
                   </View>
@@ -1067,9 +1056,15 @@ export default function ChatScreen() {
                     {item.msg!.thinking ? (
                       <ThoughtTrail thinking={item.msg!.thinking} testID="chat-thought-trail" />
                     ) : null}
-                    {item.msg!.content.trim() ? <MessageBody content={item.msg!.content} styles={markdownStyles} /> : null}
+                    {item.msg!.content.trim() ? (
+                      <MessageBody
+                        content={item.msg!.content}
+                        sources={item.msg!.sources}
+                        styles={markdownStyles}
+                      />
+                    ) : null}
                     {item.msg!.sources?.length ? (
-                      <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
+                      <SourcesPill sources={item.msg!.sources} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
                     {item.msg!.outputs?.length ? <DeliverableCardStack outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>

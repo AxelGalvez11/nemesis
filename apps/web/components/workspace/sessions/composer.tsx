@@ -45,11 +45,13 @@ import {
   type ChatEffort,
 } from "@/lib/workspace/chat-effort";
 import { publishMicLevel, resetMicLevel, subscribeMicLevel } from "@/lib/workspace/mic-level";
+import { emptyWaveform, pushWaveBar } from "@/lib/workspace/waveform-history";
 import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 import { LibraryPickerDialog } from "./library-picker-dialog";
+import { RecordingWaveform } from "./recording-waveform";
 
 export type ComposerMode = "chat" | "record";
 
@@ -553,7 +555,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       feedback; this says the microphone is hearing you at all,
                       which is the thing a silent box cannot tell you. */}
                   {activeMode === "chat" && listening && (
-                    <AudioWaveform active className="h-5 w-16 shrink-0" label="Dictation audio waveform" />
+                    <AudioWaveform active className="h-7 w-24 shrink-0" label="Dictation audio waveform" />
                   )}
                   {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
                   {activeMode === "record" ? (
@@ -646,65 +648,30 @@ const DICTATION_METER_MS = 90;
  *  dictation dies at the first silence. */
 const TERMINAL_SPEECH_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture", "language-not-supported"]);
 
-const WAVEFORM_BAR_COUNT = 24;
-/** Floor so a silent room still shows a thin line of bars rather than an empty
- *  gap, which reads as "broken" rather than "quiet". */
-const WAVEFORM_MIN_SCALE = 0.12;
-
-// The bars show the audio ACTUALLY coming in, replacing the canned pulse this
-// drew before. Levels arrive from the recorder's own AudioContext via
-// lib/workspace/mic-level.ts.
-//
-// It scrolls: each new reading enters at the right and every older one shifts a
-// bar left, so the strip reads as the last couple of seconds rather than bars
-// pulsing in unison. Heights are written straight to the DOM — no React state,
-// so a live meter costs the chat around it exactly zero re-renders (same reason
-// the mobile waveform drives Animated values imperatively).
+// Dense, retina-backed rolling audio: 96 mirrored samples instead of the old 24
+// chunky DOM bars. It uses the same canvas renderer as the recorder, so the
+// composer and dictation meter have one high-definition waveform language.
 function AudioWaveform({ active, className, label }: { active: boolean; className?: string; label?: string }) {
-  const barsRef = useRef<(HTMLSpanElement | null)[]>([]);
-  const historyRef = useRef<number[]>(Array.from({ length: WAVEFORM_BAR_COUNT }, () => WAVEFORM_MIN_SCALE));
+  const historyRef = useRef(emptyWaveform());
 
   useEffect(() => {
-    const paint = () => {
-      for (let index = 0; index < barsRef.current.length; index += 1) {
-        const bar = barsRef.current[index];
-        if (bar) bar.style.transform = `scaleY(${historyRef.current[index]})`;
-      }
-    };
     if (!active) {
-      historyRef.current = historyRef.current.map(() => WAVEFORM_MIN_SCALE);
-      paint();
+      historyRef.current = emptyWaveform();
       return;
     }
     return subscribeMicLevel((level) => {
-      historyRef.current = [
-        ...historyRef.current.slice(1),
-        WAVEFORM_MIN_SCALE + level * (1 - WAVEFORM_MIN_SCALE),
-      ];
-      paint();
+      historyRef.current = pushWaveBar(historyRef.current, { captured: true, level });
     });
   }, [active]);
 
   return (
     <div
       aria-label={label ?? (active ? "Recording audio waveform" : "Microphone idle")}
-      // The record-mode strip fills the input's slot; dictation's sits in the
-      // controls row beside the mic button, so the size is the caller's call.
-      className={cn("flex items-center gap-[3px]", className ?? "h-(--composer-input-min-height) w-full")}
+      className={className ?? "h-(--composer-input-min-height) w-full"}
       data-testid="composer-waveform"
       role="img"
     >
-      {Array.from({ length: WAVEFORM_BAR_COUNT }, (_, index) => (
-        <span
-          className={cn(
-            "h-full max-w-1 flex-1 rounded-full bg-(--theme-primary) transition-transform duration-100 ease-out",
-            active ? "opacity-100" : "opacity-40",
-          )}
-          key={index}
-          ref={(node) => { barsRef.current[index] = node; }}
-          style={{ transform: `scaleY(${WAVEFORM_MIN_SCALE})` }}
-        />
-      ))}
+      <RecordingWaveform active={active} bars={historyRef} className="block size-full" />
     </div>
   );
 }

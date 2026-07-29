@@ -354,13 +354,22 @@ export async function sendChat(
 ): Promise<ChatReply> {
   const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning } = options;
   onPhase?.({ kind: "routing" });
+  const priorAssistantText =
+    [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
   // Route first (what KIND of question is this), then let the student's own
   // dial override how hard to think about it — never the other way round. Both
   // steps make one exception, for a request to SAVE something into the student's
   // own workspace: that write happens through a tool call, and both the research
   // toggle and the High dial would otherwise switch the tools off and turn the
   // save into an essay. See routeForTurn and applyChatEffort.
-  const decision = applyChatEffort(routeForTurn(userText, forceResearch ? forcedResearchDecision() : null), effort);
+  const decision = applyChatEffort(
+    routeForTurn(
+      userText,
+      forceResearch ? forcedResearchDecision() : null,
+      priorAssistantText,
+    ),
+    effort,
+  );
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];

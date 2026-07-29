@@ -80,7 +80,9 @@ export function str(value: unknown): string {
 /** Front/back pairs a model wrote, cleaned and bounded. A card missing either side
  *  is dropped rather than saved half-blank: a card with no back cannot be
  *  reviewed, so it would sit in the deck failing forever. */
-export function usableCards(raw: unknown): { front: string; back: string }[] {
+export type AgentCardType = "basic" | "cloze" | "reversed";
+
+export function usableCards(raw: unknown): { front: string; back: string; cardType: AgentCardType }[] {
   const list = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   return list
@@ -89,6 +91,13 @@ export function usableCards(raw: unknown): { front: string; back: string }[] {
       const row = entry as Record<string, unknown>;
       const front = str(row.front).trim().slice(0, 800);
       const back = str(row.back).trim().slice(0, 4_000);
+      const requestedType = str(row.card_type).trim().toLowerCase();
+      const cardType: AgentCardType =
+        requestedType === "cloze" || requestedType === "reversed"
+          ? requestedType
+          : /\{\{c\d+::/.test(front)
+            ? "cloze"
+            : "basic";
       const key = front.toLocaleLowerCase().replace(/\s+/g, " ");
       const answerKey = back.toLocaleLowerCase().replace(/\s+/g, " ");
       const vague = /^(?:what is|define|explain)\s+(?:it|this|that|the concept)\??$/i.test(front);
@@ -105,7 +114,7 @@ export function usableCards(raw: unknown): { front: string; back: string }[] {
         seen.has(key)
       ) return [];
       seen.add(key);
-      return [{ back, front }];
+      return [{ back, cardType, front }];
     })
     .slice(0, MAX_CARDS_PER_CALL);
 }
@@ -387,8 +396,16 @@ export const AGENT_TOOLS = [
         properties: {
           cards: {
             items: {
-              properties: { back: { type: "string" }, front: { type: "string" } },
-              required: ["front", "back"],
+              properties: {
+                back: { type: "string" },
+                card_type: {
+                  description: "The learner's selected format for this card.",
+                  enum: ["basic", "cloze", "reversed"],
+                  type: "string",
+                },
+                front: { type: "string" },
+              },
+              required: ["front", "back", "card_type"],
               type: "object",
             },
             type: "array",

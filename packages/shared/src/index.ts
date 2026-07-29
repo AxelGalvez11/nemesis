@@ -180,4 +180,5 @@ export * from "./credits.ts";
 // Cross-client Anki text / Quizlet paste import. Kept pure so web and iOS
 // accept the exact same rows and quality bounds.
 export * from "./study-import.ts";
+export * from "./study-creation-preferences.ts";
 export * from "./workspace-agent-tools.ts";

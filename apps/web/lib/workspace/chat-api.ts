@@ -4,7 +4,7 @@
 // history budget, same error copy. Web swaps SecureStore for localStorage and
 // adds AbortSignal support (mobile has no cancel affordance).
 
-import { WRITING_VOICE } from "@nemesis/shared";
+import { studyCreationKindFromPreferencePrompt, WRITING_VOICE } from "@nemesis/shared";
 
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
@@ -170,9 +170,17 @@ export function buildWireMessages(
   const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
   const kept = trimHistory(history);
   const continuityAnchor = buildContinuityAnchor(history, kept);
+  const priorAssistantText =
+    [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
+  const skillText = continuationKind === "test"
+    ? `${userText}\ncreate a practice test`
+    : continuationKind === "flashcards"
+      ? `${userText}\ncreate flashcards`
+      : userText;
   // Skills go last among the system messages so their procedure is the most
   // recent instruction the model reads before the conversation itself.
-  const skills = buildSkillMessage(selectChatSkills(userText));
+  const skills = buildSkillMessage(selectChatSkills(skillText));
   return [
     {
       content: [
