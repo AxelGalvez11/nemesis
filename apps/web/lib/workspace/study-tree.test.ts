@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  artifactDropAccepts,
   buildArtifactTree,
   folderDropAccepts,
   movedFolderPath,
@@ -136,29 +135,11 @@ test("decksInGroup collects every deck beneath a folder, nested included", () =>
   assert.deepEqual(decksInGroup(decks, "Nope").map((deck) => deck.id), []);
 });
 
-// ── Tests/Mindmaps folder dragging ─────────────────────────────────────────
-// A folder here is a flat label, so a folder-on-folder drop is a MERGE, and a
-// merge cannot be undone by dragging back (nothing records which items came
-// from where). These two rules are what stop that from firing by accident.
-
-test("an item can be dropped on any folder, including Ungrouped", () => {
-  assert.equal(artifactDropAccepts({ id: "a", kind: "item" }, "Exam 7"), true);
-  assert.equal(artifactDropAccepts({ id: "a", kind: "item" }, UNGROUPED_LABEL), true);
-});
-
-test("a folder cannot be dropped on itself", () => {
-  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, "Exam 7"), false);
-  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, "Exam 8"), true);
-});
-
-// Ungrouped is the ABSENCE of a folder, not one. Dragging it would file every
-// loose artifact in a single gesture — nobody means that by picking up a heading.
-test("Ungrouped can never be dragged, but is still a valid target", () => {
-  assert.equal(artifactDropAccepts({ kind: "group", name: UNGROUPED_LABEL }, "Exam 7"), false);
-  assert.equal(artifactDropAccepts({ kind: "group", name: UNGROUPED_LABEL }, UNGROUPED_LABEL), false);
-  // Dropping a real folder ONTO Ungrouped is how a folder gets emptied out.
-  assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, UNGROUPED_LABEL), true);
-});
+// The flat-folder rules that used to live here (artifactDropAccepts: a folder
+// cannot be dropped on itself; "Ungrouped" can be a target but never a payload)
+// went with the flat list on 2026-07-29. Folders nest now, so folderDropAccepts
+// below is the whole rule, and "Ungrouped" is not a row at all — loose items sit
+// at the top level.
 
 // ── Tests/Mindmaps folders, nested like Cards (owner 2026-07-28) ─────────────
 

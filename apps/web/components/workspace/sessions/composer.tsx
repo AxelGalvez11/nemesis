@@ -276,7 +276,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
       stop: () => void;
       onresult: ((event: { results: ArrayLike<SpeechResult> }) => void) | null;
       onend: (() => void) | null;
-      onerror: (() => void) | null;
+      onerror: ((event: { error?: string }) => void) | null;
     };
     const speechWindow = window as typeof window & {
       SpeechRecognition?: SpeechRecognitionConstructor;
@@ -333,9 +333,20 @@ export function Composer({ busy, centered = false, placement = "floating", place
         stopDictation();
       }
     };
-    // One error ends it. Restarting through a failure (permission refused, no
-    // microphone) would spin forever with nothing on screen explaining why.
-    recognition.onerror = () => stopDictation();
+    // 🔴 NOT every error is fatal, and treating them alike breaks the feature on
+    // the first pause. Chrome fires `no-speech` whenever the student stops
+    // talking for a couple of seconds — which is what thinking mid-sentence
+    // looks like — and follows it with onend. Ending the session there would
+    // kill dictation the moment anyone paused, silently, since stopDictation
+    // clears wantsDictationRef and so suppresses onend's restart too.
+    //
+    // Only the errors that will still be true on the next attempt stop it.
+    // Restarting through a refused permission or an absent microphone would spin
+    // forever with nothing on screen explaining why; everything else falls
+    // through to onend, which restarts.
+    recognition.onerror = (event) => {
+      if (TERMINAL_SPEECH_ERRORS.has(event?.error ?? "")) stopDictation();
+    };
 
     setListening(true);
     recognition.start();
@@ -628,6 +639,12 @@ function WaveformMark() {
 /** How often dictation's own meter samples, matching the recorder's tick so the
  *  waveform moves at one speed whichever microphone is feeding it. */
 const DICTATION_METER_MS = 90;
+
+/** Speech-recognition errors that will still be true next time, so retrying is
+ *  pointless. Everything ELSE — above all `no-speech`, which Chrome fires every
+ *  time the speaker pauses to think — is transient and must restart, or
+ *  dictation dies at the first silence. */
+const TERMINAL_SPEECH_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture", "language-not-supported"]);
 
 const WAVEFORM_BAR_COUNT = 24;
 /** Floor so a silent room still shows a thin line of bars rather than an empty

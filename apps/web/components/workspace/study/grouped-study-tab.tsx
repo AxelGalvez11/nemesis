@@ -408,17 +408,31 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         </div>
       ) : (
         /* shrink-0: same flex trap as the Cards tab — see cards-tab.tsx.
-           Without it a long list is clipped instead of scrolling its parent. */
-        <section className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+           Without it a long list is clipped instead of scrolling its parent.
+
+           THE WHOLE CARD is the top-level drop target (data-…-group=""), which
+           is what replaces the old "Ungrouped" heading — the only place you
+           could previously drop something to take it OUT of a folder.
+           Deliberately on the section, not on the rows container, and copied
+           from the Cards tab: dropping "at the top level" means aiming at the
+           blank space under the last row, and that space belongs to the section.
+           Anchoring it to the inner list would leave the gesture working only
+           where a row already happens to be — i.e. not when every item is filed,
+           which is exactly when someone needs it. */
+        <section
+          className={cn(
+            "mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)] transition-[outline-color,background-color]",
+            drag && dropGroup === "" && "bg-[color-mix(in_srgb,var(--theme-primary)_6%,var(--background))] outline outline-2 outline-[var(--theme-primary)]",
+          )}
+          data-artifact-drop-group=""
+        >
           <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
             <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
-          {/* The top level is a drop target in its own right (data-…-group=""):
-              dragging a folder or an item onto the empty space here is how
-              something leaves a folder without having to go into another one.
-              That replaces the old "Ungrouped" heading, which existed only
-              because a flat list had nowhere else to put loose items. */}
-          <div className="py-1.5" data-artifact-drop-group="">
+          {/* min-h so there is somewhere to aim once every row is inside a
+              folder — without it the card shrink-wraps its rows and the "drop
+              below the list" gesture has no pixels to land on. */}
+          <div className="min-h-16 py-1.5">
             {tree.map((node) => renderNode(node, 0))}
           </div>
         </section>

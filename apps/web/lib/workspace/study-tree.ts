@@ -119,27 +119,15 @@ export function planGroupDissolve<T extends { name: string }>(decks: readonly T[
 /** Display name for artifacts with no folder. Stored as "" on the row itself. */
 export const UNGROUPED_LABEL = "Ungrouped";
 
-/** What a drag on the Tests/Mindmaps list is carrying. */
+/** What a drag on the Tests/Mindmaps list is carrying. For a group, `name` is
+ *  its full "::" path, not its displayed leaf. */
 export type ArtifactDrag = { kind: "item"; id: string } | { kind: "group"; name: string };
 
-/**
- * Whether `payload` may be dropped on the folder displayed as `target`.
- *
- * Pure, and separate from the component, because the two rules that make folder
- * dragging safe are the ones worth pinning down:
- *
- *   1. A folder cannot be dropped on ITSELF. Flat labels mean a folder drop is a
- *      merge, so self-drop is a no-op that would still pop a confirmation.
- *   2. "Ungrouped" cannot be DRAGGED. It is the absence of a folder, not one —
- *      dragging it would file every loose artifact in a single gesture, which
- *      nobody intends by picking up a heading. It stays a valid TARGET, because
- *      dropping a folder onto it is how a folder is emptied out.
- */
-export function artifactDropAccepts(payload: ArtifactDrag, target: string): boolean {
-  if (payload.kind === "item") return true;
-  if (payload.name === UNGROUPED_LABEL) return false;
-  return payload.name !== target;
-}
+// `artifactDropAccepts` used to live here: the drop rule for FLAT folders, where
+// a folder-on-folder drop could only merge and "Ungrouped" was a row you could
+// drop onto but never pick up. Deleted 2026-07-29 with the flat list — folders
+// nest now, so folderDropAccepts below is the whole rule, and loose items sit at
+// the top level rather than under a heading standing in for "no folder".
 
 // ── Tests/Mindmaps: the same folder tree the Cards tab has ───────────────────
 // Owner 2026-07-28: "tests page should be identical to cards page in terms of
