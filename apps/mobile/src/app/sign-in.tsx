@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { Link, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CloseIcon } from "@/components/icons";
 import { AppleMark, GoogleMark } from "@/components/SocialMarks";
 import { useAuth } from "@/auth/AuthProvider";
 import { AGE_TOS_ACK } from "@/lib/legal";
@@ -161,20 +160,13 @@ export default function SignIn() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       testID="signin-screen"
     >
-      {/* Close, top right. Sign-in is reachable from inside the app — a guest
-          tapping something that needs an account — so there has to be a way out
-          that isn't signing in. */}
-      <Pressable
-        onPress={() => router.back()}
-        style={[styles.close, { top: insets.top + space(2) }]}
-        hitSlop={10}
-        accessibilityRole="button"
-        accessibilityLabel="Close"
-        testID="signin-close"
-      >
-        <CloseIcon size={18} color="#ffffff" />
-      </Pressable>
-
+      {/* No close button (owner 2026-07-29: "remove the x in the sign in").
+          The way out is the iOS edge-swipe, which works because this screen is
+          PUSHED from the six guest empty states (Study, Library, Chat, Calendar,
+          Graph, Notebooks) onto a stack whose gestures are on by default.
+          The button it replaced was already dead on the other two routes in:
+          (tabs)/_layout.tsx redirects here and settings.tsx replaces, and after
+          either of those router.back() has nothing to go back to. */}
       <View style={[styles.headlineWrap, emailExpanded && styles.headlineWrapWithForm]}>
         {/* The cursor is a View, not a text character: a block glyph varies by
             font and would sit at a different height from the letters beside it.
@@ -402,17 +394,6 @@ function ProviderButton({
 const createStyles = (_c: ThemeColors) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: "#000000" },
-    close: {
-      position: "absolute",
-      right: space(4),
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.14)",
-      zIndex: 2,
-    },
 
     // The headline sits on the vertical centre line, where the eye lands first
     // on a page with nothing else in the middle of it.
