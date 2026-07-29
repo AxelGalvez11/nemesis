@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs } from "@/lib/workspace/chat-api";
+import { WRITING_VOICE } from "@nemesis/shared";
 import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
@@ -124,4 +125,13 @@ test("the user's message is still the last thing sent", () => {
   const last = wire.at(-1);
   assert.equal(last?.role, "user");
   assert.equal(last?.content, "calculate the dose");
+});
+
+// Voice rides on every turn, tools or not. The phone asserts the same thing
+// against its own prompt (apps/mobile/src/lib/chat-thread.test.ts) — one rule,
+// two surfaces, so neither can quietly lose it.
+test("both prompt variants carry the shared writing voice", () => {
+  assert.ok(chatSystemPrompt(true).includes(WRITING_VOICE));
+  assert.ok(chatSystemPrompt(false).includes(WRITING_VOICE));
+  assert.ok(CHAT_SYSTEM_PROMPT.includes("delve"), "a partial paste must fail too");
 });

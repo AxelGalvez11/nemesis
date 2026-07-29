@@ -236,7 +236,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Student, plus:</li>
             <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Web-grounded answers</strong> with source citations</span></li>
             <li style={billingItem}><span style={billingTick}>✓</span>Higher desktop-agent automation limits</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>80 hours of lecture recording each month</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>70 hours of lecture recording each month</li>
           </ul>
           {planCta("pro", "Upgrade to Agent Pro")}
           {currentRank === 0 ? (

@@ -141,9 +141,13 @@ export const PLAN_LIMITS_CHECKED = "2026-07-28";
  *   watch limit            plus 10    max 200
  *   watchlist limit        max 250
  *
- * Pro's recording allowance was deliberately NOT touched: 300,000s is 83 hours, it
- * already covers the advertised 80, and cutting a live allowance to make a table
- * tidier is never worth it.
+ * Pro's recording allowance WAS cut on 2026-07-29, owner's call: 300,000s (83 hours)
+ * -> 252,000s (70 hours). The earlier note here said cutting a live allowance was
+ * never worth it; that held while the number was only untidy. It stopped holding
+ * once the margin work showed Pro breaks even at 103.7 audio-hours — 83 was inside
+ * that wall but left only $3.27 a month, the thinnest plan in the ladder while
+ * being the one pushed hardest. Safe to cut today because `subscriptions` carries
+ * no paying customer: 25 owner enterprise rows and one canceled free.
  */
 export const LADDER_RESHAPED = "2026-07-28";
 
@@ -211,8 +215,8 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     premiumAnswerLane: true,
     priceUsd: 19.99,
     searchMonthly: 150,
-    // 300,000s. Reads as "80 hours" in marketing with three hours of slack.
-    transcriptionMinutes: 5_000,
+    // 252,000s = 70 hours exactly, and marketed as 70 — no slack to misread.
+    transcriptionMinutes: 4_200,
   },
 };
 

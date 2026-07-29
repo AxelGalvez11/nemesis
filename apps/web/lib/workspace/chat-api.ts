@@ -4,6 +4,8 @@
 // history budget, same error copy. Web swaps SecureStore for localStorage and
 // adds AbortSignal support (mobile has no cancel affordance).
 
+import { WRITING_VOICE } from "@nemesis/shared";
+
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
@@ -106,7 +108,13 @@ const CHAT_PROMPT_TAIL =
  * capability the request does not carry.
  */
 export function chatSystemPrompt(toolsEnabled: boolean): string {
-  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL}`;
+  // Voice rides LAST, after the verification procedure. Two reasons: it is the
+  // instruction most easily crowded out by everything above it, and the tail's
+  // "label every claim, score your confidence" rules produce exactly the stiff,
+  // hedge-heavy prose the voice rules exist to prevent — so they need to be read
+  // in that order. Shared with the phone (packages/shared) so the two surfaces
+  // cannot drift.
+  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
 }
 
 /** The tools-on prompt, kept as a named export for callers and tests that want

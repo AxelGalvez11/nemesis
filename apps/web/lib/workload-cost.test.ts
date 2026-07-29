@@ -146,10 +146,13 @@ test("Plus is half of Pro and Max is 5x Pro on the meters that scale", () => {
 test("recording follows the owner's three numbers, not the 5x rule", () => {
   assert.equal(PLANS.plus.transcriptionMinutes, 20 * 60);
   assert.equal(PLANS.max.transcriptionMinutes, 200 * 60);
-  // Pro keeps its existing 300,000-second row: 83 hours, covering the advertised 80
-  // with slack. Cutting a live allowance to make the table tidier is never worth it.
-  assert.equal(PLANS.pro.transcriptionMinutes, 5_000);
-  assert.ok(PLANS.pro.transcriptionMinutes >= 80 * 60, "the 80-hour promise must stay funded");
+  // Pro cut to 70 hours on 2026-07-29 (owner). 83 hours sat inside the 103.7-hour
+  // break-even wall but left only $3.27 a month on the plan pushed hardest.
+  assert.equal(PLANS.pro.transcriptionMinutes, 70 * 60);
+  // The advertised number and the stored number are now the SAME number. The old
+  // row was 83 hours sold as 80, and that three-hour gap is exactly the kind of
+  // slack that lets marketing copy and the meter drift apart unnoticed.
+  assert.equal(PLANS.pro.transcriptionMinutes, 4_200);
   assert.ok(PLANS.max.transcriptionMinutes < PLANS.pro.transcriptionMinutes * 5, "and 5x recording was rejected");
 });
 
@@ -166,7 +169,13 @@ test("free never out-searches a paid plan, and the paid caps stayed affordable",
 // A Max subscriber used to be stopped by their own plan while doing exactly what Pro
 // subscribers are promised. That was the user-visible face of the inverted ladder.
 test("every plan can record what it advertises, and Max can carry a Pro workload", () => {
-  assert.equal(modelStudentMonth(HEAVY_STUDENT).withinTranscriptionCap, true);
+  // Pro advertises 70 hours as of 2026-07-29, so 70 is what must fit. HEAVY_STUDENT
+  // is still 80 — the owner's persona did not change when the plan did — which is
+  // why this asserts the advertised figure rather than reusing the persona.
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 70 }).withinTranscriptionCap, true);
+  // And the persona itself now overflows Pro. Stated here as well as at the
+  // allowance test so a future edit cannot quietly restore an 80-hour promise.
+  assert.equal(modelStudentMonth(HEAVY_STUDENT).withinTranscriptionCap, false);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" }).withinTranscriptionCap, true);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, plan: "plus" }).withinTranscriptionCap, true);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 200, plan: "max" }).withinTranscriptionCap, true);
@@ -465,9 +474,17 @@ test("the token cap is several times larger than the workload that has to fit in
 test("the recording allowance, not the token cap, is what a heavy Pro month runs into", () => {
   const report = modelStudentMonth(HEAVY_STUDENT);
   assert.equal(report.recordedMinutes, 4_800);
-  assert.equal(report.transcriptionCap, 5_000);
-  assert.ok(report.withinTranscriptionCap, "4,800 against a 5,000 allowance — 96% of it");
-  assert.ok(report.recordedMinutes / report.transcriptionCap > 0.9);
+  assert.equal(report.transcriptionCap, 4_200);
+  // THE CUT TO 70 HOURS HAS A USER-VISIBLE CONSEQUENCE, AND IT BELONGS IN A TEST
+  // RATHER THAN A COMMENT: the owner's own heavy student — 80 hours a month, the
+  // persona every margin figure in this file is computed against — no longer fits
+  // inside Pro. They run out at 70 and the last ten hours are refused.
+  //
+  // That is a deliberate trade, not an oversight: 80 hours on Pro was worth $3.27
+  // a month. But it means "80 hours" must not reappear in any plan copy, and the
+  // upgrade path for a genuinely heavy recorder is now Max.
+  assert.ok(!report.withinTranscriptionCap, "4,800 recorded against a 4,200 allowance");
+  assert.ok(report.recordedMinutes > report.transcriptionCap);
 });
 
 // ── Honesty about what is not built and not priced ───────────────────────────

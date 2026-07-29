@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
-  { label: "Lecture recording each month", values: ["20 hours", "80 hours", "200 hours"] },
+  { label: "Lecture recording each month", values: ["20 hours", "70 hours", "200 hours"] },
   { label: "Calendar built from your syllabus", values: ["yes", "yes", "yes"] },
   { label: "Web-grounded answers with real citations", values: ["no", "yes", "yes"] },
   { label: "Daily limits", values: ["Standard", "Higher", "Highest"] },
@@ -101,7 +101,7 @@ export default function PricingPage() {
                   Nemesis. Every line here must name something a student can reach. */}
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
-                <li><IconCheck size={13} />80 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />70 hours of lecture recording a month</li>
                 <li><IconCheck size={13} />Web-grounded answers with real citations</li>
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>

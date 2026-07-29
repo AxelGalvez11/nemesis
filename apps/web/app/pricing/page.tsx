@@ -60,7 +60,7 @@ const TIERS: Tier[] = [
     featured: true,
     features: [
       "Everything in Student, with room for a full course load",
-      "80 hours of lecture recording each month",
+      "70 hours of lecture recording each month",
       "Web-grounded answers with real citations",
       "The highest answer quality, on every question",
     ],
