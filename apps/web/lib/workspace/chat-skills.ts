@@ -11,6 +11,8 @@
 // per turn and bounded by SKILL_CHAR_BUDGET, so a matched turn adds roughly a
 // thousand tokens — never an open-ended prompt.
 
+import { CONSISTENT_NAMING_RULE, SAVED_WRITING_TELLS } from "@nemesis/shared";
+
 import { EXAM_ITEM_RULES } from "./item-writing";
 
 export interface ChatSkill {
@@ -63,6 +65,7 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "Keep answers short enough to recall in one breath. A back longer than a sentence or two is a sign the card should be split.",
     // Was "state ... what each one covers", which contradicted the line above
     // and produced exactly the prose dump it forbids.
+    CONSISTENT_NAMING_RULE,
     "Say how many cards you saved and which deck they went to. One line. The card the app shows opens the deck; the cards themselves do not belong in chat.",
   ].join("\n"),
   match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|(?:flashcard|study) deck)\b/i,
@@ -117,6 +120,7 @@ const SLIDES_BUILDER: ChatSkill = {
     "SKILL — saving a requested slide deliverable:",
     "The student asked you to CREATE slides. You MUST call create_slide_deck. Do not print the slides as headings and bullets in chat.",
     "Give every slide one purpose, concise teaching bullets, and useful speaker notes. The tool result becomes a fullscreen preview link and the deck is also filed in Library.",
+    SAVED_WRITING_TELLS,
   ].join("\n"),
   match:
     /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:slides?|slide deck|presentation)\b/i,
@@ -129,6 +133,7 @@ const NOTES_BUILDER: ChatSkill = {
     "SKILL — saving a requested note deliverable:",
     "The student asked you to CREATE notes. You MUST call create_library_note. Do not leave the requested note only inside chat.",
     "Write skimmable markdown with a clear title, concise sections, worked examples where useful, misconceptions, and a recap. The tool result becomes the clickable Library link.",
+    SAVED_WRITING_TELLS,
   ].join("\n"),
   match:
     /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:study notes?|class notes?|lecture notes?|study guide|revision guide)\b/i,

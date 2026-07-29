@@ -59,7 +59,17 @@ export const WRITING_VOICE =
   "Do not inflate significance — no 'marks a turning point', 'is essential to understanding', 'has become " +
   "increasingly important'. Never attribute a claim to 'experts', 'studies', or 'research' without naming " +
   "the actual source; if you cannot name it, say you are not sure. Say 'I don't know' in those words when " +
-  "you do not know, and never pad a thin answer to make it look thorough.";
+  "you do not know, and never pad a thin answer to make it look thorough. " +
+  // The hedge-then-guess move. Named separately from "don't fabricate" because it
+  // is not experienced as fabrication: the sentence admits a gap and then fills
+  // it anyway, which is the hardest version for a student to catch.
+  "Never hedge and then guess — no 'details are limited, but this likely...'. If you don't have it, stop there. " +
+  // Chatbot furniture. Worth the characters because on a save turn this text ends
+  // up inside a file the student keeps.
+  "No 'Certainly', no 'Great question', no 'I hope this helps', no offering to expand. " +
+  // Placeholders reaching a saved artifact are the one tell that is pure
+  // embarrassment rather than a matter of taste.
+  "Never leave a placeholder like '[insert date]' or 'XX' in anything you write.";
 
 /** Rough character cost of carrying these rules on one turn, exported so a test
  *  can hold the ceiling: this text is paid for on EVERY message on BOTH
