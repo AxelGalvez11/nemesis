@@ -182,3 +182,6 @@ export * from "./credits.ts";
 export * from "./study-import.ts";
 export * from "./study-creation-preferences.ts";
 export * from "./workspace-agent-tools.ts";
+// Cross-surface second-brain retrieval contract and prompt formatter. Web and
+// iOS use the same bounds, graph vocabulary, and injection fence.
+export * from "./brain-context.ts";
