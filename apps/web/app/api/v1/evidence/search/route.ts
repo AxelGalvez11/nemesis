@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { searchEvidence } from "@/lib/evidence/search";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -9,17 +10,14 @@ export const runtime = "nodejs";
 // ~50 Unpaywall lookups) per uncached query, so it must NOT be a public open door. Two guards:
 //   1. Require a logged-in user (verifyBearer) — closes anonymous abuse. Nothing in the app auto-calls
 //      this route, so adding auth breaks no existing flow.
-//   2. A per-instance sliding-window rate cap that bounds the outbound fan-out under a token burst.
-// Repeats are still absorbed by the CDN cache header on the response. (Per-USER limiting is a refinement.)
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 30; // searches per window per instance — a backstop, not the primary gate (auth is)
-let hits: number[] = [];
-function rateLimited(now: number): boolean {
-  hits = hits.filter((t) => now - t < RATE_WINDOW_MS);
-  if (hits.length >= RATE_MAX) return true;
-  hits.push(now);
-  return false;
-}
+//   2. A PER-USER rate cap, counted in Postgres, bounding the outbound fan-out under a token burst.
+// Repeats are still absorbed by the CDN cache header on the response.
+//
+// That cap used to be a module-scope array, i.e. per INSTANCE. Serverless answers load by starting
+// more instances, so the real ceiling was `limit x instances` — it rose with traffic instead of
+// holding, which is the one behaviour a limiter must not have. See lib/rate-limit.ts.
+const RATE_WINDOW_SECONDS = 10;
+const RATE_MAX = 30; // searches per 10s per USER — a backstop, not the primary gate (auth is)
 
 function parseLimit(value: string | null): number {
   const parsed = value ? Number.parseInt(value, 10) : Number.NaN;
@@ -53,7 +51,8 @@ export async function GET(req: NextRequest) {
   }
 
   // Bound the outbound fan-out under abuse (CDN caching handles legitimate repeats).
-  if (rateLimited(Date.now())) {
+  const rate = await consumeRateLimit("evidence_search", user.id, RATE_MAX, RATE_WINDOW_SECONDS);
+  if (!rate.allowed) {
     return NextResponse.json(
       { error: "rate_limited", message: "Too many evidence searches right now — try again shortly." },
       { status: 429 },

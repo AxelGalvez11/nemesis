@@ -1,5 +1,7 @@
 "use client";
 
+import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
+
 import { deviceKey } from "@/lib/workspace/chat-api";
 
 // Sized for a real lecture deck, which is the main thing students attach.
@@ -213,7 +215,21 @@ export function fitAttachmentBlocks(
     const notice = clipped.length < full.length
       ? `\n\n[Truncated: ${clipped.length.toLocaleString()} of ${full.length.toLocaleString()} characters shown. The rest of this file was NOT sent to you. If the student's question depends on the part you cannot see, say so plainly rather than answering as though you read the whole file.]`
       : "";
-    blocks.push(`### Attachment: ${source.label}\nType: ${source.type || "unknown"}\n\n${clipped}${notice}`);
+    // The rule rides the FIRST block only, not every one. It has to sit inside an
+    // attachment block rather than above them all, because chat-routing.ts splits
+    // the wire text at the first "### Attachment: " marker to recover what the
+    // student actually typed — anything placed before that marker would be
+    // classified as part of their message and routed on.
+    const rule = blocks.length === 0 ? `${UNTRUSTED_CONTENT_RULE}\n\n` : "";
+    // Header OUTSIDE the fence (chat-skills.ts matches on it, and the student's
+    // own filename belongs to the app), content INSIDE it. The label is repeated
+    // on the fence line by wrapUntrusted so the model can tell two fenced blocks
+    // apart without leaving the fence.
+    blocks.push(
+      `### Attachment: ${source.label}\nType: ${source.type || "unknown"}\n\n` +
+      rule +
+      wrapUntrusted(source.label, `${clipped}${notice}`),
+    );
     used += clipped.length;
   }
 

@@ -5,7 +5,7 @@
 // The phone talks to the SAME metered valve as the desktop (nemesis-llm), so
 // there is no client-side token accounting here — just context-window hygiene:
 // send a bounded slice of the transcript, never the whole history.
-import { WRITING_VOICE } from "@nemesis/shared";
+import { UNTRUSTED_CONTENT_RULE, WRITING_VOICE, wrapUntrusted } from "@nemesis/shared";
 
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
@@ -266,7 +266,13 @@ export const ATTACHMENT_CONTEXT_MAX_CHARS = 8000;
 export function buildAttachmentContext(doc: AttachedLibraryDoc, maxChars = ATTACHMENT_CONTEXT_MAX_CHARS): string {
   const clipped = doc.content.trim().slice(0, maxChars);
   if (!clipped) return "";
-  return `### Attachment: ${doc.title}\nType: Library note\n\n${clipped}`;
+  // Fenced, same as web (chat-attachments.ts). A Library note is not safe by
+  // virtue of being the student's own: most of them arrive by importing a
+  // lecture, and the phone shares one cloud Library with the browser — so a
+  // poisoned deck imported anywhere reaches the model everywhere.
+  return `### Attachment: ${doc.title}\nType: Library note\n\n` +
+    `${UNTRUSTED_CONTENT_RULE}\n\n` +
+    wrapUntrusted(doc.title, clipped);
 }
 
 /** The compact line appended to what's actually shown/persisted for a turn that
@@ -298,7 +304,13 @@ export function formatWebSearchContext(results: ChatSource[]): string {
   if (usable.length === 0) return "";
   return [
     "Live web search results (use these for current facts and cite the relevant URL in the answer):",
-    ...usable.map((result, index) => `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`),
+    UNTRUSTED_CONTENT_RULE,
+    ...usable.map((result, index) =>
+      wrapUntrusted(
+        `result ${index + 1}`,
+        `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`,
+      ),
+    ),
   ].join("\n\n");
 }
 

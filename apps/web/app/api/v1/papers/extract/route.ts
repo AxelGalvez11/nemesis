@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { extractPdfText } from "@/lib/pdf/extract";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
 
 // This route accepts an uploaded PDF and runs a CPU-bound parse, so it is not a public open door. Two
-// guards mirror api/v1/evidence/search: (1) require a signed-in user; (2) a per-instance sliding-window
-// rate cap. Plus a hard byte cap so a huge upload can't exhaust memory before we even parse.
+// guards mirror api/v1/evidence/search: (1) require a signed-in user; (2) a rate cap PER USER, counted
+// in Postgres. Plus a hard byte cap so a huge upload can't exhaust memory before we even parse.
+//
+// The cap used to be a module-scope array — per INSTANCE, which on serverless means the ceiling rose
+// with the number of instances the platform started, i.e. it loosened under exactly the load it
+// existed for. See lib/rate-limit.ts.
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB — matches the composer upload sheet's client-side cap
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 20; // extractions per window per instance — a backstop, not the primary gate (auth is)
-let hits: number[] = [];
-function rateLimited(now: number): boolean {
-  hits = hits.filter((t) => now - t < RATE_WINDOW_MS);
-  if (hits.length >= RATE_MAX) return true;
-  hits.push(now);
-  return false;
-}
+const RATE_WINDOW_SECONDS = 60;
+const RATE_MAX = 20; // extractions per minute per USER — a backstop, not the primary gate (auth is)
 
 /** Read the PDF bytes from either a multipart form (field "file") or a raw application/pdf body. */
 async function readPdfBytes(req: NextRequest): Promise<{ bytes: Uint8Array } | { error: string; status: number }> {
@@ -48,7 +46,8 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "unauthorized", message: "Sign in to upload a paper." }, { status: 401 });
   }
-  if (rateLimited(Date.now())) {
+  const rate = await consumeRateLimit("papers_extract", user.id, RATE_MAX, RATE_WINDOW_SECONDS);
+  if (!rate.allowed) {
     return NextResponse.json({ error: "rate_limited", message: "Too many uploads right now — try again shortly." }, { status: 429 });
   }
 
