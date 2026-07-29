@@ -1,9 +1,14 @@
 "use client";
 
-// Event dialogs — verbatim from desktop calendar/index.tsx §A.13. Dispatch:
-// agent-authored events (source === 'agent') open the read-only EventViewDialog;
-// everything else opens EventFormDialog in 'add' or 'edit' mode. The two-step
-// destructive actions use an explicit confirmation prompt before deletion.
+// Event dialogs — verbatim from desktop calendar/index.tsx §A.13. Every event
+// opens EventFormDialog, in 'add' or 'edit' mode. The two-step destructive
+// actions use an explicit confirmation prompt before deletion.
+//
+// There used to be a second, read-only EventViewDialog here for agent-authored
+// rows (source === 'agent'), whose only copy was "Ask it to change this" — an
+// instruction the student could not follow, because no update or delete tool
+// has ever existed in AGENT_TOOLS. It was deleted 2026-07-28 along with the
+// dispatch that reached it: an event the student asked for is theirs to correct.
 
 import { useState } from "react";
 
@@ -23,48 +28,6 @@ const newEventId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-
-// ── Read-only view (agent-authored events) ──────────────────────────────────
-
-interface EventViewDialogProps {
-  event: CalendarEvent;
-  onClose: () => void;
-}
-
-export function EventViewDialog({ event, onClose }: EventViewDialogProps) {
-  const when = `${formatEventDate(event.date)}${event.time ? ` · ${formatEventTime(event.time)}` : ""}`;
-
-  return (
-    <Dialog onOpenChange={(open) => !open && onClose()} open>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{event.title}</DialogTitle>
-          <DialogDescription>Added by Nemesis. Ask it to change this, or add your own event alongside it.</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2 text-xs">
-          <ViewRow label="When" value={when} />
-          <ViewRow label="Type" value={KIND_META[event.kind].label} />
-          {event.course && <ViewRow label="Course" value={event.course} />}
-          {event.note && <ViewRow label="Notes" value={event.note} />}
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose} variant="outline">
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ViewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span className="w-14 shrink-0 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 text-foreground">{value}</span>
-    </div>
-  );
-}
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────
 

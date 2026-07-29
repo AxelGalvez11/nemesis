@@ -29,7 +29,7 @@ import {
 
 import { Agenda } from "./agenda";
 import { CalendarHeader } from "./calendar-header";
-import { EventFormDialog, EventViewDialog } from "./event-dialogs";
+import { EventFormDialog } from "./event-dialogs";
 import { AGENDA_WINDOW_DAYS, CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
 import { SyllabusDialog } from "./syllabus-dialog";
@@ -39,7 +39,6 @@ import { YearGrid } from "./year-grid";
 type DialogState =
   | { mode: "add"; date: string }
   | { mode: "edit"; event: CalendarEvent }
-  | { mode: "view"; event: CalendarEvent }
   | null;
 
 function loadStoredView(): CalendarViewMode {
@@ -119,8 +118,14 @@ export function CalendarWorkspace() {
     setDialog({ mode: "add", date: dateKeyStr });
   }
 
+  // EVERY event opens the editable form, whoever wrote it. This used to send a
+  // source:'agent' row to a read-only dialog whose advice was "ask it to change
+  // this" — advice nobody could act on, since AGENT_TOOLS has no update or
+  // delete tool. Chat stopped writing that marker on 2026-07-28, but rows
+  // written before then still carry it, so the fix has to be on the read side
+  // too or those stay frozen forever.
   function openEvent(event: CalendarEvent) {
-    setDialog(event.source === "agent" ? { mode: "view", event } : { mode: "edit", event });
+    setDialog({ mode: "edit", event });
   }
 
   function openMonth(year: number, month: number) {
@@ -144,8 +149,7 @@ export function CalendarWorkspace() {
 
   // Syllabus import goes through the SAME per-event save path as a hand-made
   // event, so imported rows get identical validation and land as source:
-  // 'manual' — editable and deletable, unlike agent-written events which the
-  // UI routes to a read-only dialog with no way out (see event-dialogs.tsx).
+  // 'manual'. Every event is editable and deletable now, whatever wrote it.
   // Written one at a time so a single bad row cannot lose the whole import.
   async function handleImport(imported: CalendarEvent[]) {
     // Refuse here rather than trusting the disabled button in SyllabusDialog.
@@ -210,7 +214,6 @@ export function CalendarWorkspace() {
         <SyllabusDialog onClose={() => setSyllabusOpen(false)} onImport={handleImport} uid={preview ? null : userId} />
       )}
 
-      {dialog?.mode === "view" && <EventViewDialog event={dialog.event} onClose={() => setDialog(null)} />}
       {dialog?.mode === "add" && (
         <EventFormDialog initialDate={dialog.date} mode="add" onClose={() => setDialog(null)} onSave={handleSave} />
       )}

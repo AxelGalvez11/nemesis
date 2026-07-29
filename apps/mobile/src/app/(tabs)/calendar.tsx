@@ -78,13 +78,12 @@ const VIEW_OPTIONS: { id: CalendarView; label: string }[] = [
 
 type MonthKey = { year: number; month: number };
 
-// The event create/edit/view sheet's state — same three-way dispatch as the web
-// calendar's DialogState (calendar-workspace.tsx): agent-authored events only
-// ever reach "view" (read-only); everything else is "add" or "edit".
+// The event create/edit sheet's state — same dispatch as the web calendar's
+// DialogState (calendar-workspace.tsx). A third "view" (read-only) arm for
+// agent-authored events was removed 2026-07-28; see openEvent.
 type EventDialogState =
   | { mode: "add"; date: string }
   | { mode: "edit"; event: AgendaEvent }
-  | { mode: "view"; event: AgendaEvent }
   | null;
 
 const EVENT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -311,15 +310,18 @@ export default function CalendarScreen() {
   // "today"; a day cell passes its own date).
   const openAdd = useCallback((date: string) => setDialog({ mode: "add", date }), []);
 
-  // Agent-authored events are read-only — same source:'agent' dispatch the web
-  // calendar's openEvent uses.
+  // EVERY event opens the editable sheet, whoever wrote it — same as web. This
+  // used to send a source:'agent' row to a read-only sheet that told the student
+  // to "ask it to change this", which no tool in AGENT_TOOLS can do. Chat stopped
+  // writing that marker on 2026-07-28; rows written before then still carry it,
+  // so the read side had to change too or those stay frozen forever.
   const openEvent = useCallback((event: AgendaEvent) => {
-    setDialog(event.source === "agent" ? { mode: "view", event } : { mode: "edit", event });
+    setDialog({ mode: "edit", event });
   }, []);
 
   const handleSaveEvent = useCallback(
     async (input: CalendarEventInput) => {
-      if (!userId || !dialog || dialog.mode === "view") return;
+      if (!userId || !dialog) return;
       const saved =
         dialog.mode === "edit"
           ? await updateCalendarEvent(userId, dialog.event.id, input)
@@ -1081,14 +1083,6 @@ function CalendarBottomDock({
   );
 }
 
-function ViewRow({ label, value, styles }: { label: string; value: string; styles: Styles }) {
-  return (
-    <View style={styles.viewRow}>
-      <Text style={styles.viewRowLabel}>{label}</Text>
-      <Text style={styles.viewRowValue}>{value}</Text>
-    </View>
-  );
-}
 
 /** The add/edit/view sheet — a SlideUpSheet always mounted so its open/close
  *  animation always plays (same convention as StudySheet/StudyModeMenu). Local
@@ -1135,7 +1129,7 @@ function EventSheet({
   }, [dialog]);
 
   const editingExisting = dialog?.mode === "edit";
-  const sheetTitle = !dialog ? "" : dialog.mode === "view" ? dialog.event.title || "Event" : editingExisting ? "Edit event" : "Add event";
+  const sheetTitle = !dialog ? "" : editingExisting ? "Edit event" : "Add event";
   const canSave = title.trim().length > 0 && EVENT_DATE_RE.test(date) && !saving;
 
   function submit() {
@@ -1180,109 +1174,90 @@ function EventSheet({
 
   return (
     <SlideUpSheet visible={dialog !== null} onClose={onClose} title={sheetTitle} testID="calendar-event-sheet">
-      {dialog && dialog.mode === "view" ? (
-        <View testID="calendar-event-view">
-          <ViewRow
-            label="When"
-            value={`${labelForDay(dialog.event.date, todayKey)}${dialog.event.time ? ` · ${dialog.event.time}` : ""}`}
-            styles={styles}
+      <View testID="calendar-event-form">
+        {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+        <TextInput
+          style={styles.sheetInput}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Title"
+          placeholderTextColor={c.textHint}
+          testID="calendar-event-title"
+        />
+        <View style={styles.sheetRow}>
+          <TextInput
+            style={[styles.sheetInput, styles.sheetInputFlex]}
+            value={date}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={c.textHint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            testID="calendar-event-date"
           />
-          <ViewRow
-            label="Type"
-            value={KIND_PICKER_OPTIONS.find((o) => o.value === dialog.event.kind)?.label ?? "Other"}
-            styles={styles}
+          <TextInput
+            style={[styles.sheetInput, styles.sheetInputTime]}
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:MM"
+            placeholderTextColor={c.textHint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            testID="calendar-event-time"
           />
-          {dialog.event.course ? <ViewRow label="Course" value={dialog.event.course} styles={styles} /> : null}
-          {dialog.event.note ? <ViewRow label="Notes" value={dialog.event.note} styles={styles} /> : null}
-          <Text style={styles.sheetHint}>Added by Nemesis. Ask it to change this, or add your own event alongside it.</Text>
-          <MissionButton label="Close" onPress={onClose} testID="calendar-event-view-close" />
         </View>
-      ) : (
-        <View testID="calendar-event-form">
-          {error ? <Text style={styles.sheetError}>{error}</Text> : null}
-          <TextInput
-            style={styles.sheetInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Title"
-            placeholderTextColor={c.textHint}
-            testID="calendar-event-title"
-          />
-          <View style={styles.sheetRow}>
-            <TextInput
-              style={[styles.sheetInput, styles.sheetInputFlex]}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={c.textHint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="calendar-event-date"
-            />
-            <TextInput
-              style={[styles.sheetInput, styles.sheetInputTime]}
-              value={time}
-              onChangeText={setTime}
-              placeholder="HH:MM"
-              placeholderTextColor={c.textHint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="calendar-event-time"
-            />
-          </View>
-          <View style={styles.kindPickerRow}>
-            {KIND_PICKER_OPTIONS.map((opt) => {
-              const active = kind === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  onPress={() => setKind(opt.value)}
-                  style={[styles.kindChip, active && styles.kindChipActive]}
-                  testID={`calendar-event-kind-${opt.value}`}
-                >
-                  <View style={[styles.kindChipDot, { backgroundColor: kindDotColor(opt.value, c) }]} />
-                  <Text style={[styles.kindChipText, active && styles.kindChipTextActive]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <TextInput
-            style={styles.sheetInput}
-            value={course}
-            onChangeText={setCourse}
-            placeholder="Course (optional)"
-            placeholderTextColor={c.textHint}
-            testID="calendar-event-course"
-          />
-          <TextInput
-            style={[styles.sheetInput, styles.sheetNoteInput]}
-            value={note}
-            onChangeText={setNote}
-            placeholder="Notes (optional)"
-            placeholderTextColor={c.textHint}
-            multiline
-            testID="calendar-event-note"
-          />
-          <View style={styles.sheetActions}>
-            {editingExisting ? (
-              <Pressable onPress={confirmDelete} disabled={saving} style={styles.deleteBtn} testID="calendar-event-delete">
-                <TrashIcon size={15} color={c.danger} />
-                <Text style={styles.deleteBtnText}>Delete</Text>
+        <View style={styles.kindPickerRow}>
+          {KIND_PICKER_OPTIONS.map((opt) => {
+            const active = kind === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => setKind(opt.value)}
+                style={[styles.kindChip, active && styles.kindChipActive]}
+                testID={`calendar-event-kind-${opt.value}`}
+              >
+                <View style={[styles.kindChipDot, { backgroundColor: kindDotColor(opt.value, c) }]} />
+                <Text style={[styles.kindChipText, active && styles.kindChipTextActive]}>{opt.label}</Text>
               </Pressable>
-            ) : (
-              <View />
-            )}
-            <MissionButton
-              label={saving ? "Saving…" : "Save"}
-              variant="primary"
-              busy={saving}
-              disabled={!canSave}
-              onPress={submit}
-              testID="calendar-event-save"
-            />
-          </View>
+            );
+          })}
         </View>
-      )}
+        <TextInput
+          style={styles.sheetInput}
+          value={course}
+          onChangeText={setCourse}
+          placeholder="Course (optional)"
+          placeholderTextColor={c.textHint}
+          testID="calendar-event-course"
+        />
+        <TextInput
+          style={[styles.sheetInput, styles.sheetNoteInput]}
+          value={note}
+          onChangeText={setNote}
+          placeholder="Notes (optional)"
+          placeholderTextColor={c.textHint}
+          multiline
+          testID="calendar-event-note"
+        />
+        <View style={styles.sheetActions}>
+          {editingExisting ? (
+            <Pressable onPress={confirmDelete} disabled={saving} style={styles.deleteBtn} testID="calendar-event-delete">
+              <TrashIcon size={15} color={c.danger} />
+              <Text style={styles.deleteBtnText}>Delete</Text>
+            </Pressable>
+          ) : (
+            <View />
+          )}
+          <MissionButton
+            label={saving ? "Saving…" : "Save"}
+            variant="primary"
+            busy={saving}
+            disabled={!canSave}
+            onPress={submit}
+            testID="calendar-event-save"
+          />
+        </View>
+      </View>
     </SlideUpSheet>
   );
 }
@@ -1536,19 +1511,6 @@ const createStyles = (c: ThemeColors) =>
     menuItemText: { ...type.body, color: c.text2, fontWeight: "600" },
     menuItemTextActive: { color: c.accent },
     menuItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.accent },
-
-    // Event view sheet (agent-authored, read-only).
-    viewRow: { flexDirection: "row", alignItems: "baseline", gap: space(2), paddingVertical: space(1.5) },
-    viewRowLabel: {
-      ...type.micro,
-      color: c.text2,
-      textTransform: "uppercase",
-      letterSpacing: 0.8,
-      width: 64,
-      flexShrink: 0,
-    },
-    viewRowValue: { ...type.body, color: c.text, flex: 1 },
-    sheetHint: { ...type.small, color: c.text3, marginTop: space(3), marginBottom: space(4) },
 
     // Event add/edit form sheet.
     sheetError: {
