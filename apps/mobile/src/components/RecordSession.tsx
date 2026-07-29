@@ -4,6 +4,9 @@ import { useKeepAwake } from "expo-keep-awake";
 import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
 import { MissionButton } from "@/components/mission-ui";
+import { LiveWaveform } from "./LiveWaveform";
+import { useMicHealth } from "@/hooks/useMicHealth";
+import { micHealthMessage } from "@/lib/mic-health";
 import { buildRecordingDraft, formatRecordingClock, hasTranscript } from "@/lib/recording";
 import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import type { ThemeColors } from "@/theme/palette";
@@ -88,7 +91,26 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
   const scrollRef = useRef<ScrollView>(null);
 
   const recording = live.status === "recording";
-  const reviewable = live.status === "stopped" && hasTranscript(live.transcript);
+  // 🔴 AUDIO, NOT TEXT, IS WHAT DECIDES THERE IS SOMETHING TO SAVE.
+  //
+  // This used to be `hasTranscript(live.transcript)` alone, and that quietly
+  // destroyed recordings. The audio file comes from the engine's `audioend`
+  // event and exists whether or not on-device recognition managed to make words
+  // out of it — so a lecturer across a room, the case this app is FOR, produced
+  // a real recording, no live text, and therefore no Save button at all. The
+  // student's only remaining option was Discard.
+  //
+  // It is the same root cause as the xAI silence gate (owner 2026-07-29: "most
+  // audio will be naturally quiet because lecturer is farther away than the
+  // microphone") and it fails in the same direction: quiet audio treated as no
+  // audio. Saving with an empty transcript is safe and is the whole point — the
+  // enhance pass uploads from `audioUris`, which never consults the draft text,
+  // and the server transcript replaces it minutes later. The chat card shows
+  // "Polishing transcript…" in the meantime.
+  const hasAudio = live.audioUris.length > 0;
+  const reviewable = live.status === "stopped" && (hasTranscript(live.transcript) || hasAudio);
+  // What the microphone is actually picking up, for the line under the waveform.
+  const micHealth = useMicHealth(recording);
 
   // Keep the newest words in view as they stream in.
   useEffect(() => {
@@ -140,18 +162,24 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
     }
   }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, onDone]);
 
+  // The non-recording states. The recording one is gone from here on purpose:
+  // while the mic is live this slot is driven by micHealthMessage instead, which
+  // says the same "Listening" when all is well and something useful when it is
+  // not. Keeping a static string here too would have meant two sources fighting
+  // over one line.
   const statusLine =
     live.status === "denied"
       ? "Microphone or speech recognition is turned off for Nemesis. Enable both in iOS Settings, then try again."
       : live.status === "error"
         ? "Live transcription isn't available right now. Try again in a moment."
-        : live.status === "recording"
-          ? "Listening — speech is transcribed on this phone and never uploaded as audio."
-          : live.status === "stopped" && !reviewable
-            ? "Nothing was transcribed. Start again and speak close to the phone."
-            : reviewable
-              ? "Saving keeps this transcript, then sharpens it and writes your notes — both land in the chat moments later."
-              : "Transcribes on this phone as you record, then saves the transcript into this chat.";
+        : live.status === "stopped" && !reviewable
+          // Reachable only with NO audio file either — with audio this is now a
+          // saveable recording, so the old "nothing was transcribed" verdict
+          // would have been both wrong and the reason the audio got thrown away.
+          ? "Nothing was recorded. Start again and check the microphone isn't covered."
+          : reviewable
+            ? "Saving keeps this recording, then sharpens it and writes your notes — both land in the chat moments later."
+            : "Records the room and saves it into this chat, with the transcript written afterwards.";
 
   return (
     <View style={styles.session}>
@@ -164,13 +192,32 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         <Text style={[styles.clock, recording && { color: c.accent }]}>{formatRecordingClock(live.elapsedSeconds)}</Text>
       </View>
 
-      {/* The one box. Its Transcript/Notes switch is gone with the live notes
-          it existed for — see this file's header. */}
-      <ScrollView
+      {/* WHILE RECORDING: the waveform, not the words (owner 2026-07-29:
+          "can we switch from a live transcript to a dynamic waveform to
+          indicate that the audio is coming in").
+
+          The live transcript was the wrong thing to put here, and the recording
+          that prompted this proves it: 72 seconds of speech produced 41
+          characters on-device. A student watching that concludes the recording
+          is broken — when in fact the audio was fine and the real transcript,
+          the one made on the server afterwards, is what ends up in their notes.
+          The on-device text is a means to an end, never the deliverable, and
+          showing it promised a quality nothing downstream depends on.
+          A waveform answers the only question being asked while a lecture runs:
+          is this thing hearing anything? It is also the honest answer, because
+          it is drawn from the microphone's own levels rather than from how well
+          a recogniser happened to guess the words.
+
+          STOPPED shows the transcript instead: that is where Discard-vs-Save is
+          decided, and it should be an informed choice. The transcript view is
+          moved, not deleted. */}
+      {recording ? (
+        <View style={styles.meter} testID="record-waveform-view">
+          <LiveWaveform active height={72} testID="record-waveform" />
+        </View>
+      ) : (
+        <ScrollView
         contentContainerStyle={styles.transcriptContent}
-        onContentSizeChange={() => {
-          if (recording) scrollRef.current?.scrollToEnd({ animated: true });
-        }}
         ref={scrollRef}
         style={styles.transcript}
         testID="record-transcript-view"
@@ -183,14 +230,26 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         {live.transcript.interim.trim().length > 0 && <Text style={[styles.paragraph, { color: c.text3 }]}>{live.transcript.interim}</Text>}
         {!hasTranscript(live.transcript) && (
           <View style={styles.emptyWrap}>
+            {/* The case the Save fix exists for. Audio but no words is now a
+                saveable recording, so this must read as "worth keeping" rather
+                than as the failure the old copy implied — it is the state a
+                distant lecturer produces every time, and the server transcript
+                lands minutes after saving. */}
             <Text style={styles.emptyText}>
-              {recording ? "Start speaking — the transcript builds here as you go." : "Record a lecture or a study session. The live transcript appears here."}
+              {hasAudio
+                ? `Recorded ${formatRecordingClock(live.elapsedSeconds)}. Nothing was made out on the phone, so the transcript will arrive shortly after you save.`
+                : "Record a lecture or a study session — a waveform shows what's coming in as you go."}
             </Text>
           </View>
         )}
       </ScrollView>
+      )}
 
-      <Text style={styles.statusLine}>{statusLine}</Text>
+      {/* While recording this is the mic-health line; otherwise the session's
+          own state. Both land in the same slot so the layout never shifts. */}
+      <Text style={styles.statusLine} testID="record-status-line">
+        {recording ? micHealthMessage(micHealth) : statusLine}
+      </Text>
       {saveError ? <Text style={styles.errorLine}>{saveError}</Text> : null}
 
       {/* ONE bar left, and only once there's something to decide about. Start,
@@ -219,6 +278,21 @@ const createStyles = (c: ThemeColors) =>
     header: { flexDirection: "row", alignItems: "center", paddingBottom: space(3) },
     clock: { ...type.small, fontWeight: "600", fontVariant: ["tabular-nums"], color: c.text2 },
     transcript: { flex: 1, borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface },
+    // Same box as the transcript it replaces — same flex, radius, border and
+    // fill — so starting and stopping a recording swaps the CONTENTS of one
+    // panel rather than resizing the screen around it. The waveform is centred
+    // in it rather than stretched, because a strip pinned to the top of a tall
+    // empty box reads as a loading bar.
+    meter: {
+      flex: 1,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: space(5),
+    },
     transcriptContent: { padding: space(4), gap: space(3), flexGrow: 1 },
     paragraph: { ...type.body, color: c.text },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },
