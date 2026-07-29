@@ -218,6 +218,23 @@ test("an ordinary message with no attachment does not fire intake", () => {
   assert.ok(!idsFor("explain first-pass metabolism").includes("lecture-intake"));
 });
 
+// Owner 2026-07-28: "syllabus and calendar events should not be outputted into
+// chat, the chat should just say 'ive put the events into the calendar'". The
+// skill used to ask for a compact TABLE of every date and a quoted source line
+// per row, which is exactly the dump being complained about.
+test("the syllabus skill reports a COUNT, never a list of the dates", () => {
+  const skill = CHAT_SKILLS.find((entry) => entry.id === "syllabus-intake");
+  assert.ok(skill, "syllabus-intake must exist");
+  assert.match(skill.instructions, /Do NOT list the dates in your reply/);
+  assert.match(skill.instructions, /how many dated items you found and the range/);
+  assert.match(skill.instructions, /I've put the events into your calendar/);
+  // The consent gate stays: asking first is what stops thirty events landing
+  // unannounced, and a count is still something a student can approve.
+  assert.match(skill.instructions, /Want me to add these to your calendar\?/);
+  // The source line is not lost — it moves into the event's own note.
+  assert.match(skill.instructions, /in that event's note/);
+});
+
 test("a syllabus upload routes to the calendar offer, not the lecture miner", () => {
   const wireText = "### Attachment: PHAR501-syllabus.pdf\nType: application/pdf\n\nCourse syllabus. Grading policy. Midterm Oct 14.";
   const ids = idsFor(wireText);

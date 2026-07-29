@@ -12,7 +12,10 @@ type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 const STORAGE_KEY = "pharmaorb-theme";
 const ACCENT_STORAGE_KEY = "nemesis.web.accent";
-const SCALE_STORAGE_KEY = "nemesis.web.scale";
+// v2, and the bump is load-bearing: SCALE_FACTOR below changes what a stored
+// number MEANS, so reading a v1 value would render it 25% larger than the
+// student chose. A new key retires those cleanly onto the new default.
+const SCALE_STORAGE_KEY = "nemesis.web.scale.v2";
 // Library chrome mode. Lives here rather than in the assistant-preferences blob
 // because two surfaces read it live — WorkspaceShell (whether to suppress the
 // nav rail) and the Library sidebar (whether to offer the Back exit) — and the
@@ -30,7 +33,25 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 // 16.25px. The conversation tokens in desktop-ui.css are re-based against the
 // new 20px root so the ANSWER text stays on 16px exactly instead of riding up
 // to 20px with everything else.
-const DEFAULT_SCALE = 125;
+// Owner 2026-07-28: "chatgpt '100%' is bigger than nemesis '100%' we need a
+// bigger default", answering "recalibrate AND go bigger".
+//
+// The dial's numbers were meaningless against anything: our 100% put the root at
+// 16px and the nav at 13px, where ChatGPT's default is 16px THROUGHOUT. So 100%
+// now MEANS ChatGPT's size — SCALE_FACTOR maps it onto a 20px root, which is
+// what measured equal to their 16px controls (our nav is 0.8125rem of root).
+// The default then sits one step above that, deliberately larger than ChatGPT.
+//
+//   dial 100% -> root 20px  -> nav 16.25px  (ChatGPT parity)
+//   dial 115% -> root 23px  -> nav 18.7px   (the new default)
+const SCALE_FACTOR = 1.25;
+const DEFAULT_SCALE = 115;
+
+/** Percentage to hand the root element. Kept next to SCALE_FACTOR so the two can
+ *  never drift — every writer goes through this. */
+function scaleToRootPercent(scale: number): number {
+  return Math.round(scale * SCALE_FACTOR * 10) / 10;
+}
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark";
 const isPreference = (v: unknown): v is ThemePreference => isTheme(v) || v === "system";
 const systemTheme = (): Theme =>
@@ -112,7 +133,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setAccentState(nextAccent);
     setScaleState(nextScale);
     applyAccent(nextAccent);
-    document.documentElement.style.fontSize = `${nextScale}%`;
+    document.documentElement.style.fontSize = `${scaleToRootPercent(nextScale)}%`;
     // Only an explicit "false" opts out; anything else (unset, malformed) keeps
     // the shipped full-screen default.
     setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) !== "false");
@@ -151,7 +172,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setScale = (next: number) => {
     const clamped = Math.min(150, Math.max(50, Math.round(next)));
     setScaleState(clamped);
-    document.documentElement.style.fontSize = `${clamped}%`;
+    document.documentElement.style.fontSize = `${scaleToRootPercent(clamped)}%`;
     try { localStorage.setItem(SCALE_STORAGE_KEY, String(clamped)); } catch { /* best effort */ }
   };
 

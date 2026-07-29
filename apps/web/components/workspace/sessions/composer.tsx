@@ -101,6 +101,11 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  // Files dragged from Finder. A COUNTER, not a boolean: dragenter/dragleave
+  // fire for every child the pointer crosses, so a boolean flickers off the
+  // moment the cursor moves over the textbox inside the composer.
+  const dragDepth = useRef(0);
+  const [dragOver, setDragOver] = useState(false);
   const activeMode = mode ?? composerMode;
   const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
@@ -204,6 +209,43 @@ export function Composer({ busy, centered = false, placement = "floating", place
     recognition.start();
   };
 
+  /** Only a real file drag counts. Dragging selected TEXT, or a row from the
+   *  Library/Study lists, also fires these events — and `types` is the one thing
+   *  that tells them apart before the drop. */
+  const carriesFiles = (transfer: DataTransfer | null): boolean =>
+    Boolean(transfer && Array.from(transfer.types).includes("Files"));
+
+  const onDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!carriesFiles(event.dataTransfer)) return;
+    dragDepth.current += 1;
+    setDragOver(true);
+  };
+
+  const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!carriesFiles(event.dataTransfer)) return;
+    // Without BOTH preventDefaults the browser navigates away to the dropped
+    // file and the whole composer state is lost.
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const onDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!carriesFiles(event.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  };
+
+  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!carriesFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    const dropped = Array.from(event.dataTransfer.files);
+    // Appended, never replaced — same rule the "+" picker follows, so a drop
+    // cannot bin notes that were just attached from the Library.
+    if (dropped.length > 0) setFiles((current) => [...current, ...dropped]);
+  };
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -221,8 +263,24 @@ export function Composer({ busy, centered = false, placement = "floating", place
         placement === "floating" && (centered ? "top-1/2 -translate-y-1/2" : "bottom-3"),
       )}
       data-slot="composer-root"
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <div className="relative w-full rounded-[inherit]">
+        {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
+            chat composer". pointer-events-none so the overlay cannot eat the
+            drop it is advertising. */}
+        {dragOver && activeMode === "chat" && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[inherit] border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))]"
+            data-slot="composer-drop-target"
+          >
+            <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
+          </div>
+        )}
         <div
           className="group/composer-surface relative z-4 isolate grid grid-rows-[auto_1fr] overflow-hidden rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))]"
           data-slot="composer-surface"

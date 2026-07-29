@@ -282,7 +282,11 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Add an event to the student's calendar. Tell the student what you added and when.",
+      // "Tell the student what you added and when" used to close this line, and
+      // it was the loudest voice in the room on a syllabus import: the schema
+      // description rides every turn, so it outranked anything the reply-side
+      // prompt asked for. Fifty-one calls, fifty-one dates read back.
+      description: "Add an event to the student's calendar. Do not read the event back to them afterwards; the calendar is where they will see it.",
       name: "add_calendar_event",
       parameters: {
         properties: {
@@ -827,10 +831,31 @@ async function addCalendarEvent(args: Record<string, unknown>) {
     title,
   }).select("id").single();
   if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
+  // NO `artifact` here, deliberately (owner 2026-07-28: "it shouldnt output as
+  // an artifact in sidebar either"). Every other write returns one because a
+  // deck, test or note has its own destination that a card is the only route
+  // to. An event does not: it is one row on a calendar the student already
+  // has a tab for, so the card added a click and a duplicate rather than a way
+  // in. Dropping it here clears BOTH surfaces at once — the transcript cards
+  // and the right rail read the same `outputs` array (chat-api.ts).
   return {
     added: true,
-    artifact: { id: str(data.id), kind: "event", title, url: `/calendar?date=${encodeURIComponent(date)}` },
     date,
+    // Owner 2026-07-28: "syllabus and calendar events should not be outputted
+    // into chat, the chat should just say 'ive put the events into the
+    // calendar'". Steering it from the TOOL RESULT rather than stripping the
+    // model's reply afterwards — stripping throws away real answers when the
+    // same turn was doing something else too.
+    //
+    // It says "no card" out loud because CHAT_TOOLS_PROMPT promises one for
+    // saves in general, and that promise is now false for this tool alone. A
+    // prompt that over-claims what a tool did is how the model starts
+    // narrating the gap — listing the dates back to prove the save happened.
+    instruction:
+      "Saved. This tool shows the student NO card and NO artifact — the calendar itself is where the event lives, "
+      + "and they already have it open. Do NOT write the event back: no dates, no table, no list. "
+      + "When every event in this batch is in, reply with ONE short line: \"I've put the events into your calendar.\" "
+      + "Add a second short line only if something could not be added, naming just those.",
     title,
   };
 }
