@@ -166,6 +166,25 @@ export function FolderIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
+export function FolderOpenIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M3.8 9.1V7.2a1.8 1.8 0 0 1 1.8-1.8h3.6a1.8 1.8 0 0 1 1.35.6l1.1 1.25a1.8 1.8 0 0 0 1.35.6h5.4a1.8 1.8 0 0 1 1.8 1.8v.55"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+      <Path
+        d="M4.45 9.7h15.1a1.25 1.25 0 0 1 1.17 1.7l-2.18 5.75a2.2 2.2 0 0 1-2.06 1.42H5.8a2 2 0 0 1-1.94-1.53l-1.1-4.55A2.25 2.25 0 0 1 4.95 9.7Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+    </Svg>
+  );
+}
+
 /** Right-pointing chevron; rotate 90° for the expanded (pointing-down) state. */
 export function ChevronIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (

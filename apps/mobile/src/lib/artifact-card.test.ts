@@ -84,6 +84,13 @@ Deno.test("a recording has no page to land on, so the card says it opens a previ
   assertEquals(card.where, "Tap to read");
 });
 
+Deno.test("a recording filed as a Library note routes to the Library", () => {
+  const card = artifactCard(out({ kind: "recording", route: "/note?id=note-1", title: "Lecture 4" }));
+  assertEquals(card.opens, true);
+  assertEquals(card.where, "Library");
+  assertEquals(card.place, "Library");
+});
+
 Deno.test("'place' drops the folder so a button reads 'Open in Study', not 'Open in Study · Pharm'", () => {
   assertEquals(artifactCard(out({ kind: "flashcards", route: "/study?section=cards", title: "Pharm::Cardio" })).place, "Study");
   assertEquals(artifactCard(out({ kind: "other", route: "/note?id=a", title: "Notes" })).place, "Library");

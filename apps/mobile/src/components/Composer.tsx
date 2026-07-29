@@ -260,8 +260,9 @@ export function Composer({
     onChangeText(dictationBase.current);
   };
 
-  // Record mode's own control bar: start/stop on the left, what the microphone
-  // is hearing across the middle, and the way out on the right.
+  // Record mode's own control bar: start/stop on the left, a quiet state label
+  // in the middle, and the way out on the right. The live audio is visualized
+  // once, at full size, by RecordSession above this composer.
   if (isRecordMode) {
     // modeLocked and recordingActive together name all three session states:
     // idle (neither), recording (both), reviewable (locked, not active). The
@@ -283,7 +284,9 @@ export function Composer({
             {recordingActive ? <StopGlyph color={c.onAccent} /> : <RecordDotGlyph color={c.danger} />}
           </Bounce>
           <View style={styles.recordWave}>
-            <LiveWaveform active={recordingActive} height={22} testID="composer-waveform" />
+            <Text style={styles.recordStatus} numberOfLines={1}>
+              {recordingActive ? "Recording" : modeLocked ? "Ready to save" : "Ready"}
+            </Text>
           </View>
           {/* Same round accent button that entered record mode, now wearing an
               ✕ (owner 2026-07-22) — one button, one place, both directions. */}
@@ -509,7 +512,8 @@ const createStyles = (c: ThemeColors) =>
     recordRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(1) },
     // The waveform takes the field's slot — it is what you watch while
     // recording, so it gets all the room the two buttons don't.
-    recordWave: { flex: 1 },
+    recordWave: { flex: 1, alignItems: "center" },
+    recordStatus: { ...type.small, color: c.text3, fontWeight: "500" },
     // The dictation bar's middle: waveform over the words it has heard.
     dictateMiddle: { flex: 1, justifyContent: "center", gap: 2 },
     dictateText: { ...type.micro, color: c.text3 },

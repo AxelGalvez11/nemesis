@@ -1,5 +1,5 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -12,6 +12,7 @@ import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
+import type { ChatOutput } from "@/lib/chat-thread";
 
 // Record session (phone half of web's Record mode): live on-device transcription of a
 // lecture or study session, saved into the open chat as the same recording
@@ -69,6 +70,8 @@ export interface RecordSessionProps {
   /** Fires once, after Save lands or after a confirmed Discard — the host's cue
    *  to leave record mode (chat.tsx flips composerMode back to "chat"). */
   onDone: () => void;
+  /** Posts the saved recording into the conversation before record mode exits. */
+  onSaved?: (output: ChatOutput) => void;
   /** Fires whenever the three-state UI transitions — lets a host (chat.tsx)
    *  lock its own mode-switch control while a recording is live or has an
    *  unsaved transcript, without duplicating this component's state. */
@@ -76,7 +79,7 @@ export interface RecordSessionProps {
 }
 
 export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>(function RecordSession(
-  { userId, threadId, onDone, onRecordingStateChange },
+  { userId, threadId, onDone, onSaved, onRecordingStateChange },
   ref,
 ) {
   // A lecture is longer than the auto-lock timeout; keep the screen on while
@@ -88,7 +91,6 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
   const live = useLiveTranscription();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
 
   const recording = live.status === "recording";
   // 🔴 AUDIO, NOT TEXT, IS WHAT DECIDES THERE IS SOMETHING TO SAVE.
@@ -112,11 +114,6 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
   // What the microphone is actually picking up, for the line under the waveform.
   const micHealth = useMicHealth(recording);
 
-  // Keep the newest words in view as they stream in.
-  useEffect(() => {
-    if (recording) scrollRef.current?.scrollToEnd({ animated: true });
-  }, [recording, live.transcript]);
-
   // Report the three-state UI up to the host so it can lock its own mode
   // toggle — only on actual transitions (recording ⇄ reviewable ⇄ idle), not
   // on every transcript-growing re-render.
@@ -130,15 +127,15 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
   useImperativeHandle(ref, () => ({ start: () => void live.start(), stop: live.stop }), [live]);
 
   const discard = useCallback(() => {
-    if (recording || hasTranscript(live.transcript)) {
-      Alert.alert("Discard recording?", "The transcript from this recording will be lost.", [
+    if (recording || reviewable) {
+      Alert.alert("Discard recording?", "This unsaved recording will be lost.", [
         { style: "cancel", text: "Keep recording" },
         { onPress: onDone, style: "destructive", text: "Discard" },
       ]);
       return;
     }
     onDone();
-  }, [recording, live.transcript, onDone]);
+  }, [recording, reviewable, onDone]);
 
   const save = useCallback(async () => {
     if (!userId || !threadId || saving) return;
@@ -152,6 +149,7 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         // whichever transcript it ends up with.
         buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date(), ""),
       );
+      onSaved?.(entry);
       // Enhance pass runs detached: the saved on-device transcript is already
       // safe, and the sharper server transcript swaps in when it lands.
       void enhanceRecordingArtifact(userId, threadId, entry, live.audioUris, live.elapsedSeconds);
@@ -160,7 +158,7 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
       setSaveError(cause instanceof Error ? cause.message : "Couldn't save the recording — check your connection and try again.");
       setSaving(false);
     }
-  }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, onDone]);
+  }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, onDone, onSaved]);
 
   // The non-recording states. The recording one is gone from here on purpose:
   // while the mic is live this slot is driven by micHealthMessage instead, which
@@ -192,58 +190,19 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         <Text style={[styles.clock, recording && { color: c.accent }]}>{formatRecordingClock(live.elapsedSeconds)}</Text>
       </View>
 
-      {/* WHILE RECORDING: the waveform, not the words (owner 2026-07-29:
-          "can we switch from a live transcript to a dynamic waveform to
-          indicate that the audio is coming in").
-
-          The live transcript was the wrong thing to put here, and the recording
-          that prompted this proves it: 72 seconds of speech produced 41
-          characters on-device. A student watching that concludes the recording
-          is broken — when in fact the audio was fine and the real transcript,
-          the one made on the server afterwards, is what ends up in their notes.
-          The on-device text is a means to an end, never the deliverable, and
-          showing it promised a quality nothing downstream depends on.
-          A waveform answers the only question being asked while a lecture runs:
-          is this thing hearing anything? It is also the honest answer, because
-          it is drawn from the microphone's own levels rather than from how well
-          a recogniser happened to guess the words.
-
-          STOPPED shows the transcript instead: that is where Discard-vs-Save is
-          decided, and it should be an informed choice. The transcript view is
-          moved, not deleted. */}
-      {recording ? (
-        <View style={styles.meter} testID="record-waveform-view">
-          <LiveWaveform active height={72} testID="record-waveform" />
-        </View>
-      ) : (
-        <ScrollView
-        contentContainerStyle={styles.transcriptContent}
-        ref={scrollRef}
-        style={styles.transcript}
-        testID="record-transcript-view"
-      >
-        {live.transcript.finals.map((paragraph, index) => (
-          <Text key={index} style={styles.paragraph}>
-            {paragraph}
+      {/* The transcript is deliberately never rendered on iOS. It remains
+          private processing input for the notes, while the student sees the
+          single large microphone waveform before and after stopping. */}
+      <View style={styles.meter} testID="record-waveform-view">
+        <LiveWaveform active={recording} height={72} testID="record-waveform" />
+        {!recording ? (
+          <Text style={styles.meterLabel}>
+            {reviewable
+              ? `${formatRecordingClock(live.elapsedSeconds)} recorded · ready to save`
+              : "Tap record when the lecture begins"}
           </Text>
-        ))}
-        {live.transcript.interim.trim().length > 0 && <Text style={[styles.paragraph, { color: c.text3 }]}>{live.transcript.interim}</Text>}
-        {!hasTranscript(live.transcript) && (
-          <View style={styles.emptyWrap}>
-            {/* The case the Save fix exists for. Audio but no words is now a
-                saveable recording, so this must read as "worth keeping" rather
-                than as the failure the old copy implied — it is the state a
-                distant lecturer produces every time, and the server transcript
-                lands minutes after saving. */}
-            <Text style={styles.emptyText}>
-              {hasAudio
-                ? `Recorded ${formatRecordingClock(live.elapsedSeconds)}. Nothing was made out on the phone, so the transcript will arrive shortly after you save.`
-                : "Record a lecture or a study session — a waveform shows what's coming in as you go."}
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-      )}
+        ) : null}
+      </View>
 
       {/* While recording this is the mic-health line; otherwise the session's
           own state. Both land in the same slot so the layout never shifts. */}
@@ -277,7 +236,6 @@ const createStyles = (c: ThemeColors) =>
     session: { flex: 1, backgroundColor: c.bg, paddingHorizontal: space(4), paddingTop: space(3) },
     header: { flexDirection: "row", alignItems: "center", paddingBottom: space(3) },
     clock: { ...type.small, fontWeight: "600", fontVariant: ["tabular-nums"], color: c.text2 },
-    transcript: { flex: 1, borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface },
     // Same box as the transcript it replaces — same flex, radius, border and
     // fill — so starting and stopping a recording swaps the CONTENTS of one
     // panel rather than resizing the screen around it. The waveform is centred
@@ -293,10 +251,7 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: "center",
       paddingHorizontal: space(5),
     },
-    transcriptContent: { padding: space(4), gap: space(3), flexGrow: 1 },
-    paragraph: { ...type.body, color: c.text },
-    emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },
-    emptyText: { ...type.small, color: c.text3, textAlign: "center" },
+    meterLabel: { ...type.small, color: c.text3, marginTop: space(4), textAlign: "center" },
     statusLine: { ...type.micro, color: c.text3, paddingVertical: space(3), textAlign: "center" },
     errorLine: { ...type.micro, color: c.accent, paddingBottom: space(2), textAlign: "center" },
     controls: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden", padding: space(3) },

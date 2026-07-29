@@ -146,13 +146,11 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
             <Text style={styles.contentText}>{output.notes}</Text>
           </>
         ) : null}
-        {output?.transcript ? (
-          <>
-            <Text style={styles.sectionHead}>Transcript</Text>
-            <Text style={styles.contentText}>{output.transcript}</Text>
-          </>
+        {output && !output.notes ? (
+          <Text style={styles.mutedText}>
+            {output.kind === "recording" ? "Notes are being prepared in your Library." : "No content preview for this deliverable."}
+          </Text>
         ) : null}
-        {output && !output.notes && !output.transcript ? <Text style={styles.mutedText}>No content preview for this deliverable.</Text> : null}
         <View style={styles.buttons}>
           {output?.route ? (
             <MissionButton

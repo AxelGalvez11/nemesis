@@ -453,9 +453,12 @@ export function thinkingFromMeta(meta: unknown): MessageThinking | null {
   if (typeof raw !== "object" || raw === null) return null;
   const row = raw as Record<string, unknown>;
   const text = typeof row.text === "string" ? row.text.trim() : "";
-  if (!text) return null;
   const ms = Number(row.ms);
-  return { ms: Number.isFinite(ms) && ms >= 0 ? ms : 0, text };
+  const duration = Number.isFinite(ms) && ms >= 0 ? ms : 0;
+  // A fast/non-reasoning turn still keeps ChatGPT's settled "Thought for …"
+  // row. There is simply no disclosure body to expand in that case.
+  if (!text && duration <= 0) return null;
+  return { ms: duration, text };
 }
 
 /** Merge a thread's local + cloud message lists: de-duplicated by stable id

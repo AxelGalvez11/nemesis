@@ -23,10 +23,16 @@ import {
   renameThreadTitle,
   setThreadMessages,
   setThreadPinned,
+  thinkingFromMeta,
   threadSummaries,
   UNTITLED_THREAD,
   upsertThread,
 } from "./chat-threads.ts";
+
+Deno.test("thinkingFromMeta keeps a settled duration even without a reasoning transcript", () => {
+  assertEquals(thinkingFromMeta({ thinking: { ms: 2300, text: "" } }), { ms: 2300, text: "" });
+  assertEquals(thinkingFromMeta({ thinking: { ms: 0, text: "" } }), null);
+});
 
 const user = (content: string, at = "2026-07-18T00:00:00Z", id?: string): ChatMsg => ({ at, content, role: "user", ...(id ? { id } : {}) });
 const bot = (content: string, at = "2026-07-18T00:00:01Z", id?: string): ChatMsg => ({ at, content, role: "assistant", ...(id ? { id } : {}) });
