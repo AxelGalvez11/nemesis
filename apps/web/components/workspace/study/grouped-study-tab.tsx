@@ -7,11 +7,11 @@
 // Groups come from real items + user folders only; deck names must NOT seed
 // folders across tabs (that read as "decks showing up under Tests").
 //
-// Organizing means the same three gestures the Cards tab has (owner
-// 2026-07-22): a "…" menu on every row, right-click to rename, and dragging an
-// item onto a folder to file it there. Unlike a deck folder — which only exists
-// as a prefix inside the deck's own name — a folder here is the artifact's
-// group_name column, so filing an item is a one-field update.
+// Organizing means the same gestures the Cards tab has (owner 2026-07-22): a
+// "…" menu on every row, right-click to rename, dragging an item onto a folder
+// to file it there, and — since 2026-07-29 — dragging a folder into another to
+// nest it. A folder here is the artifact's group_name column, so filing an item
+// is still a one-field update; nesting rewrites the paths beneath it.
 //
 // Verified end-to-end on the owner's real data 2026-07-23: dragging a test onto
 // a folder writes group_name and survives a reload. It only LOOKS broken when
@@ -26,7 +26,20 @@ import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { type StudyArtifact, type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
-import { artifactDropAccepts, normalizeGroupPath, UNGROUPED_LABEL, type ArtifactDrag } from "@/lib/workspace/study-tree";
+import {
+  buildArtifactTree,
+  folderDropAccepts,
+  isWithinGroup,
+  movedFolderPath,
+  normalizeGroupPath,
+  pathLeaf,
+  pathParent,
+  renamedGroupPath,
+  rewriteGroupPrefix,
+  UNGROUPED_LABEL,
+  type ArtifactDrag,
+  type ArtifactTreeNode,
+} from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
@@ -40,21 +53,24 @@ interface GroupedStudyTabProps {
 /** Display name for items with no folder. Stored as "" on the row itself. */
 const UNGROUPED = UNGROUPED_LABEL;
 
-function storedGroup(display: string): string {
-  return display === UNGROUPED ? "" : display;
-}
+/** Indent per folder level. Matches the Cards tab so a student moving between
+ *  the two tabs reads the same shape. */
+const INDENT_PX = 14;
 
 const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
 
-// Items file INTO a folder; a folder dragged onto another folder MERGES into it.
-// Merge is the only thing a folder drop can mean here, and that is a property of
-// the data rather than a design choice: a folder on this tab is a flat label in
-// the artifact's `group_name` column, not a "::" path like the Cards tab's deck
-// groups. There is no nesting to drop into, so the source folder's items take
-// the target's label and the source label stops existing.
+// FOLDERS NEST HERE, exactly as they do on the Cards tab (owner 2026-07-29:
+// the Tests page "doesnt have same functionality as cards page").
 //
-// The payload type and the drop rule live in lib/workspace/study-tree.ts —
-// pure, so they are covered by tests that need no pointer and no DOM.
+// This used to be flat. A folder was a single label in the artifact's
+// `group_name` column, so a folder dropped on a folder could only MERGE — there
+// was no "inside" to drop into. `group_name` is the same string with the same
+// "::" separator a deck name uses, so the tree the Cards tab draws applies here
+// unchanged, and an existing flat name is simply a path one segment deep. No
+// migration: "Pharmacology" was already a valid path.
+//
+// The tree and every drop rule are pure, in lib/workspace/study-tree.ts, so they
+// are covered by tests that need no pointer and no DOM.
 
 export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const confirm = useConfirm();
@@ -64,10 +80,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const label = isTests ? "Tests" : "Mindmaps";
   const items = useMemo(() => artifacts.filter((artifact) => artifact.kind === artifactKind), [artifactKind, artifacts]);
   const [extraGroups, setExtraGroups] = useState<string[]>([]);
-  const groups = useMemo(() => {
-    const names = new Set([...extraGroups, ...items.map((item) => item.groupName || UNGROUPED)]);
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [extraGroups, items]);
+  // The same tree the Cards tab draws. buildArtifactTree and its drop rules had
+  // been written and tested since 2026-07-28 but were imported by nothing except
+  // their own test file, so this tab kept rendering the old flat list — which is
+  // why folders here could not nest and a folder-on-folder drop merged instead.
+  const tree = useMemo(() => buildArtifactTree(items, extraGroups), [extraGroups, items]);
   const [groupOpen, setGroupOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -107,6 +124,22 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     setGroupOpen(false);
   }
 
+  /**
+   * May `payload` land in the folder at `path`? ("" is the top level.)
+   *
+   * Resolved during the drag rather than at drop time, so a row never lights up
+   * as if it would accept something it will refuse. Folder drops defer to
+   * folderDropAccepts, which is what stops a folder being dropped inside its own
+   * descendant — the move that would otherwise detach the whole subtree.
+   */
+  function dropAccepts(payload: ArtifactDrag, path: string): boolean {
+    if (payload.kind === "item") {
+      const item = items.find((entry) => entry.id === payload.id);
+      return !item || normalizeGroupPath(item.groupName ?? "") !== normalizeGroupPath(path);
+    }
+    return folderDropAccepts(payload.name, path);
+  }
+
   // Pointer-based drag (not HTML5 dnd) so the drop target can be resolved from
   // whatever is under the cursor, matching the Cards tab.
   function beginDrag(event: React.PointerEvent, payload: ArtifactDrag) {
@@ -127,7 +160,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       // A folder is not a drop target for itself. Resolving that here rather
       // than at drop time means the row never lights up as if it would accept
       // the thing being dragged.
-      const target = over !== null && artifactDropAccepts(payload, over) ? over : null;
+      const target = over !== null && dropAccepts(payload, over) ? over : null;
       dropGroupRef.current = target;
       setDropGroup(target);
     };
@@ -143,7 +176,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         const target = dropGroupRef.current;
         if (target !== null) {
           if (payload.kind === "item") void fileInto(payload.id, target);
-          else void mergeGroup(payload.name, target);
+          else void moveGroup(payload.name, target);
         }
         ignoreClickUntilRef.current = performance.now() + 250;
       }
@@ -159,10 +192,12 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     window.addEventListener("pointercancel", up, true);
   }
 
-  async function fileInto(artifactId: string, displayGroup: string) {
-    const next = storedGroup(displayGroup);
+  async function fileInto(artifactId: string, path: string) {
+    // A path now, not a display label: "" is the top level, so there is no
+    // "Ungrouped" pseudo-folder to translate back out of.
+    const next = normalizeGroupPath(path);
     const item = items.find((entry) => entry.id === artifactId);
-    if (!item || item.groupName === next) return;
+    if (!item || normalizeGroupPath(item.groupName ?? "") === next) return;
     setActionError(null);
     try {
       await updateArtifact(artifactId, { groupName: next });
@@ -172,35 +207,30 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   }
 
   /**
-   * Merge one folder into another by dragging it there.
+   * Move a folder INTO another by dragging it there — the Cards tab's
+   * behaviour, and the whole reason this tab needed the tree.
    *
-   * Everything inside takes the target's label and the source label stops
-   * existing — flat labels leave no other meaning for a folder-on-folder drop.
-   * That is not reversible by dragging back (once merged, nothing records which
-   * items came from where), so a non-empty merge asks first, exactly as
-   * removeGroup does. An empty folder just moves without ceremony.
+   * This used to MERGE. Everything inside took the target's label and the source
+   * label stopped existing, because a flat label left no other meaning for a
+   * folder-on-folder drop. That was destructive — nothing recorded which items
+   * came from where, so dragging back could not undo it — which is why it asked
+   * first. Nesting is reversible: drag it back out. So it now just happens, with
+   * no dialog, exactly as it does on Cards.
    *
-   * Failure leaves the source folder in place: extraGroups is only rewritten
-   * after every item has been updated, so a merge that dies halfway is visible
-   * as a half-full folder rather than as items with nowhere to belong.
+   * Every DESCENDANT is rewritten, not only direct children, and
+   * rewriteGroupPrefix is segment-aware, so moving "Exam 1" leaves "Exam 10"
+   * alone.
    */
-  async function mergeGroup(source: string, targetDisplay: string) {
-    if (!artifactDropAccepts({ kind: "group", name: source }, targetDisplay)) return;
-    const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === source);
-    if (inside.length > 0) {
-      const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
-      const destination = targetDisplay === UNGROUPED ? `${UNGROUPED} (no folder)` : `“${targetDisplay}”`;
-      if (!(await confirm({
-        body: `${inside.length} ${noun} move into ${destination}, and the folder “${source}” goes away. Nothing is deleted.`,
-        confirmLabel: "Merge folders",
-        title: `Merge “${source}” into ${destination}?`,
-      }))) return;
-    }
+  async function moveGroup(source: string, target: string) {
+    if (!folderDropAccepts(source, target)) return;
+    const next = movedFolderPath(source, target);
     setActionError(null);
     try {
-      const next = storedGroup(targetDisplay);
-      for (const item of inside) await updateArtifact(item.id, { groupName: next });
-      persistGroups(extraGroups.filter((entry) => entry !== source));
+      for (const item of items) {
+        const moved = rewriteGroupPrefix(item.groupName ?? "", source, next);
+        if (moved !== null) await updateArtifact(item.id, { groupName: moved });
+      }
+      persistGroups(extraGroups.map((entry) => rewriteGroupPrefix(entry, source, next) ?? entry));
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't move that folder.");
     }
@@ -226,57 +256,139 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     }
   }
 
-  // A folder here is just a label, and it behaves like the Cards tab's folders:
-  // renaming it relabels everything inside, removing it keeps them.
+  // Renaming a folder relabels everything inside it, at any depth. The typed
+  // name replaces the LAST segment only (renamedGroupPath) — a folder sitting in
+  // "Pharm" stays in "Pharm" when it is renamed, rather than jumping to the top
+  // level because the student typed a bare word.
   async function renameGroup(group: string, next: string) {
     setRenamingId(null);
-    const name = normalizeGroupPath(next);
-    if (!name || name === group || group === UNGROUPED) return;
+    const renamed = renamedGroupPath(group, next);
+    if (!renamed || renamed === normalizeGroupPath(group)) return;
     setActionError(null);
     try {
-      for (const item of items.filter((entry) => (entry.groupName || UNGROUPED) === group)) {
-        await updateArtifact(item.id, { groupName: name });
+      for (const item of items) {
+        const moved = rewriteGroupPrefix(item.groupName ?? "", group, renamed);
+        if (moved !== null) await updateArtifact(item.id, { groupName: moved });
       }
-      persistGroups(extraGroups.map((entry) => (entry === group ? name : entry)));
+      persistGroups(extraGroups.map((entry) => rewriteGroupPrefix(entry, group, renamed) ?? entry));
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't rename that folder.");
     }
   }
 
-  // Removing a folder keeps its contents (owner 2026-07-23). These folders are
-  // flat labels, not "::" paths, so "one level up" is simply Ungrouped: the
-  // items lose their group_name and stay exactly where they can be found. This
-  // used to delete every test/mindmap inside, which for generated work was
-  // unrecoverable.
+  // Removing a folder keeps its contents (owner 2026-07-23) — it used to delete
+  // every test inside, which for generated work was unrecoverable.
+  //
+  // Now that folders nest, "one level up" is the PARENT rather than the top
+  // level: removing "Pharm::Exam 1" leaves its tests in "Pharm", where the
+  // student was looking, instead of tipping them out to the root alongside
+  // everything else.
   async function removeGroup(group: string) {
-    const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === group);
+    const parent = pathParent(group);
+    const inside = items.filter((entry) => isWithinGroup(normalizeGroupPath(entry.groupName ?? ""), group));
     if (inside.length > 0) {
       const noun = inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase();
       if (!(await confirm({
-        body: `Its ${inside.length} ${noun} move to ${UNGROUPED}. Nothing is deleted.`,
+        body: `Its ${inside.length} ${noun} move to ${parent ? `“${pathLeaf(parent)}”` : "the top level"}. Nothing is deleted.`,
         confirmLabel: "Remove folder",
-        title: `Remove the folder “${group}”?`,
+        title: `Remove the folder “${pathLeaf(group)}”?`,
       }))) return;
     }
     setActionError(null);
     try {
-      for (const item of inside) await updateArtifact(item.id, { groupName: "" });
-      persistGroups(extraGroups.filter((entry) => entry !== group));
+      // rewriteGroupPrefix maps the folder onto its parent, so a nested folder
+      // inside it rises one level too rather than being orphaned at a path whose
+      // middle segment no longer exists.
+      for (const item of inside) {
+        const moved = rewriteGroupPrefix(item.groupName ?? "", group, parent);
+        if (moved !== null) await updateArtifact(item.id, { groupName: moved });
+      }
+      persistGroups(extraGroups.flatMap((entry) => {
+        if (normalizeGroupPath(entry) === normalizeGroupPath(group)) return [];
+        return [rewriteGroupPrefix(entry, group, parent) ?? entry];
+      }));
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't remove that folder.");
     }
   }
 
+  /** Items anywhere beneath a folder, so a parent's count includes what is
+   *  nested inside it rather than only its direct children. */
+  function countInside(node: ArtifactTreeNode<StudyArtifact>): number {
+    return node.children.reduce((total, child) => total + (child.item ? 1 : countInside(child)), 0);
+  }
+
+  /**
+   * One row, and everything under it.
+   *
+   * A folder's wrapper carries data-artifact-drop-group, and because children
+   * render INSIDE that wrapper, dropping onto a nested row resolves to the
+   * innermost folder under the cursor — elementFromPoint finds the deepest
+   * element and `closest` walks outwards from there. That is what makes a drop
+   * into a sub-folder land there rather than in its parent.
+   */
+  function renderNode(node: ArtifactTreeNode<StudyArtifact>, depth: number): React.ReactNode {
+    const item = node.item;
+    if (item) {
+      return (
+        <ItemRow
+          depth={depth}
+          dragging={drag?.kind === "item" && drag.id === item.id}
+          grid={ROW_GRID}
+          item={item}
+          key={node.id}
+          meta={isTests ? artifactScoreLabel(item) : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          onCancelRename={() => setRenamingId(null)}
+          onCommitRename={(next) => void renameItem(item, next)}
+          onDelete={() => void removeItem(item)}
+          onOpen={() => setOpenedId(item.id)}
+          onPointerDragStart={(event, id) => beginDrag(event, { id, kind: "item" })}
+          onStartRename={() => setRenamingId(node.id)}
+          renaming={renamingId === node.id}
+          suppressClick={() => performance.now() < ignoreClickUntilRef.current}
+        />
+      );
+    }
+    const beingDragged = drag?.kind === "group" && drag.name === node.path;
+    return (
+      <div
+        className={cn(
+          "transition-colors",
+          drag && dropGroup === node.path && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
+          // The folder being dragged dims, the same tell an item gives.
+          beingDragged && "opacity-50",
+        )}
+        data-artifact-drop-group={node.path}
+        key={node.id}
+      >
+        <GroupRow
+          count={countInside(node)}
+          depth={depth}
+          dragging={beingDragged}
+          grid={ROW_GRID}
+          label={node.label}
+          onCancelRename={() => setRenamingId(null)}
+          onCommitRename={(next) => void renameGroup(node.path, next)}
+          onDelete={() => void removeGroup(node.path)}
+          onPointerDragStart={(event) => beginDrag(event, { kind: "group", name: node.path })}
+          onStartRename={() => setRenamingId(node.id)}
+          renaming={renamingId === node.id}
+        />
+        {node.children.map((child) => renderNode(child, depth + 1))}
+      </div>
+    );
+  }
+
   return (
     <div className="scrollbar-study flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      {groups.length > 0 && (
+      {tree.length > 0 && (
         <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
           <Button className="rounded-xl" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>
           <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
         </nav>
       )}
 
-      {groups.length === 0 ? (
+      {tree.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <AgentEmptyState
             action={
@@ -301,53 +413,13 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
             <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
-          <div className="py-1.5">
-            {groups.map((group) => {
-              const grouped = items.filter((item) => (item.groupName || UNGROUPED) === group);
-              const renamingGroup = renamingId === `group:${group}`;
-              return (
-                <div
-                  className={cn(
-                    "transition-colors",
-                    drag && dropGroup === group && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
-                    // The folder being dragged dims, the same tell an item gives.
-                    drag?.kind === "group" && drag.name === group && "opacity-50",
-                  )}
-                  data-artifact-drop-group={group}
-                  key={group}
-                >
-                  <GroupRow
-                    count={grouped.length}
-                    dragging={drag?.kind === "group" && drag.name === group}
-                    grid={ROW_GRID}
-                    label={group}
-                    onCancelRename={() => setRenamingId(null)}
-                    onCommitRename={(next) => void renameGroup(group, next)}
-                    onDelete={() => void removeGroup(group)}
-                    onPointerDragStart={(event) => beginDrag(event, { kind: "group", name: group })}
-                    onStartRename={() => setRenamingId(`group:${group}`)}
-                    renaming={renamingGroup}
-                  />
-                  {grouped.map((item) => (
-                    <ItemRow
-                      dragging={drag?.kind === "item" && drag.id === item.id}
-                      grid={ROW_GRID}
-                      item={item}
-                      key={item.id}
-                      meta={isTests ? artifactScoreLabel(item) : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      onCancelRename={() => setRenamingId(null)}
-                      onCommitRename={(next) => void renameItem(item, next)}
-                      onDelete={() => void removeItem(item)}
-                      onOpen={() => setOpenedId(item.id)}
-                      onPointerDragStart={(event, id) => beginDrag(event, { id, kind: "item" })}
-                      onStartRename={() => setRenamingId(`item:${item.id}`)}
-                      renaming={renamingId === `item:${item.id}`}
-                      suppressClick={() => performance.now() < ignoreClickUntilRef.current}
-                    />
-                  ))}
-                </div>
-              );
-            })}
+          {/* The top level is a drop target in its own right (data-…-group=""):
+              dragging a folder or an item onto the empty space here is how
+              something leaves a folder without having to go into another one.
+              That replaces the old "Ungrouped" heading, which existed only
+              because a flat list had nowhere else to put loose items. */}
+          <div className="py-1.5" data-artifact-drop-group="">
+            {tree.map((node) => renderNode(node, 0))}
           </div>
         </section>
       )}
@@ -392,6 +464,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 interface GroupRowProps {
   label: string;
   count: number;
+  /** How deep in the folder tree, for the row's indent. 0 is the top level. */
+  depth: number;
   grid: string;
   dragging: boolean;
   renaming: boolean;
@@ -402,19 +476,19 @@ interface GroupRowProps {
   onPointerDragStart: (event: React.PointerEvent) => void;
 }
 
-function GroupRow({ label, count, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart }: GroupRowProps) {
-  // "Ungrouped" is a placeholder for "no folder", not a folder anyone made —
-  // renaming or deleting it would be renaming nothing, so it gets no menus, and
-  // for the same reason it cannot be picked up and dragged.
-  const real = label !== UNGROUPED;
+function GroupRow({ label, count, depth, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart }: GroupRowProps) {
+  // Every folder row is now a real folder someone made. The old exception —
+  // "Ungrouped", a placeholder for "no folder" that could not be renamed,
+  // deleted or dragged — is gone with the flat list: loose items sit at the top
+  // level of the tree instead of under a heading that stood for nothing.
   const row = (
     <div
-      className={cn("grid items-center px-5 py-2 text-xs", grid, real && "cursor-grab active:cursor-grabbing", dragging && "opacity-50")}
+      className={cn("grid items-center px-5 py-2 text-xs cursor-grab active:cursor-grabbing", grid, dragging && "opacity-50")}
       // The 5px threshold in beginDrag is what keeps this from stealing clicks
       // on the row's own "…" menu — a press that never travels is not a drag.
-      onPointerDown={(event) => { if (real && !renaming) onPointerDragStart(event); }}
+      onPointerDown={(event) => { if (!renaming) onPointerDragStart(event); }}
     >
-      <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+      <span className="flex min-w-0 items-center gap-1.5 font-semibold" style={{ paddingLeft: depth * INDENT_PX }}>
         <IconFolder className="shrink-0 text-(--ui-text-tertiary)" size={13} />
         {renaming
           ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={label} />
@@ -422,10 +496,9 @@ function GroupRow({ label, count, grid, dragging, renaming, onStartRename, onCom
       </span>
       <span className="text-center tabular-nums text-(--ui-text-secondary)">{count}</span>
       <span className="text-center tabular-nums text-(--ui-text-quaternary)">—</span>
-      {real ? <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER} /> : <span />}
+      <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER} />
     </div>
   );
-  if (!real) return row;
   return <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER}>{row}</StudyRowContextMenu>;
 }
 
@@ -442,9 +515,11 @@ interface ItemRowProps {
   onDelete: () => void;
   onPointerDragStart: (event: React.PointerEvent, artifactId: string) => void;
   suppressClick: () => boolean;
+  /** How deep in the folder tree, for the row's indent. 0 is the top level. */
+  depth: number;
 }
 
-function ItemRow({ item, meta, grid, dragging, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
+function ItemRow({ item, meta, depth, grid, dragging, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
   return (
     <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>
       <div
@@ -473,7 +548,7 @@ function ItemRow({ item, meta, grid, dragging, renaming, onOpen, onStartRename, 
         role="button"
         tabIndex={0}
       >
-        <span className="flex min-w-0 items-center pl-5">
+        <span className="flex min-w-0 items-center pl-5" style={{ paddingLeft: 20 + depth * INDENT_PX }}>
           {renaming
             ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={item.title} />
             : <span className="truncate">{item.title}</span>}
