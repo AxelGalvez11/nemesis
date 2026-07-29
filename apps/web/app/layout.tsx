@@ -5,6 +5,9 @@ import "./styles/shell.css";
 import "./styles/legacy.css";
 import "./styles/auth.css";
 import "./styles/account.css";
+// Last, so its phone overrides win over the desktop rules above at equal
+// specificity. See the file header for why these are not `max-sm:` utilities.
+import "./styles/mobile.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ConfirmProvider } from "@/components/desktop-ui/confirm-dialog";
 import { ThemeProvider } from "@/components/theme-provider";

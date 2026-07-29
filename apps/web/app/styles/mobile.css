@@ -1,0 +1,112 @@
+/* Phone layout.
+ *
+ * WHY A STYLESHEET RATHER THAN THE COMPONENTS. Every rule here would ideally be
+ * a `max-sm:` utility on the component that owns it. They live together in one
+ * file because a second agent held several of those components uncommitted when
+ * this was written (composer.tsx, grouped-study-tab.tsx), and editing a file
+ * someone else has open loses one of the two edits. Each block below names the
+ * component it belongs to; fold it back in when that work has landed.
+ *
+ * HOW THESE NUMBERS WERE MEASURED, because the obvious way is wrong. The
+ * in-app browser preview renders with a ~20.9px browser default font, so the
+ * app's `html { font-size: 110% }` lands at 23px instead of the 17.6px a real
+ * phone gives. That inflates every rem-based track by 1.31x and makes layouts
+ * look far more broken than they are. It is NOT viewport-dependent — a 1280px
+ * window reports the same 23px — so it is the preview environment, not the app.
+ * Everything below was measured with the root pinned to 17.6px, which is what a
+ * phone with a default browser actually produces.
+ *
+ * 640px is the breakpoint because it is Tailwind's `sm`, so these rules and the
+ * `max-sm:` utilities already scattered through the app agree on where a phone
+ * stops being a phone.
+ */
+
+/* Stops a phone browser silently inflating text (and every rem measured from
+ * it) in narrow viewports. Not the cause of anything found here — the preview
+ * proved that — but a real device will do it, and it would undo the widths
+ * below on exactly the screens they are for. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (max-width: 640px) {
+  /* ── Study tables (cards-tab.tsx, grouped-study-tab.tsx) ──────────────────
+   *
+   * THE SEVERE ONE: the deck/test name was invisible on a phone.
+   *
+   * Both tables are `grid-cols-[minmax(0,1fr) <fixed> … 2.25rem]` — the name
+   * takes what is left after the counts. On a 375px screen the card is 322px
+   * wide, 282px inside its padding, while the fixed tracks alone want
+   * 88+88+88+40 = 304px. More than the row has, so `minmax(0,1fr)` resolves to
+   * ZERO and the name column disappears completely. The counts were legible and
+   * the thing they counted was not.
+   *
+   * Narrower count tracks buy the name back ~130px. The counts are 1-2 digits;
+   * they never needed 5rem.
+   */
+  section[data-study-drop-group] .grid {
+    grid-template-columns: minmax(0, 1fr) 2.25rem 2.25rem 2.25rem 1.75rem;
+  }
+
+  section[data-artifact-drop-group] .grid {
+    grid-template-columns: minmax(0, 1fr) 2.75rem 3rem 1.75rem;
+  }
+
+  /* The rows' own 1.25rem side padding is a desktop comfort that costs 40px of
+   * the 322px available. */
+  section[data-study-drop-group] .grid,
+  section[data-artifact-drop-group] .grid {
+    padding-inline: 0.75rem;
+  }
+
+  /* ── Composer (sessions/composer.tsx) ─────────────────────────────────────
+   *
+   * One row of `menu | input | controls`, and the controls do not shrink: the
+   * effort pill, the microphone and the record button together hold 159px of a
+   * 316px composer, leaving the text you are actually typing 115px — about a
+   * dozen characters, narrower than its own "Send a follow-up" placeholder.
+   *
+   * Stacking the controls under the input gives the input the full width and
+   * costs one row of height, which a phone has and horizontal space it does
+   * not. The areas are re-declared rather than the columns alone because the
+   * component names them (`[grid-template-areas:'menu_input_controls']`).
+   */
+  [data-slot="composer-fade"] > div {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "menu input"
+      "controls controls";
+    row-gap: 0.375rem;
+  }
+
+  /* The extra row makes the composer taller, and the gap the thread leaves
+   * above it does NOT measure the composer despite its name — it is the static
+   * `calc(0.5rem + pad + 3.5rem)` in desktop-ui.css. Left alone, the taller
+   * composer eats the whole 2rem of breathing room and the last message ends up
+   * tucked behind it. `--composer-fallback-height` is the one value the others
+   * derive from, so raising it by the control row (1.875rem + the 0.375rem gap)
+   * carries through to --thread-last-message-clearance on its own.
+   *
+   * Unlayered on purpose: the original lives in `@layer base`, and unlayered
+   * rules beat layered ones regardless of specificity. */
+  :root {
+    --composer-fallback-height: calc(3.5rem + 2.25rem);
+  }
+
+  /* ── Page gutters ─────────────────────────────────────────────────────────
+   * 1.5rem each side is 48px of a 375px screen — an eighth of the display given
+   * to margin. Content is the scarce thing on a phone. */
+  .scrollbar-study {
+    padding-inline: 0.75rem;
+  }
+
+  /* ── Tap targets ──────────────────────────────────────────────────────────
+   * Row menus and icon buttons are sized for a mouse. 32px is the smallest
+   * comfortable touch target; below that a mis-tap opens the wrong row. */
+  [data-slot="composer-fade"] button,
+  section[data-study-drop-group] button,
+  section[data-artifact-drop-group] button {
+    min-block-size: 2rem;
+  }
+}
