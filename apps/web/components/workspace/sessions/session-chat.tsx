@@ -256,8 +256,17 @@ export function SessionChat() {
     return merged.filter((output) => (seen.has(output.id) ? false : (seen.add(output.id), true)));
   }, [messages, recordingArtifacts, session?.outputs]);
 
+  // Opening the recorder does NOT create a conversation any more (owner
+  // 2026-07-29: "if user opens recording that the session isnt automatically
+  // named as 'recording', it should only rename once a recording has
+  // finished"). Creating one here meant that merely pressing Record — or
+  // opening it and changing your mind — left an empty "Recorded session" row in
+  // the sidebar forever, and a sidebar of those is the exact problem the
+  // recording title was added to solve.
+  //
+  // The conversation is created by handleRecordingFinished instead, after its
+  // empty-draft guard, so it only exists once there is a recording to put in it.
   const handleModeChange = useCallback((mode: ComposerMode) => {
-    if (mode === "record" && !sessionsStore.getState().selectedId) sessionsStore.create(RECORDED_SESSION_TITLE);
     setComposerMode(mode);
   }, []);
 
@@ -276,7 +285,11 @@ export function SessionChat() {
     // was throwing it away, because grouping dropped any assistant message with
     // no unanswered question above it, which is every recording. See
     // lib/workspace/session-turns.ts.
-    const targetId = selectedId;
+    // Deliberately BELOW the empty-draft guard above: a recording that captured
+    // nothing must leave no conversation behind, which was the whole point of
+    // not creating one when the recorder opened. create() also selects the new
+    // session and hands it back, so this names it and opens it in one step.
+    const targetId = selectedId ?? sessionsStore.create(RECORDED_SESSION_TITLE).id;
     void (async () => {
       // ONE compose pass over the whole transcript (owner 2026-07-27). There are
       // no live notes to fall back on any more — nothing is written during the
@@ -291,7 +304,9 @@ export function SessionChat() {
       const { notes, title } = uid
         ? await requestRecordingNote({ transcript: draft.transcript, uid })
         : { notes: "", title: "" };
-      const artifact = await createArtifact({ ...draft, notes }, title);
+      // targetId, not the hook's own contextId: when this callback created the
+      // session a moment ago, that prop is still the previous render's value.
+      const artifact = await createArtifact({ ...draft, notes }, title, targetId);
 
       // A sidebar of identical "Recorded session" rows has the same problem the
       // title fixes, so borrow it — but only while the session still carries the
