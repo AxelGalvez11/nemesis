@@ -44,7 +44,7 @@ import {
   isChatEffort,
   type ChatEffort,
 } from "@/lib/workspace/chat-effort";
-import { subscribeMicLevel } from "@/lib/workspace/mic-level";
+import { publishMicLevel, resetMicLevel, subscribeMicLevel } from "@/lib/workspace/mic-level";
 import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
@@ -175,16 +175,108 @@ export function Composer({ busy, centered = false, placement = "floating", place
     onSubmit(text, submittedFiles);
   }, [busy, files, onSubmit]);
 
+  // The live objects dictation has to be able to tear down. Refs, not state:
+  // none of them should redraw the composer when they change, and `listening`
+  // is already the one piece of this the view cares about.
+  const recognitionRef = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const wantsDictationRef = useRef(false);
+  const dictationBaseRef = useRef("");
+  const dictationAudioRef = useRef<{ context: AudioContext; stream: MediaStream; timer: number } | null>(null);
+
+  const closeDictationMeter = useCallback(() => {
+    const audio = dictationAudioRef.current;
+    dictationAudioRef.current = null;
+    if (!audio) return;
+    window.clearInterval(audio.timer);
+    for (const track of audio.stream.getTracks()) track.stop();
+    void audio.context.close().catch(() => undefined);
+    // Without this the waveform keeps drawing the last reading for a microphone
+    // that is already closed.
+    resetMicLevel();
+  }, []);
+
+  const stopDictation = useCallback(() => {
+    wantsDictationRef.current = false;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      try { recognition.stop(); } catch { /* already stopped */ }
+    }
+    closeDictationMeter();
+    setListening(false);
+  }, [closeDictationMeter]);
+
+  /** The microphone the waveform reads. Separate from the one the Web Speech
+   *  API opens for itself, because that one is not reachable — see the note on
+   *  startDictation. */
+  const openDictationMeter = useCallback(async () => {
+    if (dictationAudioRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop may have been pressed while the permission prompt was still up.
+      if (!wantsDictationRef.current) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1_024;
+      source.connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      const timer = window.setInterval(() => {
+        analyser.getFloatTimeDomainData(samples);
+        let squares = 0;
+        for (const sample of samples) squares += sample * sample;
+        // Same RMS x 4 the recorder publishes, so one waveform can read either.
+        publishMicLevel(Math.min(1, Math.sqrt(squares / Math.max(1, samples.length)) * 4));
+      }, DICTATION_METER_MS);
+      dictationAudioRef.current = { context, stream, timer };
+    } catch {
+      // No meter, but dictation itself still works: the Web Speech API holds its
+      // own microphone permission and may well have it. Losing the waveform is
+      // not a reason to stop transcribing.
+    }
+  }, []);
+
+  // A composer unmounted mid-dictation would leave the microphone open and the
+  // recogniser running with nowhere to put its words.
+  useEffect(() => stopDictation, [stopDictation]);
+
+  // ── Dictation ─────────────────────────────────────────────────────────────
+  //
+  // CONTINUOUS, AND METERED (owner 2026-07-29: "i need the dictation to also
+  // have waveform animation for webapp"). This used to be one-shot: continuous
+  // = false, interimResults = false, so it stopped after a single phrase and
+  // nothing appeared until it did. A waveform on that would have flashed for two
+  // seconds and vanished, which looks broken rather than alive — so the mode
+  // itself changed with it. The mic button is now a toggle: press to start,
+  // press again to stop.
+  //
+  // THE WAVEFORM NEEDS ITS OWN MICROPHONE, and that is worth stating plainly
+  // because lib/workspace/mic-level.ts argues against exactly this. Its rule —
+  // never open a second getUserMedia — protects the RECORDER, where a second
+  // stream would meter audio that is not the audio being recorded. Dictation is
+  // the case that rule does not cover: the Web Speech API owns its microphone
+  // privately and exposes no stream, no node, and no level, so there is nothing
+  // to read. This one is the only stream open at the time (the mic button is
+  // hidden in record mode), and it feeds the same channel the recorder does, so
+  // the waveform component stays unaware of which one is talking.
   const startDictation = () => {
+    if (listening) {
+      stopDictation();
+      return;
+    }
+    type SpeechResult = { readonly isFinal?: boolean; readonly 0?: { transcript?: string } };
     type SpeechRecognitionConstructor = new () => {
       continuous: boolean;
       interimResults: boolean;
       lang: string;
       start: () => void;
       stop: () => void;
-      onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
+      onresult: ((event: { results: ArrayLike<SpeechResult> }) => void) | null;
       onend: (() => void) | null;
-      onerror: (() => void) | null;
+      onerror: ((event: { error?: string }) => void) | null;
     };
     const speechWindow = window as typeof window & {
       SpeechRecognition?: SpeechRecognitionConstructor;
@@ -192,21 +284,73 @@ export function Composer({ busy, centered = false, placement = "floating", place
     };
     const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!Recognition) return;
+
     const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognitionRef.current = recognition;
+    wantsDictationRef.current = true;
+    // Whatever was already typed. Each result rewrites the box from this plus
+    // everything heard so far, so a corrected phrase replaces itself instead of
+    // being appended twice.
+    dictationBaseRef.current = inputRef.current?.textContent?.trim() ?? "";
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.lang = navigator.language || "en-US";
+
     recognition.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
-      if (!transcript || !inputRef.current) return;
-      const current = inputRef.current.textContent?.trim() ?? "";
-      inputRef.current.textContent = [current, transcript].filter(Boolean).join(" ");
-      setHasText(true);
+      let heard = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        heard += event.results[index]?.[0]?.transcript ?? "";
+      }
+      const element = inputRef.current;
+      if (!element) return;
+      const combined = [dictationBaseRef.current, heard.trim()].filter(Boolean).join(" ");
+      element.textContent = combined;
+      // Writing textContent collapses the caret to the start, so a student who
+      // stops dictating and starts typing would type at the front of their own
+      // sentence. Put it back at the end.
+      const selection = window.getSelection();
+      if (selection && element.lastChild) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      setHasText(combined.trim().length > 0);
     };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
+
+    // Chrome ends a continuous session on its own after a stretch of silence.
+    // Restarting keeps "continuous" true in the sense the student means — it
+    // runs until they press stop — rather than in the sense the API means.
+    recognition.onend = () => {
+      if (!wantsDictationRef.current) return;
+      // The next session starts with an empty results list, so fold what has
+      // been heard so far into the base or it is lost on the restart.
+      dictationBaseRef.current = inputRef.current?.textContent?.trim() ?? dictationBaseRef.current;
+      try {
+        recognition.start();
+      } catch {
+        stopDictation();
+      }
+    };
+    // 🔴 NOT every error is fatal, and treating them alike breaks the feature on
+    // the first pause. Chrome fires `no-speech` whenever the student stops
+    // talking for a couple of seconds — which is what thinking mid-sentence
+    // looks like — and follows it with onend. Ending the session there would
+    // kill dictation the moment anyone paused, silently, since stopDictation
+    // clears wantsDictationRef and so suppresses onend's restart too.
+    //
+    // Only the errors that will still be true on the next attempt stop it.
+    // Restarting through a refused permission or an absent microphone would spin
+    // forever with nothing on screen explaining why; everything else falls
+    // through to onend, which restarts.
+    recognition.onerror = (event) => {
+      if (TERMINAL_SPEECH_ERRORS.has(event?.error ?? "")) stopDictation();
+    };
+
     setListening(true);
     recognition.start();
+    void openDictationMeter();
   };
 
   /** Only a real file drag counts. Dragging selected TEXT, or a row from the
@@ -404,7 +548,14 @@ export function Composer({ busy, centered = false, placement = "floating", place
                   <EffortPill effort={effort} onChange={setEffort} />
                   {/* Dictation is hidden in record mode: a live microphone is
                       already being captured, so a second one is nonsense. */}
-                  {activeMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
+                  {/* Only while dictating, and only wide enough to read as
+                      movement — the text going into the box is the real
+                      feedback; this says the microphone is hearing you at all,
+                      which is the thing a silent box cannot tell you. */}
+                  {activeMode === "chat" && listening && (
+                    <AudioWaveform active className="h-5 w-16 shrink-0" label="Dictation audio waveform" />
+                  )}
+                  {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
                   {activeMode === "record" ? (
                     // The waveform button turned into this ✕ — the way out.
                     // Mid-capture, setMode's guard turns the press into a stop
@@ -485,6 +636,16 @@ function WaveformMark() {
   );
 }
 
+/** How often dictation's own meter samples, matching the recorder's tick so the
+ *  waveform moves at one speed whichever microphone is feeding it. */
+const DICTATION_METER_MS = 90;
+
+/** Speech-recognition errors that will still be true next time, so retrying is
+ *  pointless. Everything ELSE — above all `no-speech`, which Chrome fires every
+ *  time the speaker pauses to think — is transient and must restart, or
+ *  dictation dies at the first silence. */
+const TERMINAL_SPEECH_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture", "language-not-supported"]);
+
 const WAVEFORM_BAR_COUNT = 24;
 /** Floor so a silent room still shows a thin line of bars rather than an empty
  *  gap, which reads as "broken" rather than "quiet". */
@@ -499,7 +660,7 @@ const WAVEFORM_MIN_SCALE = 0.12;
 // pulsing in unison. Heights are written straight to the DOM — no React state,
 // so a live meter costs the chat around it exactly zero re-renders (same reason
 // the mobile waveform drives Animated values imperatively).
-function AudioWaveform({ active }: { active: boolean }) {
+function AudioWaveform({ active, className, label }: { active: boolean; className?: string; label?: string }) {
   const barsRef = useRef<(HTMLSpanElement | null)[]>([]);
   const historyRef = useRef<number[]>(Array.from({ length: WAVEFORM_BAR_COUNT }, () => WAVEFORM_MIN_SCALE));
 
@@ -526,8 +687,10 @@ function AudioWaveform({ active }: { active: boolean }) {
 
   return (
     <div
-      aria-label={active ? "Recording audio waveform" : "Microphone idle"}
-      className="flex h-(--composer-input-min-height) w-full items-center gap-[3px]"
+      aria-label={label ?? (active ? "Recording audio waveform" : "Microphone idle")}
+      // The record-mode strip fills the input's slot; dictation's sits in the
+      // controls row beside the mic button, so the size is the caller's call.
+      className={cn("flex items-center gap-[3px]", className ?? "h-(--composer-input-min-height) w-full")}
       data-testid="composer-waveform"
       role="img"
     >

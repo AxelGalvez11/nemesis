@@ -6,6 +6,7 @@ import "./styles/legacy.css";
 import "./styles/auth.css";
 import "./styles/account.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ConfirmProvider } from "@/components/desktop-ui/confirm-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
@@ -30,7 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="nemesis-theme" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
         <PostHogProvider>
           <ThemeProvider>
-            <AuthProvider>{children}</AuthProvider>
+            {/* Innermost, so every surface can ask — Study, Library, Calendar,
+                Notebooks and both shells all delete things. See
+                components/desktop-ui/confirm-dialog.tsx. */}
+            <AuthProvider><ConfirmProvider>{children}</ConfirmProvider></AuthProvider>
           </ThemeProvider>
         </PostHogProvider>
       </body>

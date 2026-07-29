@@ -4,6 +4,7 @@ import { IconCards, IconChevronDown, IconChevronRight, IconFileUpload, IconFolde
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
@@ -110,6 +111,7 @@ function loadGroups(): string[] {
 }
 
 export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
+  const confirm = useConfirm();
   const { cards, decks, deleteDeck, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -148,7 +150,11 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
   async function removeDeck(deckId: string) {
     const deck = decks.find((item) => item.id === deckId);
-    if (!deck || !window.confirm(`Are you sure you want to delete “${deck.name}” and all of its cards? This can't be undone.`)) return;
+    if (!deck) return;
+    if (!(await confirm({
+      body: `“${deck.name}” and all of its cards are deleted. This can't be undone.`,
+      title: "Delete this deck?",
+    }))) return;
     try {
       await deleteDeck(deckId);
       setBrowseOpen(false);
@@ -167,7 +173,11 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     const destination = parent ? `“${pathLeaf(parent)}”` : "the top level";
     if (inside.length > 0) {
       const tally = `${inside.length} deck${inside.length === 1 ? "" : "s"}`;
-      if (!window.confirm(`Remove the folder “${leaf}”? Its ${tally} move to ${destination}. Nothing is deleted.`)) return;
+      if (!(await confirm({
+        body: `Its ${tally} move to ${destination}. Nothing is deleted.`,
+        confirmLabel: "Remove folder",
+        title: `Remove the folder “${leaf}”?`,
+      }))) return;
     }
     setActionError(null);
     try {

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { UseNotebooksApi } from "./notebooks-store";
 import { NotebookSourcesDialog } from "./notebook-sources-dialog";
 import { extractAndAddFile, isAcceptedFile } from "./notebook-source-actions";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const KIND_ICON: Record<NotebookSourceKind, string> = {
   library: "book",
@@ -53,6 +54,7 @@ export function NotebookSourcesCard({
   addExtracted,
   removeSource,
 }: NotebookSourcesCardProps) {
+  const confirm = useConfirm();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [dropBusy, setDropBusy] = useState(false);
@@ -143,7 +145,9 @@ export function NotebookSourcesCard({
                 aria-label={`Remove ${s.name}`}
                 className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 onClick={() => {
-                  if (window.confirm(`Are you sure you want to delete “${s.name}”? This can't be undone.`)) void removeSource(s.id);
+                  void (async () => {
+                    if (await confirm({ body: `“${s.name}” is removed from this notebook. This can't be undone.`, confirmLabel: "Remove", title: "Remove this source?" })) await removeSource(s.id);
+                  })();
                 }}
                 size="icon-xs"
                 type="button"

@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
 import { KIND_META, KIND_ORDER } from "./kind-meta";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const newEventId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -41,6 +42,7 @@ interface EventFormDialogProps {
 }
 
 export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onDelete }: EventFormDialogProps) {
+  const confirm = useConfirm();
   const [title, setTitle] = useState(event?.title ?? "");
   const [date, setDate] = useState(event?.date ?? initialDate ?? "");
   const [time, setTime] = useState(event?.time ?? "");
@@ -76,7 +78,7 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
 
   async function handleDelete() {
     if (!onDelete || saving) return;
-    if (!window.confirm(`Are you sure you want to delete “${title || "this event"}”? This can't be undone.`)) return;
+    if (!(await confirm({ body: `“${title || "this event"}” is deleted. This can't be undone.`, title: "Delete this event?" }))) return;
     setSaving(true);
     setError(null);
     try {

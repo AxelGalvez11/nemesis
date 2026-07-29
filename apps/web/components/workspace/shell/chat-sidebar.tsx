@@ -44,6 +44,7 @@ import {
   SidebarRowStack,
   SidebarSectionHeader,
 } from "./sidebar-primitives";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 interface NavItem {
   id: string;
@@ -76,6 +77,7 @@ interface ChatSidebarProps {
 }
 
 export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate }: ChatSidebarProps) {
+  const confirm = useConfirm();
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
@@ -111,8 +113,8 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
     onNavigate?.();
   };
 
-  const confirmRemoveSession = (id: string, title: string) => {
-    if (window.confirm(`Are you sure you want to delete “${title || "New chat"}”? This can't be undone.`)) remove(id);
+  const confirmRemoveSession = async (id: string, title: string) => {
+    if (await confirm({ body: `“${title || "New chat"}” is deleted. This can't be undone.`, title: "Delete this chat?" })) remove(id);
   };
 
   const showSessionSections = sessions.length > 0;

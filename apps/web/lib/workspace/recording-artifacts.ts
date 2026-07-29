@@ -76,12 +76,24 @@ export function useRecordingArtifacts({ contextId, preview, surface, userId }: U
     return () => { cancelled = true; };
   }, [contextId, preview, surface, userId]);
 
-  const createArtifact = useCallback(async (draft: RecordingArtifactDraft, title?: string) => {
-    if (!contextId) throw new Error("Choose a conversation before saving a recording.");
+  /**
+   * Save a finished recording.
+   *
+   * `intoContextId` exists for the caller that CREATES the conversation at save
+   * time rather than before recording (sessions/session-chat.tsx — a session is
+   * no longer made the moment you open the recorder, so there may be nothing to
+   * attach to until the recording is done). `contextId` here is a prop, so a
+   * conversation created inside the same callback is not visible to this closure
+   * until the next render — which is exactly one render too late to save into.
+   * Passing the id through sidesteps the closure instead of racing it.
+   */
+  const createArtifact = useCallback(async (draft: RecordingArtifactDraft, title?: string, intoContextId?: string) => {
+    const target = intoContextId ?? contextId;
+    if (!target) throw new Error("Choose a conversation before saving a recording.");
     const createdAt = new Date().toISOString();
     const artifact: RecordingArtifact = {
       id: crypto.randomUUID(),
-      contextId,
+      contextId: target,
       surface,
       title: title?.trim() || `Recording · ${new Date(createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
       transcript: draft.transcript.trim(),
@@ -98,7 +110,7 @@ export function useRecordingArtifacts({ contextId, preview, surface, userId }: U
         id: artifact.id,
         user_id: userId,
         surface,
-        context_id: contextId,
+        context_id: target,
         title: artifact.title,
         transcript: artifact.transcript,
         notes: artifact.notes,
