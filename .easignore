@@ -79,11 +79,17 @@ graphify-out/
 apps/desktop-agent/
 
 # ── Untracked weight the phone build has no use for. The archive was 455 MB;
-#    the git tree alone is 127 MB, so most of it was images and scratch. ───────
+#    the git tree alone is 127 MB, so most of it was images and scratch.
+#
+#    🔴 EVERYTHING BELOW IS UNTRACKED, AND THAT IS THE RULE. Excluding a file
+#    git tracks makes the upload differ from a real checkout, which is a build
+#    that cannot be reproduced by cloning the repo. `landing/` (50 files) and
+#    `apps/nemesis-desktop/` (157 files) were listed here and are both tracked;
+#    they came out on 2026-07-29 while chasing a failure in the "Configure
+#    expo-updates" phase. Excluding untracked junk only moves the archive CLOSER
+#    to a clean checkout, so it stays. ─────────────────────────────────────────
 marketing/
 tmp/
-apps/nemesis-desktop/
-landing/
 .obsidian/
 .gstack/
 .claude/worktrees/
