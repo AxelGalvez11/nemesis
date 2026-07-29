@@ -7,10 +7,12 @@
 // sources (notebook-source-actions.ts), and chat attachments (chat-attachments.ts) — so the
 // scanned-PDF vision fallback below reaches all of them from one place.
 //
-// Secrets: none required. GEMINI_API_KEY is read ONLY if present, purely to enable that fallback;
-// with no key the route behaves exactly as it did before (see lib/pdf/vision.ts).
+// Secrets: none required to PARSE. GEMINI_API_KEY is read only if present, to enable that fallback
+// (lib/pdf/vision.ts) — and because it IS present in production, this route can turn an upload into
+// a billed API call on our account. That is why the gate below is a real lookup: see verifyDeviceKey.
 import { NextResponse } from "next/server";
 
+import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
@@ -66,11 +68,26 @@ function sniffKind(bytes: Uint8Array): FileKind | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  // Require the student's device key — same gate as the URL route, so this parse endpoint can't be
-  // hit anonymously to burn CPU on arbitrary uploads.
-  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!bearer.startsWith("nmk_")) {
-    return NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
+  // 🔴 RESOLVE the device key; do not glance at how it starts.
+  //
+  // This used to be `bearer.startsWith("nmk_")` and nothing else, which is a
+  // SHAPE check wearing an auth check's clothes. The sibling URL route and
+  // /api/workspace/search carry the same-looking line and are fine, because both
+  // FORWARD the header to a Supabase function that resolves it. This route
+  // forwards it nowhere — so the line that read identically was, here, the only
+  // thing between a made-up string and a Gemini bill on our key.
+  //
+  // lib/device-key.ts was written for exactly this (PR #284) and was never
+  // imported by anything but its own test. A fix that is not wired in is not a
+  // fix; grep for the CALLER, not the helper.
+  const check = await verifyDeviceKey(bearerFrom(req.headers.get("authorization")));
+  if (!check.ok) {
+    // "unavailable" means our lookup broke, not that the caller is an impostor —
+    // 503 so a database blip reads as "try again", never as "your device is
+    // broken", and never as a pass.
+    return check.reason === "unavailable"
+      ? NextResponse.json({ error: "Can't check this device right now. Try again in a moment." }, { status: 503 })
+      : NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
   }
 
   let form: FormData;

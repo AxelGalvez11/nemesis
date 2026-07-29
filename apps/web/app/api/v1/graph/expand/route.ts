@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { pmidFromUrl } from "@nemesis/shared";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
 
 // HARDENING (mirrors evidence/search/route.ts): this route fans out to OpenAlex (up to 4 calls per
 // request), so it must not be a public open door. Two guards: (1) require a signed-in user; nothing
-// auto-calls this route, so auth breaks no flow. (2) a per-instance sliding-window rate cap bounding
-// the outbound fan-out under a token burst. Responses carry a CDN cache header so repeats are absorbed.
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 30; // expands per window per instance — a backstop; auth is the primary gate
-let hits: number[] = [];
-function rateLimited(now: number): boolean {
-  hits = hits.filter((t) => now - t < RATE_WINDOW_MS);
-  if (hits.length >= RATE_MAX) return true;
-  hits.push(now);
-  return false;
-}
+// auto-calls this route, so auth breaks no flow. (2) a PER-USER rate cap, counted in Postgres,
+// bounding the outbound fan-out under a token burst. Responses carry a CDN cache header so repeats
+// are absorbed.
+//
+// The cap was per INSTANCE until 2026-07-29, which on serverless means it rose with the number of
+// instances the platform started — looser under load, tightest when idle. See lib/rate-limit.ts.
+const RATE_WINDOW_SECONDS = 10;
+const RATE_MAX = 30; // expands per 10s per USER — a backstop; auth is the primary gate
 
 const OPENALEX = "https://api.openalex.org";
 const CAP = 8;
@@ -79,7 +77,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "bad_pmid", message: "Pass a numeric ?pmid=..." }, { status: 400 });
   }
 
-  if (rateLimited(Date.now())) {
+  const rate = await consumeRateLimit("graph_expand", user.id, RATE_MAX, RATE_WINDOW_SECONDS);
+  if (!rate.allowed) {
     return NextResponse.json({ error: "rate_limited", message: "Too many lookups right now — try again shortly." }, { status: 429 });
   }
 

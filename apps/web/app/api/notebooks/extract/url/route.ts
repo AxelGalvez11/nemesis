@@ -35,6 +35,15 @@ interface ScrapePayload {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // A SHAPE check, and that is enough HERE and only here: this route spends
+  // nothing itself — it forwards the key to nemesis-search, which resolves it
+  // against `device_keys` and meters the Firecrawl call against that account. A
+  // forged key gets a 403 one hop later, before any money is spent.
+  //
+  // The sibling file route carried this identical line and was NOT safe, because
+  // it forwards nowhere and calls Gemini on our own key. Whether a prefix check
+  // is sufficient depends entirely on what happens downstream — so if this route
+  // ever starts doing its own fetching, it needs verifyDeviceKey (lib/device-key.ts).
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!bearer.startsWith("nmk_")) {
     return NextResponse.json(

@@ -23,6 +23,12 @@ const RATE_MAX_MISSES = 3;
 const NCBI_DEADLINE_MS = 3500; // bound the whole espell→esearch→efetch chain so a hung NCBI never holds the function
 
 const cache = new Map<string, { at: number; terms: MeshTerm[] }>();
+// DELIBERATELY still per-instance, unlike the other three routes (which moved to
+// lib/rate-limit.ts on 2026-07-29). This is not a cap on a user — it is a shield
+// on the UPSTREAM lookup, three cache misses a second, on an unauthenticated
+// typeahead. A database round trip to decide whether to make one upstream call
+// costs more than the call it is guarding, and there is no user id to key it by.
+// If this route ever gains auth or gets expensive, it moves too.
 let missTimestamps: number[] = [];
 
 function rateLimited(now: number): boolean {

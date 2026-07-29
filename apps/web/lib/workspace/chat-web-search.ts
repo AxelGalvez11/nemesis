@@ -1,3 +1,5 @@
+import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
+
 export interface ChatWebResult {
   title: string;
   url: string;
@@ -41,8 +43,18 @@ export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
 export function formatWebSearchContext(results: ChatWebResult[]): string {
   const usable = usableWebResults(results);
   if (usable.length === 0) return "";
+  // Titles and snippets are whatever a stranger put on a web page, and a page
+  // that wants to be found by a study assistant can say anything it likes in the
+  // description a search engine echoes back. Same fence as an attachment: this
+  // is the more exposed of the two, because nobody chose to open it.
   return [
     "Live web search results. Use these for current facts. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
-    ...usable.map((result, index) => `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`),
+    UNTRUSTED_CONTENT_RULE,
+    ...usable.map((result, index) =>
+      wrapUntrusted(
+        `result ${index + 1}`,
+        `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`,
+      ),
+    ),
   ].join("\n\n");
 }

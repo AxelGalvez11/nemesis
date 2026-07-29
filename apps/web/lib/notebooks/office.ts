@@ -17,6 +17,70 @@
 import { strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 
+/**
+ * Most a .docx/.pptx may weigh once unpacked.
+ *
+ * BOUNDED INPUT, UNBOUNDED EXPANSION was the hole: the route refuses an upload
+ * over 25 MB, and then handed the bytes to `unzipSync`, which inflates the whole
+ * archive into memory with no ceiling of its own. Deflate reaches roughly 1000:1
+ * on repetitive data, so a hand-made 25 MB zip is comfortably tens of gigabytes
+ * once open — the serverless instance dies before any text cap is consulted,
+ * because TEXT_CAP is applied to the OUTPUT of extraction, long after.
+ *
+ * 400 MB is far above any real deck. The biggest thing in a genuine lecture file
+ * is its images, and the route already refuses more than 25 MB of them
+ * compressed; a lossless-heavy deck might triple, never sixteen-fold.
+ */
+export const UNZIP_MAX_TOTAL_BYTES = 400 * 1024 * 1024;
+
+/** Most entries a legitimate Office file contains. A zip can also attack by
+ *  COUNT rather than size — a million empty files costs nothing to compress and
+ *  a great deal to allocate. A 500-slide deck with notes, diagrams, charts and
+ *  media runs to a few thousand parts. */
+export const UNZIP_MAX_ENTRIES = 20_000;
+
+/**
+ * `unzipSync` with a ceiling on what comes OUT.
+ *
+ * fflate has no per-archive budget, so the sizes are summed as the entries are
+ * walked and the whole extraction is abandoned the moment the running total
+ * crosses the limit — the point is to stop before the memory is committed, not
+ * to report on it afterwards.
+ *
+ * Throws a student-readable message: the route turns a throw into a friendly
+ * error, and "this file is too big once unpacked" is true and actionable, while
+ * a crashed instance tells them nothing at all.
+ */
+export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
+  let total = 0;
+  let entries = 0;
+  const files = unzipSync(bytes, {
+    filter(file) {
+      entries += 1;
+      if (entries > UNZIP_MAX_ENTRIES) {
+        throw new Error("That file has too many parts to open safely.");
+      }
+      // `originalSize` is the header's claim, which a crafted zip can lie about.
+      // It is still worth checking: an honest bomb is refused before a single
+      // byte is inflated. The post-inflation sum below is what catches a liar.
+      total += file.originalSize ?? 0;
+      if (total > UNZIP_MAX_TOTAL_BYTES) {
+        throw new Error("That file is too large once unpacked. Try exporting it again, or split it up.");
+      }
+      return true;
+    },
+  });
+
+  let inflated = 0;
+  for (const name of Object.keys(files)) {
+    inflated += files[name]?.byteLength ?? 0;
+    if (inflated > UNZIP_MAX_TOTAL_BYTES) {
+      throw new Error("That file is too large once unpacked. Try exporting it again, or split it up.");
+    }
+  }
+  return files;
+}
+
 import { emfEmbeddedImage } from "./emf-bitmap";
 import { imageSize } from "./image-dimensions";
 import {
@@ -44,7 +108,7 @@ import { tiffImage } from "./tiff-image";
 
 /** Extract text from .docx bytes. Throws on a non-zip / a file missing word/document.xml. */
 export function extractDocxText(bytes: Uint8Array): OfficeExtract {
-  const files = unzipSync(bytes);
+  const files = unzipBounded(bytes);
   const doc = files["word/document.xml"];
   if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
   const text = docxXmlToText(strFromU8(doc));
@@ -121,7 +185,7 @@ function recoverImage(name: string, bytes: Uint8Array): { bytes: Uint8Array; mim
 
 /** Open a .pptx once and return everything the importer needs from it. */
 export function readPptxSlides(bytes: Uint8Array): PptxContents {
-  const files = unzipSync(bytes);
+  const files = unzipBounded(bytes);
   const slideNames = orderSlideFiles(Object.keys(files));
   if (!slideNames.length) throw new Error("That doesn't look like a PowerPoint (.pptx) file.");
 
