@@ -235,7 +235,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
                 <LibraryNoteRow
                   isSelected={note.path === selectedPath}
                   key={note.path}
-                  note={{ kind: "note", id: note.id, path: note.path, title: note.title, updatedAt: note.updatedAt, createdAt: note.createdAt, addedOrder: 0 }}
+                  note={{ kind: "note", id: note.id, path: note.path, title: note.title, updatedAt: note.updatedAt, createdAt: note.createdAt, addedOrder: 0, position: note.position ?? null }}
                   onSelect={openPath}
                 />
               ))}
