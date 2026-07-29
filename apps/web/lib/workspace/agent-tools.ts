@@ -206,8 +206,16 @@ export const AGENT_TOOLS = [
         properties: {
           cards: {
             items: {
-              properties: { back: { type: "string" }, front: { type: "string" } },
-              required: ["front", "back"],
+              properties: {
+                back: { type: "string" },
+                card_type: {
+                  description: "The learner's selected format for this card.",
+                  enum: ["basic", "cloze", "reversed"],
+                  type: "string",
+                },
+                front: { type: "string" },
+              },
+              required: ["front", "back", "card_type"],
               type: "object",
             },
             type: "array",
@@ -626,7 +634,12 @@ async function addPracticeTest(args: Record<string, unknown>) {
   if (error || !data) return { error: error?.message ?? "Couldn't save the test." };
   return {
     added: true,
-    artifact: { id: str(data.id), kind: "test", title, url: "/study?section=tests" },
+    artifact: {
+      id: str(data.id),
+      kind: "test",
+      title,
+      url: `/study?section=tests&artifact=${encodeURIComponent(str(data.id))}`,
+    },
     group: groupName,
     kind: "test",
     questions: content.questions.length,
@@ -754,12 +767,38 @@ async function readStudyArtifact(id: string) {
   };
 }
 
-async function addFlashcards(deckName: string, cards: { front: string; back: string }[]) {
+type AgentFlashcard = {
+  front: string;
+  back: string;
+  card_type?: "basic" | "cloze" | "reversed";
+};
+
+async function addFlashcards(deckName: string, cards: AgentFlashcard[]) {
   const name = deckName.trim().slice(0, 120);
   if (!name) return { error: "Deck name is required." };
   const cleanCards = cards
-    .map((card) => ({ back: str(card.back).trim().slice(0, 20_000), front: str(card.front).trim().slice(0, 12_000) }))
+    .map((card) => {
+      const front = str(card.front).trim().slice(0, 12_000);
+      const requestedType = str(card.card_type).trim().toLowerCase();
+      const cardType =
+        requestedType === "cloze" || requestedType === "reversed"
+          ? requestedType
+          : /\{\{c\d+::/.test(front)
+            ? "cloze"
+            : "basic";
+      return {
+        back: str(card.back).trim().slice(0, 20_000),
+        cardType,
+        front,
+      };
+    })
     .filter((card) => card.front && card.back)
+    .flatMap((card) => [
+      card,
+      ...(card.cardType === "reversed"
+        ? [{ back: card.front, cardType: card.cardType, front: card.back }]
+        : []),
+    ])
     .slice(0, 100);
   if (cleanCards.length === 0) return { error: "No valid cards — each needs a front and a back." };
 
@@ -781,7 +820,12 @@ async function addFlashcards(deckName: string, cards: { front: string; back: str
   // for one unchecked assumption.
   const { data: inserted, error: insertError } = await supabase
     .from("study_cards")
-    .insert(cleanCards.map((card) => ({ back: card.back, deck_id: deckId, front: card.front })))
+    .insert(cleanCards.map((card) => ({
+      back: card.back,
+      card_type: card.cardType,
+      deck_id: deckId,
+      front: card.front,
+    })))
     .select("id");
   if (insertError) return { error: insertError.message };
   return {
@@ -878,7 +922,7 @@ export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
       case "read_study_deck": return await readStudyDeck(str(args.deck_name), Number(args.offset), Number(args.limit));
       case "list_study_artifacts": return await listStudyArtifacts(str(args.kind));
       case "read_study_artifact": return await readStudyArtifact(str(args.id));
-      case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as { front: string; back: string }[]) : []);
+      case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : []);
       case "add_practice_test": return await addPracticeTest(args);
       case "add_mindmap": return await addMindmap(args);
       case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));

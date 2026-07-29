@@ -1,11 +1,12 @@
 import { useMemo, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
 import MarkdownIt from "markdown-it";
 import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
 import { MarkdownImage } from "./MarkdownImage";
+import type { ChatSource } from "@/lib/chat-thread";
 import { obsidianInline } from "@/lib/markdown-obsidian";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -79,16 +80,45 @@ interface MessageBodyProps {
   /** The note reader routes [[wikilinks]] and external URLs through its own
    *  handler; chat and review leave this off and get default link handling. */
   onLinkPress?: (url: string) => boolean;
+  /** Known answer sources. Matching markdown links become compact inline
+   * citation chips, like the iOS ChatGPT source treatment. */
+  sources?: ChatSource[];
 }
 
-export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) {
+export function MessageBody({ content, styles, onLinkPress, sources }: MessageBodyProps) {
   const { colors: c } = useTheme();
   const segments = useMemo(() => buildSegments(content), [content]);
+  const rules = useMemo(() => {
+    if (!sources?.length) return MARKDOWN_RULES;
+    const sourceUrls = new Set(sources.map((source) => normalizedUrl(source.url)));
+    return {
+      ...MARKDOWN_RULES,
+      link: (node: ASTNode, children: ReactNode) => {
+        const href = String(node.attributes?.href ?? "");
+        const isSource = sourceUrls.has(normalizedUrl(href));
+        return (
+          <Text
+            accessibilityRole="link"
+            key={node.key}
+            onPress={() => {
+              const handled = onLinkPress?.(href) ?? false;
+              if (!handled) void Linking.openURL(href).catch(() => {});
+            }}
+            style={isSource
+              ? [inlineCitation.chip, { backgroundColor: c.surface2, color: c.textHint }]
+              : styles.link}
+          >
+            {children}
+          </Text>
+        );
+      },
+    };
+  }, [c.surface2, c.textHint, onLinkPress, sources, styles]);
 
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
   if (!segments) {
-    return <Markdown style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{content}</Markdown>;
+    return <Markdown style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{content}</Markdown>;
   }
 
   return (
@@ -96,7 +126,7 @@ export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) 
       {segments.map((seg, index) => {
         if (seg.type === "markdown") {
           return (
-            <Markdown key={index} style={styles} rules={MARKDOWN_RULES} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>
+            <Markdown key={index} style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>
               {seg.text}
             </Markdown>
           );
@@ -119,6 +149,21 @@ export function MessageBody({ content, styles, onLinkPress }: MessageBodyProps) 
     </View>
   );
 }
+
+function normalizedUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+const inlineCitation = StyleSheet.create({
+  chip: {
+    borderRadius: 999,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    textDecorationLine: "none",
+  },
+});
 
 // Returns the ordered segments, or null when the message should render as one
 // plain Markdown block: either there is no real math, or a structural delimiter

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { studyCreationPreferencePrompt } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
@@ -210,6 +211,21 @@ export function SessionChat() {
       if (!prepared.displayText) return;
       if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || files[0]?.name || "New session"));
       setError(null);
+      const preferenceQuestion =
+        files.length === 0 ? studyCreationPreferencePrompt(text) : null;
+      if (preferenceQuestion) {
+        sessionsStore.appendMessage(targetId, {
+          at: new Date().toISOString(),
+          content: prepared.displayText,
+          role: "user",
+        });
+        sessionsStore.appendMessage(targetId, {
+          at: new Date(Date.now() + 1).toISOString(),
+          content: preferenceQuestion,
+          role: "assistant",
+        });
+        return;
+      }
 
       if (preview) {
         sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });

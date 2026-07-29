@@ -19,6 +19,7 @@
 
 import { IconArrowRight, IconChecklist, IconFolder, IconFolderPlus, IconSitemap, IconTrash } from "@tabler/icons-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -74,6 +75,7 @@ const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
 
 export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const confirm = useConfirm();
+  const searchParams = useSearchParams();
   const { artifacts, deleteArtifact, updateArtifact } = useCloudStudy();
   const isTests = kind === "tests";
   const artifactKind: StudyArtifactKind = isTests ? "test" : "mindmap";
@@ -97,6 +99,10 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const dragRef = useRef<ArtifactDrag | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null);
   const dropGroupRef = useRef<string | null>(null);
+  const [dropItemId, setDropItemId] = useState<string | null>(null);
+  const dropItemRef = useRef<string | null>(null);
+  const [mergeItems, setMergeItems] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [mergeGroupName, setMergeGroupName] = useState("");
   const ignoreClickUntilRef = useRef(0);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
 
@@ -108,6 +114,10 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     } catch { /* best effort */ }
   }, [groupStorageKey]);
   useEffect(() => () => pointerCleanupRef.current?.(), []);
+  useEffect(() => {
+    const artifactId = searchParams.get("artifact");
+    if (artifactId && items.some((item) => item.id === artifactId)) setOpenedId(artifactId);
+  }, [items, searchParams]);
 
   function persistGroups(next: string[]) {
     const unique = Array.from(new Set(next.map((group) => group.trim()).filter(Boolean)));
@@ -156,11 +166,19 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         document.body.style.userSelect = "none";
       }
       const hit = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY) as HTMLElement | null;
+      let validItemTarget: string | null = null;
+      if (payload.kind === "item") {
+        const itemTarget =
+          hit?.closest<HTMLElement>("[data-artifact-drop-item]")?.dataset.artifactDropItem ?? null;
+        validItemTarget = itemTarget && itemTarget !== payload.id ? itemTarget : null;
+      }
+      dropItemRef.current = validItemTarget;
+      setDropItemId(validItemTarget);
       const over = hit?.closest<HTMLElement>("[data-artifact-drop-group]")?.dataset.artifactDropGroup ?? null;
       // A folder is not a drop target for itself. Resolving that here rather
       // than at drop time means the row never lights up as if it would accept
       // the thing being dragged.
-      const target = over !== null && dropAccepts(payload, over) ? over : null;
+      const target = validItemTarget === null && over !== null && dropAccepts(payload, over) ? over : null;
       dropGroupRef.current = target;
       setDropGroup(target);
     };
@@ -173,8 +191,12 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     };
     const up = () => {
       if (dragging) {
+        const itemTarget = dropItemRef.current;
         const target = dropGroupRef.current;
-        if (target !== null) {
+        if (payload.kind === "item" && itemTarget) {
+          setMergeGroupName("");
+          setMergeItems({ sourceId: payload.id, targetId: itemTarget });
+        } else if (target !== null) {
           if (payload.kind === "item") void fileInto(payload.id, target);
           else void moveGroup(payload.name, target);
         }
@@ -184,6 +206,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       setDrag(null);
       dropGroupRef.current = null;
       setDropGroup(null);
+      dropItemRef.current = null;
+      setDropItemId(null);
       cleanup();
     };
     pointerCleanupRef.current = cleanup;
@@ -203,6 +227,33 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       await updateArtifact(artifactId, { groupName: next });
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't move that item.");
+    }
+  }
+
+  async function createFolderFromItems(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mergeItems) return;
+    const source = items.find((item) => item.id === mergeItems.sourceId);
+    const target = items.find((item) => item.id === mergeItems.targetId);
+    if (!source || !target) {
+      setMergeItems(null);
+      return;
+    }
+    const leaf = normalizeGroupPath(mergeGroupName);
+    if (!leaf) return;
+    const parent = normalizeGroupPath(target.groupName ?? "");
+    const destination = normalizeGroupPath(parent ? `${parent}::${leaf}` : leaf);
+    setActionError(null);
+    try {
+      await Promise.all([
+        updateArtifact(source.id, { groupName: destination }),
+        updateArtifact(target.id, { groupName: destination }),
+      ]);
+      persistGroups([...extraGroups, destination]);
+      setMergeItems(null);
+      setMergeGroupName("");
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't create that folder.");
     }
   }
 
@@ -334,6 +385,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         <ItemRow
           depth={depth}
           dragging={drag?.kind === "item" && drag.id === item.id}
+          dropTarget={dropItemId === item.id}
           grid={ROW_GRID}
           item={item}
           key={node.id}
@@ -458,6 +510,40 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setMergeItems(null);
+            setMergeGroupName("");
+          }
+        }}
+        open={mergeItems !== null}
+      >
+        <DialogContent className="max-w-sm">
+          <form className="grid gap-4" onSubmit={createFolderFromItems}>
+            <DialogHeader>
+              <DialogTitle>Create a folder</DialogTitle>
+              <DialogDescription>
+                Both {label.toLowerCase()} will move into the new folder.
+              </DialogDescription>
+            </DialogHeader>
+            <label className="grid gap-1.5 text-xs font-medium">
+              Folder name
+              <Input
+                autoFocus
+                onChange={(event) => setMergeGroupName(event.target.value)}
+                placeholder="Biochemistry"
+                value={mergeGroupName}
+              />
+            </label>
+            <DialogFooter>
+              <Button onClick={() => setMergeItems(null)} type="button" variant="ghost">Cancel</Button>
+              <Button disabled={!normalizeGroupPath(mergeGroupName)} type="submit" variant="secondary">Create folder</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog onOpenChange={setBrowseOpen} open={browseOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader><DialogTitle>Browse {label.toLowerCase()}</DialogTitle><DialogDescription>{items.length} cloud item{items.length === 1 ? "" : "s"}, grouped with the rest of Study.</DialogDescription></DialogHeader>
@@ -521,6 +607,7 @@ interface ItemRowProps {
   meta: string;
   grid: string;
   dragging: boolean;
+  dropTarget: boolean;
   renaming: boolean;
   onOpen: () => void;
   onStartRename: () => void;
@@ -533,7 +620,7 @@ interface ItemRowProps {
   depth: number;
 }
 
-function ItemRow({ item, meta, depth, grid, dragging, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
+function ItemRow({ item, meta, depth, grid, dragging, dropTarget, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
   return (
     <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>
       <div
@@ -542,7 +629,9 @@ function ItemRow({ item, meta, depth, grid, dragging, renaming, onOpen, onStartR
           "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) active:cursor-grabbing",
           grid,
           dragging && "opacity-50",
+          dropTarget && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
         )}
+        data-artifact-drop-item={item.id}
         data-testid={`artifact-${item.id}`}
         onClick={() => {
           if (renaming || suppressClick()) return;

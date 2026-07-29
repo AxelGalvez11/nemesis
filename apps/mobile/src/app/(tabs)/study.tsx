@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle } from "react-native-svg";
@@ -16,7 +25,7 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { TOP_BAR_BUTTON, TOP_BAR_PAD_TOP } from "@/components/TopBar";
 import { StudyAddSheet, type StudyAddStep } from "@/components/StudyAddSheet";
 import { StudyBrowseSheet } from "@/components/StudyBrowseSheet";
-import { StudyImportSheet } from "@/components/StudyImportSheet";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import {
   StudyModeMenu,
   StudyModePopup,
@@ -171,12 +180,12 @@ export default function StudyScreen() {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [addSheetStep, setAddSheetStep] = useState<StudyAddStep>("new-cards");
   const [browseOpen, setBrowseOpen] = useState(false);
-  const [importSource, setImportSource] = useState<"anki" | "quizlet" | null>(null);
   // The header "…" actions dropdown.
   const [actionsOpen, setActionsOpen] = useState(false);
-  // Deck ordering (owner 2026-07-23 → Sorting) and its picker sheet.
+  // Deck ordering. The picker is a compact menu at the Sorting row that opened
+  // it — three short choices do not warrant taking over the bottom of the page.
   const [sortMode, setSortMode] = useState<DeckSort>("due");
-  const [sortOpen, setSortOpen] = useState(false);
+  const [sortMenuAnchor, setSortMenuAnchor] = useState<MenuAnchor | null>(null);
   // Multi-select mode (owner 2026-07-23 → Select / Move to): a set of row keys
   // ("deck:<id>" / "folder:<path>") the student has ticked, plus its move sheet.
   const [selectMode, setSelectMode] = useState(false);
@@ -679,10 +688,10 @@ export default function StudyScreen() {
                     {selectMode ? <SelectDot on={selectedKeys.has(`folder:${item.path}`)} /> : null}
                     {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                     <View style={item.collapsed ? null : styles.chevronOpen}>
-                      <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
+                      <ChevronIcon size={16} color={c.text2} strokeWidth={2.2} />
                     </View>
                     {/* Folder glyph so groups read as folders at a glance (owner 2026-07-21). */}
-                    <FolderIcon size={15} color={c.text2} strokeWidth={1.9} />
+                    <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
                     {/* This folder's OWN segment — "Cardio", not "Pharm::Cardio".
                         The full path lives on item.path and keys the collapse set. */}
                     <Text style={styles.folderName} numberOfLines={1}>{item.label}</Text>
@@ -857,29 +866,48 @@ export default function StudyScreen() {
           setSelectedKeys(new Set());
           setSelectMode(true);
         }}
-        onMoveTo={() => {
-          // "Move to" enters the same multi-select mode; the bottom bar's
-          // "Move to…" then does the move once rows are ticked.
+        onSorting={(anchor) => {
           setActionsOpen(false);
-          setSelectedKeys(new Set());
-          setSelectMode(true);
-        }}
-        onSorting={() => {
-          setActionsOpen(false);
-          setSortOpen(true);
+          setSortMenuAnchor(anchor);
         }}
         onBrowse={() => {
           setActionsOpen(false);
           setBrowseOpen(true);
         }}
-        onImportAnki={() => {
-          setActionsOpen(false);
-          setImportSource("anki");
-        }}
-        onImportQuizlet={() => {
-          setActionsOpen(false);
-          setImportSource("quizlet");
-        }}
+      />
+
+      <MiniMenu
+        visible={sortMenuAnchor !== null}
+        anchor={sortMenuAnchor}
+        actions={[
+          {
+            key: "due",
+            label: sortMode === "due" ? "Due first  ✓" : "Due first",
+            onPress: () => {
+              setSortMode("due");
+              setSortMenuAnchor(null);
+            },
+          },
+          {
+            key: "alpha",
+            label: sortMode === "alpha" ? "Name (A–Z)  ✓" : "Name (A–Z)",
+            onPress: () => {
+              setSortMode("alpha");
+              setSortMenuAnchor(null);
+            },
+          },
+          {
+            key: "cards",
+            label: sortMode === "cards" ? "Card count  ✓" : "Card count",
+            onPress: () => {
+              setSortMode("cards");
+              setSortMenuAnchor(null);
+            },
+          },
+        ] satisfies MenuRow[]}
+        onClose={() => setSortMenuAnchor(null)}
+        portal
+        testID="study-sort-menu"
       />
 
       {/* Multi-select action bar — the selection's Move to / Delete, plus Cancel.
@@ -942,30 +970,6 @@ export default function StudyScreen() {
         onChanged={() => void load(userId)}
       />
 
-      {importSource ? (
-        <StudyImportSheet
-          visible
-          onClose={() => setImportSource(null)}
-          onImported={() => void load(userId)}
-          source={importSource}
-          userId={userId}
-        />
-      ) : null}
-
-      {/* Sorting picker (owner 2026-07-23). Reuses the row-actions sheet chrome;
-          a "✓" marks the current mode. */}
-      <RowActionsSheet
-        visible={sortOpen}
-        title="Sort decks"
-        actions={[
-          { key: "due", label: sortMode === "due" ? "Due first  ✓" : "Due first", onPress: () => { setSortMode("due"); setSortOpen(false); } },
-          { key: "alpha", label: sortMode === "alpha" ? "Name (A–Z)  ✓" : "Name (A–Z)", onPress: () => { setSortMode("alpha"); setSortOpen(false); } },
-          { key: "cards", label: sortMode === "cards" ? "Card count  ✓" : "Card count", onPress: () => { setSortMode("cards"); setSortOpen(false); } },
-        ]}
-        onClose={() => setSortOpen(false)}
-        testID="study-sort-sheet"
-      />
-
       {/* Bulk "Move to" destination for the selected rows. currentFolder is a
           sentinel that matches no real folder, so every destination (including
           Top level) stays pickable for a mixed selection. */}
@@ -985,8 +989,10 @@ export default function StudyScreen() {
   );
 }
 
-// The "…" header dropdown (owner 2026-07-23): Create folder / New card / Select
-// / Move to / Sorting / Browse. Modeled on chat.tsx's ChatActionsPopup — a
+// The "…" header dropdown: creation, selection, sorting and browsing. Import is
+// deliberately absent on iOS, and moving begins from a selected/held item
+// rather than as a context-free action in this menu.
+// Modeled on chat.tsx's ChatActionsPopup — a
 // transparent tap-catcher + a glass menu — but it MUST carry a zIndex above the
 // RootDropZone's 20, or on iOS the (higher-zIndex) drop zone would paint over it
 // even though this renders later in the tree.
@@ -997,11 +1003,8 @@ function StudyActionsPopup({
   onCreateFolder,
   onNewCard,
   onSelect,
-  onMoveTo,
   onSorting,
   onBrowse,
-  onImportAnki,
-  onImportQuizlet,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -1009,24 +1012,22 @@ function StudyActionsPopup({
   onCreateFolder: () => void;
   onNewCard: () => void;
   onSelect: () => void;
-  onMoveTo: () => void;
-  onSorting: () => void;
+  onSorting: (anchor: MenuAnchor) => void;
   onBrowse: () => void;
-  onImportAnki: () => void;
-  onImportQuizlet: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   if (!visible) return null;
-  const rows: { key: string; label: string; onPress: () => void }[] = [
-    { key: "create-folder", label: "Create folder", onPress: onCreateFolder },
-    { key: "new-card", label: "New card", onPress: onNewCard },
-    { key: "import-anki", label: "Import from Anki", onPress: onImportAnki },
-    { key: "import-quizlet", label: "Import from Quizlet", onPress: onImportQuizlet },
-    { key: "select", label: "Select", onPress: onSelect },
-    { key: "move-to", label: "Move to…", onPress: onMoveTo },
-    { key: "sorting", label: "Sorting", onPress: onSorting },
-    { key: "browse", label: "Browse", onPress: onBrowse },
+  const rows: { key: string; label: string; onPress: (event: GestureResponderEvent) => void }[] = [
+    { key: "create-folder", label: "Create folder", onPress: () => onCreateFolder() },
+    { key: "new-card", label: "New card", onPress: () => onNewCard() },
+    { key: "select", label: "Select", onPress: () => onSelect() },
+    {
+      key: "sorting",
+      label: "Sorting",
+      onPress: (event) => onSorting({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }),
+    },
+    { key: "browse", label: "Browse", onPress: () => onBrowse() },
   ];
   return (
     <View style={[StyleSheet.absoluteFill, styles.actionsOverlay]} testID="study-actions-menu">
@@ -1110,13 +1111,22 @@ const createStyles = (c: ThemeColors) =>
     // Collapsible folder header row — chevron + folder glyph + name, with the
     // muted card total and the accent due+new badge trailing.
     chevronOpen: { transform: [{ rotate: "90deg" }] },
-    folderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
+    folderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2.5),
+      minHeight: control.lg + space(1),
+      paddingVertical: space(2),
+      paddingHorizontal: space(2),
+      borderRadius: radius.md,
+      marginBottom: space(1),
+    },
     // Same text SIZE as a deck row's title (owner 2026-07-22: "consistent text
     // size for folders and decks") — it used to be micro-sized. The uppercase +
     // letterSpacing went with the size bump: those exist to keep tiny label
     // text legible, and at full body size they just shout. A folder still
     // reads as a folder from its chevron, its glyph and the muted tone.
-    folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0 },
+    folderName: { ...type.bodyStrong, color: c.text, fontWeight: "600", flex: 1, minWidth: 0 },
     folderTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
     folderTotal: { ...type.small, fontWeight: "600", color: c.text3, fontVariant: ["tabular-nums"] },
     folderDue: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },

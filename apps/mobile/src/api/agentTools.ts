@@ -373,24 +373,35 @@ async function addFlashcards({ args, uid }: ToolContext) {
   // thirty-card deck would otherwise be thirty round trips on a phone connection,
   // and a failure halfway through would leave the deck half-written with no way to
   // tell the student which half.
-  const { error: insertError } = await supabase.from("study_cards").insert(
-    cards.map((card) => ({
+  const rows = cards.flatMap((card) => [
+    {
       back: card.back,
-      card_type: "basic",
+      card_type: card.cardType,
       deck_id: deckId,
       front: card.front,
       source_path: null,
       user_id: uid,
-    })),
-  );
+    },
+    ...(card.cardType === "reversed"
+      ? [{
+          back: card.front,
+          card_type: card.cardType,
+          deck_id: deckId,
+          front: card.back,
+          source_path: null,
+          user_id: uid,
+        }]
+      : []),
+  ]).slice(0, 100);
+  const { error: insertError } = await supabase.from("study_cards").insert(rows);
   if (insertError) return { error: insertError.message };
   const parts = deckNameParts(matched ?? wanted);
   return {
-    added: cards.length,
+    added: rows.length,
     // The artifact keeps the FULL name; the card splits it for display itself
     // (lib/artifact-card.ts), which is also what makes the folder show up as
     // the destination line rather than as part of the deck's name.
-    artifact: { id: deckId, kind: "flashcards", route: "/study?section=cards", title: parts.full },
+    artifact: { id: deckId, kind: "flashcards", route: `/review?deckId=${encodeURIComponent(deckId)}`, title: parts.full },
     created_deck: createdDeck,
     deck: parts.name,
     ...(parts.folder ? { folder: parts.folder } : {}),
@@ -425,7 +436,7 @@ async function addPracticeTest({ args, uid }: ToolContext) {
     // The folder rides in the ROUTE rather than a new ChatOutput field: the
     // card reads it back to name its destination, and `meta.outputs` is shared
     // with web, so a field only the phone writes is a schema web has to learn.
-    artifact: { id: saved.id, kind: "test", route: studyRoute("tests", groupName), title },
+    artifact: { id: saved.id, kind: "test", route: `/test?testId=${encodeURIComponent(saved.id)}`, title },
     group: groupName,
     kind: "test",
     questions: saved.questions.length,

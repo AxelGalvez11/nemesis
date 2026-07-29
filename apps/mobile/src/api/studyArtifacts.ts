@@ -113,6 +113,19 @@ export async function listStudyArtifacts(): Promise<StudyArtifact[]> {
     .filter((artifact): artifact is StudyArtifact => artifact !== null);
 }
 
+/** Fetch one exact artifact for a fullscreen route opened from Study or chat. */
+export async function getStudyArtifact(id: string): Promise<StudyArtifact | null> {
+  const artifactId = id.trim();
+  if (!artifactId) return null;
+  const { data, error } = await supabase
+    .from("study_artifacts")
+    .select("id,kind,title,group_name,status,content,created_at")
+    .eq("id", artifactId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? toArtifact(data as Record<string, unknown>) : null;
+}
+
 /**
  * Save a practice test the chat just wrote (owner 2026-07-24: "the phone chat
  * needs to be able to create flashcards, tests, mindmaps and those should show up

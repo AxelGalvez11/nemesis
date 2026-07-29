@@ -879,9 +879,9 @@ export default function LibraryScreen() {
                 {selectMode ? <SelectDot on={isSelected} /> : null}
                 {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                 <View style={isCollapsed ? null : styles.chevronOpen}>
-                  <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
+                  <ChevronIcon size={16} color={c.text2} strokeWidth={2.2} />
                 </View>
-                <FolderIcon size={16} color={c.text2} strokeWidth={1.9} />
+                <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.folderCount}>{count}</Text>
               </Pressable>
@@ -1466,13 +1466,15 @@ const createStyles = (c: ThemeColors) =>
     folderRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: space(1.5),
-      paddingVertical: space(3),
+      gap: space(2.5),
+      minHeight: control.lg + space(1),
+      paddingVertical: space(2),
       paddingHorizontal: space(2),
       marginTop: space(3.5),
-      borderRadius: radius.sm,
+      marginBottom: space(1),
+      borderRadius: radius.md,
     },
-    folderName: { ...type.bodyStrong, color: c.text, flex: 1 },
+    folderName: { ...type.bodyStrong, color: c.text, fontWeight: "600", flex: 1 },
     // Recursive item count (owner 2026-07-20) — flex:1 on folderName above pushes
     // this flush to the row's trailing edge.
     folderCount: { ...type.micro, color: c.text3 },

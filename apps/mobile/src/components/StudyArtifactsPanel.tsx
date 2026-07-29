@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { EmptyBlock, MissionButton } from "./mission-ui";
 import { MessageBody } from "./MessageBody";
@@ -125,7 +125,13 @@ export function StudyArtifactsPanel({
           <ArtifactRow
             key={artifact.id}
             artifact={artifact}
-            onOpen={() => setOpen(artifact)}
+            onOpen={() => {
+              if (artifact.kind === "test") {
+                router.push({ pathname: "/test", params: { testId: artifact.id } });
+              } else {
+                setOpen(artifact);
+              }
+            }}
             onDelete={() => {
               // Every other row on the Study page deletes by long press, so the
               // absence of it here would read as a missing feature rather than a
@@ -159,17 +165,7 @@ export function StudyArtifactsPanel({
         fullScreen
         testID={`study-${kind}-viewer`}
       >
-        {open?.kind === "test" ? (
-          <TestRunner
-            artifact={open}
-            onFinished={(attempts) => {
-              // Keep the list's copy in step so the row's best score updates
-              // without a refetch.
-              setRows((prev) => prev?.map((row) => (row.id === open.id ? { ...row, attempts } : row)) ?? prev);
-            }}
-            onError={onError}
-          />
-        ) : open ? (
+        {open ? (
           <MindmapView artifact={open} />
         ) : null}
       </SlideUpSheet>
@@ -226,7 +222,7 @@ function ArtifactRow({
 }
 
 /** One question at a time: pick, see whether it was right and why, move on. */
-function TestRunner({
+export function TestRunner({
   artifact,
   onFinished,
   onError,
@@ -291,7 +287,7 @@ function TestRunner({
   const correct = picked !== null && picked === question.answer;
 
   return (
-    <ScrollView contentContainerStyle={styles.viewerBody} showsVerticalScrollIndicator={false} testID="study-test-runner">
+    <ScrollView style={styles.flex} contentContainerStyle={styles.viewerBody} showsVerticalScrollIndicator={false} testID="study-test-runner">
       <Text style={styles.progress}>
         Question {index + 1} of {questions.length}
       </Text>

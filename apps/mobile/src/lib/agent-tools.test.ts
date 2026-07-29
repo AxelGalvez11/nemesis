@@ -129,8 +129,8 @@ Deno.test("usableCards keeps complete pairs and drops half-written ones", () => 
     { back: "  spaced  ", front: "  trimmed  " },
   ]);
   assertEquals(cards, [
-    { back: "Blocks ACE", front: "What does lisinopril do?" },
-    { back: "spaced", front: "trimmed" },
+    { back: "Blocks ACE", cardType: "basic", front: "What does lisinopril do?" },
+    { back: "spaced", cardType: "basic", front: "trimmed" },
   ]);
 });
 
@@ -140,7 +140,7 @@ Deno.test("usableCards removes duplicate prompts", () => {
       { front: "What is a limit?", back: "A value a function approaches." },
       { front: "  WHAT   IS A LIMIT? ", back: "Duplicate." },
     ]),
-    [{ front: "What is a limit?", back: "A value a function approaches." }],
+    [{ front: "What is a limit?", back: "A value a function approaches.", cardType: "basic" }],
   );
 });
 
@@ -152,7 +152,20 @@ Deno.test("usableCards rejects vague, compound, and answer-equals-prompt cards",
       { front: "What is preload? What is afterload?", back: "Two facts" },
       { front: "What determines preload?", back: "Ventricular end-diastolic stretch." },
     ]),
-    [{ front: "What determines preload?", back: "Ventricular end-diastolic stretch." }],
+    [{ front: "What determines preload?", back: "Ventricular end-diastolic stretch.", cardType: "basic" }],
+  );
+});
+
+Deno.test("usableCards preserves requested types and infers cloze syntax", () => {
+  assertEquals(
+    usableCards([
+      { front: "{{c1::ATP}} stores usable cellular energy.", back: "Adenosine triphosphate" },
+      { front: "Sympathetic effect", back: "Raises heart rate", card_type: "reversed" },
+    ]),
+    [
+      { front: "{{c1::ATP}} stores usable cellular energy.", back: "Adenosine triphosphate", cardType: "cloze" },
+      { front: "Sympathetic effect", back: "Raises heart rate", cardType: "reversed" },
+    ],
   );
 });
 

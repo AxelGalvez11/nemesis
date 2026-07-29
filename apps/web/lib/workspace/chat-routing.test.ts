@@ -123,6 +123,13 @@ for (const prompt of ["can you make me flashcards on the Krebs cycle", "could yo
 }
 // The reasoner routes those still resolve to are untouched by the save gate.
 assert.equal(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
+{
+  const prior =
+    "Before I build the test: what do you want for how many questions, the difficulty (easy, medium, hard, or mixed), and the question types (multiple choice, true/false, or a mix)?";
+  const decision = classifyChatRequest("20, hard, with a mix", prior);
+  assert.equal(decision.savesToWorkspace, true);
+  assert.equal(decision.model, "deepseek-chat");
+}
 
 // The regression that raising the attachment budget amplified: a lecture slide
 // citing a recent year tripped the web-search matcher, buying a paid search on

@@ -58,7 +58,8 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "The front must be answerable exactly one way. Never write a prompt like 'Tell me about X' or a yes/no question, and never write a front whose answer could be several different things.",
     "Include the detail that distinguishes this item from its neighbours — the reason a student confuses two drugs, two enzymes, or two dates is the thing the card must isolate.",
     "Never put a list of more than about four items on one card. Split the list into separate cards, or write it as a cloze per item.",
-    "Use cloze deletion ({{c1::hidden text}}) when the fact only makes sense inside its sentence, and plain front/back when the question stands on its own.",
+    "Follow the learner's selected format exactly. Set card_type on every card to basic, cloze, or reversed; a mix should contain the requested blend rather than silently choosing one style.",
+    "Use cloze deletion ({{c1::hidden text}}) only when the learner selected cloze or a mix and the fact makes sense inside its sentence; use plain front/back when the question stands on its own.",
     "When the student asks you to CREATE flashcards, you MUST call list_study_decks and then add_flashcards. Do not print the requested deck as a prose list in chat; the saved tool result is the deliverable.",
     "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
     "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
@@ -107,10 +108,11 @@ const TEST_CRAFT: ChatSkill = {
   instructions: [
     "SKILL — writing exam questions that measure understanding:",
     "When the student asks you to CREATE a test, you MUST call add_practice_test. Do not print the requested test and answer key in chat; the saved tool result is the deliverable.",
+    "Follow the question count, difficulty, and question types the learner selected in the preceding turn exactly.",
     EXAM_ITEM_RULES,
   ].join("\n"),
   match:
-    /\b(practice (?:test|exam|quiz|questions?)|quiz(?:zes)?|quiz me|test me|mcqs?|multiple[- ]choice|exam questions?|question bank|board[- ]style|write (?:me )?(?:some )?(?:practice )?questions?|make (?:me )?a (?:practice )?(?:test|exam))\b/i,
+    /\b(practice (?:test|exam|quiz|questions?)|quiz(?:zes)?|quiz me|test me|mcqs?|multiple[- ]choice|exam questions?|question bank|board[- ]style|write (?:me )?(?:some )?(?:practice )?questions?|(?:make|create|build|generate|draft) (?:me )?(?:an? )?(?:practice )?(?:test|exam|quiz))\b/i,
   name: "Test craft",
 };
 
