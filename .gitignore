@@ -1,5 +1,10 @@
 # Dependencies
+# Both forms on purpose. "node_modules/" matches a DIRECTORY only, so a symlink
+# named node_modules slips straight past it — which is how one got committed in
+# e25e42f and made every fresh checkout fail `pnpm install` with ELOOP, because
+# the link resolved to its own path.
 node_modules/
+node_modules
 .pnpm-store/
 
 # Build / cache
