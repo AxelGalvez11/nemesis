@@ -202,30 +202,60 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   // delivered and how diarization is switched on are not, and writing a provider
   // against a guessed request shape is how a field gets silently ignored. They
   // give 400 free hours; wire it once it has been run against a real lecture.
+  // WHY EACH PROVIDER DIDN'T ANSWER, written to the job row.
+  //
+  // Every fall-through above is deliberately silent — that is what makes the
+  // ladder robust, and it is also what made this lane undebuggable. xAI went
+  // live on 2026-07-28 at 20:35 UTC, a real recording ran through v5 at 21:02,
+  // and it still came back `provider='assemblyai'`. Nothing anywhere said
+  // whether the key was missing or the call had failed: console.warn does not
+  // reach the log endpoint, and `error` is only written when the whole job dies.
+  // A cheaper provider that quietly never runs costs the difference every month
+  // and looks exactly like a working system.
+  const attempts: string[] = [];
+
   if (XAI_KEY) {
     const xai = await transcribeWithXai(signedUrl);
-    if (xai) {
-      await patchJob(jobId, xai.text ? { provider: "xai", transcript: xai.text } : { provider: "xai" });
+    if (xai.ok) {
+      await patchJob(jobId, {
+        provider: "xai",
+        provider_notes: note([...attempts, "xai: ok"]),
+        ...(xai.text ? { transcript: xai.text } : {}),
+      });
       await settleSynchronousJob(jobId, userId, "xai_grok_stt", xai.seconds, seconds);
       await removeObject(storagePath);
       return json({ jobId, usage }, 200, req);
     }
+    attempts.push(`xai: ${xai.reason}`);
+  } else {
+    // Reads identically to a failed call in every other signal, and is a
+    // completely different fix: a secret this function cannot see.
+    attempts.push("xai: no key visible to this function (checked XAI_API_KEY and xai_api_key)");
   }
 
   if (GROQ_KEY) {
     const groq = await transcribeWithGroq(signedUrl);
-    if (groq) {
+    if (groq.ok) {
       // Transcript first, settle the meter second: if the finalize call ever
       // failed the student would still get their text (status serves any parked
       // transcript) while the meter keeps the conservative reservation.
-      await patchJob(jobId, groq.text ? { provider: "groq", transcript: groq.text } : { provider: "groq" });
+      await patchJob(jobId, {
+        provider: "groq",
+        provider_notes: note([...attempts, "groq: ok"]),
+        ...(groq.text ? { transcript: groq.text } : {}),
+      });
       await settleSynchronousJob(jobId, userId, "groq_whisper_turbo", groq.seconds, seconds);
       await removeObject(storagePath);
       return json({ jobId, usage }, 200, req);
     }
+    attempts.push(`groq: ${groq.reason}`);
+  } else {
+    attempts.push("groq: no key (unset on purpose — no pay-as-you-go on the account)");
   }
 
   if (!ASSEMBLYAI_KEY) {
+    attempts.push("assemblyai: no key");
+    await patchJob(jobId, { provider_notes: note(attempts) });
     await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
     return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
   }
@@ -261,13 +291,25 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   });
   const submittedBody = await submitted.json().catch(() => null) as { id?: unknown; error?: unknown } | null;
   if (!submitted.ok || typeof submittedBody?.id !== "string") {
+    attempts.push(`assemblyai: HTTP ${submitted.status}`);
+    await patchJob(jobId, { provider_notes: note(attempts) });
     await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
     console.error("AssemblyAI submit failed", submitted.status, submittedBody?.error);
     return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
   }
 
+  // The row already says provider='assemblyai' (the column's default), so on its
+  // own it cannot tell "AssemblyAI was chosen" from "nothing ran". The notes are
+  // what distinguish them.
+  await patchJob(jobId, { provider_notes: note([...attempts, "assemblyai: submitted"]) });
   await finalize({ p_job_id: jobId, p_provider_job_id: submittedBody.id, p_status: "processing" });
   return json({ jobId, usage }, 200, req);
+}
+
+/** The attempt trail as one bounded line. Diagnostics must never be the reason a
+ *  write fails, so it is clipped well under any sane column budget. */
+function note(attempts: readonly string[]): string {
+  return attempts.join(" | ").slice(0, 600);
 }
 
 /** Poll one job. Settles the meter and deletes the audio on completion. */
@@ -411,6 +453,30 @@ async function settleSynchronousJob(
   await reportVoiceCost(userId, provider, paidFor || reserved);
 }
 
+/** What a provider did: the transcript, or why it stood down. */
+type ProviderAttempt =
+  | { ok: true; text: string; seconds: number }
+  | { ok: false; reason: string };
+
+/**
+ * A provider's error, short enough for a job row and safe to store.
+ *
+ * This lands in the database and is read by a human debugging a fall-through, so
+ * it is clipped hard and scrubbed: an error body is arbitrary text from someone
+ * else's server, and a diagnostic that quietly persists a credential would be a
+ * worse bug than the one it exists to find. Anything long, unbroken and
+ * token-shaped is redacted rather than trusted.
+ */
+function describe(value: unknown): string {
+  const raw = typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value);
+  return raw
+    .replace(/\b(?:xai|sk|gsk|Bearer)[-_ ][A-Za-z0-9_-]{8,}/gi, "[redacted]")
+    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+}
+
 /**
  * One synchronous xAI Grok STT pass over a remote audio URL.
  *
@@ -425,10 +491,10 @@ async function settleSynchronousJob(
  * than per turn, which utterancesFromWords regroups so both providers produce an
  * identically-formatted transcript.
  *
- * Returns null on any failure so the caller falls through to the next provider —
- * never throws.
+ * Reports a REASON on failure rather than a bare null, so the caller can write
+ * it onto the job row — never throws, and the ladder still falls through.
  */
-async function transcribeWithXai(audioUrl: string): Promise<{ text: string; seconds: number } | null> {
+async function transcribeWithXai(audioUrl: string): Promise<ProviderAttempt> {
   try {
     const form = new FormData();
     form.set("url", audioUrl);
@@ -456,25 +522,27 @@ async function transcribeWithXai(audioUrl: string): Promise<{ text: string; seco
       error?: unknown;
     } | null;
     if (!res.ok || typeof body?.text !== "string") {
-      console.warn("xAI transcription unavailable, falling through", res.status, JSON.stringify(body?.error ?? null));
-      return null;
+      const detail = describe(body?.error);
+      console.warn("xAI transcription unavailable, falling through", res.status, detail);
+      return { ok: false, reason: `HTTP ${res.status}${detail ? ` — ${detail}` : ""}` };
     }
     const flat = body.text.trim();
     // Regrouped words when they carry speakers; the flat text otherwise. A
     // provider that stops sending `words` degrades to plain text rather than
     // to an empty transcript.
     const text = formatDiarizedTranscript(utterancesFromWords(body.words), flat);
-    if (!text) return null;
-    return { seconds: Math.max(0, Math.round(Number(body.duration) || 0)), text };
+    if (!text) return { ok: false, reason: "answered with an empty transcript" };
+    return { ok: true, seconds: Math.max(0, Math.round(Number(body.duration) || 0)), text };
   } catch (err) {
-    console.warn("xAI transcription threw, falling through", (err as Error)?.message);
-    return null;
+    const detail = (err as Error)?.message ?? "unknown";
+    console.warn("xAI transcription threw, falling through", detail);
+    return { ok: false, reason: `threw: ${detail}` };
   }
 }
 
-/** One synchronous Groq Whisper pass over a remote audio URL. Returns null on
- *  any failure so the caller can fall back to AssemblyAI — never throws. */
-async function transcribeWithGroq(audioUrl: string): Promise<{ text: string; seconds: number } | null> {
+/** One synchronous Groq Whisper pass over a remote audio URL. Reports a reason on
+ *  failure so the caller can fall back AND say why — never throws. */
+async function transcribeWithGroq(audioUrl: string): Promise<ProviderAttempt> {
   try {
     const form = new FormData();
     form.set("url", audioUrl);
@@ -492,16 +560,19 @@ async function transcribeWithGroq(audioUrl: string): Promise<{ text: string; sec
       error?: { message?: unknown } | unknown;
     } | null;
     if (!res.ok || typeof resBody?.text !== "string") {
-      const reason = resBody && typeof resBody.error === "object" && resBody.error !== null
-        ? (resBody.error as { message?: unknown }).message
-        : undefined;
-      console.warn("Groq transcription unavailable, falling back to AssemblyAI", res.status, reason);
-      return null;
+      const detail = describe(
+        resBody && typeof resBody.error === "object" && resBody.error !== null
+          ? (resBody.error as { message?: unknown }).message
+          : resBody?.error,
+      );
+      console.warn("Groq transcription unavailable, falling back to AssemblyAI", res.status, detail);
+      return { ok: false, reason: `HTTP ${res.status}${detail ? ` — ${detail}` : ""}` };
     }
-    return { seconds: Math.max(0, Math.round(Number(resBody.duration) || 0)), text: resBody.text.trim() };
+    return { ok: true, seconds: Math.max(0, Math.round(Number(resBody.duration) || 0)), text: resBody.text.trim() };
   } catch (err) {
-    console.warn("Groq transcription threw, falling back to AssemblyAI", (err as Error)?.message);
-    return null;
+    const detail = (err as Error)?.message ?? "unknown";
+    console.warn("Groq transcription threw, falling back to AssemblyAI", detail);
+    return { ok: false, reason: `threw: ${detail}` };
   }
 }
 
