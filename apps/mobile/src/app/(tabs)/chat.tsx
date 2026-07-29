@@ -62,7 +62,6 @@ import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-e
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
-import { reasoningGlimpse } from "@/lib/reasoning-preview";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -661,8 +660,12 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!sending) return;
     const timer = setInterval(() => {
-      const next = reasoningGlimpse(reasoningRef.current);
-      setReasoningLine((prev) => (prev === next ? prev : next));
+      // The FULL accumulated reasoning, promoted on the same throttle. The block
+      // shows the whole stream now rather than a one-line glimpse, and it is the
+      // throttle — not the shortening — that was ever protecting the render
+      // budget: the raw stream fires ~80x/sec, this fires 4-5x.
+      const full = reasoningRef.current;
+      setReasoningLine((prev) => (prev === full ? prev : full));
     }, REASONING_FLUSH_MS);
     return () => clearInterval(timer);
   }, [sending]);
@@ -1025,7 +1028,15 @@ export default function ChatScreen() {
               >
                 {item.kind === "thinking" ? (
                   <View style={styles.assistantRow} testID="chat-thinking">
-                    <ThinkingLine phase={phase} reasoning={reasoningLine} testID="chat-thinking-line" />
+                    <ThinkingLine
+                      phase={phase}
+                      reasoning={reasoningLine}
+                      // The first word of the real answer is what closes the
+                      // accordion, so the thinking gets out of the way exactly
+                      // when there is something better to read.
+                      answerStarted={streamingText.length > 0}
+                      testID="chat-thinking-line"
+                    />
                   </View>
                 ) : item.kind === "error" ? (
                   <View style={styles.errorBubble} testID="chat-error">
