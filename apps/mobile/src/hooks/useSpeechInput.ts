@@ -32,9 +32,31 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
   // the flag is the belt to its braces, because the event has already been
   // observed to arrive late and the composer must not take it either way.
   const cancelledRef = useRef(false);
+  // Whether THIS hook started the session that is currently running.
+  //
+  // 🔴 THE EVENTS BELOW ARE GLOBAL. `useSpeechRecognitionEvent` subscribes to the
+  // one speech module on the phone, not to a session this hook owns — so it hears
+  // every result from whoever started recognition. The composer is mounted for the
+  // whole chat screen, INCLUDING while the recorder is running (chat.tsx renders
+  // <Composer> outside the record-mode branch, because the record controls live in
+  // the composer itself). So a lecture recording, which drives the same engine
+  // through useLiveTranscription, was being typed word by word into the chat box
+  // behind it — and the student got their whole lecture sitting in the prompt
+  // field as if they had dictated it (owner 2026-07-29: "i tapped the record
+  // button and once recording finished it dumped the transcript into the chat
+  // composer").
+  //
+  // `cancelledRef` did NOT cover this. It only suppresses a late final result
+  // after dictation was explicitly cancelled; when dictation was never started at
+  // all it is false, which is exactly the state that let every recorder result
+  // through. A flag for "I cancelled" cannot answer "was this mine?".
+  //
+  // A ref, not the `listening` state, because these handlers are registered once
+  // and would close over a stale value.
+  const listeningRef = useRef(false);
 
   useSpeechRecognitionEvent("result", (event) => {
-    if (cancelledRef.current) return;
+    if (!listeningRef.current || cancelledRef.current) return;
     const next = event.results?.[0]?.transcript;
     if (typeof next === "string") {
       setTranscript(next);
@@ -42,13 +64,23 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
     }
   });
   useSpeechRecognitionEvent("volumechange", (event) => {
+    // Gated for the same reason, and it is not cosmetic: the recorder publishes
+    // its own levels to the same channel, so an ungated composer would fight it
+    // for the waveform the student is watching while recording.
+    if (!listeningRef.current) return;
     publishMicLevel(normalizeMicLevel(typeof event.value === "number" ? event.value : 0));
   });
   useSpeechRecognitionEvent("end", () => {
+    // Without the gate, the RECORDER's end event reset the composer's mic level —
+    // clearing a waveform that belongs to a session still in progress.
+    if (!listeningRef.current) return;
+    listeningRef.current = false;
     setListening(false);
     resetMicLevel();
   });
   useSpeechRecognitionEvent("error", () => {
+    if (!listeningRef.current) return;
+    listeningRef.current = false;
     setListening(false);
     resetMicLevel();
   });
@@ -60,6 +92,10 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
       cancelledRef.current = false;
       setTranscript("");
       resetMicLevel();
+      // Claim the session BEFORE starting the engine — results are delivered on
+      // the module's own schedule and the first one must not arrive to a hook
+      // that has not yet admitted it is listening.
+      listeningRef.current = true;
       ExpoSpeechRecognitionModule.start({
         lang: "en-US",
         interimResults: true,
@@ -71,6 +107,7 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
       setListening(true);
       return true;
     } catch {
+      listeningRef.current = false;
       setListening(false);
       resetMicLevel();
       return false;
@@ -84,6 +121,12 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
     } catch {
       // best-effort — stopping an already-stopped session is harmless
     }
+    // listeningRef DELIBERATELY STAYS TRUE HERE. iOS delivers the best final
+    // transcript AFTER recognition stops (the same timing cancelledRef exists
+    // for), so clearing our claim on the session now would make the gate above
+    // reject the one result the student most wants — Done would keep less text
+    // than the interim display had already shown them. The `end` event clears it
+    // a beat later, which is the correct moment: the session is over by then.
     setListening(false);
     resetMicLevel();
   }, []);
@@ -91,6 +134,12 @@ export function useSpeechInput(onResult: (transcript: string) => void) {
   /** Throw it away. Not the same call as stop(): see cancelledRef above. */
   const cancel = useCallback(() => {
     cancelledRef.current = true;
+    // Cleared here rather than left to `end`, the opposite of stop() above:
+    // abort() is not guaranteed to emit `end`, and a claim that is never
+    // released would silently re-open the bug this gate closes — the composer
+    // would start accepting the recorder's results again. cancelledRef already
+    // discards any late result, so releasing early costs nothing.
+    listeningRef.current = false;
     try {
       ExpoSpeechRecognitionModule.abort();
     } catch {
