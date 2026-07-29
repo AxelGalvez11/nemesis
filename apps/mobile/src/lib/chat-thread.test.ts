@@ -1,6 +1,7 @@
 // Deno unit tests (repo convention) for the chat-thread pure helpers.
 // Run: deno test --no-check apps/mobile/src/lib/chat-thread.test.ts
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { WRITING_VOICE } from "@nemesis/shared";
 import { routeInstruction } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
 import { AGENT_TOOL_NAMES } from "./agent-tools.ts";
@@ -171,4 +172,14 @@ Deno.test("nextDailyReset: next UTC midnight, never in the past", () => {
   assertEquals(nextDailyReset(exactMidnight).toISOString(), "2026-07-21T00:00:00.000Z");
   const monthEnd = new Date("2026-07-31T12:00:00Z");
   assertEquals(nextDailyReset(monthEnd).toISOString(), "2026-08-01T00:00:00.000Z");
+});
+
+// The phone must carry the SAME voice rules as the browser. Two prompts in two
+// apps is exactly the shape that let the library order exist on one surface and
+// not the other; this asserts the shared text actually reaches the phone.
+Deno.test("CHAT_SYSTEM_PROMPT carries the shared writing voice", () => {
+  assertEquals(CHAT_SYSTEM_PROMPT.includes(WRITING_VOICE), true);
+  // Spot-check a rule rather than only the whole blob, so a partial paste fails.
+  assertMatch(CHAT_SYSTEM_PROMPT, /delve/);
+  assertMatch(CHAT_SYSTEM_PROMPT, /not just X, but Y/);
 });

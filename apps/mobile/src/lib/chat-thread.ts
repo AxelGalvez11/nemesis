@@ -5,6 +5,8 @@
 // The phone talks to the SAME metered valve as the desktop (nemesis-llm), so
 // there is no client-side token accounting here — just context-window hygiene:
 // send a bounded slice of the transcript, never the whole history.
+import { WRITING_VOICE } from "@nemesis/shared";
+
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
 
@@ -130,7 +132,11 @@ export const CHAT_SYSTEM_PROMPT =
   "and mind maps to their Study page, and read or add events on their Calendar. Flashcards, tests, and mind maps belong in Study. Notes and slide decks belong in Library. " +
   "Events belong on the Calendar tab. Use the tools whenever a question involves their own notes, decks, or schedule, or when they ask you to make or " +
   "save something — read their real material instead of guessing, and never invent what one of their notes or their calendar says. After any change, say " +
-  "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. School portals are still handled by the Mac app.";
+  "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. School portals are still handled by the Mac app. " +
+  // The SAME voice rules the web prompt carries, from packages/shared, so the
+  // phone and the browser cannot answer in two different registers. Appended
+  // last for the same reason as on web — see chatSystemPrompt in chat-api.ts.
+  WRITING_VOICE;
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —

@@ -86,7 +86,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
     features: [
       "Web-grounded answers with source citations",
       "Higher desktop-agent automation limits",
-      "80 hours of lecture recording each month",
+      "70 hours of lecture recording each month",
     ],
   },
   {

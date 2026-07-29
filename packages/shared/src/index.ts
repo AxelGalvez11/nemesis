@@ -14,6 +14,9 @@ export * from "./answer.ts";
 export * from "./claim-relation.ts";
 export * from "./discovery.ts";
 export * from "./search.ts";
+// How the product writes, shared so the web prompt and the phone prompt cannot
+// drift apart. See writing-voice.ts for why this is not a chat skill.
+export * from "./writing-voice.ts";
 export * from "./evidence.ts";
 // Phase-4 evidence-scoring engine (§9): the deterministic tier core. Pure
 // functions + signal spec; the LLM only writes rationale/limitations prose.
