@@ -68,6 +68,62 @@ test("the threshold never drops below the absolute floor", () => {
   assert.ok(gateThreshold(MAX_NOISE_FLOOR) > MIN_THRESHOLD);
 });
 
+/**
+ * Speech at a given loudness, shaped like speech.
+ *
+ * This matters more than it looks. A CONSTANT level is not speech — it is a
+ * tone, and a quiet tone is genuinely indistinguishable from room hiss by any
+ * measure of loudness alone. What separates a voice from a hiss is that a voice
+ * MOVES: syllables against near-silent gaps. The gate reads that gap as the
+ * room's floor, which is what lets it set a bar underneath quiet speech.
+ */
+function speak(gate: SilenceGate, peak: number, ms: number): SilenceGate {
+  let next = gate;
+  for (let elapsed = 0; elapsed < ms; elapsed += 300) {
+    next = run(next, peak, 200);        // a syllable
+    next = run(next, peak / 12, 100);   // the gap between two
+  }
+  return next;
+}
+
+// ── the quiet lecturer ──────────────────────────────────────────────────────
+// The case the gate was built without: the microphone is on the student's desk
+// and the person talking is at the front of the room. Nothing here is unusual —
+// it is the ENTIRE use case for a lecture recorder — but the audio arrives far
+// quieter than someone speaking into a handset.
+//
+// 0.03 is about -42 dBFS, realistic for a laptop's built-in microphone picking
+// up someone across a room. Under the old fixed 0.035 floor that read as
+// silence, so the gate paused ~4.5s in and, because the bar could only ever
+// move UP from there, never resumed. The student got a handful of loud
+// syllables out of a 50-minute lecture.
+test("a quiet, distant lecturer is never mistaken for an empty room", () => {
+  const gate = speak(createSilenceGate(), 0.03, WARMUP_MS + SILENCE_HOLD_MS + 20_000);
+  assert.equal(gate.capturing, true, "a quiet speaker was gated out as silence");
+});
+
+// The bar has to be able to come DOWN to meet a quiet speaker. A fixed minimum
+// is exactly what stops that, so pin the property rather than the constant.
+test("the bar can settle below a quiet speaker's voice", () => {
+  const quiet = speak(createSilenceGate(), 0.03, 30_000);
+  assert.ok(gateThreshold(quiet.noiseFloor) < 0.03, `bar sat at ${gateThreshold(quiet.noiseFloor)}, above the speaker`);
+});
+
+// Half a lecture at a normal level, then the lecturer walks away from the mic.
+// The gate must follow them down rather than deciding the lecture ended.
+test("the gate follows a speaker who gets quieter mid-lecture", () => {
+  let gate = speak(createSilenceGate(), 0.3, 60_000);
+  gate = speak(gate, 0.03, 60_000);
+  assert.equal(gate.capturing, true, "the lecture was dropped when the speaker got quieter");
+});
+
+// The saving still has to work, or the gate is pointless: a genuinely dead
+// microphone produces essentially zero and must still be paused.
+test("a dead microphone is still gated, so the saving survives", () => {
+  const gate = run(createSilenceGate(), 0, WARMUP_MS + SILENCE_HOLD_MS + 5 * TICK);
+  assert.equal(gate.capturing, false, "digital silence should still pause");
+});
+
 // Speech must not drag the floor up behind it — a floor that chased the signal
 // would raise the bar until the speaker's own voice counted as silence.
 test("a loud room cannot push the floor past its cap", () => {

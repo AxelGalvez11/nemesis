@@ -14,10 +14,30 @@
 // heavily toward keeping sound: a long hold before pausing, an instant resume,
 // and a floor that learns quiet fast but loudness slowly.
 
-/** Level below which we might be looking at room tone, whatever the floor says.
- *  A digital-silence input reads 0, so without this the adaptive floor would
- *  collapse to 0 and nothing would ever count as quiet. */
-export const MIN_THRESHOLD = 0.035;
+/**
+ * The absolute bottom of the bar. Only a guard: a digital-silence input reads 0,
+ * so without this the adaptive floor would collapse to 0 and nothing would ever
+ * count as quiet. It is NOT meant to decide what speech sounds like.
+ *
+ * 🔴 THIS WAS 0.035, AND IT THREW LECTURES AWAY (owner 2026-07-29: "lecturers
+ * might be farther away and if users record with macbooks then wouldn't the
+ * audio be quieter"). `level` is RMS × 4, so 0.035 meant roughly -41 dBFS — a
+ * close-mic number. A laptop's built-in microphone picking up someone across a
+ * room commonly lands at -45 to -55 dBFS, UNDER that bar. And because the
+ * adaptive term is `max(floor × 3, this)`, the bar could only ever move UP: a
+ * quiet speaker had no way to lower it. The gate paused about 4.5 seconds in
+ * (warm-up + hold) and never resumed, so a lecture came back as the handful of
+ * syllables loud enough to poke over the line. That is exactly the shape of the
+ * one real recording we have: 72 seconds of audio, 41 characters of transcript,
+ * and an empty answer from a second provider on the same file.
+ *
+ * 0.004 is about -60 dBFS — quiet enough to mean "essentially nothing arrived",
+ * which is the only thing this constant should ever assert. Telling a voice from
+ * room hiss is the adaptive floor's job (see gateThreshold), and it does it by
+ * watching the gaps BETWEEN syllables, which is the one signal that actually
+ * separates the two.
+ */
+export const MIN_THRESHOLD = 0.004;
 
 /** Speech has to clear the learned room tone by this much to count. */
 export const THRESHOLD_MULTIPLE = 3;
@@ -72,8 +92,24 @@ export function createSilenceGate(): SilenceGate {
   return { capturing: true, noiseFloor: MAX_NOISE_FLOOR, quietMs: 0, totalMs: 0 };
 }
 
-/** The level a sample must reach to count as sound, given what the room sounds
- *  like right now. Exported so a test can pin the arithmetic directly. */
+/**
+ * The level a sample must reach to count as sound, given what the room sounds
+ * like right now. Exported so a test can pin the arithmetic directly.
+ *
+ * WHY THIS CAN TELL A QUIET VOICE FROM ROOM HISS, when a fixed number cannot.
+ * Loudness alone genuinely cannot separate them — a quiet monotone and a hiss at
+ * the same level are the same reading. What separates them is that a voice
+ * MOVES: syllables against near-silent gaps. The floor falls fast and rises
+ * glacially (see FLOOR_FALL / FLOOR_RISE), so it settles into those gaps, and
+ * the bar lands a little above the gaps and well under the syllables. A steady
+ * hiss has no gaps, so the floor settles at the hiss itself and the bar ends up
+ * above it — which is why room tone still gates while a quiet lecturer does not.
+ *
+ * The one case this cannot decide is a genuinely constant quiet drone, which no
+ * level-based rule can; separating that from speech needs real voice-activity
+ * detection, which is the provider's job (see the transcribe function's own
+ * vad_threshold) rather than this meter's.
+ */
 export function gateThreshold(noiseFloor: number): number {
   return Math.max(MIN_THRESHOLD, noiseFloor * THRESHOLD_MULTIPLE);
 }

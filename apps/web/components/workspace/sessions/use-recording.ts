@@ -58,14 +58,30 @@ interface CaptureNodes {
  *  not a stuttery bar. */
 const LEVEL_INTERVAL_MS = WAVEFORM_SAMPLE_MS;
 
-/** Loudness of one analyser frame, 0..1, from bytes centred on 128. */
-function frameLevel(bytes: Uint8Array): number {
+/**
+ * Loudness of one analyser frame, 0..1.
+ *
+ * 🔴 READ AS FLOATS, NOT BYTES. This used to call getByteTimeDomainData and
+ * centre each sample with `(byte - 128) / 128`. The scale it produced is
+ * identical to the float one — both land in -1..1, so the `× 4` and every
+ * threshold measured against it are unchanged — but the RESOLUTION was not.
+ *
+ * 8-bit samples move in steps of 1/128 ≈ 0.0078. The silence gate's floor is
+ * 0.004 on this scale, which is an RMS of 0.001, which is a deviation of about
+ * ONE EIGHTH of a single byte step. The byte data cannot represent that at all:
+ * every level quieter than roughly 0.03 collapsed to the same handful of
+ * integers, so the gate was deciding whether to throw away a lecture using a
+ * number that had no precision left in exactly the range being decided. Lowering
+ * the gate's threshold without this change would have been theatre — there was
+ * nothing under 0.03 for it to see.
+ *
+ * Float samples arrive already in -1..1 with full precision, so quiet speech is
+ * a real reading rather than a rounding artefact.
+ */
+function frameLevel(samples: Float32Array): number {
   let squares = 0;
-  for (const byte of bytes) {
-    const centred = (byte - 128) / 128;
-    squares += centred * centred;
-  }
-  return Math.min(1, Math.sqrt(squares / Math.max(1, bytes.length)) * 4);
+  for (const sample of samples) squares += sample * sample;
+  return Math.min(1, Math.sqrt(squares / Math.max(1, samples.length)) * 4);
 }
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -325,10 +341,10 @@ export function useRecordingSession(options: UseRecordingOptions) {
       source.connect(analyser);
       nodesRef.current = { analyser, context, recorder, source, stream };
 
-      const bytes = new Uint8Array(analyser.fftSize);
+      const samples = new Float32Array(analyser.fftSize);
       levelTimerRef.current = window.setInterval(() => {
-        analyser.getByteTimeDomainData(bytes);
-        const next = frameLevel(bytes);
+        analyser.getFloatTimeDomainData(samples);
+        const next = frameLevel(samples);
         if (mountedRef.current) setLevel(next);
         // Same reading, published to the composer's waveform, which is a sibling
         // of this recorder rather than a child — see lib/workspace/mic-level.ts.
