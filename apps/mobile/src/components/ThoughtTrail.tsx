@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { ChevronIcon } from "./icons";
 import type { MessageThinking } from "@/lib/chat-thread";
@@ -89,11 +89,24 @@ const createStyles = (c: ThemeColors) =>
     // Indented behind a rule, the way a quotation is set — this is the model
     // talking to itself, and it must never be mistaken for part of the answer.
     body: {
-      borderLeftWidth: 1,
+      // 2px and the same inset as the live block's rule (ThinkingLine), so the
+      // reasoning appears to stay behind one continuous line as the turn settles
+      // from streaming into this collapsed row, rather than two components
+      // handing over.
+      borderLeftWidth: 2,
       borderLeftColor: c.line,
-      paddingLeft: space(3),
+      paddingLeft: space(2.5),
       paddingVertical: space(1),
       borderRadius: radius.sm,
     },
-    thought: { ...type.micro, color: c.textHint, lineHeight: type.micro.lineHeight + 3 },
+    // Monospace, matching the live ticker for the same reason it is monospace
+    // there: this is raw working-out, not prose, and the fixed width stops
+    // half-finished fragments from reflowing as the eye moves down them.
+    thought: {
+      ...type.micro,
+      fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+      fontSize: type.micro.fontSize - 0.5,
+      color: c.textHint,
+      lineHeight: type.micro.lineHeight + 3,
+    },
   });
