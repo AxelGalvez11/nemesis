@@ -484,7 +484,15 @@ async function addCalendarEvent({ args, uid }: ToolContext) {
       date,
       kind: EVENT_KINDS.has(rawKind) ? rawKind : "other",
       note: str(args.note).trim().slice(0, 4_000) || null,
-      source: "agent",
+      // "manual", not "agent" — web made this same switch on 2026-07-28 and the
+      // phone now needs it more, not less. calendar.tsx:317 sends a source:'agent'
+      // row to the VIEW-ONLY sheet: no edit, no delete, and there is no update or
+      // delete tool in AGENT_TOOLS to change it with either. That was survivable
+      // while a chip in the transcript was a second way to reach the event; with
+      // the chip gone (below) the calendar is the ONLY surface, so an
+      // uncorrectable row there is a dead end. The student asked for the event,
+      // so it is theirs to fix. Provenance stays readable in `note`.
+      source: "manual",
       time: str(args.time).trim().slice(0, 40) || null,
       title,
       user_id: uid,
@@ -492,10 +500,24 @@ async function addCalendarEvent({ args, uid }: ToolContext) {
     .select("id")
     .single();
   if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
+  // NO `artifact` here, deliberately (owner 2026-07-28, web first and now the
+  // phone). Every other write returns one because a deck, test or note has its
+  // own destination and the chip is the only route to it. An event does not: it
+  // is one row on a Calendar tab that is always one tap away, so the chip added
+  // a duplicate rather than a way in — and a syllabus import minted one per date.
   return {
     added: true,
-    artifact: { id: str(data.id), kind: "other", route: `/calendar?date=${encodeURIComponent(date)}`, title },
     date,
+    // Steer from the TOOL RESULT, never by stripping the model's reply afterwards
+    // — stripping throws away real answers when the same turn was doing something
+    // else too. It says "no chip" outright rather than leaning on the system
+    // prompt, which tells the model to report what it changed after every write:
+    // true for notes and decks, and now false for this tool alone.
+    instruction:
+      "Saved. This tool shows the student NO chip and NO card — the Calendar tab is where the event lives, "
+      + "and it is one tap away. Do NOT write the event back: no dates, no table, no list. "
+      + "When every event in this batch is in, reply with ONE short line: \"I've put the events into your calendar.\" "
+      + "Add a second short line only if something could not be added, naming just those.",
     title,
   };
 }

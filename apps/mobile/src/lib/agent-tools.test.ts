@@ -45,6 +45,18 @@ Deno.test("no tool name appears twice", () => {
   assertEquals(new Set(names).size, names.length);
 });
 
+Deno.test("the calendar tool never asks for the event to be read back", () => {
+  // A description rides EVERY turn, so it outranks the system prompt and the tool
+  // result alike. This one closed with "and tell them what was scheduled", and a
+  // syllabus import duly read every date back into the chat — the same wording and
+  // the same outcome web hit first (owner 2026-07-28: "syllabus and calendar events
+  // should not be outputted into chat").
+  const addEvent = SCHEMAS.find((schema) => schema.function.name === "add_calendar_event");
+  assertEquals(typeof addEvent?.function.description, "string");
+  assertEquals(/tell them what was scheduled/i.test(addEvent!.function.description), false);
+  assertEquals(/do not read the event back/i.test(addEvent!.function.description), true);
+});
+
 Deno.test("every required field is actually declared as a property", () => {
   // A required field the model cannot see is a tool that fails every time it is
   // called, and the failure looks like the model's fault.
