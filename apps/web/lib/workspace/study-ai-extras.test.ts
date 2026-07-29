@@ -32,6 +32,34 @@ test("explain messages carry both sides without cloze noise", () => {
   assert.ok(oneSided[1]?.content.includes("the answer is inside the front text"));
 });
 
+// Owner 2026-07-28: "research skills for ai for better mnemonics, analogies,
+// explanations should be in simple technical english." The four moves are the
+// whole point of the prompt, so they are pinned here rather than left to drift.
+test("the explain prompt asks for meaning, mechanism, analogy and an optional hook", () => {
+  const [system] = buildExplainMessages({ back: "b", front: "f" });
+  assert.ok(system);
+  assert.match(system.content, /what the answer MEANS/);
+  assert.match(system.content, /explain WHY it is true/);
+  assert.match(system.content, /ONE concrete analogy/);
+  assert.match(system.content, /ONE memory hook only if a genuinely good one exists/);
+  // A forced mnemonic is one more thing to memorise — skipping must be allowed.
+  assert.match(system.content, /skip this step entirely/);
+});
+
+test("the explain prompt keeps the technical terms and stays field-agnostic", () => {
+  const [system] = buildExplainMessages({ back: "b", front: "f" });
+  assert.ok(system);
+  // "Simple technical English" is not "simple English": the term is what the
+  // exam asks for, so the language AROUND it is what gets simplified.
+  assert.match(system.content!, /KEEP the technical terms/);
+  assert.match(system.content!, /define each one in plain words/);
+  // The app serves a law student and a mech-eng student too — the old prompt
+  // said "health-sciences student" and biased every analogy toward medicine.
+  assert.doesNotMatch(system.content!, /health[- ]sciences/i);
+  assert.match(system.content!, /law, engineering, medicine/);
+  assert.match(system.content!, /never invent a fact/);
+});
+
 test("auto-tag targets only untagged cards, capped", () => {
   const cards = Array.from({ length: 70 }, (_, index) => ({ id: `c${index}`, tags: index % 2 === 0 ? [] : ["done"] }));
   const targets = autoTagTargets(cards);

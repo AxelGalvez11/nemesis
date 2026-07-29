@@ -140,3 +140,98 @@ export function artifactDropAccepts(payload: ArtifactDrag, target: string): bool
   if (payload.name === UNGROUPED_LABEL) return false;
   return payload.name !== target;
 }
+
+// ── Tests/Mindmaps: the same folder tree the Cards tab has ───────────────────
+// Owner 2026-07-28: "tests page should be identical to cards page in terms of
+// drag and drop functionality."
+//
+// Cards decks were already a tree, because a deck's folder lives as a "::"
+// prefix inside its own name. A test artifact keeps its folder in `groupName`
+// instead, but that is the same string with the same separator — so the tree,
+// and every drop rule over it, is shared rather than reimplemented per tab.
+
+export interface ArtifactTreeNode<T> {
+  /** "group:<path>" or "item:<id>" — stable across renders, unique per tree. */
+  id: string;
+  /** The row's own name: a folder's last segment, or the artifact's title. */
+  label: string;
+  /** The folder this node sits IN (a folder's own path is `groupPath`+label). */
+  groupPath: string;
+  /** Full path for a folder; "" for an item row. */
+  path: string;
+  item: T | null;
+  children: ArtifactTreeNode<T>[];
+}
+
+/**
+ * Nest artifacts under their "::"-delimited folders.
+ *
+ * `extraGroups` are folders the student made that hold nothing yet — without
+ * them an empty folder would vanish the moment its last test moved out, which
+ * is not how a folder behaves anywhere else.
+ *
+ * Folders sort before items at every level, then alphabetically, matching the
+ * Cards tab exactly.
+ */
+export function buildArtifactTree<T extends { id: string; title: string; groupName: string }>(
+  items: readonly T[],
+  extraGroups: readonly string[] = [],
+): ArtifactTreeNode<T>[] {
+  const roots: ArtifactTreeNode<T>[] = [];
+
+  function ensureGroup(path: string): ArtifactTreeNode<T> | null {
+    const parts = normalizeGroupPath(path).split(SEPARATOR).filter(Boolean);
+    if (parts.length === 0) return null;
+    let siblings = roots;
+    let currentPath = "";
+    let current: ArtifactTreeNode<T> | null = null;
+    for (const label of parts) {
+      const parent = currentPath;
+      currentPath = joinGroupPath(currentPath, label);
+      current = siblings.find((node) => node.id === `group:${currentPath}`) ?? null;
+      if (!current) {
+        current = { children: [], groupPath: parent, id: `group:${currentPath}`, item: null, label, path: currentPath };
+        siblings.push(current);
+      }
+      siblings = current.children;
+    }
+    return current;
+  }
+
+  for (const group of extraGroups) ensureGroup(group);
+  for (const item of items) {
+    const groupPath = normalizeGroupPath(item.groupName ?? "");
+    const siblings = ensureGroup(groupPath)?.children ?? roots;
+    siblings.push({ children: [], groupPath, id: `item:${item.id}`, item, label: item.title, path: "" });
+  }
+
+  const sort = (nodes: ArtifactTreeNode<T>[]) => {
+    nodes.sort((a, b) => Number(Boolean(a.item)) - Number(Boolean(b.item)) || a.label.localeCompare(b.label));
+    for (const node of nodes) sort(node.children);
+  };
+  sort(roots);
+  return roots;
+}
+
+/**
+ * May folder `source` be dropped into folder `target`? ("" is the root.)
+ *
+ * The rule that matters is the third: dropping a folder inside its own
+ * descendant detaches the whole subtree from the tree, because every path
+ * rewrite would then be relative to a folder that no longer has a parent.
+ * `isWithinGroup` is segment-aware, so "Exam 1" is not treated as an ancestor
+ * of "Exam 10".
+ */
+export function folderDropAccepts(source: string, target: string): boolean {
+  const from = normalizeGroupPath(source);
+  const to = normalizeGroupPath(target);
+  if (!from) return false; // the root is not a folder anyone can pick up
+  if (from === to) return false; // onto itself
+  if (isWithinGroup(to, from)) return false; // into its own descendant
+  return pathParent(from) !== to; // already sitting there
+}
+
+/** Where folder `source` ends up once dropped into `target`. */
+export function movedFolderPath(source: string, target: string): string {
+  return joinGroupPath(target, pathLeaf(source));
+}

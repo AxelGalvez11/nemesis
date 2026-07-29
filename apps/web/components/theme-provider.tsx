@@ -20,6 +20,17 @@ const SCALE_STORAGE_KEY = "nemesis.web.scale";
 // reload. Same shape as theme/accent/scale, which are app-chrome for the same
 // reason. Default true keeps the shipped full-screen behaviour.
 const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
+
+// Owner 2026-07-28: "i need the default scaling size to match chatgpt".
+// MEASURED on chatgpt.com and on our own build, not guessed: ChatGPT runs its
+// root, its body and every control at 16px. Nemesis at the old 110% put the
+// root at 17.6px but its nav, chat rows and composer at 14.3px — the CHROME was
+// the small part, not the reading text, which is why raising only the
+// conversation token did not answer the complaint. 125% lands those controls on
+// 16.25px. The conversation tokens in desktop-ui.css are re-based against the
+// new 20px root so the ANSWER text stays on 16px exactly instead of riding up
+// to 20px with everything else.
+const DEFAULT_SCALE = 125;
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark";
 const isPreference = (v: unknown): v is ThemePreference => isTheme(v) || v === "system";
 const systemTheme = (): Theme =>
@@ -48,7 +59,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   preference: "system",
   theme: "light",
   accent: "default",
-  scale: 110,
+  scale: DEFAULT_SCALE,
   libraryFullScreen: true,
   setTheme: () => {},
   setAccent: () => {},
@@ -77,7 +88,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const [accent, setAccentState] = useState<AccentPreference>("default");
-  const [scale, setScaleState] = useState(110);
+  const [scale, setScaleState] = useState(DEFAULT_SCALE);
   const [libraryFullScreen, setLibraryFullScreenState] = useState(true);
 
   useEffect(() => {
@@ -97,7 +108,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const storedAccent = normalizeStoredAccent(localStorage.getItem(ACCENT_STORAGE_KEY));
     const nextAccent = isAccent(storedAccent) ? storedAccent : "default";
     const storedScale = Number(localStorage.getItem(SCALE_STORAGE_KEY));
-    const nextScale = Number.isFinite(storedScale) && storedScale >= 50 && storedScale <= 150 ? storedScale : 110;
+    const nextScale = Number.isFinite(storedScale) && storedScale >= 50 && storedScale <= 150 ? storedScale : DEFAULT_SCALE;
     setAccentState(nextAccent);
     setScaleState(nextScale);
     applyAccent(nextAccent);

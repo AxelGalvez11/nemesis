@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 import {
   artifactDropAccepts,
+  buildArtifactTree,
+  folderDropAccepts,
+  movedFolderPath,
   decksInGroup,
   isWithinGroup,
   UNGROUPED_LABEL,
@@ -155,4 +158,50 @@ test("Ungrouped can never be dragged, but is still a valid target", () => {
   assert.equal(artifactDropAccepts({ kind: "group", name: UNGROUPED_LABEL }, UNGROUPED_LABEL), false);
   // Dropping a real folder ONTO Ungrouped is how a folder gets emptied out.
   assert.equal(artifactDropAccepts({ kind: "group", name: "Exam 7" }, UNGROUPED_LABEL), true);
+});
+
+// ── Tests/Mindmaps folders, nested like Cards (owner 2026-07-28) ─────────────
+
+const artifact = (id: string, title: string, groupName: string) => ({ groupName, id, title });
+
+test("artifacts nest under their :: folders", () => {
+  const tree = buildArtifactTree([
+    artifact("a", "Loose test", ""),
+    artifact("b", "Cardio quiz", "Pharm::Exam 1"),
+    artifact("c", "Renal quiz", "Pharm::Exam 2"),
+    artifact("d", "Whole-course", "Pharm"),
+  ]);
+  assert.deepEqual(tree.map((n) => n.label), ["Pharm", "Loose test"], "folders before items");
+  const pharm = tree[0]!;
+  assert.deepEqual(pharm.children.map((n) => n.label), ["Exam 1", "Exam 2", "Whole-course"]);
+  assert.equal(pharm.children[0]!.path, "Pharm::Exam 1");
+  assert.equal(pharm.children[0]!.children[0]!.item?.title, "Cardio quiz");
+});
+
+// Without this an empty folder disappears the moment its last test moves out.
+test("a folder holding nothing still appears", () => {
+  const tree = buildArtifactTree([], ["Pharm::Exam 3"]);
+  assert.equal(tree[0]?.label, "Pharm");
+  assert.equal(tree[0]?.children[0]?.path, "Pharm::Exam 3");
+});
+
+test("a folder cannot be dropped into itself, its own child, or where it already is", () => {
+  assert.equal(folderDropAccepts("Pharm", "Pharm"), false, "onto itself");
+  assert.equal(folderDropAccepts("Pharm", "Pharm::Exam 1"), false, "into its own descendant");
+  assert.equal(folderDropAccepts("Pharm::Exam 1", "Pharm"), false, "already there");
+  assert.equal(folderDropAccepts("", "Pharm"), false, "the root is not a folder");
+});
+
+test("a folder can move to another branch or out to the root", () => {
+  assert.equal(folderDropAccepts("Pharm::Exam 1", "Renal"), true);
+  assert.equal(movedFolderPath("Pharm::Exam 1", "Renal"), "Renal::Exam 1");
+  assert.equal(folderDropAccepts("Pharm::Exam 1", ""), true, "out to the root");
+  assert.equal(movedFolderPath("Pharm::Exam 1", ""), "Exam 1");
+});
+
+// The segment-aware check that keeps "Exam 1" from reading as an ancestor of
+// "Exam 10" — a raw startsWith would refuse this legitimate move.
+test("a sibling with a longer name is not an ancestor", () => {
+  assert.equal(folderDropAccepts("Exam 1", "Exam 10"), true);
+  assert.equal(movedFolderPath("Exam 1", "Exam 10"), "Exam 10::Exam 1");
 });

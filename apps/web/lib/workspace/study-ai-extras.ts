@@ -27,11 +27,38 @@ export function stripClozeMarkers(text: string): string {
   return text.replace(/\{\{c\d+::(.*?)(?:::[^}]*)?\}\}/g, "$1");
 }
 
+// Owner 2026-07-28: "research skills for ai for better mnemonics, analogies,
+// explanations should be in simple technical english."
+//
+// The old prompt asked for "one memorable hook or contrast" and left the rest to
+// the model, which reliably produced a restatement of the card. This one names
+// the four moves that make an explanation stick, in the order a learner needs
+// them, and each is drawn from what actually works:
+//
+//   1. Meaning first — you cannot elaborate on something you have not understood.
+//   2. The mechanism — elaborative interrogation: answering "why is this true"
+//      beats re-reading, because it forces the causal link into memory.
+//   3. ONE concrete analogy — a familiar system carries the structure of an
+//      unfamiliar one. Concrete beats clever; a vague analogy teaches nothing.
+//   4. ONE memory hook — the keyword method: an acronym, a sound-alike, or a
+//      vivid image. Deliberately optional. A forced mnemonic is extra to
+//      memorise, so the instruction says to skip it rather than invent one.
+//
+// "Simple technical English" is the owner's phrase and it is not the same as
+// "simple English": the technical term is what the exam asks for, so it stays —
+// what gets simplified is the language AROUND it.
+//
+// NOT health-sciences. This app is field-agnostic (a law student and a
+// mechanical-engineering student both use it), and the old prompt's
+// "health-sciences student" quietly biased every analogy toward medicine.
 const EXPLAIN_SYSTEM =
-  "You are Nemesis's study coach. Explain flashcards in plain, encouraging language a health-sciences " +
-  "student can absorb fast: what the answer means, why it works that way, and one memorable hook or " +
-  "contrast to anchor it. Stay under 150 words, use short paragraphs or a short list, and never use emojis. " +
-  "Work only from the card and well-established textbook knowledge - no invented citations.";
+  "You are Nemesis's study coach, explaining one flashcard to the student who is revising it. Any subject — law, engineering, medicine, history, anything. " +
+  "Work in this order: (1) say what the answer MEANS in one plain sentence; (2) explain WHY it is true — the mechanism, the reasoning, or the rule behind it, because understanding the cause is what makes it stick; " +
+  "(3) give ONE concrete analogy to something the student already knows from everyday life, and make it structural, not decorative — the analogy has to carry the same relationship as the real thing; " +
+  "(4) give ONE memory hook only if a genuinely good one exists: an acronym, a sound-alike for a hard term, or a vivid image tied to the answer. A forced mnemonic is one more thing to memorise — if nothing good comes, skip this step entirely and say nothing about it. " +
+  "Write in simple technical English: KEEP the technical terms, since those are what the student is being tested on, but define each one in plain words the first time it appears, and keep every sentence around fifteen words. No filler, no throat-clearing, no restating the card back at them. " +
+  "Stay under 150 words. Short paragraphs or a short list. Never use emojis. " +
+  "Work only from the card and well-established textbook knowledge — never invent a fact, a number, or a citation. If the card is too thin to explain properly, say what is missing rather than padding.";
 
 export function buildExplainMessages(card: { front: string; back: string }): WireMsg[] {
   const front = stripClozeMarkers(card.front).trim();
