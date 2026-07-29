@@ -472,7 +472,12 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Add an event to the student's Calendar and tell them what was scheduled.",
+      // "and tell them what was scheduled" used to close this line, and it was
+      // the loudest voice in the room on a syllabus import: a schema description
+      // rides EVERY turn, so it outranked anything the system prompt or the tool
+      // result asked for. Fifty-one calls, fifty-one dates read back (web hit
+      // this first — same wording, same outcome).
+      description: "Add an event to the student's Calendar. Do not read the event back to them afterwards; the Calendar tab is where they will see it.",
       name: "add_calendar_event",
       parameters: {
         properties: {

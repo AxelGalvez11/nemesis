@@ -109,8 +109,15 @@ export interface WireMsg {
  *  search_library and create_library_note while instructing it to decline and send
  *  the student to a different app. A tool the prompt disowns is a tool the model
  *  will not call. The list below is deliberately concrete about what this app's
- *  tools can do, and stops at what the phone actually offers — no calendar tools
- *  here, unlike web. */
+ *  tools can do, and stops at what the phone actually offers.
+ *
+ *  That last clause used to read "no calendar tools here, unlike web" — true when
+ *  it was written and stale by 2026-07-28: agent-tools.ts advertises BOTH
+ *  list_calendar_events and add_calendar_event, and chat.ts:441 hands the whole
+ *  array over unfiltered. So the phone was running the exact failure this comment
+ *  warns about, in the other direction — carrying tools the prompt never
+ *  mentioned. Whenever a tool is added to agent-tools.ts, this sentence is the
+ *  second half of the change. */
 export const CHAT_SYSTEM_PROMPT =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
@@ -119,10 +126,11 @@ export const CHAT_SYSTEM_PROMPT =
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. " +
   "You can see and change this student's own Nemesis workspace through your tools: search and read their Library notes, create a note, " +
-  "add to an existing note, create slide decks, make folders, rename and move notes, list their flashcard decks, add cards to a deck, and save practice tests " +
-  "and mind maps to their Study page. Flashcards, tests, and mind maps belong in Study. Notes and slide decks belong in Library. Use the tools whenever a question involves their own notes or decks, or when they ask you to make or " +
-  "save something — read their real material instead of guessing, and never invent what one of their notes says. After any change, say " +
-  "plainly what you created or changed and where it is. School portals are still handled by the Mac app.";
+  "add to an existing note, create slide decks, make folders, rename and move notes, list their flashcard decks, add cards to a deck, save practice tests " +
+  "and mind maps to their Study page, and read or add events on their Calendar. Flashcards, tests, and mind maps belong in Study. Notes and slide decks belong in Library. " +
+  "Events belong on the Calendar tab. Use the tools whenever a question involves their own notes, decks, or schedule, or when they ask you to make or " +
+  "save something — read their real material instead of guessing, and never invent what one of their notes or their calendar says. After any change, say " +
+  "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. School portals are still handled by the Mac app.";
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —

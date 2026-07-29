@@ -3,6 +3,7 @@
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { routeInstruction } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
+import { AGENT_TOOL_NAMES } from "./agent-tools.ts";
 import {
   ATTACHMENT_CONTEXT_MAX_CHARS,
   buildAttachmentContext,
@@ -63,6 +64,19 @@ Deno.test("buildWireMessages: an explicit decision overrides the auto-classified
     content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
     role: "system",
   });
+});
+
+// A tool the prompt disowns is a tool the model will not call — or will narrate
+// instead of calling. The phone carried both calendar tools for weeks while this
+// paragraph listed only Library and Study, because the tool catalog and the prompt
+// are edited in different files and nothing tied them together. This does.
+Deno.test("the workspace paragraph names every tool family the phone actually carries", () => {
+  const carries = (name: string) => (AGENT_TOOL_NAMES as readonly string[]).includes(name);
+  if (carries("add_calendar_event") || carries("list_calendar_events")) {
+    assertMatch(CHAT_SYSTEM_PROMPT, /Calendar/);
+  }
+  if (carries("add_flashcards")) assertMatch(CHAT_SYSTEM_PROMPT, /flashcard/i);
+  if (carries("create_library_note")) assertMatch(CHAT_SYSTEM_PROMPT, /Library/);
 });
 
 Deno.test("buildWireMessages: keeps quiz answers hidden and carries learner preferences", () => {
