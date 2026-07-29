@@ -83,6 +83,7 @@ import { control, radius, space, type } from "@/theme/tokens";
 // moved into the top-right dots. Find, Rename, and Delete are real iOS actions;
 // there is no fake "Replace on web" row for markdown notes.
 const MENU_ITEMS = [
+  { key: "brain", label: "Connections", enabled: true },
   { key: "find", label: "Find", enabled: true },
   { key: "rename", label: "Rename", enabled: true },
   { key: "delete", label: "Delete", enabled: true },
@@ -405,6 +406,12 @@ export default function NoteScreen() {
   const onMenuSelect = useCallback(
     (item: (typeof MENU_ITEMS)[number]) => {
       setMenuOpen(false);
+      if (item.key === "brain") {
+        if (doc) {
+          router.push({ pathname: "/note-brain", params: { id: doc.id } });
+        }
+        return;
+      }
       if (item.key === "find") {
         // Mid-edit, save-and-exit first and only open Find once reading mode is
         // actually reached — opening it eagerly would drop an autofocused find

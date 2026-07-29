@@ -19,6 +19,10 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
+import {
+  formatBrainContext,
+  shouldRecallBrain,
+} from "@nemesis/shared";
 import { supabase } from "./supabase";
 import { createNoteWithContent, updateNoteContent } from "./cloudLibrary";
 import {
@@ -41,13 +45,7 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
-import {
-  formatLibraryContext,
-  notesUsed,
-  shouldSearchLibrary,
-  type LibraryHit,
-} from "@/lib/library-context";
-import { searchLibrarySemantic } from "./librarySearch";
+import { recallBrain } from "./brain";
 import {
   buildLiveNotesMessages,
   FINAL_NOTES_MAX_KEPT,
@@ -375,13 +373,12 @@ export async function sendChat(
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
   const outputs: ChatOutput[] = [];
-  // The student's own notes, looked up by meaning. Started HERE, before the web
-  // search, and awaited after it: the two are independent lookups, so running
-  // them at the same time costs one wait instead of two. Never rejects — an
-  // empty list is the normal outcome for a topic they have no notes on.
-  const libraryLookup: Promise<LibraryHit[]> = shouldSearchLibrary(userText)
-    ? searchLibrarySemantic(userText)
-    : Promise.resolve([]);
+  // The student's second brain: semantic notes + one-hop links + deadlines +
+  // demonstrated weak cards. It starts beside web search so the independent
+  // calls cost one wait, and returns null on any degraded backend path.
+  const brainLookup = shouldRecallBrain(userText)
+    ? recallBrain(userText)
+    : Promise.resolve(null);
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     // The phase echoes the student's OWN words, not `query` — the "current"
@@ -395,13 +392,14 @@ export async function sendChat(
       ? `${groundedText}\n\n${result.context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  // The Library goes in LAST, after any web results, so the closest thing to hand
-  // when the model starts writing is the student's own course material.
-  const libraryHits = await libraryLookup;
-  const libraryContext = formatLibraryContext(libraryHits);
-  if (libraryContext) {
-    onPhase?.({ kind: "recalling", notes: notesUsed(libraryHits) });
-    groundedText = `${groundedText}\n\n${libraryContext}`;
+  // Personal context goes LAST so it is closest to the answer and the student's
+  // course material wins over generic model memory when the two disagree.
+  const brain = await brainLookup;
+  const brainContext = formatBrainContext(brain);
+  if (brainContext) {
+    const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
+    onPhase?.({ kind: "recalling", notes: noteCount });
+    groundedText = `${groundedText}\n\n${brainContext}`;
   }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
 

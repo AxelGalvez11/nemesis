@@ -379,6 +379,12 @@ deno_version = 2
 [functions.nemesis-transcribe]
 verify_jwt = false
 
+# Unified note graph / Calendar / Study retrieval and organization. User JWTs
+# are verified inside the function; the cron-only /drain path requires the
+# exact service-role bearer.
+[functions.library-brain]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
