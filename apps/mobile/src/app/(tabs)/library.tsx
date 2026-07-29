@@ -22,7 +22,7 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { Skeleton } from "@/components/Skeleton";
-import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
+import { ChevronIcon, CloseIcon, FolderIcon, FolderOpenIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { DragChip } from "@/components/DragChip";
 import { FolderPickerSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
 import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
@@ -881,7 +881,11 @@ export default function LibraryScreen() {
                 <View style={isCollapsed ? null : styles.chevronOpen}>
                   <ChevronIcon size={16} color={c.text2} strokeWidth={2.2} />
                 </View>
-                <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
+                {isCollapsed ? (
+                  <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
+                ) : (
+                  <FolderOpenIcon size={22} color={c.text2} strokeWidth={1.9} />
+                )}
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.folderCount}>{count}</Text>
               </Pressable>

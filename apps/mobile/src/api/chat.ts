@@ -19,7 +19,12 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
+import {
+  formatBrainContext,
+  shouldRecallBrain,
+} from "@nemesis/shared";
 import { supabase } from "./supabase";
+import { createNoteWithContent, updateNoteContent } from "./cloudLibrary";
 import {
   budgetResetKind,
   buildAttachmentContext,
@@ -40,13 +45,7 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
-import {
-  formatLibraryContext,
-  notesUsed,
-  shouldSearchLibrary,
-  type LibraryHit,
-} from "@/lib/library-context";
-import { searchLibrarySemantic } from "./librarySearch";
+import { recallBrain } from "./brain";
 import {
   buildLiveNotesMessages,
   FINAL_NOTES_MAX_KEPT,
@@ -374,13 +373,12 @@ export async function sendChat(
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
   const outputs: ChatOutput[] = [];
-  // The student's own notes, looked up by meaning. Started HERE, before the web
-  // search, and awaited after it: the two are independent lookups, so running
-  // them at the same time costs one wait instead of two. Never rejects — an
-  // empty list is the normal outcome for a topic they have no notes on.
-  const libraryLookup: Promise<LibraryHit[]> = shouldSearchLibrary(userText)
-    ? searchLibrarySemantic(userText)
-    : Promise.resolve([]);
+  // The student's second brain: semantic notes + one-hop links + deadlines +
+  // demonstrated weak cards. It starts beside web search so the independent
+  // calls cost one wait, and returns null on any degraded backend path.
+  const brainLookup = shouldRecallBrain(userText)
+    ? recallBrain(userText)
+    : Promise.resolve(null);
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     // The phase echoes the student's OWN words, not `query` — the "current"
@@ -394,13 +392,14 @@ export async function sendChat(
       ? `${groundedText}\n\n${result.context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  // The Library goes in LAST, after any web results, so the closest thing to hand
-  // when the model starts writing is the student's own course material.
-  const libraryHits = await libraryLookup;
-  const libraryContext = formatLibraryContext(libraryHits);
-  if (libraryContext) {
-    onPhase?.({ kind: "recalling", notes: notesUsed(libraryHits) });
-    groundedText = `${groundedText}\n\n${libraryContext}`;
+  // Personal context goes LAST so it is closest to the answer and the student's
+  // course material wins over generic model memory when the two disagree.
+  const brain = await brainLookup;
+  const brainContext = formatBrainContext(brain);
+  if (brainContext) {
+    const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
+    onPhase?.({ kind: "recalling", notes: noteCount });
+    groundedText = `${groundedText}\n\n${brainContext}`;
   }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
 
@@ -626,7 +625,9 @@ async function withOneRetry<T extends SupabaseResult>(fn: () => PromiseLike<T>):
  *  has no UPDATE grant, so an existing row is never overwritten — see
  *  syncThreadToCloud's ignoreDuplicates upsert below). */
 function cloudMessageRow(uid: string, threadId: string, message: ChatMsg & { id: string }) {
-  const thinking = message.thinking?.text ? { ms: message.thinking.ms, text: message.thinking.text.slice(0, 40_000) } : null;
+  const thinking = message.thinking && (message.thinking.ms > 0 || message.thinking.text)
+    ? { ms: message.thinking.ms, text: message.thinking.text.slice(0, 40_000) }
+    : null;
   const meta = message.sources?.length || message.outputs?.length || thinking
     ? {
         ...(message.sources?.length ? { sources: message.sources } : {}),
@@ -893,10 +894,36 @@ export async function loadThreadOutputs(uid: string, id: string): Promise<ChatOu
  *  load-bearing write and throws on failure; the meta mirror is best-effort —
  *  if it fails, the recording still exists server-side and web's rail shows
  *  it, the chip just waits for the next successful meta write. */
+const RECORDINGS_LIBRARY_FOLDER = "Nemesis/Recordings";
+const RECORDING_NOTE_PENDING =
+  "Your recording is saved. Nemesis is preparing structured notes from the audio now.";
+const RECORDING_NOTE_UNAVAILABLE =
+  "The recording is saved, but Nemesis could not prepare the notes yet. Open the original chat and ask Nemesis to write them up.";
+
+function recordingNoteId(route: string | undefined): string {
+  const match = /[?&]id=([^&]+)/.exec(route ?? "");
+  if (!match?.[1]) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
+}
+
+async function updateRecordingLibraryNote(uid: string, artifact: ChatOutput, content: string): Promise<void> {
+  const noteId = recordingNoteId(artifact.route);
+  if (!noteId) return;
+  try {
+    await updateNoteContent(uid, noteId, content);
+  } catch (cause) {
+    console.warn("recording Library note update skipped:", cause instanceof Error ? cause.message : cause);
+  }
+}
+
 export async function saveRecordingArtifact(uid: string, threadId: string, draft: RecordingDraft): Promise<ChatOutput> {
   const id = generateUuidV4();
   const title = draft.title.slice(0, 200);
-  const entry: ChatOutput = {
+  let entry: ChatOutput = {
     id,
     kind: "recording",
     title,
@@ -917,6 +944,18 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
     created_at: draft.createdAt,
   });
   if (error) throw new Error(error.message);
+
+  // Create the destination immediately, before the slower transcription/notes
+  // pass. The chat card can route to a durable Library note as soon as Save
+  // returns, and that same note is filled in place when the background work
+  // finishes. Failure here never discards the canonical recording row above.
+  try {
+    const note = await createNoteWithContent(uid, title, RECORDING_NOTE_PENDING, RECORDINGS_LIBRARY_FOLDER);
+    entry = { ...entry, route: `/note?id=${encodeURIComponent(note.id)}` };
+  } catch (cause) {
+    console.warn("recording Library note creation skipped:", cause instanceof Error ? cause.message : cause);
+  }
+
   try {
     const { data } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
     if (data) {
@@ -1016,6 +1055,30 @@ async function rebuildNotesFromTranscript(uid: string, transcript: string): Prom
   return notes.length ? liveNotesText(notes) : null;
 }
 
+/** Persist one recording's generated notes to every durable destination: the
+ * recording row, the thread output mirror, and the Library note the card opens. */
+async function publishRecordingNotes(
+  uid: string,
+  threadId: string,
+  artifact: ChatOutput,
+  transcript: string,
+  chipBase: ChatOutput,
+): Promise<void> {
+  const notes = await rebuildNotesFromTranscript(uid, transcript);
+  if (!notes) {
+    await updateRecordingLibraryNote(uid, artifact, RECORDING_NOTE_UNAVAILABLE);
+    return;
+  }
+  const { error } = await supabase
+    .from("chat_recording_artifacts")
+    .update({ notes })
+    .eq("id", artifact.id)
+    .eq("user_id", uid);
+  if (error) throw new Error(error.message);
+  await updateRecordingLibraryNote(uid, artifact, notes);
+  await writeChipEntry(uid, threadId, { ...chipBase, notes });
+}
+
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
  *  on-device audio, run it through the server's batch transcription (top-
  *  accuracy engine, metered against the plan's monthly enhance allowance),
@@ -1038,7 +1101,14 @@ export async function enhanceRecordingArtifact(
   // so. Each file now carries its own real duration (read out of its WAV
   // header), so neither the cap nor the arithmetic is guesswork.
   const uris = audioUris;
-  if (uris.length === 0) return;
+  if (uris.length === 0) {
+    try {
+      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+    } catch (cause) {
+      console.warn("recording notes skipped:", cause instanceof Error ? cause.message : cause);
+    }
+    return;
+  }
   // Trimmed/compressed copies WE created. Tracked outside the try so the finally
   // sweeps them even when the loop throws part-way: without this, a lecture that
   // lost the network mid-upload would strand a compressed copy of every file
@@ -1094,6 +1164,7 @@ export async function enhanceRecordingArtifact(
     const enhanced = pieces.filter(Boolean).join("\n\n").trim();
     if (!enhanced) {
       await writeChipEntry(uid, threadId, { ...artifact });
+      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
       return;
     }
 
@@ -1115,19 +1186,7 @@ export async function enhanceRecordingArtifact(
     // fail on its own (offline, out of tokens), and losing the notes must never
     // cost the better transcript — or reset the chip out of "done".
     try {
-      const notes = await rebuildNotesFromTranscript(uid, enhanced);
-      if (notes) {
-        const { error: notesError } = await supabase
-          .from("chat_recording_artifacts")
-          .update({ notes })
-          .eq("id", artifact.id)
-          .eq("user_id", uid);
-        // The artifact row is the source of truth web's rail reads. If it did
-        // not take, do NOT publish the new notes to the chip — a chip showing
-        // bullets the row does not have is a divergence that never resolves.
-        if (notesError) throw new Error(notesError.message);
-        await writeChipEntry(uid, threadId, { ...polished, notes });
-      }
+      await publishRecordingNotes(uid, threadId, artifact, enhanced, polished);
     } catch (cause) {
       console.warn("notes rebuild skipped:", cause instanceof Error ? cause.message : cause);
     }
@@ -1143,17 +1202,7 @@ export async function enhanceRecordingArtifact(
     // would open the recording to a raw transcript and no notes at all.
     // Best-effort and separately guarded: this is already the failure path.
     try {
-      const notes = await rebuildNotesFromTranscript(uid, artifact.transcript ?? "");
-      if (notes) {
-        const { error } = await supabase
-          .from("chat_recording_artifacts")
-          .update({ notes })
-          .eq("id", artifact.id)
-          .eq("user_id", uid);
-        // Same rule as the success path: the artifact row is what web's rail
-        // reads, so the chip never publishes bullets the row does not have.
-        if (!error) await writeChipEntry(uid, threadId, { ...artifact, notes });
-      }
+      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
     } catch (notesCause) {
       console.warn("fallback notes skipped:", notesCause instanceof Error ? notesCause.message : notesCause);
     }

@@ -5,6 +5,8 @@
 // Run from the REPO ROOT: deno test --no-check --allow-env apps/mobile/src/
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  allArtifactGroupPaths,
+  buildArtifactTreeRows,
   decksInGroup,
   isWithinGroup,
   joinGroupPath,
@@ -15,6 +17,21 @@ import {
   rewriteGroupPrefix,
   safeLeafName,
 } from "./study-tree.ts";
+
+Deno.test("artifact rows build nested folders and keep root items visible", () => {
+  const artifacts = [
+    { groupName: "Pharm::Exam 1", id: "a" },
+    { groupName: "Pharm::Exam 1", id: "b" },
+    { groupName: "", id: "root" },
+  ];
+  assertEquals(allArtifactGroupPaths(artifacts), ["Pharm", "Pharm::Exam 1"]);
+  const rows = buildArtifactTreeRows(artifacts, new Set(["Pharm::Exam 1"]));
+  assertEquals(rows.map((row) => row.type === "folder" ? `${row.path}:${row.count}` : row.artifact.id), [
+    "Pharm:2",
+    "Pharm::Exam 1:2",
+    "root",
+  ]);
+});
 
 // The student never types "::" any more — the parent comes from a dropdown, so
 // a separator that reaches a name field is always an accident. Folding it to a

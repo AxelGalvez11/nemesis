@@ -166,6 +166,7 @@ export default function ChatScreen() {
   // When the current turn was sent, and how long it spent working before its
   // first word landed — the "Thought for Xs" note above a streaming answer.
   const turnStartedAtRef = useRef(0);
+  const thoughtMsRef = useRef(0);
   const [thoughtMs, setThoughtMs] = useState(0);
   // Pinned state of the active thread (drives the "…" menu's Pin/Unpin label) and
   // whether that menu is open.
@@ -311,6 +312,7 @@ export default function ChatScreen() {
     // into reasoningRef until its epoch check fails, and none of that belongs to
     // whatever thread is on screen now.
     reasoningRef.current = "";
+    thoughtMsRef.current = 0;
     setThoughtMs(0);
     setMessages([]);
     // Uncertain until the load below resolves one way or the other. Starting
@@ -545,6 +547,7 @@ export default function ChatScreen() {
     // Clear the last turn's thinking preview, or the new question would open on
     // the previous answer's leftover reasoning.
     reasoningRef.current = "";
+    thoughtMsRef.current = 0;
     setThoughtMs(0);
     turnStartedAtRef.current = Date.now();
     // The question is away and the model is working — the send's own receipt.
@@ -562,7 +565,11 @@ export default function ChatScreen() {
         if (epochRef.current !== epoch) return;
         // The first word ends the thinking preview and fixes how long the
         // working-out took. Guarded so later chunks don't keep moving it.
-        setThoughtMs((prev) => (prev > 0 ? prev : Date.now() - turnStartedAtRef.current));
+        setThoughtMs((prev) => {
+          const next = prev > 0 ? prev : Date.now() - turnStartedAtRef.current;
+          thoughtMsRef.current = next;
+          return next;
+        });
         setStreamingText(accumulated);
       },
       onPhase: (next) => {
@@ -588,6 +595,10 @@ export default function ChatScreen() {
           // never a summary we wrote. An Instant turn runs with thinking off and
           // simply has none.
           const thought = reasoningRef.current.trim();
+          const completedThoughtMs = Math.max(
+            1,
+            thoughtMsRef.current || Date.now() - turnStartedAtRef.current,
+          );
           const next: ChatMsg[] = [
             ...base,
             {
@@ -596,7 +607,10 @@ export default function ChatScreen() {
               role: "assistant",
               ...(reply.sources.length ? { sources: reply.sources } : {}),
               ...(reply.outputs?.length ? { outputs: reply.outputs } : {}),
-              ...(thought ? { thinking: { ms: Date.now() - turnStartedAtRef.current, text: thought } } : {}),
+              // Keep the settled duration even when the selected model did not
+              // expose raw reasoning. Otherwise the preview disappears as soon
+              // as the final message replaces the streaming row.
+              thinking: { ms: completedThoughtMs, text: thought },
             },
           ];
           setMessages(next);
@@ -744,6 +758,28 @@ export default function ChatScreen() {
     setComposerMode("chat");
     setRecordingState("idle");
   }, []);
+
+  const handleRecordingSaved = useCallback(
+    (output: ChatOutput) => {
+      if (!uid || !threadId) return;
+      setMessages((current) => {
+        const next: ChatMsg[] = [
+          ...current,
+          {
+            at: new Date().toISOString(),
+            content: output.route
+              ? "Recording saved. Your notes are being prepared in the Library."
+              : "Recording saved. Your notes are being prepared.",
+            outputs: [output],
+            role: "assistant",
+          },
+        ];
+        void saveThreadMessages(uid, threadId, next);
+        return next;
+      });
+    },
+    [threadId, uid],
+  );
 
   // While a recording is live (recording OR stopped-but-unsaved), opening the
   // drawer is the one navigation surface that could silently unmount
@@ -925,6 +961,8 @@ export default function ChatScreen() {
     );
   }
   const hasContent = rows.length > 0;
+  const messageOutputIds = new Set(messages.flatMap((message) => message.outputs?.map((output) => output.id) ?? []));
+  const headerOutputs = threadOutputs.filter((output) => !messageOutputIds.has(output.id));
   // Composer size follows the KEYBOARD, not the conversation (owner 2026-07-22:
   // "when users have keyboard open, the chat composer should be the big version,
   // but when keyboard is down the chatcomposer should have the smaller one").
@@ -979,6 +1017,7 @@ export default function ChatScreen() {
               userId={uid}
               threadId={threadId}
               onDone={exitRecordMode}
+              onSaved={handleRecordingSaved}
               onRecordingStateChange={setRecordingState}
             />
           </View>
@@ -1075,7 +1114,7 @@ export default function ChatScreen() {
               // Session-level deliverables (e.g. a web Record-mode recording synced
               // onto this thread) — a chip row at the very top of the transcript,
               // separate from any PER-MESSAGE chips rendered in renderItem above.
-              threadOutputs.length ? <DeliverableCardStack outputs={threadOutputs} onSelect={openDeliverable} compact /> : null
+              headerOutputs.length ? <DeliverableCardStack outputs={headerOutputs} onSelect={openDeliverable} compact /> : null
             }
             ListEmptyComponent={
               messagesLoading ? (

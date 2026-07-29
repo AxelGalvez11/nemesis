@@ -40,16 +40,25 @@ export function ThoughtTrail({ thinking, testID }: { thinking: MessageThinking; 
   const { colors: c } = useTheme();
   const [open, setOpen] = useState(false);
   const text = thinking.text.trim();
-  if (!text) return null;
+  const expandable = text.length > 0;
 
   return (
     <View style={styles.wrap} testID={testID}>
       <Pressable
+        disabled={!expandable}
         onPress={() => setOpen((v) => !v)}
         hitSlop={8}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={open ? "Hide what it worked through" : "Show what it worked through"}
+        accessibilityRole={expandable ? "button" : "text"}
+        accessibilityState={expandable ? { expanded: open } : undefined}
+        accessibilityLabel={
+          expandable
+            ? open
+              ? "Hide what it worked through"
+              : "Show what it worked through"
+            : thinking.ms > 0
+              ? `Thought for ${thoughtDuration(thinking.ms)}`
+              : "Thought complete"
+        }
         style={styles.row}
         testID="chat-thought-trail-toggle"
       >
@@ -58,11 +67,13 @@ export function ThoughtTrail({ thinking, testID }: { thinking: MessageThinking; 
         </Text>
         {/* The chevron is the app's right-pointing one, rotated — a quarter turn
             down when open is the convention every disclosure row here uses. */}
-        <View style={open ? styles.chevronOpen : styles.chevron}>
-          <ChevronIcon size={15} color={c.textHint} />
-        </View>
+        {expandable ? (
+          <View style={open ? styles.chevronOpen : styles.chevron}>
+            <ChevronIcon size={15} color={c.textHint} />
+          </View>
+        ) : null}
       </Pressable>
-      {open ? (
+      {open && expandable ? (
         <Animated.View entering={FadeIn.duration(140)} style={styles.body}>
           {/* Plain Text, not markdown: raw reasoning is full of half-finished
               lists and stray asterisks, and rendering it as markdown turns that

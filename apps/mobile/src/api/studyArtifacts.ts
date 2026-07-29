@@ -31,6 +31,13 @@ import {
   type TestQuestion,
 } from "@/lib/study-artifact-content";
 import { balanceAnswerPositions } from "@/lib/test-answer-balance";
+import {
+  isWithinGroup,
+  joinGroupPath,
+  normalizeGroupPath,
+  pathLeaf,
+  rewriteGroupPrefix,
+} from "@/lib/study-tree";
 
 // Re-exported so every caller keeps importing artifacts from ONE place: the
 // screens want the row type and the scorer together, and splitting that across
@@ -228,6 +235,38 @@ export async function recordTestAttempt(artifact: StudyArtifact, attempt: TestAt
 export async function deleteStudyArtifact(id: string): Promise<void> {
   const { error } = await supabase.from("study_artifacts").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/** Move one test/mindmap into a virtual "::"-folder. */
+export async function moveStudyArtifact(id: string, groupName: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_artifacts")
+    .update({ group_name: normalizeGroupPath(groupName).slice(0, MAX_GROUP) })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Move an artifact folder and every nested child. */
+export async function moveStudyArtifactGroup(
+  artifacts: readonly StudyArtifact[],
+  sourceGroup: string,
+  targetGroup: string,
+): Promise<void> {
+  const source = normalizeGroupPath(sourceGroup);
+  const target = normalizeGroupPath(targetGroup);
+  if (!source || isWithinGroup(target, source)) throw new Error("A folder can't be moved inside itself.");
+  const destination = joinGroupPath(target, pathLeaf(source));
+  const changes = artifacts.flatMap((artifact) => {
+    const next = rewriteGroupPrefix(artifact.groupName, source, destination);
+    return next ? [{ id: artifact.id, groupName: next }] : [];
+  });
+  const results = await Promise.all(
+    changes.map(({ id, groupName }) =>
+      supabase.from("study_artifacts").update({ group_name: groupName.slice(0, MAX_GROUP) }).eq("id", id),
+    ),
+  );
+  const failure = results.find((result) => result.error)?.error;
+  if (failure) throw new Error(failure.message);
 }
 
 // Deliberately NOT ported here yet: the web's missedQuestionCards(), which turns

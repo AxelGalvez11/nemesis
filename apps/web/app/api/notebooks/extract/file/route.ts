@@ -17,6 +17,7 @@ import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/note
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
+import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
 export const runtime = "nodejs";
 /** A picture-heavy lecture now costs several transcription calls in waves of
@@ -27,7 +28,7 @@ export const maxDuration = 300;
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB upload ceiling.
 
-type FileKind = "pdf" | "docx" | "pptx";
+type FileKind = "pdf" | "docx" | "pptx" | "image";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -37,6 +38,7 @@ function kindFor(name: string, type: string): FileKind | null {
   if (lower.endsWith(".pdf") || type === "application/pdf") return "pdf";
   if (lower.endsWith(".docx") || type === DOCX_MIME) return "docx";
   if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
+  if (visionMime(name, type)) return "image";
   return null;
 }
 
@@ -116,9 +118,17 @@ export async function POST(req: Request): Promise<Response> {
   const kind = kindFor(file.name, file.type) ?? sniffKind(bytes);
   if (!kind) {
     return NextResponse.json(
-      { error: "Unsupported file. Add a PDF, Word (.docx), or PowerPoint (.pptx)." },
+      { error: "Unsupported file. Add a photo, a PDF, Word (.docx), or PowerPoint (.pptx)." },
       { status: 415 },
     );
+  }
+  if (kind === "image") {
+    if (file.size > VISION_MAX_BYTES) {
+      return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
+    }
+    if (!visionConfigured()) {
+      return NextResponse.json({ error: "Reading photos isn't switched on for this app yet." }, { status: 503 });
+    }
   }
 
   try {
@@ -126,7 +136,13 @@ export async function POST(req: Request): Promise<Response> {
     let readBy: string | undefined;
     let skippedFigures = 0;
     let coverage: Record<string, number | boolean> | undefined;
-    if (kind === "pdf") {
+    if (kind === "image") {
+      const seen = await readWithVision(original, visionMime(file.name, file.type) ?? "image/jpeg", {
+        prompt: PHOTO_PROMPT,
+      });
+      result = { text: seen?.text ?? "", title: seen ? guessTitle(seen.text) : null };
+      readBy = seen?.model;
+    } else if (kind === "pdf") {
       const r = await extractPdfText(original);
       result = { title: r.meta.title, text: r.text };
       // Pages whose content is a picture. The old fallback below only fires when the
@@ -237,6 +253,8 @@ export async function POST(req: Request): Promise<Response> {
           error:
             kind === "pdf"
               ? "This PDF has no selectable text (it may be scanned images)."
+              : kind === "image"
+                ? "Couldn't read anything in that picture. Try again with more light, or hold the camera steadier."
               : "No readable text was found in that file.",
         },
         { status: 422 },

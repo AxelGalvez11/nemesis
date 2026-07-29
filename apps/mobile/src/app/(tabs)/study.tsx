@@ -14,7 +14,7 @@ import { GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle } from "react-native-svg";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronIcon, FolderIcon } from "@/components/icons";
+import { ChevronIcon, FolderIcon, FolderOpenIcon } from "@/components/icons";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
@@ -52,7 +52,7 @@ import {
   type DeckCounts,
 } from "@/api/cloudStudy";
 import { allGroupPaths, buildDeckTree, flattenDeckTree, type DeckSort, type DeckTreeRow } from "@/lib/deck-tree";
-import { decksInGroup, isWithinGroup, pathLeaf, pathParent } from "@/lib/study-tree";
+import { decksInGroup, isWithinGroup, joinGroupPath, pathLeaf, pathParent, safeLeafName } from "@/lib/study-tree";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -194,7 +194,8 @@ export default function StudyScreen() {
 
   // Long-press row actions (owner 2026-07-22, same ask as the Library's).
   const [rowTarget, setRowTarget] = useState<StudyRowTarget | null>(null);
-  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | null>(null);
+  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | "merge" | null>(null);
+  const [mergeDecks, setMergeDecks] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
@@ -325,6 +326,7 @@ export default function StudyScreen() {
   const closeRowSheets = useCallback(() => {
     setRowSheet(null);
     setRowTarget(null);
+    setMergeDecks(null);
     setRowError(null);
   }, []);
 
@@ -440,6 +442,13 @@ export default function StudyScreen() {
       if (!userId) return;
       const source = sourceKey.slice(sourceKey.indexOf(":") + 1);
       const destination = targetKey.slice(targetKey.indexOf(":") + 1);
+      if (sourceKey.startsWith("deck:") && targetKey.startsWith("deck:")) {
+        if (source === destination) return;
+        setMergeDecks({ sourceId: source, targetId: destination });
+        setRowError(null);
+        setRowSheet("merge");
+        return;
+      }
       if (sourceKey.startsWith("folder:")) {
         void applyRowChange(() => moveStudyGroup(userId, decks, source, destination));
         return;
@@ -447,6 +456,24 @@ export default function StudyScreen() {
       void applyRowChange(() => moveStudyDeck(userId, decks, source, destination));
     },
     [userId, decks, applyRowChange],
+  );
+
+  const onMergeDecksConfirm = useCallback(
+    (value: string) => {
+      if (!userId || !mergeDecks) return;
+      const target = decks.find((deck) => deck.id === mergeDecks.targetId);
+      const folderLeaf = safeLeafName(value);
+      if (!target || !folderLeaf) return;
+      const destination = joinGroupPath(pathParent(target.name), folderLeaf);
+      void applyRowChange(
+        async () => {
+          await moveStudyDeck(userId, decks, mergeDecks.targetId, destination);
+          await moveStudyDeck(userId, decks, mergeDecks.sourceId, destination);
+        },
+        { inline: true },
+      );
+    },
+    [applyRowChange, decks, mergeDecks, userId],
   );
 
   const rowDrag = useRowDrag({ onDrop: onRowDrop, onHold: openRowMenu });
@@ -663,6 +690,7 @@ export default function StudyScreen() {
                       // A folder can't be dropped inside itself, and moving it
                       // back into its own parent would be a no-op.
                       canDropOn: (targetKey) => {
+                        if (targetKey.startsWith("deck:")) return false;
                         const destination = targetKey.slice(targetKey.indexOf(":") + 1);
                         return !isWithinGroup(destination, item.path) && destination !== pathParent(item.path);
                       },
@@ -691,7 +719,11 @@ export default function StudyScreen() {
                       <ChevronIcon size={16} color={c.text2} strokeWidth={2.2} />
                     </View>
                     {/* Folder glyph so groups read as folders at a glance (owner 2026-07-21). */}
-                    <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
+                    {item.collapsed ? (
+                      <FolderIcon size={22} color={c.text2} strokeWidth={1.9} />
+                    ) : (
+                      <FolderOpenIcon size={22} color={c.text2} strokeWidth={1.9} />
+                    )}
                     {/* This folder's OWN segment — "Cardio", not "Pharm::Cardio".
                         The full path lives on item.path and keys the collapse set. */}
                     <Text style={styles.folderName} numberOfLines={1}>{item.label}</Text>
@@ -717,15 +749,15 @@ export default function StudyScreen() {
                       // Dropping a deck back into the folder it already sits in
                       // would do nothing, so that target never lights up.
                       canDropOn: (targetKey) =>
+                        targetKey !== `deck:${item.deck.deck.id}` &&
                         targetKey.slice(targetKey.indexOf(":") + 1) !== pathParent(item.deck.deck.name),
                       draggable: !selectMode,
                       holdForMenu: !selectMode,
                     })}
                   >
                   <Pressable
-                    // A deck is never a drop TARGET — decks aren't containers —
-                    // but it registers so the drag can pick it up.
-                    ref={rowDrag.registerRow(`deck:${item.deck.deck.id}`, false)}
+                    // Deck-on-deck creates a new folder containing both items.
+                    ref={rowDrag.registerRow(`deck:${item.deck.deck.id}`, true)}
                     testID={`deck-${item.deck.deck.id}`}
                     onPress={() =>
                       selectMode
@@ -825,6 +857,18 @@ export default function StudyScreen() {
         onConfirm={onRenameConfirm}
         onClose={closeRowSheets}
         testID="study-rename-prompt"
+      />
+      <TextPromptSheet
+        visible={rowSheet === "merge"}
+        title="Create a folder"
+        placeholder="Folder name"
+        initialValue=""
+        confirmLabel="Create"
+        busy={rowBusy}
+        error={rowError}
+        onConfirm={onMergeDecksConfirm}
+        onClose={closeRowSheets}
+        testID="study-merge-prompt"
       />
       <FolderPickerSheet
         visible={rowSheet === "move"}

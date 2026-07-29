@@ -87,3 +87,68 @@ export function decksInGroup<T extends { name: string }>(decks: readonly T[], gr
   if (!root) return [];
   return decks.filter((deck) => isWithinGroup(deck.name, root));
 }
+
+export type ArtifactTreeRow<T> =
+  | { collapsed: boolean; count: number; depth: number; label: string; path: string; type: "folder" }
+  | { artifact: T; depth: number; type: "artifact" };
+
+interface ArtifactFolder<T> {
+  children: Map<string, ArtifactFolder<T>>;
+  items: T[];
+  label: string;
+  path: string;
+}
+
+/** Build the Tests/Mindmaps tree from each artifact's `groupName`. Artifacts
+ * keep their own identity; folders are virtual "::"-paths, exactly like cards. */
+export function buildArtifactTreeRows<T extends { groupName: string }>(
+  artifacts: readonly T[],
+  collapsed: ReadonlySet<string>,
+): ArtifactTreeRow<T>[] {
+  const root: ArtifactFolder<T> = { children: new Map(), items: [], label: "", path: "" };
+  for (const artifact of artifacts) {
+    const parts = normalizeGroupPath(artifact.groupName).split(SEPARATOR).filter(Boolean);
+    let folder = root;
+    let path = "";
+    for (const label of parts) {
+      path = joinGroupPath(path, label);
+      let child = folder.children.get(label);
+      if (!child) {
+        child = { children: new Map(), items: [], label, path };
+        folder.children.set(label, child);
+      }
+      folder = child;
+    }
+    folder.items.push(artifact);
+  }
+
+  const count = (folder: ArtifactFolder<T>): number =>
+    folder.items.length + [...folder.children.values()].reduce((sum, child) => sum + count(child), 0);
+
+  const flatten = (folder: ArtifactFolder<T>, depth: number): ArtifactTreeRow<T>[] => {
+    const rows: ArtifactTreeRow<T>[] = [];
+    const children = [...folder.children.values()].sort((a, b) => a.label.localeCompare(b.label));
+    for (const child of children) {
+      const isCollapsed = collapsed.has(child.path);
+      rows.push({ collapsed: isCollapsed, count: count(child), depth, label: child.label, path: child.path, type: "folder" });
+      if (!isCollapsed) rows.push(...flatten(child, depth + 1));
+    }
+    rows.push(...folder.items.map((artifact) => ({ artifact, depth, type: "artifact" as const })));
+    return rows;
+  };
+  return flatten(root, 0);
+}
+
+/** Every real and intermediate Tests/Mindmaps folder path. */
+export function allArtifactGroupPaths<T extends { groupName: string }>(artifacts: readonly T[]): string[] {
+  const paths = new Set<string>();
+  for (const artifact of artifacts) {
+    const parts = normalizeGroupPath(artifact.groupName).split(SEPARATOR).filter(Boolean);
+    let path = "";
+    for (const label of parts) {
+      path = joinGroupPath(path, label);
+      paths.add(path);
+    }
+  }
+  return [...paths].sort((a, b) => a.localeCompare(b));
+}

@@ -103,8 +103,8 @@ const KICKER: Record<ChatOutput["kind"], string> = {
  *  deck's own folder when it has one — a deck is the only artifact that carries
  *  its location in its title; a test or mind map carries it in the route. */
 function destination(kind: ChatOutput["kind"], route: string | undefined, folder: string): string {
-  if (kind === "recording") return "Tap to read";
   const path = routePath(route);
+  if (kind === "recording") return path === "/note" ? "Library" : "Tap to read";
   if (path === "/note" || path === "/slides") return "Library";
   if (path === "/calendar") return "Calendar";
   if (path !== "/study") return route ? "Tap to open" : "Tap to read";

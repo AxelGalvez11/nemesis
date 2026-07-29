@@ -4,7 +4,12 @@
 // history budget, same error copy. Web swaps SecureStore for localStorage and
 // adds AbortSignal support (mobile has no cancel affordance).
 
-import { studyCreationKindFromPreferencePrompt, WRITING_VOICE } from "@nemesis/shared";
+import {
+  formatBrainContext,
+  shouldRecallBrain,
+  studyCreationKindFromPreferencePrompt,
+  WRITING_VOICE,
+} from "@nemesis/shared";
 
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +17,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
+import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
@@ -510,6 +516,12 @@ export async function sendChatTurn(
   const decision = applyChatEffort(routed, effort);
   let groundedText = userText;
   let sources: ChatWebResult[] = [];
+  // Start the second-brain lookup beside live web search. It combines semantic
+  // Library passages with typed graph neighbors, Calendar deadlines, and Study
+  // weak spots in one bounded packet; failures are a normal empty context.
+  const brainLookup = shouldRecallBrain(askText)
+    ? recallBrain(askText)
+    : Promise.resolve(null);
   if (needsWeb) {
     const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
     sources = result.sources;
@@ -517,6 +529,8 @@ export async function sendChatTurn(
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
+  const brainContext = formatBrainContext(await brainLookup);
+  if (brainContext) groundedText = `${groundedText}\n\n${brainContext}`;
 
   const toolsEnabled = toolsAllowed(decision);
   let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled);
