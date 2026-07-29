@@ -46,3 +46,8 @@ supabase/.branches/
 # graphify knowledge-graph output (generated cache, never source)
 graphify-out/
 .env*
+
+# Dead prototype, still on disk. Ignored here so EAS never uploads it, and
+# excluded from the workspace in pnpm-workspace.yaml so pnpm never counts it —
+# both are needed, because pnpm globs the filesystem rather than git.
+apps/desktop-agent/
