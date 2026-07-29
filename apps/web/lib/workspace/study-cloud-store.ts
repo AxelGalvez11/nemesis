@@ -16,6 +16,7 @@ import {
   type OcclusionShape,
 } from "./study-occlusion";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
+import { fetchAllRows } from "./supabase-paging";
 import { decksInGroup, isWithinGroup, normalizeGroupPath, planGroupDissolve, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";
 
 export interface StudyDeck {
@@ -361,39 +362,6 @@ function toArtifact(raw: unknown): StudyArtifact | null {
   if (!isObject(raw) || typeof raw.id !== "string" || (raw.kind !== "test" && raw.kind !== "mindmap") || typeof raw.title !== "string") return null;
   const status = raw.status === "ready" || raw.status === "archived" ? raw.status : "draft";
   return { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, content: "content" in raw ? raw.content : null, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
-}
-
-/**
- * PostgREST caps every response at a server-side row limit (1,000 on this
- * project) whether or not the query asks for one. A collection larger than that
- * came back SILENTLY TRUNCATED — no error, no flag, just a short array.
- *
- * Found live 2026-07-27: this account has 6,504 cards, so exactly 1,000 reached
- * the browser. Because the card query sorts by due_at ascending and a new card
- * is due now, every newly created card sorted past the cut — a deck created
- * from chat showed 0 cards on the Study page and Browse could not find them,
- * while the rows were sitting in the database the whole time. That is every
- * new card from every source: chat, import, and the Add card button.
- *
- * So: page until a short page comes back. The caller must supply a sort ending
- * in a UNIQUE column — paging an ambiguous sort skips and duplicates rows,
- * because Postgres is free to order ties differently on each request.
- */
-const PAGE_SIZE = 1_000;
-
-async function fetchAllRows<Row>(
-  page: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
-): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await page(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const batch = data ?? [];
-    rows.push(...batch);
-    // A short page means there is nothing after it. An exactly-full last page
-    // costs one extra empty request, which is the cheap side of the trade.
-    if (batch.length < PAGE_SIZE) return rows;
-  }
 }
 
 async function loadStudy(userId: string) {

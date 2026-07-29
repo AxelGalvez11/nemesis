@@ -15,6 +15,7 @@
 
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput, SessionSource, WorkspaceSession } from "./sessions-store";
+import { fetchAllRows } from "./supabase-paging";
 
 const MIGRATION_FLAG_PREFIX = "nemesis.web.sessions.cloudmigrated.v1:";
 const LEGACY_CLAIMED_FLAG = "nemesis.web.sessions.legacyclaimed.v1";
@@ -276,18 +277,25 @@ export async function uploadLocalSessionsToCloud(uid: string, sessions: Workspac
 // ── Full refresh (initial load + visibilitychange→visible) ─────────────────
 
 /** Fetches every thread + message the user owns and reassembles them into
- * WorkspaceSession shape. Unbounded (matches study-cloud-store's decks/cards
- * fetch) — pagination is a follow-up if history grows large enough to matter. */
+ * WorkspaceSession shape.
+ *
+ * Both reads are PAGED. They used to be unbounded, which quietly meant "the
+ * first 1,000 rows": a busy account would have lost its oldest threads and, far
+ * sooner, messages from the middle of its history — with no error to notice.
+ * Each sort ends in `id` because neither updated_at nor created_at is unique
+ * (a thread and its first message are written in the same instant). */
 export async function fetchCloudSessions(uid: string): Promise<WorkspaceSession[]> {
-  const [threadsResult, messagesResult] = await Promise.all([
-    supabase.from("chat_threads").select(THREAD_COLUMNS).eq("user_id", uid).order("updated_at", { ascending: false }),
-    supabase.from("chat_messages").select(MESSAGE_COLUMNS).eq("user_id", uid).order("created_at", { ascending: true }),
+  const [threadRows, messageRows] = await Promise.all([
+    fetchAllRows((from, to) =>
+      supabase.from("chat_threads").select(THREAD_COLUMNS).eq("user_id", uid)
+        .order("updated_at", { ascending: false }).order("id").range(from, to)),
+    fetchAllRows((from, to) =>
+      supabase.from("chat_messages").select(MESSAGE_COLUMNS).eq("user_id", uid)
+        .order("created_at", { ascending: true }).order("id").range(from, to)),
   ]);
-  if (threadsResult.error) throw new Error(threadsResult.error.message);
-  if (messagesResult.error) throw new Error(messagesResult.error.message);
 
   const messagesByThread = new Map<string, SessionMessage[]>();
-  for (const row of messagesResult.data ?? []) {
+  for (const row of messageRows) {
     if (!isRecord(row) || typeof row.thread_id !== "string") continue;
     const message = rowToMessage(row);
     if (!message) continue;
@@ -296,7 +304,7 @@ export async function fetchCloudSessions(uid: string): Promise<WorkspaceSession[
     else messagesByThread.set(row.thread_id, [message]);
   }
 
-  return (threadsResult.data ?? []).flatMap((row) => {
+  return threadRows.flatMap((row) => {
     if (!isRecord(row) || typeof row.id !== "string") return [];
     const session = rowToSession(row, messagesByThread.get(row.id) ?? []);
     return session ? [session] : [];

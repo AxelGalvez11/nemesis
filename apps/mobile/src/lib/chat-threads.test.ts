@@ -80,8 +80,12 @@ Deno.test("upsertThread: a manual rename SURVIVES the next message (no title clo
 
 Deno.test("upsertThread: newest thread sorts first; store caps at MAX_THREADS", () => {
   let store = emptyStore();
+  // One minute apart, built as real dates: a hand-padded "00:${i}:00" string
+  // stops being a valid timestamp once i passes 59, which silently broke the
+  // sort rather than the assertion when MAX_THREADS grew past two digits.
+  const base = Date.UTC(2026, 6, 18, 0, 0, 0);
   for (let i = 0; i < MAX_THREADS + 5; i++) {
-    const iso = `2026-07-18T00:${String(i).padStart(2, "0")}:00Z`;
+    const iso = new Date(base + i * 60_000).toISOString();
     store = upsertThread(store, `t${i}`, [user(`q${i}`)], iso);
   }
   assertEquals(store.threads.length, MAX_THREADS);

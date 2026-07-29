@@ -34,6 +34,8 @@ export function libraryRowToNote(raw: unknown): CloudLibraryNote | null {
     content: typeof raw.content === "string" ? raw.content : "",
     updatedAt,
     createdAt: typeof raw.created_at === "string" ? raw.created_at : updatedAt,
+    // Null for every note never dragged — see compareManual in library-tree.ts.
+    position: typeof raw.position === "number" ? raw.position : null,
   };
 }
 

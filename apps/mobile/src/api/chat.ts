@@ -734,11 +734,15 @@ export async function listThreads(uid: string): Promise<ThreadSummary[]> {
   await ensureMigrated(uid);
   let store = await readStore(uid);
   try {
+    // `id` ends the sort so the page boundaries are stable — a thread and the
+    // message that named it are written in the same instant, so updated_at ties
+    // are ordinary and an ambiguous sort would skip rows between pages.
     const { data, error } = await supabase
       .from("chat_threads")
       .select("id,title,pinned,created_at,updated_at")
       .eq("user_id", uid)
       .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
       .limit(MAX_THREADS);
     if (!error && data) {
       const cloudMeta: CloudThreadMeta[] = data.map((row) => ({

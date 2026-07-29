@@ -19,6 +19,7 @@ import {
   type LiveAction,
 } from "./library-live";
 import { titleFromPath, type CloudLibraryNote } from "./library-tree";
+import { fetchAllRows } from "./supabase-paging";
 
 const PREVIEW_NOTES: CloudLibraryNote[] = [
   {
@@ -151,14 +152,22 @@ function noteCandidate(title: string, folder: string, suffix: number) {
   return { title: candidateTitle, path: notePathFor(candidateTitle, folder) };
 }
 
+/** Every note and folder row for `userId`, paged — a library past 1,000 rows
+ *  would otherwise come back silently short (see supabase-paging.ts). `id` ends
+ *  the sort because updated_at is not unique: an import stamps a whole folder
+ *  of notes in one statement. */
 function fetchDocuments(userId: string) {
-  return supabase
-    .from("readable_library_documents")
-    .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted")
-    .eq("user_id", userId)
-    .eq("deleted", false)
-    .in("kind", ["note", "folder"])
-    .order("updated_at", { ascending: false });
+  return fetchAllRows((from, to) =>
+    supabase
+      .from("readable_library_documents")
+      .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted,position")
+      .eq("user_id", userId)
+      .eq("deleted", false)
+      .in("kind", ["note", "folder"])
+      .order("updated_at", { ascending: false })
+      .order("id")
+      .range(from, to),
+  );
 }
 
 async function loadDocuments(userId: string): Promise<void> {
@@ -166,8 +175,7 @@ async function loadDocuments(userId: string): Promise<void> {
   setState({ status: "loading", error: null, notes: [], folders: [], selectedPath: null });
   const generation = dataGeneration;
   try {
-    const { data, error } = await fetchDocuments(userId);
-    if (error) throw new Error(error.message);
+    const data = await fetchDocuments(userId); // throws on a failed page
     if (loadedForUserId !== userId) return; // the user switched mid-flight
     const { notes, folders } = parseDocumentRows(data);
     folderRows = folders;
@@ -204,8 +212,7 @@ async function loadDocuments(userId: string): Promise<void> {
 async function refreshDocuments(userId: string): Promise<void> {
   const generation = dataGeneration;
   try {
-    const { data, error } = await fetchDocuments(userId);
-    if (error) throw new Error(error.message);
+    const data = await fetchDocuments(userId); // throws on a failed page
     if (loadedForUserId !== userId) return;
     if (dataGeneration !== generation) {
       // Newer data was applied while this snapshot was in flight; this one may

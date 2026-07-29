@@ -48,7 +48,21 @@ export interface ThreadStore {
   threads: ChatThread[];
 }
 
-export const MAX_THREADS = 60;
+/**
+ * How many threads the on-device cache keeps, oldest evicted first.
+ *
+ * This is a SYNC CEILING, not just a cache size: the drawer lists what the store
+ * holds, so a thread evicted here is one the student can still see on the web app
+ * but cannot reach on their phone. At 60 an ordinary account was ~20 chats away
+ * from that, which is why this is far larger than it needs to be.
+ *
+ * Raising it is cheap because a thread merged in from the cloud carries METADATA
+ * ONLY — mergeCloudThreadList sets `messages: []`, and bodies are filled in only
+ * for threads actually opened. A cached row is a title, an id and two timestamps,
+ * on the order of a hundred bytes. The eviction rule stays so a pathological
+ * account still has a bound.
+ */
+export const MAX_THREADS = 500;
 export const MAX_MESSAGES_PER_THREAD = 200;
 export const UNTITLED_THREAD = "New chat";
 

@@ -185,6 +185,9 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
                   <DropdownMenuSubTrigger><IconArrowsSort /> Sort</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="min-w-40" sideOffset={6}>
                     <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
+                      {/* Same label the phone uses for this mode, because it is
+                          the same stored order on both surfaces. */}
+                      <DropdownMenuRadioItem value="manual">My order</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>

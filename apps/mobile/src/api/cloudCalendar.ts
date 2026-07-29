@@ -138,6 +138,12 @@ export async function listCalendarEvents(
       .lte("date", range.to)
       .order("date", { ascending: true })
       .order("time", { ascending: true, nullsFirst: false })
+      // `id` makes the page boundaries stable. Neither date nor time is unique —
+      // a syllabus import writes a whole term of events, and several can share a
+      // date with no time at all — and Postgres may order ties differently on
+      // each request, which would skip and duplicate events across pages rather
+      // than fail visibly.
+      .order("id", { ascending: true })
       .range(offset, offset + pageSize - 1);
     if (error) throw new Error(error.message);
 

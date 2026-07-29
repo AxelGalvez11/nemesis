@@ -10,6 +10,12 @@ export interface CloudLibraryNote {
   content: string;
   updatedAt: string;
   createdAt: string;
+  /** Hand-arranged slot within this note's folder, or null/absent if it has
+   *  never been dragged. Written by the phone (apps/mobile/src/lib/library-order.ts);
+   *  the web reads it so an arrangement made on one surface shows on the other.
+   *  Optional because the column is nullable and most rows simply do not carry
+   *  one — buildLibraryTree normalizes a missing value to null. */
+  position?: number | null;
 }
 
 export interface LibraryTreeNote {
@@ -20,6 +26,7 @@ export interface LibraryTreeNote {
   updatedAt: string;
   createdAt: string;
   addedOrder: number;
+  position: number | null;
 }
 
 export interface LibraryTreeFolder {
@@ -43,10 +50,10 @@ export function titleFromPath(path: string): string {
  *  the desktop Library sidebar groups into. Folders and notes are sorted alphabetically at
  *  every level; a blank/whitespace title falls back to `titleFromPath`. Rows with an empty
  *  path are skipped (defensive — should never happen for a well-formed row). */
-export type LibrarySortMode = "az" | "za" | "modified" | "added";
+export type LibrarySortMode = "az" | "za" | "modified" | "added" | "manual";
 
 export function buildLibraryTree(
-  notes: { path: string; title: string; updatedAt?: string; createdAt?: string }[],
+  notes: { path: string; title: string; updatedAt?: string; createdAt?: string; position?: number | null }[],
   folderPaths: readonly string[] = [],
   sortMode: LibrarySortMode = "az",
 ): LibraryTreeFolder {
@@ -89,6 +96,7 @@ export function buildLibraryTree(
       updatedAt: note.updatedAt ?? "",
       createdAt: note.createdAt ?? note.updatedAt ?? "",
       addedOrder,
+      position: typeof note.position === "number" ? note.position : null,
     });
   });
 
@@ -113,14 +121,40 @@ function latestCreated(folder: LibraryTreeFolder): number {
   return Math.max(0, ...folder.notes.map((note) => Date.parse(note.createdAt) || 0), ...folder.folders.map(latestCreated));
 }
 
+/**
+ * Order two notes by the slot the student dragged them into.
+ *
+ * Ported line for line from the phone's compareManual (apps/mobile/src/lib/
+ * library-order.ts) — the two surfaces read the SAME `position` column, so any
+ * difference here shows up as the same library in two different orders.
+ *
+ * NULL SORTS LAST, tie-broken by title. Notes arrive from the web app, from
+ * chat and from the recorder, none of which set a position, so most of a real
+ * library is null. Sorting null first would bury the arrangement the student
+ * made under every note they have ever created.
+ *
+ * Positions are only comparable WITHIN one folder, which is exactly the scope
+ * this runs in — sortFolder sorts one folder's notes at a time.
+ */
+function compareManual(a: LibraryTreeNote, b: LibraryTreeNote): number {
+  if (a.position === null && b.position === null) return a.title.localeCompare(b.title);
+  if (a.position === null) return 1;
+  if (b.position === null) return -1;
+  return a.position - b.position || a.title.localeCompare(b.title);
+}
+
 function sortFolder(folder: LibraryTreeFolder, mode: LibrarySortMode): void {
   const direction = mode === "za" ? -1 : 1;
   folder.folders.sort((a, b) => {
-    if (mode === "modified") return latestModified(b) - latestModified(a) || a.name.localeCompare(b.name);
+    // Folders carry no position of their own, so "My order" falls back to
+    // newest-modified-first for them — the same fall-through the phone's
+    // compareFolders lands on for its "manual" key.
+    if (mode === "modified" || mode === "manual") return latestModified(b) - latestModified(a) || a.name.localeCompare(b.name);
     if (mode === "added") return latestCreated(b) - latestCreated(a) || earliestAddedOrder(a) - earliestAddedOrder(b) || a.name.localeCompare(b.name);
     return direction * a.name.localeCompare(b.name);
   });
   folder.notes.sort((a, b) => {
+    if (mode === "manual") return compareManual(a, b);
     if (mode === "modified") return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) || a.title.localeCompare(b.title);
     if (mode === "added") return (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || a.addedOrder - b.addedOrder || a.title.localeCompare(b.title);
     return direction * a.title.localeCompare(b.title);

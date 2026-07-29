@@ -100,7 +100,12 @@ export async function listStudyArtifacts(): Promise<StudyArtifact[]> {
   const { data, error } = await supabase
     .from("study_artifacts")
     .select("id,kind,title,group_name,status,content,created_at")
-    .order("created_at", { ascending: false })
+    // Ordered exactly like the web workspace's artifact fetch (updated_at desc,
+    // then id). It used to sort by created_at, so the same two tests appeared in
+    // a different order on each surface as soon as one of them was taken —
+    // taking a test writes its attempt back and moves updated_at, not created_at.
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: true })
     .limit(MAX_ARTIFACTS);
   if (error) throw new Error(error.message);
   return (data ?? [])
