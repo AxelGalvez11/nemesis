@@ -374,16 +374,20 @@
 
     --composer-shell-pad-block-end: 0.625rem;
     --message-text-indent: 0.75rem;
-    /* Owner 2026-07-28: "why does nemesis look so small compared to chatgpt?"
-       Measured against the screenshots: the answer text was 15px against
-       ChatGPT's 16px, with a line height to match. Raised HERE rather than by
-       moving the Appearance > Scaling default, because scaling is a stored
-       per-device preference — bumping its default only reaches people who never
-       touched the dial, and everyone else stays small. */
-    --conversation-text-font-size: 1rem;
-    --conversation-tool-font-size: 0.75rem;
-    --conversation-caption-font-size: 0.8125rem;
-    --conversation-line-height: 1.25rem;
+    /* Owner 2026-07-28: "why does nemesis look so small compared to chatgpt?",
+       then "i need the default scaling size to match chatgpt."
+       Raising this token alone did NOT answer it. Measured on chatgpt.com and
+       on our own build: ChatGPT runs its root and every control at 16px, while
+       ours ran the CHROME — nav, chat rows, composer — at 14.3px. That was the
+       small part, not the reading text. The fix is the Scaling default
+       (110% -> 125%, theme-provider.tsx), which lifts the whole interface since
+       all of it is rem. These four are then re-based against the new 20px root
+       so the ANSWER text lands on 16px exactly, ChatGPT's own size, rather than
+       riding up to 20px with everything else. 0.8rem x 20px = 16px. */
+    --conversation-text-font-size: 0.8rem;
+    --conversation-tool-font-size: 0.6rem;
+    --conversation-caption-font-size: 0.66rem;
+    --conversation-line-height: 1.05rem;
     --conversation-caption-line-height: 1rem;
     --conversation-turn-gap: 0.375rem;
     --turn-block-gap: 0.75rem;
@@ -393,9 +397,10 @@
     --sticky-human-top: 0.23rem;
     --file-tree-row-height: 1.375rem;
 
-    /* Grown with the type above: at 51rem the wider text wrapped noticeably
-       shorter than ChatGPT's column. */
-    --composer-width: 54rem;
+    /* Re-based against the 20px root so the column stays about 900px, the same
+       measure it had at 110% — 54rem would now be 1080px and leave the text
+       stranded across a very long line. */
+    --composer-width: 45rem;
     /* Pill cap narrower than the thread column (owner 2026-07-20: composer
        "bigger but less lengthy" — chunkier contents, shorter run). */
     --composer-pill-max-width: 42rem;

@@ -15,11 +15,36 @@
   --auth-accent: #404040;
   background: #fff;
   color: var(--auth-ink);
+  /* Owner 2026-07-28: "the sign in should be centered like chatgpt, keep the
+     grid background of aesthetics."
+     Was a two-column marketing layout — copy on the left over the grid, the card
+     pinned into a white right-hand column. One column now, card centred in the
+     viewport, and the grid that used to live only behind the left column runs
+     across the whole page. The 900px breakpoint further down already collapsed
+     to exactly this, so the narrow layout is unchanged; what changed is that
+     wide viewports get it too. */
+  background:
+    linear-gradient(rgba(20, 20, 20, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 20, 20, 0.035) 1px, transparent 1px),
+    #fff;
+  background-size: 56px 56px;
   display: grid;
   font-family: Arial, Helvetica, sans-serif;
-  grid-template-columns: minmax(0, 1fr) minmax(430px, 0.82fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100svh;
   position: relative;
+}
+
+/* The soft wash the left column used to carry, moved onto the shell. Light
+   enough that the grid still reads across the page — the owner asked to KEEP
+   it — but enough that the card is not sitting on a busy background. */
+.nemesis-auth-shell::before {
+  background: radial-gradient(120% 80% at 50% 44%, rgba(255, 255, 255, 0.72) 30%, rgba(255, 255, 255, 0.28) 100%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
 }
 
 .nemesis-auth-shell *,
@@ -42,15 +67,16 @@
 .nemesis-auth-brand img { height: 28px; object-fit: contain; width: 28px; }
 .nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
 
+/* HIDDEN, not deleted. The marketing copy and its three-step strip are intact in
+   the markup, so restoring the two-column layout is this `display` plus
+   grid-template-columns on the shell. The grid background moved UP to the shell
+   so it survives this. `display` must stay HERE rather than in an earlier rule:
+   same specificity means the later declaration wins, and an earlier one was
+   silently overridden by this block. */
 .nemesis-auth-field {
   align-items: flex-end;
-  background:
-    linear-gradient(rgba(20, 20, 20, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20, 20, 20, 0.035) 1px, transparent 1px),
-    #fff;
-  background-size: 56px 56px;
   border-right: 1px solid var(--auth-line);
-  display: flex;
+  display: none;
   min-height: 100svh;
   padding: clamp(120px, 15vh, 180px) clamp(42px, 7vw, 104px) clamp(54px, 8vh, 84px);
   position: relative;
@@ -129,8 +155,12 @@
  * submit button, and a form you cannot finish is worse than one that scrolls. */
 .nemesis-auth-panel-wrap {
   align-items: center;
-  background: #fff;
+  /* Transparent so the shell's grid shows through — this used to be the opaque
+     white half of the split layout. */
+  background: transparent;
   display: flex;
+  position: relative;
+  z-index: 1;
   justify-content: center;
   min-height: 100svh;
   padding: 48px 36px;
