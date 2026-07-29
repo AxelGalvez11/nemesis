@@ -510,6 +510,33 @@ async function transcribeWithXai(audioUrl: string): Promise<ProviderAttempt> {
     // so the pair has to be set together, as it is here.)
     form.set("format", "true");
     form.set("diarize", "true");
+    // THE GATE THAT WAS THROWING LECTURES AWAY.
+    //
+    // xAI runs a voice-activity gate: audio scoring below `vad_threshold` is
+    // treated as non-speech and never transcribed. The batch endpoint defaults
+    // to 0.5 — but their own STREAMING endpoint defaults to 0.08, six times more
+    // sensitive, and the docs say plainly that lower values are what transcribe
+    // "quieter or noisier speech". 0.5 is a close-mic default: right for someone
+    // talking into a handset, wrong for the only thing this function is ever
+    // pointed at.
+    //
+    // WHY THAT IS THE WRONG DEFAULT FOR US (owner 2026-07-29): "most audio will
+    // be naturally quiet because lecturer is farther away than the microphone."
+    // A phone on a desk recording someone at the front of a room is not an edge
+    // case here, it is the ENTIRE use case — so a gate tuned for close speech
+    // rejects the normal recording rather than an unusual one.
+    //
+    // The observed failure matches exactly. The first recording ever sent to
+    // xAI (2026-07-29, a real .m4a) came back HTTP 200 with an EMPTY transcript
+    // while AssemblyAI, which has no such gate, pulled a sentence out of the
+    // same file. The format was fine and the key was fine; the audio was simply
+    // quieter than 0.5.
+    //
+    // 0.08 rather than 0: their own sensitive default, not a number we invented.
+    // Disabling the gate entirely (0) invites spurious text from room noise,
+    // which in a lecture transcript becomes sentences the lecturer never said —
+    // and this transcript is the input to the student's notes and flashcards.
+    form.set("vad_threshold", "0.08");
     const res = await fetch("https://api.x.ai/v1/stt", {
       body: form,
       headers: { Authorization: `Bearer ${XAI_KEY}` },
