@@ -4,10 +4,13 @@
 // the agenda/grid logic (day sorting, month grids, day-key math) stays in
 // lib/agenda.ts, unchanged, reused as-is against whatever this file returns.
 //
-// source:'agent' rows are read-only everywhere on the phone (like the web):
-// createCalendarEvent always writes 'manual', and update/delete both filter on
-// source='manual' server-side as a second line of defense — the calendar screen
-// itself already only ever routes an agent event to the read-only view sheet.
+// EVERY event is editable and deletable by its owner, whatever wrote it. Until
+// 2026-07-28 update and delete both carried `.eq("source", "manual")`, which was
+// the deeper half of a read-only rule for agent-written rows — deeper because the
+// calendar screen's view-only sheet was the visible half, and removing that alone
+// would have produced an edit form whose Save silently matched zero rows.
+// `.single()` on the update would then have thrown, reading as a save failure.
+// Ownership is still enforced, by `.eq("user_id", userId)` and by the table's RLS.
 //
 // Offline cache: a small per-signed-in-user JSON file, same shape/convention as
 // api/cloudLibrary.ts's cache (FileSystem.writeAsStringAsync/readAsStringAsync,
@@ -190,7 +193,6 @@ export async function updateCalendarEvent(
     .update(toRow(userId, input))
     .eq("id", id)
     .eq("user_id", userId)
-    .eq("source", "manual")
     .select(EVENT_COLUMNS)
     .single();
   if (error) throw new Error(error.message);
@@ -204,7 +206,6 @@ export async function deleteCalendarEvent(userId: string, id: string): Promise<v
     .from("calendar_events")
     .delete()
     .eq("id", id)
-    .eq("user_id", userId)
-    .eq("source", "manual");
+    .eq("user_id", userId);
   if (error) throw new Error(error.message);
 }
