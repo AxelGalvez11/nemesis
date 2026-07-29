@@ -47,9 +47,6 @@ export function AuthFrame({ eyebrow, title, description, children, footer }: Aut
             <p className="nemesis-auth-description">{description}</p>
             {children}
             {footer ? <div className="nemesis-auth-footer">{footer}</div> : null}
-            <p className="nemesis-auth-trust">
-              Activity logged <span>·</span> Never submits for you
-            </p>
           </div>
         </div>
       </section>
