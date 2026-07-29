@@ -1,0 +1,44 @@
+# Inputs excluded from the runtime-version fingerprint.
+#
+# WHY THIS EXISTS. Build 26 failed four times, the last three in "Configure
+# expo-updates" with:
+#   Runtime version calculated on local machine: 1cbf2a3a...
+#   Runtime version calculated on EAS:           43fcdad0...
+#
+# The build log prints the diff, and it was exactly ONE entry: the directory
+# node_modules/expo, hashed for expoAutolinkingIos + rncoreAutolinkingIos.
+#
+# The reason it differs is the line at the bottom of this file. pnpm runs with
+# node-linker=hoisted (see .npmrc), and this repo resolves TWO React versions:
+# 19.2.4 at the root, and 19.2.3 which expo pins for itself. The hoisted linker
+# resolves that conflict by nesting the second copy at
+# node_modules/expo/node_modules/, and the fingerprinter walks node_modules/expo
+# as a DIRECTORY — so a nested JavaScript dependency lands inside a hash that is
+# supposed to describe the NATIVE build. EAS's own install does not produce that
+# nested copy, so the two machines disagreed by construction on every build.
+#
+# 🔴 THIS IS NOT STALE STATE. It survives `rm -rf node_modules` followed by
+# `pnpm install --frozen-lockfile` — it is exactly what the hoisted linker is
+# supposed to do with a real version conflict. Reinstalling does not fix it and
+# never will. Two other theories were tested and disproved the same way:
+# `.easignore` does not move the fingerprint at all, and neither does the 1.1 GB
+# local apps/mobile/ios prebuild (it appears in the source list as `DIR ios` yet
+# contributes nothing to the hash, because it is gitignored — appearing in that
+# list is not the same as affecting the result).
+#
+# Excluding it is correct rather than merely convenient: EAS already computes
+# the fingerprint WITHOUT this directory, and EAS's number is the one the
+# shipped binary carries. Making the local calculation agree with the builder is
+# the entire point — a published OTA has to match what the phone was built as.
+# A nested React copy is a JavaScript-level difference that rides inside the
+# update bundle anyway; it says nothing about native compatibility, which is
+# what the runtime version exists to gate.
+#
+# VERIFIED, not assumed: with this line present the local hash is
+# 43fcdad0effa1ca6766a7df95f4a80a5a6cdaf68 — byte-identical to the value EAS
+# reported in the build 26 failure log.
+#
+# If this file is deleted the mismatch returns immediately. The permanent
+# alternative is to make the repo resolve a single React version so nothing
+# nests at all; do that INSTEAD of deleting this, never as well as.
+node_modules/expo/node_modules/

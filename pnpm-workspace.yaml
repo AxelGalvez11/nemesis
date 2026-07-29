@@ -1,3 +1,19 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # apps/desktop-agent is a dead prototype that still sits on disk. It matches the
+  # apps/* glob, so pnpm counted it as a workspace member while pnpm-lock.yaml has
+  # no importer for it — an asymmetry that only ever showed up somewhere else.
+  #
+  # On EAS it was fatal: the archive included the folder, and
+  # `pnpm install --frozen-lockfile` refused with ERR_PNPM_OUTDATED_LOCKFILE
+  # (build 26, attempt 1, dead in 44 seconds). Locally it was invisible, because
+  # the installed tree was made before the folder existed and nothing reinstalled
+  # since — apps/desktop-agent has no node_modules of its own to this day.
+  #
+  # Excluding it HERE rather than in .gitignore alone is the point: pnpm globs the
+  # FILESYSTEM, not git, so an ignored folder is still a workspace member. Only
+  # this line makes the two machines agree on the member list, which is the
+  # precondition for their two installs hashing the same — and therefore for
+  # expo-updates computing one runtime version instead of two.
+  - "!apps/desktop-agent"
