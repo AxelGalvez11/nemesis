@@ -39,7 +39,17 @@ test("libraryRowToNote parses a row and falls back created_at to updated_at", ()
     content: "body",
     updatedAt: "2026-07-21T10:00:00.000Z",
     createdAt: "2026-07-21T10:00:00.000Z",
+    // A row that has never been dragged carries no position — null, not absent,
+    // so "My order" can sort it to the end without special-casing missing keys.
+    position: null,
   });
+});
+
+test("libraryRowToNote keeps the hand-arranged position the phone wrote", () => {
+  const parsed = libraryRowToNote({ id: "n1", path: "Pharm/ACE.md", title: "ACE", content: "", position: 2.5 });
+  assert.equal(parsed?.position, 2.5);
+  // A non-numeric position is treated as "never dragged" rather than trusted.
+  assert.equal(libraryRowToNote({ id: "n2", path: "b.md", title: "b", content: "", position: "3" })?.position, null);
 });
 
 test("libraryRowToNote derives a title from the path when the column is blank", () => {

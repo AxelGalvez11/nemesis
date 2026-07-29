@@ -14,6 +14,8 @@
 
 import { supabase } from "@/lib/supabase";
 
+import { fetchAllRows } from "./supabase-paging";
+
 export type CalendarEventKind = "assignment" | "exam" | "rotation" | "class" | "other";
 
 export interface CalendarEvent {
@@ -171,12 +173,17 @@ export async function loadCalendarEvents(ctx: CalendarCloudCtx): Promise<Calenda
   await migrateLocalCalendarToCloud(userId);
   const cacheKey = calendarCacheKey(userId);
   try {
-    const { data, error } = await supabase
-      .from("calendar_events")
-      .select(CALENDAR_EVENT_COLUMNS)
-      .eq("user_id", userId)
-      .order("date", { ascending: true });
-    if (error) throw new Error(error.message);
+    // Paged, and the sort ends in `id`: a syllabus import writes a whole term of
+    // events sharing one date, so date alone could never split pages safely.
+    const data = await fetchAllRows((from, to) =>
+      supabase
+        .from("calendar_events")
+        .select(CALENDAR_EVENT_COLUMNS)
+        .eq("user_id", userId)
+        .order("date", { ascending: true })
+        .order("id")
+        .range(from, to),
+    );
     const events = (data ?? []).flatMap((row) => {
       const event = sanitizeEvent(row);
       return event ? [event] : [];
