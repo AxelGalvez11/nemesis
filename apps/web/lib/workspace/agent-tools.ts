@@ -831,6 +831,15 @@ async function addCalendarEvent(args: Record<string, unknown>) {
     added: true,
     artifact: { id: str(data.id), kind: "event", title, url: `/calendar?date=${encodeURIComponent(date)}` },
     date,
+    // Owner 2026-07-28: "syllabus and calendar events should not be outputted
+    // into chat, the chat should just say 'ive put the events into the
+    // calendar'". Steering it from the TOOL RESULT rather than stripping the
+    // model's reply afterwards — stripping throws away real answers when the
+    // same turn was doing something else too.
+    instruction:
+      "Saved. Do NOT write this event back to the student — the calendar already shows it, and repeating it here is noise. "
+      + "When every event in this batch is in, reply with ONE short line: \"I've put the events into your calendar.\" "
+      + "Add a second short line only if something could not be added, naming just those.",
     title,
   };
 }
