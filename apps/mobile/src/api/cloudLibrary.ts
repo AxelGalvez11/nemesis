@@ -30,6 +30,7 @@ import {
   uniqueNotePath,
 } from "@/lib/library-paths";
 import { positionForDrop, renumbered } from "@/lib/library-order";
+import { fetchAllRows } from "./supabase-paging";
 import { supabase } from "./supabase";
 
 /** One library document as the phone consumes it — same shape as the web's
@@ -164,16 +165,23 @@ export function findCachedNote(
  *  on success, replaces the cached list wholesale — the right behavior for a fresh
  *  pull, since it must also reflect deletions/renames made on the web app. */
 export async function fetchLibrary(uid: string): Promise<CloudLibrarySnapshot> {
-  const { data, error } = await supabase
-    .from("readable_library_documents")
-    .select("id,path,kind,title,content,created_at,updated_at,position")
-    .eq("user_id", uid)
-    .eq("deleted", false)
-    .in("kind", ["note", "folder"])
-    .order("updated_at", { ascending: false });
-  if (error) throw new Error(error.message);
+  // Paged, like the web's loadDocuments(): a library past 1,000 rows would come
+  // back silently short, the same way the Study page lost 5,578 cards. `id` ends
+  // the sort because updated_at is not unique — an import stamps a whole folder
+  // of notes in one statement, and paging an ambiguous sort skips rows instead
+  // of failing visibly.
+  const rows = await fetchAllRows((from, to) =>
+    supabase
+      .from("readable_library_documents")
+      .select("id,path,kind,title,content,created_at,updated_at,position")
+      .eq("user_id", uid)
+      .eq("deleted", false)
+      .in("kind", ["note", "folder"])
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
-  const rows = Array.isArray(data) ? data : [];
   const notes: CloudLibraryNote[] = [];
   const folders: string[] = [];
   for (const row of rows) {
