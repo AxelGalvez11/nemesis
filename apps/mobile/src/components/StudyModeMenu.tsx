@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Line, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -8,12 +8,22 @@ import { control, radius, space, type } from "@/theme/tokens";
 
 export type StudyModeKey = "cards" | "tests" | "mindmaps";
 
+/** The sections the menu OFFERS.
+ *
+ *  Mindmaps is deliberately absent (owner 2026-07-29: "hide the mindmaps tab
+ *  from the study page"). Only the menu row is gone — the mindmap viewer, its
+ *  data and its deep links all still work, so anything already created stays
+ *  reachable and putting the row back is a one-line change. Removing the
+ *  control is not the same as removing the feature. */
 const OPTIONS: { key: StudyModeKey; label: string }[] = [
   { key: "cards", label: "Cards" },
   { key: "tests", label: "Tests" },
-  { key: "mindmaps", label: "Mindmaps" },
 ];
 
+/** Labels stay complete, Mindmaps included: a deep link into a mindmap still
+ *  opens it, and the trigger has to be able to name where you are. `activeMode`
+ *  resets to Cards on every launch, so nobody gets stuck in a section the menu
+ *  no longer lists. */
 export const MODE_LABEL: Record<StudyModeKey, string> = {
   cards: "Cards",
   mindmaps: "Mindmaps",
@@ -163,25 +173,14 @@ export function StudyModePopup({
             accessibilityLabel="Study stats"
             style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
           >
-            <ChartIcon size={16} color={c.text} />
+            {/* Text only (owner 2026-07-29: "remove the icon from the stats
+                tab"). The section rows above carry no leading glyph either, so
+                the menu now reads as one column of labels. */}
             <Text style={styles.rowLabel}>Stats</Text>
           </Pressable>
         </GlassSurface>
       </Animated.View>
     </View>
-  );
-}
-
-/** Simple bar-chart glyph for the menu's Stats row — kept local to this file
- *  (moved here from study.tsx along with the Stats trigger it belongs to). */
-function ChartIcon({ size = 22, color, strokeWidth = 1.7 }: { size?: number; color: string; strokeWidth?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Line x1="4.2" y1="20" x2="19.8" y2="20" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      <Path d="M7.4 20V13.4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      <Path d="M12 20V8.2" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      <Path d="M16.6 20V11" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-    </Svg>
   );
 }
 

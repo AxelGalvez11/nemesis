@@ -188,33 +188,82 @@ async function writeStudyCache(uid: string, value: { decks: CloudStudyDeck[]; ca
   }
 }
 
+/**
+ * Read EVERY row of a query, a page at a time.
+ *
+ * PostgREST silently caps a response at 1,000 rows. Not an error — a short
+ * answer that looks exactly like the whole answer, so nothing anywhere reports
+ * a problem.
+ *
+ * What that did on this screen: the phone loaded cards ordered by `due_at`
+ * ascending. With 6,550 cards the first 1,000 are the oldest due dates, i.e.
+ * the imported Anki decks. A deck generated TODAY gets today's timestamp, sorts
+ * LAST, and falls off the end of the page — so a student asks chat for a deck,
+ * the deck row appears, and it contains nothing. The 28 cards were in the
+ * database the entire time. That is every new card from every source: chat,
+ * import, and the Add card button.
+ *
+ * The web app already pages (study-cloud-store.ts); the phone never did.
+ *
+ * The caller MUST end its sort on a unique column. Paging an ambiguous sort
+ * skips and duplicates rows, because Postgres may order ties differently per
+ * request — and a whole deck written in one insert shares one `due_at` to the
+ * microsecond, so `due_at` is about as ambiguous as a sort key gets.
+ */
+const PAGE_SIZE = 1_000;
+
+async function fetchAllRows<Row>(
+  page: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const batch = data ?? [];
+    rows.push(...batch);
+    // A short page means there is nothing after it. An exactly-full last page
+    // costs one extra empty request, which is the cheap side of the trade.
+    if (batch.length < PAGE_SIZE) return rows;
+  }
+}
+
 /** Every deck + card the signed-in user owns. Throws a friendly-message Error
  *  on failure — callers (the Study screens) catch it into their own
  *  loading/error state, the same shape as the web workspace's loadStudy().
  *  Writes the disk cache on the way out, so the NEXT open paints instantly. */
 export async function fetchCloudStudy(userId: string): Promise<{ decks: CloudStudyDeck[]; cards: CloudStudyCard[] }> {
-  const [deckResult, cardResult] = await Promise.all([
-    supabase
-      .from("study_decks")
-      .select("id,name,description,source_path,created_at,updated_at")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false }),
-    supabase
-      .from("study_cards")
-      // `payload` rides along so image-occlusion cards arrive ready to review —
-      // without it the phone would have to re-fetch per card at review time.
-      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at")
-      .eq("user_id", userId)
-      .order("due_at", { ascending: true }),
+  const [deckRows, cardRows] = await Promise.all([
+    fetchAllRows((from, to) =>
+      supabase
+        .from("study_decks")
+        .select("id,name,description,source_path,created_at,updated_at")
+        .eq("user_id", userId)
+        // `id` is the unique tiebreaker that makes paging safe — see fetchAllRows.
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase
+        .from("study_cards")
+        // `payload` rides along so image-occlusion cards arrive ready to review —
+        // without it the phone would have to re-fetch per card at review time.
+        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at")
+        .eq("user_id", userId)
+        // A whole deck generated in one go shares ONE due_at to the microsecond,
+        // so due_at alone is nowhere near unique and paging on it would skip and
+        // duplicate rows across page boundaries.
+        .order("due_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
-  if (deckResult.error) throw new Error(deckResult.error.message);
-  if (cardResult.error) throw new Error(cardResult.error.message);
 
-  const decks = (deckResult.data ?? []).flatMap((row) => {
+  const decks = deckRows.flatMap((row) => {
     const deck = toDeck(row);
     return deck ? [deck] : [];
   });
-  const cards = (cardResult.data ?? []).flatMap((row) => {
+  const cards = cardRows.flatMap((row) => {
     const card = toCard(row);
     return card ? [card] : [];
   });
