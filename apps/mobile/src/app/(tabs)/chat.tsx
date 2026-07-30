@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { studyCreationPreferencePrompt } from "@nemesis/shared";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -238,15 +237,35 @@ export default function ChatScreen() {
   // picture itself is only needed for the two things text can't do: show a
   // thumbnail on the chip, and put the image in the note if it gets saved.
   const [cameraOpen, setCameraOpen] = useState(false);
-  // The local file URI of a shot whose upload + read is still running. It is
-  // what lets the thumbnail appear the INSTANT the shutter fires, the way
-  // ChatGPT's does, instead of after a multi-megabyte round trip — the picture
-  // is already on the phone, so there is nothing to wait for to show it.
-  const [photoPending, setPhotoPending] = useState<string | null>(null);
-  // Set when the student hits send while that read is still in flight. Their
-  // turn is not dropped and it is not sent half-formed: it waits here and goes
-  // out the moment the words from the picture arrive.
-  const queuedPhotoSendRef = useRef<string | null>(null);
+  // The local file URI of a shot that has been taken and NOTHING ELSE. It has
+  // not been uploaded and nothing has been read out of it.
+  //
+  // 🔴 IT USED TO UPLOAD AND RUN THE VISION READ AT ATTACH TIME, and the owner
+  // caught it (2026-07-30): "it shouldnt have the loading icon on it because the
+  // ai brain should only process it once its in chat." Right, and the spinner
+  // was only the symptom — the real fault was doing the expensive, billable work
+  // before the student had decided to ask anything. A photo they take a second
+  // look at and remove now costs nothing at all. The read moves to sendPhotoTurn.
+  //
+  // The thumbnail still appears the INSTANT the shutter fires, because it is
+  // drawn from this local file rather than from anything the server returns.
+  const [photoDraft, setPhotoDraft] = useState<string | null>(null);
+  // True only between "send pressed" and "the turn is away" — the upload and
+  // the vision read. It spins the SEND BUTTON, never the photo (see Composer).
+  const [photoReading, setPhotoReading] = useState(false);
+  const photoReadingRef = useRef(false);
+  // Cancels a read that is already in flight. The read cannot be un-started, so
+  // this is what stops its RESULT from acting: sendPhotoTurn takes a number on
+  // the way in and refuses to send if that number has moved by the time the
+  // upload comes back. Bumped wherever the shot stops being the one the student
+  // means — removed, replaced by a newer shot, or left behind by a thread switch.
+  //
+  // Without it, pressing ✕ during the upload still fired the turn a moment later,
+  // carrying the picture they had just thrown away AND clearing whatever they had
+  // typed since. The old code had this safeguard as `queuedPhotoSendRef = null`
+  // inside clearAttachment; the rewrite dropped it, which is exactly the sort of
+  // thing that survives a typecheck and a green test run.
+  const photoSendTokenRef = useRef(0);
   const [photo, setPhoto] = useState<ReadPhoto | null>(null);
   const [photoSaved, setPhotoSaved] = useState<"idle" | "saving" | "saved">("idle");
   // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
@@ -339,6 +358,14 @@ export default function ChatScreen() {
     sendingRef.current = false;
     setSending(false);
     setStreamingText("");
+    // A photo read started in the thread being left behind. send()'s SYNCHRONOUS
+    // body is not epoch-guarded (only its .then/.finally are), so letting that
+    // read finish would write the old thread's history into the thread now on
+    // screen. The draft goes with the thread it was taken in.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
+    setPhotoDraft(null);
     // The thinking preview belongs to the turn that was in flight, so it dies
     // with it — an in-flight reply whose thread was switched away keeps writing
     // into reasoningRef until its epoch check fails, and none of that belongs to
@@ -506,11 +533,11 @@ export default function ChatScreen() {
     setAttachedDoc(null);
     setPhoto(null);
     setPhotoSaved("idle");
-    // Removing the thumbnail must also cancel a send that was waiting on it,
-    // or the turn would fire on its own once the read finished — for a picture
-    // the student has just thrown away.
-    setPhotoPending(null);
-    queuedPhotoSendRef.current = null;
+    setPhotoDraft(null);
+    // A read still running for the picture just removed must not send anything.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
   }, []);
 
   /** Send a turn.
@@ -534,17 +561,9 @@ export default function ChatScreen() {
     // and an empty send then must not re-ask about a picture that is no longer
     // riding the turn.
     const photoAttached =
-      override?.attachment !== undefined || photoPending !== null || (photo !== null && attachedDoc !== null);
+      override?.attachment !== undefined || (photo !== null && attachedDoc !== null);
     const text = photoTurnText(typed, photoAttached);
     if (!text || !uid || !threadId || sendingRef.current) return;
-    // The shot is still uploading. Hold the turn instead of dropping it or
-    // sending it without its picture — handlePhoto fires this the moment the
-    // read lands. The composer clears now so the press feels like it landed.
-    if (photoPending !== null && override?.attachment === undefined) {
-      queuedPhotoSendRef.current = typed;
-      setInput("");
-      return;
-    }
     const doc = override?.doc ?? attachedDoc;
     const preferenceQuestion = doc ? null : studyCreationPreferencePrompt(text);
     if (preferenceQuestion) {
@@ -696,7 +715,7 @@ export default function ChatScreen() {
           setStreamingText("");
         }
       });
-  }, [input, messages, uid, threadId, attachedDoc, effort, photo, photoPending]);
+  }, [input, messages, uid, threadId, attachedDoc, effort, photo]);
 
   // A shot the student just took. It ATTACHES; it does not send.
   //
@@ -714,55 +733,100 @@ export default function ChatScreen() {
   // canned question survives as the fallback for a send with an empty composer,
   // which is the case the auto-send was really protecting.
   //
-  // The sheet closes IMMEDIATELY and the thumbnail is drawn from the local file,
-  // so the upload and the Gemini read happen behind an attachment that is
-  // already on screen rather than behind a spinner.
-  const handlePhoto = useCallback(
-    (uri: string) => {
-      if (!uid) return;
-      setCameraOpen(false);
-      setPhotoPending(uri);
-      setPhotoSaved("idle");
-      queuedPhotoSendRef.current = null;
-      void (async () => {
-        try {
-          const read = await storeAndReadPhoto(uid, uri);
-          setPhoto(read);
-          // photoAttachmentTitle prefixes "Photo:" — the model is never told a
-          // photograph is a Library note, because where a fact came from changes
-          // how much weight it deserves.
-          const doc = { content: read.text, title: photoAttachmentTitle(read.title) };
-          setAttachedDoc(doc);
-          setPhotoPending(null);
-          // They pressed send while this was still reading. Go now, with the
-          // attachment passed explicitly — setAttachedDoc above has not flushed,
-          // so a send that read state would go out with no picture on it.
-          const queued = queuedPhotoSendRef.current;
-          if (queued !== null) {
-            queuedPhotoSendRef.current = null;
-            send({
-              attachment: {
-                kind: "image",
-                mime: "image/jpeg",
-                name: `${read.title}.jpg`,
-                storagePath: read.storagePath,
-                url: read.imageUrl,
-              },
-              doc,
-              keepPhoto: true,
-              text: photoTurnText(queued, true),
-            });
-          }
-        } catch (cause) {
-          // api/photos.ts throws sentences, so this reaches the screen as-is.
-          setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
-          setPhotoPending(null);
-          queuedPhotoSendRef.current = null;
+  // The sheet closes IMMEDIATELY and the thumbnail is drawn from the local file.
+  // NOTHING ELSE HAPPENS HERE — no upload, no vision read, no spinner. Taking a
+  // photograph is now as cheap as typing a word, and a shot the student thinks
+  // better of costs nothing (owner 2026-07-30).
+  const handlePhoto = useCallback((uri: string) => {
+    setCameraOpen(false);
+    setPhotoDraft(uri);
+    // A read still running for the PREVIOUS shot must not send this one's turn,
+    // nor restore the old picture over this one.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
+    // A new shot replaces whatever the last one left behind — the finished
+    // photo kept around for "Save to Library", and its save state.
+    setPhoto(null);
+    setPhotoSaved("idle");
+  }, []);
+
+  // Send a turn that carries a photograph. THIS is where the picture is uploaded
+  // and read, because this is the moment the student asked for something.
+  //
+  // The read has to finish before the turn can go: the chat wire is text, so the
+  // words have to be out of the picture before there is anything to send. The
+  // waiting shows on the send button, and the typed question is left alone until
+  // the read succeeds — a failed upload must not also eat what they wrote.
+  const sendPhotoTurn = useCallback(() => {
+    const uri = photoDraft;
+    if (!uid || uri === null || photoReadingRef.current || sendingRef.current) return;
+    photoReadingRef.current = true;
+    setPhotoReading(true);
+    const typed = input;
+    // Claim this read. Anything that invalidates the shot bumps the token, and
+    // every line after the await is gated on it still being ours.
+    const token = (photoSendTokenRef.current += 1);
+    void (async () => {
+      try {
+        const read = await storeAndReadPhoto(uid, uri);
+        // Removed, replaced, or a different thread now. The upload already
+        // happened — that cannot be undone — but nothing else may follow: no
+        // attachment restored, no turn sent, no typed text cleared.
+        if (photoSendTokenRef.current !== token) return;
+        setPhoto(read);
+        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
+        // photograph is a Library note, because where a fact came from changes
+        // how much weight it deserves.
+        const doc = { content: read.text, title: photoAttachmentTitle(read.title) };
+        setAttachedDoc(doc);
+        setPhotoDraft(null);
+        // Everything passed explicitly: the setStates above have not flushed, so
+        // a send reading state here would go out with no picture on it.
+        send({
+          attachment: {
+            kind: "image",
+            mime: "image/jpeg",
+            name: `${read.title}.jpg`,
+            storagePath: read.storagePath,
+            url: read.imageUrl,
+          },
+          doc,
+          keepPhoto: true,
+          // An empty box is not an empty turn — a photograph is a question by
+          // itself, and this is the canned ask the old auto-send used to supply.
+          text: photoTurnText(typed, true),
+        });
+      } catch (cause) {
+        // api/photos.ts throws sentences, so this reaches the screen as-is. The
+        // draft and the typed question both survive, so it can just be sent again.
+        // Silent when the shot was abandoned: an error about a picture the
+        // student already removed is noise about work they cancelled.
+        if (photoSendTokenRef.current !== token) return;
+        setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
+      } finally {
+        // Only if this read is still the current one — a newer attach may have
+        // already set these for ITS read, and clearing them here would let two
+        // reads run at once.
+        if (photoSendTokenRef.current === token) {
+          photoReadingRef.current = false;
+          setPhotoReading(false);
         }
-      })();
-    },
-    [uid, send],
-  );
+      }
+    })();
+  }, [uid, photoDraft, input, send]);
+
+  /** The composer's one send. A photo draft takes the route that reads it first;
+   *  everything else goes straight out. Deliberately the SINGLE path from the
+   *  button — a send that reached send() directly with an unread draft attached
+   *  would compute an empty turn from an empty box and return silently. */
+  const handleSend = useCallback(() => {
+    if (photoDraft !== null) {
+      sendPhotoTurn();
+      return;
+    }
+    send();
+  }, [photoDraft, sendPhotoTurn, send]);
 
   // "…" menu actions.
   const handleDelete = useCallback(() => {
@@ -1406,34 +1470,48 @@ export default function ChatScreen() {
               }}
             />
           ) : null}
-          {/* Three conditions, three different moments. `photoPending` is the
-              shot that is still uploading — drawn from the local file so the
-              thumbnail is there the instant the shutter fires. `attachedDoc` is
-              the ordinary attached-thing case. `photo` outlives both because the
-              chip is also where "Save to Library" lives, and without it that
-              offer would vanish in the frame it appeared. */}
-          {composerMode === "chat" && (attachedDoc || photo || photoPending) ? (
-            <AttachedDocChip
-              title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
-              onRemove={clearAttachment}
-              thumbnailUri={photoPending ?? photo?.imageUrl ?? null}
-              reading={photoPending !== null}
-              onSave={photo ? () => void savePhotoToLibrary() : undefined}
-              saveState={photoSaved}
-            />
-          ) : null}
           <Composer
             value={input}
             onChangeText={setInput}
+            // 🔴 INSIDE THE CARD, NOT ABOVE IT. It used to render as a sibling
+            // here, and the owner's word for that (2026-07-30) was that the
+            // photo "does not actually go into the composer" — correct: a tile
+            // floating over the card reads as a notification about the photo
+            // rather than as part of the message being written.
+            //
+            // Three conditions, three moments. `photoDraft` is the shot just
+            // taken, drawn from the local file so the tile is there the instant
+            // the shutter fires. `attachedDoc` is the ordinary attached-thing
+            // case. `photo` outlives both because the chip is also where "Save
+            // to Library" lives, and without it that offer would vanish in the
+            // frame it appeared.
+            attachment={
+              composerMode === "chat" && (attachedDoc || photo || photoDraft) ? (
+                <AttachedDocChip
+                  title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
+                  onRemove={clearAttachment}
+                  thumbnailUri={photoDraft ?? photo?.imageUrl ?? null}
+                  onSave={photo ? () => void savePhotoToLibrary() : undefined}
+                  saveState={photoSaved}
+                />
+              ) : null
+            }
+            // What makes an empty box sendable. A LINGERING chip is excluded on
+            // purpose: `photo` alone survives a sent turn to keep offering "Save
+            // to Library", and an empty send then must not re-ask about a
+            // picture that is no longer riding anything.
+            attached={photoDraft !== null || attachedDoc !== null}
             // Wrapped, not passed straight through: the send button hands its
             // press event to onPress, and send() now takes an optional override
             // object — an event arriving in that slot would be read as one.
-            onSend={() => send()}
+            onSend={handleSend}
             onPlus={() => {
               setEffortMenuOpen(false);
               setPlusMenuOpen((v) => !v);
             }}
-            sending={sending}
+            // photoReading counts as sending: the turn is on its way, it is just
+            // still getting the words out of the picture first.
+            sending={sending || photoReading}
             placeholder="Ask Nemesis"
             inputRef={composerRef}
             testID="chat-input"
@@ -1661,15 +1739,12 @@ function AttachedDocChip({
   title,
   onRemove,
   thumbnailUri = null,
-  reading = false,
   onSave,
   saveState = "idle",
 }: {
   title: string;
   onRemove: () => void;
   thumbnailUri?: string | null;
-  /** The picture is on screen but its words are still being read out of it. */
-  reading?: boolean;
   onSave?: () => void;
   saveState?: "idle" | "saving" | "saved";
 }) {
@@ -1685,11 +1760,6 @@ function AttachedDocChip({
       <View style={styles.attachChipRow}>
         <View style={styles.photoChip} testID="chat-attached-doc-chip">
           <Image source={{ uri: thumbnailUri }} style={styles.photoChipImage} />
-          {reading ? (
-            <View style={styles.photoChipReading}>
-              <ActivityIndicator color="#fff" size="small" />
-            </View>
-          ) : null}
           <Pressable
             onPress={onRemove}
             hitSlop={10}
@@ -1819,7 +1889,10 @@ const createStyles = (c: ThemeColors) =>
     // The attached-Library-doc chip staged above the composer input. A row
     // rather than a lone pill since the camera landed: a photo chip carries a
     // "Save to Library" action beside it.
-    attachChipRow: { alignItems: "center", flexDirection: "row", gap: space(2), marginBottom: space(1.5), paddingHorizontal: space(1) },
+    // No margin and no horizontal padding of its own any more: this row now
+    // lives INSIDE the composer card, which already supplies both. Keeping them
+    // doubled the inset and pushed the tile off the field's left edge.
+    attachChipRow: { alignItems: "center", flexDirection: "row", gap: space(2) },
     attachChip: {
       flexDirection: "row",
       alignItems: "center",
@@ -1839,17 +1912,6 @@ const createStyles = (c: ThemeColors) =>
     // which one, which is the only question this chip is here to answer.
     photoChip: { borderCurve: "continuous", borderRadius: radius.md, height: 64, overflow: "visible", width: 64 },
     photoChipImage: { borderCurve: "continuous", borderRadius: radius.md, height: "100%", width: "100%" },
-    photoChipReading: {
-      bottom: 0,
-      left: 0,
-      position: "absolute",
-      right: 0,
-      top: 0,
-      alignItems: "center",
-      backgroundColor: "rgba(0,0,0,0.4)",
-      borderRadius: radius.md,
-      justifyContent: "center",
-    },
     // Straddles the corner the way ChatGPT's does, so it reads as a badge ON the
     // photo rather than a button crowding its contents.
     photoChipRemove: {

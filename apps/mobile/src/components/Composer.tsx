@@ -1,12 +1,13 @@
 import type { ReactNode, RefObject } from "react";
 import { useRef } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "./icons";
 import { EffortLabel } from "./ComposerEffortMenu";
 import { LiveWaveform } from "./LiveWaveform";
 import type { ChatEffort } from "@/lib/chat-effort";
+import { composerAction } from "@/lib/composer-send";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -188,6 +189,8 @@ export function Composer({
   effort,
   effortMenuOpen = false,
   onEffortToggle,
+  attachment,
+  attached = false,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -226,10 +229,28 @@ export function Composer({
    *  pill's chevron; the menu itself is the caller's to render. */
   effortMenuOpen?: boolean;
   onEffortToggle?: () => void;
+  /** What is riding this turn — the photo tile or the attached-note pill. It
+   *  renders INSIDE the card, above the text field, which is where ChatGPT puts
+   *  it and where the owner asked for it (2026-07-30: an attachment sitting
+   *  above the composer "does not actually go into the composer"). */
+  attachment?: ReactNode;
+  /** True when that attachment is actually riding the next turn. It is what
+   *  makes an EMPTY box sendable: a photograph is a question by itself, and
+   *  with only the typed text consulted the send button never appeared, so the
+   *  picture could not be sent at all (owner 2026-07-30). Passed separately
+   *  from `attachment` because the chip outlives the turn it went with — it
+   *  lingers to offer "Save to Library" — and a lingering chip must not make an
+   *  empty box look sendable. */
+  attached?: boolean;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const canSend = value.trim().length > 0 && !sending;
+  // The three-way decision lives in lib/composer-send.ts, tested. It used to be
+  // one inline `value.trim().length > 0` here, and that expression is what made
+  // an attached photo unsendable — see that file's header.
+  const action = composerAction(value, { attached, sending });
+  const hasDraft = action !== "record";
+  const canSend = action === "send";
   const isRecordMode = mode === "record";
 
   // Voice dictation: the transcript is merged onto whatever was already typed when
@@ -384,9 +405,24 @@ export function Composer({
   // rather than stack, because both are accent-filled and two accent circles
   // side by side read as one control split in half. Record only appears where
   // record mode is actually wired up; other callers just get Send-or-nothing.
-  const sendOrRecordButton = canSend ? (
-    <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
-      <ArrowUpIcon size={18} color={c.onAccent} />
+  const sendOrRecordButton = hasDraft ? (
+    <Bounce
+      style={[styles.round, styles.sendOn, !canSend && styles.controlOff]}
+      onPress={canSend ? onSend : undefined}
+      disabled={!canSend}
+      accessibilityLabel="Send"
+      testID="composer-send"
+    >
+      {/* The waiting lives HERE, on the button that was pressed — never as an
+          overlay on the photo tile. A spinner on the picture reads as "this is
+          already being analysed", which is precisely what the owner objected to
+          (2026-07-30): nothing should be read out of a photograph until the
+          student has actually sent it. */}
+      {action === "sending" ? (
+        <ActivityIndicator color={c.onAccent} size="small" />
+      ) : (
+        <ArrowUpIcon size={18} color={c.onAccent} />
+      )}
     </Bounce>
   ) : onModeChange ? (
     <Bounce
@@ -431,6 +467,11 @@ export function Composer({
   // rather than contorting the tree to move them.
   return (
     <View style={[styles.card, compact && styles.cardCompact]}>
+      {/* ALWAYS rendered, null when there is nothing attached. React reconciles
+          unkeyed children by index, and a slot that appeared and disappeared
+          would shift the row below it — the same index bookkeeping the comment
+          above describes, one level up. */}
+      {attachment ? <View style={styles.attachmentSlot}>{attachment}</View> : null}
       <View style={compact ? styles.compactRow : undefined}>
         {compact ? plusButton : null}
         {field}
@@ -469,6 +510,10 @@ const createStyles = (c: ThemeColors) =>
       paddingBottom: space(2),
       gap: space(1),
     },
+    // The attachment sits INSIDE the card, above the field. Its own bottom
+    // margin rather than the card's `gap`, which is zero in the compact layout
+    // and would leave the tile flush against the text.
+    attachmentSlot: { marginBottom: space(1.5), paddingHorizontal: space(1), paddingTop: space(0.5) },
     input: {
       maxHeight: 120,
       paddingHorizontal: space(2),
