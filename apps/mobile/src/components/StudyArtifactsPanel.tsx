@@ -421,10 +421,12 @@ export function TestRunner({
   artifact,
   onFinished,
   onError,
+  onPullDown,
 }: {
   artifact: StudyArtifact;
   onFinished: (attempts: TestAttempt[]) => void;
   onError: (message: string) => void;
+  onPullDown?: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const questions = useMemo(() => artifact.questions ?? [], [artifact.questions]);
@@ -457,7 +459,17 @@ export function TestRunner({
 
   if (done) {
     return (
-      <View style={styles.viewerBody} testID="study-test-result">
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.viewerBody}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          if (event.nativeEvent.contentOffset.y < -56) onPullDown?.();
+        }}
+        testID="study-test-result"
+      >
         <Text style={styles.resultScore}>
           {done.score} / {done.total}
         </Text>
@@ -467,22 +479,41 @@ export function TestRunner({
             : `${done.missed.length} to go back over. The ones you missed are the ones worth turning into cards.`}
         </Text>
         {saving ? <Text style={styles.rowMeta}>Saving your score…</Text> : null}
-      </View>
+      </ScrollView>
     );
   }
 
   if (!question) {
     return (
-      <View style={styles.viewerBody}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.viewerBody}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          if (event.nativeEvent.contentOffset.y < -56) onPullDown?.();
+        }}
+      >
         <Text style={styles.rowMeta}>This test has no usable questions.</Text>
-      </View>
+      </ScrollView>
     );
   }
 
   const correct = picked !== null && picked === question.answer;
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.viewerBody} showsVerticalScrollIndicator={false} testID="study-test-runner">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.viewerBody}
+      showsVerticalScrollIndicator={false}
+      alwaysBounceVertical
+      scrollEventThrottle={16}
+      onScroll={(event) => {
+        if (event.nativeEvent.contentOffset.y < -56) onPullDown?.();
+      }}
+      testID="study-test-runner"
+    >
       <Text style={styles.progress}>
         Question {index + 1} of {questions.length}
       </Text>

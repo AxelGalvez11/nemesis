@@ -1102,6 +1102,11 @@ export default function ChatScreen() {
                         styles={markdownStyles}
                       />
                     ) : null}
+                    {item.id === THINKING_ID && sending ? (
+                      <View style={styles.continuedThinking} testID="chat-thinking-continuing">
+                        <ThinkingLine phase={phase} testID="chat-thinking-line-continuing" />
+                      </View>
+                    ) : null}
                     {item.msg!.sources?.length ? (
                       <SourcesPill sources={item.msg!.sources} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
@@ -1583,6 +1588,7 @@ const createStyles = (c: ThemeColors) =>
     // "Thought for 12s" above a streaming answer — a quiet footnote, deliberately
     // the dimmest text on the row so it never reads as part of the answer.
     thoughtNote: { ...type.micro, color: c.text3, marginBottom: space(1) },
+    continuedThinking: { marginTop: space(1) },
     // No flex:1 — the greeting sizes to its content so it sits at the top of the
     // scroll area (paddingTop places it just below the glass TopBar). Owner
     // 2026-07-20: ONE short line only, muted (text2) — no explainer sentence.

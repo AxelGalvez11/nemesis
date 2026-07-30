@@ -55,6 +55,7 @@ export default function SignIn() {
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const {
+    session,
     providerError,
     clearProviderError,
     signInWithProvider,
@@ -94,20 +95,30 @@ export default function SignIn() {
     clearProviderError();
   }, [providerError, clearProviderError]);
 
+  // /sign-in is a root Stack route, not a child of the authenticated tabs
+  // guard. A completed provider exchange therefore does not unmount this screen
+  // by itself. Route on the session as the source of truth so direct returns,
+  // cold-start callbacks, and a slightly delayed auth event all leave the
+  // spinner instead of stranding the student here.
+  useEffect(() => {
+    if (session) router.replace("/");
+  }, [session]);
+
   const line = HEADLINES[typed.line] ?? "";
 
   async function start(provider: SocialProvider) {
     setError(null);
     setPending(provider);
     const { error: failure } = await signInWithProvider(provider);
+    setPending(null);
     if (failure) {
       setError(failure);
-      setPending(null);
       return;
     }
-    // `signInWithProvider` stays pending while the in-app authentication sheet
-    // is open. A successful session unmounts this screen; cancel/failure clears
-    // the spinner through the branch above.
+    // Do not depend solely on the session effect: navigating here makes the
+    // successful direct-return path immediate, while the effect remains the
+    // fallback for cold-start and delayed auth events.
+    router.replace("/");
   }
 
   const isSignup = emailMode === "signup";
