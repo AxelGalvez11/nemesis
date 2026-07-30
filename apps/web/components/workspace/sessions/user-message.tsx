@@ -9,7 +9,7 @@ import { useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { splitAttachmentSummary } from "@/lib/workspace/chat-attachments";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { SessionAttachment, SessionMessage } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
 const USER_BUBBLE_BASE_CLASS =
@@ -32,11 +32,26 @@ function attachmentKind(name: string): { label: string; icon: string } {
 }
 
 /** Attachments as cards rather than a line of prose (owner 2026-07-27). */
-function AttachmentCards({ names }: { names: string[] }) {
+function AttachmentCards({ names, records }: { names: string[]; records: SessionAttachment[] }) {
+  const byName = new Map(records.map((attachment) => [attachment.name, attachment]));
+  const items = names.length ? names : records.map((attachment) => attachment.name);
   return (
     <div className="flex flex-wrap justify-end gap-1.5">
-      {names.map((name) => {
+      {items.map((name) => {
+        const record = byName.get(name);
         const kind = attachmentKind(name);
+        if (record?.kind === "image" && record.url) {
+          return (
+            <figure className="max-w-sm overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background" key={name}>
+              {/* A private signed URL is intentionally rendered directly; the
+                  storage hostname is deployment-specific and cannot be listed
+                  statically in next/image config. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt={name} className="max-h-80 w-auto max-w-full object-contain" src={record.url} />
+              <figcaption className="truncate px-3 py-2 text-[0.6875rem] text-(--ui-text-tertiary)">{name}</figcaption>
+            </figure>
+          );
+        }
         return (
           <div
             className="flex min-w-0 max-w-64 items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2.5 py-1.5 text-left"
@@ -57,6 +72,7 @@ function AttachmentCards({ names }: { names: string[] }) {
 
 export function UserMessage({ message, onEdit }: { message: SessionMessage; onEdit: (at: string, content: string) => void }) {
   const { attachments, body } = splitAttachmentSummary(message.content);
+  const attachmentRecords = message.attachments ?? [];
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
 
@@ -77,9 +93,11 @@ export function UserMessage({ message, onEdit }: { message: SessionMessage; onEd
         </div>
       ) : (
         <>
-          {attachments.length > 0 && <AttachmentCards names={attachments} />}
+          {(attachments.length > 0 || attachmentRecords.length > 0) && (
+            <AttachmentCards names={attachments} records={attachmentRecords} />
+          )}
           {body && (
-            <div className={cn(USER_BUBBLE_BASE_CLASS, USER_BUBBLE_READ_CLASS, "text-center", attachments.length > 0 && "mt-1.5")}>
+            <div className={cn(USER_BUBBLE_BASE_CLASS, USER_BUBBLE_READ_CLASS, "text-center", (attachments.length > 0 || attachmentRecords.length > 0) && "mt-1.5")}>
               <div className="min-h-[1.25rem] w-full">{body}</div>
             </div>
           )}

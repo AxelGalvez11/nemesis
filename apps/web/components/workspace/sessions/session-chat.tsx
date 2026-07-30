@@ -21,6 +21,7 @@ import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effor
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
 import { requestRecordingNote } from "@/lib/workspace/recording-note";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
@@ -33,6 +34,7 @@ import { Thread } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace } from "./record-workspace";
+import { SyllabusDialog } from "../calendar/syllabus-dialog";
 
 /** Where a recording's notes are filed. Its own folder so a semester of
  *  lectures stays browsable next to the student's typed notes. */
@@ -62,6 +64,11 @@ function titleFromPrompt(text: string) {
   return compact.length <= 54 ? compact : `${compact.slice(0, 54).trimEnd()}…`;
 }
 
+function looksLikeSyllabus(file: File): boolean {
+  return /\.(pdf|docx|pptx)$/i.test(file.name) &&
+    /(syllabus|course[\s_-]*(schedule|outline)|class[\s_-]*schedule)/i.test(file.name);
+}
+
 export function SessionChat() {
   const preview = Boolean(useWorkspacePreview());
   const { session: authSession } = useAuth();
@@ -87,6 +94,7 @@ export function SessionChat() {
   // deck picker, progress, and error copy all already reviewed — is what runs,
   // rather than a second import path invented for chat.
   const [deckToImport, setDeckToImport] = useState<File | null>(null);
+  const [syllabusImport, setSyllabusImport] = useState<{ file: File; targetId: string } | null>(null);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -201,6 +209,25 @@ export function SessionChat() {
         files = rest;
       }
 
+      // A syllabus is a calendar import, not free-form attachment context.
+      // Route it through the same quote-verified review flow as Calendar's own
+      // importer instead of asking the chat model to rediscover dates and call
+      // add_calendar_event repeatedly (the path that mis-mapped this account).
+      const syllabus = files.length === 1 && looksLikeSyllabus(files[0]!) ? files[0]! : null;
+      if (syllabus && !preview) {
+        const targetId = selectedId ?? sessionsStore.create().id;
+        const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
+        if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || syllabus.name));
+        sessionsStore.appendMessage(targetId, {
+          at: new Date().toISOString(),
+          content: `${text.trim()}${text.trim() ? "\n\n" : ""}Attachments: ${syllabus.name}`,
+          role: "user",
+        });
+        setError(null);
+        setSyllabusImport({ file: syllabus, targetId });
+        return;
+      }
+
       if (projectId && !preview) {
         await submitIntoProject(projectId, text, files);
         return;
@@ -216,6 +243,7 @@ export function SessionChat() {
       if (preferenceQuestion) {
         sessionsStore.appendMessage(targetId, {
           at: new Date().toISOString(),
+          ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
           content: prepared.displayText,
           role: "user",
         });
@@ -228,7 +256,12 @@ export function SessionChat() {
       }
 
       if (preview) {
-        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
+        sessionsStore.appendMessage(targetId, {
+          at: new Date().toISOString(),
+          ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
+          content: prepared.displayText,
+          role: "user",
+        });
         sessionsStore.setWorking(targetId, true);
         window.setTimeout(() => {
           sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: PREVIEW_REPLY, role: "assistant" });
@@ -237,7 +270,12 @@ export function SessionChat() {
         return;
       }
 
-      sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
+      sessionsStore.appendMessage(targetId, {
+        at: new Date().toISOString(),
+        ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
+        content: prepared.displayText,
+        role: "user",
+      });
       void runTurn(uid, targetId, history, prepared.wireText);
     },
     [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
@@ -247,6 +285,28 @@ export function SessionChat() {
     if (!selectedId) return;
     abortControllers.current.get(selectedId)?.abort();
   }, [selectedId]);
+
+  const importSyllabusEvents = useCallback(async (events: CalendarEvent[]) => {
+    if (!uid || preview || !syllabusImport) throw new Error("Sign in to import a syllabus.");
+    const saved: CalendarEvent[] = [];
+    for (const event of events) saved.push(await saveCalendarEvent(event, { preview: false, userId: uid }));
+    if (!saved.length) return;
+    const firstDate = [...saved].sort((a, b) => a.date.localeCompare(b.date))[0]?.date;
+    const artifactId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `calendar-${Date.now().toString(36)}`;
+    sessionsStore.appendMessage(syllabusImport.targetId, {
+      at: new Date().toISOString(),
+      content: `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${syllabusImport.file.name} to your calendar.`,
+      outputs: [{
+        id: artifactId,
+        kind: "event",
+        route: `/calendar${firstDate ? `?date=${encodeURIComponent(firstDate)}` : ""}`,
+        title: `${saved.length} syllabus event${saved.length === 1 ? "" : "s"}`,
+      }],
+      role: "assistant",
+    });
+  }, [preview, syllabusImport, uid]);
 
   const handleEditMessage = useCallback((at: string, content: string) => {
     if (selectedId) sessionsStore.updateMessage(selectedId, at, content);
@@ -429,6 +489,14 @@ export function SessionChat() {
         onOpenChange={(next) => { if (!next) setDeckToImport(null); }}
         open={deckToImport !== null}
       />
+      {syllabusImport ? (
+        <SyllabusDialog
+          initialFile={syllabusImport.file}
+          onClose={() => setSyllabusImport(null)}
+          onImport={importSyllabusEvents}
+          uid={preview ? null : uid}
+        />
+      ) : null}
     </div>
   );
 }

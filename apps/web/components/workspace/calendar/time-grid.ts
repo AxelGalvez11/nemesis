@@ -46,7 +46,10 @@ export function minutesOf(time: string | undefined): number | null {
 
 /** How long to draw an event. Reads a real end time when one exists, so this
  *  is the ONLY place that changes once the end_time column is applied. */
-function durationOf(_event: CalendarEvent): number {
+function durationOf(event: CalendarEvent): number {
+  const start = minutesOf(event.time);
+  const end = minutesOf(event.endTime);
+  if (start !== null && end !== null && end > start) return end - start;
   return DEFAULT_EVENT_MINUTES;
 }
 

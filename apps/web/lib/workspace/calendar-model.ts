@@ -24,11 +24,20 @@ export interface CalendarEvent {
   /** ISO yyyy-mm-dd, NO timezone — always parsed as LOCAL date. */
   date: string;
   time?: string;
+  endTime?: string;
   kind: CalendarEventKind;
   course?: string;
   note?: string;
   /** 'agent' events are read-only in the UI. */
   source?: "agent" | "manual";
+  recurrence?: {
+    /** 0 = Sunday … 6 = Saturday. */
+    days: number[];
+    /** Inclusive local yyyy-mm-dd end date. */
+    until: string;
+  };
+  /** UI-only identity for an expanded recurrence occurrence. */
+  seriesId?: string;
 }
 
 export interface CalendarState {
@@ -58,7 +67,7 @@ export const CALENDAR_STORAGE_KEY = "nemesis.web.calendar.v1";
 // (or re-upload) another account's data. A per-uid flag would have left the
 // legacy key sitting there for every subsequent sign-in to also claim.
 const CALENDAR_CLOUD_MIGRATED_KEY = "nemesis.web.calendar.cloudmigrated.v1";
-const CALENDAR_EVENT_COLUMNS = "id,title,date,time,kind,course,note,source";
+const CALENDAR_EVENT_COLUMNS = "id,title,date,time,end_time,kind,course,note,source,recurrence";
 
 /** The ONGOING per-account warm-cache key — every signed-in user's cache
  *  lives at its own key, so switching accounts on the same browser can never
@@ -80,9 +89,20 @@ function sanitizeEvent(raw: unknown): CalendarEvent | null {
 
   const event: CalendarEvent = { id: e.id, title: e.title, date: e.date, kind: e.kind as CalendarEventKind };
   if (typeof e.time === "string") event.time = e.time;
+  if (typeof e.endTime === "string") event.endTime = e.endTime;
+  if (typeof e.end_time === "string") event.endTime = e.end_time;
   if (typeof e.course === "string") event.course = e.course;
   if (typeof e.note === "string") event.note = e.note;
   if (e.source === "agent" || e.source === "manual") event.source = e.source;
+  if (e.recurrence && typeof e.recurrence === "object") {
+    const recurrence = e.recurrence as Record<string, unknown>;
+    const days = Array.isArray(recurrence.days)
+      ? recurrence.days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
+      : [];
+    if (days.length > 0 && typeof recurrence.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(recurrence.until)) {
+      event.recurrence = { days: Array.from(new Set(days)), until: recurrence.until };
+    }
+  }
   return event;
 }
 
@@ -126,10 +146,12 @@ function toCloudRow(event: CalendarEvent, userId: string, source: "agent" | "man
     title: event.title,
     date: event.date,
     time: event.time ?? null,
+    end_time: event.endTime ?? null,
     kind: event.kind,
     course: event.course ?? null,
     note: event.note ?? null,
     source,
+    recurrence: event.recurrence ?? null,
   };
 }
 
@@ -307,9 +329,44 @@ export function weekGrid(anchor: Date, today: Date): MonthDay[] {
   });
 }
 
+/** Expand a compact recurrence rule into UI-only occurrences. Stored rows stay
+ * singular and editable; occurrence ids carry `seriesId` so the workspace can
+ * open the original rule rather than creating dozens of independent events. */
+export function expandRecurringEvents(events: CalendarEvent[], from?: Date, to?: Date): CalendarEvent[] {
+  const out: CalendarEvent[] = [];
+  for (const event of events) {
+    if (!event.recurrence) {
+      out.push(event);
+      continue;
+    }
+    const start = parseDateKey(event.date);
+    // Callers often pass a live `Date` carrying the current clock time. Work
+    // entirely in local calendar days so an occurrence on the first/last day
+    // is not dropped merely because midnight sorts before 3:42 PM.
+    const requestedStart = from ? parseDateKey(dateKey(from)) : start;
+    const hardEnd = addMonths(start, 18);
+    const ruleEnd = parseDateKey(event.recurrence.until);
+    const requestedEnd = to ? parseDateKey(dateKey(to)) : ruleEnd;
+    const first = requestedStart > start ? requestedStart : start;
+    const end = requestedEnd < ruleEnd ? requestedEnd : ruleEnd;
+    const boundedEnd = end < hardEnd ? end : hardEnd;
+    for (let cursor = new Date(first); cursor <= boundedEnd; cursor = addDays(cursor, 1)) {
+      if (!event.recurrence.days.includes(cursor.getDay())) continue;
+      const occurrenceDate = dateKey(cursor);
+      out.push({
+        ...event,
+        date: occurrenceDate,
+        id: `${event.id}@${occurrenceDate}`,
+        seriesId: event.id,
+      });
+    }
+  }
+  return out;
+}
+
 export function eventsByDate(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const map = new Map<string, CalendarEvent[]>();
-  for (const event of events) {
+  for (const event of expandRecurringEvents(events)) {
     const list = map.get(event.date) ?? [];
     list.push(event);
     map.set(event.date, list);
@@ -322,14 +379,14 @@ export function upcomingEvents(events: CalendarEvent[], from: Date, days: number
   const fromKey = dateKey(from);
   const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
   const toKey = dateKey(to);
-  return events
+  return expandRecurringEvents(events, from, to)
     .filter((event) => event.date >= fromKey && event.date <= toKey)
     .sort((a, b) => (a.date === b.date ? (a.time ?? "").localeCompare(b.time ?? "") : a.date.localeCompare(b.date)));
 }
 
 export function dayEvents(events: CalendarEvent[], date: Date): CalendarEvent[] {
   const key = dateKey(date);
-  const onDate = events.filter((event) => event.date === key);
+  const onDate = expandRecurringEvents(events, date, date).filter((event) => event.date === key);
   const timed = onDate.filter((event) => event.time).sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
   const untimed = onDate.filter((event) => !event.time);
   return [...timed, ...untimed];

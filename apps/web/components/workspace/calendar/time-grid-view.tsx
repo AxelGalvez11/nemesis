@@ -62,7 +62,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
   const nowTop = now && todayIndex >= 0 ? nowOffset(now, window) : null;
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
       {/* Day headings, pinned above the scrolling grid. */}
       <div className="flex shrink-0 border-b border-border">
         <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />

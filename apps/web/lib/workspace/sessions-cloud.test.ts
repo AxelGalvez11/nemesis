@@ -96,6 +96,34 @@ describe("appendMessageCloud", () => {
     }
   });
 
+  it("persists image attachment metadata with the message so another device can render the original photo", async () => {
+    const stub = installSupabaseStub();
+    try {
+      await appendMessageCloud("u1", session(), message({
+        attachments: [{
+          kind: "image",
+          mime: "image/jpeg",
+          name: "Syllabus page.jpg",
+          storagePath: "u1/chat/photo.jpg",
+          url: "https://storage.example/signed",
+        }],
+      }));
+      const row = stub.calls.find((c) => c.table === "chat_messages" && c.method === "upsert")!.args[0] as {
+        meta: { attachments: unknown[] };
+      };
+      assert.equal(row.meta.attachments.length, 1);
+      assert.deepEqual(row.meta.attachments[0], {
+        kind: "image",
+        mime: "image/jpeg",
+        name: "Syllabus page.jpg",
+        storagePath: "u1/chat/photo.jpg",
+        url: "https://storage.example/signed",
+      });
+    } finally {
+      stub.restore();
+    }
+  });
+
   it("is a no-op when the message has no id (defensive — the store always assigns one first)", async () => {
     const stub = installSupabaseStub();
     try {

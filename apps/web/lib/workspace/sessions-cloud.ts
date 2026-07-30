@@ -14,7 +14,7 @@
 // separate avoids a circular import between the store and this module.
 
 import { supabase } from "@/lib/supabase";
-import type { SessionMessage, SessionOutput, SessionSource, WorkspaceSession } from "./sessions-store";
+import type { SessionAttachment, SessionMessage, SessionOutput, SessionSource, WorkspaceSession } from "./sessions-store";
 import { fetchAllRows } from "./supabase-paging";
 
 const MIGRATION_FLAG_PREFIX = "nemesis.web.sessions.cloudmigrated.v1:";
@@ -108,7 +108,7 @@ function toSessionSource(raw: unknown): SessionSource | null {
 
 function toSessionOutput(raw: unknown): SessionOutput | null {
   if (!isRecord(raw)) return null;
-  const { id, title, kind, url, transcript, notes, durationSeconds, createdAt } = raw;
+  const { id, title, kind, url, route, transcript, notes, durationSeconds, createdAt, polish } = raw;
   const kinds = new Set(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
   if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !kinds.has(kind)) return null;
   return {
@@ -116,10 +116,24 @@ function toSessionOutput(raw: unknown): SessionOutput | null {
     title,
     kind: kind as SessionOutput["kind"],
     ...(typeof url === "string" ? { url } : {}),
+    ...(typeof route === "string" ? { route } : {}),
     ...(typeof transcript === "string" ? { transcript } : {}),
     ...(typeof notes === "string" ? { notes } : {}),
     ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
     ...(typeof createdAt === "string" ? { createdAt } : {}),
+    ...(polish === "pending" || polish === "done" ? { polish } : {}),
+  };
+}
+
+function toSessionAttachment(raw: unknown): SessionAttachment | null {
+  if (!isRecord(raw) || typeof raw.name !== "string") return null;
+  if (raw.kind !== "image" && raw.kind !== "file") return null;
+  return {
+    name: raw.name.slice(0, 240),
+    kind: raw.kind,
+    ...(typeof raw.mime === "string" ? { mime: raw.mime.slice(0, 120) } : {}),
+    ...(typeof raw.url === "string" ? { url: raw.url } : {}),
+    ...(typeof raw.storagePath === "string" ? { storagePath: raw.storagePath } : {}),
   };
 }
 
@@ -133,6 +147,9 @@ function rowToMessage(row: Record<string, unknown>): SessionMessage | null {
   const outputs = isRecord(meta) && Array.isArray(meta.outputs)
     ? meta.outputs.flatMap((raw) => { const o = toSessionOutput(raw); return o ? [o] : []; })
     : [];
+  const attachments = isRecord(meta) && Array.isArray(meta.attachments)
+    ? meta.attachments.flatMap((raw) => { const a = toSessionAttachment(raw); return a ? [a] : []; })
+    : [];
   return {
     id,
     role,
@@ -140,6 +157,7 @@ function rowToMessage(row: Record<string, unknown>): SessionMessage | null {
     at: typeof createdAt === "string" ? createdAt : new Date(0).toISOString(),
     ...(sources.length ? { sources } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
 }
 
@@ -181,8 +199,12 @@ function threadRow(uid: string, session: WorkspaceSession) {
 }
 
 function messageRow(uid: string, threadId: string, message: SessionMessage) {
-  const meta = message.sources?.length || message.outputs?.length
-    ? { ...(message.sources?.length ? { sources: message.sources } : {}), ...(message.outputs?.length ? { outputs: message.outputs } : {}) }
+  const meta = message.sources?.length || message.outputs?.length || message.attachments?.length
+    ? {
+        ...(message.sources?.length ? { sources: message.sources } : {}),
+        ...(message.outputs?.length ? { outputs: message.outputs } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+      }
     : null;
   return {
     id: message.id,

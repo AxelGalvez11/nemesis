@@ -34,9 +34,9 @@ export const LIVE_NOTES_MIN_CHARS = 160;
  *  window planner can size against it — a window bigger than this is silently
  *  truncated by the prompt builder, not summarized. */
 export const LIVE_NOTES_TRANSCRIPT_CHARS = 8_000;
-const MAX_NEW_NOTES = 6;
-const MAX_KEPT_NOTES = 18;
-const MAX_NOTE_LENGTH = 240;
+const MAX_NEW_NOTES = 10;
+const MAX_KEPT_NOTES = 40;
+const MAX_NOTE_LENGTH = 520;
 
 /** The messages one notes pass sends. Named for web's live contract, which it
  *  still mirrors verbatim, though on the phone every call now comes from the
@@ -48,9 +48,12 @@ export function buildLiveNotesMessages(transcript: string, previousNotes: string
     {
       role: "system",
       content:
-        "You are Nemesis's live learning copilot. Support any subject, discipline, major, profession, meeting, interview, or research conversation; never assume a biomedical context. " +
-        "Extract only what the speaker actually established. Separate uncertainty from fact. Return strict JSON with exactly one string-array key: notes (up to 6 concise new note bullets). " +
-        "Do not repeat prior notes. Do not include markdown fences or any text outside the JSON object.",
+        "You turn a finished recording into faithful, useful notes. Support any subject, discipline, meeting, interview, lecture, or research conversation; never assume a biomedical context. " +
+        "Keep the speaker's meaning, names, examples, qualifications, disagreements, and uncertainty. Attribute opinions and allegations to the speaker instead of rewriting them as facts. " +
+        "For teaching content, capture definitions, mechanisms, relationships, steps, examples, and conclusions. For meetings, capture decisions, rationale, open questions, and action items. " +
+        "Write self-contained, polished notes in complete sentences, not telegraphic fragments. Extract only what the recording establishes and never fill gaps in a poor transcript. " +
+        "Return strict JSON with exactly one string-array key: notes (up to 10 substantive new notes, each one to three sentences). " +
+        "Keep the recording's order, do not repeat prior notes, and include no markdown fences or text outside the JSON object.",
     },
     {
       role: "user",

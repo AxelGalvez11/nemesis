@@ -2,7 +2,9 @@
 
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
+import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
+import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 
 // Sized for a real lecture deck, which is the main thing students attach.
 // The old 12k/22k pair silently discarded the back half of any substantial
@@ -91,6 +93,40 @@ export function isImage(file: File) {
   // A browser that reports the type but a filename without an extension (a
   // pasted screenshot) is still an image.
   return /^image\/(png|jpe?g|webp|heic|heif)$/.test(file.type.toLowerCase());
+}
+
+function attachmentRecord(file: File): SessionAttachment {
+  return {
+    name: relativePath(file) || file.name,
+    kind: isImage(file) ? "image" : "file",
+    ...(file.type ? { mime: file.type } : {}),
+  };
+}
+
+/** Keep images as first-class conversation history. Text extraction lets the
+ * model read a picture, but it cannot make the original pixels reappear on a
+ * second device; that requires one private durable object plus its metadata in
+ * chat_messages.meta.attachments. */
+async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
+  const base = attachmentRecord(file);
+  if (!uid || !isImage(file)) return base;
+  const extension = file.name.toLowerCase().match(/\.(png|jpe?g|webp|heic|heif)$/)?.[1] ?? "jpg";
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const storagePath = `${uid}/chat/${id}.${extension}`;
+  try {
+    const uploaded = await supabase.storage.from("library-images").upload(storagePath, file, {
+      contentType: file.type || "image/jpeg",
+      upsert: false,
+    });
+    if (uploaded.error) return base;
+    const signed = await supabase.storage.from("library-images").createSignedUrl(storagePath, 31_536_000);
+    if (signed.error || !signed.data?.signedUrl) return { ...base, storagePath };
+    return { ...base, storagePath, url: signed.data.signedUrl };
+  } catch {
+    return base;
+  }
 }
 
 /** Anything the server-side extractor can turn into text: a document, or now a
@@ -242,8 +278,9 @@ export function fitAttachmentBlocks(
 
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
   const displayText = `${text.trim()}${attachmentSummary(files)}`.trim();
-  if (!files.length) return { displayText, wireText: text.trim() };
+  if (!files.length) return { attachments: [] as SessionAttachment[], displayText, wireText: text.trim() };
 
+  const attachments = await Promise.all(files.map((file) => persistChatAttachment(file, uid)));
   const sources: AttachmentSource[] = [];
   for (const file of files) {
     let content = "";
@@ -262,6 +299,7 @@ export async function prepareChatAttachments(text: string, files: readonly File[
   }
 
   return {
+    attachments,
     displayText,
     wireText: `${text.trim()}\n\n${fitAttachmentBlocks(sources).join("\n\n")}`.trim(),
   };

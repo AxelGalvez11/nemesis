@@ -92,6 +92,8 @@ function otherKicker(route: string | undefined): string {
 const KICKER: Record<ChatOutput["kind"], string> = {
   flashcards: "Flashcard deck",
   mindmap: "Mind map",
+  note: "Note",
+  event: "Calendar",
   other: "Saved",
   recording: "Recording",
   report: "Report",

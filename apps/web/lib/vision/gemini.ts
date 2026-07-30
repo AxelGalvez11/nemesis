@@ -22,7 +22,11 @@
  * supabase/functions/nemesis-media does. Gemini 2.0 Flash was shut down on
  * 2026-06-01, so it must not remain the recovery path for camera or slide OCR.
  * Flash-Lite is the lower-cost fallback and is still multimodal. */
-export const VISION_MODEL_LADDER = ["gemini-2.5-flash", "gemini-2.5-flash-lite"] as const;
+export const VISION_MODEL_LADDER = [
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+] as const;
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -157,8 +161,6 @@ export function buildVisionRequest(base64: string, mimeType: string, prompt: str
         ],
       },
     ],
-    // Transcription must not drift; temperature 0 keeps it literal.
-    generationConfig: { temperature: 0 },
   });
 }
 
@@ -196,19 +198,24 @@ export async function readWithVision(
     } catch {
       continue;
     }
-    // Model id retired for this key — try the next rung.
-    if (response.status === 404) {
-      await response.body?.cancel();
-      continue;
-    }
     if (!response.ok) {
+      // An invalid/forbidden key cannot be repaired by changing models.
+      // Everything else can: model availability, quota and transient provider
+      // errors differ by rung. The old code returned after the first 400/429/
+      // 5xx, so its advertised fallback ladder was only a 404 ladder.
+      console.warn(JSON.stringify({
+        event: "vision_provider_error",
+        model,
+        status: response.status,
+      }));
       await response.body?.cancel();
-      return null;
+      if (response.status === 401 || response.status === 403) return null;
+      continue;
     }
     const payload = (await response.json().catch(() => null)) as unknown;
     const text = parseVisionText(payload);
     if (text) return { model, text };
-    return null;
+    console.warn(JSON.stringify({ event: "vision_empty_response", model }));
   }
   return null;
 }

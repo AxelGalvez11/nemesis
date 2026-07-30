@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
-import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
+import { enhanceRecordingArtifact, recordingOutputForChat, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
 import { MissionButton } from "@/components/mission-ui";
 import { LiveWaveform } from "./LiveWaveform";
@@ -72,6 +72,8 @@ export interface RecordSessionProps {
   onDone: () => void;
   /** Posts the saved recording into the conversation before record mode exits. */
   onSaved?: (output: ChatOutput) => void;
+  /** Posts the resolved notes artifact after the background polish pass. */
+  onUpdated?: (output: ChatOutput) => void;
   /** Fires whenever the three-state UI transitions — lets a host (chat.tsx)
    *  lock its own mode-switch control while a recording is live or has an
    *  unsaved transcript, without duplicating this component's state. */
@@ -79,7 +81,7 @@ export interface RecordSessionProps {
 }
 
 export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>(function RecordSession(
-  { userId, threadId, onDone, onSaved, onRecordingStateChange },
+  { userId, threadId, onDone, onSaved, onUpdated, onRecordingStateChange },
   ref,
 ) {
   // A lecture is longer than the auto-lock timeout; keep the screen on while
@@ -149,16 +151,16 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
         // whichever transcript it ends up with.
         buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date(), ""),
       );
-      onSaved?.(entry);
+      onSaved?.(recordingOutputForChat(entry));
       // Enhance pass runs detached: the saved on-device transcript is already
       // safe, and the sharper server transcript swaps in when it lands.
-      void enhanceRecordingArtifact(userId, threadId, entry, live.audioUris, live.elapsedSeconds);
+      void enhanceRecordingArtifact(userId, threadId, entry, live.audioUris, live.elapsedSeconds, onUpdated);
       onDone();
     } catch (cause) {
       setSaveError(cause instanceof Error ? cause.message : "Couldn't save the recording — check your connection and try again.");
       setSaving(false);
     }
-  }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, onDone, onSaved]);
+  }, [userId, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, onDone, onSaved, onUpdated]);
 
   // The non-recording states. The recording one is gone from here on purpose:
   // while the mic is live this slot is driven by micHealthMessage instead, which

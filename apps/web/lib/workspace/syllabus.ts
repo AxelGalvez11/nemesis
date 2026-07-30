@@ -256,20 +256,11 @@ export function describeMeeting(meeting: SyllabusMeeting): string {
   return `${days || "Weekly"}${span}${range}`;
 }
 
-/** A recurring meeting becomes ONE anchor event carrying the pattern in its
- *  note — not 45 rows.
- *
- *  Why not expand it: `calendar_events` has no recurrence columns (no rrule, no
- *  end date, no duration — see 20260720210000_cloud_chat_calendar.sql). A
- *  15-week MWF course expands to ~45 rows, a full semester load to 150+, and
- *  the first time a class moves an hour the student has 45 rows to edit by
- *  hand. Adding recurrence columns is a migration, which is a production
- *  database change and needs the owner's go-ahead, so this stays lossless-in,
- *  honest-out: the full pattern is preserved on SyllabusMeeting and written
- *  where the student can read it. When the columns land, only this function
- *  changes. */
+/** A recurring meeting becomes one compact series row. The production table
+ * now has `end_time` and `recurrence`; the UI expands that rule for display,
+ * so a semester schedule is editable as one class rather than 45 copies. */
 export function meetingToAnchorEvent(meeting: SyllabusMeeting, id: string, course: string | null): CalendarEvent | null {
-  if (!meeting.startDate || !isRealDate(meeting.startDate)) return null;
+  if (!meeting.startDate || !isRealDate(meeting.startDate) || !meeting.endDate || !isRealDate(meeting.endDate)) return null;
   const pattern = describeMeeting(meeting);
   const event: CalendarEvent = {
     id,
@@ -280,10 +271,13 @@ export function meetingToAnchorEvent(meeting: SyllabusMeeting, id: string, cours
     // them as 'agent' would route every one to the read-only view dialog,
     // which has no edit and no delete — a wrong date would be permanent.
     source: "manual",
-    note: `Repeats: ${pattern}${meeting.location ? ` · ${meeting.location}` : ""}\nFrom your syllabus. This is the first meeting — the calendar does not repeat events yet, so add the rest as you need them.`,
+    recurrence: { days: meeting.daysOfWeek, until: meeting.endDate },
+    note: `Repeats: ${pattern}${meeting.location ? ` · ${meeting.location}` : ""}\nFrom your syllabus.`,
   };
   const time = normalizeTime(meeting.startTime);
+  const endTime = normalizeTime(meeting.endTime);
   if (time) event.time = time;
+  if (endTime) event.endTime = endTime;
   if (course) event.course = course;
   return event;
 }

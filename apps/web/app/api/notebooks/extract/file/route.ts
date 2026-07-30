@@ -70,6 +70,8 @@ function sniffKind(bytes: Uint8Array): FileKind | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
   // 🔴 RESOLVE the device key; do not glance at how it starts.
   //
   // This used to be `bearer.startsWith("nmk_")` and nothing else, which is a
@@ -130,6 +132,13 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "Reading photos isn't switched on for this app yet." }, { status: 503 });
     }
   }
+  console.info(JSON.stringify({
+    event: "file_extract_started",
+    requestId,
+    kind,
+    bytes: file.size,
+    mime: file.type || "unknown",
+  }));
 
   try {
     let result: { title: string | null; text: string };
@@ -248,6 +257,13 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     if (!text) {
+      console.warn(JSON.stringify({
+        event: "file_extract_empty",
+        requestId,
+        kind,
+        readBy: readBy ?? null,
+        durationMs: Date.now() - startedAt,
+      }));
       return NextResponse.json(
         {
           error:
@@ -262,6 +278,14 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const baseName = file.name.replace(/\.[^.]+$/, "").trim();
+    console.info(JSON.stringify({
+      event: "file_extract_completed",
+      requestId,
+      kind,
+      readBy: readBy ?? "text",
+      chars: text.length,
+      durationMs: Date.now() - startedAt,
+    }));
     return NextResponse.json({
       kind,
       title: result.title ?? (baseName || "Untitled document"),
@@ -279,6 +303,13 @@ export async function POST(req: Request): Promise<Response> {
       ...(coverage ? { coverage } : {}),
     });
   } catch (err) {
+    console.error(JSON.stringify({
+      event: "file_extract_failed",
+      requestId,
+      kind,
+      durationMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message.slice(0, 300) : "unknown",
+    }));
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Couldn't read that file." },
       { status: 422 },

@@ -478,7 +478,7 @@ export async function sendChat(
             typeof row.id === "string" &&
             typeof row.title === "string" &&
             typeof kind === "string" &&
-            ["flashcards", "slides", "test", "mindmap", "report", "recording", "other"].includes(kind)
+            ["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"].includes(kind)
           ) {
             outputs.push({
               id: row.id,
@@ -628,10 +628,11 @@ function cloudMessageRow(uid: string, threadId: string, message: ChatMsg & { id:
   const thinking = message.thinking && (message.thinking.ms > 0 || message.thinking.text)
     ? { ms: message.thinking.ms, text: message.thinking.text.slice(0, 40_000) }
     : null;
-  const meta = message.sources?.length || message.outputs?.length || thinking
+  const meta = message.sources?.length || message.outputs?.length || message.attachments?.length || thinking
     ? {
         ...(message.sources?.length ? { sources: message.sources } : {}),
         ...(message.outputs?.length ? { outputs: message.outputs } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
         // Clamped well under the content column's own limit: reasoning on a deep
         // turn runs long, and this rides in a jsonb column alongside sources.
         ...(thinking ? { thinking } : {}),
@@ -931,6 +932,7 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
     ...(draft.notes ? { notes: draft.notes } : {}),
     durationSeconds: draft.durationSeconds,
     createdAt: draft.createdAt,
+    polish: "pending",
   };
   const { error } = await supabase.from("chat_recording_artifacts").insert({
     id,
@@ -961,7 +963,7 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
     if (data) {
       await supabase
         .from("chat_threads")
-        .update({ meta: mergeOutputsMeta(data.meta, entry), updated_at: draft.createdAt })
+        .update({ meta: mergeOutputsMeta(data.meta, recordingOutputForChat(entry)), updated_at: draft.createdAt })
         .eq("id", threadId)
         .eq("user_id", uid);
     } else {
@@ -970,7 +972,7 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
         user_id: uid,
         title,
         pinned: false,
-        meta: { outputs: [entry] },
+        meta: { outputs: [recordingOutputForChat(entry)] },
         created_at: draft.createdAt,
         updated_at: draft.createdAt,
       });
@@ -979,6 +981,14 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
     // best-effort mirror — see the doc comment
   }
   return entry;
+}
+
+/** Chat history never exposes a recording transcript on iOS. The transcript
+ * remains in chat_recording_artifacts as private processing input; shared
+ * cards carry only progress, destination and finished notes. */
+export function recordingOutputForChat(entry: ChatOutput): ChatOutput {
+  const { transcript: _transcript, ...visible } = entry;
+  return visible;
 }
 
 // Live notes ride the cheap conversational slot — never search, never the
@@ -1015,7 +1025,7 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
     if (!data) return;
     await supabase
       .from("chat_threads")
-      .update({ meta: mergeOutputsMeta(data.meta, entry) })
+      .update({ meta: mergeOutputsMeta(data.meta, recordingOutputForChat(entry)) })
       .eq("id", threadId)
       .eq("user_id", uid);
   } catch {
@@ -1063,11 +1073,13 @@ async function publishRecordingNotes(
   artifact: ChatOutput,
   transcript: string,
   chipBase: ChatOutput,
-): Promise<void> {
+): Promise<ChatOutput> {
   const notes = await rebuildNotesFromTranscript(uid, transcript);
   if (!notes) {
     await updateRecordingLibraryNote(uid, artifact, RECORDING_NOTE_UNAVAILABLE);
-    return;
+    const finished = { ...chipBase, polish: "done" as const };
+    await writeChipEntry(uid, threadId, finished);
+    return finished;
   }
   const { error } = await supabase
     .from("chat_recording_artifacts")
@@ -1076,7 +1088,9 @@ async function publishRecordingNotes(
     .eq("user_id", uid);
   if (error) throw new Error(error.message);
   await updateRecordingLibraryNote(uid, artifact, notes);
-  await writeChipEntry(uid, threadId, { ...chipBase, notes });
+  const finished = { ...chipBase, notes, polish: "done" as const };
+  await writeChipEntry(uid, threadId, finished);
+  return finished;
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -1093,6 +1107,7 @@ export async function enhanceRecordingArtifact(
   artifact: ChatOutput,
   audioUris: string[],
   elapsedSeconds: number,
+  onUpdated?: (output: ChatOutput) => void,
 ): Promise<void> {
   // Every file, not the first eight. `audioUris.slice(0, 8)` silently DROPPED
   // the rest of a long lecture, and because the per-file estimate divided the
@@ -1103,9 +1118,11 @@ export async function enhanceRecordingArtifact(
   const uris = audioUris;
   if (uris.length === 0) {
     try {
-      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      const finished = await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      onUpdated?.(recordingOutputForChat(finished));
     } catch (cause) {
       console.warn("recording notes skipped:", cause instanceof Error ? cause.message : cause);
+      onUpdated?.(recordingOutputForChat({ ...artifact, polish: "done" }));
     }
     return;
   }
@@ -1163,8 +1180,8 @@ export async function enhanceRecordingArtifact(
     }
     const enhanced = pieces.filter(Boolean).join("\n\n").trim();
     if (!enhanced) {
-      await writeChipEntry(uid, threadId, { ...artifact });
-      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      const finished = await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      onUpdated?.(recordingOutputForChat(finished));
       return;
     }
 
@@ -1186,9 +1203,11 @@ export async function enhanceRecordingArtifact(
     // fail on its own (offline, out of tokens), and losing the notes must never
     // cost the better transcript — or reset the chip out of "done".
     try {
-      await publishRecordingNotes(uid, threadId, artifact, enhanced, polished);
+      const finished = await publishRecordingNotes(uid, threadId, artifact, enhanced, polished);
+      onUpdated?.(recordingOutputForChat(finished));
     } catch (cause) {
       console.warn("notes rebuild skipped:", cause instanceof Error ? cause.message : cause);
+      onUpdated?.(recordingOutputForChat(polished));
     }
   } catch (cause) {
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
@@ -1202,9 +1221,11 @@ export async function enhanceRecordingArtifact(
     // would open the recording to a raw transcript and no notes at all.
     // Best-effort and separately guarded: this is already the failure path.
     try {
-      await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      const finished = await publishRecordingNotes(uid, threadId, artifact, artifact.transcript ?? "", artifact);
+      onUpdated?.(recordingOutputForChat(finished));
     } catch (notesCause) {
       console.warn("fallback notes skipped:", notesCause instanceof Error ? notesCause.message : notesCause);
+      onUpdated?.(recordingOutputForChat({ ...artifact, polish: "done" }));
     }
   } finally {
     // Originals AND the trimmed/compressed copies we made from them. Both lists

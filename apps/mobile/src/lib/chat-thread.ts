@@ -25,7 +25,7 @@ export interface ChatSource {
  *  synced down through the shared cloud tables. */
 export interface ChatOutput {
   id: string;
-  kind: "flashcards" | "slides" | "test" | "mindmap" | "report" | "recording" | "other";
+  kind: "flashcards" | "slides" | "test" | "mindmap" | "note" | "event" | "report" | "recording" | "other";
   title: string;
   url?: string;
   /** An in-app destination for a saved artifact. Kept separate from `url` so
@@ -40,6 +40,14 @@ export interface ChatOutput {
    *  once it replaced the on-device text. Absent for non-recordings, for saves
    *  that kept no audio, and after a failed pass. */
   polish?: "pending" | "done";
+}
+
+export interface ChatAttachment {
+  name: string;
+  kind: "image" | "file";
+  mime?: string;
+  url?: string;
+  storagePath?: string;
 }
 
 export interface ChatMsg {
@@ -57,6 +65,9 @@ export interface ChatMsg {
   /** Deliverables recorded against this turn (persisted into the cloud row's
    *  `meta.outputs`) — see ChatOutput's doc. */
   outputs?: ChatOutput[];
+  /** Original files shown as part of conversation history on every device.
+   * Extracted text remains wire-only; this metadata is safe to persist. */
+  attachments?: ChatAttachment[];
   /** What the model worked through before answering, kept so it can be reopened
    *  after the fact (persisted into the cloud row's `meta.thinking`).
    *

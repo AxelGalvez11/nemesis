@@ -19,7 +19,7 @@ Deno.test("messages carry prior notes and clip the transcript tail", () => {
   const messages = buildLiveNotesMessages("x".repeat(9_000), ["alpha", "beta"], "Pharmacology lecture");
   assertEquals(messages.length, 2);
   assertEquals(messages[0].role, "system");
-  assert(messages[0].content.includes("notes (up to 6 concise new note bullets)"));
+  assert(messages[0].content.includes("up to 10 substantive new notes"));
   assert(messages[1].content.includes("Known session context: Pharmacology lecture"));
   assert(messages[1].content.includes("- alpha\n- beta"));
   assert(messages[1].content.length < 9_000);
@@ -32,16 +32,16 @@ Deno.test("parse survives fences, junk, and extra keys; rejects non-JSON", () =>
   assertEquals(parseLiveNotes('{"notes":"not an array"}'), []);
 });
 
-Deno.test("parse dedupes, trims whitespace runs, and caps at six per pass", () => {
+Deno.test("parse dedupes, trims whitespace runs, and permits ten substantive notes per pass", () => {
   const notes = parseLiveNotes(JSON.stringify({ notes: ["a  a", "a a", "b", "c", "d", "e", "f", "g"] }));
-  assertEquals(notes, ["a a", "b", "c", "d", "e", "f"]);
+  assertEquals(notes, ["a a", "b", "c", "d", "e", "f", "g"]);
 });
 
-Deno.test("merge dedupes across passes and keeps only the newest 18", () => {
+Deno.test("merge dedupes across passes and keeps the richer forty-note board", () => {
   const first = Array.from({ length: 15 }, (_, i) => `note ${i}`);
   const merged = mergeLiveNotes(first, ["note 3", "fresh 1", "fresh 2", "fresh 3", "fresh 4", "fresh 5"]);
-  assertEquals(merged.length, 18);
-  assertEquals(merged[0], "note 2");
+  assertEquals(merged.length, 20);
+  assertEquals(merged[0], "note 0");
   assertEquals(merged[merged.length - 1], "fresh 5");
   assertEquals(merged.filter((note) => note === "note 3").length, 1);
 });
@@ -105,9 +105,9 @@ Deno.test("the end-of-recording pass keeps more notes than one window would, sti
   assertEquals(merged[merged.length - 1], "fresh b");
 });
 
-Deno.test("the default merge ceiling is unchanged when no cap is passed", () => {
+Deno.test("the default merge ceiling keeps a full lecture board", () => {
   const previous = Array.from({ length: 30 }, (_, i) => `note ${i}`);
-  assertEquals(mergeLiveNotes(previous, ["fresh"]).length, 18);
+  assertEquals(mergeLiveNotes(previous, ["fresh"]).length, 31);
 });
 
 // --- The invariant that makes the rebuild mean anything ---------------------

@@ -171,7 +171,7 @@ test("imported events are the student's own, so a wrong date can be fixed", () =
 
 // ── Recurrence: one anchor, pattern preserved ────────────────────────────────
 
-test("a repeating class becomes one anchor event carrying its pattern, not 45 rows", () => {
+test("a repeating class becomes one compact calendar series, not 45 rows", () => {
   const meeting = {
     title: "Lecture",
     daysOfWeek: [1, 3, 5],
@@ -187,11 +187,12 @@ test("a repeating class becomes one anchor event carrying its pattern, not 45 ro
   assert.equal(event.date, "2026-08-25");
   assert.equal(event.kind, "class");
   assert.equal(event.time, "09:00");
+  assert.equal(event.endTime, "09:50");
+  assert.deepEqual(event.recurrence, { days: [1, 3, 5], until: "2026-12-12" });
   assert.equal(event.source, "manual");
   assert.match(event.note ?? "", /Mon\/Wed\/Fri 09:00–09:50/);
   assert.match(event.note ?? "", /Bell Hall 204/);
-  // The student is told the limitation rather than left to discover it.
-  assert.match(event.note ?? "", /does not repeat events yet/);
+  assert.doesNotMatch(event.note ?? "", /does not repeat events yet/);
 });
 
 test("a meeting with no start date produces nothing rather than a guess", () => {

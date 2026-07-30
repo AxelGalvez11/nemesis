@@ -10,7 +10,7 @@
 // gets written is source:'manual' — the student's own events, editable and
 // deletable afterwards (see the note in syllabus.ts meetingToAnchorEvent).
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
@@ -27,6 +27,7 @@ const ACCEPT = ".pdf,.docx,.pptx";
 
 interface SyllabusDialogProps {
   uid: string | null;
+  initialFile?: File | null;
   onClose: () => void;
   /** Writes one event. Reused from the calendar's own save path so imported
    *  events go through exactly the same validation as hand-made ones. */
@@ -45,10 +46,11 @@ function newAnchorId(): string {
     : `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function SyllabusDialog({ uid, onClose, onImport }: SyllabusDialogProps) {
+export function SyllabusDialog({ uid, initialFile = null, onClose, onImport }: SyllabusDialogProps) {
   const [stage, setStage] = useState<Stage>({ name: "pick" });
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialRead = useRef(false);
 
   async function handleFile(file: File | undefined) {
     if (!file || !uid) return;
@@ -67,6 +69,15 @@ export function SyllabusDialog({ uid, onClose, onImport }: SyllabusDialogProps) 
       setStage({ name: "pick" });
     }
   }
+
+  useEffect(() => {
+    if (!initialFile || !uid || initialRead.current) return;
+    initialRead.current = true;
+    void handleFile(initialFile);
+    // `handleFile` is intentionally owned by this render; initialFile is
+    // immutable for one dialog lifetime and the guard prevents a second read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile, uid]);
 
   function toggle(id: string) {
     setStage((prev) => {

@@ -15,42 +15,54 @@ interface CalendarHeaderProps {
   today: Date;
   onChangeView: (view: CalendarViewMode) => void;
   onStep: (delta: 1 | -1) => void;
+  onToday: () => void;
   onAddEvent: (dateKeyStr: string) => void;
   onImportSyllabus: () => void;
 }
 
-export function CalendarHeader({ view, cursor, today, onChangeView, onStep, onAddEvent, onImportSyllabus }: CalendarHeaderProps) {
+export function CalendarHeader({
+  view,
+  cursor,
+  today,
+  onChangeView,
+  onStep,
+  onToday,
+  onAddEvent,
+  onImportSyllabus,
+}: CalendarHeaderProps) {
   return (
-    <header className="workspace-page-header flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5 max-sm:px-4">
-      <div>
-        <h1 className="workspace-page-title">Calendar</h1>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
+    <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 px-5 pb-4 pt-5 max-lg:grid-cols-1 max-lg:gap-3 max-sm:px-3">
+      <h1 className="truncate text-[2rem] font-semibold tracking-[-0.04em] text-foreground">
+        {viewLabel(view, cursor)}
+      </h1>
+      <div className="justify-self-center max-lg:order-3">
         <SegmentedControl onChange={onChangeView} options={VIEW_OPTIONS} value={view} />
-        <div className="flex items-center gap-1 rounded-md border border-border">
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center gap-1">
           <Button
             aria-label={`Previous ${VIEW_UNIT_LABEL[view]}`}
             onClick={() => onStep(-1)}
-            size="icon-xs"
-            variant="ghost"
+            size="icon-sm"
+            variant="secondary"
           >
-            <ChevronLeft size={14} />
+            <ChevronLeft size={16} />
           </Button>
-          <span className="min-w-32 px-1 text-center text-xs font-medium tabular-nums">{viewLabel(view, cursor)}</span>
+          <Button onClick={onToday} size="sm" variant="secondary">Today</Button>
           <Button
             aria-label={`Next ${VIEW_UNIT_LABEL[view]}`}
             onClick={() => onStep(1)}
-            size="icon-xs"
-            variant="ghost"
+            size="icon-sm"
+            variant="secondary"
           >
-            <ChevronRight size={14} />
+            <ChevronRight size={16} />
           </Button>
         </div>
-        <Button onClick={onImportSyllabus} size="sm" variant="outline">
-          <FileText size={14} /> Import syllabus
+        <Button aria-label="Import syllabus" onClick={onImportSyllabus} size="icon-sm" variant="ghost">
+          <FileText size={16} />
         </Button>
-        <Button onClick={() => onAddEvent(dateKey(today))} size="sm">
-          <Plus size={14} /> Add event
+        <Button aria-label="Add event" onClick={() => onAddEvent(dateKey(today))} size="icon-sm">
+          <Plus size={16} />
         </Button>
       </div>
     </header>
