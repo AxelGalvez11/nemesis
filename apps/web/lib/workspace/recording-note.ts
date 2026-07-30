@@ -13,7 +13,11 @@
 // constraint of being live, not a description of a good note. Without that
 // constraint there is only one prompt, and it can organise by idea.
 
-import { postChatCompletion, type WireMsg } from "@/lib/workspace/chat-api";
+import { isFallbackModel, postChatCompletion, type WireMsg } from "@/lib/workspace/chat-api";
+
+/** The engine this prompt was written and tuned against. Named once so the
+ *  request and the did-we-actually-get-it check can never drift apart. */
+const NOTE_MODEL = "deepseek-chat";
 
 /** How much transcript rides the compose call. A 60k-char window is roughly a
  *  three-hour lecture at speaking pace, and the clip takes the END so a long
@@ -129,20 +133,36 @@ export async function requestRecordingNote(input: {
   transcript: string;
   context?: string;
   signal?: AbortSignal;
-}): Promise<{ notes: string; title: string }> {
-  if (!input.transcript.trim()) return { notes: "", title: "" };
+}): Promise<{ notes: string; title: string; fallbackModel: string | null }> {
+  if (!input.transcript.trim()) return { fallbackModel: null, notes: "", title: "" };
   try {
     const reply = await postChatCompletion(
       input.uid,
       buildRecordingNoteMessages(input.transcript, input.context),
       {
-        decision: { model: "deepseek-chat", route: "learning", searchWeb: false },
+        decision: { model: NOTE_MODEL, route: "learning", searchWeb: false },
         signal: input.signal,
       },
     );
     const { body, title } = splitRecordingNote(reply.text?.trim() ?? "");
-    return { notes: body.trim(), title };
+    return {
+      // WHICH ENGINE ANSWERED, when it was not the one asked for.
+      //
+      // nemesis-llm falls through to GLM, Qwen, Kimi then Anthropic when
+      // DeepSeek is unreachable. That is deliberate uptime insurance and stays —
+      // a student mid-lecture is better served by weaker notes than by none.
+      // What is NOT acceptable is doing it silently, which is what happened on
+      // 2026-07-29: the notes stopped following this prompt entirely (no
+      // opening summary, no headings, just the transcript restated line by
+      // line) and every signal in the product still said success.
+      //
+      // Reported rather than thrown so the notes are still delivered. The
+      // caller's job is to say so, not to withhold them.
+      fallbackModel: isFallbackModel(NOTE_MODEL, reply.model) ? (reply.model ?? null) : null,
+      notes: body.trim(),
+      title,
+    };
   } catch {
-    return { notes: "", title: "" };
+    return { fallbackModel: null, notes: "", title: "" };
   }
 }

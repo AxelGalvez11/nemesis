@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs } from "@/lib/workspace/chat-api";
+import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs, completionModel, isFallbackModel } from "@/lib/workspace/chat-api";
 import { WRITING_VOICE } from "@nemesis/shared";
 import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
@@ -134,4 +134,44 @@ test("both prompt variants carry the shared writing voice", () => {
   assert.ok(chatSystemPrompt(true).includes(WRITING_VOICE));
   assert.ok(chatSystemPrompt(false).includes(WRITING_VOICE));
   assert.ok(CHAT_SYSTEM_PROMPT.includes("delve"), "a partial paste must fail too");
+});
+
+// ---- Silent-fallback detection -------------------------------------------
+// nemesis-llm swaps DeepSeek for GLM/Qwen/Kimi/Anthropic during an outage and
+// says nothing. On 2026-07-29 that downgraded recording notes for days: they
+// stopped following their prompt entirely and every signal still read success.
+// These pin the rule that makes it visible.
+
+test("completionModel reads the model the provider actually reported", () => {
+  assert.equal(completionModel({ model: "glm-4.6", choices: [] }), "glm-4.6");
+  assert.equal(completionModel({ model: "  deepseek-chat  " }), "deepseek-chat");
+});
+
+test("completionModel returns undefined rather than guessing", () => {
+  // "We don't know" must never collapse into "it was the one we asked for" —
+  // an undetected downgrade would then read as a healthy turn.
+  assert.equal(completionModel({ choices: [] }), undefined);
+  assert.equal(completionModel({ model: "" }), undefined);
+  assert.equal(completionModel(null), undefined);
+  assert.equal(completionModel("not an object"), undefined);
+});
+
+test("isFallbackModel catches the family changing", () => {
+  assert.equal(isFallbackModel("deepseek-chat", "glm-4.6"), true);
+  assert.equal(isFallbackModel("deepseek-chat", "qwen-max"), true);
+  assert.equal(isFallbackModel("deepseek-chat", "kimi-k2"), true);
+  assert.equal(isFallbackModel("deepseek-chat", "claude-sonnet-4-5"), true);
+});
+
+test("isFallbackModel does NOT cry wolf on a dated build of the same engine", () => {
+  // Providers answer "deepseek-chat" with builds like "deepseek-chat-0324".
+  // Flagging those would warn the student on every healthy recording, which
+  // trains them to ignore the warning that matters.
+  assert.equal(isFallbackModel("deepseek-chat", "deepseek-chat"), false);
+  assert.equal(isFallbackModel("deepseek-chat", "deepseek-chat-0324"), false);
+  assert.equal(isFallbackModel("deepseek-chat", "DeepSeek-Chat"), false);
+});
+
+test("an unknown model is not reported as a downgrade", () => {
+  assert.equal(isFallbackModel("deepseek-chat", undefined), false);
 });

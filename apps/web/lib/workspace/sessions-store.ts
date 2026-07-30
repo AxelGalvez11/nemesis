@@ -550,6 +550,63 @@ export const sessionsStore = {
     if (uid && session) cloudFireAndForget(() => appendMessageCloud(uid, session, stored));
   },
 
+  /**
+   * Append a message that exists ONLY in this tab until it is resolved.
+   *
+   * For work that has visibly started but has not finished — a recording whose
+   * notes are still being written. Without this the chat sits empty for the
+   * whole compose call and looks like the recording was thrown away.
+   *
+   * 🔴 DELIBERATELY NOT SYNCED. appendMessageCloud upserts with
+   * `ignoreDuplicates: true`, so the FIRST write of an id wins and every later
+   * one is silently discarded. Syncing the placeholder would therefore persist
+   * "still working" forever: resolvePending's real content could never overwrite
+   * it, and a reload would show a card pulsing at a job that finished hours ago.
+   * Local-only also means a tab closed mid-compose leaves no phantom behind.
+   */
+  appendPending(id: string, message: SessionMessage) {
+    ensureHydrated();
+    const stored: SessionMessage = message.id ? message : { ...message, id: newId() };
+    setState({
+      ...state,
+      sessions: state.sessions.map((s) =>
+        s.id === id
+          ? { ...s, messages: [...s.messages, stored].slice(-MAX_MESSAGES_PER_SESSION), updatedAt: nowIso() }
+          : s,
+      ),
+    });
+  },
+
+  /**
+   * Swap a pending message for its finished form, and sync THAT to the cloud —
+   * the first and only time this message is written remotely.
+   *
+   * A no-op when the placeholder is already gone (session deleted, or trimmed
+   * past MAX_MESSAGES_PER_SESSION mid-compose), because re-adding a message the
+   * student has since dismissed would be worse than losing the card.
+   */
+  resolvePending(id: string, messageId: string, patch: { content: string; outputs?: SessionOutput[] }) {
+    ensureHydrated();
+    const session = state.sessions.find((s) => s.id === id);
+    const existing = session?.messages.find((message) => message.id === messageId);
+    if (!session || !existing) return;
+    const resolved: SessionMessage = {
+      ...existing,
+      content: patch.content,
+      ...(patch.outputs ? { outputs: patch.outputs } : {}),
+    };
+    setState({
+      ...state,
+      sessions: state.sessions.map((s) =>
+        s.id === id
+          ? { ...s, messages: s.messages.map((m) => (m.id === messageId ? resolved : m)), updatedAt: nowIso() }
+          : s,
+      ),
+    });
+    const uid = cloudUserId;
+    if (uid) cloudFireAndForget(() => appendMessageCloud(uid, session, resolved));
+  },
+
   addOutput(id: string, output: SessionOutput) {
     ensureHydrated();
     setState({

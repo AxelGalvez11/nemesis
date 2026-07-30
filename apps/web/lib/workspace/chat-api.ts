@@ -256,6 +256,38 @@ export function completionText(body: unknown): string | null {
   return typeof message?.content === "string" && message.content.trim() ? message.content : null;
 }
 
+/**
+ * The model a non-streaming response says actually produced it.
+ *
+ * Pure and exported so the fallback-detection rule can be pinned by a test
+ * without a network call. Returns null rather than a guess when the field is
+ * missing: "we do not know" and "it was the model we asked for" must never
+ * collapse into the same value, or an undetected downgrade reads as healthy.
+ */
+export function completionModel(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const model = (body as { model?: unknown }).model;
+  return typeof model === "string" && model.trim() ? model.trim() : undefined;
+}
+
+/**
+ * Whether `answered` is a different engine from the `requested` alias.
+ *
+ * Compares only up to the first "-", because a provider legitimately answers a
+ * request for "deepseek-chat" with a dated build like "deepseek-chat-0324" and
+ * flagging that as a downgrade would cry wolf on every healthy turn. What must
+ * be caught is the family changing: deepseek -> glm, qwen, kimi, claude.
+ *
+ * Unknown (undefined) is NOT a downgrade. A missing field is a gap in what the
+ * provider told us, and warning a student about a model swap that may not have
+ * happened would train them to ignore the warning that matters.
+ */
+export function isFallbackModel(requested: string, answered: string | undefined): boolean {
+  if (!answered) return false;
+  const family = (name: string) => name.toLowerCase().split("-")[0] ?? "";
+  return family(requested) !== family(answered);
+}
+
 /** Tool calls from a non-streaming chat/completions response, if any. */
 export function completionToolCalls(body: unknown): AgentToolCall[] {
   if (typeof body !== "object" || body === null) return [];
@@ -331,6 +363,26 @@ export interface ChatReply {
   outputs?: SessionOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
+  /**
+   * The model that ACTUALLY answered, as reported by the provider — not the one
+   * we asked for.
+   *
+   * nemesis-llm keeps a fallback chain (DeepSeek, then GLM, Qwen, Kimi,
+   * Anthropic) as uptime insurance, and it swaps providers without telling
+   * anyone. That is the right call for availability and the wrong call for
+   * anything that depends on following a long instruction: on 2026-07-29 the
+   * recording notes silently stopped obeying their prompt — no headings, no
+   * opening summary, just the transcript restated line by line — and nothing
+   * anywhere said a different model had answered.
+   *
+   * The value was on the wire the whole time; the valve returns the provider's
+   * body verbatim and it carries `model`. This type was simply dropping it.
+   *
+   * Undefined on streamed turns (the field arrives in the SSE chunks, which
+   * readCompletionStreamFull does not surface) and whenever the provider omits
+   * it — so treat undefined as "unknown", never as "the model we asked for".
+   */
+  model?: string;
 }
 
 export interface ChatCompletionOptions {
@@ -392,6 +444,7 @@ export async function postChatCompletion(
     }
     let text: string | null = null;
     let toolCalls: AgentToolCall[] = [];
+    let answeringModel: string | undefined;
     if (options.onDelta) {
       const streamed = await readCompletionStreamFull(res.body, options.onDelta);
       text = streamed.text.trim() ? streamed.text : null;
@@ -400,9 +453,17 @@ export async function postChatCompletion(
       const body = (await res.json().catch(() => null)) as unknown;
       text = completionText(body);
       toolCalls = completionToolCalls(body);
+      answeringModel = completionModel(body);
     }
     if (text || toolCalls.length) {
-      return { errorKind: null, errorText: null, sources: [], text, ...(toolCalls.length ? { toolCalls } : {}) };
+      return {
+        errorKind: null,
+        errorText: null,
+        sources: [],
+        text,
+        ...(answeringModel ? { model: answeringModel } : {}),
+        ...(toolCalls.length ? { toolCalls } : {}),
+      };
     }
     return { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch (err) {
