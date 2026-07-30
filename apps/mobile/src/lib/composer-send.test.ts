@@ -28,7 +28,14 @@ Deno.test("mid-flight it stays the send button, marked sending", () => {
   assertEquals(composerAction("a question", { sending: true }), "sending");
 });
 
-// Nothing to send means nothing to wait for: sending must not conjure a button.
-Deno.test("sending with nothing drafted is still record", () => {
-  assertEquals(composerAction("", { sending: true }), "record");
+// 🔴 THIS TEST ASSERTED THE OPPOSITE AND THE OPPOSITE WAS THE BUG. It read
+// "sending with nothing drafted is still record", on the reasoning that nothing to
+// send means nothing to wait for. But send() empties the composer the moment it
+// fires, so "nothing drafted while sending" is the state of EVERY ordinary turn —
+// and under the old rule the button became the Record circle mid-answer, which is
+// both useless and destructive to tap. A turn in flight is precisely when Stop has
+// to exist.
+Deno.test("an emptied composer mid-flight still shows the button, as Stop", () => {
+  assertEquals(composerAction("", { sending: true }), "sending");
+  assertEquals(composerAction("", { attached: false, sending: true }), "sending");
 });

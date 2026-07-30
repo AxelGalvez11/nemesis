@@ -53,6 +53,7 @@ import {
   splitFinalNote,
 } from "@/lib/live-notes";
 import { isDefaultRecordingTitle, mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
+import { folderOf } from "@/lib/library-paths";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import { base64ToBytes, bytesToBase64, readWav, trimWavSilence } from "@/lib/wav-trim";
 import { encodeToM4A } from "../../modules/nemesis-audio-encoder";
@@ -67,6 +68,7 @@ import {
   deriveMessageId,
   emptyStore,
   ensureMessageIds,
+  withoutPendingRecordings,
   generateUuidV4,
   getThread,
   isValidThreadId,
@@ -869,7 +871,12 @@ export async function saveThreadMessages(uid: string, id: string, messages: Chat
   // user turn, again once the reply lands, both times off the same object —
   // converges on the same id instead of double-inserting it. See
   // deriveMessageId's doc in lib/chat-threads.ts.
-  const withIds = ensureMessageIds(messages, (message) => deriveMessageId(id, message));
+  // Filtered HERE rather than at each call site, because there are several and the
+  // one that mattered was not the obvious one: send() persists the whole message
+  // array, so an ordinary chat turn sent while a recording was being written up
+  // was what pushed the placeholder into an insert-only table. See
+  // isPendingRecordingMessage for what that costs.
+  const withIds = ensureMessageIds(withoutPendingRecordings(messages), (message) => deriveMessageId(id, message));
   const before = await readStore(uid);
   const previousMessages = getThread(before, id)?.messages ?? [];
   const after = upsertThread(before, id, withIds, new Date().toISOString());
@@ -965,11 +972,22 @@ async function updateRecordingLibraryNote(
   const noteId = recordingNoteId(artifact.route);
   if (!noteId) return;
   try {
-    await updateNoteContent(uid, noteId, content);
+    const note = await updateNoteContent(uid, noteId, content);
     // Separate write, and deliberately AFTER the content: a rename that fails
     // leaves a correctly-written note under a dull name, which is recoverable.
     // The other order risks a well-named note still holding the placeholder text.
-    if (rename) await renameNoteById(uid, noteId, rename, RECORDINGS_LIBRARY_FOLDER);
+    //
+    // 🔴 GUARDED ON THE NOTE'S OWN NAME AND FOLDER, not the chat card's. Those are
+    // two different records that drift apart the moment the student touches the
+    // Library: renaming or moving the note there does not touch the chat artifact,
+    // whose title was frozen when Save was pressed. Guarding on the card meant a
+    // note the student had renamed still looked "untouched" and got overwritten,
+    // and passing a hardcoded folder would have dragged a note they had filed
+    // elsewhere back into Recordings — renameNoteById rebuilds the whole path from
+    // that argument, so it is a destination, not a default.
+    if (rename && isDefaultRecordingTitle(note.title)) {
+      await renameNoteById(uid, noteId, rename, folderOf(note.path));
+    }
   } catch (cause) {
     console.warn("recording Library note update skipped:", cause instanceof Error ? cause.message : cause);
   }

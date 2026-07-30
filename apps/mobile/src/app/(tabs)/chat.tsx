@@ -875,7 +875,22 @@ export default function ChatScreen() {
    *  the round it is in. It does NOT undo a deck, note, or calendar event already
    *  written — those rows exist, and their cards stay on the answer. */
   const handleStop = useCallback(() => {
+    // The photo read is its own kind of in-flight, with no controller of its own —
+    // it shows Stop because `sending` is true for it. Cancelling means invalidating
+    // its token, the same mechanism that handles a removed photo.
+    if (photoReadingRef.current) {
+      photoSendTokenRef.current += 1;
+      photoReadingRef.current = false;
+      setPhotoReading(false);
+    }
     abortRef.current?.abort();
+    // Unwound HERE rather than waiting for the request to settle. A native cancel
+    // does not always reject — it can be swallowed between the response headers and
+    // the first body read — and a promise that never settles would leave the
+    // composer permanently inert. The .then()/.finally() below are still the ones
+    // that keep the partial answer; this only guarantees the button comes back.
+    sendingRef.current = false;
+    setSending(false);
   }, []);
 
   /** The composer's one send. A photo draft takes the route that reads it first;

@@ -531,6 +531,32 @@ export function mergeMessages(local: ChatMsg[], cloud: ChatMsg[]): ChatMsg[] {
  * that lib/artifact-timeline.ts decides which STATE an artifact card shows —
  * this function only has to decide which messages exist.
  */
+/**
+ * A recording's PLACEHOLDER message — the "Writing up your notes." line that is
+ * replaced in place when the write-up lands.
+ *
+ * 🔴 IT MUST NEVER BE PERSISTED, and that is not a preference. `chat_messages` is
+ * insert-only (the upsert runs `ignoreDuplicates: true` and the role has no UPDATE
+ * grant), and `newMessagesSince` keys on id. So if the placeholder reaches the
+ * cloud, the rewritten version — same id, new text — can never replace it: the
+ * sync filters it out as "not new", and the next poll's merge lets the CLOUD copy
+ * win by id and drags the frozen "Writing up your notes." back onto the screen,
+ * taking the recording's notes off the wire with it. That is exactly the frozen
+ * pending card of #358, reintroduced by the fix for the three-blocks complaint.
+ *
+ * Dropping it from the local store too is the intended cost: during the pending
+ * window the artifact still lives in the thread's own outputs, so the card is
+ * drawn as the header chip. The message reappears, resolved, the moment the
+ * write-up lands and it becomes an ordinary insert.
+ */
+export function isPendingRecordingMessage(message: ChatMsg): boolean {
+  return (message.outputs ?? []).some((output) => output.kind === "recording" && output.polish === "pending");
+}
+
+export function withoutPendingRecordings(messages: readonly ChatMsg[]): ChatMsg[] {
+  return messages.filter((message) => !isPendingRecordingMessage(message));
+}
+
 export function mergeRefreshedMessages(current: readonly ChatMsg[], loaded: readonly ChatMsg[]): ChatMsg[] {
   const contentKey = (message: ChatMsg) => `${message.role}|${message.at}|${message.content}`;
   const seenIds = new Set<string>();

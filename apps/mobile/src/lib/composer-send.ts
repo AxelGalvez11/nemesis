@@ -23,9 +23,16 @@ export function composerAction(
   typed: string,
   { attached = false, sending = false }: { attached?: boolean; sending?: boolean } = {},
 ): ComposerAction {
+  // 🔴 A TURN IN FLIGHT OWNS THIS BUTTON, WHATEVER THE BOX SAYS — and this check
+  // has to come FIRST. It used to sit after the draft check, and that made the
+  // Stop button unreachable on every ordinary question: send() empties the box and
+  // clears the attachment the instant it fires, so by the time the answer was
+  // streaming there was no draft, and the slot fell through to the RECORD circle.
+  // Tapping where Stop should be started a recording. The one case that did work
+  // was a photo, because its draft outlives the send — which is exactly why this
+  // looked fine in the tests that had one attached.
+  if (sending) return "sending";
   // An attachment is a turn by itself: a photographed slide asks "what is this?"
   // without a word typed, and photoTurnText supplies those words at send time.
-  const hasDraft = typed.trim().length > 0 || attached;
-  if (!hasDraft) return "record";
-  return sending ? "sending" : "send";
+  return typed.trim().length > 0 || attached ? "send" : "record";
 }
