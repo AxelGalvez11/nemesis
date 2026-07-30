@@ -49,7 +49,17 @@ export function initPosthog(): void {
   started = true;
   posthog.init(posthogKey, {
     api_host: posthogHost,
-    capture_pageview: false, // sent manually so App Router soft navigations still register
+    // 'history_change' lets posthog-js capture the first pageview AND every App Router
+    // soft navigation itself, via its HistoryAutocapture extension.
+    //
+    // This was `false` plus a hand-rolled $pageview in a <Suspense> boundary in
+    // PostHogProvider, and that pageview never fired. The failure was silent and
+    // total: PostHog initialised, fetched its config and wrote its cookie, but with
+    // autocapture also off there was simply nothing left to send — zero POSTs to the
+    // ingest host, no error anywhere, because nothing had gone wrong. It just never
+    // happened. Not depending on our own effect to produce the only event on the site
+    // is the actual fix; the library has done this reliably for years.
+    capture_pageview: "history_change",
     capture_pageleave: true, // gives us time-on-page, which is how we tell reading from bouncing
     autocapture: false, // never auto-collect on-screen text or input
     disable_session_recording: true,
@@ -59,11 +69,6 @@ export function initPosthog(): void {
 
 /** Where a sign-up call to action lives, so we can tell which placement actually earns clicks. */
 export type CtaLocation = "nav" | "hero" | "showcase" | "ios" | "closer" | "footer" | "pricing";
-
-export function phCapture(event: string, properties?: Record<string, unknown>): void {
-  initPosthog();
-  if (started) posthog.capture(event, properties);
-}
 
 /**
  * One event for every "start using Nemesis" click, with the placement as a property.
