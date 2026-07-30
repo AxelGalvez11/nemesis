@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
+import { PlanCta } from "@/components/PlanCta";
 import { IconCheck } from "@/components/FeatureIcons";
 
 export const metadata: Metadata = {
@@ -84,7 +85,7 @@ export default function PricingPage() {
                 <li><IconCheck size={13} />A calendar built from your syllabus</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Student</a>
+                <PlanCta plan="plus" label="Get Student" />
                 <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
@@ -106,7 +107,7 @@ export default function PricingPage() {
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-primary" href={APP_SIGN_UP}>Get Agent Pro</a>
+                <PlanCta plan="pro" label="Get Agent Pro" variant="primary" />
                 <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
@@ -120,7 +121,7 @@ export default function PricingPage() {
                 <li><IconCheck size={13} />First access to new features</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Max</a>
+                <PlanCta plan="max" label="Get Max" />
                 <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
