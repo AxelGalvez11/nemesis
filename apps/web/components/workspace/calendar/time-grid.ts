@@ -5,12 +5,14 @@
 // week view stacked text chips in a column; nothing showed that a 9am lecture
 // and a 9:30 lab collide, or that one runs twice as long as the other.
 //
-// One honest limitation drives the whole design. `calendar_events` stores a
-// single `date` and a free-text `time` — there is NO end time and no duration
-// (supabase/migrations/20260720210000_cloud_chat_calendar.sql). So a block's
-// height cannot be read from the data; it is drawn at DEFAULT_EVENT_MINUTES.
-// The migration that adds `end_time` is written but not applied — when it is,
-// only `durationOf` below needs to change.
+// `calendar_events` stores a `date`, a free-text `time` and — since migration
+// 20260724200000_calendar_end_time_recurrence.sql, which IS applied — an
+// `end_time`. An event that carries one is drawn at its real length; anything
+// without one still falls back to DEFAULT_EVENT_MINUTES, because most rows
+// predate the column and syllabus imports rarely state an end.
+//
+// That column is what makes dragging out a time range possible at all: without
+// somewhere to put the end, a drag could only ever produce a start.
 //
 // Events with no time at all (most syllabus deadlines: "due Friday") are NOT
 // given a fake time. They go to a separate all-day strip above the grid, the
@@ -211,4 +213,98 @@ export function nowOffset(now: Date, window: HourWindow): number | null {
   const minute = now.getHours() * 60 + now.getMinutes();
   if (minute < window.startHour * 60 || minute > window.endHour * 60) return null;
   return offsetFor(minute, window);
+}
+
+// ── Pointer arithmetic ───────────────────────────────────────────────────────
+// Everything below turns a pixel position into a time, which is what lets a
+// student click 9am and get a 9am event instead of an untimed one.
+//
+// It lives here, apart from the components, for a practical reason: a drag
+// cannot be driven by the browser tooling available to this project, so the
+// only way any of it can be checked is as pure arithmetic. The DOM layer is
+// deliberately thin — it reads a pointer offset and calls these.
+
+/** Drags land on quarter hours, the way every desktop calendar behaves. Free
+ *  positioning sounds more capable and produces events at 9:07. */
+export const SNAP_MINUTES = 15;
+
+/** Round a minute-of-day onto the snap grid. */
+export function snapMinute(minute: number): number {
+  return Math.round(minute / SNAP_MINUTES) * SNAP_MINUTES;
+}
+
+/** "HH:MM" for a minute-of-day, in the shape `minutesOf` parses back and the
+ *  `time` / `end_time` columns store. Minutes past the end of a day are wrapped
+ *  by the caller, never here. */
+export function clockOf(minute: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(minute)));
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The inverse of `offsetFor`: which minute a pixel position inside the grid
+ * refers to, snapped, and held inside the drawn window.
+ *
+ * Clamping matters more than it looks. A pointer can travel above or below the
+ * grid mid-drag — the browser keeps reporting coordinates after the cursor
+ * leaves the element — and without this an upward overshoot produces a
+ * negative minute, i.e. an event "before" the day.
+ */
+export function minuteAtOffset(offsetY: number, window: HourWindow): number {
+  const raw = (offsetY / HOUR_HEIGHT) * 60 + window.startHour * 60;
+  const snapped = snapMinute(raw);
+  return Math.max(window.startHour * 60, Math.min(window.endHour * 60, snapped));
+}
+
+export interface TimeRange {
+  time: string;
+  endTime: string;
+}
+
+/**
+ * The range a drag describes, from where it started to where the pointer is.
+ *
+ * Dragging UPWARD is a real gesture, not a mistake, so the two minutes are
+ * ordered rather than assumed. A press with no movement — the ordinary click —
+ * comes out as a DEFAULT_EVENT_MINUTES event starting where it was clicked,
+ * which is both what Apple's calendar does and the length this grid already
+ * draws an end-less event at, so the block does not resize the instant it saves.
+ */
+export function rangeFromDrag(anchorMinute: number, pointerMinute: number): TimeRange {
+  const start = Math.min(anchorMinute, pointerMinute);
+  const end = Math.max(anchorMinute, pointerMinute);
+  const length = end - start < SNAP_MINUTES ? DEFAULT_EVENT_MINUTES : end - start;
+  return { endTime: clockOf(Math.min(start + length, 24 * 60 - 1)), time: clockOf(start) };
+}
+
+/**
+ * An event moved by `deltaMinutes`, keeping its length.
+ *
+ * Returns null for an event with no readable start — those live in the all-day
+ * strip and have no position on the grid to move. The whole event is held
+ * inside the day rather than the window: dragging must not be able to push a
+ * class past midnight into a date the row does not claim.
+ */
+export function movedRange(event: CalendarEvent, deltaMinutes: number): TimeRange | null {
+  const start = minutesOf(event.time);
+  if (start === null) return null;
+  const end = minutesOf(event.endTime);
+  const length = end !== null && end > start ? end - start : DEFAULT_EVENT_MINUTES;
+  const shifted = Math.max(0, Math.min(24 * 60 - 1 - length, snapMinute(start + deltaMinutes)));
+  return { endTime: clockOf(shifted + length), time: clockOf(shifted) };
+}
+
+/**
+ * An event whose end has been dragged to `pointerMinute`, keeping its start.
+ *
+ * The end can never cross the start: pulled above it, the event collapses to
+ * one snap step rather than inverting into a negative-length block that
+ * `layoutDay` would then sort incorrectly. A 15-minute event still DRAWS at
+ * MIN_BLOCK_MINUTES, which is a floor on legibility, not on the stored data.
+ */
+export function resizedRange(event: CalendarEvent, pointerMinute: number): TimeRange | null {
+  const start = minutesOf(event.time);
+  if (start === null) return null;
+  const end = Math.max(snapMinute(pointerMinute), start + SNAP_MINUTES);
+  return { endTime: clockOf(Math.min(end, 24 * 60 - 1)), time: clockOf(start) };
 }

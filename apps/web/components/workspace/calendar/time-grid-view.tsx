@@ -7,7 +7,8 @@
 // Week and Day are the same component with a different number of columns —
 // they were near-duplicates before, and every fix had to be made twice.
 //
-// Layout arithmetic lives in time-grid.ts (pure, tested). This file only paints.
+// Layout arithmetic lives in time-grid.ts and gesture bookkeeping in
+// use-time-grid-gestures.ts, both pure of the DOM. This file only paints.
 
 import { useEffect, useState } from "react";
 
@@ -16,10 +17,11 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
-import { formatEventDate, formatEventTime } from "./format";
+import { formatEventDate, formatEventTime, hourLabel } from "./format";
 import { KIND_META } from "./kind-meta";
 import {
   blockGeometry,
+  clockOf,
   hourLabels,
   hourWindow,
   layoutDay,
@@ -27,21 +29,29 @@ import {
   offsetFor,
   windowHeight,
 } from "./time-grid";
+import { type GestureResult, useTimeGridGestures } from "./use-time-grid-gestures";
 
 /** How often the "now" line moves. A minute is the smallest visible step, and
  *  anything faster would re-render the grid for no reason. */
 const NOW_TICK_MS = 60_000;
 
-const GUTTER_WIDTH = "3.25rem";
+/** Wide enough for the longest hour label ("12 AM") and for "All day" to stay
+ *  on one line. Both were wrapping at 3.25rem once the app's default text size
+ *  put the root at 20px. */
+const GUTTER_WIDTH = "3.75rem";
 
 interface TimeGridViewProps {
   days: MonthDay[];
   eventsByDay: Map<string, CalendarEvent[]>;
   onAddOnDate: (dateKeyStr: string) => void;
   onOpenEvent: (event: CalendarEvent) => void;
+  /** A slot was clicked or dragged out — raise the quick-create card over it. */
+  onPickSlot: (result: GestureResult, anchor: DOMRect) => void;
+  /** An event was dragged to a new time, day, or length. */
+  onMoveEvent: (event: CalendarEvent, result: GestureResult) => void;
 }
 
-export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: TimeGridViewProps) {
+export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot }: TimeGridViewProps) {
   const [now, setNow] = useState<Date | null>(null);
 
   // Set after mount only: rendering a clock during SSR gives the server and the
@@ -54,12 +64,18 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
   }, []);
 
   const layouts = days.map((day) => layoutDay(eventsByDay.get(day.key) ?? []));
-  const window = hourWindow(layouts);
-  const labels = hourLabels(window);
-  const gridHeight = windowHeight(window);
+  // Named `hours`, not `window`: the pointer code below and the gesture hook
+  // both live near the real `window`, and shadowing it is the kind of thing
+  // that reads fine and breaks the first time someone reaches for it.
+  const hours = hourWindow(layouts);
+  const labels = hourLabels(hours);
+  const gridHeight = windowHeight(hours);
   const hasAllDay = layouts.some((layout) => layout.allDay.length > 0);
   const todayIndex = days.findIndex((day) => day.isToday);
-  const nowTop = now && todayIndex >= 0 ? nowOffset(now, window) : null;
+  const nowTop = now && todayIndex >= 0 ? nowOffset(now, hours) : null;
+
+  const { beginCreate, beginMove, beginResize, gesture, gridRef, handlePointerMove, handlePointerUp, preview } =
+    useTimeGridGestures({ days, hours, onCommit: onMoveEvent, onOpenEvent, onPickSlot });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
@@ -102,7 +118,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-border bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.08em] text-(--ui-text-quaternary)"
+            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day
@@ -136,19 +152,38 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
       <div>
         <div className="flex">
           <div className="relative shrink-0" style={{ height: gridHeight, width: GUTTER_WIDTH }}>
-            {labels.map((hour) => (
-              <div
-                className="absolute right-2 -translate-y-1/2 text-[0.625rem] tabular-nums text-(--ui-text-quaternary)"
-                key={hour}
-                style={{ top: offsetFor(hour * 60, window) }}
-              >
-                {hour === 0 ? "" : formatEventTime(`${String(hour).padStart(2, "0")}:00`)}
-              </div>
-            ))}
+            {labels.map((hour, index) => {
+              const { suffix, value } = hourLabel(hour);
+              return (
+                <div
+                  className={cn(
+                    "absolute right-2 flex items-baseline gap-0.5 whitespace-nowrap text-[0.625rem] tabular-nums text-(--ui-text-quaternary)",
+                    // Every label is centred on its own hour rule — except the
+                    // first, which sits ON the top edge, where centring pushed
+                    // half of it up into the all-day strip.
+                    index === 0 ? "translate-y-0" : "-translate-y-1/2",
+                  )}
+                  key={hour}
+                  style={{ top: offsetFor(hour * 60, hours) }}
+                >
+                  <span>{value}</span>
+                  {suffix && <span className="text-[0.5rem] tracking-[0.03em]">{suffix}</span>}
+                </div>
+              );
+            })}
           </div>
 
+          {/* The grid IS the create surface: pressing anywhere that is not an
+              event block starts a new one at the minute pressed, and dragging
+              sets how long it runs. The per-column transparent "add" button
+              that used to sit here could only ever produce an untimed event,
+              because a click target has no idea where inside itself it was hit. */}
           <div
-            className="relative grid flex-1"
+            className={cn("relative grid flex-1", gesture && "cursor-ns-resize select-none")}
+            onPointerDown={beginCreate}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            ref={gridRef}
             style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, height: gridHeight }}
           >
             {/* Hour rules, drawn once across the whole grid rather than per
@@ -158,7 +193,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
                 <div
                   className="absolute inset-x-0 border-t border-border/60"
                   key={hour}
-                  style={{ top: offsetFor(hour * 60, window) }}
+                  style={{ top: offsetFor(hour * 60, hours) }}
                 />
               ))}
             </div>
@@ -167,12 +202,34 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onOpenEvent }: Ti
               <DayColumn
                 key={day.key}
                 layout={layouts[index]}
-                onAdd={onAddOnDate}
                 onOpenEvent={onOpenEvent}
+                onResizeStart={beginResize}
+                onMoveStart={beginMove}
                 day={day}
-                window={window}
+                window={hours}
               />
             ))}
+
+            {/* What the drag currently describes. Move and resize leave the
+                real block in place and show this on top, so the change is
+                visible against where it came from. */}
+            {preview && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute z-20 overflow-hidden rounded-md border border-(--theme-primary) bg-(--theme-primary)/20 px-1.5 py-0.5 text-[0.6875rem] font-medium leading-tight text-(--theme-primary)"
+                style={{
+                  height: Math.max(offsetFor(preview.endMinute, hours) - offsetFor(preview.startMinute, hours), 16),
+                  left: `calc(${(preview.dayIndex / days.length) * 100}% + 2px)`,
+                  top: offsetFor(preview.startMinute, hours),
+                  width: `calc(${(1 / days.length) * 100}% - 4px)`,
+                }}
+              >
+                <span className="block truncate">{preview.label}</span>
+                <span className="block truncate text-[0.625rem] tabular-nums opacity-80">
+                  {formatEventTime(clockOf(preview.startMinute))} – {formatEventTime(clockOf(preview.endMinute))}
+                </span>
+              </div>
+            )}
 
             {/* The now line, drawn last so it sits above the blocks. Only on
                 today's column, and only when the time is inside the window. */}
@@ -200,22 +257,16 @@ interface DayColumnProps {
   day: MonthDay;
   layout: ReturnType<typeof layoutDay> | undefined;
   window: ReturnType<typeof hourWindow>;
-  onAdd: (dateKeyStr: string) => void;
   onOpenEvent: (event: CalendarEvent) => void;
+  onMoveStart: (nativeEvent: React.PointerEvent, event: CalendarEvent) => void;
+  onResizeStart: (nativeEvent: React.PointerEvent, event: CalendarEvent) => void;
 }
 
-function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) {
+function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStart }: DayColumnProps) {
   const timed = layout?.timed ?? [];
 
   return (
     <div className="relative border-l border-border">
-      {/* Click an empty patch to add an event on that day. */}
-      <button
-        aria-label={`Add event on ${formatEventDate(day.key)}`}
-        className="absolute inset-0 h-full w-full cursor-pointer"
-        onClick={() => onAdd(day.key)}
-        type="button"
-      />
       {timed.map((item) => {
         const top = offsetFor(item.startMinute, window);
         const height = offsetFor(item.endMinute, window) - top;
@@ -238,12 +289,26 @@ function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) 
               zIndex: geometry.zIndex,
             }}
           >
+            {/* Still a button, and still opens on a plain click — but the click
+                is decided on pointer UP by the gesture hook, after it knows
+                whether the pointer travelled. An onClick here as well would
+                fire a second time at the end of every drag and open the event
+                the student just finished moving. */}
             <button
               className={cn(
-                "flex size-full flex-col overflow-hidden rounded-md border border-border/70 px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight transition-shadow hover:shadow-md",
+                "flex size-full cursor-grab flex-col overflow-hidden rounded-md border border-border/70 px-1.5 py-1 text-left text-[0.6875rem] font-medium leading-tight transition-shadow hover:shadow-md active:cursor-grabbing",
                 KIND_META[item.event.kind].chip,
               )}
-              onClick={() => onOpenEvent(item.event)}
+              onKeyDown={(keyEvent) => {
+                if (keyEvent.key !== "Enter" && keyEvent.key !== " ") return;
+                keyEvent.preventDefault();
+                onOpenEvent(item.event);
+              }}
+              onPointerDown={(pointerEvent) => {
+                // Stop the grid underneath from also starting a new event.
+                pointerEvent.stopPropagation();
+                onMoveStart(pointerEvent, item.event);
+              }}
               title={item.event.title}
               type="button"
             >
@@ -256,6 +321,19 @@ function DayColumn({ day, layout, window, onAdd, onOpenEvent }: DayColumnProps) 
                 </span>
               )}
             </button>
+            {/* The resize grip. Only on blocks tall enough that it does not eat
+                the whole target — on a short one, dragging the body to a new
+                time is the sane gesture and resizing is the form's job. */}
+            {height > 24 && (
+              <div
+                aria-hidden
+                className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+                onPointerDown={(pointerEvent) => {
+                  pointerEvent.stopPropagation();
+                  onResizeStart(pointerEvent, item.event);
+                }}
+              />
+            )}
           </div>
         );
       })}

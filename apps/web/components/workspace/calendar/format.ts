@@ -52,6 +52,38 @@ export function formatEventTime(time: string): string {
   return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+/** Does this browser's locale write clock times as 3 PM rather than 15:00? */
+const usesMeridiem = (): boolean =>
+  new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ?? false;
+
+export interface HourLabelParts {
+  /** The number, or "Noon". */
+  value: string;
+  /** "AM"/"PM" where the locale uses one, so it can be set smaller. */
+  suffix?: string;
+}
+
+/**
+ * The label down the side of the week and day grids.
+ *
+ * Owner 2026-07-30: "the time stamps on the left look off too". They were
+ * formatted with `formatEventTime`, which is built for an EVENT ("2:30 PM").
+ * On an hour rule the ":00" is always zero, and at the app's text size the
+ * extra three characters pushed "10:00 AM" onto two lines inside the gutter.
+ * An hour marker only ever needs the hour.
+ *
+ * Locale-aware rather than hand-built: a 24-hour locale gets "15" and no
+ * suffix. "Noon" is Apple's word for midday and only makes sense on a
+ * 12-hour clock, so it is spelled out only there.
+ */
+export function hourLabel(hour: number): HourLabelParts {
+  const meridiem = usesMeridiem();
+  if (hour === 12 && meridiem) return { value: "Noon" };
+  const formatted = new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, { hour: "numeric" });
+  const [value, ...rest] = formatted.split(" ");
+  return { value: value ?? String(hour), ...(rest.length > 0 ? { suffix: rest.join(" ") } : {}) };
+}
+
 export function viewLabel(view: CalendarViewMode, cursor: Date): string {
   if (view === "day") {
     return cursor.toLocaleDateString(undefined, {

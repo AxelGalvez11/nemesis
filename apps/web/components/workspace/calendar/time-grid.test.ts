@@ -5,14 +5,23 @@ import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 
 import {
   blockGeometry,
+  clockOf,
   DEFAULT_END_HOUR,
+  DEFAULT_EVENT_MINUTES,
   DEFAULT_START_HOUR,
+  HOUR_HEIGHT,
   hourLabels,
   hourWindow,
   layoutDay,
+  minuteAtOffset,
   minutesOf,
+  movedRange,
   nowOffset,
   offsetFor,
+  rangeFromDrag,
+  resizedRange,
+  SNAP_MINUTES,
+  snapMinute,
   windowHeight,
 } from "./time-grid";
 
@@ -171,4 +180,112 @@ test("a deep pile still leaves the last block readable", () => {
 test("blocks in a pile are each offset from the one below", () => {
   const lefts = [0, 1, 2].map((column) => blockGeometry(column, 3).leftPct);
   assert.ok(lefts[0]! < lefts[1]! && lefts[1]! < lefts[2]!, `expected increasing offsets, got ${lefts}`);
+});
+
+// ── Pointer arithmetic ───────────────────────────────────────────────────────
+// A drag cannot be driven by this project's browser tooling, so these are the
+// only place the click-and-drag behaviour can actually be checked. Everything
+// the components do is a call into the functions below.
+
+const WINDOW = { endHour: 20, startHour: 8 };
+
+test("clicking a pixel position gives back the hour that was drawn there", () => {
+  // The exact inverse of offsetFor: paint 09:00 at some offset, click that
+  // offset, get 09:00. If these two ever disagree, every created event lands
+  // at a different time than the one the student pointed at.
+  for (const minute of [8 * 60, 9 * 60, 13 * 60 + 30, 19 * 60 + 45]) {
+    assert.equal(minuteAtOffset(offsetFor(minute, WINDOW), WINDOW), minute);
+  }
+});
+
+test("a click lands on the nearest quarter hour, not on 9:07", () => {
+  const sevenPastNine = offsetFor(9 * 60 + 7, WINDOW);
+  assert.equal(minuteAtOffset(sevenPastNine, WINDOW), 9 * 60);
+  const twentyPastNine = offsetFor(9 * 60 + 20, WINDOW);
+  assert.equal(minuteAtOffset(twentyPastNine, WINDOW), 9 * 60 + 15);
+});
+
+test("a pointer dragged off the top or bottom of the grid stays inside the day", () => {
+  // The browser keeps reporting coordinates after the cursor leaves the
+  // element, so this is the ordinary case for a fast drag, not an edge case.
+  assert.equal(minuteAtOffset(-500, WINDOW), WINDOW.startHour * 60);
+  assert.equal(minuteAtOffset(99_999, WINDOW), WINDOW.endHour * 60);
+});
+
+test("snapMinute rounds to the quarter hour in both directions", () => {
+  assert.equal(snapMinute(0), 0);
+  assert.equal(snapMinute(7), 0);
+  assert.equal(snapMinute(8), SNAP_MINUTES);
+  assert.equal(snapMinute(541), 540);
+});
+
+test("clockOf writes a time minutesOf can read back", () => {
+  for (const minute of [0, 9 * 60, 13 * 60 + 45, 23 * 60 + 59]) {
+    assert.equal(minutesOf(clockOf(minute)), minute);
+  }
+  assert.equal(clockOf(9 * 60), "09:00", "single-digit hours must keep their leading zero");
+});
+
+test("a click with no drag creates an event the length the grid already draws", () => {
+  // Anything else and the block visibly resizes the moment it is saved.
+  const range = rangeFromDrag(9 * 60, 9 * 60);
+  assert.deepEqual(range, { endTime: clockOf(9 * 60 + DEFAULT_EVENT_MINUTES), time: "09:00" });
+});
+
+test("dragging down picks out the range that was dragged", () => {
+  assert.deepEqual(rangeFromDrag(9 * 60, 10 * 60 + 30), { endTime: "10:30", time: "09:00" });
+});
+
+test("dragging upward is a real gesture, not an inverted event", () => {
+  assert.deepEqual(rangeFromDrag(14 * 60, 12 * 60), { endTime: "14:00", time: "12:00" });
+});
+
+test("a drag too short to be deliberate is treated as a click", () => {
+  const range = rangeFromDrag(9 * 60, 9 * 60 + 5);
+  assert.equal(range.time, "09:00");
+  assert.equal(range.endTime, clockOf(9 * 60 + DEFAULT_EVENT_MINUTES));
+});
+
+test("moving an event keeps its length", () => {
+  const moved = movedRange({ ...event("Lecture", "09:00"), endTime: "10:30" }, 60);
+  assert.deepEqual(moved, { endTime: "11:30", time: "10:00" });
+});
+
+test("an event with no end time keeps the length it was drawn at when moved", () => {
+  const moved = movedRange(event("Lecture", "09:00"), 120);
+  assert.deepEqual(moved, { endTime: clockOf(11 * 60 + DEFAULT_EVENT_MINUTES), time: "11:00" });
+});
+
+test("an event cannot be dragged off the end of its own day", () => {
+  // The row claims one date. Sliding past midnight would put it on a day the
+  // data does not say it belongs to.
+  const moved = movedRange({ ...event("Lecture", "22:00"), endTime: "23:00" }, 10 * 60);
+  assert.ok(moved);
+  assert.equal(moved.endTime, "23:59");
+  assert.equal(moved.time, "22:59");
+});
+
+test("an all-day event has no position to move", () => {
+  assert.equal(movedRange(event("Essay due"), 60), null);
+});
+
+test("resizing changes the end and leaves the start alone", () => {
+  const resized = resizedRange(event("Lab", "13:00"), 15 * 60 + 30);
+  assert.deepEqual(resized, { endTime: "15:30", time: "13:00" });
+});
+
+test("an end dragged above its start collapses instead of inverting", () => {
+  // A negative-length block sorts wrongly in layoutDay and paints upward.
+  const resized = resizedRange(event("Lab", "13:00"), 9 * 60);
+  assert.deepEqual(resized, { endTime: clockOf(13 * 60 + SNAP_MINUTES), time: "13:00" });
+});
+
+test("a dragged-out range is one layoutDay reads back at the same length", () => {
+  // The round trip that matters: drag it, store it, draw it. HOUR_HEIGHT is
+  // the shared scale, so a 90-minute drag must come back 90 minutes tall.
+  const range = rangeFromDrag(9 * 60, 10 * 60 + 30);
+  const [placed] = layoutDay([{ ...event("Seminar", range.time), endTime: range.endTime }]).timed;
+  assert.ok(placed);
+  assert.equal(placed.endMinute - placed.startMinute, 90);
+  assert.equal(offsetFor(placed.endMinute, WINDOW) - offsetFor(placed.startMinute, WINDOW), HOUR_HEIGHT * 1.5);
 });
