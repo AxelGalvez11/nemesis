@@ -280,28 +280,24 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: b
 
 function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
   return (
-    <SettingsPage title="Usage" description="How much of your plan you've used — questions per day, per week, and voice-recording minutes.">
+    <SettingsPage title="Usage" description="How much of this month's and today's allowance you have used.">
       <SettingsCard>
         {bars === null ? (
           <p className="text-xs text-(--ui-text-tertiary)">Loading usage…</p>
         ) : bars.length === 0 ? (
           <p className="text-xs text-(--ui-text-tertiary)">No measured usage is available yet.</p>
         ) : (
-          bars.map((bar) => {
-            const percentage = bar.unlimited ? 0 : bar.limit > 0 ? Math.min(100, Math.round((bar.used / bar.limit) * 100)) : 0;
-            return (
-              <div className="border-b border-(--ui-stroke-tertiary) py-3 first:pt-1 last:border-b-0 last:pb-1" key={bar.key}>
-                <div className="mb-1 flex items-center justify-between gap-4">
-                  <span className="text-xs font-medium">{bar.label}</span>
-                  <span className="text-sm font-semibold tabular-nums">{bar.unlimited ? "Unlimited" : `${percentage}%`}</span>
-                </div>
-                <p className="mb-2 text-[0.7rem] text-(--ui-text-tertiary)">{bar.detail}</p>
-                <div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
-                  <div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${bar.unlimited ? 100 : percentage}%`, opacity: bar.unlimited ? 0.25 : 1 }} />
-                </div>
+          bars.map((bar) => (
+            <div className="border-b border-(--ui-stroke-tertiary) py-3 first:pt-1 last:border-b-0 last:pb-1" key={bar.key}>
+              <div className="mb-2 flex items-center justify-between gap-4">
+                <span className="text-xs font-medium">{bar.label}</span>
+                <span className="text-sm font-semibold tabular-nums">{bar.unlimited ? "Unlimited" : `${bar.percent}%`}</span>
               </div>
-            );
-          })
+              <div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
+                <div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${bar.unlimited ? 100 : bar.percent}%`, opacity: bar.unlimited ? 0.25 : 1 }} />
+              </div>
+            </div>
+          ))
         )}
       </SettingsCard>
     </SettingsPage>
