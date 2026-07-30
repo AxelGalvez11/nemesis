@@ -44,6 +44,15 @@ const RECORDINGS_FOLDER = "Nemesis/Recordings";
  *  session still carrying this gets renamed to the recording's own title. */
 const RECORDED_SESSION_TITLE = "Recorded session";
 
+/** An id for a message or artifact this tab is about to create. Guarded because
+ *  crypto.randomUUID is absent on http:// origins in some browsers, and an
+ *  exception here would take out the whole recording follow-up. */
+function newLocalId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
@@ -366,6 +375,37 @@ export function SessionChat() {
     // not creating one when the recorder opened. create() also selects the new
     // session and hands it back, so this names it and opens it in one step.
     const targetId = selectedId ?? sessionsStore.create(RECORDED_SESSION_TITLE).id;
+
+    // THE CARD GOES UP FIRST, BEFORE ANY OF THE WORK BELOW.
+    //
+    // Everything that follows is awaited — a whole compose pass over the
+    // transcript, then the artifact write, then the Library write — and until
+    // this callback was changed NOTHING was posted until all of it finished. So
+    // the recorder closed, the thread appeared empty for the length of an LLM
+    // call, and the student's recording looked like it had been thrown away
+    // (owner 2026-07-30: "when i 'saved to chat' the chat went back to blank").
+    //
+    // The placeholder carries the transcript it already has, so even the pending
+    // card is backed by something real rather than being pure decoration.
+    const pendingMessageId = newLocalId();
+    sessionsStore.appendPending(targetId, {
+      at: new Date().toISOString(),
+      content: "Recording captured. Writing up your notes…",
+      id: pendingMessageId,
+      outputs: [{
+        durationSeconds: draft.durationSeconds,
+        id: newLocalId(),
+        kind: "recording",
+        // Not the finished title: that is written by the same pass that writes
+        // the notes and does not exist yet. Renaming under the student as it
+        // resolves is honest — it is what actually happens.
+        polish: "pending",
+        title: "Recording",
+        transcript: draft.transcript,
+      }],
+      role: "assistant",
+    });
+
     void (async () => {
       // ONE compose pass over the whole transcript (owner 2026-07-27). There are
       // no live notes to fall back on any more — nothing is written during the
@@ -408,8 +448,11 @@ export function SessionChat() {
       // The artifact also lands in the chat itself as a clickable card
       // (owner ask 2026-07-20) — message outputs sync to cloud meta.
       if (!targetId) return;
-      sessionsStore.appendMessage(targetId, {
-        at: new Date().toISOString(),
+      // RESOLVES the placeholder rather than appending beside it — appending
+      // would leave the pulsing card on screen forever, next to the finished
+      // one. This is also the first and only time this message reaches the
+      // cloud, which is what keeps a half-written state from being persisted.
+      sessionsStore.resolvePending(targetId, pendingMessageId, {
         // The silence gate's saving is reported, not hidden: the student's
         // allowance was charged for the shorter audio, so they should be able
         // to reconcile a 60-minute lecture reading as 45 minutes.
@@ -422,7 +465,6 @@ export function SessionChat() {
           draft.silenceSkipped ? `\n\n${draft.silenceSkipped}.` : "",
         ].join(""),
         outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-        role: "assistant",
       });
     })().catch((cause) => {
       // Was `.catch(() => undefined)`. Anything that threw between saving the
@@ -431,10 +473,14 @@ export function SessionChat() {
       // why. Say so in the thread instead of dropping it.
       console.error("recording follow-up failed", cause);
       if (!targetId) return;
-      sessionsStore.appendMessage(targetId, {
-        at: new Date().toISOString(),
+      // Also RESOLVES rather than appends. A throw used to be the one path that
+      // left the placeholder untouched, so the student would have been told the
+      // write-up failed while a card pulsed away beside it, apparently still
+      // working. `outputs: []` clears the pending card; the transcript is not
+      // lost, it is on the artifact this failure did not reach.
+      sessionsStore.resolvePending(targetId, pendingMessageId, {
         content: "Your recording was saved, but writing it up failed. The audio and transcript are safe — ask me to write the notes and I will use them.",
-        role: "assistant",
+        outputs: [],
       });
     });
   }, [createArtifact, preview, selectedId, uid]);
