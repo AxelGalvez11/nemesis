@@ -3,5 +3,6 @@
   "framework": "nextjs",
   "crons": [
     { "path": "/api/cron/deepseek-balance", "schedule": "0 14 * * *" }
-  ]
+  ],
+  "ignoreCommand": "npx --yes turbo-ignore @nemesis/web"
 }
