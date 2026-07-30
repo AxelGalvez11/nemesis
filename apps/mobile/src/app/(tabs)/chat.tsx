@@ -53,12 +53,14 @@ import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { PhotoCaptureSheet } from "@/components/PhotoCaptureSheet";
 import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
+import { resolveArtifacts } from "@/lib/artifact-timeline";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
 import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
+import { MAX_MESSAGES_PER_THREAD, mergeMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
@@ -117,11 +119,47 @@ const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
 // so the choice survives app launches and chat switches.
 const effortStoreKey = (uid: string) => `nemesis_chat_effort_v1_${uid}`;
 
+/**
+ * Apply a BACKGROUND refresh (the foreground pull and the 8-second poll) to
+ * what is on screen, without losing anything this device appended while the
+ * fetch was in flight.
+ *
+ * 🔴 THESE TWO REFRESHES USED TO REPLACE STATE OUTRIGHT, AND THAT COULD BLANK
+ * THE SCREEN. loadThreadMessages snapshots the local cache the moment it is
+ * called and only merges the cloud into THAT snapshot, so a poll already in
+ * flight when a recording is saved comes back describing a thread the save
+ * never happened in. On a brand-new chat — the usual case, since you open a
+ * chat and hit record — that snapshot is empty, so the card the student just
+ * watched appear vanished and the conversation looked untouched (owner
+ * 2026-07-30: "the chat went back to blank"). It refilled on the next poll,
+ * which is why it read as a flicker rather than lost work.
+ *
+ * `sendingRef` already guarded the same hazard for a chat turn in flight; a
+ * recording save is simply not a chat turn, so nothing covered it. Merging
+ * rather than replacing covers every appender at once, including any future
+ * one that also forgets to raise a flag.
+ *
+ * Argument order matters: mergeMessages prefers its SECOND list on a shared
+ * id, so `current` goes second and local state wins. Reversing it would let a
+ * poll drag a recording card back to "still transcribing" after its notes had
+ * already landed.
+ */
+function applyRefresh(current: ChatMsg[], loaded: ChatMsg[]): ChatMsg[] {
+  return mergeMessages(loaded, current).slice(-MAX_MESSAGES_PER_THREAD);
+}
+
 interface Row {
   id: string;
   kind: "error" | "msg" | "thinking";
   msg?: ChatMsg;
   errorText?: string;
+  /** The artifact cards this row draws — NOT `msg.outputs`. A recording is
+   *  written into the conversation twice (once on save, once when its notes
+   *  land), so the raw per-message lists would draw the same recording twice,
+   *  the first copy frozen at "pending" forever. lib/artifact-timeline.ts
+   *  resolves them to one card per artifact at its newest state; this is where
+   *  that answer rides. */
+  outputs?: ChatOutput[];
   /** Set only on the row that is streaming RIGHT NOW: how long this turn spent
    *  working before its first word, shown as a small "Thought for Xs" note. It
    *  is deliberately not part of ChatMsg — nothing is written to the saved
@@ -399,7 +437,7 @@ export default function ChatScreen() {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active" || sendingRef.current) return; // never clobber an in-flight turn
       void loadThreadMessages(uid, threadId).then((loaded) => {
-        if (epochRef.current === epoch) setMessages(loaded);
+        if (epochRef.current === epoch) setMessages((current) => applyRefresh(current, loaded));
       });
     });
     return () => sub.remove();
@@ -975,7 +1013,7 @@ export default function ChatScreen() {
       const pull = () => {
         if (sendingRef.current) return;
         void loadThreadMessages(uid, threadId).then((loaded) => {
-          if (epochRef.current === epoch) setMessages(loaded);
+          if (epochRef.current === epoch) setMessages((current) => applyRefresh(current, loaded));
         });
       };
       pull();
@@ -996,7 +1034,15 @@ export default function ChatScreen() {
     );
   }
 
-  const rows: Row[] = messages.map((msg, index) => ({ id: `m-${index}`, kind: "msg", msg }));
+  // One card per artifact, at its newest state, in the first place it appeared
+  // — see lib/artifact-timeline.ts for why a recording otherwise draws two.
+  const artifacts = resolveArtifacts(messages, threadOutputs);
+  const rows: Row[] = messages.map((msg, index) => ({
+    id: `m-${index}`,
+    kind: "msg",
+    msg,
+    outputs: artifacts.perMessage[index] ?? [],
+  }));
   if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
   if (sending) {
     // Dots until the first chunk lands, then the SAME "msg" row shape as a
@@ -1009,8 +1055,7 @@ export default function ChatScreen() {
     );
   }
   const hasContent = rows.length > 0;
-  const messageOutputIds = new Set(messages.flatMap((message) => message.outputs?.map((output) => output.id) ?? []));
-  const headerOutputs = threadOutputs.filter((output) => !messageOutputIds.has(output.id));
+  const headerOutputs = artifacts.header;
   // Composer size follows the KEYBOARD, not the conversation (owner 2026-07-22:
   // "when users have keyboard open, the chat composer should be the big version,
   // but when keyboard is down the chatcomposer should have the smaller one").
@@ -1168,7 +1213,7 @@ export default function ChatScreen() {
                     {item.msg!.sources?.length ? (
                       <SourcesPill sources={item.msg!.sources} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
                     ) : null}
-                    {item.msg!.outputs?.length ? <DeliverableCardStack outputs={item.msg!.outputs} onSelect={openDeliverable} /> : null}
+                    {item.outputs?.length ? <DeliverableCardStack outputs={item.outputs} onSelect={openDeliverable} /> : null}
                   </Reanimated.View>
                 )}
               </View>
