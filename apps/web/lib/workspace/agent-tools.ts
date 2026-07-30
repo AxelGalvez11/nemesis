@@ -47,7 +47,7 @@ export const AGENT_TOOLS = [
       description: "Read one Library note's full text by its path (get the path from search_library).",
       name: "read_library_note",
       parameters: {
-        properties: { path: { description: "The note's path, e.g. 'Pharmacology/ACE inhibitors.md'", type: "string" } },
+        properties: { path: { description: "The note's path, e.g. 'Contract law/Consideration.md'", type: "string" } },
         required: ["path"],
         type: "object",
       },
@@ -61,7 +61,7 @@ export const AGENT_TOOLS = [
       parameters: {
         properties: {
           content: { description: "Markdown body of the note", type: "string" },
-          folder: { description: "Optional folder path like 'Pharmacology/Unit 3'", type: "string" },
+          folder: { description: "Optional folder path like 'Contract law/Unit 3'", type: "string" },
           title: { description: "Note title", type: "string" },
         },
         required: ["title", "content"],
@@ -220,7 +220,7 @@ export const AGENT_TOOLS = [
             },
             type: "array",
           },
-          deck_name: { description: "Deck name, e.g. 'Cardiovascular pharmacology'", type: "string" },
+          deck_name: { description: "Deck name, e.g. 'Constitutional law'", type: "string" },
         },
         required: ["deck_name", "cards"],
         type: "object",
@@ -249,7 +249,7 @@ export const AGENT_TOOLS = [
             },
             type: "array",
           },
-          title: { description: "Test title, e.g. 'ACE inhibitors practice test'", type: "string" },
+          title: { description: "Test title, e.g. 'Commerce clause practice test'", type: "string" },
         },
         required: ["title", "questions"],
         type: "object",

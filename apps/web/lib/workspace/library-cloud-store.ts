@@ -21,32 +21,36 @@ import {
 import { titleFromPath, type CloudLibraryNote } from "./library-tree";
 import { fetchAllRows } from "./supabase-paging";
 
+// Sample notes for the signed-out preview. Nemesis is field-agnostic (see CLAUDE.md), so
+// these deliberately span unrelated disciplines — a reader should never be able to guess
+// "what subject this app is for" from the demo content. They also appear in every
+// screenshot taken from the dev-preview harness, so they double as marketing material.
 const PREVIEW_NOTES: CloudLibraryNote[] = [
   {
-    id: "preview-ace",
-    path: "Pharmacology/Cardiovascular/ACE inhibitors.md",
-    title: "ACE inhibitors",
+    id: "preview-commerce",
+    path: "Constitutional law/Commerce power/The commerce clause.md",
+    title: "The commerce clause",
     updatedAt: "",
     createdAt: "",
     content:
-      "# ACE inhibitors\n\n**Mechanism:** block angiotensin-converting enzyme → less angiotensin II → vasodilation and less aldosterone.\n\n## Key points\n- First-line for hypertension and heart failure\n- Classic side effect: a dry cough (bradykinin-mediated)\n\n## Related\n- Contrasts with: [[ARBs]]\n- Applied in: [[Lisinopril case]]",
+      "# The commerce clause\n\n**Rule:** Congress may regulate the channels of interstate commerce, its instrumentalities, and activities that substantially affect it.\n\n## Key points\n- The substantial-effects prong is the broadest of the three\n- Aggregation: small local acts count once you add them up\n\n## Related\n- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]",
   },
   {
-    id: "preview-beta",
-    path: "Pharmacology/Cardiovascular/Beta blockers.md",
-    title: "Beta blockers",
+    id: "preview-beams",
+    path: "Structural engineering/Mechanics/Bending stress.md",
+    title: "Bending stress",
     updatedAt: "",
     createdAt: "",
     content:
-      "# Beta blockers\n\nReduce heart rate and contractility (beta-1 blockade).\n\n| Agent | Selectivity | NAPLEX weight |\n| --- | --- | --- |\n| Metoprolol | Beta-1 selective | High |\n| Propranolol | Non-selective | High |",
+      "# Bending stress\n\nStress varies linearly from the neutral axis: σ = My / I.\n\n| Section | Second moment I | Typical use |\n| --- | --- | --- |\n| Rectangle | bh³ / 12 | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
   },
   {
-    id: "preview-immunology",
-    path: "Immunology/01 Intro to Immunology.md",
-    title: "01 Intro to Immunology",
+    id: "preview-baroque",
+    path: "Art history/01 Intro to the Baroque.md",
+    title: "01 Intro to the Baroque",
     updatedAt: "",
     createdAt: "",
-    content: "# Introduction to Immunology\n\n- Innate vs. adaptive immunity — the two arms\n- Key cells: leukocytes, lymphocytes, phagocytes",
+    content: "# Introduction to the Baroque\n\n- Tenebrism vs. chiaroscuro — the two lighting arguments\n- Key figures: Caravaggio, Gentileschi, Bernini",
   },
 ];
 

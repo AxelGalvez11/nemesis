@@ -151,7 +151,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
             <>
               <label className="grid gap-1.5 text-xs font-medium">
                 Deck name
-                <Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Cardiovascular pharmacology" value={name} />
+                <Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Constitutional law" value={name} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 Group <span className="font-normal text-muted-foreground">optional</span>
@@ -178,7 +178,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
                 <>
                   <label className="grid gap-1.5 text-xs font-medium">
                     Tags <span className="font-normal text-muted-foreground">optional</span>
-                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
+                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#week-4 #exam-2" value={tags} />
                   </label>
                   <OcclusionEditor
                     deckId={deckId}
@@ -221,7 +221,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
                   </label>
                   <label className="grid gap-1.5 text-xs font-medium">
                     Tags <span className="font-normal text-muted-foreground">optional</span>
-                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
+                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#week-4 #exam-2" value={tags} />
                   </label>
                 </>
               )}
