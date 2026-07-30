@@ -33,5 +33,15 @@ jobs:
         run: deno test --allow-env supabase/functions/ask/
       - name: Deno unit tests (shared cost attribution)
         run: deno test --allow-env supabase/functions/_shared/
+      # --allow-read is for no-external-purchase.test.ts, which reads the app's
+      # own source to prove no App Store 3.1.1(a) purchase link has crept back in.
+      #
+      # --ignore=apps/mobile/src/app is NOT a skipped test directory: `deno test`
+      # treats any file literally named `test.tsx` as a test file, and the Tests
+      # SCREEN is `src/app/test.tsx` (an expo-router route, so it cannot be
+      # renamed without changing the in-app URL). Deno tried to load a React
+      # screen, failed on the `@/` path alias, and aborted the WHOLE run before a
+      # single test executed. No real test lives under src/app — all 68 are
+      # elsewhere — so ignoring that folder costs nothing and restores the suite.
       - name: Deno unit tests (mobile app — incl. the analytics privacy core)
-        run: deno test --no-check --allow-env apps/mobile/src/
+        run: deno test --no-check --allow-env --allow-read --ignore=apps/mobile/src/app apps/mobile/src/
