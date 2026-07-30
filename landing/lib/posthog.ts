@@ -28,10 +28,18 @@ const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.postho
 // quietly off and poison production numbers with preview traffic.
 const ROOT_DOMAIN = "enternemesis.com";
 
+/**
+ * Pure so it can be tested. The `.${ROOT_DOMAIN}` suffix (rather than a bare `endsWith`)
+ * is load-bearing: a bare suffix check would also admit `evil-enternemesis.com` and let a
+ * look-alike domain write into our analytics.
+ */
+export function isReportingHostname(hostname: string): boolean {
+  return hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`);
+}
+
 function isReportingHost(): boolean {
   if (typeof window === "undefined") return false;
-  const { hostname } = window.location;
-  return hostname === ROOT_DOMAIN || hostname.endsWith(`.${ROOT_DOMAIN}`);
+  return isReportingHostname(window.location.hostname);
 }
 
 let started = false;
