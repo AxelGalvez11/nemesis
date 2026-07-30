@@ -21,7 +21,13 @@ const SCALE_STORAGE_KEY = "nemesis.web.scale.v2";
 // nav rail) and the Library sidebar (whether to offer the Back exit) — and the
 // settings modal renders over the workspace, so a change must apply without a
 // reload. Same shape as theme/accent/scale, which are app-chrome for the same
-// reason. Default true keeps the shipped full-screen behaviour.
+// reason.
+//
+// Owner 2026-07-30: "the default for library should be 'keep sidebar'". So the
+// default is now FALSE, and the stored-value test below reads `=== "true"` —
+// only an explicit opt-in gives Library the whole left side. Getting that
+// sentinel backwards is the way this change silently does nothing: the mount
+// effect runs after the useState default and would overwrite it.
 const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 
 // Owner 2026-07-28: "i need the default scaling size to match chatgpt".
@@ -40,12 +46,17 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 // 16px and the nav at 13px, where ChatGPT's default is 16px THROUGHOUT. So 100%
 // now MEANS ChatGPT's size — SCALE_FACTOR maps it onto a 20px root, which is
 // what measured equal to their 16px controls (our nav is 0.8125rem of root).
-// The default then sits one step above that, deliberately larger than ChatGPT.
 //
-//   dial 100% -> root 20px  -> nav 16.25px  (ChatGPT parity)
-//   dial 115% -> root 23px  -> nav 18.7px   (the new default)
+// Owner 2026-07-30: "i need the default size for the webapp to be 100% not
+// 115%." The RECALIBRATION stands and is what makes 100% the right number to
+// land on — the dial reads 100% and the app renders at ChatGPT's size, which is
+// the same size the 115% step was reaching for by a different route. Only the
+// extra step above parity is gone.
+//
+//   dial 100% -> root 20px  -> nav 16.25px  (ChatGPT parity, the default)
+//   dial 115% -> root 23px  -> nav 18.7px   (still one step up the dial)
 const SCALE_FACTOR = 1.25;
-const DEFAULT_SCALE = 115;
+const DEFAULT_SCALE = 100;
 
 /** Percentage to hand the root element. Kept next to SCALE_FACTOR so the two can
  *  never drift — every writer goes through this. */
@@ -81,7 +92,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   theme: "light",
   accent: "default",
   scale: DEFAULT_SCALE,
-  libraryFullScreen: true,
+  libraryFullScreen: false,
   setTheme: () => {},
   setAccent: () => {},
   setScale: () => {},
@@ -110,7 +121,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const [accent, setAccentState] = useState<AccentPreference>("default");
   const [scale, setScaleState] = useState(DEFAULT_SCALE);
-  const [libraryFullScreen, setLibraryFullScreenState] = useState(true);
+  const [libraryFullScreen, setLibraryFullScreenState] = useState(false);
 
   useEffect(() => {
     // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
@@ -134,9 +145,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setScaleState(nextScale);
     applyAccent(nextAccent);
     document.documentElement.style.fontSize = `${scaleToRootPercent(nextScale)}%`;
-    // Only an explicit "false" opts out; anything else (unset, malformed) keeps
-    // the shipped full-screen default.
-    setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) !== "false");
+    // Only an explicit "true" opts IN to full screen; anything else (unset,
+    // malformed) keeps the nav rail beside Library. Inverted 2026-07-30 with
+    // the default — see the storage-key comment.
+    setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) === "true");
   }, []);
 
   useEffect(() => {
