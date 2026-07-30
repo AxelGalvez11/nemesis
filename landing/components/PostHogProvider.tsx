@@ -1,42 +1,21 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
-import { initPosthog, phCapture } from "@/lib/posthog";
+import { useEffect } from "react";
+import { initPosthog } from "@/lib/posthog";
 
-// Starts analytics once in the browser and records a pageview on every route change.
-// Next.js soft navigations (Home -> Pricing) don't reload the page, so the pageview has to be
-// sent explicitly or the whole site would look like one visit. Mirrors the app's provider so
-// both halves of the funnel count a "page" the same way. useSearchParams forces a Suspense
-// boundary: without it the entire page opts out of static rendering.
+// Starts analytics once in the browser. That is all it does now.
+//
+// It used to also render a <PageView> child inside a <Suspense> boundary that read
+// usePathname/useSearchParams and sent $pageview by hand. That effect never fired on the
+// deployed site, and because autocapture is off too, the result was an analytics install
+// that recorded nothing at all: cookie written, config fetched, zero events sent, and no
+// error to notice. Pageviews are posthog-js's job again (capture_pageview:
+// 'history_change' in lib/posthog.ts), which also covers App Router soft navigations
+// without this component needing to know anything about routing.
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initPosthog();
   }, []);
 
-  return (
-    <>
-      <Suspense fallback={null}>
-        <PageView />
-      </Suspense>
-      {children}
-    </>
-  );
-}
-
-function PageView() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    if (!pathname) return;
-    let url = window.location.origin + pathname;
-    const qs = searchParams?.toString();
-    // Campaign tags (utm_*) ride in the query string, which is how we learn whether a visitor
-    // came from TikTok, YouTube, or a link someone shared.
-    if (qs) url += `?${qs}`;
-    phCapture("$pageview", { $current_url: url });
-  }, [pathname, searchParams]);
-
-  return null;
+  return <>{children}</>;
 }
