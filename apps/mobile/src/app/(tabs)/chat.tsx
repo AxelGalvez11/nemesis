@@ -254,6 +254,18 @@ export default function ChatScreen() {
   // the vision read. It spins the SEND BUTTON, never the photo (see Composer).
   const [photoReading, setPhotoReading] = useState(false);
   const photoReadingRef = useRef(false);
+  // Cancels a read that is already in flight. The read cannot be un-started, so
+  // this is what stops its RESULT from acting: sendPhotoTurn takes a number on
+  // the way in and refuses to send if that number has moved by the time the
+  // upload comes back. Bumped wherever the shot stops being the one the student
+  // means — removed, replaced by a newer shot, or left behind by a thread switch.
+  //
+  // Without it, pressing ✕ during the upload still fired the turn a moment later,
+  // carrying the picture they had just thrown away AND clearing whatever they had
+  // typed since. The old code had this safeguard as `queuedPhotoSendRef = null`
+  // inside clearAttachment; the rewrite dropped it, which is exactly the sort of
+  // thing that survives a typecheck and a green test run.
+  const photoSendTokenRef = useRef(0);
   const [photo, setPhoto] = useState<ReadPhoto | null>(null);
   const [photoSaved, setPhotoSaved] = useState<"idle" | "saving" | "saved">("idle");
   // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
@@ -346,6 +358,14 @@ export default function ChatScreen() {
     sendingRef.current = false;
     setSending(false);
     setStreamingText("");
+    // A photo read started in the thread being left behind. send()'s SYNCHRONOUS
+    // body is not epoch-guarded (only its .then/.finally are), so letting that
+    // read finish would write the old thread's history into the thread now on
+    // screen. The draft goes with the thread it was taken in.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
+    setPhotoDraft(null);
     // The thinking preview belongs to the turn that was in flight, so it dies
     // with it — an in-flight reply whose thread was switched away keeps writing
     // into reasoningRef until its epoch check fails, and none of that belongs to
@@ -514,6 +534,10 @@ export default function ChatScreen() {
     setPhoto(null);
     setPhotoSaved("idle");
     setPhotoDraft(null);
+    // A read still running for the picture just removed must not send anything.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
   }, []);
 
   /** Send a turn.
@@ -716,6 +740,11 @@ export default function ChatScreen() {
   const handlePhoto = useCallback((uri: string) => {
     setCameraOpen(false);
     setPhotoDraft(uri);
+    // A read still running for the PREVIOUS shot must not send this one's turn,
+    // nor restore the old picture over this one.
+    photoSendTokenRef.current += 1;
+    photoReadingRef.current = false;
+    setPhotoReading(false);
     // A new shot replaces whatever the last one left behind — the finished
     // photo kept around for "Save to Library", and its save state.
     setPhoto(null);
@@ -735,9 +764,16 @@ export default function ChatScreen() {
     photoReadingRef.current = true;
     setPhotoReading(true);
     const typed = input;
+    // Claim this read. Anything that invalidates the shot bumps the token, and
+    // every line after the await is gated on it still being ours.
+    const token = (photoSendTokenRef.current += 1);
     void (async () => {
       try {
         const read = await storeAndReadPhoto(uid, uri);
+        // Removed, replaced, or a different thread now. The upload already
+        // happened — that cannot be undone — but nothing else may follow: no
+        // attachment restored, no turn sent, no typed text cleared.
+        if (photoSendTokenRef.current !== token) return;
         setPhoto(read);
         // photoAttachmentTitle prefixes "Photo:" — the model is never told a
         // photograph is a Library note, because where a fact came from changes
@@ -764,10 +800,18 @@ export default function ChatScreen() {
       } catch (cause) {
         // api/photos.ts throws sentences, so this reaches the screen as-is. The
         // draft and the typed question both survive, so it can just be sent again.
+        // Silent when the shot was abandoned: an error about a picture the
+        // student already removed is noise about work they cancelled.
+        if (photoSendTokenRef.current !== token) return;
         setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
       } finally {
-        photoReadingRef.current = false;
-        setPhotoReading(false);
+        // Only if this read is still the current one — a newer attach may have
+        // already set these for ITS read, and clearing them here would let two
+        // reads run at once.
+        if (photoSendTokenRef.current === token) {
+          photoReadingRef.current = false;
+          setPhotoReading(false);
+        }
       }
     })();
   }, [uid, photoDraft, input, send]);
