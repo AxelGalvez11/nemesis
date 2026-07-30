@@ -318,8 +318,10 @@ export default function Home() {
               <summary>Do you sell my data or train on my notes?</summary>
               <p>
                 No and no. No ads, no selling your data, no training on your
-                content. We do measure which pages of this website get read, and
-                nothing more &mdash; see <a href="/privacy">privacy</a>.
+                content. On this website we do measure which pages get read and
+                which buttons get pressed, so we know what is worth writing; we
+                do not record your screen or capture what you type. See{" "}
+                <a href="/privacy">privacy</a>.
               </p>
             </details>
             <details>
