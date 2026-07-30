@@ -83,6 +83,7 @@ function Bounce({
   disabled,
   style,
   accessibilityLabel,
+  accessibilityHint,
   testID,
   hitSlop,
   children,
@@ -91,6 +92,9 @@ function Bounce({
   disabled?: boolean;
   style?: object | object[];
   accessibilityLabel: string;
+  /** For a control whose consequence is not obvious from its label — Stop, whose
+   *  label cannot say "and anything already saved stays saved". */
+  accessibilityHint?: string;
   testID?: string;
   hitSlop?: number;
   children: ReactNode;
@@ -104,6 +108,7 @@ function Bounce({
       disabled={disabled}
       hitSlop={hitSlop}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       testID={testID}
       onPressIn={() => {
         scale.value = withSpring(0.85, spring);
@@ -191,6 +196,7 @@ export function Composer({
   onEffortToggle,
   attachment,
   attached = false,
+  onStop,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -242,6 +248,11 @@ export function Composer({
    *  lingers to offer "Save to Library" — and a lingering chip must not make an
    *  empty box look sendable. */
   attached?: boolean;
+  /** Cancel the turn in flight. Wire it and the send button becomes a Stop square
+   *  while `sending` — without it the button just goes inert, which is what the
+   *  phone did before (owner 2026-07-30: "there is also no pause button for once
+   *  it begins thinking and doing"). */
+  onStop?: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -405,20 +416,27 @@ export function Composer({
   // rather than stack, because both are accent-filled and two accent circles
   // side by side read as one control split in half. Record only appears where
   // record mode is actually wired up; other callers just get Send-or-nothing.
+  // Mid-flight the button becomes STOP, and pressing it cancels the turn. That is
+  // the whole affordance the phone was missing: once a turn was away the student
+  // could only watch, even when they could already see it had misunderstood them.
+  // Falls back to an inert spinner when no onStop is wired (every non-chat caller).
+  const stopping = action === "sending" && Boolean(onStop);
   const sendOrRecordButton = hasDraft ? (
     <Bounce
-      style={[styles.round, styles.sendOn, !canSend && styles.controlOff]}
-      onPress={canSend ? onSend : undefined}
-      disabled={!canSend}
-      accessibilityLabel="Send"
-      testID="composer-send"
+      style={[styles.round, styles.sendOn, action === "sending" && !stopping && styles.controlOff]}
+      onPress={stopping ? onStop : canSend ? onSend : undefined}
+      disabled={!canSend && !stopping}
+      accessibilityLabel={stopping ? "Stop" : "Send"}
+      accessibilityHint={stopping ? "Stops this answer. Anything already saved stays saved." : undefined}
+      testID={stopping ? "composer-stop" : "composer-send"}
     >
-      {/* The waiting lives HERE, on the button that was pressed — never as an
-          overlay on the photo tile. A spinner on the picture reads as "this is
-          already being analysed", which is precisely what the owner objected to
-          (2026-07-30): nothing should be read out of a photograph until the
-          student has actually sent it. */}
-      {action === "sending" ? (
+      {/* Waiting shows HERE, on the button that was pressed — never as an overlay
+          on the photo tile. A spinner on the picture reads as "this is already
+          being analysed", which is precisely what the owner objected to
+          (2026-07-30): nothing is read out of a photograph until they send it. */}
+      {stopping ? (
+        <StopGlyph size={16} color={c.onAccent} />
+      ) : action === "sending" ? (
         <ActivityIndicator color={c.onAccent} size="small" />
       ) : (
         <ArrowUpIcon size={18} color={c.onAccent} />

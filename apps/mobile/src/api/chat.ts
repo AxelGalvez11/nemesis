@@ -24,7 +24,7 @@ import {
   shouldRecallBrain,
 } from "@nemesis/shared";
 import { supabase } from "./supabase";
-import { createNoteWithContent, updateNoteContent } from "./cloudLibrary";
+import { createNoteWithContent, renameNoteById, updateNoteContent } from "./cloudLibrary";
 import {
   budgetResetKind,
   buildAttachmentContext,
@@ -52,7 +52,8 @@ import {
   parseLiveNotes,
   splitFinalNote,
 } from "@/lib/live-notes";
-import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
+import { isDefaultRecordingTitle, mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
+import { folderOf } from "@/lib/library-paths";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import { base64ToBytes, bytesToBase64, readWav, trimWavSilence } from "@/lib/wav-trim";
 import { encodeToM4A } from "../../modules/nemesis-audio-encoder";
@@ -67,6 +68,7 @@ import {
   deriveMessageId,
   emptyStore,
   ensureMessageIds,
+  withoutPendingRecordings,
   generateUuidV4,
   getThread,
   isValidThreadId,
@@ -223,6 +225,7 @@ async function postChatCompletion(
   onDelta?: CompletionDeltaHandler,
   onReasoning?: CompletionDeltaHandler,
   tools?: readonly unknown[],
+  signal?: AbortSignal,
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
   if (!key) return { budgetReset: null, errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
@@ -241,6 +244,11 @@ async function postChatCompletion(
       body: payload,
       headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
+      // What makes Stop physically possible. expo/fetch honours this and calls
+      // the native request.cancel(); without it the only "cancellation" the phone
+      // had was the epoch guard, which merely ignores a reply that is still
+      // arriving and still being paid for.
+      ...(signal ? { signal } : {}),
     });
 
   try {
@@ -282,6 +290,17 @@ async function postChatCompletion(
     }
     return { budgetReset: null, errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch {
+    // 🔴 TEST THE SIGNAL, NEVER THE EXCEPTION. A cancelled expo/fetch does NOT
+    // throw a DOMException named "AbortError" the way the browser does: before the
+    // response it throws FetchError("fetch failed: The operation was aborted."),
+    // and mid-stream the body controller errors with a plain Error. Checking
+    // err.name would match neither, and the student would be told they were
+    // offline every time they pressed Stop. It may also not throw AT ALL — a
+    // native cancel can surface as a clean stream close — which is why the loop
+    // above checks signal.aborted independently.
+    if (signal?.aborted) {
+      return { budgetReset: null, errorKind: "aborted", errorText: null, sources: [], text: null };
+    }
     return {
       budgetReset: null,
       errorKind: "unreachable",
@@ -318,6 +337,14 @@ export interface SendChatOptions {
    *  explicit pick BEATS the route's own guess (see lib/chat-effort.ts);
    *  omitted means Medium, which is the classifier's untouched behaviour. */
   effort?: ChatEffort;
+  /** Cancels this turn — the composer's Stop control (owner 2026-07-30: "there is
+   *  also no pause button for once it begins thinking and doing").
+   *
+   *  What it stops: the streaming request itself, any further tool rounds, and any
+   *  remaining tool calls in the round it is in. What it does NOT stop: a tool call
+   *  already executed. A deck that was written is written, so the UI must never
+   *  imply a rollback. */
+  signal?: AbortSignal;
 }
 
 /** Most tool rounds one turn may run before we force a plain answer. Same cap the
@@ -348,7 +375,7 @@ export async function sendChat(
   userText: string,
   options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning } = options;
+  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning, signal } = options;
   onPhase?.({ kind: "routing" });
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -390,13 +417,15 @@ export async function sendChat(
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
   // Personal context goes LAST so it is closest to the answer and the student's
-  // course material wins over generic model memory when the two disagree.
+  // course material wins over generic model memory when the two disagree — but it
+  // rides its OWN system message now, NOT the student's sentence. Appending it here
+  // is what let "make flashcards from this" resolve "this" to a pile of retrieved
+  // notes on an unrelated subject (owner 2026-07-30). See buildWireMessages.
   const brain = await brainLookup;
   const brainContext = formatBrainContext(brain);
   if (brainContext) {
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });
-    groundedText = `${groundedText}\n\n${brainContext}`;
   }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
 
@@ -430,13 +459,27 @@ export async function sendChat(
 
   const toolsEnabled = toolsAllowed(decision);
   const learnerProfile = await learnerProfileForChat(uid);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile, Boolean(attachedDoc));
+  let messages: WireMsg[] = buildWireMessages(
+    history,
+    groundedText,
+    decision,
+    learnerProfile,
+    Boolean(attachedDoc),
+    brainContext,
+  );
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice
     // but to answer in words. Otherwise a turn that hits the cap ends on a tool
     // call and the student is left looking at an empty bubble.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
+    // Checked BEFORE each round, not only inside the fetch. A native cancel can
+    // surface as a clean stream close rather than a throw, and a turn that has
+    // already been stopped must not open a new round on the student's budget.
+    if (signal?.aborted) {
+      reply = { budgetReset: null, errorKind: "aborted", errorText: null, sources: [], text: reply.text };
+      break;
+    }
     reply = await postChatCompletion(
       uid,
       messages,
@@ -444,6 +487,7 @@ export async function sendChat(
       relayDelta,
       onReasoning,
       offerTools ? AGENT_TOOLS : undefined,
+      signal,
     );
     const calls = reply.toolCalls ?? [];
     if (calls.length === 0 || reply.errorKind) break;
@@ -464,6 +508,12 @@ export async function sendChat(
     // nothing to win by overlapping them.
     const results: { call: AgentToolCall; result: unknown }[] = [];
     for (const call of calls) {
+      // 🔴 STOP PREVENTS THE NEXT WRITE; IT CANNOT UNDO THE LAST ONE. Each tool
+      // call creates something real — a deck, a note, a calendar event — and once
+      // executeAgentTool returns, that row exists. Checking here is what stops the
+      // REMAINING calls of a round the student has abandoned. Anything already
+      // written stays written, and the UI says so rather than implying a rollback.
+      if (signal?.aborted) break;
       const result = await executeAgentTool(uid, call);
       results.push({ call, result });
       if (result && typeof result === "object") {
@@ -821,7 +871,12 @@ export async function saveThreadMessages(uid: string, id: string, messages: Chat
   // user turn, again once the reply lands, both times off the same object —
   // converges on the same id instead of double-inserting it. See
   // deriveMessageId's doc in lib/chat-threads.ts.
-  const withIds = ensureMessageIds(messages, (message) => deriveMessageId(id, message));
+  // Filtered HERE rather than at each call site, because there are several and the
+  // one that mattered was not the obvious one: send() persists the whole message
+  // array, so an ordinary chat turn sent while a recording was being written up
+  // was what pushed the placeholder into an insert-only table. See
+  // isPendingRecordingMessage for what that costs.
+  const withIds = ensureMessageIds(withoutPendingRecordings(messages), (message) => deriveMessageId(id, message));
   const before = await readStore(uid);
   const previousMessages = getThread(before, id)?.messages ?? [];
   const after = upsertThread(before, id, withIds, new Date().toISOString());
@@ -908,11 +963,31 @@ function recordingNoteId(route: string | undefined): string {
   }
 }
 
-async function updateRecordingLibraryNote(uid: string, artifact: ChatOutput, content: string): Promise<void> {
+async function updateRecordingLibraryNote(
+  uid: string,
+  artifact: ChatOutput,
+  content: string,
+  rename: string | null = null,
+): Promise<void> {
   const noteId = recordingNoteId(artifact.route);
   if (!noteId) return;
   try {
-    await updateNoteContent(uid, noteId, content);
+    const note = await updateNoteContent(uid, noteId, content);
+    // Separate write, and deliberately AFTER the content: a rename that fails
+    // leaves a correctly-written note under a dull name, which is recoverable.
+    // The other order risks a well-named note still holding the placeholder text.
+    //
+    // 🔴 GUARDED ON THE NOTE'S OWN NAME AND FOLDER, not the chat card's. Those are
+    // two different records that drift apart the moment the student touches the
+    // Library: renaming or moving the note there does not touch the chat artifact,
+    // whose title was frozen when Save was pressed. Guarding on the card meant a
+    // note the student had renamed still looked "untouched" and got overwritten,
+    // and passing a hardcoded folder would have dragged a note they had filed
+    // elsewhere back into Recordings — renameNoteById rebuilds the whole path from
+    // that argument, so it is a destination, not a default.
+    if (rename && isDefaultRecordingTitle(note.title)) {
+      await renameNoteById(uid, noteId, rename, folderOf(note.path));
+    }
   } catch (cause) {
     console.warn("recording Library note update skipped:", cause instanceof Error ? cause.message : cause);
   }
@@ -1036,7 +1111,10 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
  *  and not to repeat it, and returns the joined bullets or null if nothing came
  *  back. Never throws: requestLiveNotes resolves null on failure, and a window
  *  that comes back empty just contributes nothing. */
-async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
+async function rebuildNotesFromTranscript(
+  uid: string,
+  transcript: string,
+): Promise<{ body: string; title: string } | null> {
   if (!transcript.trim()) return null;
   // ONE PASS, matching web (owner 2026-07-30: "FIX IT").
   //
@@ -1056,8 +1134,17 @@ async function rebuildNotesFromTranscript(uid: string, transcript: string): Prom
   if (!reply.text) return null;
   // The title line is scaffolding for the caller, never part of the note body —
   // without this strip, every note would open with a stray "Title: …".
-  const { body } = splitFinalNote(reply.text.trim());
-  return body.trim() || null;
+  //
+  // 🔴 THE TITLE USED TO BE DESTRUCTURED AWAY HERE. splitFinalNote has always
+  // returned it and the brief has always asked for it; this function kept only
+  // `body` and returned a bare string, so a recording's Library note kept the
+  // timestamp it was created with forever (owner 2026-07-30: "it did not rename
+  // the title"). Web never had this bug because it names the note AFTER the
+  // write-up; the phone creates it first, so the rename has to happen here.
+  const { body, title } = splitFinalNote(reply.text.trim());
+  const clean = body.trim();
+  if (!clean) return null;
+  return { body: clean, title: title.trim() };
 }
 
 /** Persist one recording's generated notes to every durable destination: the
@@ -1069,21 +1156,29 @@ async function publishRecordingNotes(
   transcript: string,
   chipBase: ChatOutput,
 ): Promise<ChatOutput> {
-  const notes = await rebuildNotesFromTranscript(uid, transcript);
-  if (!notes) {
+  const written = await rebuildNotesFromTranscript(uid, transcript);
+  if (!written) {
     await updateRecordingLibraryNote(uid, artifact, RECORDING_NOTE_UNAVAILABLE);
     const finished = { ...chipBase, polish: "done" as const };
     await writeChipEntry(uid, threadId, finished);
     return finished;
   }
+  const notes = written.body;
+  // The timestamp name is a placeholder, and this is the moment there is finally
+  // something better to call it. Only if the student has not named it themselves
+  // in the minutes this pass took (isDefaultRecordingTitle), and only if the pass
+  // actually produced a title.
+  const rename = written.title && isDefaultRecordingTitle(chipBase.title) ? written.title.slice(0, 200) : null;
   const { error } = await supabase
     .from("chat_recording_artifacts")
-    .update({ notes })
+    .update(rename ? { notes, title: rename } : { notes })
     .eq("id", artifact.id)
     .eq("user_id", uid);
   if (error) throw new Error(error.message);
-  await updateRecordingLibraryNote(uid, artifact, notes);
-  const finished = { ...chipBase, notes, polish: "done" as const };
+  await updateRecordingLibraryNote(uid, artifact, notes, rename);
+  // The chip entry too, or the chat card would keep showing the timestamp while
+  // the Library showed the real name — the same artifact under two names.
+  const finished = { ...chipBase, notes, ...(rename ? { title: rename } : {}), polish: "done" as const };
   await writeChipEntry(uid, threadId, finished);
   return finished;
 }

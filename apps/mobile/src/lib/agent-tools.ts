@@ -200,7 +200,14 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Search the student's Library notes by title and text. Returns each match's path, title, and a snippet. Use this before answering anything about their own notes, and to get the path other Library tools need.",
+        // 🔴 THIS DESCRIPTION USED TO END "Use this before answering anything about
+        // their own notes", and a tool's schema description outranks the system
+        // prompt. Asked to build flashcards "from this" — meaning a recording made
+        // moments earlier in the same conversation — the model dutifully swept the
+        // Library first and built the cards from whatever it found there instead
+        // (owner 2026-07-30). "Before answering" made retrieval the first move on
+        // every turn, including the turns whose subject was already on screen.
+        "Search the student's Library notes by title and text. Returns each match's path, title, and a snippet. Use it when the student refers to material that is NOT already in this conversation, or names a note to find, and to get the path other Library tools need. When they point at something this conversation already produced or discussed, work from that instead of searching.",
       name: "search_library",
       parameters: {
         properties: { query: { description: "Words to look for", type: "string" } },

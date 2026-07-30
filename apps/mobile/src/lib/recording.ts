@@ -48,7 +48,26 @@ export function formatRecordingClock(totalSeconds: number): string {
 
 /** Same default title web's Record mode saves with (recording-artifacts.ts). */
 export function recordingTitle(at: Date): string {
-  return `Recording · ${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+  return `${RECORDING_TITLE_PREFIX}${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
+export const RECORDING_TITLE_PREFIX = "Recording · ";
+
+/**
+ * Is this still the placeholder name a recording is born with?
+ *
+ * The write-up pass renames a recording from its timestamp to a title describing
+ * what was actually said. That rename must never overwrite a name the STUDENT
+ * chose — the pass finishes minutes after Save, long enough for them to have
+ * renamed it themselves, and silently undoing that would be worse than the
+ * timestamp it replaces.
+ *
+ * Prefix rather than an exact match against recordingTitle(createdAt): the note's
+ * own copy has been through safeLibraryTitle, which turns "5:23 PM" into
+ * "5-23 PM", so the two are never string-equal. The prefix survives that.
+ */
+export function isDefaultRecordingTitle(title: string): boolean {
+  return title.trimStart().startsWith(RECORDING_TITLE_PREFIX);
 }
 
 export interface RecordingDraft {

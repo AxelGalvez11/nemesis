@@ -5,6 +5,7 @@ import { UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE } from "@nemesis/shared";
 import { WRITING_VOICE } from "@nemesis/shared";
 import { routeInstruction } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
+import { ARTIFACT_REFERENCE_RULE } from "./history-artifacts.ts";
 import { AGENT_TOOL_NAMES } from "./agent-tools.ts";
 import {
   ATTACHMENT_CONTEXT_MAX_CHARS,
@@ -52,7 +53,7 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
   // own instruction text rather than hardcoding it, so route-tuning can't silently
   // desync this test from chat-routing.ts.
   assertEquals(wire[0], {
-    content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("conversation")}\n\n${academicSkillInstruction("what next?")}`,
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("conversation")}\n\n${academicSkillInstruction("what next?")}`,
     role: "system",
   });
   assertEquals(wire[1], { content: "hi", role: "user" });
@@ -63,7 +64,7 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
 Deno.test("buildWireMessages: an explicit decision overrides the auto-classified route", () => {
   const wire = buildWireMessages([], "hi", { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" });
   assertEquals(wire[0], {
-    content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
     role: "system",
   });
 });
