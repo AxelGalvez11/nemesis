@@ -17,7 +17,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
-import { formatEventDate, formatEventTime } from "./format";
+import { formatEventDate, formatEventTime, hourLabel } from "./format";
 import { KIND_META } from "./kind-meta";
 import {
   blockGeometry,
@@ -35,7 +35,10 @@ import { type GestureResult, useTimeGridGestures } from "./use-time-grid-gesture
  *  anything faster would re-render the grid for no reason. */
 const NOW_TICK_MS = 60_000;
 
-const GUTTER_WIDTH = "3.25rem";
+/** Wide enough for the longest hour label ("12 AM") and for "All day" to stay
+ *  on one line. Both were wrapping at 3.25rem once the app's default text size
+ *  put the root at 20px. */
+const GUTTER_WIDTH = "3.75rem";
 
 interface TimeGridViewProps {
   days: MonthDay[];
@@ -115,7 +118,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-border bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.08em] text-(--ui-text-quaternary)"
+            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day
@@ -149,15 +152,25 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
       <div>
         <div className="flex">
           <div className="relative shrink-0" style={{ height: gridHeight, width: GUTTER_WIDTH }}>
-            {labels.map((hour) => (
-              <div
-                className="absolute right-2 -translate-y-1/2 text-[0.625rem] tabular-nums text-(--ui-text-quaternary)"
-                key={hour}
-                style={{ top: offsetFor(hour * 60, hours) }}
-              >
-                {hour === 0 ? "" : formatEventTime(`${String(hour).padStart(2, "0")}:00`)}
-              </div>
-            ))}
+            {labels.map((hour, index) => {
+              const { suffix, value } = hourLabel(hour);
+              return (
+                <div
+                  className={cn(
+                    "absolute right-2 flex items-baseline gap-0.5 whitespace-nowrap text-[0.625rem] tabular-nums text-(--ui-text-quaternary)",
+                    // Every label is centred on its own hour rule — except the
+                    // first, which sits ON the top edge, where centring pushed
+                    // half of it up into the all-day strip.
+                    index === 0 ? "translate-y-0" : "-translate-y-1/2",
+                  )}
+                  key={hour}
+                  style={{ top: offsetFor(hour * 60, hours) }}
+                >
+                  <span>{value}</span>
+                  {suffix && <span className="text-[0.5rem] tracking-[0.03em]">{suffix}</span>}
+                </div>
+              );
+            })}
           </div>
 
           {/* The grid IS the create surface: pressing anywhere that is not an
