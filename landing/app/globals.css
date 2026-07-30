@@ -249,9 +249,13 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .ui-file .nm { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-msg { border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; }
 .ui-msg.me { border-color: var(--line-2); color: var(--text); }
+/* block + fit-content so the source chip always drops onto its own line under the
+   message instead of trailing the last sentence inline. */
 .ui-chip {
-  display: inline-block; font-size: 10px; letter-spacing: 0.04em; color: var(--text-3);
+  display: block; width: fit-content; max-width: 100%;
+  font-size: 10px; letter-spacing: 0.04em; color: var(--text-3);
   border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; margin-top: 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* phone — the iPhone half of the story */
