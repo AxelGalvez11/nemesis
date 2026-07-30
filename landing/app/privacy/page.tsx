@@ -77,9 +77,15 @@ export default function PrivacyPage() {
 
       <h2>This website</h2>
       <p>
-        This site sets no advertising trackers. If you create an account, the email you
-        provide is used to operate your account and tell you about the product you signed up
-        for, and nothing else.
+        This site sets no advertising trackers. We do measure how the site itself is used, so
+        we can tell which pages people read and which buttons they press: that means the pages
+        you visit, the links you click, and where you arrived from. It is a cookie, and it is
+        the only one we set. We do not record your screen, we do not capture what you type, and
+        we never sell or share any of it.
+      </p>
+      <p>
+        If you create an account, the email you provide is used to operate your account and
+        tell you about the product you signed up for, and nothing else.
       </p>
 
       <h2>Your work is yours</h2>
