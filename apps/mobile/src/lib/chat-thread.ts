@@ -245,7 +245,9 @@ export function buildWireMessages(
   ];
 }
 
-export type ChatErrorKind = "budget" | "auth" | "unreachable" | "generic";
+/** "aborted" is the student pressing Stop — NOT a failure. It carries no
+ *  errorText on purpose: nothing should be painted red for a thing they asked for. */
+export type ChatErrorKind = "budget" | "auth" | "unreachable" | "generic" | "aborted";
 
 function errorCode(body: unknown): string {
   return typeof body === "object" && body !== null

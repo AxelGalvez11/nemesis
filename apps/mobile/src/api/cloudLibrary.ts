@@ -384,6 +384,60 @@ export async function createNoteWithContent(
   throw new Error("Couldn't find an available name for that note.");
 }
 
+/**
+ * Give an existing note a new title (and the matching filename), in one write.
+ *
+ * Exists for recordings. A recording's Library note is created the instant Save
+ * is pressed — before there is a transcript, let alone notes — so it is born with
+ * a timestamp for a name ("Recording · Jul 30, 2026 at 5-23 PM"). The write-up
+ * pass produces a real title minutes later, and until now that title was parsed
+ * and thrown away, so the note kept the timestamp forever (owner 2026-07-30:
+ * "it did not rename the title").
+ *
+ * `title` and `path` move TOGETHER — the path carries the filename, and a note
+ * whose title and filename disagree shows one name in the Library tree and
+ * another in the note itself. That is also why updateNoteContent cannot be the
+ * vehicle: it deliberately writes content only, so the phone editor can never
+ * clobber a rename made on the web.
+ *
+ * Same suffix retry as createNoteWithContent, and for the same reason: the
+ * (user_id, path) unique index counts soft-deleted rows, so a collision is a
+ * normal outcome rather than an error.
+ */
+export async function renameNoteById(
+  uid: string,
+  noteId: string,
+  title: string,
+  folder = "",
+): Promise<CloudLibraryNote> {
+  const base = safeLibraryTitle(title);
+  const where = normalizeLibraryFolder(folder);
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const name = suffix === 1 ? base : `${base} ${suffix}`;
+    const path = where ? `${where}/${name}.md` : `${name}.md`;
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .update({ path, title: name })
+      .eq("id", noteId)
+      .eq("user_id", uid)
+      .eq("kind", "note")
+      .eq("deleted", false)
+      .select("id,path,kind,title,content,created_at,updated_at,position")
+      .maybeSingle();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    if (!note) throw new Error("This note was deleted on another device.");
+    // The cache is keyed by id, so the renamed row REPLACES the old entry rather
+    // than sitting beside it — without this the note appears twice, under both
+    // names, until the next full fetch.
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for that note.");
+}
+
 /** Save one note's edited content — the phone's first library WRITE (owner
  *  2026-07-20: real on-phone editing). Mirrors the web store's saveNote UPDATE
  *  (apps/web/lib/workspace/library-cloud-store.ts) with two deliberate

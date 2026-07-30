@@ -200,6 +200,13 @@ export default function ChatScreen() {
   // transcript. See api/chat.ts's loadThreadOutputs doc for why the phone
   // only ever reads these, never creates them.
   const [threadOutputs, setThreadOutputs] = useState<ChatOutput[]>([]);
+  // Cancels the turn in flight — the composer's Stop control. Before this the
+  // phone had no cancel at all: epochRef only made the app IGNORE a reply that
+  // was still arriving and still being paid for (owner 2026-07-30).
+  const abortRef = useRef<AbortController | null>(null);
+  // The streamed answer as a ref, mirroring streamingText. A stop has to be able
+  // to KEEP what has been written so far, and .then()'s closure cannot read state.
+  const streamedRef = useRef("");
   const recordingUpdatesSeenRef = useRef(new Set<string>());
   // artifact id → the id of the chat message showing it, so the enhance pass can
   // rewrite that one message instead of appending a second. See handleRecordingSaved.
@@ -361,6 +368,12 @@ export default function ChatScreen() {
     sendingRef.current = false;
     setSending(false);
     setStreamingText("");
+    // Leaving a thread now actually CANCELS its turn rather than just ignoring the
+    // answer. The epoch guard below has always dropped the reply; until there was
+    // a signal to abort, the request kept running and kept costing the student.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamedRef.current = "";
     // A photo read started in the thread being left behind. send()'s SYNCHRONOUS
     // body is not epoch-guarded (only its .then/.finally are), so letting that
     // read finish would write the old thread's history into the thread now on
@@ -591,6 +604,9 @@ export default function ChatScreen() {
       return;
     }
     sendingRef.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    streamedRef.current = "";
     const epoch = epochRef.current;
     const history = messages;
     const id = threadId;
@@ -642,6 +658,7 @@ export default function ChatScreen() {
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
     void sendChat(uid, history, text, {
+      signal: controller.signal,
       attachedDoc: doc ? { content: doc.content, title: doc.title } : undefined,
       effort: chosenEffort,
       forceResearch: research,
@@ -656,6 +673,7 @@ export default function ChatScreen() {
           thoughtMsRef.current = next;
           return next;
         });
+        streamedRef.current = accumulated;
         setStreamingText(accumulated);
       },
       onPhase: (next) => {
@@ -671,6 +689,28 @@ export default function ChatScreen() {
         // The epoch guard above is what keeps this quiet when the student has
         // moved to another thread — no buzz for an answer they can't see.
         if (epochRef.current !== epoch) return;
+        // STOPPED BY THE STUDENT. Not a failure, and nothing is painted red.
+        // Whatever had been written is KEPT — the half-answer is often the useful
+        // part, and it was already on screen — and so are any cards the turn had
+        // already saved, because those rows exist and pretending otherwise would
+        // be a lie about their own workspace.
+        if (reply.errorKind === "aborted") {
+          const partial = streamedRef.current.trim();
+          if (partial || reply.outputs?.length) {
+            const next: ChatMsg[] = [
+              ...base,
+              {
+                at: new Date().toISOString(),
+                content: partial,
+                role: "assistant",
+                ...(reply.outputs?.length ? { outputs: reply.outputs } : {}),
+              },
+            ];
+            setMessages(next);
+            void saveThreadMessages(uid, id, next);
+          }
+          return;
+        }
         if (reply.text || reply.outputs?.length) {
           hapticAnswerReady();
           // Keep what it worked through, so the answer can be opened up later
@@ -712,10 +752,17 @@ export default function ChatScreen() {
         }
       })
       .finally(() => {
+        if (abortRef.current === controller) abortRef.current = null;
         if (epochRef.current === epoch) {
           sendingRef.current = false;
           setSending(false);
           setStreamingText("");
+          // Back to the neutral opening phase. It is only drawn while `sending`, so
+          // leaving it frozen at "Acting" was invisible — but a stopped turn may not
+          // be followed by another send, and a stale phase waiting to flash on the
+          // next one is the kind of thing that shows up as a mystery later.
+          setPhase({ kind: "routing" });
+          reasoningRef.current = "";
         }
       });
   }, [input, messages, uid, threadId, attachedDoc, effort, photo]);
@@ -818,6 +865,18 @@ export default function ChatScreen() {
       }
     })();
   }, [uid, photoDraft, input, send]);
+
+  /** Stop the turn in flight (owner 2026-07-30). Aborting the request is all this
+   *  does — the rest happens in sendChat's .then(), which is the one place that
+   *  knows what the turn managed to produce before it was cut off.
+   *
+   *  Worth being plain about what Stop can and cannot do: it ends the streaming
+   *  request, prevents any further tool rounds, and skips the remaining calls of
+   *  the round it is in. It does NOT undo a deck, note, or calendar event already
+   *  written — those rows exist, and their cards stay on the answer. */
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   /** The composer's one send. A photo draft takes the route that reads it first;
    *  everything else goes straight out. Deliberately the SINGLE path from the
@@ -1547,6 +1606,7 @@ export default function ChatScreen() {
             // press event to onPress, and send() now takes an optional override
             // object — an event arriving in that slot would be read as one.
             onSend={handleSend}
+            onStop={handleStop}
             onPlus={() => {
               setEffortMenuOpen(false);
               setPlusMenuOpen((v) => !v);
