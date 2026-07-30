@@ -218,7 +218,10 @@ test("net revenue subtracts Stripe's cut, and the flat 30 cents does not scale",
 
 test("the audio bill dwarfs every model call the student makes", () => {
   const report = modelStudentMonth(HEAVY_STUDENT);
-  assert.ok(report.audioUsd > 13, `audio was ${report.audioUsd}`);
+  // $8.00 on the xAI lane, down from $13.60 on AssemblyAI. Halving the rate did
+  // not change the shape of the bill — audio is still 16x everything the student's
+  // chat, flashcards and tests cost put together.
+  assert.ok(report.audioUsd > 7, `audio was ${report.audioUsd}`);
   assert.ok(report.aiUsd < 1.5, `AI was ${report.aiUsd}`);
   assert.ok(report.audioToAiRatio > 10, `ratio was ${report.audioToAiRatio}x`);
 });
@@ -245,22 +248,30 @@ test("the premium answer lane is the one way the AI line can rival the audio lin
   assert.ok(glm.aiUsd > flash.aiUsd * 5, `only ${round(glm.aiUsd / flash.aiUsd, 1)}x`);
   assert.equal(PLANS.pro.premiumAnswerLane, true, "and Pro can reach it");
   assert.equal(PLANS.plus.premiumAnswerLane, false);
-  // $0.49 -> $2.71 of AI, which halves Pro's headroom. It is the only model line
-  // that gets anywhere near the audio line, and therefore the one AI-side cost
-  // worth metering separately rather than giving away.
+  // $0.49 -> $2.71 of AI. On the old AssemblyAI lane that took Pro's headroom from
+  // $3.85 to $1.63 — more than half of what the plan kept. On today's cheaper audio
+  // it costs $9.45 -> $7.23, about a quarter. Still the only model line that gets
+  // anywhere near the audio line, and still the one AI-side cost worth metering
+  // rather than giving away — but the cheaper transcript is what made it affordable.
   assert.ok(glm.aiUsd > 2.5, `GLM AI lane was ${glm.aiUsd}`);
-  assert.ok(glm.headroomUsd < flash.headroomUsd / 2, "a Pro student living on High halves what the plan keeps");
+  assert.ok(glm.headroomUsd < flash.headroomUsd * 0.8, "living on High still costs a real slice of what the plan keeps");
+  const onOldAudio = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", recorder: "web-batch" });
+  assert.ok(onOldAudio.headroomUsd < flash.headroomUsd / 2, "which is what it used to cost");
 });
 
-test("switching off speaker labels is a real but small lever", () => {
+// Pinned to `web-batch` on purpose: the speaker-label add-on is an ASSEMBLYAI line
+// item. xAI, the live lane, includes diarization in its $0.10 and has no such lever
+// to pull, so running this against the default would price a switch that does not
+// exist on the provider we actually use.
+test("switching off speaker labels is a real but small lever, on the AssemblyAI lane", () => {
   const saving = HEAVY_STUDENT.audioHours * DIARIZATION_USD_PER_HOUR;
-  const report = modelStudentMonth(HEAVY_STUDENT);
+  const report = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" });
   assert.equal(round(saving, 2), 1.6);
   assert.ok(saving < report.audioUsd * 0.15, "a tenth of the audio line, not a fix for it");
 });
 
 test("the cheaper AssemblyAI tier is worth more than the add-on, and Groq more than both", () => {
-  const universal2 = modelStudentMonth(HEAVY_STUDENT).audioUsd;
+  const universal2 = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" }).audioUsd;
   const pro = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-pro" }).audioUsd;
   const groq = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-groq" }).audioUsd;
   assert.equal(universal2, 13.6);
@@ -277,7 +288,7 @@ test("the cheaper AssemblyAI tier is worth more than the add-on, and Groq more t
 // not merely get thinner: it goes underwater at 80 hours, and the only signal is a
 // console.warn inside an edge function that nobody reads.
 test("Pro LOSES MONEY at 80 hours if the cheaper AssemblyAI tier is not honoured", () => {
-  const pinned = modelStudentMonth(HEAVY_STUDENT);
+  const pinned = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" });
   const ignored = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-pro" });
   assert.equal(pinned.profitable, true);
   assert.equal(ignored.profitable, false, "a silently ignored request field costs the whole margin and more");
@@ -285,17 +296,17 @@ test("Pro LOSES MONEY at 80 hours if the cheaper AssemblyAI tier is not honoured
   assert.ok(ignored.grossMarginPct < 0, `margin was ${ignored.grossMarginPct}%`);
 });
 
-// ── Would a different provider or a better model help? ──────────────────────
-// Surveyed 2026-07-28 because the owner asked. Every figure here is a comparison
-// against what we pay today, and none of these lanes is wired.
+// ── What the provider switch bought, and what is still on the table ─────────
+// Surveyed 2026-07-28 because the owner asked. xAI stopped being hypothetical on
+// 2026-07-30 and is now the default lane; Modulate is still unwired.
 
-test("xAI Grok STT would more than double Pro's margin, and throws in the add-on", () => {
+test("moving to xAI more than doubled Pro's margin, and threw in the add-on", () => {
+  const previous = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" });
   const live = modelStudentMonth(HEAVY_STUDENT);
-  const xai = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-xai" });
-  assert.equal(xai.audioUsd, 8);
-  assert.ok(xai.grossMarginPct > live.grossMarginPct * 2, `${live.grossMarginPct}% -> ${xai.grossMarginPct}%`);
-  // And its $0.10 INCLUDES speaker diarization, which we currently pay $0.02/hr for
-  // on top — so the real gap is wider than the sticker difference suggests.
+  assert.equal(live.audioUsd, 8);
+  assert.ok(live.grossMarginPct > previous.grossMarginPct * 2, `${previous.grossMarginPct}% -> ${live.grossMarginPct}%`);
+  // And its $0.10 INCLUDES speaker diarization, which the AssemblyAI lane pays
+  // $0.02/hr for on top — so the real gap is wider than the sticker difference.
   assert.ok(SURVEYED_USD_PER_HOUR.xai_grok_stt < BATCH_USD_PER_HOUR.assemblyai_batch_universal2);
 });
 
@@ -305,33 +316,43 @@ test("the cheapest surveyed lane is also the one to test first, because testing 
   // lectures at zero cost. Cheapest to TEST is a different question from cheapest
   // to TRUST, and this is the rare case where one answer serves both.
   const modulate = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-modulate" });
-  const xai = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-xai" });
   const live = modelStudentMonth(HEAVY_STUDENT);
-  assert.ok(modulate.grossMarginPct > xai.grossMarginPct);
+  const previous = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" });
+  assert.ok(modulate.grossMarginPct > live.grossMarginPct);
   assert.ok(SURVEYED_USD_PER_HOUR.modulate < SURVEYED_USD_PER_HOUR.xai_grok_stt / 3);
   // 400 free hours is five months of the heavy student's recording.
   assert.ok(400 / HEAVY_STUDENT.audioHours >= 5);
-  // Either survey lane roughly triples what Pro keeps.
-  assert.ok(xai.headroomUsd > live.headroomUsd * 2);
-  assert.ok(modulate.headroomUsd > live.headroomUsd * 3);
+  // Against where this started: the switch already took, and Modulate is more again.
+  assert.ok(live.headroomUsd > previous.headroomUsd * 2);
+  assert.ok(modulate.headroomUsd > previous.headroomUsd * 3);
 });
 
 // "The AI is cheap, so can we use a better model?" — true of the model we run, and
 // it stops being true fast. The audio lane decides the answer, not the AI budget.
-test("a better chat model is affordable only once the audio lane comes down", () => {
+test("a better chat model became affordable when the audio lane came down", () => {
+  const glmOnAssembly = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", recorder: "web-batch" });
   const glmOnLiveAudio = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2" });
-  const glmOnXai = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", recorder: "web-batch-xai" });
-  assert.ok(glmOnLiveAudio.grossMarginPct < 10, `GLM on today's audio is ${glmOnLiveAudio.grossMarginPct}%`);
-  assert.ok(glmOnXai.grossMarginPct > 35, `GLM on cheaper audio is ${glmOnXai.grossMarginPct}%`);
+  assert.ok(glmOnAssembly.grossMarginPct < 10, `GLM on the old audio lane is ${glmOnAssembly.grossMarginPct}%`);
+  assert.ok(glmOnLiveAudio.grossMarginPct > 35, `GLM on today's audio is ${glmOnLiveAudio.grossMarginPct}%`);
 });
 
 // Kimi K3 is $3/$0.30/$15 per 1M and has NO non-thinking mode, so every reasoning
 // token bills as output. Pricing it off visible completion length alone is the error
 // that makes it look affordable; at 3x thinking it is not close, on any audio lane.
-test("Kimi K3 loses money on Pro even with free audio, and it is the OUTPUT rate", () => {
+test("Kimi K3 loses money on Pro once it thinks, and it is the OUTPUT rate", () => {
   const noThinking = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3" });
   const thinking = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3 });
-  assert.equal(noThinking.profitable, false, "even the flattering assumption is underwater");
+  // The cheaper audio lane bought Kimi its one survivable case: on the flattering
+  // no-reasoning assumption it now clears break-even at 17.4%, where on AssemblyAI
+  // it was underwater. That assumption is fiction — K3 has no non-thinking mode —
+  // which is exactly why the honest 3x figure below is the one that decides this.
+  assert.equal(noThinking.profitable, true, "the flattering assumption now survives, on cheaper audio");
+  assert.equal(
+    modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", recorder: "web-batch" }).profitable,
+    false,
+    "it did not survive on the old audio lane",
+  );
+  assert.equal(thinking.profitable, false, "and the real, always-reasoning case is underwater regardless");
   assert.ok(thinking.aiUsd > noThinking.aiUsd * 2, "reasoning tokens are most of the bill");
   // Give it free transcription and it STILL misses the house margin on Pro.
   const free = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3, recorder: "ios-parakeet" });
@@ -355,7 +376,7 @@ test("Max can afford the model Pro cannot, which is what makes it a Max feature"
 test("the silence saving is a band, and the model refuses to assume one", () => {
   assert.equal(HEAVY_STUDENT.silenceShare, 0, "no saving is claimed by default");
   const band = [0.1, 0.2, 0.3].map((share) => modelStudentMonth({ ...HEAVY_STUDENT, silenceShare: share }));
-  assert.deepEqual(band.map((report) => report.audioUsd), [12.24, 10.88, 9.52]);
+  assert.deepEqual(band.map((report) => report.audioUsd), [7.2, 6.4, 5.6]);
   // Even 30% trimmed does not get Pro to the house margin on its own.
   assert.equal(band[2]!.meetsHouseMargin, false);
 });
@@ -368,17 +389,26 @@ test("trimming silence stretches the student's allowance too, because web bills 
 
 // ── The verdict, plan by plan ────────────────────────────────────────────────
 
-test("Pro at 80 hours is profitable but nowhere near the house margin", () => {
+// Halving the audio rate roughly doubled what Pro keeps — $3.85 -> $9.45 a month,
+// 20.2% -> 49.5%. It still does not reach the 80% house rule, and no realistic
+// transcription price would: at 80 hours the rule funds $0.04/hr. The switch moved
+// Pro from "technically above water" to "a real margin", not to the house standard.
+test("Pro at 80 hours keeps a real margin now, but still not the house margin", () => {
   const report = modelStudentMonth(HEAVY_STUDENT);
+  const previous = modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" });
   assert.equal(report.profitable, true);
   assert.equal(report.meetsHouseMargin, false);
-  assert.ok(report.headroomUsd > 2 && report.headroomUsd < 5, `headroom was ${report.headroomUsd}`);
-  assert.ok(report.grossMarginPct > 12 && report.grossMarginPct < 25, `margin was ${report.grossMarginPct}%`);
+  assert.ok(report.headroomUsd > 8 && report.headroomUsd < 11, `headroom was ${report.headroomUsd}`);
+  assert.ok(report.grossMarginPct > 45 && report.grossMarginPct < 55, `margin was ${report.grossMarginPct}%`);
+  assert.ok(report.headroomUsd > previous.headroomUsd * 2, "the provider switch is what bought this");
 });
 
 test("80 hours at $19.99 and the 80% house rule cannot both be true", () => {
   const hours = affordableAudioHours(HEAVY_STUDENT, HOUSE_MARGIN * 100);
-  assert.ok(hours < 20, `the house rule funds only ${hours} hours at this price`);
+  // 23.6 hours on the xAI lane, up from ~13 on AssemblyAI. Cheaper audio moved the
+  // wall; it did not remove it, and 80 is still nearly 4x what the rule funds.
+  assert.ok(hours < 30, `the house rule funds only ${hours} hours at this price`);
+  assert.ok(hours < HEAVY_STUDENT.audioHours / 3, "the promise is still multiples of what the rule pays for");
   // Break-even, by contrast, is comfortably past 80 — the plan is not losing money.
   assert.ok(affordableAudioHours(HEAVY_STUDENT, 0) > 80);
 });
@@ -386,15 +416,19 @@ test("80 hours at $19.99 and the 80% house rule cannot both be true", () => {
 test("the durable output is a rate, because provider prices move", () => {
   const breakEven = affordableRatePerAudioHour(HEAVY_STUDENT, 0);
   const houseRule = affordableRatePerAudioHour(HEAVY_STUDENT, HOUSE_MARGIN * 100);
-  assert.ok(breakEven > 0.17, "the live lane is under break-even");
+  // The live lane is $0.10/hr as of 2026-07-30. Both walls are stated as RATES so
+  // this test survives the next provider move without being rewritten.
+  assert.ok(breakEven > SURVEYED_USD_PER_HOUR.xai_grok_stt, "the live lane is under break-even");
   assert.ok(houseRule < 0.04, "and above what the house rule would fund");
   // Not even Groq clears the house rule at 80 hours.
   assert.ok(BATCH_USD_PER_HOUR.groq_whisper_turbo > houseRule);
 });
 
 test("only a zero-cost lane reaches the house margin at 80 hours", () => {
+  assert.equal(modelStudentMonth(HEAVY_STUDENT).meetsHouseMargin, false, "not even the live xAI lane");
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch" }).meetsHouseMargin, false);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-groq" }).meetsHouseMargin, false);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, recorder: "web-batch-modulate" }).meetsHouseMargin, false);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, recorder: "ios-parakeet" }).meetsHouseMargin, true);
 });
 
@@ -411,45 +445,69 @@ test("half of Pro's workload on half of Pro's price is a WORSE margin, not the s
     plan: "plus",
   });
   assert.ok(halfOfPro.grossMarginPct < pro.grossMarginPct, `${halfOfPro.grossMarginPct}% vs ${pro.grossMarginPct}%`);
-  assert.ok(halfOfPro.headroomUsd < 2, `headroom was ${halfOfPro.headroomUsd}`);
+  // Cheaper audio lifted both, and the GAP is the point: half the workload on half
+  // the price keeps well under half of what Pro keeps, because the fixed costs did
+  // not halve with it.
+  assert.ok(halfOfPro.headroomUsd < pro.headroomUsd / 2, `headroom was ${halfOfPro.headroomUsd} vs ${pro.headroomUsd}`);
   assert.equal(halfOfPro.profitable, true);
 });
 
-// Which is why Plus got a QUARTER of Pro's hours rather than half. Recording is both
-// the expensive line and the best reason to upgrade; spending margin on 40 hours
-// would have bought away the upgrade reason as well as the profit.
-test("Plus at 20 hours keeps a real margin where 40 hours would not", () => {
+// Plus got a QUARTER of Pro's hours rather than half. On the AssemblyAI lane the
+// binding reason was margin — 40 hours took Plus under 15%. THE CHEAPER LANE
+// REMOVED THAT REASON: 40 hours on Plus now clears 40%, so this is no longer a
+// pricing constraint that decides itself.
+//
+// The remaining reasons are product ones, and they still hold: recording is the
+// best reason to upgrade, and giving Plus half of Pro's headline number spends the
+// upgrade reason to buy nothing. Worth revisiting deliberately rather than assuming
+// the old answer — the number that used to force it does not force it any more.
+test("Plus at 20 hours is comfortable, and 40 is now a product call rather than a margin one", () => {
   const at20 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
   const at40 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 40, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
+  const at40OnOldLane = modelStudentMonth({
+    ...HEAVY_STUDENT, audioHours: 40, chatTurnsPerDay: 20, decks: 35, plan: "plus", recorder: "web-batch",
+  });
   assert.ok(at20.grossMarginPct > 45, `20h on Plus is ${at20.grossMarginPct}%`);
-  assert.ok(at40.grossMarginPct < 15, `40h on Plus is ${at40.grossMarginPct}%`);
+  assert.ok(at40.grossMarginPct > 35, `40h on Plus is now ${at40.grossMarginPct}%`);
+  assert.ok(at40OnOldLane.grossMarginPct < 15, `and was ${at40OnOldLane.grossMarginPct}% before the switch`);
+  // The CAP, not the margin, is what 40 hours runs into today.
   assert.equal(at20.withinTranscriptionCap, true);
-  assert.equal(at40.withinTranscriptionCap, false, "and 40 hours is past what Plus allows");
+  assert.equal(at40.withinTranscriptionCap, false, "40 hours is past what Plus allows");
 });
 
-// 5x on the recording meter is the one place "5x everything" breaks down. Not because
-// it loses money — it doesn't — but because it converts the best-margin plan in the
-// ladder into the worst, in exchange for hours nobody can spend: 400 hours a month is
-// ~100 hours of lecture a week.
-test("5x recording turns Max from the best-margin plan into a thin one", () => {
+// 5x on the recording meter is where "5x everything" costs the most. On the cheaper
+// lane it no longer makes Max thin — 89.9% -> 55.7% — but it still hands away a
+// third of the best margin in the ladder in exchange for hours nobody can spend:
+// 400 hours a month is ~100 hours of lecture a week.
+test("5x recording gives away a third of Max's margin, for hours nobody records", () => {
   const fiveX = 5 * 80;
   const atEighty = modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" });
   const maxed = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: fiveX, plan: "max" });
   assert.ok(atEighty.grossMarginPct > 80, `80h on Max is ${atEighty.grossMarginPct}%`);
-  assert.ok(maxed.grossMarginPct < 30, `400h on Max is ${maxed.grossMarginPct}%`);
+  assert.ok(maxed.grossMarginPct < atEighty.grossMarginPct * 0.7, `400h on Max is ${maxed.grossMarginPct}%`);
   assert.equal(maxed.profitable, true, "still above water — the objection is margin, not loss");
-  // Revenue per promised hour drops to within pennies of what the hour costs.
+  // Revenue per promised hour falls to $0.24. On AssemblyAI that was 1.4x what the
+  // hour cost — pennies of cover. On the xAI lane it is 2.4x, which is the whole
+  // reason 400 hours stops being reckless and becomes merely expensive. Stated as a
+  // ratio against the live rate so it stays honest the next time the provider moves.
   const revenuePerHour = netRevenueUsd(PLANS.max.priceUsd) / fiveX;
-  assert.ok(revenuePerHour < BATCH_USD_PER_HOUR.assemblyai_batch_universal2 * 1.5, `${round(revenuePerHour, 3)}/hr`);
+  const cover = revenuePerHour / SURVEYED_USD_PER_HOUR.xai_grok_stt;
+  assert.ok(cover > 2 && cover < 3, `${round(revenuePerHour, 3)}/hr is ${round(cover, 2)}x the live rate`);
+  assert.ok(
+    revenuePerHour / BATCH_USD_PER_HOUR.assemblyai_batch_universal2 < 1.5,
+    "and it was under 1.5x on the lane this replaced",
+  );
 });
 
 // The number that decides how much recording each plan can actually promise.
 test("what each plan can fund at the house margin, and where break-even sits", () => {
   const hoursAt = (plan: PlanCode, margin: number) =>
     affordableAudioHours({ ...HEAVY_STUDENT, plan }, margin);
-  // At the 80% rule, on the live $0.17/hr lane:
-  assert.ok(hoursAt("plus", 80) < 5, `Plus funds ${hoursAt("plus", 80)}h`);
-  assert.ok(hoursAt("pro", 80) < 15, `Pro funds ${hoursAt("pro", 80)}h`);
+  // At the 80% rule, on the live $0.10/hr xAI lane (was $0.17 until 2026-07-30):
+  assert.ok(hoursAt("plus", 80) < 6, `Plus funds ${hoursAt("plus", 80)}h`);
+  assert.ok(hoursAt("pro", 80) < 30, `Pro funds ${hoursAt("pro", 80)}h`);
+  // Still short of every plan's headline promise, on the cheapest wired provider.
+  assert.ok(hoursAt("pro", 80) < HEAVY_STUDENT.audioHours / 3);
   // Max is the only plan whose price already funds the 80-hour promise outright.
   assert.ok(hoursAt("max", 80) > 100, `Max funds ${hoursAt("max", 80)}h`);
   // Break-even is a different, much later wall — no plan is losing money at 80h.

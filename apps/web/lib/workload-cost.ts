@@ -348,12 +348,18 @@ export function tokensFromChars(chars: number): number {
 /**
  * Which recorder the audio goes through.
  *
- *  • web-batch    — WHAT ACTUALLY RUNS TODAY. The recorder uploads a file, and
- *    nemesis-transcribe submits it to AssemblyAI pinned to Universal-2 with speaker
- *    labels, and since 2026-07-29 AssemblyAI is FIRST in the ladder rather than the
- *    backstop — the owner reversed a cheapest-first order after xAI transcripts
- *    produced visibly worse notes. Every web recording lands here by design now,
- *    not (as this comment used to say) because the cheaper lanes were unreachable.
+ *  • web-batch-xai — WHAT ACTUALLY RUNS TODAY, on the website AND the phone (owner
+ *    2026-07-30: "switch to xai on all platforms"). One synchronous call to x.ai's
+ *    STT at $0.10/hr with speaker diarization included in that rate, no add-on.
+ *    The 2026-07-29 reversal that put AssemblyAI first was undone: the notes it was
+ *    reversed over were worse because the PHONE shipped a different prompt, not
+ *    because the transcript was worse — the two transcripts of one recording
+ *    differed by 79 words against 77. See the provider-order comment in
+ *    supabase/functions/nemesis-transcribe/index.ts.
+ *  • web-batch    — AssemblyAI pinned to Universal-2 with speaker labels. Now the
+ *    FALLBACK directly behind xAI rather than the default, so it still bills on any
+ *    recording xAI cannot read. Rising to a large share of recordings is the signal
+ *    that xAI is failing quietly.
  *  • web-batch-pro — the SAME code path when AssemblyAI ignores the pinned model and
  *    runs Universal-3.5 Pro. Not hypothetical: `speech_models` is a priority list, and
  *    /status reads the model back off the finished job precisely because a request
@@ -411,11 +417,11 @@ const LANE_USD_PER_HOUR: Readonly<Record<RecorderLane, number>> = {
 
 const LANE_NOTES: Readonly<Record<RecorderLane, string>> = {
   "ios-parakeet": "nothing leaves the phone — built (PR #273, build 22), not device-verified",
-  "web-batch": "AssemblyAI Universal-2 + speaker labels — the live default",
+  "web-batch": "AssemblyAI Universal-2 + speaker labels — the fallback behind xAI since 2026-07-30",
   "web-batch-groq": "Groq whisper-large-v3-turbo — wired but LAST, never run (no PAYG), and no speaker labels",
   "web-batch-modulate": "Modulate — cheapest surveyed, diarization included, but VENDOR-CLAIMED and untested",
   "web-batch-pro": "AssemblyAI Universal-3.5 Pro — what we pay if the pinned model is ignored",
-  "web-batch-xai": "xAI Grok STT — diarization included, price confirmed at two sources, not wired",
+  "web-batch-xai": "xAI Grok STT — diarization included, price confirmed at two sources — THE LIVE DEFAULT, web and phone",
 };
 
 export interface StudentMonth {
@@ -487,7 +493,7 @@ export const HEAVY_STUDENT: StudentMonth = {
   flashcardRunsPerDeck: 1,
   hoursPerRecording: 1,
   plan: "pro",
-  recorder: "web-batch",
+  recorder: "web-batch-xai",
   schoolDays: 22,
   silenceShare: 0,
   testRunsPerDeck: 1,

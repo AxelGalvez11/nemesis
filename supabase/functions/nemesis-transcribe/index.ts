@@ -13,11 +13,15 @@
 // The flow: the phone (or web) records, uploads the audio to the private
 // `recordings` bucket, and posts the storage path here. Submit meters the
 // request against the plan's monthly transcription allowance, then transcribes
-// Groq-first — synchronous Whisper turbo at ~1/4 the AssemblyAI price, parking
-// the text on the job row for the first status poll to collect. Any Groq failure
-// (no pay-as-you-go on the account, file over its size cap, rate limit, outage)
-// falls back to the asynchronous AssemblyAI flow, which status polls to
-// completion.
+// xAI-first — one synchronous call that parks the text on the job row for the
+// first status poll to collect. Any xAI failure (unreadable file, rate limit,
+// outage) falls through to the asynchronous AssemblyAI flow, which /status polls
+// to completion. See the provider-order comment in handleSubmit for why that
+// order, and Groq's position in it.
+//
+// ONE PLACE SETS THIS FOR EVERY SURFACE. The website and the phone both post to
+// this function, so the provider choice is a server-side decision that reaches
+// both the moment it is deployed — no app release, no TestFlight build.
 //
 // verify_jwt must be FALSE on this function: the caller's bearer token is
 // verified below against the auth server, and the phone's Authorization header
@@ -54,30 +58,18 @@ const XAI_KEY = Deno.env.get("XAI_API_KEY") ?? Deno.env.get("xai_api_key") ?? ""
 // "wired" to the next person. See the provider-order comment in handleSubmit for
 // what is still missing from their published docs.
 
-/**
- * Accounts that run BOTH transcription providers over the same audio, and keep
- * both results, so the providers can be compared on identical input.
- *
- * WHY AN ALLOWLIST RATHER THAN A BOOLEAN. Everywhere else in this lane a
- * transcript is handed over once and erased: lecture text is the student's, and
- * the recording artifact is its durable home. A global comparison switch would
- * quietly turn that into indefinite retention of every student's coursework, to
- * answer a question only the owner is asking. Scoped to the owner's own uid, the
- * comparison uses the owner's own recordings and nobody else's data is kept.
- *
- * Empty (the default) means the feature does not exist: no shadow call, no extra
- * cost, and this table behaves byte-for-byte as it did before.
- */
-const COMPARE_UIDS = new Set(
-  (Deno.env.get("COMPARE_TRANSCRIPT_UIDS") ?? "")
-    .split(",")
-    .map((uid) => uid.trim())
-    .filter(Boolean),
-);
-
-function isComparing(userId: string): boolean {
-  return COMPARE_UIDS.has(userId);
-}
+// The COMPARE_TRANSCRIPT_UIDS allowlist that used to sit here is gone (2026-07-30).
+// It ran both providers over the owner's own audio and kept both results so they
+// could be read side by side; that comparison is settled, and its outcome is the
+// provider order in handleSubmit. The `transcript_primary` / `transcript_alt` /
+// `provider_alt` columns and the pairs already collected are left alone.
+//
+// Worth keeping if this is ever rebuilt: it was an ALLOWLIST rather than a
+// boolean on purpose. Everywhere else in this lane a transcript is handed over
+// once and erased — lecture text is the student's, and the recording artifact is
+// its durable home. A global comparison switch would quietly turn that into
+// indefinite retention of every student's coursework to answer a question only
+// the owner was asking.
 
 // Project-scoped write-only key — not a secret. Override with POSTHOG_KEY.
 const POSTHOG_KEY = Deno.env.get("POSTHOG_KEY") ?? "phc_xcEjfTB3a2ftyzsw7oEAkpiBXRThWWjA3D5BcPBj36ht";
@@ -220,28 +212,35 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   // Whichever answers is the one billed — reportVoiceCost is called on the branch
   // that actually produced the transcript, never on the one we hoped would.
   //
-  // THIS LADDER WAS CHEAPEST-FIRST UNTIL 2026-07-29, and the owner reversed it
-  // after reading notes built from an xAI transcript: "the new xai notes from the
+  // THE 2026-07-29 REVERSAL WAS BUILT ON A MISREADING, AND IS UNDONE HERE.
+  //
+  // That day the ladder went cheapest-first -> quality-first because the owner
+  // read notes made from an xAI transcript and said "the new xai notes from the
   // transcript seem to be worser than the assemblyai, it doesnt have the same
-  // quality."
+  // quality." The notes really were worse. The transcript was not the reason.
   //
-  // The order is a QUALITY decision with a known price, not an oversight.
-  // Per apps/web/lib/workload-cost.ts: universal-2 is $0.17/hr against xAI's
-  // $0.10/hr, so leading with AssemblyAI costs about 1.7x per hour of audio on
-  // the transcription line. That is the trade being bought, deliberately.
+  // What actually differed: those notes were written ON THE PHONE, and the phone
+  // shipped a completely different prompt — one that demanded a JSON array of
+  // one-to-three-sentence bullets and forbade markdown, left over from the live
+  // note ticker. Same audio, same engine, different instructions. Feeding BOTH
+  // stored transcripts through the SAME prompt produced the same shape of note,
+  // and a word-level diff of the two transcripts of one recording came back 79
+  // words against 77, nearly every difference capitalisation. PR #357 gave the
+  // phone the web's prompt; there was never a transcript-quality gap to price.
   //
-  // WHY QUALITY WINS HERE even though audio is the most expensive lane: this
-  // transcript is not the deliverable. It is the INPUT to the student's notes and
-  // flashcards, so every error in it is inherited by everything built on top —
-  // a mis-heard term becomes a flashcard that teaches the wrong word. A cheaper
-  // transcript is not a cheaper version of the same product.
+  // So the 1.7x premium was buying nothing. Per apps/web/lib/workload-cost.ts
+  // universal-2 is $0.17/hr against xAI's $0.10/hr, and audio is already the most
+  // expensive lane in the product by a wide margin — roughly 15x the entire AI
+  // lane. Owner 2026-07-30: "switch to xai on all platforms."
   //
-  // xAI stays as the FIRST fallback rather than being deleted: when AssemblyAI
-  // cannot be reached at all, a slightly worse transcript beats a lost lecture.
-  // (Caveat worth knowing before relying on it — xAI's most common observed
-  // failure is `Could not detect audio format from file head`, which is exactly
-  // the wrong time for a safety net to be unreliable. Fixing that is its own
-  // change: send `audio_format`.)
+  // RELIABILITY, MEASURED RATHER THAN REMEMBERED (transcription_jobs, 2026-07-30):
+  // since the vad_threshold fix, xAI has answered 5 of 5 — three as the serving
+  // provider, two as the shadow. Its two historic failures both predate that fix:
+  // an empty transcript (the gate itself) and one `Could not detect audio format
+  // from file header` on a 15-second clip, which has not recurred since and was
+  // never reproduced. That single unexplained 400 is why AssemblyAI now sits
+  // DIRECTLY BEHIND rather than being dropped: when xAI cannot read a file, the
+  // cost is a few seconds and a fall-through, not a lost lecture.
   //
   // Modulate is NOT in this ladder yet, deliberately. Its endpoint and auth are
   // published (api.modulate.ai/v1/transcription, bearer) but how audio is
@@ -260,20 +259,47 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   // and looks exactly like a working system.
   const attempts: string[] = [];
 
+  // xAI leads. Synchronous: the text comes back on this call, so it is parked on
+  // the job row and handed to the first /status poll, and the audio object is
+  // deleted here rather than later.
+  //
+  // A failure here is CHEAP BY DESIGN — it costs the seconds of the attempt and
+  // falls through to AssemblyAI below, which is why leading with the provider
+  // that has one unexplained 400 in its history is a safe trade rather than a
+  // gamble on the student's lecture.
+  if (XAI_KEY) {
+    const xai = await transcribeWithXai(signedUrl);
+    if (xai.ok) {
+      await patchJob(jobId, {
+        provider: "xai",
+        provider_notes: note([...attempts, "xai: ok"]),
+        ...(xai.text ? { transcript: xai.text } : {}),
+      });
+      await settleSynchronousJob(jobId, userId, "xai_grok_stt", xai.seconds, seconds);
+      await removeObject(storagePath);
+      return json({ jobId, usage }, 200, req);
+    }
+    attempts.push(`xai: ${xai.reason}`);
+  } else {
+    // Reads identically to a failed call in every other signal, and is a
+    // completely different fix: a secret this function cannot see.
+    attempts.push("xai: no key visible to this function (checked XAI_API_KEY and xai_api_key)");
+  }
+
   // AssemblyAI is the only ASYNCHRONOUS provider in the ladder: it takes the job
   // and /status collects the text later. That is why its success path returns
   // "processing" and does NOT delete the audio object — handleStatus does both
   // once the transcript lands.
   //
-  // A submit failure now FALLS THROUGH instead of ending the job. It used to be
-  // terminal, which was correct while it sat last; leading the ladder, a terminal
-  // error here would throw away a recording that xAI could still have saved.
+  // A submit failure FALLS THROUGH rather than ending the job. It was terminal
+  // while this block sat last in the ladder; it is not last any more, and a
+  // terminal error here would skip the reason-reporting path at the bottom.
   //
-  // 🔴 Nothing in this block may call finalize() with an error status. The
-  // fall-through leads to settleSynchronousJob on the xAI/Groq branches, and
-  // finalize_transcription_job does `used += p_actual_seconds - audio_seconds`
-  // — a second settle on the same reservation silently corrupts the student's
-  // meter. One terminal finalize per request path, at the bottom.
+  // 🔴 Nothing in this block may call finalize() with an error status. xAI above
+  // may already have run, and finalize_transcription_job does
+  // `used += p_actual_seconds - audio_seconds` — a second settle on the same
+  // reservation silently corrupts the student's meter. One terminal finalize per
+  // request path, at the bottom.
   if (ASSEMBLYAI_KEY) {
     const submitted = await fetch("https://api.assemblyai.com/v2/transcript", {
       body: JSON.stringify({
@@ -311,58 +337,25 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
       // notes are what distinguish them.
       await patchJob(jobId, { provider_notes: note([...attempts, "assemblyai: submitted"]) });
       await finalize({ p_job_id: jobId, p_provider_job_id: submittedBody.id, p_status: "processing" });
-      // THE SHADOW RUN — the same audio through the runner-up, kept beside the
-      // real transcript so the two can be read side by side.
+      // THE SHADOW RUN WAS REMOVED HERE ON 2026-07-30, having answered its
+      // question. It transcribed the owner's own audio a second time through xAI
+      // so the two could be read side by side, and the pairs it collected are
+      // what showed the transcripts were near-identical (79 words against 77) —
+      // which is why xAI now leads this ladder instead of shadowing it.
       //
-      // Storing "both transcripts" WITHOUT this would not produce a comparison.
-      // The ladder returns on the first provider that answers, so one recording
-      // is only ever transcribed once: you would accumulate AssemblyAI text for
-      // Monday's lecture and xAI text for Tuesday's, which is two transcripts of
-      // DIFFERENT audio and settles nothing. Comparison needs identical input.
-      //
-      // SYNCHRONOUS on purpose, rather than backgrounded. /status deletes the
-      // audio object as soon as AssemblyAI finishes, and xAI fetches that object
-      // by URL — so a backgrounded shadow races the delete and loses silently,
-      // writing an empty transcript_alt that reads as "xAI did worse" when it
-      // actually means "the file disappeared mid-fetch". A wrong answer that
-      // looks like a result is precisely what this feature exists to prevent.
-      // The cost is a few seconds on the owner's own submit, on their own clips.
-      //
-      // 🔴 Touches NO meter. No finalize, no settleSynchronousJob, no
-      // reportVoiceCost — AssemblyAI is the serving provider and the only one
-      // that bills. The shadow's xAI charge is the price of the experiment.
-      if (isComparing(userId)) {
-        const shadow = await transcribeWithXai(signedUrl);
-        await patchJob(jobId, {
-          provider_alt: shadow.ok ? "xai" : `xai failed — ${shadow.reason}`,
-          ...(shadow.ok ? { transcript_alt: shadow.text } : {}),
-        });
-      }
+      // It cannot simply be left in place under the new order. It lived on the
+      // AssemblyAI branch, and AssemblyAI is now the FALLBACK: the shadow would
+      // only fire on recordings where xAI had ALREADY failed, transcribing twice
+      // exactly when one attempt had gone wrong. Inverting it is not a small
+      // change either — AssemblyAI is asynchronous, so shadowing it means
+      // submitting a second job and collecting it in handleStatus, not one inline
+      // call. The columns and the data it gathered are kept.
       return json({ jobId, usage }, 200, req);
     }
     attempts.push(`assemblyai: HTTP ${submitted.status}`);
     console.error("AssemblyAI submit failed, falling through", submitted.status, submittedBody?.error);
   } else {
     attempts.push("assemblyai: no key");
-  }
-
-  if (XAI_KEY) {
-    const xai = await transcribeWithXai(signedUrl);
-    if (xai.ok) {
-      await patchJob(jobId, {
-        provider: "xai",
-        provider_notes: note([...attempts, "xai: ok"]),
-        ...(xai.text ? { transcript: xai.text } : {}),
-      });
-      await settleSynchronousJob(jobId, userId, "xai_grok_stt", xai.seconds, seconds);
-      await removeObject(storagePath);
-      return json({ jobId, usage }, 200, req);
-    }
-    attempts.push(`xai: ${xai.reason}`);
-  } else {
-    // Reads identically to a failed call in every other signal, and is a
-    // completely different fix: a secret this function cannot see.
-    attempts.push("xai: no key visible to this function (checked XAI_API_KEY and xai_api_key)");
   }
 
   if (GROQ_KEY) {
@@ -462,18 +455,14 @@ async function handleStatus(req: Request, userId: string, body: Record<string, u
   );
   const actualSeconds = Math.max(0, Math.round(Number(polledBody.audio_duration) || 0));
 
-  // The other half of the comparison: what the SERVING provider heard, parked
-  // beside the shadow's version of the same audio.
-  //
-  // Written to `transcript_primary`, never to `transcript`. That distinction is
+  // The comparison's write to `transcript_primary` stood here until 2026-07-30.
+  // If it ever comes back, it goes back HERE and not one line lower: it must
+  // write `transcript_primary`, never `transcript`. That distinction is
   // load-bearing — the branch at the top of this function treats a non-empty
   // `transcript` as "a synchronous provider parked this, serve it once and clear
   // it", and it is checked BEFORE `status`. Putting AssemblyAI's text there would
   // fire that branch on an asynchronous job: the student would be handed the
   // transcript on an earlier poll and the settlement below would never run.
-  if (isComparing(job.user_id)) {
-    await patchJob(job.id, { transcript_primary: transcript });
-  }
 
   // TWO DIFFERENT NUMBERS, TWO DIFFERENT DESTINATIONS. Read this before
   // changing either.
