@@ -63,10 +63,24 @@ export interface SessionOutput {
   kind: "flashcards" | "slides" | "test" | "mindmap" | "note" | "event" | "report" | "recording" | "other";
   title: string;
   url?: string;
+  /** In-app destination shared with the iOS artifact card. */
+  route?: string;
   transcript?: string;
   notes?: string;
   durationSeconds?: number;
   createdAt?: string;
+  polish?: "pending" | "done";
+}
+
+/** A durable attachment that belongs to a user turn, not to the transient
+ * composer. Images carry both a signed URL for immediate display and the
+ * private storage path that can be re-signed later. */
+export interface SessionAttachment {
+  name: string;
+  kind: "image" | "file";
+  mime?: string;
+  url?: string;
+  storagePath?: string;
 }
 
 export interface SessionMessage {
@@ -82,6 +96,7 @@ export interface SessionMessage {
   at: string;
   sources?: SessionSource[];
   outputs?: SessionOutput[];
+  attachments?: SessionAttachment[];
 }
 
 export interface WorkspaceSession {
@@ -165,10 +180,26 @@ function sanitizeOutput(rawOutput: unknown): SessionOutput | null {
     title: output.title,
     kind: output.kind as SessionOutput["kind"],
     ...(typeof output.url === "string" ? { url: output.url } : {}),
+    ...(typeof output.route === "string" ? { route: output.route } : {}),
     ...(typeof output.transcript === "string" ? { transcript: output.transcript } : {}),
     ...(typeof output.notes === "string" ? { notes: output.notes } : {}),
     ...(typeof output.durationSeconds === "number" ? { durationSeconds: output.durationSeconds } : {}),
     ...(typeof output.createdAt === "string" ? { createdAt: output.createdAt } : {}),
+    ...(output.polish === "pending" || output.polish === "done" ? { polish: output.polish } : {}),
+  };
+}
+
+function sanitizeAttachment(raw: unknown): SessionAttachment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.name !== "string" || !value.name.trim()) return null;
+  if (value.kind !== "image" && value.kind !== "file") return null;
+  return {
+    name: value.name.slice(0, 240),
+    kind: value.kind,
+    ...(typeof value.mime === "string" ? { mime: value.mime.slice(0, 120) } : {}),
+    ...(typeof value.url === "string" ? { url: value.url } : {}),
+    ...(typeof value.storagePath === "string" ? { storagePath: value.storagePath } : {}),
   };
 }
 
@@ -189,6 +220,9 @@ function sanitizeMessage(raw: unknown): SessionMessage | null {
   // the Sources pill after the next reload.
   const sources = persistedSources.length ? persistedSources : inferSourcesFromContent(m.content);
   const outputs = Array.isArray(m.outputs) ? m.outputs.map(sanitizeOutput).filter((output): output is SessionOutput => output !== null).slice(0, 30) : [];
+  const attachments = Array.isArray(m.attachments)
+    ? m.attachments.map(sanitizeAttachment).filter((attachment): attachment is SessionAttachment => attachment !== null).slice(0, 12)
+    : [];
   return {
     id: typeof m.id === "string" && m.id.length > 0 ? m.id : newId(),
     role,
@@ -196,6 +230,7 @@ function sanitizeMessage(raw: unknown): SessionMessage | null {
     at: typeof m.at === "string" ? m.at : new Date(0).toISOString(),
     ...(sources.length ? { sources } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
 }
 
@@ -347,16 +382,35 @@ async function syncCloudForUser(uid: string) {
   }
 }
 
-/** Cloud-authoritative replace, except a session with an in-flight turn or
- * the one currently open — those keep their local copy so a background
- * refresh (tab-focus) can never clobber a streaming answer or a
- * not-yet-synced draft (the create() → appendMessage() window). */
+/** Merge local and cloud message histories. Stable ids are authoritative;
+ * legacy rows fall back to their visible tuple. Cloud wins an exact duplicate
+ * because it carries the normalized timestamp and shared metadata, while
+ * local-only optimistic/offline rows remain present. */
+export function mergeSessionMessages(local: SessionMessage[], cloud: SessionMessage[]): SessionMessage[] {
+  const seen = new Set<string>();
+  const merged: SessionMessage[] = [];
+  for (const message of [...cloud, ...local]) {
+    const key = message.id ?? `${message.role}|${message.at}|${message.content}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(message);
+  }
+  return merged
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    .slice(-MAX_MESSAGES_PER_SESSION);
+}
+
+/** Cloud refresh reconciles every idle session, including the one currently
+ * open. The previous implementation protected the selected session forever,
+ * which also blocked every message sent from the iPhone from appearing in the
+ * web chat until the user navigated away. Only an actively streaming session
+ * remains protected; idle/open sessions merge by stable message id. */
 function applyCloudRefresh(cloudSessions: WorkspaceSession[]) {
   const protectedIds = new Set(Object.keys(state.working));
-  if (state.selectedId) protectedIds.add(state.selectedId);
   const preserved = state.sessions.filter((s) => protectedIds.has(s.id));
   const preservedIds = new Set(preserved.map((s) => s.id));
   const localById = new Map(state.sessions.map((s) => [s.id, s]));
+  const cloudIds = new Set(cloudSessions.map((s) => s.id));
   const fromCloud = cloudSessions
     .filter((s) => !preservedIds.has(s.id))
     .map((s) => {
@@ -370,10 +424,13 @@ function applyCloudRefresh(cloudSessions: WorkspaceSession[]) {
       return {
         ...s,
         ...(outputs.length ? { outputs } : {}),
-        messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION),
+        messages: mergeSessionMessages(localById.get(s.id)?.messages ?? [], s.messages),
       };
     });
-  const sessions = [...preserved, ...fromCloud];
+  // A local-only session may be waiting for a retried cloud write. Dropping it
+  // just because it was absent from one read makes offline-first destructive.
+  const localOnly = state.sessions.filter((s) => !protectedIds.has(s.id) && !cloudIds.has(s.id));
+  const sessions = [...preserved, ...fromCloud, ...localOnly];
   const stillSelected = state.selectedId ? sessions.some((s) => s.id === state.selectedId) : true;
   setState({ ...state, sessions, selectedId: stillSelected ? state.selectedId : null });
 }
@@ -413,6 +470,10 @@ export const sessionsStore = {
   /** Called from useSessions() only — wires which account's cloud data this
    *  tab syncs against. Not meant for direct use by other components. */
   setCloudUser,
+
+  refreshCloud() {
+    if (cloudUserId) void syncCloudForUser(cloudUserId);
+  },
 
   create(title = "New session"): WorkspaceSession {
     ensureHydrated();
@@ -637,6 +698,18 @@ export function useSessions(): UseSessionsApi {
 
   useEffect(() => {
     sessionsStore.setCloudUser(uid);
+  }, [uid]);
+
+  // Keep the shared thread genuinely shared while both surfaces are open.
+  // Realtime is not enabled for these tables in production; a small,
+  // visibility-gated pull gives web ↔ iPhone convergence without waiting for
+  // a tab switch. syncCloudForUser already coalesces overlapping requests.
+  useEffect(() => {
+    if (!uid || typeof document === "undefined") return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") sessionsStore.refreshCloud();
+    }, 8_000);
+    return () => window.clearInterval(timer);
   }, [uid]);
 
   const snap = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

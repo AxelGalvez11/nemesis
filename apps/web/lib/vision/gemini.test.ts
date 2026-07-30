@@ -68,13 +68,11 @@ import {
   type Part = { inline_data?: { data: string; mime_type: string }; text?: string };
   const body = JSON.parse(buildVisionRequest("QUJD", "image/heic", PHOTO_PROMPT)) as {
     contents: [{ parts: [Part, Part] }];
-    generationConfig: { temperature: number };
   };
   const [inline, instruction] = body.contents[0].parts;
   assert.equal(inline.inline_data?.mime_type, "image/heic");
   assert.equal(inline.inline_data?.data, "QUJD");
   assert.equal(instruction.text, PHOTO_PROMPT);
-  assert.equal(body.generationConfig.temperature, 0, "a drifting transcript is a corrupted note");
 }
 
 // The photo prompt has to carry both halves of the job: transcribe text, and

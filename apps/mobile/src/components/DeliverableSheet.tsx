@@ -1,4 +1,4 @@
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
@@ -103,7 +103,7 @@ export function DeliverableCardStack(
               </Text>
               {compact && !polishing ? null : (
                 <Text style={styles.cardWhere} numberOfLines={1}>
-                  {polishing ? "Polishing transcript…" : card.where}
+                  {polishing ? "Transcribing and polishing notes…" : card.where}
                 </Text>
               )}
             </View>
@@ -136,9 +136,16 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
       <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
         {polish === "pending" ? (
-          <Text style={styles.polishLine} testID="chat-deliverable-polishing">
-            Polishing transcript — a high-accuracy version replaces this text automatically.
-          </Text>
+          <View style={styles.polishPreview} testID="chat-deliverable-polishing">
+            <View style={styles.polishHeader}>
+              <ActivityIndicator color={styles.polishLine.color} size="small" />
+              <Text style={styles.polishLine}>Preparing high-quality notes…</Text>
+            </View>
+            <View style={[styles.previewLine, { width: "92%" }]} />
+            <View style={[styles.previewLine, { width: "78%" }]} />
+            <View style={[styles.previewLine, { width: "86%" }]} />
+            <Text style={styles.previewCaption}>The finished notes will replace this preview automatically and stay linked to this chat.</Text>
+          </View>
         ) : null}
         {output?.notes ? (
           <>
@@ -204,7 +211,11 @@ const createStyles = (c: ThemeColors) =>
     // that animated cap instead of overflowing it.
     body: { flexShrink: 1 },
     meta: { ...type.micro, color: c.text3, marginBottom: space(3) },
-    polishLine: { ...type.small, color: c.accent, marginBottom: space(3), lineHeight: 19 },
+    polishLine: { ...type.small, color: c.accent, lineHeight: 19 },
+    polishPreview: { gap: space(2), padding: space(3), borderRadius: radius.md, backgroundColor: c.surface2, marginBottom: space(3) },
+    polishHeader: { flexDirection: "row", alignItems: "center", gap: space(2) },
+    previewLine: { height: 9, borderRadius: radius.pill, backgroundColor: c.skeleton },
+    previewCaption: { ...type.micro, color: c.text3, lineHeight: 17, marginTop: space(1) },
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(2), marginBottom: space(1) },
     contentText: { ...type.small, color: c.text, lineHeight: 22 },
     mutedText: { ...type.small, color: c.text3, paddingVertical: space(2) },

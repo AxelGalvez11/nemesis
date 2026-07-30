@@ -18,10 +18,10 @@ interface MonthGridProps {
 
 export function MonthGrid({ days, eventsByDay, onAddOnDate, onOpenEvent }: MonthGridProps) {
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="grid shrink-0 grid-cols-7 border-b border-border text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
+      <div className="grid shrink-0 grid-cols-7 border-b border-(--ui-stroke-tertiary) text-sm font-medium text-(--ui-text-secondary)">
         {WEEKDAY_LABELS.map((label) => (
-          <div className="px-2 py-2 text-center" key={label}>
+          <div className="px-3 py-2 text-right" key={label}>
             {label}
           </div>
         ))}
@@ -54,15 +54,15 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
   return (
     <div
       className={cn(
-        "group flex min-h-28 flex-col gap-1 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0",
-        day.inMonth && isWeekend && "bg-(--ui-bg-quaternary)/25",
-        !day.inMonth && "bg-(--ui-bg-quaternary)/50",
+        "group flex min-h-24 flex-col gap-1 border-b border-r border-(--ui-stroke-tertiary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
+        day.inMonth && isWeekend && "bg-(--ui-bg-quaternary)/10",
+        !day.inMonth && "bg-(--ui-bg-quaternary)/20",
       )}
     >
-      <div className="flex shrink-0 items-center justify-between">
+      <div className="flex shrink-0 flex-row-reverse items-center justify-between">
         <span
           className={cn(
-            "grid size-6 place-items-center rounded-full text-[0.75rem] font-medium tabular-nums",
+            "grid size-7 place-items-center rounded-full text-sm font-medium tabular-nums",
             day.isToday ? "bg-(--theme-primary) text-primary-foreground" : !day.inMonth && "text-(--ui-text-quaternary)",
           )}
         >

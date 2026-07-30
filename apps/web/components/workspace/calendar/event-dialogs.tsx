@@ -46,6 +46,7 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
   const [title, setTitle] = useState(event?.title ?? "");
   const [date, setDate] = useState(event?.date ?? initialDate ?? "");
   const [time, setTime] = useState(event?.time ?? "");
+  const [endTime, setEndTime] = useState(event?.endTime ?? "");
   const [kind, setKind] = useState<CalendarEventKind>(event?.kind ?? "assignment");
   const [course, setCourse] = useState(event?.course ?? "");
   const [note, setNote] = useState(event?.note ?? "");
@@ -63,8 +64,10 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
       date,
       kind,
       source: "manual",
+      ...(event?.recurrence ? { recurrence: event.recurrence } : {}),
     };
     if (time) built.time = time;
+    if (endTime) built.endTime = endTime;
     if (course.trim()) built.course = course.trim();
     if (note.trim()) built.note = note.trim();
 
@@ -98,10 +101,17 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <Input autoFocus onChange={(e) => setTitle(e.target.value)} placeholder="Title" value={title} />
-          <div className="flex gap-2">
-            <Input className="flex-1" onChange={(e) => setDate(e.target.value)} type="date" value={date} />
-            <Input className="w-32" onChange={(e) => setTime(e.target.value)} type="time" value={time} />
+          <div className="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-2">
+            <Input onChange={(e) => setDate(e.target.value)} type="date" value={date} />
+            <Input aria-label="Start time" onChange={(e) => setTime(e.target.value)} type="time" value={time} />
+            <Input aria-label="End time" onChange={(e) => setEndTime(e.target.value)} type="time" value={endTime} />
           </div>
+          {event?.recurrence ? (
+            <p className="text-xs text-muted-foreground">
+              Repeats on {event.recurrence.days.map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day]).join(", ")}
+              {" "}through {event.recurrence.until}.
+            </p>
+          ) : null}
           <Select onValueChange={(value) => setKind(value as CalendarEventKind)} value={kind}>
             <SelectTrigger aria-label="Event type" className="w-full">
               <SelectValue />

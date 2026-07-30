@@ -20,7 +20,7 @@
 // upsert/insert-with-conflict-ignore keyed on `id`, so a message can safely be
 // re-sent after a dropped connection without ever duplicating a row.
 
-import type { ChatMsg, ChatOutput, ChatRole, ChatSource, MessageThinking } from "./chat-thread.ts";
+import type { ChatAttachment, ChatMsg, ChatOutput, ChatRole, ChatSource, MessageThinking } from "./chat-thread.ts";
 
 export interface ChatThread {
   id: string;
@@ -383,7 +383,7 @@ function sourcesFromMeta(meta: unknown): ChatSource[] {
 /** The kinds SessionOutput/ChatOutput allows — mirrors web's toSessionOutput
  *  validation set exactly (sessions-cloud.ts) so a malformed/future kind never
  *  round-trips into a value the UI doesn't know how to render. */
-const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
+const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
 
 /** Tolerant parse of the `meta` jsonb column's `{ outputs?: [...] }` shape —
  *  used for BOTH `chat_messages.meta.outputs` (per-turn deliverables) and
@@ -417,6 +417,27 @@ export function outputsFromMeta(meta: unknown): ChatOutput[] {
   return outputs;
 }
 
+export function attachmentsFromMeta(meta: unknown): ChatAttachment[] {
+  if (typeof meta !== "object" || meta === null) return [];
+  const raw = (meta as Record<string, unknown>).attachments;
+  if (!Array.isArray(raw)) return [];
+  const attachments: ChatAttachment[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { name, kind, mime, url, storagePath } = entry as Record<string, unknown>;
+    if (typeof name !== "string" || (kind !== "image" && kind !== "file")) continue;
+    attachments.push({
+      name: name.slice(0, 240),
+      kind,
+      ...(typeof mime === "string" ? { mime: mime.slice(0, 120) } : {}),
+      ...(typeof url === "string" ? { url } : {}),
+      ...(typeof storagePath === "string" ? { storagePath } : {}),
+    });
+    if (attachments.length >= 12) break;
+  }
+  return attachments;
+}
+
 /** Map one `chat_messages` row into a ChatMsg. Rows with role='system' (never
  *  written by this client, but the column allows it) are dropped — only
  *  user/assistant turns ever render in the transcript. `created_at` is
@@ -432,6 +453,7 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
   const at = parsed.toISOString();
   const sources = sourcesFromMeta(row.meta);
   const outputs = outputsFromMeta(row.meta);
+  const attachments = attachmentsFromMeta(row.meta);
   const thinking = thinkingFromMeta(row.meta);
   return {
     at,
@@ -440,6 +462,7 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
     role: row.role,
     ...(sources.length ? { sources } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(attachments.length ? { attachments } : {}),
     ...(thinking ? { thinking } : {}),
   };
 }

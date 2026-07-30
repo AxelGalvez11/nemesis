@@ -58,7 +58,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
+import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
@@ -178,6 +178,7 @@ export default function ChatScreen() {
   // transcript. See api/chat.ts's loadThreadOutputs doc for why the phone
   // only ever reads these, never creates them.
   const [threadOutputs, setThreadOutputs] = useState<ChatOutput[]>([]);
+  const recordingUpdatesSeenRef = useRef(new Set<string>());
   // Composer "+" mini menu (owner: attach a Library doc, or toggle deep
   // research) and the two things it opens/toggles.
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -483,7 +484,12 @@ export default function ChatScreen() {
    *  are NOT yet in state — a setState in the same tick would not have flushed, so
    *  reading them from state here would send an empty turn with no picture. The
    *  composer passes nothing and everything comes from state as before. */
-  const send = useCallback((override?: { text?: string; doc?: { content: string; title: string }; keepPhoto?: boolean }) => {
+  const send = useCallback((override?: {
+    text?: string;
+    doc?: { content: string; title: string };
+    attachment?: ChatAttachment;
+    keepPhoto?: boolean;
+  }) => {
     const text = (override?.text ?? input).trim();
     if (!text || !uid || !threadId || sendingRef.current) return;
     const doc = override?.doc ?? attachedDoc;
@@ -522,7 +528,12 @@ export default function ChatScreen() {
     // sources; nothing here forces it.
     const research = false;
     const chosenEffort = effort;
-    const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
+    const userMsg: ChatMsg = {
+      at: new Date().toISOString(),
+      content: withAttachmentNote(text, doc?.title ?? null),
+      role: "user",
+      ...(override?.attachment ? { attachments: [override.attachment] } : {}),
+    };
     const base = [...history, userMsg];
     setMessages(base);
     setLastError(null);
@@ -663,7 +674,18 @@ export default function ChatScreen() {
         // Passed explicitly rather than through state: the setAttachedDoc above
         // has not flushed yet, so a send that read state would go out with no
         // picture attached.
-        send({ doc, keepPhoto: true, text: input.trim() || PHOTO_ANALYSIS_ASK });
+        send({
+          attachment: {
+            kind: "image",
+            mime: "image/jpeg",
+            name: `${read.title}.jpg`,
+            storagePath: read.storagePath,
+            url: read.imageUrl,
+          },
+          doc,
+          keepPhoto: true,
+          text: input.trim() || PHOTO_ANALYSIS_ASK,
+        });
       } catch (cause) {
         // api/photos.ts throws sentences, so this reaches the screen as-is.
         setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
@@ -770,6 +792,32 @@ export default function ChatScreen() {
             content: output.route
               ? "Recording saved. Your notes are being prepared in the Library."
               : "Recording saved. Your notes are being prepared.",
+            outputs: [output],
+            role: "assistant",
+          },
+        ];
+        void saveThreadMessages(uid, threadId, next);
+        return next;
+      });
+    },
+    [threadId, uid],
+  );
+
+  const handleRecordingUpdated = useCallback(
+    (output: ChatOutput) => {
+      if (!uid || !threadId) return;
+      const key = `${output.id}:${output.polish}:${output.notes ?? ""}`;
+      if (recordingUpdatesSeenRef.current.has(key)) return;
+      recordingUpdatesSeenRef.current.add(key);
+      setThreadOutputs((current) => [output, ...current.filter((entry) => entry.id !== output.id)]);
+      setMessages((current) => {
+        const next: ChatMsg[] = [
+          ...current,
+          {
+            at: new Date().toISOString(),
+            content: output.notes
+              ? "Your polished recording notes are ready in the Library."
+              : "The recording is safe, but Nemesis couldn't produce reliable notes from this audio.",
             outputs: [output],
             role: "assistant",
           },
@@ -931,7 +979,7 @@ export default function ChatScreen() {
         });
       };
       pull();
-      const timer = setInterval(pull, 30000);
+      const timer = setInterval(pull, 8_000);
       return () => clearInterval(timer);
     }, [uid, threadId]),
   );
@@ -1018,6 +1066,7 @@ export default function ChatScreen() {
               threadId={threadId}
               onDone={exitRecordMode}
               onSaved={handleRecordingSaved}
+              onUpdated={handleRecordingUpdated}
               onRecordingStateChange={setRecordingState}
             />
           </View>
@@ -1072,6 +1121,15 @@ export default function ChatScreen() {
                   </View>
                 ) : item.msg!.role === "user" ? (
                   <View style={[styles.bubble, styles.userBubble]}>
+                    {item.msg!.attachments?.filter((attachment) => attachment.kind === "image" && attachment.url).map((attachment) => (
+                      <Image
+                        accessibilityLabel={attachment.name}
+                        key={`${attachment.storagePath ?? attachment.url}:${attachment.name}`}
+                        resizeMode="contain"
+                        source={{ uri: attachment.url as string }}
+                        style={styles.messageImage}
+                      />
+                    ))}
                     <Text style={styles.userText}>{item.msg!.content}</Text>
                   </View>
                 ) : (
@@ -1579,7 +1637,9 @@ const createStyles = (c: ThemeColors) =>
     userBubble: {
       alignSelf: "flex-end",
       backgroundColor: c.surface2,
+      gap: space(2),
     },
+    messageImage: { width: 250, maxWidth: "100%", height: 220, borderRadius: radius.md, backgroundColor: c.surface },
     userText: { ...type.body, color: c.text },
     // Assistant is not a bubble — it's a full-width block of markdown.
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },

@@ -23,14 +23,12 @@ import {
   loadCalendarEvents,
   monthGrid,
   saveCalendarEvent,
-  upcomingEvents,
   weekGrid,
 } from "@/lib/workspace/calendar-model";
 
-import { Agenda } from "./agenda";
 import { CalendarHeader } from "./calendar-header";
 import { EventFormDialog } from "./event-dialogs";
-import { AGENDA_WINDOW_DAYS, CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
+import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
 import { SyllabusDialog } from "./syllabus-dialog";
 import { TimeGridView } from "./time-grid-view";
@@ -56,7 +54,6 @@ export function CalendarWorkspace() {
   const [view, setView] = useState<CalendarViewMode>("month");
   const [cursor, setCursor] = useState<Date>(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [syllabusOpen, setSyllabusOpen] = useState(false);
 
@@ -84,11 +81,9 @@ export function CalendarWorkspace() {
   // from null to a real id) or preview status changes.
   useEffect(() => {
     let cancelled = false;
-    setLoaded(false);
     loadCalendarEvents({ userId, preview }).then((state) => {
       if (cancelled) return;
       setEvents(state.events);
-      setLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -96,7 +91,6 @@ export function CalendarWorkspace() {
   }, [userId, preview]);
 
   const byDate = useMemo(() => eventsByDate(events), [events]);
-  const upcoming = useMemo(() => upcomingEvents(events, today, AGENDA_WINDOW_DAYS), [events, today]);
   const monthDays = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth(), today), [cursor, today]);
   const weekDays = useMemo(() => weekGrid(cursor, today), [cursor, today]);
   // Day view is the same grid with one column, so it takes the same shape.
@@ -125,7 +119,8 @@ export function CalendarWorkspace() {
   // written before then still carry it, so the fix has to be on the read side
   // too or those stay frozen forever.
   function openEvent(event: CalendarEvent) {
-    setDialog({ mode: "edit", event });
+    const original = event.seriesId ? events.find((candidate) => candidate.id === event.seriesId) : event;
+    setDialog({ mode: "edit", event: original ?? event });
   }
 
   function openMonth(year: number, month: number) {
@@ -187,10 +182,11 @@ export function CalendarWorkspace() {
           onChangeView={setView}
           onImportSyllabus={() => setSyllabusOpen(true)}
           onStep={goStep}
+          onToday={() => setCursor(new Date())}
           today={today}
           view={view}
         />
-        <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 max-sm:px-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 max-sm:px-2 max-sm:pb-2">
           {/* Day and Week are the same time grid with a different column count
               — they were near-duplicate components before, so every fix had to
               be made twice. */}
@@ -206,7 +202,6 @@ export function CalendarWorkspace() {
           {view === "year" && (
             <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} year={cursor.getFullYear()} />
           )}
-          <Agenda events={upcoming} hasAnyEvents={events.length > 0} loaded={loaded} onOpenEvent={openEvent} />
         </div>
       </div>
 

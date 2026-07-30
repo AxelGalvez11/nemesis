@@ -38,7 +38,11 @@ import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/p
 /** Google retires fixed model ids for new keys (learned 2026-07-14 with
  *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
  *  404 exactly like supabase/functions/nemesis-media does. */
-export const VISION_MODEL_LADDER = ["gemini-2.5-flash", "gemini-2.0-flash"] as const;
+export const VISION_MODEL_LADDER = [
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+] as const;
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -270,16 +274,14 @@ async function callGemini(body: string, key: string, env: VisionEnv, signal?: Ab
     } catch {
       continue;
     }
-    if (response.status === 404) {
-      await response.body?.cancel();
-      continue;
-    }
     if (!response.ok) {
       await response.body?.cancel();
-      return null;
+      if (response.status === 401 || response.status === 403) return null;
+      continue;
     }
     const payload = (await response.json().catch(() => null)) as unknown;
-    return parseVisionText(payload) || null;
+    const text = parseVisionText(payload);
+    if (text) return text;
   }
   return null;
 }
@@ -418,19 +420,14 @@ export async function readPdfWithVision(
     } catch {
       continue;
     }
-    // Model id retired for this key — try the next rung.
-    if (response.status === 404) {
-      await response.body?.cancel();
-      continue;
-    }
     if (!response.ok) {
       await response.body?.cancel();
-      return null;
+      if (response.status === 401 || response.status === 403) return null;
+      continue;
     }
     const payload = (await response.json().catch(() => null)) as unknown;
     const text = parseVisionText(payload);
     if (text) return { model, text };
-    return null;
   }
   return null;
 }
