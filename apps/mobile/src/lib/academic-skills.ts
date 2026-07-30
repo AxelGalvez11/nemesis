@@ -67,7 +67,14 @@ const SKILL_INSTRUCTIONS: Record<AcademicSkill, string> = {
   "test-builder":
     "Academic skill: Test Builder. You MUST call add_practice_test so the result appears in Study; never leave the test only in chat. Follow the question count, difficulty, and question types the learner just selected. Each item must test one objective, have one unambiguously best answer, plausible misconception-based distractors when applicable, no answer clues, and a concise rationale explaining why the correct option wins. Save it under the Generated tests Study group unless the learner names a course or folder.",
   "flashcard-builder":
-    "Academic skill: Flashcard Builder. You MUST call list_study_decks and then add_flashcards so every card appears in Study; never leave cards only in chat. Follow the learner's selected format exactly and set each card_type to basic, cloze, or reversed. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing matching deck when possible. " +
+    // 🔴 "You MUST call list_study_decks and then add_flashcards" put a deck sweep
+    // FIRST, before the model had settled what the cards were even about. Asked for
+    // cards "from this" after a recording, it opened the student's existing decks,
+    // found an unrelated subject there, and built twenty cards on it (owner
+    // 2026-07-30). The saving requirement was always the point; the ordering was an
+    // accident. Decks are now consulted to choose a DESTINATION, after the source
+    // is settled — and the source is whatever the student pointed at.
+    "Academic skill: Flashcard Builder. First settle what the cards are FROM: if the learner points at something in this conversation, use that and do not go looking for other material. Then call add_flashcards so every card appears in Study; never leave cards only in chat, and call list_study_decks only to pick which deck they belong in. Follow the learner's selected format exactly and set each card_type to basic, cloze, or reversed. Apply the minimum-information principle: one retrievable fact or relationship per card, a precise prompt, a short self-contained answer, no duplicate prompts, no answer leaked in the question, and no vague pronouns without context. Prefer cards that require recall over recognition. Use an existing deck only when it matches what these cards are actually about; otherwise make a new one. " +
     CONSISTENT_NAMING_RULE,
   "notes-builder":
     `Academic skill: Notes Builder. You MUST call create_library_note so the note appears in Library; never leave it only in chat. Use the learner's requested folder when given, otherwise file it in "${GENERATED_NOTES_FOLDER}". Write skimmable markdown with a clear title, learning objectives, concise sections, worked examples where useful, misconceptions, and a short recap.\n\n${SAVED_WRITING_TELLS}`,

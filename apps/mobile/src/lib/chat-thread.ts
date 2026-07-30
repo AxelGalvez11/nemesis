@@ -9,6 +9,7 @@ import { UNTRUSTED_CONTENT_RULE, WRITING_VOICE, wrapUntrusted } from "@nemesis/s
 
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
+import { ARTIFACT_REFERENCE_RULE, expandArtifactContext } from "./history-artifacts.ts";
 
 export type ChatRole = "assistant" | "user";
 
@@ -143,7 +144,20 @@ export const CHAT_SYSTEM_PROMPT =
   "and mind maps to their Study page, and read or add events on their Calendar. Flashcards, tests, and mind maps belong in Study. Notes and slide decks belong in Library. " +
   "Events belong on the Calendar tab. Use the tools whenever a question involves their own notes, decks, or schedule, or when they ask you to make or " +
   "save something — read their real material instead of guessing, and never invent what one of their notes or their calendar says. After any change, say " +
-  "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. School portals are still handled by the Mac app. " +
+  "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. " +
+  // 🔴 THIS SENTENCE USED TO SEND THE STUDENT TO AN APP THEY CANNOT GET. It read
+  // "School portals are still handled by the Mac app." The owner caught it on
+  // their phone (2026-07-30): the model answered "I cannot access your Canvas
+  // portal directly — that requires the Mac app." The Mac app is deferred, so
+  // that is a dead end wearing the clothes of an answer.
+  //
+  // The restriction it encodes is real and stays — Nemesis genuinely cannot log
+  // into a school portal, and a model that thinks it can will invent what it
+  // found there. What changes is the destination: name what the student can do
+  // on the surface they are holding instead of naming a product. Deliberately
+  // "course sites", not any one system's name — a law student's portal and an
+  // apprentice's are not called the same thing.
+  "You cannot sign in to school portals or course sites, and never tell the student another app will do it for them: when their material lives in one, ask them to upload, paste, or photograph it, and work from that. " +
   // The SAME voice rules the web prompt carries, from packages/shared, so the
   // phone and the browser cannot answer in two different registers. Appended
   // last for the same reason as on web — see chatSystemPrompt in chat-api.ts.
@@ -184,6 +198,21 @@ export function buildWireMessages(
   learnerProfile = "",
   /** True when course material rides along with this turn — see MATERIAL_OFFER. */
   hasMaterial = false,
+  /** Retrieved background — the second-brain packet. Its OWN system message, on
+   *  purpose.
+   *
+   *  🔴 IT USED TO BE CONCATENATED ONTO THE USER'S MESSAGE. A student asking "make
+   *  flashcards from this" therefore sent one message reading, in full: their seven
+   *  words, then several unrelated Library notes, their calendar, and their
+   *  most-failed cards. The word "this" had that pile as its nearest antecedent and
+   *  the recording they meant was nowhere on the wire, so the model built cards on
+   *  the wrong subject entirely (owner 2026-07-30).
+   *
+   *  Retrieved material is not something the student said. Keeping it in a separate
+   *  system message is what lets a pronoun in their sentence resolve to their
+   *  conversation rather than to a search result. It still sits last, closest to the
+   *  answer, which is where it earns its keep when the question IS about their notes. */
+  groundingContext = "",
 ): WireMsg[] {
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -191,10 +220,27 @@ export function buildWireMessages(
   const profile = learnerProfile.trim() ? `\n\n${learnerProfile.trim()}` : "";
   return [
     {
-      content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(resolvedDecision.route)}\n\n${academicSkillInstruction(userText, hasMaterial, priorAssistantText)}${profile}`,
+      content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction(resolvedDecision.route)}\n\n${academicSkillInstruction(userText, hasMaterial, priorAssistantText)}${profile}`,
       role: "system",
     },
-    ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),
+    // 🔴 expandArtifactContext BEFORE trimHistory, and that order is the point.
+    // This line used to be a bare `.map` that kept only content+role, so every
+    // artifact the conversation produced — a recording's notes, a deck, a saved
+    // note — was invisible to the next turn, and a question like "make flashcards
+    // from this" had nothing to bind "this" to. Expanding first also means the
+    // 24,000-character budget is measured against what is ACTUALLY sent; appending
+    // afterwards would silently blow it. See lib/history-artifacts.ts.
+    ...trimHistory(expandArtifactContext(history)).map((msg) => ({ content: msg.content, role: msg.role })),
+    ...(groundingContext.trim()
+      ? [{
+        content:
+          "Background retrieved automatically from this student's workspace. It was NOT said by them and is " +
+          "not what they are pointing at. Use it only where it is relevant to what they actually asked; if it " +
+          "is about a different subject, ignore it.\n\n" +
+          groundingContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     { content: userText, role: "user" },
   ];
 }

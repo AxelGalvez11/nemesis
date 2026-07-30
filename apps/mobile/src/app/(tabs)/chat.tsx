@@ -60,7 +60,7 @@ import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
-import { mergeRefreshedMessages } from "@/lib/chat-threads";
+import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
@@ -201,6 +201,9 @@ export default function ChatScreen() {
   // only ever reads these, never creates them.
   const [threadOutputs, setThreadOutputs] = useState<ChatOutput[]>([]);
   const recordingUpdatesSeenRef = useRef(new Set<string>());
+  // artifact id → the id of the chat message showing it, so the enhance pass can
+  // rewrite that one message instead of appending a second. See handleRecordingSaved.
+  const recordingMessageIdsRef = useRef(new Map<string, string>());
   // Composer "+" mini menu (owner: attach a Library doc, or toggle deep
   // research) and the two things it opens/toggles.
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -909,24 +912,44 @@ export default function ChatScreen() {
     setRecordingState("idle");
   }, []);
 
+  // 🔴 ONE MESSAGE PER RECORDING, REWRITTEN IN PLACE — not two.
+  //
+  // Saving a recording used to produce THREE blocks: "Recording saved. Your notes
+  // are being prepared in the Library.", then the card, then a whole second message
+  // "Your polished recording notes are ready in the Library." The owner's word for
+  // it (2026-07-30) was confusing, and it is: three things narrating one event, the
+  // last of which repeats what the card underneath it already says.
+  //
+  // Web has never had this — it posts one pending message and REWRITES it
+  // (sessions-store appendPending/resolvePending). The phone appended instead,
+  // because a message is normally a historical record that nothing rewrites.
+  //
+  // The id is minted here rather than derived, and that is the load-bearing detail:
+  // deriveMessageId hashes (thread, role, at, CONTENT), so rewriting the text of a
+  // message that had already been persisted would give it a NEW id, leave the old
+  // row in the cloud, and let the 8-second poll fold the stale "…being prepared"
+  // line back onto the screen beside the resolved one — three blocks again, this
+  // time self-inflicted. An explicit id makes identity survive the rewrite, and the
+  // placeholder is deliberately NOT persisted until it resolves. If the app dies in
+  // between, the artifact still lives in the thread's own outputs, so the card
+  // survives as the header chip.
   const handleRecordingSaved = useCallback(
     (output: ChatOutput) => {
       if (!uid || !threadId) return;
-      setMessages((current) => {
-        const next: ChatMsg[] = [
-          ...current,
-          {
-            at: new Date().toISOString(),
-            content: output.route
-              ? "Recording saved. Your notes are being prepared in the Library."
-              : "Recording saved. Your notes are being prepared.",
-            outputs: [output],
-            role: "assistant",
-          },
-        ];
-        void saveThreadMessages(uid, threadId, next);
-        return next;
-      });
+      const messageId = generateUuidV4();
+      recordingMessageIdsRef.current.set(output.id, messageId);
+      setMessages((current) => [
+        ...current,
+        {
+          at: new Date().toISOString(),
+          // No "in the Library" here any more: the card directly below says where
+          // it went and opens it. The sentence saying it too was half the clutter.
+          content: "Recording saved. Writing up your notes.",
+          id: messageId,
+          outputs: [output],
+          role: "assistant",
+        },
+      ]);
     },
     [threadId, uid],
   );
@@ -938,21 +961,40 @@ export default function ChatScreen() {
       if (recordingUpdatesSeenRef.current.has(key)) return;
       recordingUpdatesSeenRef.current.add(key);
       setThreadOutputs((current) => [output, ...current.filter((entry) => entry.id !== output.id)]);
+      const settled = output.notes
+        ? "Recording saved and written up."
+        : "The recording is safe, but Nemesis couldn't produce reliable notes from this audio.";
+      const messageId = recordingMessageIdsRef.current.get(output.id);
       setMessages((current) => {
-        const next: ChatMsg[] = [
-          ...current,
-          {
-            at: new Date().toISOString(),
-            content: output.notes
-              ? "Your polished recording notes are ready in the Library."
-              : "The recording is safe, but Nemesis couldn't produce reliable notes from this audio.",
-            outputs: [output],
-            role: "assistant",
-          },
-        ];
+        // By id first, then by the artifact the message carries. The second route
+        // matters after a restart or a thread revisit, where the placeholder came
+        // back from the cloud and this session's ref knows nothing about it —
+        // without it we would append, which is the bug being fixed.
+        const index = current.findIndex(
+          (message) =>
+            (messageId !== undefined && message.id === messageId) ||
+            (message.outputs ?? []).some((entry) => entry.id === output.id),
+        );
+        const next: ChatMsg[] =
+          index >= 0
+            ? current.map((message, i) =>
+              i === index ? { ...message, content: settled, outputs: [output] } : message)
+            : [
+              ...current,
+              {
+                at: new Date().toISOString(),
+                content: settled,
+                id: messageId,
+                outputs: [output],
+                role: "assistant",
+              },
+            ];
+        // Persisted only now — see handleRecordingSaved for why the placeholder is
+        // deliberately never written.
         void saveThreadMessages(uid, threadId, next);
         return next;
       });
+      recordingMessageIdsRef.current.delete(output.id);
     },
     [threadId, uid],
   );

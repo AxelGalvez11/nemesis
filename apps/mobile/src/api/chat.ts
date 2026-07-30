@@ -390,13 +390,15 @@ export async function sendChat(
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
   // Personal context goes LAST so it is closest to the answer and the student's
-  // course material wins over generic model memory when the two disagree.
+  // course material wins over generic model memory when the two disagree — but it
+  // rides its OWN system message now, NOT the student's sentence. Appending it here
+  // is what let "make flashcards from this" resolve "this" to a pile of retrieved
+  // notes on an unrelated subject (owner 2026-07-30). See buildWireMessages.
   const brain = await brainLookup;
   const brainContext = formatBrainContext(brain);
   if (brainContext) {
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });
-    groundedText = `${groundedText}\n\n${brainContext}`;
   }
   onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
 
@@ -430,7 +432,14 @@ export async function sendChat(
 
   const toolsEnabled = toolsAllowed(decision);
   const learnerProfile = await learnerProfileForChat(uid);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, learnerProfile, Boolean(attachedDoc));
+  let messages: WireMsg[] = buildWireMessages(
+    history,
+    groundedText,
+    decision,
+    learnerProfile,
+    Boolean(attachedDoc),
+    brainContext,
+  );
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice
