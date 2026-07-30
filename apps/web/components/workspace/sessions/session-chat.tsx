@@ -417,9 +417,9 @@ export function SessionChat() {
       // costs nothing extra folded in here, and it is what the Library note,
       // its filename, and the chat card are all called. An empty title is not
       // an error: createArtifact falls back to the dated name.
-      const { notes, title } = uid
+      const { fallbackModel, notes, title } = uid
         ? await requestRecordingNote({ transcript: draft.transcript, uid })
-        : { notes: "", title: "" };
+        : { fallbackModel: null, notes: "", title: "" };
       // targetId, not the hook's own contextId: when this callback created the
       // session a moment ago, that prop is still the previous render's value.
       const artifact = await createArtifact({ ...draft, notes }, title, targetId);
@@ -463,6 +463,16 @@ export function SessionChat() {
               ? "Recording captured — transcript and notes are ready."
               : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
           draft.silenceSkipped ? `\n\n${draft.silenceSkipped}.` : "",
+          // SAY WHEN A BACKUP ENGINE WROTE THESE. The answer engine falls
+          // through to a spare when the usual one is unreachable, which keeps
+          // recordings working during an outage and is worth keeping. But on
+          // 2026-07-29 it downgraded the notes for days with nothing to show
+          // for it — they stopped following their own prompt and every signal
+          // still read as success. A student cannot ask for a rewrite of a
+          // problem nobody told them about.
+          fallbackModel
+            ? "\n\nHeads up: my usual notes engine was unavailable, so a backup wrote these and they may be less organised than normal. Ask me to rewrite them and I will use the transcript."
+            : "",
         ].join(""),
         outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
       });
