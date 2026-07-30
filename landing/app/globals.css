@@ -187,19 +187,18 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .band p { color: var(--text-2); margin: 16px 0 0; font-size: 17px; line-height: 1.65; max-width: 28em; }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   PRODUCT SHOWCASE — alternating rows, each pairing a real screenshot of the
+   PRODUCT SHOWCASE: stacked beats, each pairing a real screenshot of the
    running product with the words for it.
 
    The captures live in public/nemesis/shots and are taken from the app's own
    /dev-preview harness, in light and dark, so the page can serve whichever
    matches the visitor. Re-take them when the shell changes; a stale screenshot
-   is worse than none. The iPhone block below is still drawn rather than
-   captured — it is line art, not a claim about a screen.
+   is worse than none.
    ────────────────────────────────────────────────────────────────────────── */
 .rows { display: grid; gap: 112px; }
 /* Each beat stacks: the words in a readable measure, then the screenshot at the
    full container width beneath them. Side-by-side was tried first and failed for
-   a concrete reason — a 1680px capture shown in a half-width column renders at
+   a concrete reason: a 1680px capture shown in a half-width column renders at
    about a third of scale, which makes the app's own text unreadable and turns
    the screenshot into decoration. Full width buys back ~2x. */
 .row { display: grid; gap: 30px; }
@@ -217,30 +216,53 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 }
 .shot img { display: block; width: 100%; height: auto; }
 
-/* phone — the iPhone half of the story. Line art, not a screenshot: it stands in
-   until there is a simulator build to capture from. */
-#iphone .row { grid-template-columns: minmax(0, 1fr) auto; gap: 60px; align-items: center; }
-.phone { width: 236px; margin: 0 auto; border: 1px solid var(--line-2); border-radius: 30px; padding: 9px; }
-.phone-in {
-  border: 1px solid var(--line); border-radius: 22px; padding: 18px 14px;
-  display: grid; gap: 11px; align-content: start; min-height: 348px;
-  font-size: 12.5px; line-height: 1.45;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   NAV: inline links on wide screens, one button on narrow ones. The bar is
+   58px tall and holds a brand plus four items; below ~720px those cannot all
+   fit without dropping tap targets under a usable size, so they collapse into
+   a panel. The glyph is three rules that become an X, drawn in the page's own
+   ink rather than an icon font.
+   ────────────────────────────────────────────────────────────────────────── */
+.nav-links { display: flex; align-items: center; gap: 22px; }
+.nav-burger {
+  display: none; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; margin-right: -8px;
+  background: transparent; border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text); cursor: pointer; transition: border-color 0.15s ease;
 }
-.phone-k { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); font-weight: 650; }
-.phone-msg { border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; }
-.phone-file { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 5px; padding: 9px 12px; }
-.phone-file .ext {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-3);
-  border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px; flex: none;
+.nav-burger:hover { border-color: var(--line-2); }
+.burger-glyph { display: block; width: 16px; height: 12px; position: relative; }
+.burger-glyph i {
+  position: absolute; left: 0; width: 100%; height: 1.5px; background: currentColor;
+  border-radius: 1px; transition: transform 0.18s ease, opacity 0.12s ease;
 }
-.phone-file .nm { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the level meter: bars only, no colour, sized by inline height */
-.wave { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
-.wave i { flex: 1; background: var(--text); opacity: 0.55; border-radius: 1px; }
+.burger-glyph i:nth-child(1) { top: 0; }
+.burger-glyph i:nth-child(2) { top: 5.25px; }
+.burger-glyph i:nth-child(3) { top: 10.5px; }
+.burger-glyph.is-open i:nth-child(1) { transform: translateY(5.25px) rotate(45deg); }
+.burger-glyph.is-open i:nth-child(2) { opacity: 0; }
+.burger-glyph.is-open i:nth-child(3) { transform: translateY(-5.25px) rotate(-45deg); }
+
+.nav-menu { display: none; border-bottom: 1px solid var(--line); background: var(--bg); }
+.nav-menu-in { display: grid; gap: 2px; padding-top: 8px; padding-bottom: 16px; }
+.nav-menu-in a {
+  text-decoration: none; color: var(--text-2); font-family: var(--sans);
+  font-size: 13px; font-weight: 550; letter-spacing: 0.1em; text-transform: uppercase;
+  /* 44px of height is the tap target, not decoration */
+  display: flex; align-items: center; min-height: 44px;
+}
+.nav-menu-in a:hover { color: var(--text); }
+.nav-menu-in a.btn { justify-content: center; margin-top: 10px; color: var(--bg); }
+
+@media (max-width: 720px) {
+  .nav-links { display: none; }
+  .nav-burger { display: flex; }
+  .nav-menu.is-open { display: block; }
+}
 
 @media (max-width: 900px) {
   .rows { gap: 68px; }
-  #iphone .row { grid-template-columns: 1fr; gap: 30px; }
 }
 
 /* trust — the rule on the left was the accent's last structural job; it is

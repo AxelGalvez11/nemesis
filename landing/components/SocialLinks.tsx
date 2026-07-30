@@ -1,7 +1,7 @@
 // Footer social links as recognizable glyphs instead of text labels (owner
 // ask 2026-07-16). Single-path monochrome marks (Simple Icons path data,
-// CC0) filled with currentColor so they inherit the footer's link colors —
-// including hover — exactly like the text links they replaced. Accessible
+// CC0) filled with currentColor so they inherit the footer's link colors,
+// including hover, exactly like the text links they replaced. Accessible
 // names live on the anchor; the svg itself is decorative.
 interface SocialLink {
   label: string;

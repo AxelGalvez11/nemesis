@@ -8,7 +8,7 @@ import { initPosthog, phCapture } from "@/lib/posthog";
 // Next.js soft navigations (Home -> Pricing) don't reload the page, so the pageview has to be
 // sent explicitly or the whole site would look like one visit. Mirrors the app's provider so
 // both halves of the funnel count a "page" the same way. useSearchParams forces a Suspense
-// boundary — without it the entire page opts out of static rendering.
+// boundary: without it the entire page opts out of static rendering.
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initPosthog();

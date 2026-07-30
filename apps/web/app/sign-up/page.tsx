@@ -130,7 +130,12 @@ export default function SignUpPage() {
           </div>
           <label className="nemesis-auth-consent">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} aria-label="Agree to the Terms and Privacy Policy" />
-            <span>I understand Nemesis prepares academic and research material for my review and never submits on my behalf. I agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.</span>
+            {/* The "Nemesis prepares material for my review and never submits on my
+                behalf" sentence was removed by the owner 2026-07-30. The Terms and
+                Privacy agreement stays: it is what the checkbox actually gates
+                (submit is disabled until `agreed`), and it is the part that carries
+                legal weight. That commitment still holds and is stated in the Terms. */}
+            <span>I agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.</span>
           </label>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
           <button className="nemesis-auth-submit" disabled={busy || (!agreed && !isPreviewMode) || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Creating account…" : isPreviewMode ? "Enter preview" : "Create account"}</button>
