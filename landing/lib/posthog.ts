@@ -49,17 +49,16 @@ export function initPosthog(): void {
   started = true;
   posthog.init(posthogKey, {
     api_host: posthogHost,
-    // 'history_change' lets posthog-js capture the first pageview AND every App Router
-    // soft navigation itself, via its HistoryAutocapture extension.
+    // Pageviews are posthog-js's job. This was `false` plus a hand-rolled $pageview in a
+    // <Suspense> boundary in PostHogProvider, and that effect never fired on the deployed
+    // build. With autocapture off too, the install had nothing left to send: it initialised,
+    // fetched config, wrote its cookie, and POSTed nothing, with no error anywhere.
     //
-    // This was `false` plus a hand-rolled $pageview in a <Suspense> boundary in
-    // PostHogProvider, and that pageview never fired. The failure was silent and
-    // total: PostHog initialised, fetched its config and wrote its cookie, but with
-    // autocapture also off there was simply nothing left to send — zero POSTs to the
-    // ingest host, no error anywhere, because nothing had gone wrong. It just never
-    // happened. Not depending on our own effect to produce the only event on the site
-    // is the actual fix; the library has done this reliably for years.
-    capture_pageview: "history_change",
+    // `true` and not 'history_change': HistoryAutocapture only fires on history API changes,
+    // and on a landing page most visitors never cause one — they arrive, read, and click out
+    // to the app. That leaves the first (and often only) pageview uncaptured, which is why
+    // 'history_change' still sent nothing when it was tried. `true` captures the initial load.
+    capture_pageview: true,
     capture_pageleave: true, // gives us time-on-page, which is how we tell reading from bouncing
     autocapture: false, // never auto-collect on-screen text or input
     disable_session_recording: true,
