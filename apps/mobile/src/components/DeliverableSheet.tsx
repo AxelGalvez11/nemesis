@@ -1,4 +1,5 @@
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { ActivityIndicator, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
@@ -37,6 +38,39 @@ function ArtifactIcon({ kind, where, color }: { kind: ChatOutput["kind"]; where:
   return <FileIcon size={18} color={color} />;
 }
 
+/** A slow breathe for a card whose work is still running (owner 2026-07-30:
+ *  "it should show a processing artifact with a pulsing animation, not just a
+ *  regular artifact"). Built on RN's own Animated, the same zero-dep posture as
+ *  Skeleton.tsx — reanimated stays reserved for gestures.
+ *
+ *  The floor is 0.5 rather than Skeleton's 0.35 because this card carries a
+ *  title the student is meant to read while it pulses; a skeleton has no words
+ *  to lose. Legs are 900ms, slower than a loading shimmer, because this stands
+ *  for a minutes-long job rather than a page that is about to appear. */
+function usePulse(active: boolean): Animated.Value {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!active) {
+      // Settle at full strength — a card that finished mid-fade would keep
+      // whatever partial opacity the loop was stopped on.
+      opacity.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.5, duration: 900, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      opacity.setValue(1);
+    };
+  }, [active, opacity]);
+  return opacity;
+}
+
 function formatCreatedAt(iso: string | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
@@ -70,48 +104,63 @@ export function DeliverableCardStack(
   { outputs, onSelect, compact = false }: { outputs: ChatOutput[]; onSelect: (output: ChatOutput) => void; compact?: boolean },
 ) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   if (!outputs.length) return null;
   return (
     <View style={styles.cardStack} testID="chat-deliverables-row">
-      {outputs.map((output) => {
-        const card = artifactCard(output);
-        // A recording being re-transcribed says so IN PLACE of its destination:
-        // the text it holds is about to be replaced, so "tap to read" would be
-        // pointing at something that is still changing.
-        const polishing = polishState(output, new Date()) === "pending";
-        return (
-          <Pressable
-            key={output.id}
-            style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && styles.cardPressed]}
-            onPress={() => onSelect(output)}
-            accessibilityRole="button"
-            accessibilityLabel={`${card.kicker}: ${card.title}. ${card.where}`}
-            testID={`chat-deliverable-card-${output.id}`}
-          >
-            <View style={styles.cardIcon}>
-              <ArtifactIcon kind={output.kind} where={card.where} color={colors.accent} />
-            </View>
-            <View style={styles.cardText}>
-              {compact ? null : (
-                <Text style={styles.cardKicker} numberOfLines={1}>
-                  {card.kicker.toUpperCase()}
-                </Text>
-              )}
-              <Text style={styles.cardTitle} numberOfLines={compact ? 1 : 2}>
-                {card.title}
-              </Text>
-              {compact && !polishing ? null : (
-                <Text style={styles.cardWhere} numberOfLines={1}>
-                  {polishing ? "Transcribing and polishing notes…" : card.where}
-                </Text>
-              )}
-            </View>
-            <ChevronIcon size={18} color={colors.text3} />
-          </Pressable>
-        );
-      })}
+      {outputs.map((output) => (
+        <ArtifactRow key={output.id} output={output} onSelect={onSelect} compact={compact} />
+      ))}
     </View>
+  );
+}
+
+/** One card. Its own component rather than a loop body because the pulse is a
+ *  hook, and a hook cannot live inside a `.map()`. */
+function ArtifactRow(
+  { output, onSelect, compact }: { output: ChatOutput; onSelect: (output: ChatOutput) => void; compact: boolean },
+) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const card = artifactCard(output);
+  // A recording being re-transcribed says so IN PLACE of its destination: the
+  // text it holds is about to be replaced, so "tap to read" would be pointing
+  // at something that is still changing. lib/artifact-timeline.ts is what keeps
+  // this honest — it resolves each card to the artifact's NEWEST state, so a
+  // "pending" copy frozen in an old chat message cannot leave this pulsing
+  // after the notes have landed.
+  const polishing = polishState(output, new Date()) === "pending";
+  const opacity = usePulse(polishing);
+  return (
+    <Animated.View style={{ opacity }}>
+      <Pressable
+        style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && styles.cardPressed]}
+        onPress={() => onSelect(output)}
+        accessibilityRole="button"
+        // The kicker is gone from the face of the card (see createStyles) but
+        // stays here: VoiceOver has no icon to read, so dropping it would leave
+        // a card that announces a bare title with no idea what kind of thing it
+        // is. "Working" first, because that is the part that changes.
+        accessibilityLabel={`${polishing ? "Still working. " : ""}${card.kicker}: ${card.title}. ${polishing ? "Transcribing and polishing notes" : card.where}`}
+        testID={`chat-deliverable-card-${output.id}`}
+      >
+        <View style={styles.cardIcon}>
+          <ArtifactIcon kind={output.kind} where={card.where} color={colors.text} />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={styles.cardTitle} numberOfLines={compact ? 1 : 2}>
+            {card.title}
+          </Text>
+          {compact && !polishing ? null : (
+            <Text style={styles.cardWhere} numberOfLines={1}>
+              {polishing ? "Transcribing and polishing notes…" : card.where}
+            </Text>
+          )}
+        </View>
+        <View style={styles.cardChevron}>
+          <ChevronIcon size={16} color={colors.text} />
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -190,29 +239,61 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     cardStack: { gap: space(1.5), marginTop: space(2), paddingHorizontal: space(0.5) },
+    // 🔴 NEUTRAL, NOT ACCENT (owner 2026-07-30: "all artifacts should be gray
+    // and give it a modern minimal look"). This used to fill with accentFaint
+    // and outline with accentLine, which is the student's chosen accent at 12%
+    // and 35% — on a blue accent every artifact in the transcript read as a
+    // blue callout box competing with the answer above it. An artifact is a
+    // quiet destination, not an alert, so it now sits on the same neutral
+    // surface as every other card in the app and is separated from the page by
+    // a hairline instead of a coloured outline.
+    //
+    // Do NOT reach back for the accent family here to "bring it to life" — the
+    // accent earns its place on things the student ACTS on (primary buttons,
+    // the record control), and spending it on a passive row is what made this
+    // loud in the first place.
     card: {
       flexDirection: "row", alignItems: "center", gap: space(2.5),
-      paddingVertical: space(2), paddingHorizontal: space(2.5),
+      paddingVertical: space(2.5), paddingHorizontal: space(3),
       borderRadius: radius.md, borderCurve: "continuous",
-      borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: c.line, backgroundColor: c.surface2,
     },
-    cardCompact: { paddingVertical: space(1.25) },
-    cardPressed: { backgroundColor: c.surface2 },
-    // Fixed so the three text lines start on the same x whatever the glyph is.
-    cardIcon: { width: 22, alignItems: "center" },
+    cardCompact: { paddingVertical: space(1.75) },
+    cardPressed: { backgroundColor: c.raised },
+    // Fixed so the text lines start on the same x whatever the glyph is. The
+    // opacity is how the icon reads as grey without a grey COLOUR: the palette
+    // flattened every text tier to pure black/white on purpose (owner
+    // 2026-07-21, "no gray text anywhere"), so tinting is done with alpha.
+    cardIcon: { width: 20, alignItems: "center", opacity: 0.45 },
     // minWidth:0 is what lets numberOfLines truncate instead of pushing the
     // chevron off the card — a flex child's default min-width is its content.
-    cardText: { flex: 1, minWidth: 0, gap: space(0.25) },
-    cardKicker: { ...type.micro, color: c.accent, letterSpacing: 1.1, fontWeight: "600" },
+    cardText: { flex: 1, minWidth: 0, gap: space(0.5) },
+    // The KICKER LINE IS GONE from the card face — "RECORDING" in accent caps
+    // above a title that already says "Recording · Jul 30" was the same fact
+    // twice, and it is the icon's whole job besides. artifactCard().kicker is
+    // still read by the sheet's heading and by the card's accessibility label,
+    // so nothing lost the information — only the row lost a line.
     cardTitle: { ...type.small, color: c.text, fontWeight: "600" },
-    cardWhere: { ...type.micro, color: c.text3 },
+    // `color: c.text3` alone does NOTHING — all three text tiers are pure
+    // black/white since the grey ramp was killed. Opacity is the house way to
+    // make something read as secondary. 0.5, not the 0.16 the calendar's
+    // out-of-month days use: that number is for a number you are meant to skip
+    // over, and this is a line you are meant to read.
+    cardWhere: { ...type.micro, color: c.text3, opacity: 0.5 },
+    cardChevron: { opacity: 0.35 },
     // Height is owned by SlideUpSheet's body (collapsed cap + drag-up-to-
     // expand, owner 2026-07-21); flexShrink lets the scroll area compress to
     // that animated cap instead of overflowing it.
     body: { flexShrink: 1 },
     meta: { ...type.micro, color: c.text3, marginBottom: space(3) },
-    polishLine: { ...type.small, color: c.accent, lineHeight: 19 },
-    polishPreview: { gap: space(2), padding: space(3), borderRadius: radius.md, backgroundColor: c.surface2, marginBottom: space(3) },
+    // Neutral for the same reason the card is (see `card` above): "still
+    // working" is a status, and statuses do not get to wear the accent.
+    polishLine: { ...type.small, color: c.text, lineHeight: 19 },
+    polishPreview: {
+      gap: space(2), padding: space(3), borderRadius: radius.md,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: c.line,
+      backgroundColor: c.surface2, marginBottom: space(3),
+    },
     polishHeader: { flexDirection: "row", alignItems: "center", gap: space(2) },
     previewLine: { height: 9, borderRadius: radius.pill, backgroundColor: c.skeleton },
     previewCaption: { ...type.micro, color: c.text3, lineHeight: 17, marginTop: space(1) },
