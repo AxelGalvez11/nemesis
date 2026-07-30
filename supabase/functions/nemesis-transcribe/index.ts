@@ -54,6 +54,31 @@ const XAI_KEY = Deno.env.get("XAI_API_KEY") ?? Deno.env.get("xai_api_key") ?? ""
 // "wired" to the next person. See the provider-order comment in handleSubmit for
 // what is still missing from their published docs.
 
+/**
+ * Accounts that run BOTH transcription providers over the same audio, and keep
+ * both results, so the providers can be compared on identical input.
+ *
+ * WHY AN ALLOWLIST RATHER THAN A BOOLEAN. Everywhere else in this lane a
+ * transcript is handed over once and erased: lecture text is the student's, and
+ * the recording artifact is its durable home. A global comparison switch would
+ * quietly turn that into indefinite retention of every student's coursework, to
+ * answer a question only the owner is asking. Scoped to the owner's own uid, the
+ * comparison uses the owner's own recordings and nobody else's data is kept.
+ *
+ * Empty (the default) means the feature does not exist: no shadow call, no extra
+ * cost, and this table behaves byte-for-byte as it did before.
+ */
+const COMPARE_UIDS = new Set(
+  (Deno.env.get("COMPARE_TRANSCRIPT_UIDS") ?? "")
+    .split(",")
+    .map((uid) => uid.trim())
+    .filter(Boolean),
+);
+
+function isComparing(userId: string): boolean {
+  return COMPARE_UIDS.has(userId);
+}
+
 // Project-scoped write-only key — not a secret. Override with POSTHOG_KEY.
 const POSTHOG_KEY = Deno.env.get("POSTHOG_KEY") ?? "phc_xcEjfTB3a2ftyzsw7oEAkpiBXRThWWjA3D5BcPBj36ht";
 const POSTHOG_HOST = Deno.env.get("POSTHOG_HOST") ?? "https://us.i.posthog.com";
@@ -286,6 +311,33 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
       // notes are what distinguish them.
       await patchJob(jobId, { provider_notes: note([...attempts, "assemblyai: submitted"]) });
       await finalize({ p_job_id: jobId, p_provider_job_id: submittedBody.id, p_status: "processing" });
+      // THE SHADOW RUN — the same audio through the runner-up, kept beside the
+      // real transcript so the two can be read side by side.
+      //
+      // Storing "both transcripts" WITHOUT this would not produce a comparison.
+      // The ladder returns on the first provider that answers, so one recording
+      // is only ever transcribed once: you would accumulate AssemblyAI text for
+      // Monday's lecture and xAI text for Tuesday's, which is two transcripts of
+      // DIFFERENT audio and settles nothing. Comparison needs identical input.
+      //
+      // SYNCHRONOUS on purpose, rather than backgrounded. /status deletes the
+      // audio object as soon as AssemblyAI finishes, and xAI fetches that object
+      // by URL — so a backgrounded shadow races the delete and loses silently,
+      // writing an empty transcript_alt that reads as "xAI did worse" when it
+      // actually means "the file disappeared mid-fetch". A wrong answer that
+      // looks like a result is precisely what this feature exists to prevent.
+      // The cost is a few seconds on the owner's own submit, on their own clips.
+      //
+      // 🔴 Touches NO meter. No finalize, no settleSynchronousJob, no
+      // reportVoiceCost — AssemblyAI is the serving provider and the only one
+      // that bills. The shadow's xAI charge is the price of the experiment.
+      if (isComparing(userId)) {
+        const shadow = await transcribeWithXai(signedUrl);
+        await patchJob(jobId, {
+          provider_alt: shadow.ok ? "xai" : `xai failed — ${shadow.reason}`,
+          ...(shadow.ok ? { transcript_alt: shadow.text } : {}),
+        });
+      }
       return json({ jobId, usage }, 200, req);
     }
     attempts.push(`assemblyai: HTTP ${submitted.status}`);
@@ -409,6 +461,19 @@ async function handleStatus(req: Request, userId: string, body: Record<string, u
     typeof polledBody.text === "string" ? polledBody.text : "",
   );
   const actualSeconds = Math.max(0, Math.round(Number(polledBody.audio_duration) || 0));
+
+  // The other half of the comparison: what the SERVING provider heard, parked
+  // beside the shadow's version of the same audio.
+  //
+  // Written to `transcript_primary`, never to `transcript`. That distinction is
+  // load-bearing — the branch at the top of this function treats a non-empty
+  // `transcript` as "a synchronous provider parked this, serve it once and clear
+  // it", and it is checked BEFORE `status`. Putting AssemblyAI's text there would
+  // fire that branch on an asynchronous job: the student would be handed the
+  // transcript on an earlier poll and the settlement below would never run.
+  if (isComparing(job.user_id)) {
+    await patchJob(job.id, { transcript_primary: transcript });
+  }
 
   // TWO DIFFERENT NUMBERS, TWO DIFFERENT DESTINATIONS. Read this before
   // changing either.
