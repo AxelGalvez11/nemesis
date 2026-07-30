@@ -32,22 +32,35 @@ const newEventId = () =>
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────
 
+/** What the quick-create card had filled in when the student asked for the full
+ *  form. Everything is optional but the date, which the click already decided. */
+export interface EventDraft {
+  date: string;
+  title?: string;
+  time?: string;
+  endTime?: string;
+  kind?: CalendarEventKind;
+}
+
 interface EventFormDialogProps {
   mode: "add" | "edit";
-  initialDate?: string;
+  /** Starting values for `add`. Replaced the old bare `initialDate` so that
+   *  pressing "Details" on the quick-create card carries the title, the time
+   *  range and the type across instead of making the student type them again. */
+  draft?: EventDraft;
   event?: CalendarEvent;
   onClose: () => void;
   onSave: (event: CalendarEvent) => Promise<void>;
   onDelete?: () => Promise<void>;
 }
 
-export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onDelete }: EventFormDialogProps) {
+export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete }: EventFormDialogProps) {
   const confirm = useConfirm();
-  const [title, setTitle] = useState(event?.title ?? "");
-  const [date, setDate] = useState(event?.date ?? initialDate ?? "");
-  const [time, setTime] = useState(event?.time ?? "");
-  const [endTime, setEndTime] = useState(event?.endTime ?? "");
-  const [kind, setKind] = useState<CalendarEventKind>(event?.kind ?? "assignment");
+  const [title, setTitle] = useState(event?.title ?? draft?.title ?? "");
+  const [date, setDate] = useState(event?.date ?? draft?.date ?? "");
+  const [time, setTime] = useState(event?.time ?? draft?.time ?? "");
+  const [endTime, setEndTime] = useState(event?.endTime ?? draft?.endTime ?? "");
+  const [kind, setKind] = useState<CalendarEventKind>(event?.kind ?? draft?.kind ?? "assignment");
   const [course, setCourse] = useState(event?.course ?? "");
   const [note, setNote] = useState(event?.note ?? "");
   const [saving, setSaving] = useState(false);

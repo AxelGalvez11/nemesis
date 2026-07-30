@@ -27,17 +27,27 @@ import {
 } from "@/lib/workspace/calendar-model";
 
 import { CalendarHeader } from "./calendar-header";
-import { EventFormDialog } from "./event-dialogs";
+import { type EventDraft, EventFormDialog } from "./event-dialogs";
 import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
+import { type AnchorRect, QuickCreatePopover, type QuickCreateDraft } from "./quick-create-popover";
 import { SyllabusDialog } from "./syllabus-dialog";
 import { TimeGridView } from "./time-grid-view";
+import type { GestureResult } from "./use-time-grid-gestures";
 import { YearGrid } from "./year-grid";
 
 type DialogState =
-  | { mode: "add"; date: string }
+  | { mode: "add"; draft: EventDraft }
   | { mode: "edit"; event: CalendarEvent }
   | null;
+
+/** The quick-create card and where it hangs. Lives up here rather than inside
+ *  each grid so month and week raise the same card, and "Details" can hand off
+ *  to the dialog that is already a sibling of it. */
+interface QuickCreateState {
+  draft: QuickCreateDraft;
+  anchor: AnchorRect;
+}
 
 function loadStoredView(): CalendarViewMode {
   if (typeof window === "undefined") return "month";
@@ -55,6 +65,7 @@ export function CalendarWorkspace() {
   const [cursor, setCursor] = useState<Date>(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null);
   const [syllabusOpen, setSyllabusOpen] = useState(false);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
@@ -109,7 +120,57 @@ export function CalendarWorkspace() {
   }
 
   function openAdd(dateKeyStr: string) {
-    setDialog({ mode: "add", date: dateKeyStr });
+    setDialog({ draft: { date: dateKeyStr }, mode: "add" });
+  }
+
+  /** A slot was clicked or dragged out on the time grid. */
+  function pickSlot(result: GestureResult, anchor: DOMRect) {
+    setDialog(null);
+    setQuickCreate({
+      anchor: { height: anchor.height, left: anchor.left, top: anchor.top, width: anchor.width },
+      draft: { date: result.dateKey, endTime: result.range.endTime, time: result.range.time },
+    });
+  }
+
+  /** A month cell was clicked. No time — a month grid cannot say one, and
+   *  inventing 9am for a deadline is how a calendar starts lying. */
+  function pickDay(dateKeyStr: string, anchor: DOMRect) {
+    setDialog(null);
+    setQuickCreate({
+      anchor: { height: anchor.height, left: anchor.left, top: anchor.top, width: anchor.width },
+      draft: { date: dateKeyStr },
+    });
+  }
+
+  /**
+   * An event was dragged to a new time, day, or length.
+   *
+   * A recurring event is left alone: `recurrence` describes a whole series, and
+   * dragging one of its instances would silently move every other one too. The
+   * form is where a series gets edited, so the drag simply does not commit.
+   */
+  async function handleGridMove(event: CalendarEvent, result: GestureResult) {
+    if (event.recurrence) return;
+    if (event.date === result.dateKey && event.time === result.range.time && event.endTime === result.range.endTime) {
+      return;
+    }
+    const next: CalendarEvent = {
+      ...event,
+      date: result.dateKey,
+      endTime: result.range.endTime,
+      time: result.range.time,
+    };
+    // Paint the new position immediately; the save catches up. A calendar that
+    // waits for a round trip before the block lands feels like it dropped it.
+    setEvents((prev) => prev.map((row) => (row.id === next.id ? next : row)));
+    try {
+      const stored = await saveCalendarEvent(next, { preview, userId });
+      setEvents((prev) => prev.map((row) => (row.id === stored.id ? stored : row)));
+    } catch {
+      // Put it back where it was rather than leaving the student looking at a
+      // position that was never written.
+      setEvents((prev) => prev.map((row) => (row.id === event.id ? event : row)));
+    }
   }
 
   // EVERY event opens the editable form, whoever wrote it. This used to send a
@@ -191,13 +252,27 @@ export function CalendarWorkspace() {
               — they were near-duplicate components before, so every fix had to
               be made twice. */}
           {view === "day" && (
-            <TimeGridView days={dayColumn} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
+            <TimeGridView
+              days={dayColumn}
+              eventsByDay={byDate}
+              onAddOnDate={openAdd}
+              onMoveEvent={handleGridMove}
+              onOpenEvent={openEvent}
+              onPickSlot={pickSlot}
+            />
           )}
           {view === "week" && (
-            <TimeGridView days={weekDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
+            <TimeGridView
+              days={weekDays}
+              eventsByDay={byDate}
+              onAddOnDate={openAdd}
+              onMoveEvent={handleGridMove}
+              onOpenEvent={openEvent}
+              onPickSlot={pickSlot}
+            />
           )}
           {view === "month" && (
-            <MonthGrid days={monthDays} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
+            <MonthGrid days={monthDays} eventsByDay={byDate} onOpenEvent={openEvent} onPickDay={pickDay} />
           )}
           {view === "year" && (
             <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} year={cursor.getFullYear()} />
@@ -205,12 +280,28 @@ export function CalendarWorkspace() {
         </div>
       </div>
 
+      {quickCreate && (
+        <QuickCreatePopover
+          anchor={quickCreate.anchor}
+          draft={quickCreate.draft}
+          onCancel={() => setQuickCreate(null)}
+          onCreate={async (created) => {
+            await handleSave(created);
+            setQuickCreate(null);
+          }}
+          onOpenDetails={(draft, title, kind) => {
+            setQuickCreate(null);
+            setDialog({ draft: { ...draft, kind, ...(title.trim() ? { title: title.trim() } : {}) }, mode: "add" });
+          }}
+        />
+      )}
+
       {syllabusOpen && (
         <SyllabusDialog onClose={() => setSyllabusOpen(false)} onImport={handleImport} uid={preview ? null : userId} />
       )}
 
       {dialog?.mode === "add" && (
-        <EventFormDialog initialDate={dialog.date} mode="add" onClose={() => setDialog(null)} onSave={handleSave} />
+        <EventFormDialog draft={dialog.draft} mode="add" onClose={() => setDialog(null)} onSave={handleSave} />
       )}
       {dialog?.mode === "edit" && (
         <EventFormDialog

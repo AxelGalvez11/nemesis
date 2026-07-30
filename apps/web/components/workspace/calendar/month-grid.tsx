@@ -1,8 +1,11 @@
-// Month view — verbatim from desktop calendar/index.tsx §A.7 (MonthGrid + DayCell).
+// Month view — MonthGrid + DayCell, ported from desktop calendar/index.tsx §A.7.
+//
+// Owner 2026-07-30: clicking a day should make an event on that day, the way
+// Apple Calendar does. The whole cell is the target now, so the hover-only "+"
+// button that used to be the ONLY way in is gone — it was a control that
+// appeared after you had already moved the mouse to where you wanted to click.
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/desktop-ui/popover";
-import { Button } from "@/components/desktop-ui/button";
-import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
@@ -12,11 +15,12 @@ import { KIND_META } from "./kind-meta";
 interface MonthGridProps {
   days: MonthDay[];
   eventsByDay: Map<string, CalendarEvent[]>;
-  onAddOnDate: (dateKeyStr: string) => void;
+  /** A day cell was clicked — raise the quick-create card over it. */
+  onPickDay: (dateKeyStr: string, anchor: DOMRect) => void;
   onOpenEvent: (event: CalendarEvent) => void;
 }
 
-export function MonthGrid({ days, eventsByDay, onAddOnDate, onOpenEvent }: MonthGridProps) {
+export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay }: MonthGridProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
       <div className="grid shrink-0 grid-cols-7 border-b border-(--ui-stroke-tertiary) text-sm font-medium text-(--ui-text-secondary)">
@@ -28,7 +32,7 @@ export function MonthGrid({ days, eventsByDay, onAddOnDate, onOpenEvent }: Month
       </div>
       <div className="grid flex-1 grid-cols-7 grid-rows-6">
         {days.map((day) => (
-          <DayCell day={day} events={eventsByDay.get(day.key) ?? []} key={day.key} onAdd={onAddOnDate} onOpenEvent={onOpenEvent} />
+          <DayCell day={day} events={eventsByDay.get(day.key) ?? []} key={day.key} onOpenEvent={onOpenEvent} onPick={onPickDay} />
         ))}
       </div>
     </div>
@@ -38,11 +42,11 @@ export function MonthGrid({ days, eventsByDay, onAddOnDate, onOpenEvent }: Month
 interface DayCellProps {
   day: MonthDay;
   events: CalendarEvent[];
-  onAdd: (dateKeyStr: string) => void;
+  onPick: (dateKeyStr: string, anchor: DOMRect) => void;
   onOpenEvent: (event: CalendarEvent) => void;
 }
 
-function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
+function DayCell({ day, events, onOpenEvent, onPick }: DayCellProps) {
   const visible = events.slice(0, MAX_CHIPS_PER_DAY);
   const overflow = events.length - visible.length;
 
@@ -54,35 +58,39 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
   return (
     <div
       className={cn(
-        "group flex min-h-24 flex-col gap-1 border-b border-r border-(--ui-stroke-tertiary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
+        "group relative flex min-h-24 flex-col gap-1 border-b border-r border-(--ui-stroke-tertiary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
         day.inMonth && isWeekend && "bg-(--ui-bg-quaternary)/10",
         !day.inMonth && "bg-(--ui-bg-quaternary)/20",
       )}
     >
-      <div className="flex shrink-0 flex-row-reverse items-center justify-between">
+      {/* The cell itself is the create target, sitting BEHIND the day number
+          and the chips. A real button, so it is reachable by keyboard too —
+          the hover "+" it replaced was the only focusable way in. */}
+      <button
+        aria-label={`Add event on ${formatEventDate(day.key)}`}
+        className="absolute inset-0 z-0 cursor-pointer rounded-none transition-colors hover:bg-(--ui-control-hover-background)/40 focus-visible:bg-(--ui-control-hover-background)/40"
+        onClick={(clickEvent) => onPick(day.key, clickEvent.currentTarget.getBoundingClientRect())}
+        type="button"
+      />
+      <div className="relative z-10 flex shrink-0 flex-row-reverse items-center justify-between">
         <span
           className={cn(
-            "grid size-7 place-items-center rounded-full text-sm font-medium tabular-nums",
+            "pointer-events-none grid size-7 place-items-center rounded-full text-sm font-medium tabular-nums",
             day.isToday ? "bg-(--theme-primary) text-primary-foreground" : !day.inMonth && "text-(--ui-text-quaternary)",
           )}
         >
           {day.date.getDate()}
         </span>
-        <Button
-          aria-label={`Add event on ${formatEventDate(day.key)}`}
-          className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={() => onAdd(day.key)}
-          size="icon-xs"
-          variant="ghost"
-        >
-          <Codicon name="add" size="0.75rem" />
-        </Button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5">
+      {/* pointer-events-none on the COLUMN, auto on each chip: the column is
+          flex-1 and fills the cell, so without this it would swallow every
+          click on the empty space under the last chip — which is most of the
+          cell, and exactly where people click to make an event. */}
+      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col gap-0.5">
         {visible.map((event) => (
           <button
             className={cn(
-              "flex items-baseline gap-1 truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
+              "pointer-events-auto flex items-baseline gap-1 truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
               KIND_META[event.kind].chip,
             )}
             key={event.id}
@@ -100,7 +108,7 @@ function DayCell({ day, events, onAdd, onOpenEvent }: DayCellProps) {
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium text-muted-foreground hover:text-foreground"
+                className="pointer-events-auto truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium text-muted-foreground hover:text-foreground"
                 type="button"
               >
                 +{overflow} more
