@@ -10,6 +10,9 @@ assert.deepEqual(classifyChatRequest("hello"), {
   route: "conversation",
   model: "deepseek-chat",
   searchWeb: false,
+  // Flags the turn as deliberate small talk so chat-api cannot re-promote it to a
+  // web search. See the casual block at the end of this file.
+  casual: true,
 });
 
 // Learning is discipline-neutral and gets Flash thinking, not a premium model request.
@@ -258,6 +261,25 @@ for (const prompt of [
   assert.equal(toolsAllowed(decision), true, "High must not strip a save's tools");
   const messages = buildWireMessages([], "create a test on the krebs cycle", decision);
   assert.ok(messages[0]?.content.includes(SAVE_INSTRUCTION));
+}
+
+// Small talk and "what even are you" questions are flagged `casual`. That flag is what
+// stops chat-api re-promoting them to a web search: route "conversation" is ALSO what an
+// unmatched message falls through to, and only the flag tells the two apart. Without it
+// "who are you" searched the web and answered about someone else (owner, 2026-07-30).
+for (const casualText of ["who are you", "Who are you?", "hi", "hello", "what can you do", "thanks"]) {
+  const decision = classifyChatRequest(casualText);
+  assert.equal(decision.route, "conversation", `${casualText} should be conversation`);
+  assert.equal(decision.searchWeb, false, `${casualText} should not search`);
+  assert.equal(decision.casual, true, `${casualText} must be flagged casual`);
+}
+
+// An unmatched message is also "conversation" but is NOT casual, so chat-api may still
+// promote it when its own heuristic fires. Keeping that path open is deliberate.
+{
+  const decision = classifyChatRequest("the mitochondria thing from lecture");
+  assert.equal(decision.route, "conversation");
+  assert.notEqual(decision.casual, true);
 }
 
 console.log("chat-routing.test.ts OK");

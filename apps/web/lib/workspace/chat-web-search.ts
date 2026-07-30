@@ -8,7 +8,12 @@ export interface ChatWebResult {
 
 const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
 const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live)\b/i;
-const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+// "who is/are X" is a changing-world fact worth searching — UNLESS X is Nemesis
+// itself. "who are you" is the assistant being asked about itself: there is nothing
+// on the web to look up, the search costs money, and the answer came back about some
+// unrelated person. The negative lookahead excludes the self-referential forms only;
+// "who is the president" and "who are the founders" still search.
+const CHANGING_FACT_PATTERN = /\bwho\s+(?:(?:is|are)\s+(?!you\b|u\b|ya\b|this\b|nemesis\b)|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
 const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;

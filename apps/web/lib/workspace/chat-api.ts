@@ -508,8 +508,15 @@ export async function sendChatTurn(
   const classified = !askText && userText.trim()
     ? ATTACHMENT_ONLY_DECISION
     : classifyChatRequest(askText, priorAssistant);
+  // `classified.casual` blocks the re-promotion below. shouldSearchWeb is a SECOND,
+  // looser heuristic than the router's own, and it is joined with `||`, so whichever
+  // is more eager wins. That is how "who are you" reached the web: the router
+  // deliberately said conversation/no-search, shouldSearchWeb matched it as a
+  // changing-fact question, and the OR overrode the decision that was actually
+  // correct. An unmatched conversation may still be promoted; a deliberate one
+  // never is.
   const needsWeb = classified.searchWeb || shouldSearchWeb(askText);
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
+  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.casual
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.

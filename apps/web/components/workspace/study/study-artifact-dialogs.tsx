@@ -277,7 +277,13 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
 
   return (
     <Dialog onOpenChange={(next) => { if (!next) onClose(); }} open>
-      <DialogContent className="max-w-xl">
+      {/* Full screen, matching the iPhone app, which gives a test its own route.
+          Taking a test is a task you sit inside, not a panel you glance at: the
+          previous max-w-xl box left a question and four options competing for
+          576px, and on a phone that was unusable. The inner column keeps the
+          content readable on a wide monitor without shrinking the surface. */}
+      <DialogContent className="max-w-none" fullScreen>
+        <div className="mx-auto grid w-full max-w-2xl min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-y-auto">
         {!finished && question ? (
           <>
             <DialogHeader>
@@ -369,6 +375,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
             <DialogFooter><Button onClick={onClose} type="button" variant="secondary">Done</Button></DialogFooter>
           </>
         ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
