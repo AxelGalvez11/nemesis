@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
+import { captureCtaClick } from "@/lib/posthog";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
@@ -29,7 +30,13 @@ export function SiteChrome({ children }: { children: ReactNode }) {
           <Link className="ghost" href="/pricing">Pricing</Link>
           <Link className="ghost" href="/about">About</Link>
           <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
-          <a className="btn btn-primary" href={APP_SIGN_UP}>Sign up</a>
+          <a
+            className="btn btn-primary"
+            href={APP_SIGN_UP}
+            onClick={() => captureCtaClick("nav", "Sign up")}
+          >
+            Sign up
+          </a>
         </div>
       </nav>
 
@@ -51,7 +58,9 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             <nav className="foot-col" aria-label="Product">
               <span className="foot-k">Product</span>
               <Link href="/pricing">Pricing</Link>
-              <a href={APP_SIGN_UP}>Get started free</a>
+              <a href={APP_SIGN_UP} onClick={() => captureCtaClick("footer", "Get started free")}>
+                Get started free
+              </a>
               <a href={APP_SIGN_IN}>Sign in</a>
             </nav>
             <nav className="foot-col" aria-label="Company">
