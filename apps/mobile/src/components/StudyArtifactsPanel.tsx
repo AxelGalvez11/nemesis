@@ -421,10 +421,12 @@ export function TestRunner({
   artifact,
   onFinished,
   onError,
+  onPullDown,
 }: {
   artifact: StudyArtifact;
   onFinished: (attempts: TestAttempt[]) => void;
   onError: (message: string) => void;
+  onPullDown?: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const questions = useMemo(() => artifact.questions ?? [], [artifact.questions]);
@@ -482,7 +484,17 @@ export function TestRunner({
   const correct = picked !== null && picked === question.answer;
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.viewerBody} showsVerticalScrollIndicator={false} testID="study-test-runner">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.viewerBody}
+      showsVerticalScrollIndicator={false}
+      alwaysBounceVertical
+      scrollEventThrottle={16}
+      onScroll={(event) => {
+        if (event.nativeEvent.contentOffset.y < -56) onPullDown?.();
+      }}
+      testID="study-test-runner"
+    >
       <Text style={styles.progress}>
         Question {index + 1} of {questions.length}
       </Text>
