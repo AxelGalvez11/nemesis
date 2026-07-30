@@ -190,12 +190,33 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
     return json({ error: "The uploaded audio could not be found." }, 404, req);
   }
 
-  // PROVIDER ORDER, cheapest-that-works first. Each returns null on any failure,
-  // so an outage at one falls through to the next rather than failing the job;
-  // AssemblyAI below is the backstop because it is the one we have run in
-  // production. Whichever answers is the one billed — reportVoiceCost is called
-  // on the branch that actually produced the transcript, never on the one we
-  // hoped would.
+  // PROVIDER ORDER, BEST TRANSCRIPT FIRST. Each returns a reason on any failure,
+  // so an outage at one falls through to the next rather than failing the job.
+  // Whichever answers is the one billed — reportVoiceCost is called on the branch
+  // that actually produced the transcript, never on the one we hoped would.
+  //
+  // THIS LADDER WAS CHEAPEST-FIRST UNTIL 2026-07-29, and the owner reversed it
+  // after reading notes built from an xAI transcript: "the new xai notes from the
+  // transcript seem to be worser than the assemblyai, it doesnt have the same
+  // quality."
+  //
+  // The order is a QUALITY decision with a known price, not an oversight.
+  // Per apps/web/lib/workload-cost.ts: universal-2 is $0.17/hr against xAI's
+  // $0.10/hr, so leading with AssemblyAI costs about 1.7x per hour of audio on
+  // the transcription line. That is the trade being bought, deliberately.
+  //
+  // WHY QUALITY WINS HERE even though audio is the most expensive lane: this
+  // transcript is not the deliverable. It is the INPUT to the student's notes and
+  // flashcards, so every error in it is inherited by everything built on top —
+  // a mis-heard term becomes a flashcard that teaches the wrong word. A cheaper
+  // transcript is not a cheaper version of the same product.
+  //
+  // xAI stays as the FIRST fallback rather than being deleted: when AssemblyAI
+  // cannot be reached at all, a slightly worse transcript beats a lost lecture.
+  // (Caveat worth knowing before relying on it — xAI's most common observed
+  // failure is `Could not detect audio format from file head`, which is exactly
+  // the wrong time for a safety net to be unreliable. Fixing that is its own
+  // change: send `audio_format`.)
   //
   // Modulate is NOT in this ladder yet, deliberately. Its endpoint and auth are
   // published (api.modulate.ai/v1/transcription, bearer) but how audio is
@@ -213,6 +234,65 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   // A cheaper provider that quietly never runs costs the difference every month
   // and looks exactly like a working system.
   const attempts: string[] = [];
+
+  // AssemblyAI is the only ASYNCHRONOUS provider in the ladder: it takes the job
+  // and /status collects the text later. That is why its success path returns
+  // "processing" and does NOT delete the audio object — handleStatus does both
+  // once the transcript lands.
+  //
+  // A submit failure now FALLS THROUGH instead of ending the job. It used to be
+  // terminal, which was correct while it sat last; leading the ladder, a terminal
+  // error here would throw away a recording that xAI could still have saved.
+  //
+  // 🔴 Nothing in this block may call finalize() with an error status. The
+  // fall-through leads to settleSynchronousJob on the xAI/Groq branches, and
+  // finalize_transcription_job does `used += p_actual_seconds - audio_seconds`
+  // — a second settle on the same reservation silently corrupts the student's
+  // meter. One terminal finalize per request path, at the bottom.
+  if (ASSEMBLYAI_KEY) {
+    const submitted = await fetch("https://api.assemblyai.com/v2/transcript", {
+      body: JSON.stringify({
+        audio_url: signedUrl,
+        format_text: true,
+        punctuate: true,
+        // Owner 2026-07-27, on the cheaper async tier: "just do it for now."
+        //
+        // This is a LIST, in priority order, and omitting it is NOT the same as
+        // omitting a default — AssemblyAI's own default is
+        // ["universal-3-5-pro", "universal-2"], so sending nothing was quietly
+        // buying the $0.21/hr Pro model on every recording. Pinning Universal-2
+        // is $0.15/hr, ~29% off the transcription line.
+        //
+        // (`speech_model`, singular, is the deprecated spelling — it would be
+        // accepted and ignored, which is the failure that looks like a saving on
+        // the invoice and isn't. /status reads the model back off the finished
+        // job for exactly that reason.)
+        speech_models: ["universal-2"],
+        // Owner 2026-07-27. +$0.02/hr — a tenth of the transcription line, not a
+        // new engine — and it buys the one thing that matters for a lecture: a
+        // classmate's question, and especially a classmate's wrong guess, is no
+        // longer indistinguishable from what the lecturer established.
+        // _shared/transcript-speakers.ts drops the labels again when the recording
+        // turns out to have only one voice, which is the common case.
+        speaker_labels: true,
+      }),
+      headers: { Authorization: ASSEMBLYAI_KEY, "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const submittedBody = await submitted.json().catch(() => null) as { id?: unknown; error?: unknown } | null;
+    if (submitted.ok && typeof submittedBody?.id === "string") {
+      // The row already says provider='assemblyai' (the column's default), so on
+      // its own it cannot tell "AssemblyAI was chosen" from "nothing ran". The
+      // notes are what distinguish them.
+      await patchJob(jobId, { provider_notes: note([...attempts, "assemblyai: submitted"]) });
+      await finalize({ p_job_id: jobId, p_provider_job_id: submittedBody.id, p_status: "processing" });
+      return json({ jobId, usage }, 200, req);
+    }
+    attempts.push(`assemblyai: HTTP ${submitted.status}`);
+    console.error("AssemblyAI submit failed, falling through", submitted.status, submittedBody?.error);
+  } else {
+    attempts.push("assemblyai: no key");
+  }
 
   if (XAI_KEY) {
     const xai = await transcribeWithXai(signedUrl);
@@ -253,57 +333,12 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
     attempts.push("groq: no key (unset on purpose — no pay-as-you-go on the account)");
   }
 
-  if (!ASSEMBLYAI_KEY) {
-    attempts.push("assemblyai: no key");
-    await patchJob(jobId, { provider_notes: note(attempts) });
-    await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
-    return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
-  }
-
-  const submitted = await fetch("https://api.assemblyai.com/v2/transcript", {
-    body: JSON.stringify({
-      audio_url: signedUrl,
-      format_text: true,
-      punctuate: true,
-      // Owner 2026-07-27, on the cheaper async tier: "just do it for now."
-      //
-      // This is a LIST, in priority order, and omitting it is NOT the same as
-      // omitting a default — AssemblyAI's own default is
-      // ["universal-3-5-pro", "universal-2"], so sending nothing was quietly
-      // buying the $0.21/hr Pro model on every recording. Pinning Universal-2
-      // is $0.15/hr, ~29% off the transcription line.
-      //
-      // (`speech_model`, singular, is the deprecated spelling — it would be
-      // accepted and ignored, which is the failure that looks like a saving on
-      // the invoice and isn't. /status reads the model back off the finished
-      // job for exactly that reason.)
-      speech_models: ["universal-2"],
-      // Owner 2026-07-27. +$0.02/hr — a tenth of the transcription line, not a
-      // new engine — and it buys the one thing that matters for a lecture: a
-      // classmate's question, and especially a classmate's wrong guess, is no
-      // longer indistinguishable from what the lecturer established.
-      // _shared/transcript-speakers.ts drops the labels again when the recording
-      // turns out to have only one voice, which is the common case.
-      speaker_labels: true,
-    }),
-    headers: { Authorization: ASSEMBLYAI_KEY, "Content-Type": "application/json" },
-    method: "POST",
-  });
-  const submittedBody = await submitted.json().catch(() => null) as { id?: unknown; error?: unknown } | null;
-  if (!submitted.ok || typeof submittedBody?.id !== "string") {
-    attempts.push(`assemblyai: HTTP ${submitted.status}`);
-    await patchJob(jobId, { provider_notes: note(attempts) });
-    await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
-    console.error("AssemblyAI submit failed", submitted.status, submittedBody?.error);
-    return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
-  }
-
-  // The row already says provider='assemblyai' (the column's default), so on its
-  // own it cannot tell "AssemblyAI was chosen" from "nothing ran". The notes are
-  // what distinguish them.
-  await patchJob(jobId, { provider_notes: note([...attempts, "assemblyai: submitted"]) });
-  await finalize({ p_job_id: jobId, p_provider_job_id: submittedBody.id, p_status: "processing" });
-  return json({ jobId, usage }, 200, req);
+  // THE ONE TERMINAL FAILURE PATH. Reached only when every provider above has
+  // declined, so `attempts` carries the reason each one did — which is the whole
+  // difference between a debuggable outage and a job that just says "error".
+  await patchJob(jobId, { provider_notes: note(attempts) });
+  await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
+  return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
 }
 
 /** The attempt trail as one bounded line. Diagnostics must never be the reason a
