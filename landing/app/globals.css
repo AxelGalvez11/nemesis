@@ -187,24 +187,22 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .band p { color: var(--text-2); margin: 16px 0 0; font-size: 17px; line-height: 1.65; max-width: 28em; }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   PRODUCT SHOWCASE — alternating rows, each pairing a drawing of the real
-   interface with the words for it.
+   PRODUCT SHOWCASE: stacked beats, each pairing a real screenshot of the
+   running product with the words for it.
 
-   Drawn in markup rather than shipped as screenshots, deliberately. A PNG of
-   the app would not reflow on a phone, would ship a dark image onto a page
-   that has a light theme, would weigh several hundred KB, and would rot into
-   a picture of a build from six months ago. This draws in the page's own
-   two-tone system, so it is legible in both themes and costs nothing.
-
-   It stays honest by using only the app's real vocabulary: the rail
-   (New chat / Study / Library / Calendar) and the deck table's actual
-   Deck / New / Learn / Due columns. If the app's shell changes, change this.
+   The captures live in public/nemesis/shots and are taken from the app's own
+   /dev-preview harness, in light and dark, so the page can serve whichever
+   matches the visitor. Re-take them when the shell changes; a stale screenshot
+   is worse than none.
    ────────────────────────────────────────────────────────────────────────── */
-.rows { display: grid; gap: 104px; }
-.row { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 60px; align-items: center; }
-/* Alternate which side the drawing sits on, so the eye zig-zags down the page
-   instead of running down one rail. */
-.row:nth-child(even) .row-copy { order: 2; }
+.rows { display: grid; gap: 112px; }
+/* Each beat stacks: the words in a readable measure, then the screenshot at the
+   full container width beneath them. Side-by-side was tried first and failed for
+   a concrete reason: a 1680px capture shown in a half-width column renders at
+   about a third of scale, which makes the app's own text unreadable and turns
+   the screenshot into decoration. Full width buys back ~2x. */
+.row { display: grid; gap: 30px; }
+.row-copy { max-width: 640px; }
 .row-copy .k {
   font-family: var(--sans); font-size: 11px; font-weight: 650; letter-spacing: 0.15em;
   text-transform: uppercase; color: var(--text-3);
@@ -212,71 +210,59 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .row-copy h3 { font-size: clamp(24px, 2.6vw, 31px); letter-spacing: -0.02em; margin: 12px 0 0; line-height: 1.15; }
 .row-copy p { font-size: 17px; line-height: 1.65; color: var(--text-2); margin: 14px 0 0; }
 
-/* the drawn app window */
-.ui {
-  border: 1px solid var(--line); border-radius: 7px; overflow: hidden;
-  background: var(--bg); font-size: 12.5px; line-height: 1.45; color: var(--text-2);
+.shot {
+  display: block; width: 100%; border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; line-height: 0; background: var(--bg);
 }
-.ui-top { display: flex; align-items: center; gap: 6px; padding: 9px 13px; border-bottom: 1px solid var(--line); }
-.ui-dot { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--line-2); }
-.ui-top b {
-  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--text-3); font-weight: 650; margin-left: 8px;
-}
-.ui-body { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 252px; }
-.ui-rail { border-right: 1px solid var(--line); padding: 12px 9px; display: grid; gap: 2px; align-content: start; }
-.ui-nav { padding: 5px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
-.ui-nav.on { background: var(--wash); color: var(--text); font-weight: 600; }
-.ui-main { padding: 15px 17px; display: grid; gap: 9px; align-content: start; min-width: 0; }
+.shot img { display: block; width: 100%; height: auto; }
 
-/* deck table — same columns the real Study tab uses */
-.ui-tbl { border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
-.ui-tr {
-  display: grid; grid-template-columns: minmax(0, 1fr) 34px 38px 32px; gap: 8px;
-  padding: 8px 12px; align-items: center;
-}
-.ui-tr + .ui-tr { border-top: 1px solid var(--line); }
-.ui-tr.head { color: var(--text-3); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 650; }
-.ui-tr span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.ui-tr .nm { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* library rows + chat bubbles */
-.ui-file { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 5px; padding: 9px 12px; }
-.ui-file .ext {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-3);
-  border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px; flex: none;
+/* ──────────────────────────────────────────────────────────────────────────
+   NAV: inline links on wide screens, one button on narrow ones. The bar is
+   58px tall and holds a brand plus four items; below ~720px those cannot all
+   fit without dropping tap targets under a usable size, so they collapse into
+   a panel. The glyph is three rules that become an X, drawn in the page's own
+   ink rather than an icon font.
+   ────────────────────────────────────────────────────────────────────────── */
+.nav-links { display: flex; align-items: center; gap: 22px; }
+.nav-burger {
+  display: none; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; margin-right: -8px;
+  background: transparent; border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text); cursor: pointer; transition: border-color 0.15s ease;
 }
-.ui-file .nm { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ui-msg { border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; }
-.ui-msg.me { border-color: var(--line-2); color: var(--text); }
-/* block + fit-content so the source chip always drops onto its own line under the
-   message instead of trailing the last sentence inline. */
-.ui-chip {
-  display: block; width: fit-content; max-width: 100%;
-  font-size: 10px; letter-spacing: 0.04em; color: var(--text-3);
-  border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; margin-top: 8px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.nav-burger:hover { border-color: var(--line-2); }
+.burger-glyph { display: block; width: 16px; height: 12px; position: relative; }
+.burger-glyph i {
+  position: absolute; left: 0; width: 100%; height: 1.5px; background: currentColor;
+  border-radius: 1px; transition: transform 0.18s ease, opacity 0.12s ease;
 }
+.burger-glyph i:nth-child(1) { top: 0; }
+.burger-glyph i:nth-child(2) { top: 5.25px; }
+.burger-glyph i:nth-child(3) { top: 10.5px; }
+.burger-glyph.is-open i:nth-child(1) { transform: translateY(5.25px) rotate(45deg); }
+.burger-glyph.is-open i:nth-child(2) { opacity: 0; }
+.burger-glyph.is-open i:nth-child(3) { transform: translateY(-5.25px) rotate(-45deg); }
 
-/* phone — the iPhone half of the story */
-.phone { width: 236px; margin: 0 auto; border: 1px solid var(--line-2); border-radius: 30px; padding: 9px; }
-.phone-in {
-  border: 1px solid var(--line); border-radius: 22px; padding: 18px 14px;
-  display: grid; gap: 11px; align-content: start; min-height: 348px;
-  font-size: 12.5px; line-height: 1.45;
+.nav-menu { display: none; border-bottom: 1px solid var(--line); background: var(--bg); }
+.nav-menu-in { display: grid; gap: 2px; padding-top: 8px; padding-bottom: 16px; }
+.nav-menu-in a {
+  text-decoration: none; color: var(--text-2); font-family: var(--sans);
+  font-size: 13px; font-weight: 550; letter-spacing: 0.1em; text-transform: uppercase;
+  /* 44px of height is the tap target, not decoration */
+  display: flex; align-items: center; min-height: 44px;
 }
-.phone-k { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); font-weight: 650; }
-/* the level meter: bars only, no colour, sized by inline height */
-.wave { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
-.wave i { flex: 1; background: var(--text); opacity: 0.55; border-radius: 1px; }
+.nav-menu-in a:hover { color: var(--text); }
+.nav-menu-in a.btn { justify-content: center; margin-top: 10px; color: var(--bg); }
+
+@media (max-width: 720px) {
+  .nav-links { display: none; }
+  .nav-burger { display: flex; }
+  .nav-menu.is-open { display: block; }
+}
 
 @media (max-width: 900px) {
-  .rows { gap: 64px; }
-  .row { grid-template-columns: 1fr; gap: 28px; }
-  /* undo the zig-zag when stacked: words first, drawing under them, every time */
-  .row:nth-child(even) .row-copy { order: 0; }
-  .ui-body { grid-template-columns: 92px minmax(0, 1fr); min-height: 0; }
-  .ui-nav { font-size: 11.5px; padding: 5px 6px; }
+  .rows { gap: 68px; }
 }
 
 /* trust — the rule on the left was the accent's last structural job; it is

@@ -9,8 +9,8 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-// Comparison rows repeat ONLY claims already made on this page's cards —
-// nothing new gets promised in a table cell. "—" renders as an em dash with
+// Comparison rows repeat ONLY claims already made on this page's cards:
+// nothing new gets promised in a table cell. A "no" renders as a middot with
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
@@ -55,7 +55,7 @@ function CompareCell({ value }: { value: string }) {
   if (value === "no") {
     return (
       <td className="compare-no" aria-label="Not included">
-        &mdash;
+        &middot;
       </td>
     );
   }
@@ -70,7 +70,7 @@ export default function PricingPage() {
           <div className="section-head pricing-head">
             <p className="eyebrow">Pricing</p>
             <h2>Start free. Upgrade when you need more.</h2>
-            <p>Use Nemesis free every day, no card required. Paid plans raise the limits — cancel anytime.</p>
+            <p>Use Nemesis free every day, no card required. Paid plans raise the limits, and you can cancel anytime.</p>
           </div>
           <div className="plans">
             <div className="plan">

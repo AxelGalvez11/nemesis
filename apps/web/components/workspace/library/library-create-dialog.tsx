@@ -62,7 +62,7 @@ export function LibraryCreateDialog({ kind, open, onOpenChange, initialFolder = 
             <DialogDescription>
               {kind === "note"
                 ? "Create a cloud note. Use [[double brackets]] in the editor to connect it to your Library."
-                : "Folders can be nested with a slash, such as Pharmacology/Week 4."}
+                : "Folders can be nested with a slash, such as Contract law/Week 4."}
             </DialogDescription>
           </DialogHeader>
           <label className="grid gap-1.5 text-xs font-medium">

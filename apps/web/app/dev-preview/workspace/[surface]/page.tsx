@@ -41,49 +41,49 @@ const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString(
 // a populated conversation, plus filler rows for the sidebar list.
 const PREVIEW_SESSIONS: WorkspaceSession[] = [
   {
-    id: "preview-pharmacology",
-    title: "Beta blocker mechanisms",
+    id: "preview-commerce",
+    title: "Dormant commerce clause",
     createdAt: minutesAgo(42),
     updatedAt: minutesAgo(3),
     messages: [
       {
         role: "user",
-        content: "Explain how beta blockers lower blood pressure, in exam-ready bullet points.",
+        content: "Explain the dormant commerce clause, in exam-ready bullet points.",
         at: minutesAgo(42),
       },
       {
         role: "assistant",
         content:
-          "Here is the exam-ready breakdown:\n\n- **Beta-1 blockade in the heart** reduces heart rate (negative chronotropy) and contractility (negative inotropy), lowering cardiac output.\n- **Reduced renin release** from juxtaglomerular cells (beta-1 mediated) dampens the RAAS cascade, so less angiotensin II and aldosterone.\n- **Central sympathetic outflow** falls with chronic use, reducing overall vascular tone.\n- Net effect: lower cardiac output plus reduced volume retention equals lower blood pressure.\n\nWant a comparison table of selective vs non-selective agents next?",
+          "Here is the exam-ready breakdown:\n\n- **Facial discrimination** against out-of-state commerce is virtually per se invalid; the state must show no reasonable non-discriminatory alternative exists.\n- **Even-handed laws** with only an incidental burden go to the Pike balancing test instead.\n- **Pike balancing** asks whether the burden on interstate commerce is clearly excessive next to the local benefit.\n- Net effect: how the law treats out-of-state actors on its face decides which test you are in, and the test usually decides the case.\n\nWant the leading cases lined up against each prong next?",
         at: minutesAgo(41),
         sources: [
-          { title: "Beta blockers", url: "https://medlineplus.gov/betablockers.html", description: "MedlinePlus overview of beta blockers, uses, and safety." },
+          { title: "Dormant Commerce Clause", url: "https://www.law.cornell.edu/wex/dormant_commerce_clause", description: "Cornell Legal Information Institute overview of the doctrine and its tests." },
         ],
       },
       {
         role: "user",
-        content: "Yes, and flag which ones show up on the NAPLEX most.",
+        content: "Yes, and flag which ones come up most in past papers.",
         at: minutesAgo(40),
       },
       {
         role: "assistant",
         content:
-          "| Agent | Selectivity | NAPLEX weight |\n| --- | --- | --- |\n| Metoprolol | Beta-1 selective | High |\n| Atenolol | Beta-1 selective | High |\n| Propranolol | Non-selective | High |\n| Carvedilol | Alpha-1 + non-selective beta | High |\n| Labetalol | Alpha-1 + non-selective beta | Medium |\n\nMetoprolol succinate vs tartrate dosing is a recurring trap — succinate is the heart-failure formulation.",
+          "| Case | Prong | Exam weight |\n| --- | --- | --- |\n| Philadelphia v. New Jersey | Facial discrimination | High |\n| Hunt v. Washington Apple | Discriminatory effect | High |\n| Pike v. Bruce Church | Balancing | High |\n| C&A Carbone v. Clarkstown | Facial discrimination | Medium |\n| Exxon v. Governor of Maryland | Incidental burden | Medium |\n\nPike is the one to know cold — the balancing language gets quoted in almost every answer.",
         at: minutesAgo(39),
       },
     ],
   },
   {
-    id: "preview-renal",
-    title: "Renal dosing cheat sheet",
+    id: "preview-thermo",
+    title: "Thermodynamics formula sheet",
     createdAt: minutesAgo(300),
     updatedAt: minutesAgo(120),
     pinned: true,
     messages: [
-      { role: "user", content: "Build me a renal dosing cheat sheet for the top 10 antibiotics.", at: minutesAgo(300) },
+      { role: "user", content: "Build me a formula sheet for the second-law problems in this unit.", at: minutesAgo(300) },
       {
         role: "assistant",
-        content: "Starting with vancomycin, cefepime, and piperacillin-tazobactam — the three the exams love most.",
+        content: "Starting with entropy change, Carnot efficiency, and the Clausius inequality — the three your problem sets lean on hardest.",
         at: minutesAgo(299),
       },
     ],
@@ -115,13 +115,13 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
     ],
   },
   {
-    id: "preview-anki",
-    title: "Anki deck from cardio lecture",
+    id: "preview-deck",
+    title: "Deck from the Baroque lecture",
     createdAt: minutesAgo(2000),
     updatedAt: minutesAgo(1440),
     messages: [
-      { role: "user", content: "Turn my cardio lecture notes into cloze cards.", at: minutesAgo(2000) },
-      { role: "assistant", content: "Drafted 24 cloze cards across preload, afterload, and Frank-Starling.", at: minutesAgo(1999), outputs: [{ id: "preview-card-output", kind: "flashcards", title: "Cardio lecture cloze deck" }] },
+      { role: "user", content: "Turn my Baroque lecture notes into cloze cards.", at: minutesAgo(2000) },
+      { role: "assistant", content: "Drafted 24 cloze cards across Caravaggio, tenebrism, and the Counter-Reformation commissions.", at: minutesAgo(1999), outputs: [{ id: "preview-card-output", kind: "flashcards", title: "Baroque lecture cloze deck" }] },
     ],
   },
 ];
@@ -140,8 +140,8 @@ export default function WorkspacePreviewPage() {
   // useSearchParams so this page needs no Suspense boundary to prerender.
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("session");
-    const selected = PREVIEW_SESSIONS.some((session) => session.id === requested) ? requested : "preview-pharmacology";
-    sessionsStore.injectPreview(PREVIEW_SESSIONS, selected ?? "preview-pharmacology");
+    const selected = PREVIEW_SESSIONS.some((session) => session.id === requested) ? requested : "preview-commerce";
+    sessionsStore.injectPreview(PREVIEW_SESSIONS, selected ?? "preview-commerce");
   }, []);
 
   const Surface = SURFACES[surface];
