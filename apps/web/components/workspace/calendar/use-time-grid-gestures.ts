@@ -94,10 +94,19 @@ export function useTimeGridGestures({ days, hours, onCommit, onOpenEvent, onPick
       // event wherever the finger stopped.
       if (!started.touch) {
         nativeEvent.preventDefault();
-        // Capture on the GRID, not on the block: a fast drag leaves a 30px-tall
-        // event within a frame or two, and an uncaptured pointer stops
-        // reporting the moment it does.
-        gridRef.current?.setPointerCapture(nativeEvent.pointerId);
+        try {
+          // Capture on the GRID, not on the block: a fast drag leaves a 30px-
+          // tall event within a frame or two, and an uncaptured pointer stops
+          // reporting the moment it does.
+          //
+          // Guarded because capture throws outright for a pointer the browser
+          // no longer considers active — a released pointer, a synthetic event
+          // — and an exception here would take the gesture down before it
+          // started. Losing capture only costs tracking outside the grid.
+          gridRef.current?.setPointerCapture(nativeEvent.pointerId);
+        } catch {
+          /* not capturable — the drag still works inside the grid */
+        }
       }
       pressRef.current = { x: nativeEvent.clientX, y: nativeEvent.clientY };
       setGesture(started);
@@ -217,15 +226,22 @@ export function useTimeGridGestures({ days, hours, onCommit, onOpenEvent, onPick
 
   // Escape abandons a drag in progress. Without it the only way out of a
   // mis-started drag is to complete it and then undo the change by hand.
+  //
+  // Registered in the CAPTURE phase and stopped there: Escape is a busy key in
+  // this app — it closes dialogs, cancels an inline rename, dismisses menus —
+  // and one press should call off the drag and nothing else. Letting it through
+  // means abandoning a drag also shuts whatever is behind the calendar.
   useEffect(() => {
     if (!gesture) return;
     const cancel = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key !== "Escape") return;
+      keyEvent.preventDefault();
+      keyEvent.stopPropagation();
       pressRef.current = null;
       setGesture(null);
     };
-    window.addEventListener("keydown", cancel);
-    return () => window.removeEventListener("keydown", cancel);
+    window.addEventListener("keydown", cancel, true);
+    return () => window.removeEventListener("keydown", cancel, true);
   }, [gesture]);
 
   /** The block to paint while a gesture runs, or null when nothing is dragging.
