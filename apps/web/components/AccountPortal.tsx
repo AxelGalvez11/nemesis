@@ -48,7 +48,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
   }, [session]);
 
   if (loading || !session) {
-    return <main className="nemesis-account-loading">Restoring account perimeter…</main>;
+    return <main className="nemesis-account-loading">Loading…</main>;
   }
 
   const plan = entitlementState === "loading"
@@ -72,7 +72,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
       <div className="nemesis-account-layout">
         <aside className="nemesis-account-nav">
           <div>
-            <p className="nemesis-account-nav-label">Account perimeter</p>
+            <p className="nemesis-account-nav-label">Account</p>
             <p className="nemesis-account-nav-email" title={email}>{email}</p>
           </div>
           <nav aria-label="Account sections">
@@ -103,7 +103,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
           {section === "overview" ? (
             <div className="nemesis-account-overview">
               <section className="nemesis-account-card primary-card">
-                <p className="nemesis-account-card-label">Current containment</p>
+                <p className="nemesis-account-card-label">Signed in as</p>
                 <h2>{email}</h2>
                 <div className="nemesis-account-plan-row">
                   <span>Plan</span>

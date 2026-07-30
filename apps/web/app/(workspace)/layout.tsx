@@ -22,7 +22,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   }, [loading, pathname, router, session]);
 
   if (loading || !session) {
-    return <main className="nemesis-account-loading">Restoring account perimeter…</main>;
+    return <main className="nemesis-account-loading">Loading…</main>;
   }
 
   return <WorkspaceShell>{children}</WorkspaceShell>;

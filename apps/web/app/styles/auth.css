@@ -181,6 +181,40 @@
   padding: 30px 38px 26px;
 }
 
+/* THE PASS-THROUGH VARIANT — /auth/callback and /auth/desktop.
+   A student sees these for about a second on the way somewhere else, so they get
+   a sentence on the page rather than a card: no border, no shadow, no white
+   panel, and the headline drops from 28px to 19px at normal weight. The brand
+   mark top-left is the only chrome, and it is already on the shell.
+   The narrower max-width keeps the line length readable now that nothing frames
+   it. Everything /sign-in and /sign-up rely on is untouched — this is opt-in. */
+.nemesis-auth-card.is-minimal { max-width: 420px; }
+.nemesis-auth-card-in.is-minimal {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.nemesis-auth-card-in.is-minimal h1 {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 7px;
+}
+.nemesis-auth-card-in.is-minimal .nemesis-auth-description { margin-bottom: 14px; }
+.nemesis-auth-card-in.is-minimal .nemesis-auth-footer { border: 0; margin-top: 14px; padding-top: 0; }
+/* The notice pill is the last box on the page once the card's own frame is gone,
+   and a grey tablet floating in white space reads as a component rather than a
+   sentence. Flattened to plain centred text. The error and success variants keep
+   their tinted panels — those carry meaning through colour and are rare. */
+.nemesis-auth-card-in.is-minimal .nemesis-auth-notice {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: center;
+}
+
 .nemesis-auth-mark {
   align-items: center;
   background: var(--auth-soft);

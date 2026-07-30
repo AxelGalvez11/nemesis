@@ -117,11 +117,14 @@ export default function DesktopAuthPage() {
   }, [loading, session, signInWithOAuth]);
 
   return (
+    // Minimal for the same reason as /auth/callback: this is a hand-off, not a
+    // destination. The title already says which device is asking, so the uppercase
+    // label above it was saying it twice.
     <AuthFrame
-      eyebrow={error ? "Sign-in failed" : isPhone ? "Phone sign-in" : "Desktop sign-in"}
+      minimal
       title={
         error
-          ? "The perimeter stayed closed."
+          ? "That didn't work."
           : deepLink
             ? isPhone
               ? "One tap to finish."
@@ -145,14 +148,17 @@ export default function DesktopAuthPage() {
         error ? (
           <p>
             <Link className="nemesis-auth-link" href="/sign-in">
-              Sign in on the web instead.
+              Sign in on the web instead
             </Link>
           </p>
         ) : undefined
       }
     >
+      {/* Quiet text, not the red error panel — the description above already gave
+          the reason, so the panel was restating it in a louder voice. Matches
+          /auth/callback. role="alert" keeps the announcement. */}
       {error ? (
-        <p className="nemesis-auth-error" role="alert">
+        <p className="nemesis-auth-notice" role="alert">
           {isPhone ? "Open the Nemesis app and tap Continue with Google or Apple again." : "Open the Nemesis app and press Continue with Google or Apple again."}
         </p>
       ) : deepLink ? (
