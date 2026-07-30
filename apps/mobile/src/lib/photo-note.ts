@@ -135,3 +135,28 @@ export function photoUploadError(status: number): string {
   if (status >= 500) return "Couldn't reach storage right now. Try again in a moment.";
   return "Couldn't save that photo. Try again.";
 }
+
+/** The canned question a photo asks when the student typed nothing. Open on
+ *  purpose: the picture could be a slide, a page, a diagram or a broken piece of
+ *  lab equipment, and a narrower prompt would tell the model what to see. */
+export const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
+
+/**
+ * What a turn actually asks, given what was typed and whether a photo is riding
+ * along.
+ *
+ * This rule used to live inside the camera handler, because a photo SENT ITSELF
+ * the moment it was taken and that handler was the only place a turn could be
+ * built from a picture. The photo now attaches and waits (owner 2026-07-30,
+ * matching ChatGPT), so the rule moved to the send path — and moving it is
+ * exactly the kind of change that quietly loses a case, hence the tests.
+ *
+ * Two things it has to keep true: a student's own words always beat the canned
+ * ask, and a photo with an empty composer is still a real question rather than a
+ * dead button.
+ */
+export function photoTurnText(typed: string, photoAttached: boolean): string {
+  const clean = typed.trim();
+  if (clean) return clean;
+  return photoAttached ? PHOTO_ANALYSIS_ASK : "";
+}

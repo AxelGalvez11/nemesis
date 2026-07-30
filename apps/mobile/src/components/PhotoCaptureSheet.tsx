@@ -1,64 +1,71 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
-import { CloseIcon } from "./icons";
+import Svg, { Circle, Path } from "react-native-svg";
 import { radius, space, type } from "@/theme/tokens";
 
 // The camera, for "photograph this and read it" (owner 2026-07-24).
 //
-// A full-screen Modal rather than a route on purpose: a route would have to
-// hand the captured file back to the chat screen through a module singleton or
-// a navigation param, and a camera is a transient thing the student is either
-// in or out of. As a modal it returns its result by simply calling onCaptured.
+// A Modal rather than a route on purpose: a route would have to hand the
+// captured file back to the chat screen through a module singleton or a
+// navigation param, and a camera is a transient thing the student is either in
+// or out of. As a modal it returns its result by simply calling onCaptured.
 //
 // expo-camera is declared in app.json and the native permission copy describes
 // this study-material use case. The camera is opened only from the student's
 // explicit attachment action.
 //
-// Two states, no more: live preview with a shutter, then the shot with Retake /
-// Use photo. The confirmation step is not decoration — a blurred or half-framed
-// photo of a lecture slide reads back as nonsense, and it is much cheaper to
-// notice that here than after a round trip to the server.
+// 🔴 REBUILT 2026-07-30 AGAINST ChatGPT, WHICH THE OWNER SENT AS THE TARGET:
+// "this is how chatgpt camera works, i need it to work and look the same."
+// Two things changed, and the second one is not cosmetic.
+//
+// 1. IT IS A PANEL, NOT A TAKEOVER. This used to be a full-screen black modal.
+//    ChatGPT slides a rounded-corner panel up over the conversation and leaves
+//    the chat visible above it, so the camera reads as something you are doing
+//    INSIDE the chat rather than a different place you have travelled to. That
+//    also gives the shot an obvious way out — tap the chat you can still see.
+//
+// 2. THE CONFIRM STEP IS GONE. There used to be a Retake / Use photo screen
+//    here, defended on the grounds that a blurred slide is cheaper to catch
+//    before a round trip than after. That reasoning was sound and still lost:
+//    ChatGPT drops the shot straight into the composer, where it sits as a
+//    thumbnail you can look at, remove, or ignore while you type your question.
+//    The student can still see the picture and still back out — the check just
+//    happens somewhere that does not block them. A retake is now "tap the ✕ and
+//    shoot again", which costs the same two taps the confirm screen did.
 export function PhotoCaptureSheet({
   visible,
   onClose,
   onCaptured,
-  busy = false,
 }: {
   visible: boolean;
   onClose: () => void;
-  /** Called with a local file URI once the student accepts the shot. */
+  /** Called with a local file URI the moment the shutter fires. There is no
+   *  confirm step — see this file's header. */
   onCaptured: (uri: string) => void;
-  /** The caller is uploading/reading the accepted shot — keeps the sheet up
-   *  with a spinner so the student isn't dropped back into chat wondering
-   *  whether anything happened. */
-  busy?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
-  const [shot, setShot] = useState<string | null>(null);
   const [taking, setTaking] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [facing, setFacing] = useState<"back" | "front">("back");
   const cameraRef = useRef<CameraView | null>(null);
   // Before the first ask, `permission` is null — treat that as askable.
   const askable = permission?.canAskAgain ?? true;
 
-  // The parent closes the sheet after it finishes reading an accepted picture.
-  // That path does not call this component's close() function, so reset hidden
-  // camera state here or the next open would show the previous photograph.
+  // The parent closes the sheet after a capture without calling close(), so
+  // reset here or the next open inherits the last session's state.
   useEffect(() => {
     if (visible) return;
-    setShot(null);
     setTaking(false);
     setCameraReady(false);
     setCaptureError(null);
+    setFacing("back");
   }, [visible]);
 
   const close = () => {
-    setShot(null);
     setTaking(false);
     setCameraReady(false);
     setCaptureError(null);
@@ -79,7 +86,7 @@ export function PhotoCaptureSheet({
       // the over-the-air update. A 12-megapixel shot at 0.7 lands around 2 MB,
       // comfortably inside the 14 MB ceiling the bucket and the reader share.
       const picture = await cameraRef.current.takePictureAsync({ quality: 0.7 });
-      if (picture?.uri) setShot(picture.uri);
+      if (picture?.uri) onCaptured(picture.uri);
       else setCaptureError("The camera didn't return a photo. Try again.");
     } catch (cause) {
       setCaptureError(cause instanceof Error ? cause.message : "Couldn't take that photo. Try again.");
@@ -89,10 +96,14 @@ export function PhotoCaptureSheet({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={close} statusBarTranslucent>
-      <View style={styles.host}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={close} statusBarTranslucent>
+      {/* The chat shows through here. Tapping it leaves, the way tapping outside
+          any sheet does — with the panel covering most of the screen this strip
+          is small, so the chevron below is still the main way out. */}
+      <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close camera" />
+      <View style={[styles.panel, { paddingBottom: insets.bottom }]}>
         {!permission?.granted ? (
-          <View style={[styles.permission, { paddingTop: insets.top + space(6) }]}>
+          <View style={styles.permission}>
             <Text style={styles.permissionTitle}>Let Nemesis use the camera</Text>
             <Text style={styles.permissionBody}>
               {askable
@@ -115,46 +126,12 @@ export function PhotoCaptureSheet({
               <Text style={styles.secondaryText}>Not now</Text>
             </Pressable>
           </View>
-        ) : shot ? (
-          <>
-            <Image source={{ uri: shot }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-            <View style={[styles.bar, { paddingBottom: insets.bottom + space(5) }]}>
-              <Pressable
-                onPress={() => {
-                  setShot(null);
-                  setCameraReady(false);
-                  setCaptureError(null);
-                }}
-                disabled={busy}
-                accessibilityRole="button"
-                hitSlop={10}
-              >
-                <Text style={[styles.barAction, busy && styles.barActionDim]}>Retake</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onCaptured(shot)}
-                disabled={busy}
-                accessibilityRole="button"
-                testID="photo-use"
-                hitSlop={10}
-              >
-                {busy ? (
-                  <View style={styles.busyRow}>
-                    <ActivityIndicator color="#fff" />
-                    <Text style={styles.barAction}>Reading…</Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.barAction, styles.barActionStrong]}>Use photo</Text>
-                )}
-              </Pressable>
-            </View>
-          </>
         ) : (
           <>
             <CameraView
               ref={cameraRef}
               style={StyleSheet.absoluteFill}
-              facing="back"
+              facing={facing}
               mode="picture"
               onCameraReady={() => {
                 setCameraReady(true);
@@ -167,11 +144,25 @@ export function PhotoCaptureSheet({
                 <Text style={styles.captureErrorText}>{captureError}</Text>
               </View>
             ) : null}
-            <View style={[styles.shutterBar, { paddingBottom: insets.bottom + space(6) }]}>
+
+            {/* All three controls float ON the picture rather than sitting in a
+                bar below it, so the preview stays as tall as the panel. */}
+            <View style={styles.controls}>
+              <Pressable
+                onPress={close}
+                style={({ pressed }) => [styles.roundButton, pressed && styles.roundButtonPressed]}
+                accessibilityLabel="Close camera"
+                accessibilityRole="button"
+                testID="photo-back"
+                hitSlop={8}
+              >
+                <ChevronLeftGlyph />
+              </Pressable>
+
               <Pressable
                 onPress={() => void take()}
                 accessibilityLabel="Take photo"
-                accessibilityHint={cameraReady ? "Captures the study material in view" : "Wait for the camera to finish starting"}
+                accessibilityHint={cameraReady ? "Attaches the photo to your message" : "Wait for the camera to finish starting"}
                 testID="photo-shutter"
                 disabled={!cameraReady || taking}
                 style={({ pressed }) => [
@@ -182,20 +173,23 @@ export function PhotoCaptureSheet({
               >
                 {taking ? <ActivityIndicator color="#fff" size="large" /> : <ShutterGlyph />}
               </Pressable>
+
+              {/* ChatGPT puts a "…" here. A menu with one item in it is worse
+                  than the item itself, so this is the flip directly — the one
+                  thing a camera needs that the shutter cannot do. */}
+              <Pressable
+                onPress={() => setFacing((current) => (current === "back" ? "front" : "back"))}
+                style={({ pressed }) => [styles.roundButton, pressed && styles.roundButtonPressed]}
+                accessibilityLabel={facing === "back" ? "Switch to the front camera" : "Switch to the back camera"}
+                accessibilityRole="button"
+                testID="photo-flip"
+                hitSlop={8}
+              >
+                <FlipGlyph />
+              </Pressable>
             </View>
           </>
         )}
-
-        {permission?.granted ? (
-          <Pressable
-            onPress={close}
-            style={[styles.close, { top: insets.top + space(2) }]}
-            accessibilityLabel="Close camera"
-            hitSlop={10}
-          >
-            <CloseIcon size={20} color="#fff" />
-          </Pressable>
-        ) : null}
       </View>
     </Modal>
   );
@@ -206,44 +200,86 @@ export function PhotoCaptureSheet({
  *  ComposerPlusMenu's CheckIcon). */
 function ShutterGlyph() {
   return (
-    <Svg width={64} height={64} viewBox="0 0 64 64">
-      <Circle cx={32} cy={32} r={30} fill="none" stroke="#fff" strokeWidth={2.5} />
-      <Circle cx={32} cy={32} r={24} fill="#fff" />
+    <Svg width={72} height={72} viewBox="0 0 72 72">
+      <Circle cx={36} cy={36} r={34} fill="none" stroke="#fff" strokeWidth={3} />
+      <Circle cx={36} cy={36} r={27} fill="#fff" />
     </Svg>
   );
 }
 
-// Fixed black-and-white rather than themed: a camera screen IS the picture, and
-// a tinted panel over a live preview reads as a colour cast on the shot.
+function ChevronLeftGlyph() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24">
+      <Path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function FlipGlyph() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24">
+      <Path
+        d="M4 9a8 8 0 0 1 13.5-3.5L20 8M20 15a8 8 0 0 1-13.5 3.5L4 16"
+        fill="none"
+        stroke="#fff"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M20 4v4h-4M4 20v-4h4" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Fixed black-and-white rather than themed: a camera panel IS the picture, and
+// a tinted surface over a live preview reads as a colour cast on the shot.
 const styles = StyleSheet.create({
-  bar: {
+  // Deliberately not a scrim. ChatGPT leaves the chat above the panel looking
+  // normal, not dimmed, which is what makes the camera feel like part of the
+  // conversation instead of a modal thrown over it.
+  backdrop: { flex: 1 },
+  panel: {
+    backgroundColor: "#000",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderCurve: "continuous",
+    // Roughly ChatGPT's proportion: enough chat left visible to read as "still
+    // in this conversation", enough panel that the preview is the screen.
+    height: "78%",
+    overflow: "hidden",
+  },
+  controls: {
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.65)",
-    bottom: 0,
+    bottom: space(5),
     flexDirection: "row",
     justifyContent: "space-between",
     left: 0,
-    paddingHorizontal: space(8),
-    paddingTop: space(5),
+    paddingHorizontal: space(6),
     position: "absolute",
     right: 0,
   },
-  barAction: { ...type.body, color: "#fff" },
-  barActionDim: { opacity: 0.4 },
-  barActionStrong: { fontWeight: "600" },
-  busyRow: { alignItems: "center", flexDirection: "row", gap: space(2) },
-  close: { left: space(4), padding: space(2), position: "absolute", zIndex: 2 },
+  roundButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderRadius: radius.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  roundButtonPressed: { opacity: 0.6 },
+  shutter: { alignItems: "center", justifyContent: "center" },
+  shutterDisabled: { opacity: 0.5 },
+  shutterPressed: { opacity: 0.7 },
   captureError: {
     position: "absolute",
     left: space(5),
     right: space(5),
-    top: "16%",
+    top: space(6),
     backgroundColor: "rgba(0,0,0,0.72)",
     borderRadius: radius.md,
     padding: space(3),
   },
   captureErrorText: { ...type.small, color: "#fff", textAlign: "center" },
-  host: { backgroundColor: "#000", flex: 1 },
   permission: { alignItems: "center", flex: 1, gap: space(4), justifyContent: "center", padding: space(8) },
   permissionBody: { ...type.body, color: "rgba(255,255,255,0.7)", textAlign: "center" },
   permissionTitle: { ...type.h2, color: "#fff", textAlign: "center" },
@@ -255,8 +291,4 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { ...type.body, color: "#000", fontWeight: "600" },
   secondaryText: { ...type.body, color: "rgba(255,255,255,0.6)" },
-  shutter: { alignItems: "center", justifyContent: "center" },
-  shutterDisabled: { opacity: 0.5 },
-  shutterBar: { alignItems: "center", bottom: 0, left: 0, paddingTop: space(6), position: "absolute", right: 0 },
-  shutterPressed: { opacity: 0.7 },
 });

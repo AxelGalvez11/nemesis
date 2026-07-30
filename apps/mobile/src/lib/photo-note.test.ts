@@ -1,5 +1,7 @@
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  PHOTO_ANALYSIS_ASK,
+  photoTurnText,
   PHOTO_BUCKET,
   photoPathInNote,
   PHOTO_MAX_BYTES,
@@ -123,4 +125,23 @@ Deno.test("a note with no recorded path reads back as none, not as a crash", () 
   assertEquals(photoPathInNote(photoNoteBody("Words.", "https://example.test/p.jpg")), null);
   assertEquals(photoPathInNote("Just some prose.\n"), null);
   assertEquals(photoPathInNote(""), null);
+});
+
+Deno.test("photoTurnText: the student's own question always wins", () => {
+  assertEquals(photoTurnText("which enzyme is circled here?", true), "which enzyme is circled here?");
+});
+
+Deno.test("photoTurnText: a photo with an empty composer still asks something", () => {
+  // The case the old auto-send existed to cover. Without this, taking a picture
+  // and pressing send would do nothing at all.
+  assertEquals(photoTurnText("   ", true), PHOTO_ANALYSIS_ASK);
+});
+
+Deno.test("photoTurnText: an empty composer with NO photo sends nothing", () => {
+  assertEquals(photoTurnText("", false), "");
+  assertEquals(photoTurnText("   \n ", false), "");
+});
+
+Deno.test("photoTurnText: whitespace around a real question is trimmed, not counted", () => {
+  assertEquals(photoTurnText("  what is this?  ", true), "what is this?");
 });
