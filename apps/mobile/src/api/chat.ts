@@ -47,13 +47,10 @@ import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
 import { recallBrain } from "./brain";
 import {
+  buildFinalNoteMessages,
   buildLiveNotesMessages,
-  FINAL_NOTES_MAX_KEPT,
-  FINAL_NOTES_MAX_WINDOWS,
-  liveNotesText,
-  mergeLiveNotes,
   parseLiveNotes,
-  planFinalNotesWindows,
+  splitFinalNote,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/chat-stream";
@@ -1040,29 +1037,27 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
  *  back. Never throws: requestLiveNotes resolves null on failure, and a window
  *  that comes back empty just contributes nothing. */
 async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
-  const windows = planFinalNotesWindows(transcript);
-  if (windows.length === 0) return null;
-  if (windows.length === FINAL_NOTES_MAX_WINDOWS) {
-    console.warn(`notes pass hit the ${FINAL_NOTES_MAX_WINDOWS}-window ceiling; the tail may not be summarized`);
-  }
-  let notes: string[] = [];
-  let failed = 0;
-  for (const window of windows) {
-    const fresh = await requestLiveNotes(uid, window, notes);
-    // KEEP GOING past a failed window. This used to bail on the first failure,
-    // because notes covering only part of a lecture were worse than the live
-    // pass's notes, which at least spanned all of it. There is no live pass to
-    // fall back to any more, so bailing would hand the student NOTHING — and
-    // bullets for four fifths of a lecture beat none. (An empty-but-successful
-    // window is not a failure; see requestLiveNotes.)
-    if (!fresh) {
-      failed += 1;
-      continue;
-    }
-    notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
-  }
-  if (failed) console.warn(`notes pass: ${failed}/${windows.length} windows failed; notes may have gaps`);
-  return notes.length ? liveNotesText(notes) : null;
+  if (!transcript.trim()) return null;
+  // ONE PASS, matching web (owner 2026-07-30: "FIX IT").
+  //
+  // This walked the transcript in windows, asking for up to ten one-to-three
+  // sentence notes per window and joining them. That is why the phone's notes
+  // looked so different from the browser's: not a worse model and not a worse
+  // transcript, but a windowed brief that asked for a list of sentences and got
+  // exactly that. Headings and an opening summary were never possible.
+  //
+  // The window loop also cannot survive the new brief. "Organise BY IDEA, not
+  // by chronology — group what belongs together even if it was said twenty
+  // minutes apart" is impossible to honour a slice at a time: each window can
+  // only see its own fifth of the lecture, so grouping across the whole thing
+  // requires the whole thing in one call. Web has always done this, over a
+  // 60k-char clip, which is about three hours of speech.
+  const reply = await postChatCompletion(uid, buildFinalNoteMessages(transcript), LIVE_NOTES_DECISION);
+  if (!reply.text) return null;
+  // The title line is scaffolding for the caller, never part of the note body —
+  // without this strip, every note would open with a stray "Title: …".
+  const { body } = splitFinalNote(reply.text.trim());
+  return body.trim() || null;
 }
 
 /** Persist one recording's generated notes to every durable destination: the

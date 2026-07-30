@@ -66,6 +66,82 @@ export function buildLiveNotesMessages(transcript: string, previousNotes: string
   ];
 }
 
+/** How much transcript the FINAL note pass sends. Matches web's
+ *  RECORDING_NOTE_TRANSCRIPT_CHARS — roughly a three-hour lecture at speaking
+ *  pace — and the clip takes the END so a long session keeps its conclusions. */
+export const FINAL_NOTE_TRANSCRIPT_CHARS = 60_000;
+
+/**
+ * The finished recording's notes, in ONE pass, as markdown.
+ *
+ * WHY THIS EXISTS (owner 2026-07-30). The phone and the web produced visibly
+ * different notes from the same feature, and the cause was not the model, the
+ * transcript, or a provider fallback — it was this file. buildLiveNotesMessages
+ * asks for "strict JSON with exactly one string-array key" and "no markdown",
+ * so the phone was STRUCTURALLY incapable of the headings, opening summary and
+ * point-plus-reasoning the web produced. It was not degraded output; it was a
+ * different brief, working exactly as written.
+ *
+ * So this mirrors apps/web/lib/workspace/recording-note.ts verbatim. Two prompts
+ * for one feature is what caused the divergence, and the fix is not to write a
+ * third — if this drifts from web's again, the phone's notes get quietly worse
+ * again and nothing will say so.
+ */
+export function buildFinalNoteMessages(transcript: string, context?: string): WireMsg[] {
+  const clipped = transcript.slice(-FINAL_NOTE_TRANSCRIPT_CHARS);
+  const contextLine = cleanLine(context, 500);
+  return [
+    {
+      role: "system",
+      content:
+        "You are turning a recording into the notes a student will revise from. Any subject or profession; never assume a biomedical one. " +
+        "Write markdown. Open with one short paragraph saying what this session covered and what the listener should be able to do afterwards. " +
+        "Then organise BY IDEA, not by chronology — group what belongs together even if it was said twenty minutes apart. Use headings. " +
+        "For each idea give the point, the reasoning or mechanism behind it, and whatever example, number, or case the speaker used to make it. Prose and short lists both fine; a page of bare bullets is not. " +
+        "Mark explicitly anything the speaker called examinable, important, or likely to appear on a test, and anything they were openly unsure about. " +
+        "Keep every figure, unit, name, and definition exactly as spoken. Never add material that was not said — if the transcript is too fragmentary to support a section, leave it out rather than padding it. " +
+        "Finish with a short 'Open questions' list of what was raised but not resolved. " +
+        "Start your reply with one line in exactly this form: Title: <4 to 8 words naming what was actually discussed>. " +
+        "Make it specific enough to recognise a month later — never the word 'Recording', never a date, never 'Lecture Notes'. " +
+        "Then a blank line, then the markdown body only: no title heading, no code fences, no preamble.",
+    },
+    {
+      role: "user",
+      content: [
+        contextLine ? `Session context: ${contextLine}` : "",
+        `Transcript:\n${clipped}`,
+      ].filter(Boolean).join("\n\n"),
+    },
+  ];
+}
+
+/** A "Title: …" first line, with the decoration models like to add. Mirrors
+ *  web's splitRecordingNote so both surfaces strip it identically. */
+const TITLE_LINE = /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*|__|\*|_)?[ \t]*title[ \t]*(?:\*\*|__|\*|_)?[ \t]*[:：][ \t]*(.*)$/i;
+
+/**
+ * Peel the model's "Title: …" line off the front of the note.
+ *
+ * Only the FIRST non-empty line is considered — a "Title:" further down is the
+ * note's own content. No match returns the body byte-identical with an empty
+ * title, which leaves the caller on its dated fallback rather than guessing
+ * that line one was meant as a heading.
+ */
+export function splitFinalNote(raw: string): { body: string; title: string } {
+  const lines = raw.split("\n");
+  const index = lines.findIndex((line) => line.trim().length > 0);
+  if (index < 0) return { body: raw, title: "" };
+  const match = lines[index]!.match(TITLE_LINE);
+  if (!match) return { body: raw, title: "" };
+  const title = (match[1] ?? "")
+    .replace(/[*_`]/g, "")
+    .replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.。]+$/, "")
+    .trim();
+  return { body: lines.slice(index + 1).join("\n").replace(/^\s+/, ""), title };
+}
+
 /** Tolerant parse of the model reply — fences stripped, outer braces sliced,
  *  anything that isn't a clean notes array becomes []. */
 export function parseLiveNotes(raw: string): string[] {
