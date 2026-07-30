@@ -350,14 +350,20 @@ export function tokensFromChars(chars: number): number {
  *
  *  • web-batch    — WHAT ACTUALLY RUNS TODAY. The recorder uploads a file, and
  *    nemesis-transcribe submits it to AssemblyAI pinned to Universal-2 with speaker
- *    labels. Groq is tried first in code but the owner has no pay-as-you-go access,
- *    so in practice every web recording lands here.
+ *    labels, and since 2026-07-29 AssemblyAI is FIRST in the ladder rather than the
+ *    backstop — the owner reversed a cheapest-first order after xAI transcripts
+ *    produced visibly worse notes. Every web recording lands here by design now,
+ *    not (as this comment used to say) because the cheaper lanes were unreachable.
  *  • web-batch-pro — the SAME code path when AssemblyAI ignores the pinned model and
  *    runs Universal-3.5 Pro. Not hypothetical: `speech_models` is a priority list, and
  *    /status reads the model back off the finished job precisely because a request
  *    field that has moved is accepted and ignored rather than rejected.
- *  • web-batch-groq — the same route once Groq pay-as-you-go is available. No code
- *    change: nemesis-transcribe already tries Groq first.
+ *  • web-batch-groq — the same route once Groq pay-as-you-go is available. Wired but
+ *    LAST in the ladder, and it has never run: no key. Cheapest wired lane at
+ *    $0.04/hr, and the only one with NO SPEAKER LABELS — Whisper does not diarize at
+ *    all, so transcribeWithGroq returns flat text that never reaches
+ *    formatDiarizedTranscript. Price it against that, not against the hourly rate
+ *    alone.
  *  • ios-parakeet — on-device Parakeet (PR #273, shipped in iOS build 22, still not
  *    device-verified). Nothing leaves the phone, so there is no per-minute cost.
  */
@@ -406,7 +412,7 @@ const LANE_USD_PER_HOUR: Readonly<Record<RecorderLane, number>> = {
 const LANE_NOTES: Readonly<Record<RecorderLane, string>> = {
   "ios-parakeet": "nothing leaves the phone — built (PR #273, build 22), not device-verified",
   "web-batch": "AssemblyAI Universal-2 + speaker labels — the live default",
-  "web-batch-groq": "Groq whisper-large-v3-turbo — wired and first in line, but no PAYG access",
+  "web-batch-groq": "Groq whisper-large-v3-turbo — wired but LAST, never run (no PAYG), and no speaker labels",
   "web-batch-modulate": "Modulate — cheapest surveyed, diarization included, but VENDOR-CLAIMED and untested",
   "web-batch-pro": "AssemblyAI Universal-3.5 Pro — what we pay if the pinned model is ignored",
   "web-batch-xai": "xAI Grok STT — diarization included, price confirmed at two sources, not wired",
