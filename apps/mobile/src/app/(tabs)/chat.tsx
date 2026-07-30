@@ -60,7 +60,7 @@ import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
-import { MAX_MESSAGES_PER_THREAD, mergeMessages } from "@/lib/chat-threads";
+import { mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { photoAttachmentTitle, photoNoteBody } from "@/lib/photo-note";
@@ -119,34 +119,25 @@ const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
 // so the choice survives app launches and chat switches.
 const effortStoreKey = (uid: string) => `nemesis_chat_effort_v1_${uid}`;
 
-/**
- * Apply a BACKGROUND refresh (the foreground pull and the 8-second poll) to
- * what is on screen, without losing anything this device appended while the
- * fetch was in flight.
- *
- * 🔴 THESE TWO REFRESHES USED TO REPLACE STATE OUTRIGHT, AND THAT COULD BLANK
- * THE SCREEN. loadThreadMessages snapshots the local cache the moment it is
- * called and only merges the cloud into THAT snapshot, so a poll already in
- * flight when a recording is saved comes back describing a thread the save
- * never happened in. On a brand-new chat — the usual case, since you open a
- * chat and hit record — that snapshot is empty, so the card the student just
- * watched appear vanished and the conversation looked untouched (owner
- * 2026-07-30: "the chat went back to blank"). It refilled on the next poll,
- * which is why it read as a flicker rather than lost work.
- *
- * `sendingRef` already guarded the same hazard for a chat turn in flight; a
- * recording save is simply not a chat turn, so nothing covered it. Merging
- * rather than replacing covers every appender at once, including any future
- * one that also forgets to raise a flag.
- *
- * Argument order matters: mergeMessages prefers its SECOND list on a shared
- * id, so `current` goes second and local state wins. Reversing it would let a
- * poll drag a recording card back to "still transcribing" after its notes had
- * already landed.
- */
-function applyRefresh(current: ChatMsg[], loaded: ChatMsg[]): ChatMsg[] {
-  return mergeMessages(loaded, current).slice(-MAX_MESSAGES_PER_THREAD);
-}
+// 🔴 THE TWO BACKGROUND REFRESHES BELOW MERGE, THEY DO NOT REPLACE, AND THAT
+// IS WHY THE SCREEN NO LONGER GOES BLANK. loadThreadMessages snapshots the
+// local cache the moment it is called and merges only the cloud into THAT
+// snapshot, so a poll already in flight when a recording is saved comes back
+// describing a thread the save never happened in. On a brand-new chat — the
+// usual case, since you open a chat and hit record — that snapshot is empty,
+// so the card the student just watched appear vanished (owner 2026-07-30:
+// "the chat went back to blank"). It refilled on the next poll, which is why
+// it read as a flicker rather than as lost work.
+//
+// `sendingRef` already guarded the same hazard for a chat turn in flight; a
+// recording save is simply not a chat turn, so nothing covered it. Merging
+// covers every appender at once, including any future one that also forgets
+// to raise a flag.
+//
+// The merge itself lives in lib/chat-threads.ts (mergeRefreshedMessages) and
+// is NOT the same function the store uses — read its comment before touching
+// it. Folding on-screen state and stored state together with the store's own
+// merge duplicates every message in the thread.
 
 interface Row {
   id: string;
@@ -437,7 +428,7 @@ export default function ChatScreen() {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active" || sendingRef.current) return; // never clobber an in-flight turn
       void loadThreadMessages(uid, threadId).then((loaded) => {
-        if (epochRef.current === epoch) setMessages((current) => applyRefresh(current, loaded));
+        if (epochRef.current === epoch) setMessages((current) => mergeRefreshedMessages(current, loaded));
       });
     });
     return () => sub.remove();
@@ -1013,7 +1004,7 @@ export default function ChatScreen() {
       const pull = () => {
         if (sendingRef.current) return;
         void loadThreadMessages(uid, threadId).then((loaded) => {
-          if (epochRef.current === epoch) setMessages((current) => applyRefresh(current, loaded));
+          if (epochRef.current === epoch) setMessages((current) => mergeRefreshedMessages(current, loaded));
         });
       };
       pull();

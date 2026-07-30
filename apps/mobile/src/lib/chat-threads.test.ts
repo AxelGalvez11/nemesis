@@ -12,9 +12,11 @@ import {
   generateUuidV4,
   getThread,
   isValidThreadId,
+  MAX_MESSAGES_PER_THREAD,
   MAX_THREADS,
   mergeCloudThreadList,
   mergeMessages,
+  mergeRefreshedMessages,
   newMessagesSince,
   outputsFromMeta,
   parseThreadStore,
@@ -419,4 +421,61 @@ Deno.test("setThreadMessages: constructs a fresh entry when the thread is unknow
   const store = setThreadMessages(emptyStore(), "cloud-only", [user("hi")], "2026-07-18T09:00:00Z");
   assertEquals(getThread(store, "cloud-only")?.messages[0].content, "hi");
   assertEquals(getThread(store, "cloud-only")?.title, "hi");
+});
+
+// --- mergeRefreshedMessages: on-screen state + a background refresh ---------
+//
+// The chat screen's poll used to REPLACE state, which could blank the screen
+// (owner 2026-07-30). Merging fixes that and opens a different hole: on-screen
+// messages have no id, stored ones do, so a naive merge keeps both copies.
+
+Deno.test("mergeRefreshedMessages: the SAME message, id-less on screen and id-bearing from the store, stays ONE", () => {
+  const onScreen: ChatMsg = { at: "2026-07-30T18:41:02.548Z", content: "Recording saved.", role: "assistant" };
+  const fromStore: ChatMsg = { ...onScreen, id: "95ba3f92-d8e7-6960-f89e-04beefbe2eac" };
+  const merged = mergeRefreshedMessages([onScreen], [fromStore]);
+  assertEquals(merged.length, 1);
+  // The copy WITH the id wins, so the next refresh has a stable key to match on.
+  assertEquals(merged[0].id, "95ba3f92-d8e7-6960-f89e-04beefbe2eac");
+});
+
+Deno.test("mergeRefreshedMessages: merging its own output again is a no-op (the poll runs every 8s)", () => {
+  const onScreen: ChatMsg = { at: "2026-07-30T18:41:02.548Z", content: "Recording saved.", role: "assistant" };
+  const fromStore: ChatMsg = { ...onScreen, id: "abc" };
+  const once = mergeRefreshedMessages([onScreen], [fromStore]);
+  const twice = mergeRefreshedMessages(once, [fromStore]);
+  assertEquals(twice.length, 1);
+});
+
+Deno.test("mergeRefreshedMessages: a card this device just appended SURVIVES a refresh that predates it", () => {
+  // The blank-screen case: the poll's snapshot was taken before the save, so
+  // `loaded` knows nothing about the recording. Replacing lost it; merging must not.
+  const recording: ChatMsg = { at: "2026-07-30T18:41:02.548Z", content: "Recording saved.", role: "assistant" };
+  const merged = mergeRefreshedMessages([recording], []);
+  assertEquals(merged.length, 1);
+  assertEquals(merged[0].content, "Recording saved.");
+});
+
+Deno.test("mergeRefreshedMessages: a message from ANOTHER device arrives, in time order", () => {
+  const mine: ChatMsg = { at: "2026-07-30T10:00:00.000Z", content: "from this phone", id: "a", role: "user" };
+  const theirs: ChatMsg = { at: "2026-07-30T09:00:00.000Z", content: "from the web", id: "b", role: "user" };
+  const merged = mergeRefreshedMessages([mine], [theirs, mine]);
+  assertEquals(merged.map((message) => message.content), ["from the web", "from this phone"]);
+});
+
+Deno.test("mergeRefreshedMessages: two genuinely different messages at the same instant both survive", () => {
+  const user: ChatMsg = { at: "2026-07-30T10:00:00.000Z", content: "hi", role: "user" };
+  const bot: ChatMsg = { at: "2026-07-30T10:00:00.000Z", content: "hello", role: "assistant" };
+  assertEquals(mergeRefreshedMessages([user, bot], []).length, 2);
+});
+
+Deno.test("mergeRefreshedMessages: caps at MAX_MESSAGES_PER_THREAD, keeping the newest", () => {
+  const many: ChatMsg[] = Array.from({ length: MAX_MESSAGES_PER_THREAD + 5 }, (_unused, index) => ({
+    at: new Date(Date.UTC(2026, 6, 30, 0, index)).toISOString(),
+    content: `m${index}`,
+    id: `id-${index}`,
+    role: "user",
+  }));
+  const merged = mergeRefreshedMessages([], many);
+  assertEquals(merged.length, MAX_MESSAGES_PER_THREAD);
+  assertEquals(merged[merged.length - 1].content, `m${MAX_MESSAGES_PER_THREAD + 4}`);
 });

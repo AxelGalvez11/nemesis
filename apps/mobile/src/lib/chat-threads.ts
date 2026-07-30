@@ -503,6 +503,52 @@ export function mergeMessages(local: ChatMsg[], cloud: ChatMsg[]): ChatMsg[] {
   return merged.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
+/**
+ * Fold a background refresh into what is ON SCREEN — the chat screen's
+ * foreground pull and its 8-second poll.
+ *
+ * 🔴 THIS CANNOT BE `mergeMessages`, AND GETTING THAT WRONG DUPLICATES EVERY
+ * MESSAGE IN THE THREAD. mergeMessages keys a message as `id ?? role|at|content`,
+ * which is right when BOTH sides come out of the store (everything there has
+ * been through ensureMessageIds). On-screen state has not: chat.tsx builds
+ * `{ at, content, role }` with no id, and ensureMessageIds hands its ids to the
+ * STORE copy, never back to React state. So the same message arrives here
+ * id-less from the screen and id-bearing from the store, hashes to two
+ * different keys, and both survive. Nothing corrects it afterwards either —
+ * the whole point of merging rather than replacing is that state stops being
+ * overwritten, so the next poll folds in a list that already holds both copies
+ * and keeps them. Every ordinary chat turn would double within 8 seconds of
+ * finishing, not just a recording.
+ *
+ * So identity is checked BOTH ways: by id when there is one, and always by
+ * role+timestamp+content. The content key round-trips exactly — the cloud row's
+ * `created_at` is written from `message.at` (api/chat.ts cloudMessageRow), not
+ * defaulted by the database, so a message read back from Postgres carries the
+ * same instant the phone stamped on it.
+ *
+ * `loaded` is folded in first, so a message present on both sides keeps the
+ * copy that has an id and any metadata the cloud attached. That is safe now
+ * that lib/artifact-timeline.ts decides which STATE an artifact card shows —
+ * this function only has to decide which messages exist.
+ */
+export function mergeRefreshedMessages(current: readonly ChatMsg[], loaded: readonly ChatMsg[]): ChatMsg[] {
+  const contentKey = (message: ChatMsg) => `${message.role}|${message.at}|${message.content}`;
+  const seenIds = new Set<string>();
+  const seenContent = new Set<string>();
+  const merged: ChatMsg[] = [];
+  for (const message of [...loaded, ...current]) {
+    const key = contentKey(message);
+    if (message.id && seenIds.has(message.id)) continue;
+    if (seenContent.has(key)) continue;
+    if (message.id) seenIds.add(message.id);
+    seenContent.add(key);
+    merged.push(message);
+  }
+  return merged
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    .slice(-MAX_MESSAGES_PER_THREAD);
+}
+
 /** Replace a thread's message list (the result of a cloud merge) without
  *  disturbing its title/pinned/timestamps — unlike upsertThread, this is a
  *  READ-time reconciliation, not a new-message event, so it must NOT bump
