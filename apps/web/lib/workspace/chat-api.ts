@@ -5,6 +5,8 @@
 // adds AbortSignal support (mobile has no cancel affordance).
 
 import {
+  ARTIFACT_REFERENCE_RULE,
+  expandArtifactContext,
   formatBrainContext,
   shouldRecallBrain,
   studyCreationKindFromPreferencePrompt,
@@ -63,6 +65,20 @@ export const CHAT_TOOLS_PROMPT =
   "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
   "note or calendar says. " +
+  // The prompt used to stop at the creating verbs, and the model answered
+  // accordingly: asked to move an exam or fix a card's wording it said it
+  // could not, while holding a tool that does exactly that. A capability the
+  // model does not believe it has is the same as no capability.
+  "You can also CHANGE and REMOVE things, not only create them: correct an event's date or time, rewrite or rename a note, fix a " +
+  "flashcard's wording, and delete a note, card, event or generated test the student no longer wants. Editing takes the item's id, " +
+  "which the list and read tools return — pass only the fields that should change, and leave the rest out so they stay as they are. " +
+  // 🔴 The nearest thing to a confirmation step this lane has. There is no
+  // dialog inside a chat turn, so the bar for a destructive call is the
+  // student's own words: "tidy up my notes" is a request to reorganise, not a
+  // licence to delete, and the cost of asking is one sentence.
+  "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which " +
+  "item they mean, ask them which one first — deleting is the one action they cannot take back from here. Never delete something as " +
+  "a side effect of tidying, reorganising, or making room. " +
   // Same correction as the phone's CHAT_SYSTEM_PROMPT — see the long comment
   // there. This used to say school portals were "handled by the Mac app's
   // missions", pointing the student at a deferred product. The inability is
@@ -175,12 +191,29 @@ export function buildWireMessages(
   // Derived from the decision by default so a caller cannot accidentally
   // describe tools that will not be sent.
   toolsEnabled = toolsAllowed(decision),
+  /** Retrieved background — the second-brain packet. Its OWN system message, on
+   *  purpose; see the block comment on the grounding message below. */
+  groundingContext = "",
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
-  const kept = trimHistory(history);
-  const continuityAnchor = buildContinuityAnchor(history, kept);
+  // 🔴 EXPAND BEFORE TRIMMING, never after. The artifact notes are real
+  // characters on the wire — up to ARTIFACT_BODY_BUDGET (4,000) for the newest
+  // one, plus a bracket per message that has outputs. Trimming first and
+  // expanding after would enforce the 24,000-character budget and then walk
+  // straight past it, and an oversized packet is dropped SILENTLY elsewhere in
+  // this codebase rather than erroring. Mobile has done it in this order from
+  // the start; this file briefly did not.
+  //
+  // The anchor is measured against `expanded`, not `history`, on purpose:
+  // buildContinuityAnchor tests `kept.includes(firstUser)` by object identity,
+  // and expandArtifactContext returns NEW objects for messages carrying
+  // outputs. Comparing the two different sets would make the anchor fire for a
+  // message that is actually present.
+  const expanded = expandArtifactContext(history);
+  const kept = trimHistory(expanded);
+  const continuityAnchor = buildContinuityAnchor(expanded, kept);
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
   const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
@@ -196,6 +229,7 @@ export function buildWireMessages(
     {
       content: [
         chatSystemPrompt(toolsEnabled),
+        ARTIFACT_REFERENCE_RULE,
         routeInstruction(decision.route),
         // Only when the tools are really riding — see SAVE_INSTRUCTION.
         ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
@@ -205,7 +239,30 @@ export function buildWireMessages(
     },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
     ...(skills ? [{ content: skills, role: "system" as const }] : []),
+    // 🔴 This used to be a bare content+role map over the raw history, which
+    // dropped every message's `outputs` — so a recording, a deck or a note THIS
+    // CONVERSATION had just produced was invisible on the next turn and "make
+    // flashcards from this" had nothing to bind "this" to. Fixed on iOS first
+    // (owner 2026-07-30); web had the identical hole. Shared module, not a
+    // second copy. `kept` is already expanded — see the note above.
     ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
+    // 🔴 The retrieved packet rides its OWN system message. Concatenating it
+    // onto the student's sentence — which is what `groundedText` used to do —
+    // put unrelated Library notes, deadlines and weak cards immediately after
+    // the word "this", making them the nearest antecedent for a pronoun that
+    // meant something else entirely. Retrieved material is not something the
+    // student said. It still sits last, closest to the answer, which is where
+    // it earns its keep when the question really is about their notes.
+    ...(groundingContext.trim()
+      ? [{
+        content:
+          "Background retrieved automatically from this student's workspace. It was NOT said by them and is "
+          + "not what they are pointing at. Use it only where it is relevant to what they actually asked; if it "
+          + "is about a different subject, ignore it.\n\n"
+          + groundingContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     { content: userText, role: "user" },
   ];
 }
@@ -595,11 +652,13 @@ export async function sendChatTurn(
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  const brainContext = formatBrainContext(await brainLookup);
-  if (brainContext) groundedText = `${groundedText}\n\n${brainContext}`;
+  // The question decides which parts of the packet survive — Calendar and Study
+  // rows have to be asked for or share vocabulary with it now, rather than
+  // riding along on every turn. See brain-context.ts.
+  const brainContext = formatBrainContext(await brainLookup, askText);
 
   const toolsEnabled = toolsAllowed(decision);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {

@@ -18,6 +18,19 @@ export const WORKSPACE_AGENT_TOOL_NAMES = [
   "add_mindmap",
   "list_calendar_events",
   "add_calendar_event",
+  // Editing and removing. The chat could create in all three places but change
+  // nothing, so a student who asked it to move an exam or fix a card's wording
+  // was told to go and do it by hand — in the one surface meant to be where
+  // everything gets done.
+  "update_calendar_event",
+  "delete_calendar_event",
+  "replace_library_note",
+  "delete_library_note",
+  "edit_flashcard",
+  "delete_flashcard",
+  "rename_study_deck",
+  "delete_study_deck",
+  "delete_study_artifact",
 ] as const;
 
 export type WorkspaceAgentToolName = (typeof WORKSPACE_AGENT_TOOL_NAMES)[number];

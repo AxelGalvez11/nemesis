@@ -5,7 +5,7 @@ import { UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE } from "@nemesis/shared";
 import { WRITING_VOICE } from "@nemesis/shared";
 import { routeInstruction } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
-import { ARTIFACT_REFERENCE_RULE } from "./history-artifacts.ts";
+import { ARTIFACT_REFERENCE_RULE } from "@nemesis/shared";
 import { AGENT_TOOL_NAMES } from "./agent-tools.ts";
 import {
   ATTACHMENT_CONTEXT_MAX_CHARS,

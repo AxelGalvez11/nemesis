@@ -49,6 +49,18 @@ const TOOL_PHRASE: Record<string, string> = {
   read_study_artifact: "Reading your study material",
   rename_library_note: "Renaming that note",
   search_library: "Looking through your library",
+  // Changing and removing. These say what is happening in the plainest words
+  // available, because this line is the ONLY warning a student gets before a
+  // delete lands — there is no confirmation step inside a chat turn.
+  update_calendar_event: "Updating that calendar event",
+  delete_calendar_event: "Removing that from your calendar",
+  replace_library_note: "Rewriting your note",
+  delete_library_note: "Moving that note to your trash",
+  edit_flashcard: "Editing that flashcard",
+  delete_flashcard: "Deleting that flashcard",
+  rename_study_deck: "Renaming that deck",
+  delete_study_deck: "Deleting that deck",
+  delete_study_artifact: "Deleting that study material",
 };
 
 /** How much of the student's own question to echo back inside the search line

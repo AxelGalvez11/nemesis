@@ -90,12 +90,43 @@ Deno.test("every tool has a plain-English line for the thinking preview", () => 
   }
 });
 
-Deno.test("deleting is deliberately not on offer", () => {
-  // Pinned as a decision, not left as an accident: a model that misreads "clear up
-  // my ACE inhibitor notes" must not be able to act on it, and there is no confirm
-  // step inside a chat turn. If this ever fails, the confirm has to come first.
+// This test used to read "deleting is deliberately not on offer", and it pinned
+// exactly the right worry: a model that misreads "clear up my ACE inhibitor
+// notes" must not be able to act on it, and there is still no confirmation step
+// inside a chat turn.
+//
+// The owner reversed the decision on 2026-07-31 — the chat is meant to be the
+// one place where everything gets done, and a chat that could create but never
+// correct sent the student to another screen for every mistake it made.
+//
+// The old note said "if this ever fails, the confirm has to come first". A
+// confirm is not what arrived, so what replaced it is written down here instead
+// of being left implicit: EVERY DESTRUCTIVE TOOL IS EITHER RECOVERABLE OR
+// SMALL. That is the property this test now guards, and it is the reason the
+// reversal is defensible.
+Deno.test("nothing the chat can delete is both big and unrecoverable", () => {
+  const destructive = AGENT_TOOL_NAMES.filter((name) => /delete|remove|destroy|wipe/i.test(name));
+  // If a new destructive tool appears, it has to be classified here on purpose.
+  assertEquals(destructive.slice().sort(), [
+    // Soft — sets a `deleted` flag, so the student gets the note back.
+    "delete_library_note",
+    // Permanent, but one row each: a card is retyped in seconds, an event in less.
+    "delete_calendar_event",
+    "delete_flashcard",
+    // Permanent, and it WOULD be big — so deckDeletionVerdict refuses any deck
+    // that still holds cards. Only an empty deck can go from here.
+    "delete_study_deck",
+    // Permanent, one generated artifact, regenerable from the same material.
+    "delete_study_artifact",
+  ].sort());
+});
+
+Deno.test("a whole folder is not something the chat can delete", () => {
+  // The one shape with a genuinely large blast radius and no undo: a folder
+  // takes every note beneath it, and nothing in a chat turn shows the student
+  // what that was. Kept off the list entirely rather than guarded.
   for (const name of AGENT_TOOL_NAMES) {
-    assertEquals(/delete|remove|destroy|wipe/i.test(name), false, name);
+    assertEquals(/delete_(library_)?folder|delete_study_group/i.test(name), false, name);
   }
 });
 

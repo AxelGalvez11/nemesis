@@ -422,7 +422,10 @@ export async function sendChat(
   // is what let "make flashcards from this" resolve "this" to a pile of retrieved
   // notes on an unrelated subject (owner 2026-07-30). See buildWireMessages.
   const brain = await brainLookup;
-  const brainContext = formatBrainContext(brain);
+  // The question decides which parts of the packet survive: Calendar and Study
+  // rows now have to be asked for or share vocabulary with it, instead of
+  // riding along on every turn as a decoy. See brain-context.ts.
+  const brainContext = formatBrainContext(brain, userText);
   if (brainContext) {
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });

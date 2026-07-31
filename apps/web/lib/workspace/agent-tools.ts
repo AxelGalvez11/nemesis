@@ -6,7 +6,14 @@
 // the browser against the same RLS-scoped Supabase tables the pages use, so
 // the agent can never see or touch another account's data.
 
-import { WORKSPACE_AGENT_TOOL_NAMES } from "@nemesis/shared";
+import {
+  calendarEventPatch,
+  deckDeletionVerdict,
+  isPatchFailure,
+  noteReplacementBody,
+  WORKSPACE_AGENT_TOOL_NAMES,
+  workspaceId,
+} from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { writeLibraryNote } from "./library-write";
@@ -311,6 +318,151 @@ export const AGENT_TOOLS = [
     },
     type: "function",
   },
+  // ── Editing and removing what already exists ────────────────────────────────
+  //
+  // The descriptions below are deliberately flat and short. Two of this file's
+  // schema lines have already steered the model badly — search_library's "use
+  // this before answering anything" and add_calendar_event's date read-back —
+  // because a tool description rides EVERY turn and outranks the system prompt.
+  // A destructive tool that oversells itself is the worst version of that, so
+  // none of these say "always", "whenever", or "make sure to".
+  {
+    function: {
+      description:
+        "Change an existing calendar event. Pass only the fields that should change; anything omitted is left alone. "
+        + "Needs the event's id from list_calendar_events.",
+      name: "update_calendar_event",
+      parameters: {
+        properties: {
+          course: { description: "Course name, or empty string to clear it", type: "string" },
+          date: { description: "New date, YYYY-MM-DD", type: "string" },
+          event_id: { description: "The event's id from list_calendar_events", type: "string" },
+          kind: { description: "One of assignment, exam, rotation, class, other", type: "string" },
+          note: { description: "Details, or empty string to clear them", type: "string" },
+          time: { description: "New time, or empty string to make it all-day", type: "string" },
+          title: { description: "New title", type: "string" },
+        },
+        required: ["event_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Remove an event from the student's calendar. Needs the event's id from list_calendar_events.",
+      name: "delete_calendar_event",
+      parameters: {
+        properties: { event_id: { description: "The event's id from list_calendar_events", type: "string" } },
+        required: ["event_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
+        + "Needs the note's id from search_library or read_library_note.",
+      name: "replace_library_note",
+      parameters: {
+        properties: {
+          content: { description: "The note's new full markdown body", type: "string" },
+          note_id: { description: "The note's id from search_library", type: "string" },
+        },
+        required: ["note_id", "content"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move a Library note to the student's trash. It stops appearing in their Library but is recoverable. "
+        + "Needs the note's id from search_library.",
+      name: "delete_library_note",
+      parameters: {
+        properties: { note_id: { description: "The note's id from search_library", type: "string" } },
+        required: ["note_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Change the front or back of one flashcard. Pass only the side that changes. "
+        + "Needs the card's id from read_study_deck.",
+      name: "edit_flashcard",
+      parameters: {
+        properties: {
+          back: { description: "New back/answer text", type: "string" },
+          card_id: { description: "The card's id from read_study_deck", type: "string" },
+          front: { description: "New front/question text", type: "string" },
+        },
+        required: ["card_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Delete one flashcard. This cannot be undone. Needs the card's id from read_study_deck.",
+      name: "delete_flashcard",
+      parameters: {
+        properties: { card_id: { description: "The card's id from read_study_deck", type: "string" } },
+        required: ["card_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Rename a Study deck. Give the deck's current full name and the new name; its folder and cards stay where they are.",
+      name: "rename_study_deck",
+      parameters: {
+        properties: {
+          deck_name: { description: "The deck's current full name from list_study_decks", type: "string" },
+          new_name: { description: "The new deck name", type: "string" },
+        },
+        required: ["deck_name", "new_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Delete a Study deck. Only works on a deck with no cards left in it — a deck that still holds cards has to "
+        + "be removed by the student from the Study page, because deleting it would destroy their review history.",
+      name: "delete_study_deck",
+      parameters: {
+        properties: { deck_name: { description: "The deck's full name from list_study_decks", type: "string" } },
+        required: ["deck_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Delete a practice test or mind map. This cannot be undone. Needs the id from list_study_artifacts.",
+      name: "delete_study_artifact",
+      parameters: {
+        properties: { artifact_id: { description: "The artifact's id from list_study_artifacts", type: "string" } },
+        required: ["artifact_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
 ] as const;
 
 function clip(text: string, max = MAX_NOTE_CHARS): string {
@@ -400,22 +552,44 @@ async function searchLibrary(query: string) {
       lexicalLibrarySearch(q).catch(() => [] as LexicalHit[]),
     ]);
     const hits = mergeLibraryHits(semantic, lexical, MAX_LIST);
-    return { notes: hits.map(({ path, snippet, title }) => ({ path, snippet, title })) };
+    // Hand back the note's id as well as its path. Path is fine for reading and
+    // appending, but it is NOT a stable handle: rename_library_note and
+    // move_library_note both rewrite it, and availableNotePath hands freed names
+    // straight to the next note. A delete keyed on a path the model picked up
+    // three turns ago could land on a different note entirely. Ids never move.
+    return { notes: await withNoteIds(hits.map(({ path, snippet, title }) => ({ path, snippet, title }))) };
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "Search failed." };
   }
 }
 
+/** Attach each note's stable id to a list of path-keyed hits, in one query. */
+async function withNoteIds<T extends { path: string }>(hits: T[]): Promise<(T & { id: string })[]> {
+  if (hits.length === 0) return [];
+  const { data } = await supabase
+    .from("readable_library_documents")
+    .select("id,path")
+    .eq("deleted", false)
+    .in("path", hits.map((hit) => hit.path));
+  const idByPath = new Map((data ?? []).map((row) => [str(row.path), str(row.id)]));
+  return hits.map((hit) => ({ ...hit, id: idByPath.get(hit.path) ?? "" }));
+}
+
 async function readLibraryNote(path: string) {
   const { data, error } = await supabase
     .from("readable_library_documents")
-    .select("path,title,content")
+    .select("id,path,title,content")
     .eq("deleted", false)
     .eq("path", path)
     .maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: `No note at '${path}'. Use search_library to find the right path.` };
-  return { content: clip(str(data.content)), path: str(data.path), title: str(data.title) };
+  return {
+    content: clip(str(data.content)),
+    id: str(data.id),
+    path: str(data.path),
+    title: str(data.title),
+  };
 }
 
 /** The signed-in user id for THIS turn. readable_library_documents.user_id is
@@ -705,7 +879,7 @@ async function readStudyDeck(deckName: string, rawOffset: number, rawLimit: numb
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 20) : 12;
   const { data: cards, error } = await supabase
     .from("study_cards")
-    .select("front,back,card_type,tags,suspended")
+    .select("id,front,back,card_type,tags,suspended")
     .eq("deck_id", deck.id)
     .order("created_at")
     .range(offset, offset + limit - 1);
@@ -715,6 +889,9 @@ async function readStudyDeck(deckName: string, rawOffset: number, rawLimit: numb
       back: clip(str(card.back), 600),
       card_type: str(card.card_type),
       front: clip(str(card.front), 300),
+      // The handle for edit_flashcard and delete_flashcard. Without it those
+      // tools have nothing to point at and the model guesses.
+      id: str(card.id),
       suspended: card.suspended === true,
       tags: Array.isArray(card.tags) ? card.tags.map(str).filter(Boolean).slice(0, 20) : [],
     })),
@@ -842,7 +1019,7 @@ async function listCalendarEvents(daysAhead: number) {
   const end = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from("calendar_events")
-    .select("title,date,time,kind,course,note")
+    .select("id,title,date,time,kind,course,note")
     .gte("date", today)
     .lte("date", end)
     .order("date")
@@ -904,6 +1081,181 @@ async function addCalendarEvent(args: Record<string, unknown>) {
   };
 }
 
+/**
+ * Resolve the handle a destructive verb was given.
+ *
+ * Returns the row's id only when it is a real uuid AND the row exists and
+ * belongs to this student. A model that passed a title, a list position, or an
+ * id it half-remembered gets a readable error naming the tool that produces
+ * real ids, instead of a query that reaches the database and matches something
+ * the student never mentioned.
+ */
+async function resolveRow(
+  table: "calendar_events" | "readable_library_documents" | "study_cards" | "study_artifacts",
+  rawId: unknown,
+  hint: string,
+): Promise<{ error: string } | { id: string; row: Record<string, unknown> }> {
+  const id = workspaceId(rawId);
+  if (!id) return { error: `That is not a valid id. ${hint}` };
+  const query = supabase.from(table).select("*").eq("id", id);
+  const { data, error } = await (table === "readable_library_documents"
+    ? query.eq("deleted", false)
+    : query).maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: `Nothing found with that id — it may already be gone. ${hint}` };
+  return { id, row: data as Record<string, unknown> };
+}
+
+async function updateCalendarEventTool(args: Record<string, unknown>) {
+  const found = await resolveRow("calendar_events", args.event_id, "Use list_calendar_events to get event ids.");
+  if ("error" in found) return found;
+  // Strip the handle before building the patch: `event_id` is how we found the
+  // row, not a field on it, and letting it through would make a call that
+  // changes nothing look like a change.
+  const fields = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "event_id"));
+  const patch = calendarEventPatch(fields);
+  if (isPatchFailure(patch)) return patch;
+  const { error } = await supabase.from("calendar_events").update(patch).eq("id", found.id);
+  if (error) return { error: error.message };
+  return {
+    changed: Object.keys(patch),
+    // Same reasoning as add_calendar_event: the calendar is where they see it,
+    // so do not read the event back at them.
+    instruction:
+      "Updated. Do not read the event back — the calendar shows it. Reply with one short line saying what changed.",
+    title: str(patch.title) || str(found.row.title),
+    updated: true,
+  };
+}
+
+async function deleteCalendarEventTool(args: Record<string, unknown>) {
+  const found = await resolveRow("calendar_events", args.event_id, "Use list_calendar_events to get event ids.");
+  if ("error" in found) return found;
+  const { error } = await supabase.from("calendar_events").delete().eq("id", found.id);
+  if (error) return { error: error.message };
+  return { deleted: true, title: str(found.row.title) };
+}
+
+async function replaceLibraryNoteTool(args: Record<string, unknown>) {
+  const found = await resolveRow("readable_library_documents", args.note_id, "Use search_library to get note ids.");
+  if ("error" in found) return found;
+  if (str(found.row.kind) !== "note") return { error: "That id is a folder, not a note." };
+  const body = noteReplacementBody(args.content);
+  if (!body) return { error: "Nothing to write — a replacement needs a body. Use delete_library_note to remove it." };
+  const { error } = await supabase
+    .from("readable_library_documents")
+    .update({ content: body, updated_at: new Date().toISOString() })
+    .eq("id", found.id);
+  if (error) return { error: error.message };
+  return { path: str(found.row.path), replaced: true, title: str(found.row.title) };
+}
+
+async function deleteLibraryNoteTool(args: Record<string, unknown>) {
+  const found = await resolveRow("readable_library_documents", args.note_id, "Use search_library to get note ids.");
+  if ("error" in found) return found;
+  if (str(found.row.kind) !== "note") {
+    // Folder deletion would take every note inside it with no way to see what
+    // that was from here. Out of scope for this lane on purpose.
+    return { error: "That id is a folder. Folders are removed from the Library page, not from chat." };
+  }
+  // Soft: `deleted` is a flag, so this is recoverable and the row survives.
+  const { error } = await supabase
+    .from("readable_library_documents")
+    .update({ deleted: true, updated_at: new Date().toISOString() })
+    .eq("id", found.id);
+  if (error) return { error: error.message };
+  return { deleted: true, recoverable: true, title: str(found.row.title) };
+}
+
+async function editFlashcardTool(args: Record<string, unknown>) {
+  const found = await resolveRow("study_cards", args.card_id, "Use read_study_deck to get card ids.");
+  if ("error" in found) return found;
+  // Same only-what-was-named rule as the calendar patch: a call carrying just
+  // `back` must not blank the front.
+  const patch: { back?: string; front?: string } = {};
+  if ("front" in args) {
+    const front = str(args.front).trim().slice(0, 12_000);
+    if (!front) return { error: "A card's front cannot be empty." };
+    patch.front = front;
+  }
+  if ("back" in args) {
+    const back = str(args.back).trim().slice(0, 12_000);
+    if (!back) return { error: "A card's back cannot be empty." };
+    patch.back = back;
+  }
+  if (Object.keys(patch).length === 0) return { error: "Nothing to change — pass front, back, or both." };
+  const { error } = await supabase.from("study_cards").update(patch).eq("id", found.id);
+  if (error) return { error: error.message };
+  return { changed: Object.keys(patch), edited: true };
+}
+
+async function deleteFlashcardTool(args: Record<string, unknown>) {
+  const found = await resolveRow("study_cards", args.card_id, "Use read_study_deck to get card ids.");
+  if ("error" in found) return found;
+  const { error } = await supabase.from("study_cards").delete().eq("id", found.id);
+  if (error) return { error: error.message };
+  return { deleted: true, front: str(found.row.front).slice(0, 120) };
+}
+
+/** The deck a name refers to, or an error the model can act on. */
+async function findDeck(deckName: string) {
+  const wanted = deckName.trim();
+  if (!wanted) return { error: "Which deck? Use list_study_decks to see the names." };
+  const { data, error } = await supabase.from("study_decks").select("id,name").limit(200);
+  if (error) return { error: error.message };
+  const matches = (data ?? []).filter((deck) =>
+    str(deck.name).toLowerCase() === wanted.toLowerCase()
+    || str(deck.name).toLowerCase().endsWith(`::${wanted.toLowerCase()}`)
+  );
+  const only = matches.length === 1 ? matches[0] : undefined;
+  if (!only) {
+    return { error: `No single Study deck matched '${wanted}'. Use the full name from list_study_decks.` };
+  }
+  return { id: str(only.id), name: str(only.name) };
+}
+
+async function renameStudyDeckTool(args: Record<string, unknown>) {
+  const deck = await findDeck(str(args.deck_name));
+  if ("error" in deck) return deck;
+  const newName = str(args.new_name).trim().slice(0, 120);
+  if (!newName) return { error: "A deck needs a name." };
+  const { error } = await supabase.from("study_decks").update({ name: newName }).eq("id", deck.id);
+  if (error) return { error: error.message };
+  return { from: deck.name, renamed: true, to: newName };
+}
+
+async function deleteStudyDeckTool(args: Record<string, unknown>) {
+  const deck = await findDeck(str(args.deck_name));
+  if ("error" in deck) return deck;
+  const { count, error: countError } = await supabase
+    .from("study_cards")
+    .select("id", { count: "exact", head: true })
+    .eq("deck_id", deck.id);
+  if (countError) return { error: countError.message };
+  // 🔴 FAIL CLOSED. `count ?? 0` would have read "I could not count" as "it is
+  // empty" and deleted the deck — a null count is not an error, it is what a
+  // head-count returns when the option is not honoured, so no `countError`
+  // would have caught it. On a permanent delete, unknown has to mean no.
+  if (typeof count !== "number") {
+    return { error: "Couldn't check whether that deck still has cards in it, so it was left alone." };
+  }
+  // The guard. study_decks has no soft-delete column, so this is permanent and
+  // takes every card's scheduling history with it. See deckDeletionVerdict.
+  const verdict = deckDeletionVerdict(count);
+  if (!verdict.allowed) return { error: verdict.reason };
+  const { error } = await supabase.from("study_decks").delete().eq("id", deck.id);
+  if (error) return { error: error.message };
+  return { deleted: true, deck: deck.name };
+}
+
+async function deleteStudyArtifactTool(args: Record<string, unknown>) {
+  const found = await resolveRow("study_artifacts", args.artifact_id, "Use list_study_artifacts to get ids.");
+  if ("error" in found) return found;
+  const { error } = await supabase.from("study_artifacts").delete().eq("id", found.id);
+  if (error) return { error: error.message };
+  return { deleted: true, kind: str(found.row.kind), title: str(found.row.title) };
+}
+
 /** Run one tool call; ALWAYS resolves to a JSON-stringifiable result (errors
  *  become `{error}` so the model can react instead of the turn dying). */
 export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
@@ -927,6 +1279,15 @@ export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
       case "add_mindmap": return await addMindmap(args);
       case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
       case "add_calendar_event": return await addCalendarEvent(args);
+      case "update_calendar_event": return await updateCalendarEventTool(args);
+      case "delete_calendar_event": return await deleteCalendarEventTool(args);
+      case "replace_library_note": return await replaceLibraryNoteTool(args);
+      case "delete_library_note": return await deleteLibraryNoteTool(args);
+      case "edit_flashcard": return await editFlashcardTool(args);
+      case "delete_flashcard": return await deleteFlashcardTool(args);
+      case "rename_study_deck": return await renameStudyDeckTool(args);
+      case "delete_study_deck": return await deleteStudyDeckTool(args);
+      case "delete_study_artifact": return await deleteStudyArtifactTool(args);
       default: return { error: `Unknown tool '${call.name}'.` };
     }
   } catch (cause) {
