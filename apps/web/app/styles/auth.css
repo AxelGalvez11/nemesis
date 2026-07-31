@@ -78,6 +78,11 @@
   z-index: 3;
 }
 .nemesis-auth-brand img { height: 28px; object-fit: contain; width: 28px; }
+/* The mark is a dark monochrome glyph on transparency, so it vanishes on the
+   dark ground. Inverting is safe precisely because it has no hue to damage —
+   the same trick the landing nav uses. If the logo ever gains colour this has
+   to become a second asset instead. */
+[data-theme="dark"] .nemesis-auth-brand img { filter: invert(1); }
 .nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
 
 /* HIDDEN, not deleted. The marketing copy and its three-step strip are intact in
@@ -383,6 +388,7 @@
 }
 .nemesis-auth-submit:hover:not(:disabled) { opacity: 0.85; }
 .nemesis-auth-submit:disabled { cursor: not-allowed; opacity: 0.42; }
+[data-theme="dark"] .nemesis-auth-submit:disabled { opacity: 0.3; }
 
 .nemesis-auth-error,
 .nemesis-auth-success,
