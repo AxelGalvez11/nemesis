@@ -188,6 +188,12 @@ export default function LibraryScreen() {
   const [sort, setSort] = useState<SortKey>("az");
   const [sortOpen, setSortOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  // How tall the floating top band is right now — TopBar clearance when it is
+  // empty, more once a search field, a hint or a warning is in it. The list
+  // reserves exactly this at the top of its CONTENT, which is what lets rows
+  // scroll up under it (and under the status-bar blur) instead of stopping at a
+  // fixed header line.
+  const [controlsH, setControlsH] = useState(0);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulling = useRef(false);
   // Long-press row actions (owner 2026-07-22). One target drives all three
@@ -773,11 +779,25 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.flex} testID="library-screen">
-      {/* Top band below the glass TopBar: just the search field + inline hint now — the
-          Search / New note / New folder / Sort actions moved into the lower-left "…" glass
-          menu (owner 2026-07-18). Carries the TopBar clearance; only pads at the bottom
-          when it actually has a row to show. */}
-      <View style={[styles.controls, { paddingTop: contentTop, paddingBottom: searchOpen || hint ? space(3) : 0 }]}>
+      {/* 🔴 FLOATS OVER THE LIST, IT IS NOT A BAND ABOVE IT (owner 2026-07-31: "i
+          need library to also have the blur fade up top instead of header"). It
+          used to sit in the flex column carrying the whole TopBar clearance, and
+          that clearance is what made it a header: no row could ever reach the top
+          of the screen, so notes stopped at a hard invisible line instead of
+          sliding up under the status-bar blur the way the chat's do. Now the list
+          owns the full height and reserves this band's MEASURED height at its
+          foot-of-content instead — see controlsH — so nothing is hidden behind it
+          and everything can scroll under it.
+
+          Contents: the search field and the inline hint (the Search / New note /
+          New folder / Sort actions moved into the "…" glass menu, owner
+          2026-07-18), plus any connection warning, which came in here with them
+          rather than being left as the one in-flow child at the top of the page. */}
+      <View
+        style={[styles.controls, { paddingTop: contentTop, paddingBottom: searchOpen || hint || error ? space(3) : 0 }]}
+        onLayout={(e) => setControlsH(e.nativeEvent.layout.height)}
+        pointerEvents="box-none"
+      >
         {searchOpen ? (
           <View style={styles.searchField}>
             <SearchIcon size={16} color={c.text3} />
@@ -806,13 +826,13 @@ export default function LibraryScreen() {
             <Text style={styles.hintText}>{hint}</Text>
           </View>
         ) : null}
-      </View>
 
-      {error ? (
-        <Surface style={styles.warn} testID="library-error">
-          <Text style={styles.warnText}>Couldn't reach your library: {error}</Text>
-        </Surface>
-      ) : null}
+        {error ? (
+          <Surface style={styles.warn} testID="library-error">
+            <Text style={styles.warnText}>Couldn't reach your library: {error}</Text>
+          </Surface>
+        ) : null}
+      </View>
 
       {/* Reanimated.FlatList so folder collapse/expand animates (itemLayoutAnimation): the
           rows below slide to their new positions. Lighter than Study's per-row fade — kept
@@ -822,11 +842,20 @@ export default function LibraryScreen() {
         keyExtractor={(item: LibraryRow) => `${item.type}:${item.path}`}
         keyboardShouldPersistTaps="handled"
         itemLayoutAnimation={LinearTransition.duration(200)}
-        contentContainerStyle={[styles.listBody, { paddingTop: space(1), paddingBottom: contentBottom + (selectMode ? 72 : 0) }]}
+        // The band's own measured height, falling back to the bare TopBar
+        // clearance for the first frame before onLayout has fired — without the
+        // fallback the first row would start under the menu button.
+        contentContainerStyle={[
+          styles.listBody,
+          { paddingBottom: contentBottom + (selectMode ? 72 : 0), paddingTop: (controlsH || contentTop) + space(1) },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             tintColor={c.text2}
+            // Pull-to-refresh starts below the floating band, or the spinner
+            // comes down behind the search field.
+            progressViewOffset={controlsH || contentTop}
             onRefresh={() => {
               setRefreshing(true);
               void refresh(userId).finally(() => setRefreshing(false));
@@ -1416,7 +1445,14 @@ const createStyles = (c: ThemeColors) =>
 
     // Top band below the TopBar — now just the (conditional) search field + hint; its
     // bottom padding is applied inline, only when it has a row to show.
-    controls: { paddingHorizontal: space(4), gap: space(2.5) },
+    // Absolute so it takes no space in the column — see the comment at its use.
+    // zIndex 6 puts it just above StatusBarBlur (5) and below the TopBar (10), so
+    // the search field is crisp rather than frosted, like the TopBar's own
+    // controls.
+    controls: {
+      position: "absolute", top: 0, left: 0, right: 0, zIndex: 6,
+      paddingHorizontal: space(4), gap: space(2.5),
+    },
     searchField: {
       flexDirection: "row",
       alignItems: "center",
