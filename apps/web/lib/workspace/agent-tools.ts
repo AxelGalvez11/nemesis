@@ -7,6 +7,8 @@
 // the agent can never see or touch another account's data.
 
 import {
+  folderForNewItem,
+  knownCourses,
   calendarEventPatch,
   deckDeletionVerdict,
   describeTarget,
@@ -68,7 +70,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: `Create a new Library note for the student. Use markdown. If no folder was requested, omit folder to file it in '${GENERATED_NOTES_FOLDER}'.`,
+      description: `Create a new Library note for the student. Use markdown. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one.`,
       name: "create_library_note",
       parameters: {
         properties: {
@@ -85,7 +87,7 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        `Create and save a structured slide deck in the student's Library. You MUST use this when slides or a presentation are requested. If no folder was requested, omit folder to file it in '${GENERATED_SLIDES_FOLDER}'.`,
+        `Create and save a structured slide deck in the student's Library. You MUST use this when slides or a presentation are requested. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one.`,
       name: "create_slide_deck",
       parameters: {
         properties: {
@@ -606,11 +608,42 @@ async function currentUserId(): Promise<string | null> {
   return data.session?.user.id ?? null;
 }
 
+/**
+ * The courses this student is actually taking, in their own words.
+ *
+ * Their calendar events' `course` field plus the top-level folders they made
+ * themselves. Both are things they typed; nothing here is inferred, which is
+ * what keeps course filing field-agnostic.
+ *
+ * NEVER THROWS — an empty list just means "file it where it is filed today".
+ * Losing a note because a folder lookup timed out would be a far worse trade.
+ */
+async function loadKnownCourses(): Promise<string[]> {
+  try {
+    const [events, folders] = await Promise.all([
+      supabase.from("calendar_events").select("course").not("course", "is", null).limit(500),
+      supabase.from("readable_library_documents").select("path").eq("deleted", false).limit(1000),
+    ]);
+    const top = new Set<string>();
+    for (const row of folders.data ?? []) {
+      const segments = str((row as { path?: string }).path).split("/").filter(Boolean);
+      if (segments.length > 1) top.add(segments[0] as string);
+    }
+    return knownCourses((events.data ?? []).map((row) => (row as { course?: string }).course), [...top]);
+  } catch {
+    return [];
+  }
+}
+
 async function createLibraryNote(title: string, content: string, folder: string) {
   const userId = await currentUserId();
   if (!userId) return { error: "Sign in to save a note." };
   try {
-    const saved = await writeLibraryNote({ content, folder: folder.trim() || GENERATED_NOTES_FOLDER, title, userId });
+    // An explicit folder always wins — the student asked for it. Otherwise
+    // file by course instead of dropping everything in one pile.
+    const destination = folder.trim()
+      || folderForNewItem("note", `${title}\n${content}`, await loadKnownCourses());
+    const saved = await writeLibraryNote({ content, folder: destination, title, userId });
     return {
       artifact: {
         id: saved.path,
@@ -654,7 +687,8 @@ async function createSlideDeck(args: Record<string, unknown>) {
   try {
     const saved = await writeLibraryNote({
       content: body,
-      folder: str(args.folder).trim() || GENERATED_SLIDES_FOLDER,
+      folder: str(args.folder).trim()
+        || folderForNewItem("slides", `${title}\n${slides.map((slide) => slide.title).join("\n")}`, await loadKnownCourses()),
       title,
       userId,
     });

@@ -16,6 +16,7 @@
 // of the whole turn dying with an empty bubble. Error strings are written for the
 // student, because the model repeats them almost verbatim.
 import {
+  folderForNewItem,
   calendarEventPatch,
   deckDeletionVerdict,
   describeTarget,
@@ -28,6 +29,7 @@ import {
   type PendingDelete,
 } from "@nemesis/shared";
 import { supabase } from "./supabase";
+import { loadKnownCourses } from "./courses";
 import {
   createFolder,
   createNoteWithContent,
@@ -147,7 +149,10 @@ async function createLibraryNote({ args, uid }: ToolContext) {
   const content = str(args.content);
   if (!title) return { error: "A note needs a title." };
   if (!content.trim()) return { error: "A note needs a body — write the markdown yourself." };
-  const folder = str(args.folder).trim() || GENERATED_NOTES_FOLDER;
+  // An explicit folder from the model always wins — the student asked for it.
+  // Otherwise file by course rather than dropping everything in one pile.
+  const folder = str(args.folder).trim()
+    || folderForNewItem("note", `${title}\n${content}`, await loadKnownCourses(uid));
   const note = await createNoteWithContent(uid, title, content, folder);
   return {
     artifact: { id: note.id, kind: "other", route: `/note?id=${encodeURIComponent(note.id)}`, title: note.title },
@@ -164,7 +169,8 @@ async function createSlideDeck({ args, uid }: ToolContext) {
   if (slides.length < 2) {
     return { error: "A slide deck needs at least two usable slides with a title and content." };
   }
-  const folder = str(args.folder).trim() || GENERATED_SLIDES_FOLDER;
+  const folder = str(args.folder).trim()
+    || folderForNewItem("slides", `${title}\n${slides.map((slide) => slide.title).join("\n")}`, await loadKnownCourses(uid));
   const body = [
     "---",
     "nemesis_artifact: slides",

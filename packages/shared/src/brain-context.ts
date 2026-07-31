@@ -2,6 +2,7 @@ import {
   UNTRUSTED_CONTENT_RULE,
   wrapUntrusted,
 } from "./untrusted-content.ts";
+import { contentWords, sharesVocabulary } from "./word-overlap.ts";
 
 export interface BrainNoteHit {
   chunk_index?: number;
@@ -218,36 +219,6 @@ function deckName(card: BrainWeakCard): string {
     ? card.study_decks[0]
     : card.study_decks;
   return deck?.name?.trim() || "Study";
-}
-
-/**
- * Words too common to mean anything when two texts share them.
- *
- * Deliberately generic English, never subject matter: the moment this list
- * contains a discipline's vocabulary it stops working for the next student.
- */
-const STOPWORDS: ReadonlySet<string> = new Set([
-  "about", "after", "again", "against", "because", "been", "before", "being",
-  "between", "both", "cannot", "could", "does", "doing", "down", "during",
-  "each", "from", "further", "have", "having", "here", "into", "just", "like",
-  "make", "more", "most", "much", "only", "other", "over", "same", "should",
-  "some", "such", "than", "that", "their", "them", "then", "there", "these",
-  "they", "this", "those", "through", "under", "until", "very", "well", "were",
-  "what", "when", "where", "which", "while", "with", "would", "your",
-]);
-
-/** Distinctive words in a piece of text: long enough to carry meaning, and not filler. */
-function contentWords(text: string): Set<string> {
-  const words = text.toLowerCase().match(/[a-z][a-z0-9'-]{3,}/g) ?? [];
-  return new Set(words.filter((word) => !STOPWORDS.has(word)));
-}
-
-function sharesVocabulary(asked: ReadonlySet<string>, candidate: string): boolean {
-  if (asked.size === 0) return false;
-  for (const word of contentWords(candidate)) {
-    if (asked.has(word)) return true;
-  }
-  return false;
 }
 
 // Whether the student is asking about their SCHEDULE or their PROGRESS at all.
