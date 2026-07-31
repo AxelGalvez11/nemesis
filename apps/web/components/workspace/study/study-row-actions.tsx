@@ -21,6 +21,8 @@
 import { IconDots, IconFolderMinus, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Tip } from "@/components/desktop-ui/tooltip";
+
 import {
   ContextMenu,
   ContextMenuContent,
@@ -82,7 +84,16 @@ interface StudyRowMenuProps {
 export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW }: StudyRowMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      {/* 🔴 THE TIP GOES OUTSIDE THE DROPDOWN TRIGGER, not around the button.
+          Both Tip and DropdownMenuTrigger use asChild, and Radix composes
+          nested slots fine in this order. The other way round — a Tip sitting
+          between the trigger and its button — puts a plain function component
+          where the trigger expects an element, so the props that open the menu
+          are handed to something that drops them and the menu stops working.
+          This is a raw <button> rather than our Button, so it does not get the
+          automatic tooltip and has to say so itself. */}
+      <Tip label={`${kindLabel} actions`}>
+        <DropdownMenuTrigger asChild>
         <button
           aria-label={`${kindLabel} actions`}
           // Always visible, not hover-only: the owner asked for a "…" on every
@@ -95,7 +106,8 @@ export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_R
         >
           <IconDots size={14} />
         </button>
-      </DropdownMenuTrigger>
+        </DropdownMenuTrigger>
+      </Tip>
       <DropdownMenuContent align="end" className="min-w-36" {...menuSurfaceProps}>
         <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onRename={onRename} removal={removal} />
       </DropdownMenuContent>
