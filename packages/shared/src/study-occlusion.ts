@@ -1,7 +1,19 @@
-// Pure geometry and payload logic for Anki-style image occlusion cards.
-// The payload rides in study_cards.payload (jsonb). Every card created from
-// one image shares the image and the full mask list; each card points at the
-// single mask it tests via targetId.
+// Pure geometry and payload logic for Anki-style image occlusion ("image
+// cloze") cards — you cover parts of a picture with boxes, and each box becomes
+// its own card that asks what is underneath it.
+//
+// 🔴 ONE COPY, SHARED. This lived twice — apps/web and apps/mobile — with the
+// mobile one labelled "PORTED VERBATIM" and warning that "a payload one client
+// accepts and the other rejects is a card that only exists on one device". By
+// 2026-07-31 the two files had already drifted (comments only, code still
+// identical — caught by diffing them before adding to either). Adding the
+// AI-suggested-box validation to one copy is exactly how that warning comes
+// true, so both were replaced by this single module first.
+//
+// Every card made from one image carries the image and the FULL mask list;
+// each card points at the single mask it tests via targetId.
+//
+// Dependency-free, so it Deno-tests alongside the other pure modules.
 
 export type OcclusionMode = "hide-all" | "hide-one";
 

@@ -186,6 +186,8 @@ export * from "./workspace-agent-tools.ts";
 // iOS use the same bounds, graph vocabulary, and injection fence.
 export * from "./word-overlap.ts";
 export * from "./course-filing.ts";
+export * from "./study-occlusion.ts";
+export * from "./occlusion-suggest.ts";
 export * from "./brain-context.ts";
 export * from "./history-artifacts.ts";
 export * from "./workspace-commands.ts";

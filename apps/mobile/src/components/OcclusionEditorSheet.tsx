@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View,
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
+import { suggestOcclusionMasks } from "@/api/occlusionSuggest";
 import { PhotoCaptureSheet } from "./PhotoCaptureSheet";
 import { CloseIcon } from "./icons";
 import { createOcclusionCards } from "@/api/cloudStudy";
@@ -13,7 +14,7 @@ import {
   occlusionCardFront,
   type OcclusionMode,
   type OcclusionShape,
-} from "@/lib/study-occlusion";
+} from "@nemesis/shared";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -65,6 +66,12 @@ export function OcclusionEditorSheet({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<OcclusionMode>("hide-all");
   const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  // 🔴 SEPARATE FROM `error` ON PURPOSE. "Found 8 boxes, skipped 3 overlapping"
+  // is a report on work that SUCCEEDED; showing it in the red error slot reads
+  // as a failure and teaches the student to distrust the button that just
+  // worked. Failures still go to `error`.
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The box being dragged out right now, in picture pixels. State (not a shared
   // value) because it is one rectangle on an otherwise still screen — the graph's
@@ -191,11 +198,52 @@ export function OcclusionEditorSheet({
     }
   }
 
+  /** Let the reader find the labelled parts, then hand them over to be adjusted.
+   *
+   *  🔴 THIS PROPOSES, IT DOES NOT DECIDE. The boxes land in the same `shapes`
+   *  state a finger would have drawn, so every one can be moved, relabelled or
+   *  deleted before Save — and Save is still a separate, deliberate press. An
+   *  automatic reading that saved itself would be a deck of cards the student
+   *  never looked at, which is worse than no cards.
+   *
+   *  Existing boxes are kept and the suggestions are added to them, so a student
+   *  who drew two by hand and then asked for help does not lose their work. */
+  const suggest = useCallback(async () => {
+    if (!uri || !natural || suggesting) return;
+    setSuggesting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const found = await suggestOcclusionMasks(
+        userId,
+        uri,
+        natural.width,
+        natural.height,
+        () => generateUuidV4(),
+      );
+      if (found.shapes.length === 0) {
+        // Not a failure: plenty of pictures have nothing worth hiding.
+        setNotice(found.note || "Nothing to hide was found in that image.");
+      } else {
+        setShapes((current) => [...current, ...found.shapes]);
+        const added = `Added ${found.shapes.length} box${found.shapes.length === 1 ? "" : "es"}. Adjust or delete any, then save.`;
+        // Never silent about what was thrown away — "it covered everything" is
+        // the impression a quiet truncation leaves.
+        setNotice(found.note ? `${added} ${found.note}` : added);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't read that image.");
+    } finally {
+      setSuggesting(false);
+    }
+  }, [natural, suggesting, uri, userId]);
+
   const canSave = !!uri && !!natural && !!deckId && shapes.length > 0 && !saving;
 
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title="Image cloze" fullScreen testID="occlusion-editor-sheet">
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {notice ? <Text style={styles.hint} testID="occlusion-notice">{notice}</Text> : null}
 
       {!uri ? (
         <View style={styles.empty} testID="occlusion-empty">
@@ -304,6 +352,14 @@ export function OcclusionEditorSheet({
             <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={styles.retake} testID="occlusion-retake">
               <Text style={styles.retakeLabel}>Retake</Text>
             </Pressable>
+            <MissionButton
+              label={suggesting ? "Reading…" : "Suggest boxes"}
+              variant="secondary"
+              busy={suggesting}
+              disabled={!uri || !natural || suggesting}
+              onPress={() => void suggest()}
+              testID="occlusion-suggest"
+            />
             <MissionButton
               label={saving ? "Adding…" : shapes.length > 0 ? `Add ${shapes.length} card${shapes.length === 1 ? "" : "s"}` : "Add cards"}
               variant="primary"

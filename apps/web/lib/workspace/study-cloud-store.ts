@@ -14,7 +14,7 @@ import {
   type OcclusionMode,
   type OcclusionPayload,
   type OcclusionShape,
-} from "./study-occlusion";
+} from "@nemesis/shared";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
 import { fetchAllRows } from "./supabase-paging";
 import { decksInGroup, isWithinGroup, normalizeGroupPath, planGroupDissolve, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { signOcclusionImage } from "@/api/cloudStudy";
-import { occlusionMaskState, type OcclusionPayload } from "@/lib/study-occlusion";
+import { occlusionMaskState, type OcclusionPayload } from "@nemesis/shared";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles, useTheme } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";

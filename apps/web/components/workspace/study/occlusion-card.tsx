@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { resolveStudyImageUrl } from "@/lib/workspace/study-cloud-store";
-import { occlusionMaskState, type OcclusionPayload } from "@/lib/workspace/study-occlusion";
+import { occlusionMaskState, type OcclusionPayload } from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 interface OcclusionCardViewProps {
