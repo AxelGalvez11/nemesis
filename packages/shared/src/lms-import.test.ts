@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   type LmsScan,
   MAX_COURSES,
+  MAX_DOCUMENTS_PER_COURSE,
+  MAX_FOLDER_DEPTH,
   MAX_ITEMS_PER_COURSE,
   MAX_TITLE_CHARS,
   sanitiseDate,
@@ -275,4 +277,90 @@ test("counting and emptiness", () => {
 test("a scan whose only course was unusable reports no content", () => {
   const scan = sanitiseScan(scanWith([{ items: [], name: "", syllabusLinks: [] }]));
   assert.equal(scanHasContent(scan), false);
+});
+
+// ── Documents found by crawling into a course ────────────────────────────────
+
+const courseWithDocs = (documents: unknown) =>
+  scanWith([{ documents, items: [], name: "Pharmacology", syllabusLinks: [] }]);
+
+test("NOT LOOKED and FOUND NOTHING stay different", () => {
+  // A course-list scan never opened a course, so it has no documents FIELD.
+  // A crawled course that turned up nothing has an empty array. The card says
+  // different things for each, so the sanitiser must not flatten them.
+  const notLooked = sanitiseScan(scanWith([{ items: [], name: "Pharmacology", syllabusLinks: [] }]));
+  assert.equal(notLooked.courses[0]?.documents, undefined);
+
+  const lookedAndEmpty = sanitiseScan(courseWithDocs([]));
+  assert.deepEqual(lookedAndEmpty.courses[0]?.documents, []);
+});
+
+test("a document keeps its folder path, outermost first", () => {
+  const scan = sanitiseScan(
+    courseWithDocs([{ folder: ["Week 3", "Lectures"], kind: "file", title: "Enzyme kinetics", fileType: "PDF" }]),
+  );
+  const doc = scan.courses[0]?.documents?.[0];
+  assert.deepEqual(doc?.folder, ["Week 3", "Lectures"]);
+  assert.equal(doc?.fileType, "pdf", "extensions are lowercased");
+});
+
+test("🔴 A FOLDER NAME CANNOT CLIMB OUT OF ITS OWN PATH", () => {
+  // These become Library folders. A segment carrying a separator would let a
+  // crafted portal folder write somewhere it was never listed.
+  const scan = sanitiseScan(
+    courseWithDocs([{ folder: ["../../etc", "a/b", "c\\d"], kind: "file", title: "x" }]),
+  );
+  const folder = scan.courses[0]?.documents?.[0]?.folder ?? [];
+  assert.equal(folder.some((segment) => segment.includes("/") || segment.includes("\\")), false);
+});
+
+test("folder nesting is capped rather than trusted", () => {
+  const deep = Array.from({ length: 40 }, (_, i) => `level ${i}`);
+  const scan = sanitiseScan(courseWithDocs([{ folder: deep, kind: "file", title: "x" }]));
+  assert.equal((scan.courses[0]?.documents?.[0]?.folder ?? []).length, MAX_FOLDER_DEPTH);
+});
+
+test("blank folder segments are dropped, not kept as gaps", () => {
+  const scan = sanitiseScan(courseWithDocs([{ folder: ["Week 1", "   ", "", "Slides"], kind: "file", title: "x" }]));
+  assert.deepEqual(scan.courses[0]?.documents?.[0]?.folder, ["Week 1", "Slides"]);
+});
+
+test("an unknown document kind falls back to file rather than being dropped", () => {
+  const scan = sanitiseScan(courseWithDocs([{ folder: [], kind: "wormhole", title: "Reading" }]));
+  assert.equal(scan.courses[0]?.documents?.[0]?.kind, "file");
+});
+
+test("a document with no title is dropped — there is nothing to show", () => {
+  const scan = sanitiseScan(courseWithDocs([{ folder: [], kind: "file", title: "   " }, { folder: [], kind: "file", title: "Real" }]));
+  assert.deepEqual(scan.courses[0]?.documents?.map((d) => d.title), ["Real"]);
+});
+
+test("a made-up file type is refused rather than shown", () => {
+  const scan = sanitiseScan(courseWithDocs([{ fileType: "pdf; rm -rf", folder: [], kind: "file", title: "x" }]));
+  assert.equal(scan.courses[0]?.documents?.[0]?.fileType, undefined);
+});
+
+test("document urls obey the same http(s)-only rule as everything else", () => {
+  const scan = sanitiseScan(
+    courseWithDocs([
+      { folder: [], kind: "link", title: "bad", url: "javascript:alert(1)" },
+      { folder: [], kind: "file", title: "good", url: "https://x.edu/a.pdf" },
+    ]),
+  );
+  const docs = scan.courses[0]?.documents ?? [];
+  assert.equal(docs[0]?.url, undefined);
+  assert.equal(docs[1]?.url, "https://x.edu/a.pdf");
+});
+
+test("the per-course document count is capped", () => {
+  const many = Array.from({ length: MAX_DOCUMENTS_PER_COURSE + 250 }, (_, i) => ({ folder: [], kind: "file", title: `f${i}` }));
+  const scan = sanitiseScan(courseWithDocs(many));
+  assert.equal((scan.courses[0]?.documents ?? []).length, MAX_DOCUMENTS_PER_COURSE);
+});
+
+test("documents that are not an array are treated as absent, never as a crash", () => {
+  for (const junk of ["nope", 7, {}, null]) {
+    const scan = sanitiseScan(courseWithDocs(junk));
+    assert.equal(scan.courses[0]?.documents, undefined);
+  }
 });

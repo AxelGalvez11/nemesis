@@ -10,9 +10,11 @@
 // point is that the receiver must not trust this sender.
 
 export type {
+  DocumentKind,
   LmsKind,
   LmsScan,
   ScrapedCourse,
+  ScrapedDocument,
   ScrapedItem,
   ScrapedKind,
   ScrapedLink,

@@ -94,6 +94,36 @@ export interface ScrapedLink {
   url: string;
 }
 
+/**
+ * What a document IS, as far as a scraper can honestly tell from a listing.
+ *
+ * Deliberately coarse. "file" means something downloadable, "page" means
+ * content that lives in the portal, "link" means it points somewhere else
+ * entirely. We do not try to say whether a file is lecture slides or a reading:
+ * that is a judgement about content we have not read, and getting it wrong
+ * files a student's exam revision under the wrong heading.
+ */
+export type DocumentKind = "file" | "page" | "link";
+
+/** One thing found inside a course — a slide deck, a reading, a page. */
+export interface ScrapedDocument {
+  title: string;
+  kind: DocumentKind;
+  /**
+   * Where it sat, outermost folder first: ["Week 3", "Lectures"]. Empty at the
+   * course root.
+   *
+   * KEPT AS A PATH, not flattened to a string, because the student's own
+   * folder names are the only structure we have and Nemesis rebuilds Library
+   * folders from them. A portal that nests six deep is a real portal.
+   */
+  folder: string[];
+  /** Lowercase extension where the link admits one — "pdf", "pptx". Absent
+   *  rather than guessed. */
+  fileType?: string;
+  url?: string;
+}
+
 export interface ScrapedCourse {
   /** The course as the STUDENT'S OWN PORTAL names it. Never normalised into
    *  some canonical subject — that is the whole field-agnostic point. */
@@ -105,6 +135,15 @@ export interface ScrapedCourse {
   /** Files that look like a syllabus. Offered as links for the student to open
    *  and import; we never fetch them ourselves. */
   syllabusLinks: ScrapedLink[];
+  /**
+   * Everything found by walking INTO the course and its folders.
+   *
+   * Optional on the wire: a scan of a course-list page legitimately has none,
+   * and an older extension will not send the field at all. Absent means "not
+   * looked for", which is a different thing from an empty array meaning
+   * "looked, found nothing" — and the card says which.
+   */
+  documents?: ScrapedDocument[];
 }
 
 export interface LmsScan {
@@ -124,6 +163,15 @@ export interface LmsScan {
 
 export const MAX_TITLE_CHARS = 300;
 export const MAX_COURSE_NAME_CHARS = 200;
+/** A real course can hold hundreds of files across a semester; nothing
+ *  legitimate holds thousands. */
+export const MAX_DOCUMENTS_PER_COURSE = 800;
+/** Folders nest, but not like this. Beyond eight the path has stopped being
+ *  navigation and started being an accident or an attack. */
+export const MAX_FOLDER_DEPTH = 8;
+export const MAX_FOLDER_NAME_CHARS = 120;
+/** Extensions are short. Anything longer is not a file type. */
+export const MAX_FILE_TYPE_CHARS = 12;
 export const MAX_URL_CHARS = 2000;
 export const MAX_ITEMS_PER_COURSE = 500;
 export const MAX_COURSES = 60;
@@ -250,6 +298,47 @@ function sanitiseLink(raw: unknown): ScrapedLink | null {
   return { label, url };
 }
 
+const DOCUMENT_KINDS: readonly DocumentKind[] = ["file", "page", "link"];
+
+function sanitiseDocumentKind(raw: unknown): DocumentKind {
+  return typeof raw === "string" && (DOCUMENT_KINDS as readonly string[]).includes(raw)
+    ? (raw as DocumentKind)
+    : "file";
+}
+
+/** A folder path, cleaned segment by segment. Empty segments are dropped
+ *  rather than preserved as blanks, because a blank folder name renders as a
+ *  gap the student cannot click or explain. PURE. */
+function sanitiseFolderPath(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const segment of raw.slice(0, MAX_FOLDER_DEPTH)) {
+    const clean = sanitiseText(segment, MAX_FOLDER_NAME_CHARS);
+    // A path separator inside a segment would let a crafted folder name climb
+    // out of its own path once Nemesis turns this into Library folders.
+    if (clean) out.push(clean.replaceAll("/", " ").replaceAll("\\", " ").trim());
+  }
+  return out.filter(Boolean);
+}
+
+function sanitiseDocument(raw: unknown): ScrapedDocument | null {
+  if (!raw || typeof raw !== "object") return null;
+  const source = raw as Record<string, unknown>;
+  const title = sanitiseText(source.title, MAX_TITLE_CHARS);
+  if (!title) return null;
+  const url = sanitiseUrl(source.url);
+  const fileType = sanitiseText(source.fileType, MAX_FILE_TYPE_CHARS).toLowerCase();
+  return {
+    folder: sanitiseFolderPath(source.folder),
+    kind: sanitiseDocumentKind(source.kind),
+    title,
+    // Only ever letters and digits: an "extension" carrying punctuation is
+    // either not one or is trying to be read as something else downstream.
+    ...(fileType && /^[a-z0-9]+$/.test(fileType) ? { fileType } : {}),
+    ...(url ? { url } : {}),
+  };
+}
+
 function sanitiseCourse(raw: unknown): ScrapedCourse | null {
   if (!raw || typeof raw !== "object") return null;
   const source = raw as Record<string, unknown>;
@@ -266,7 +355,24 @@ function sanitiseCourse(raw: unknown): ScrapedCourse | null {
         .map(sanitiseLink)
         .filter((link): link is ScrapedLink => link !== null)
     : [];
-  return { items, name, syllabusLinks, ...(code ? { code } : {}), ...(url ? { url } : {}) };
+  // ABSENT stays absent. An old extension that never crawled sends no
+  // `documents` field at all, and that must not become an empty array — the
+  // card says "no documents found" for [] and "not looked" for undefined, and
+  // those are different sentences.
+  const documents = Array.isArray(source.documents)
+    ? source.documents
+        .slice(0, MAX_DOCUMENTS_PER_COURSE)
+        .map(sanitiseDocument)
+        .filter((doc): doc is ScrapedDocument => doc !== null)
+    : undefined;
+  return {
+    items,
+    name,
+    syllabusLinks,
+    ...(code ? { code } : {}),
+    ...(url ? { url } : {}),
+    ...(documents ? { documents } : {}),
+  };
 }
 
 /**
