@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
@@ -12,9 +13,16 @@ import {
   clampOcclusionShape,
   normalizeOcclusionRect,
   occlusionCardFront,
+  occlusionShapeAt,
   type OcclusionMode,
   type OcclusionShape,
 } from "@nemesis/shared";
+import {
+  imageExtensionFor,
+  pickedImageMime,
+  STUDY_IMAGE_PICKER_TYPES,
+  STUDY_IMAGE_REFUSAL,
+} from "@/lib/study-image-pick";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -28,11 +36,13 @@ import { control, radius, space, type } from "@/theme/tokens";
 // the other way round. All the geometry lives in lib/study-occlusion.ts, ported
 // verbatim from web for exactly that reason.
 //
-// CAMERA ONLY, deliberately. Picking an existing picture would mean
-// expo-image-picker, which is a NATIVE module: adding one changes the runtime
-// fingerprint, which orphans the over-the-air update and strands this feature
-// behind an App Store release. expo-camera is already in the build. Photographing
-// the slide is also what a student in a lecture actually does.
+// CAMERA OR FILES (owner 2026-07-31: "allow users to choose photos from photo
+// gallery or files"). The PHOTO LIBRARY is the half that is not here, and the
+// reason is fingerprints: reaching the gallery means expo-image-picker, a NATIVE
+// module, and adding one changes the app's runtime fingerprint so build 26 stops
+// receiving over-the-air updates altogether. expo-document-picker is already in
+// the build, so Files ships today and the gallery is queued behind the next
+// native build — the owner's call on the day. See lib/study-image-pick.ts.
 //
 // Coordinates: every shape is stored in the picture's OWN pixels, never screen
 // points, so a card drawn on a phone lines up on a laptop. `scale` below is the
@@ -61,6 +71,9 @@ export function OcclusionEditorSheet({
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [uri, setUri] = useState<string | null>(null);
+  /** The picture's real content type. The camera only makes JPEGs; a file chosen
+   *  from Files can be a PNG, and it has to be stored and read as one. */
+  const [mime, setMime] = useState("image/jpeg");
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [shapes, setShapes] = useState<OcclusionShape[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,6 +98,7 @@ export function OcclusionEditorSheet({
     // before the animation has even finished.
     setCameraOpen(false);
     setUri(null);
+    setMime("image/jpeg");
     setNatural(null);
     setShapes([]);
     setSelectedId(null);
@@ -94,19 +108,55 @@ export function OcclusionEditorSheet({
     setDraft(null);
   }, [visible]);
 
-  const onCaptured = useCallback((next: string) => {
+  /** Adopt a picture, however it arrived — shutter or file picker. */
+  const adoptImage = useCallback((next: string, nextMime: string, retryHint: string) => {
     setCameraOpen(false);
     setUri(next);
+    setMime(nextMime);
     setShapes([]);
     setSelectedId(null);
+    setNatural(null);
     // The picture's real pixel size is the coordinate space every box is stored
     // in, so nothing can be drawn until it is known.
     Image.getSize(
       next,
       (width, height) => setNatural({ height, width }),
-      () => setError("Couldn't read that picture. Try taking it again."),
+      () => setError(retryHint),
     );
   }, []);
+
+  const onCaptured = useCallback(
+    (next: string) => adoptImage(next, "image/jpeg", "Couldn't read that picture. Try taking it again."),
+    [adoptImage],
+  );
+
+  /** Choose a picture already on the phone. Files, not the photo library — see
+   *  the note at the top of this file for why that half is not here yet. */
+  const pickFile = useCallback(async () => {
+    setError(null);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        // Copied into the app's cache, same as the chat's file picker: a raw
+        // provider URI from Files can be unreadable by the time it is uploaded.
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: [...STUDY_IMAGE_PICKER_TYPES],
+      });
+      if (picked.canceled) return;
+      const asset = picked.assets?.[0];
+      if (!asset) return;
+      // The picker filters by type, but a provider can still hand over something
+      // else — the refusal is what stops that becoming a broken card later.
+      const nextMime = pickedImageMime(asset.name, asset.mimeType);
+      if (!nextMime) {
+        setError(STUDY_IMAGE_REFUSAL);
+        return;
+      }
+      adoptImage(asset.uri, nextMime, "Couldn't read that image. Try a different one.");
+    } catch {
+      setError("Couldn't open your files. Try again.");
+    }
+  }, [adoptImage]);
 
   // How the picture is laid out on screen, and the factor between screen points
   // and picture pixels. Capped in height so a portrait shot still leaves the
@@ -124,6 +174,13 @@ export function OcclusionEditorSheet({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const startRef = useRef({ x: 0, y: 0 });
+  // The gesture callbacks are memoised once, so anything they read has to be a
+  // ref or it goes stale the first time a box is added.
+  const shapesRef = useRef(shapes);
+  shapesRef.current = shapes;
+  /** Set on touch-down when the finger landed ON a box: which one, and where it
+   *  started, so the drag moves it instead of drawing a new one over it. */
+  const movingRef = useRef<{ id: string; originX: number; originY: number; startX: number; startY: number } | null>(null);
 
   const drawGesture = useMemo(
     () =>
@@ -132,22 +189,52 @@ export function OcclusionEditorSheet({
         .onStart((event) => {
           const box = layoutRef.current;
           if (!box) return;
-          startRef.current = { x: event.x / box.scale, y: event.y / box.scale };
+          const x = event.x / box.scale;
+          const y = event.y / box.scale;
+          startRef.current = { x, y };
+          // 🔴 A DRAG THAT STARTS ON A BOX MOVES IT (owner 2026-07-31: "allow
+          // users to select boxes instead of only creating them"). Every drag
+          // used to draw a NEW rectangle, so a box put down slightly wrong could
+          // only be deleted and drawn again — and on a dense diagram the
+          // replacement usually landed on top of the original.
+          const hit = occlusionShapeAt(shapesRef.current, x, y);
+          movingRef.current = hit
+            ? { id: hit.id, originX: hit.x, originY: hit.y, startX: x, startY: y }
+            : null;
+          if (hit) setSelectedId(hit.id);
         })
         .onUpdate((event) => {
           const box = layoutRef.current;
           if (!box || !natural) return;
-          const rect = normalizeOcclusionRect(
-            startRef.current,
-            { x: event.x / box.scale, y: event.y / box.scale },
-            natural.width,
-            natural.height,
-          );
-          setDraft(rect);
+          const x = event.x / box.scale;
+          const y = event.y / box.scale;
+          const moving = movingRef.current;
+          if (moving) {
+            // clampOcclusionShape keeps the size and pushes the position back
+            // inside the picture, so dragging off the edge parks the box at the
+            // edge rather than shrinking or losing it.
+            setShapes((prev) =>
+              prev.map((shape) =>
+                shape.id === moving.id
+                  ? clampOcclusionShape(
+                      { ...shape, x: moving.originX + (x - moving.startX), y: moving.originY + (y - moving.startY) },
+                      natural.width,
+                      natural.height,
+                    )
+                  : shape,
+              ),
+            );
+            return;
+          }
+          setDraft(normalizeOcclusionRect(startRef.current, { x, y }, natural.width, natural.height));
         })
         .onEnd(() => {
           const box = layoutRef.current;
           if (!box || !natural) return;
+          if (movingRef.current) {
+            movingRef.current = null;
+            return;
+          }
           setDraft((pending) => {
             if (pending) {
               const shape: OcclusionShape = { id: generateUuidV4(), label: "", ...pending };
@@ -184,6 +271,7 @@ export function OcclusionEditorSheet({
     try {
       const made = await createOcclusionCards(userId, deckId, {
         height: natural.height,
+        mime,
         mode,
         shapes,
         uri,
@@ -220,6 +308,7 @@ export function OcclusionEditorSheet({
         natural.width,
         natural.height,
         () => generateUuidV4(),
+        mime,
       );
       if (found.shapes.length === 0) {
         // Not a failure: plenty of pictures have nothing worth hiding.
@@ -236,7 +325,7 @@ export function OcclusionEditorSheet({
     } finally {
       setSuggesting(false);
     }
-  }, [natural, suggesting, uri, userId]);
+  }, [mime, natural, suggesting, uri, userId]);
 
   const canSave = !!uri && !!natural && !!deckId && shapes.length > 0 && !saving;
 
@@ -252,7 +341,13 @@ export function OcclusionEditorSheet({
             A diagram, a slide, a page of a textbook. Then drag a box over each part you want to be asked about — every box
             becomes its own card.
           </Text>
-          <MissionButton label="Take a photo" variant="primary" onPress={() => setCameraOpen(true)} testID="occlusion-take-photo" />
+          <View style={styles.emptyActions}>
+            <MissionButton label="Take a photo" variant="primary" onPress={() => setCameraOpen(true)} testID="occlusion-take-photo" />
+            {/* Named for what it actually opens. It is the Files app, not the
+                photo library — calling it "Choose a photo" would be promising a
+                place this button cannot reach. */}
+            <MissionButton label="Choose a file" onPress={() => void pickFile()} testID="occlusion-pick-file" />
+          </View>
         </View>
       ) : !layout ? (
         <View style={styles.empty}>
@@ -263,7 +358,7 @@ export function OcclusionEditorSheet({
           <Text style={styles.hint}>
             {shapes.length === 0
               ? "Drag across the picture to cover something."
-              : `${shapes.length} box${shapes.length === 1 ? "" : "es"} — ${shapes.length} card${shapes.length === 1 ? "" : "s"}. Tap one to name or remove it.`}
+              : `${shapes.length} box${shapes.length === 1 ? "" : "es"} — ${shapes.length} card${shapes.length === 1 ? "" : "s"}. Tap one to name or remove it, or drag it to move it.`}
           </Text>
 
           <GestureDetector gesture={drawGesture}>
@@ -349,9 +444,14 @@ export function OcclusionEditorSheet({
           </View>
 
           <View style={styles.actions}>
-            <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={styles.retake} testID="occlusion-retake">
-              <Text style={styles.retakeLabel}>Retake</Text>
-            </Pressable>
+            <View style={styles.retakeRow}>
+              <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={styles.retake} testID="occlusion-retake">
+                <Text style={styles.retakeLabel}>Retake</Text>
+              </Pressable>
+              <Pressable onPress={() => void pickFile()} hitSlop={6} style={styles.retake} testID="occlusion-replace-file">
+                <Text style={styles.retakeLabel}>Choose a file</Text>
+              </Pressable>
+            </View>
             <MissionButton
               label={suggesting ? "Reading…" : "Suggest boxes"}
               variant="secondary"
@@ -413,6 +513,7 @@ const createStyles = (c: ThemeColors) =>
     error: { ...type.small, color: c.danger, backgroundColor: c.surface2, borderRadius: radius.sm, padding: space(2.5), marginBottom: space(2) },
 
     empty: { alignItems: "center", gap: space(3), paddingVertical: space(8), paddingHorizontal: space(2) },
+    emptyActions: { flexDirection: "row", alignItems: "center", gap: space(2) },
     emptyTitle: { ...type.h2, color: c.text, textAlign: "center" },
     emptyBody: { ...type.small, color: c.textHint, textAlign: "center", marginBottom: space(2) },
 
@@ -449,6 +550,7 @@ const createStyles = (c: ThemeColors) =>
     modeHint: { ...type.micro, color: c.textHint },
 
     actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space(1) },
+    retakeRow: { flexDirection: "row", alignItems: "center", gap: space(3) },
     retake: { paddingVertical: space(2), paddingHorizontal: space(1) },
     retakeLabel: { ...type.small, color: c.text2, fontWeight: "600" },
   });

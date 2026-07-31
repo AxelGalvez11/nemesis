@@ -1,5 +1,13 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { applyBrowseFilter, buildBrowseRows, buildBrowseSections, EMPTY_BROWSE_FILTER, type BrowseCard } from "./study-browse.ts";
+import {
+  applyBrowseFilter,
+  buildBrowseRows,
+  buildBrowseSections,
+  buildDeckTree,
+  searchRevealed,
+  EMPTY_BROWSE_FILTER,
+  type BrowseCard,
+} from "./study-browse.ts";
 
 const DECKS = [
   { id: "d1", name: "Pharmacology::Cardiovascular" },
@@ -169,4 +177,105 @@ Deno.test("buildBrowseSections: counts ignore cards whose deck was deleted", () 
   const rows = buildBrowseRows(CARDS, DECKS);
   const total = buildBrowseSections(rows, DECKS)[0]?.rows.reduce((sum, r) => sum + r.count, 0);
   assertEquals(total, 3);
+});
+
+// --- Nested decks (owner 2026-07-31) -----------------------------------------
+//
+// A Study folder has no row of its own in the database — it is a prefix inside a
+// deck's name — so these tests are really about rows that get INVENTED, and the
+// one number on them that has to be right is the card count, which is the sum of
+// everything below and not the number of decks.
+
+const NESTED_DECKS = [
+  { id: "d1", name: "Pharmacology::Cardiovascular::Week 1" },
+  { id: "d2", name: "Pharmacology::Cardiovascular::Week 2" },
+  { id: "d3", name: "Pharmacology::Renal" },
+  { id: "d4", name: "Constitutional Law" },
+];
+
+const NESTED_CARDS: BrowseCard[] = [
+  card({ id: "n1", deckId: "d1", front: "Beta blockers", back: "a" }),
+  card({ id: "n2", deckId: "d1", front: "ACE inhibitors", back: "b" }),
+  card({ id: "n3", deckId: "d2", front: "Statins", back: "c" }),
+  card({ id: "n4", deckId: "d3", front: "Loop diuretics", back: "d" }),
+  card({ id: "n5", deckId: "d4", front: "Commerce Clause", back: "e" }),
+];
+
+function deckRowsFor(decks: { id: string; name: string }[], cards: BrowseCard[]) {
+  const sections = buildBrowseSections(buildBrowseRows(cards, decks), decks);
+  return sections.find((section) => section.key === "decks")?.rows ?? [];
+}
+
+Deno.test("buildDeckTree: folders are invented from the deck names and nest", () => {
+  const tree = buildDeckTree(deckRowsFor(NESTED_DECKS, NESTED_CARDS), new Set());
+  assertEquals(
+    tree.map((entry) => [entry.type, entry.type === "folder" ? entry.label : entry.row.label, entry.depth]),
+    [
+      ["folder", "Pharmacology", 0],
+      ["folder", "Cardiovascular", 1],
+      ["deck", "Week 1", 2],
+      ["deck", "Week 2", 2],
+      ["deck", "Renal", 1],
+      ["deck", "Constitutional Law", 0],
+    ],
+  );
+});
+
+Deno.test("buildDeckTree: a folder counts CARDS below it, not decks", () => {
+  const tree = buildDeckTree(deckRowsFor(NESTED_DECKS, NESTED_CARDS), new Set());
+  const counts = Object.fromEntries(
+    tree.filter((entry) => entry.type === "folder").map((entry) => [entry.path, entry.count]),
+  );
+  // Pharmacology holds 4 cards across 3 decks; two of them sit one level down.
+  assertEquals(counts["Pharmacology"], 4);
+  assertEquals(counts["Pharmacology::Cardiovascular"], 3);
+});
+
+Deno.test("buildDeckTree: a folded folder hides its contents but keeps its count", () => {
+  const tree = buildDeckTree(deckRowsFor(NESTED_DECKS, NESTED_CARDS), new Set(["Pharmacology"]));
+  assertEquals(
+    tree.map((entry) => (entry.type === "folder" ? entry.label : entry.row.label)),
+    ["Pharmacology", "Constitutional Law"],
+  );
+  const pharm = tree[0];
+  assertEquals(pharm.type === "folder" ? pharm.count : -1, 4);
+});
+
+Deno.test("buildDeckTree: an empty deck still gets a row — you have to see it to believe it exists", () => {
+  const tree = buildDeckTree(deckRowsFor([{ id: "d9", name: "Torts::Fresh" }], []), new Set());
+  assertEquals(
+    tree.map((entry) => [entry.type, entry.type === "folder" ? entry.label : entry.row.label]),
+    [["folder", "Torts"], ["deck", "Fresh"]],
+  );
+});
+
+// --- Pull down to reveal the search box ---------------------------------------
+
+Deno.test("searchRevealed: a real pull past the top brings it down", () => {
+  assertEquals(searchRevealed(false, -40, ""), true);
+});
+
+Deno.test("searchRevealed: a rubber-band twitch does not", () => {
+  assertEquals(searchRevealed(false, -8, ""), false);
+});
+
+Deno.test("searchRevealed: scrolling back up puts it away", () => {
+  assertEquals(searchRevealed(true, 60, ""), false);
+});
+
+Deno.test("searchRevealed: settling at exactly 0 after a reveal drag leaves it down", () => {
+  // The whole point of a hide threshold above zero: releasing the drag lands
+  // here, and a bare `> 0` would undo the reveal in the same gesture.
+  assertEquals(searchRevealed(true, 0, ""), true);
+});
+
+Deno.test("searchRevealed: a box with something typed in it NEVER hides", () => {
+  // Hiding it would turn a filtered list into a list that has mysteriously lost
+  // most of its cards, with the explanation off screen.
+  assertEquals(searchRevealed(true, 400, "beta"), true);
+  assertEquals(searchRevealed(false, 400, "beta"), true);
+});
+
+Deno.test("searchRevealed: whitespace is not a filter", () => {
+  assertEquals(searchRevealed(true, 400, "   "), false);
 });
