@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 import {
+  jsonFrom,
   looksNormalized,
   OCCLUSION_VISION_PROMPT,
   parseSuggestedBoxes,
@@ -22,24 +23,6 @@ import {
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-/** Pull the JSON object out of a reply that may be fenced or have a sentence
- *  in front of it. Models are told to return bare JSON and mostly do. */
-function jsonFrom(text: string): unknown {
-  const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    try {
-      return JSON.parse(trimmed.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
-}
 
 export async function POST(req: Request) {
   // Same gate as the extract route, and for the same reason: this route forwards

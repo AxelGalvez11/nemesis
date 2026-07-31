@@ -66,6 +66,30 @@ export function looksNormalized(boxes: readonly SuggestedBox[]): boolean {
   });
 }
 
+/**
+ * Pull the JSON object out of a model reply.
+ *
+ * Lived in the route, where nothing could test it — and it sits on the only
+ * path a real request takes, so a fence format Gemini actually emits and this
+ * mis-parses would break the whole feature with every unit test still green.
+ */
+export function jsonFrom(text: string): unknown {
+  const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // A model that wrote a sentence first still usually wrote valid JSON after it.
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
 /** Parse whatever JSON the model produced into boxes, dropping unusable rows. */
 export function parseSuggestedBoxes(value: unknown): SuggestedBox[] {
   const rows = Array.isArray(value)

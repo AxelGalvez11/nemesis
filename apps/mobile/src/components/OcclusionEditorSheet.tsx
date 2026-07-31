@@ -67,6 +67,11 @@ export function OcclusionEditorSheet({
   const [mode, setMode] = useState<OcclusionMode>("hide-all");
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  // 🔴 SEPARATE FROM `error` ON PURPOSE. "Found 8 boxes, skipped 3 overlapping"
+  // is a report on work that SUCCEEDED; showing it in the red error slot reads
+  // as a failure and teaches the student to distrust the button that just
+  // worked. Failures still go to `error`.
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The box being dragged out right now, in picture pixels. State (not a shared
   // value) because it is one rectangle on an otherwise still screen — the graph's
@@ -207,6 +212,7 @@ export function OcclusionEditorSheet({
     if (!uri || !natural || suggesting) return;
     setSuggesting(true);
     setError(null);
+    setNotice(null);
     try {
       const found = await suggestOcclusionMasks(
         userId,
@@ -216,12 +222,14 @@ export function OcclusionEditorSheet({
         () => generateUuidV4(),
       );
       if (found.shapes.length === 0) {
-        setError(found.note || "Nothing to hide was found in that image.");
+        // Not a failure: plenty of pictures have nothing worth hiding.
+        setNotice(found.note || "Nothing to hide was found in that image.");
       } else {
         setShapes((current) => [...current, ...found.shapes]);
+        const added = `Added ${found.shapes.length} box${found.shapes.length === 1 ? "" : "es"}. Adjust or delete any, then save.`;
         // Never silent about what was thrown away — "it covered everything" is
         // the impression a quiet truncation leaves.
-        if (found.note) setError(found.note);
+        setNotice(found.note ? `${added} ${found.note}` : added);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't read that image.");
@@ -235,6 +243,7 @@ export function OcclusionEditorSheet({
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title="Image cloze" fullScreen testID="occlusion-editor-sheet">
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {notice ? <Text style={styles.hint} testID="occlusion-notice">{notice}</Text> : null}
 
       {!uri ? (
         <View style={styles.empty} testID="occlusion-empty">

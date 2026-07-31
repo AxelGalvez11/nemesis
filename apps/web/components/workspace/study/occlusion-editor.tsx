@@ -55,6 +55,9 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  // Separate from `error`: "found 8, skipped 3" is a report on work that
+  // SUCCEEDED, and showing it in the red slot reads as a failure.
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -180,6 +183,7 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
     if (!image?.file || suggesting) return;
     setSuggesting(true);
     setError(null);
+    setNotice(null);
     try {
       const found = await suggestOcclusionMasks(
         image.file,
@@ -188,12 +192,13 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
         () => crypto.randomUUID(),
       );
       if (found.shapes.length === 0) {
-        setError(found.note || "Nothing to hide was found in that image.");
+        setNotice(found.note || "Nothing to hide was found in that image.");
       } else {
         setShapes((current) => [...current, ...found.shapes]);
+        const added = `Added ${found.shapes.length} box${found.shapes.length === 1 ? "" : "es"}. Adjust or delete any, then save.`;
         // Never silent about what was dropped — quiet truncation reads as
         // "it found everything".
-        if (found.note) setError(found.note);
+        setNotice(found.note ? `${added} ${found.note}` : added);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't read that image.");
@@ -416,6 +421,7 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
         </>
       )}
       {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
+      {notice && <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground" data-testid="occlusion-notice">{notice}</p>}
       <div className="flex items-center justify-end gap-2">
         {image && shapes.length > 0 && (
           <span className="mr-auto text-xs text-muted-foreground">

@@ -4,6 +4,7 @@ import test from "node:test";
 import { MIN_OCCLUSION_SIZE } from "./study-occlusion.ts";
 import {
   droppedSummary,
+  jsonFrom,
   looksNormalized,
   MAX_SUGGESTED_BOXES,
   OCCLUSION_VISION_PROMPT,
@@ -121,4 +122,62 @@ test("the prompt actually states the contract it depends on", () => {
   assert.match(OCCLUSION_VISION_PROMPT, /Do NOT use pixels/);
   assert.match(OCCLUSION_VISION_PROMPT, /Do NOT use percentages/);
   assert.match(OCCLUSION_VISION_PROMPT, /TOP-LEFT/);
+});
+
+// ── the seam ────────────────────────────────────────────────────────────────
+// Every test above exercises one pure function. This one runs the path a REAL
+// request takes, end to end: model reply → jsonFrom → parseSuggestedBoxes →
+// looksNormalized → scaleBoxes → the shapes the editor renders. That chain is
+// where a working set of parts still adds up to a broken feature.
+
+test("SEAM: a realistic fenced model reply becomes masks on a real slide", () => {
+  // Gemini fences its JSON and sometimes writes a line first. Both here.
+  const reply = [
+    "Here are the labelled parts I found:",
+    "```json",
+    '{"boxes":[',
+    '  {"label":"mitochondrion","x":0.10,"y":0.20,"w":0.15,"h":0.06},',
+    '  {"label":"nucleus","x":0.55,"y":0.42,"w":0.12,"h":0.05},',
+    '  {"label":"ribosome","x":0.30,"y":0.70,"w":0.18,"h":0.07}',
+    "]}",
+    "```",
+  ].join("\n");
+
+  const boxes = parseSuggestedBoxes(jsonFrom(reply));
+  assert.equal(boxes.length, 3);
+  assert.equal(looksNormalized(boxes), true);
+
+  // 1600×1200 is the MEASURED slide, not anything the model claimed.
+  const { dropped, shapes } = scaleBoxes(boxes, 1600, 1200, (i) => `m${i}`);
+  assert.equal(shapes.length, 3);
+  assert.deepEqual(droppedSummary(dropped), "");
+  assert.deepEqual(shapes[0], { h: 72, id: "m0", label: "mitochondrion", w: 240, x: 160, y: 240 });
+  // Every mask lands inside the slide, which is the thing a units bug breaks.
+  for (const shape of shapes) {
+    assert.ok(shape.x >= 0 && shape.y >= 0, "mask starts inside the image");
+    assert.ok(shape.x + shape.w <= 1600, "mask ends inside the width");
+    assert.ok(shape.y + shape.h <= 1200, "mask ends inside the height");
+  }
+});
+
+test("SEAM: a reply with no fence and no prose still parses", () => {
+  const boxes = parseSuggestedBoxes(jsonFrom('{"boxes":[{"label":"aorta","x":0.1,"y":0.1,"w":0.2,"h":0.2}]}'));
+  assert.equal(boxes.length, 1);
+});
+
+test("SEAM: an empty answer is a real answer, not a crash", () => {
+  // Plenty of images genuinely have nothing worth hiding.
+  assert.deepEqual(parseSuggestedBoxes(jsonFrom('{"boxes":[]}')), []);
+});
+
+test("SEAM: unparseable prose yields nothing rather than throwing", () => {
+  assert.equal(jsonFrom("I could not find any labels in this image."), null);
+  assert.deepEqual(parseSuggestedBoxes(jsonFrom("no json here")), []);
+});
+
+test("SEAM: a percentage reply is caught before it reaches scaleBoxes", () => {
+  // The failure this whole module exists to stop, checked at the seam.
+  const boxes = parseSuggestedBoxes(jsonFrom('{"boxes":[{"label":"x","x":10,"y":20,"w":15,"h":6}]}'));
+  assert.equal(boxes.length, 1);
+  assert.equal(looksNormalized(boxes), false);
 });
