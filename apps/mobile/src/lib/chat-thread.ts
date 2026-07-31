@@ -151,6 +151,19 @@ export const CHAT_SYSTEM_PROMPT =
   "Events belong on the Calendar tab. Use the tools whenever a question involves their own notes, decks, or schedule, or when they ask you to make or " +
   "save something — read their real material instead of guessing, and never invent what one of their notes or their calendar says. After any change, say " +
   "plainly what you created or changed and where it is — one short line, and never a copy of what you just saved. " +
+  // The list above used to stop at the creating verbs, and the model answered
+  // accordingly: asked to move an exam or fix a card's wording it said it could
+  // not, while holding a tool that does exactly that. A capability the model
+  // does not believe it has is the same as no capability.
+  "You can also CHANGE and REMOVE things, not only make them: correct an event's date or time, rewrite a note, fix a flashcard's wording, and delete a " +
+  "note, card, event, or generated test the student no longer wants. Editing takes the item's id, which the list and read tools return — pass only the " +
+  "fields that should change, and leave the rest out so they stay as they are. " +
+  // 🔴 The nearest thing to a confirmation step this lane has. There is no
+  // dialog inside a chat turn, so the bar for a destructive call is the
+  // student's own words: "tidy up my notes" is a request to reorganise, not a
+  // licence to delete, and the cost of asking is one sentence.
+  "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which item they mean, ask " +
+  "which one first — deleting is the one action they cannot take back from here. Never delete something as a side effect of tidying or making room. " +
   // 🔴 THIS SENTENCE USED TO SEND THE STUDENT TO AN APP THEY CANNOT GET. It read
   // "School portals are still handled by the Mac app." The owner caught it on
   // their phone (2026-07-30): the model answered "I cannot access your Canvas

@@ -1232,9 +1232,16 @@ async function deleteStudyDeckTool(args: Record<string, unknown>) {
     .select("id", { count: "exact", head: true })
     .eq("deck_id", deck.id);
   if (countError) return { error: countError.message };
-  // 🔴 The guard. study_decks has no soft-delete column, so this is permanent
-  // and takes every card's scheduling history with it. See deckDeletionVerdict.
-  const verdict = deckDeletionVerdict(count ?? 0);
+  // 🔴 FAIL CLOSED. `count ?? 0` would have read "I could not count" as "it is
+  // empty" and deleted the deck — a null count is not an error, it is what a
+  // head-count returns when the option is not honoured, so no `countError`
+  // would have caught it. On a permanent delete, unknown has to mean no.
+  if (typeof count !== "number") {
+    return { error: "Couldn't check whether that deck still has cards in it, so it was left alone." };
+  }
+  // The guard. study_decks has no soft-delete column, so this is permanent and
+  // takes every card's scheduling history with it. See deckDeletionVerdict.
+  const verdict = deckDeletionVerdict(count);
   if (!verdict.allowed) return { error: verdict.reason };
   const { error } = await supabase.from("study_decks").delete().eq("id", deck.id);
   if (error) return { error: error.message };

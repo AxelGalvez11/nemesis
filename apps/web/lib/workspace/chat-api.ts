@@ -65,6 +65,20 @@ export const CHAT_TOOLS_PROMPT =
   "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
   "note or calendar says. " +
+  // The prompt used to stop at the creating verbs, and the model answered
+  // accordingly: asked to move an exam or fix a card's wording it said it
+  // could not, while holding a tool that does exactly that. A capability the
+  // model does not believe it has is the same as no capability.
+  "You can also CHANGE and REMOVE things, not only create them: correct an event's date or time, rewrite or rename a note, fix a " +
+  "flashcard's wording, and delete a note, card, event or generated test the student no longer wants. Editing takes the item's id, " +
+  "which the list and read tools return — pass only the fields that should change, and leave the rest out so they stay as they are. " +
+  // 🔴 The nearest thing to a confirmation step this lane has. There is no
+  // dialog inside a chat turn, so the bar for a destructive call is the
+  // student's own words: "tidy up my notes" is a request to reorganise, not a
+  // licence to delete, and the cost of asking is one sentence.
+  "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which " +
+  "item they mean, ask them which one first — deleting is the one action they cannot take back from here. Never delete something as " +
+  "a side effect of tidying, reorganising, or making room. " +
   // Same correction as the phone's CHAT_SYSTEM_PROMPT — see the long comment
   // there. This used to say school portals were "handled by the Mac app's
   // missions", pointing the student at a deferred product. The inability is

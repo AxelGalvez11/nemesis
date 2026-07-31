@@ -605,7 +605,10 @@ async function updateCalendarEventTool({ args, uid }: ToolContext) {
   const merged = {
     course: patch.course !== undefined ? patch.course ?? undefined : str(found.row.course) || undefined,
     date: patch.date ?? str(found.row.date),
-    kind: (patch.kind ?? str(found.row.kind) ?? "other") as AgendaEventKind,
+    // `||`, not `??`: str() gives "" for a missing kind, and "" survives `??`.
+    // calendar_events.kind carries a CHECK constraint, so an empty string is
+    // rejected by Postgres and a perfectly ordinary edit fails.
+    kind: (patch.kind ?? (str(found.row.kind) || "other")) as AgendaEventKind,
     note: patch.note !== undefined ? patch.note ?? undefined : str(found.row.note) || undefined,
     time: patch.time !== undefined ? patch.time ?? undefined : str(found.row.time) || undefined,
     title: patch.title ?? str(found.row.title),
@@ -711,9 +714,15 @@ async function deleteStudyDeckTool({ args, uid }: ToolContext) {
     .select("id", { count: "exact", head: true })
     .eq("deck_id", deck.id);
   if (error) return { error: error.message };
-  // 🔴 Permanent, and it takes every card's review history with it. Empty decks
+  // 🔴 FAIL CLOSED. `count ?? 0` would have read "I could not count" as "it is
+  // empty" and deleted the deck — a null count is not an error, so no `error`
+  // above would have caught it. On a permanent delete, unknown has to mean no.
+  if (typeof count !== "number") {
+    return { error: "Couldn't check whether that deck still has cards in it, so it was left alone." };
+  }
+  // Permanent, and it takes every card's review history with it. Empty decks
   // only — see deckDeletionVerdict for why that line is where it is.
-  const verdict = deckDeletionVerdict(count ?? 0);
+  const verdict = deckDeletionVerdict(count);
   if (!verdict.allowed) return { error: verdict.reason };
   await deleteCloudStudyDeck(uid, deck.id);
   return { deck: deck.name, deleted: true };
