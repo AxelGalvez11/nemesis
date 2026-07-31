@@ -881,6 +881,13 @@ export default function ChatScreen() {
     if (!pending || !uid || !threadId || deleting) return;
     setDeleting(true);
     const id = threadId;
+    // The delete itself belongs to the thread that proposed it and runs to
+    // completion either way. What must NOT happen is the outcome line landing in
+    // whatever thread is on screen when it returns: setMessages writes the
+    // CURRENT thread's array, so without this the confirmation of a delete made
+    // in one conversation could be appended to another. Same epoch guard the
+    // photo read uses, for the same reason.
+    const epoch = epochRef.current;
     void (async () => {
       const result = await executeAgentTool(
         uid,
@@ -893,6 +900,7 @@ export default function ChatScreen() {
         : `Deleted ${pending.target}.${pending.recoverable ? " It is in your trash if you want it back." : ""}`;
       setPendingDelete(null);
       setDeleting(false);
+      if (epochRef.current !== epoch) return;
       setMessages((current) => {
         const next: ChatMsg[] = [
           ...current,

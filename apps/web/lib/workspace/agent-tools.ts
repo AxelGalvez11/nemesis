@@ -1296,22 +1296,27 @@ export async function executeAgentTool(
   options: { confirmed?: boolean } = {},
 ): Promise<unknown> {
   const args = parseArgs(call.arguments);
-  // 🔴 THE CONFIRMATION GATE — one place, not a check inside each delete
-  // handler. A per-handler check is one a future tool can forget, and the cost
-  // of forgetting is a delete with no confirmation at all. Adding a name to
-  // DESTRUCTIVE_TOOLS is what puts it behind this line, and a shared test
-  // asserts the map and the tool catalogue never drift apart.
-  if (!options.confirmed && isDestructiveTool(call.name)) {
-    const pending = await pendingDeleteFor(call.name, args);
-    if (pending) {
-      return {
-        confirm_required: true,
-        instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
-        pending_delete: pending,
-      };
-    }
-  }
+  // 🔴 INSIDE THE TRY, and that is not a formatting preference. This file's
+  // contract is that a tool NEVER throws — a failure comes back as {error} so
+  // the model can react, instead of the turn dying with an empty bubble. The
+  // gate does a label lookup over the network, so a blip on that lookup outside
+  // the try would break the contract at exactly the moment a delete was pending.
   try {
+    // THE CONFIRMATION GATE — one place, not a check inside each delete
+    // handler. A per-handler check is one a future tool can forget, and the cost
+    // of forgetting is a delete with no confirmation at all. Adding a name to
+    // DESTRUCTIVE_TOOLS is what puts it behind this line, and a shared test
+    // asserts the map and the tool catalogue never drift apart.
+    if (!options.confirmed && isDestructiveTool(call.name)) {
+      const pending = await pendingDeleteFor(call.name, args);
+      if (pending) {
+        return {
+          confirm_required: true,
+          instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
+          pending_delete: pending,
+        };
+      }
+    }
     switch (call.name) {
       case "search_library": return await searchLibrary(str(args.query));
       case "read_library_note": return await readLibraryNote(str(args.path));
