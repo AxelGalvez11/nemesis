@@ -25,7 +25,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
-import { useWorkspacePreview } from "@/components/workspace/workspace-preview";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { type CalendarEvent, saveCalendarEvent } from "@/lib/workspace/calendar-model";
 import { clearScan } from "@/lib/workspace/extension-bridge";
 import { Check, ChevronLeft, Loader2 } from "@/lib/workspace/icons";
@@ -65,7 +65,7 @@ function newEventId(): string {
 
 export function OnboardingFlow({ onDone }: OnboardingFlowProps) {
   const { session } = useAuth();
-  const preview = useWorkspacePreview();
+  const preview = useWorkspacePreview() !== null;
   const library = useCloudLibrary();
   const uid = session?.user.id ?? null;
 

@@ -17,8 +17,8 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
-import { useWorkspacePreview } from "@/components/workspace/workspace-preview";
-import { loadCalendarState } from "@/lib/workspace/calendar-model";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { loadCalendarEvents } from "@/lib/workspace/calendar-model";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import {
   ONBOARDING_STORAGE_KEY,
@@ -51,7 +51,7 @@ function writeMarker(outcome: OnboardingOutcome) {
 
 export function OnboardingGate() {
   const { loading, session } = useAuth();
-  const preview = useWorkspacePreview();
+  const preview = useWorkspacePreview() !== null;
   const library = useCloudLibrary();
   const [show, setShow] = useState(false);
   const [decided, setDecided] = useState(false);
@@ -68,7 +68,7 @@ export function OnboardingGate() {
     void (async () => {
       let hasEvents = false;
       try {
-        const state = await loadCalendarState(uid);
+        const state = await loadCalendarEvents({ preview, userId: uid });
         hasEvents = state.events.length > 0;
       } catch {
         // Could not tell. Assume they HAVE events: showing a welcome screen to
