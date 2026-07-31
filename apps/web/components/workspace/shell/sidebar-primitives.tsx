@@ -112,7 +112,11 @@ export function SidebarMenuButton({ className, type = "button", ...props }: Reac
 
 export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-(--ui-text-tertiary)">
+    // Sentence case, normal letter spacing (owner 2026-07-31, ChatGPT as the
+    // reference). UPPERCASE at 0.16em tracking is louder than the chat titles
+    // underneath it, which inverts the hierarchy: the label is scaffolding,
+    // the titles are the content.
+    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.6875rem] font-medium text-(--ui-text-quaternary)">
       <span className="min-w-0 truncate leading-none">{children}</span>
     </span>
   );
