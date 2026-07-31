@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Nemesis — bring in your coursework",
+  "version": "0.1.0",
+  "description": "Reads the courses and syllabus files already on your school portal, so Nemesis can set up your semester. Read-only.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://app.enternemesis.com/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Nemesis",
+    "default_popup": "dist/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.enternemesis.com/*", "http://localhost:3000/*"],
+      "js": ["dist/content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

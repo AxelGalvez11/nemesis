@@ -192,3 +192,8 @@ export * from "./brain-context.ts";
 export * from "./history-artifacts.ts";
 export * from "./workspace-commands.ts";
 export * from "./destructive-tools.ts";
+// The browser-extension wire and the gate it comes through. Shared because the
+// extension and the web app must agree on the shape, and because the SANITISER
+// is the app's own defence — it runs on the receiving side precisely so a
+// spoofed or compromised sender changes nothing.
+export * from "./lms-import.ts";

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nemesis</title>
+    <style>
+      /* Self-contained: an extension page cannot load anything remote, and
+         should not want to. */
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #111318;
+        --muted: #5f6672;
+        --line: #e3e6ea;
+        --accent: #2f5bd7;
+        --good: #1c7c4a;
+        --bad: #a63a2f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16181c;
+          --fg: #f2f4f7;
+          --muted: #9aa2ae;
+          --line: #2a2e35;
+          --accent: #7d9bf0;
+          --good: #6bd39b;
+          --bad: #f0938a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        margin: 0;
+        padding: 14px;
+        width: 320px;
+      }
+      h1 { font-size: 14px; letter-spacing: -0.01em; margin: 0 0 2px; }
+      p.lede { color: var(--muted); margin: 0 0 12px; }
+      #status { margin: 0 0 10px; }
+      #status[data-tone="good"] { color: var(--good); }
+      #status[data-tone="bad"] { color: var(--bad); }
+      button {
+        background: var(--accent);
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        padding: 8px 12px;
+        width: 100%;
+      }
+      button[disabled] { opacity: 0.55; cursor: default; }
+      button.secondary { background: transparent; border: 1px solid var(--line); color: var(--fg); font-weight: 500; }
+      .row { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+      ul { list-style: none; margin: 10px 0 0; max-height: 190px; overflow-y: auto; padding: 0; }
+      li {
+        align-items: center;
+        border-top: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        padding: 6px 0;
+      }
+      .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .count { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+      footer { border-top: 1px solid var(--line); color: var(--muted); margin-top: 12px; padding-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>Nemesis</h1>
+    <p class="lede">Reads the courses already on your school portal. It never changes anything there.</p>
+
+    <p id="status">Open your school portal, then read this page.</p>
+    <ul id="courses"></ul>
+
+    <div class="row">
+      <button id="scan" type="button">Read this page</button>
+      <button class="secondary" hidden id="next" type="button">Open Nemesis to finish</button>
+      <button class="secondary" id="clear" type="button">Clear what is stored</button>
+    </div>
+
+    <footer>What it finds stays in this browser until you import it.</footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
