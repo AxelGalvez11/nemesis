@@ -32,6 +32,7 @@ import {
   type OcclusionShape,
 } from "@nemesis/shared";
 import { generateUuidV4 } from "@/lib/chat-threads";
+import { imageExtensionFor } from "@/lib/study-image-pick";
 import { fetchAllRows } from "./supabase-paging";
 import { supabase } from "./supabase";
 
@@ -454,7 +455,18 @@ export const STUDY_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export async function createOcclusionCards(
   userId: string,
   deckId: string,
-  input: { uri: string; width: number; height: number; mode: OcclusionMode; shapes: OcclusionShape[]; notes?: string },
+  input: {
+    uri: string;
+    width: number;
+    height: number;
+    mode: OcclusionMode;
+    shapes: OcclusionShape[];
+    notes?: string;
+    /** The picture's real content type. Defaults to JPEG, which is what the
+     *  camera makes; a PNG chosen from Files has to say so, or it lands in the
+     *  bucket labelled as something it is not. */
+    mime?: string;
+  },
 ): Promise<CloudStudyCard[]> {
   if (!deckId) throw new Error("Choose a deck first.");
   if (input.shapes.length === 0) throw new Error("Draw at least one box over the part you want to test.");
@@ -467,15 +479,17 @@ export async function createOcclusionCards(
   if (!info.exists) throw new Error("That picture is no longer on this phone.");
   if (info.size > STUDY_IMAGE_MAX_BYTES) throw new Error("That picture is too large (10 MB max).");
 
-  // `userId/uuid.jpg` — the path shape both clients' storage policies are
-  // written against, so the row's own owner is the first path segment.
-  const storagePath = `${userId}/${generateUuidV4()}.jpg`;
+  // `userId/uuid.<ext>` — the path shape both clients' storage policies are
+  // written against, so the row's own owner is the first path segment. The
+  // extension follows the real type rather than always saying jpg.
+  const mime = input.mime === "image/png" ? "image/png" : "image/jpeg";
+  const storagePath = `${userId}/${generateUuidV4()}.${imageExtensionFor(mime)}`;
   const base = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
   // Streams from disk rather than reading the file into a base64 string first,
   // same as the camera upload in api/photos.ts.
   const upload = await FileSystem.uploadAsync(`${base}/storage/v1/object/${STUDY_IMAGE_BUCKET}/${storagePath}`, input.uri, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${session.access_token}`, "Content-Type": "image/jpeg" },
+    headers: { apikey: anonKey, Authorization: `Bearer ${session.access_token}`, "Content-Type": mime },
     httpMethod: "POST",
   });
   if (upload.status !== 200) {

@@ -83,6 +83,33 @@ export function clampOcclusionShape(shape: OcclusionShape, width: number, height
   };
 }
 
+/**
+ * The box under a point, or null for bare image.
+ *
+ * Owner 2026-07-31: "allow users to select boxes instead of only creating them."
+ * The editor's drag always started a NEW rectangle, so a box put down slightly
+ * wrong could only be deleted and drawn again — and on a dense diagram the new
+ * one usually landed on top of the old one, which is worse than either.
+ *
+ * TOPMOST WINS, and topmost means LAST DRAWN: boxes paint in array order, so the
+ * one the finger appears to be on is the last match, not the first. Searching
+ * forwards would grab whatever is underneath and move the wrong thing — the kind
+ * of bug that only shows up once two boxes overlap.
+ *
+ * Coordinates are the picture's own pixels, like every other number here.
+ */
+export function occlusionShapeAt(
+  shapes: readonly OcclusionShape[],
+  x: number,
+  y: number,
+): OcclusionShape | null {
+  for (let index = shapes.length - 1; index >= 0; index -= 1) {
+    const shape = shapes[index]!;
+    if (x >= shape.x && x <= shape.x + shape.w && y >= shape.y && y <= shape.y + shape.h) return shape;
+  }
+  return null;
+}
+
 export type OcclusionMaskState = "covered" | "target-covered" | "target-revealed" | "clear";
 
 /**
