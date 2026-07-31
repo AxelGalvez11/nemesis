@@ -99,11 +99,16 @@ Deno.test("every tool has a plain-English line for the thinking preview", () => 
 // one place where everything gets done, and a chat that could create but never
 // correct sent the student to another screen for every mistake it made.
 //
-// The old note said "if this ever fails, the confirm has to come first". A
-// confirm is not what arrived, so what replaced it is written down here instead
-// of being left implicit: EVERY DESTRUCTIVE TOOL IS EITHER RECOVERABLE OR
-// SMALL. That is the property this test now guards, and it is the reason the
-// reversal is defensible.
+// The old note said "if this ever fails, the confirm has to come first". It
+// shipped without one for a few hours on 2026-07-31 — recoverable-or-small
+// standing in — and the owner asked for the real confirm the same day. It now
+// exists: packages/shared/destructive-tools.ts holds every delete behind a card
+// the student has to tap, and destructive-tools.test.ts asserts no delete tool
+// can exist outside that gate.
+//
+// The blast-radius property below STAYS, because a confirmation is not a licence
+// to make deletion dangerous: a mis-tap is one tap, and the deck rule is what
+// keeps a mis-tap from costing a term of review history.
 Deno.test("nothing the chat can delete is both big and unrecoverable", () => {
   const destructive = AGENT_TOOL_NAMES.filter((name) => /delete|remove|destroy|wipe/i.test(name));
   // If a new destructive tool appears, it has to be classified here on purpose.

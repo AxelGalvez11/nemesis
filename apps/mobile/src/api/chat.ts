@@ -45,6 +45,7 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
+import type { PendingDelete } from "@nemesis/shared";
 import { recallBrain } from "./brain";
 import {
   buildFinalNoteMessages,
@@ -210,6 +211,11 @@ export interface ChatReply {
   /** Workspace tools the model asked for on this round. Present only inside
    *  sendChat's agent loop; a reply handed back to the screen never has any. */
   toolCalls?: AgentToolCall[];
+  /** A delete the model asked for and the gate held. NOTHING has been deleted;
+   *  the screen shows a card and only the student's tap carries it out.
+   *  Deliberately NOT a ChatOutput: a decision they have not made yet is not a
+   *  deliverable, so it is never persisted and closing the app declines it. */
+  pendingDelete?: PendingDelete;
 }
 
 /** One completion turn over expo/fetch's streaming Response.body (SDK 56, no
@@ -397,6 +403,7 @@ export async function sendChat(
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
   const outputs: ChatOutput[] = [];
+  let pendingDelete: PendingDelete | undefined;
   // The student's second brain: semantic notes + one-hop links + deadlines +
   // demonstrated weak cards. It starts beside web search so the independent
   // calls cost one wait, and returns null on any degraded backend path.
@@ -520,6 +527,14 @@ export async function sendChat(
       const result = await executeAgentTool(uid, call);
       results.push({ call, result });
       if (result && typeof result === "object") {
+        // A held delete. Only the FIRST is kept: two confirmation cards in one
+        // turn is a queue the student has to reason about, and a model that
+        // asked to delete two things at once is exactly when they should be
+        // slowing down rather than tapping twice.
+        const held = (result as Record<string, unknown>).pending_delete;
+        if (!pendingDelete && held && typeof held === "object") {
+          pendingDelete = held as PendingDelete;
+        }
         const artifact = (result as Record<string, unknown>).artifact;
         if (artifact && typeof artifact === "object") {
           const row = artifact as Record<string, unknown>;
@@ -582,6 +597,7 @@ export async function sendChat(
     errorText: reply.errorText,
     sources,
     ...(outputs.length ? { outputs } : {}),
+    ...(pendingDelete ? { pendingDelete } : {}),
     text: carried ? `${carried}${reply.text ?? ""}`.trim() || null : reply.text,
   };
 }

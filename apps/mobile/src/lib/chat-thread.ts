@@ -162,6 +162,7 @@ export const CHAT_SYSTEM_PROMPT =
   // dialog inside a chat turn, so the bar for a destructive call is the
   // student's own words: "tidy up my notes" is a request to reorganise, not a
   // licence to delete, and the cost of asking is one sentence.
+  "A delete never happens immediately: it puts a confirmation card on screen and the student has to tap it. So do not say anything has been deleted until they have — say the card is there and ask them to tap it. " +
   "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which item they mean, ask " +
   "which one first — deleting is the one action they cannot take back from here. Never delete something as a side effect of tidying or making room. " +
   // 🔴 THIS SENTENCE USED TO SEND THE STUDENT TO AN APP THEY CANNOT GET. It read

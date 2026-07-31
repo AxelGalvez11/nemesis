@@ -187,3 +187,4 @@ export * from "./workspace-agent-tools.ts";
 export * from "./brain-context.ts";
 export * from "./history-artifacts.ts";
 export * from "./workspace-commands.ts";
+export * from "./destructive-tools.ts";

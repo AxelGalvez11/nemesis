@@ -6,6 +6,7 @@
 
 import {
   ARTIFACT_REFERENCE_RULE,
+  type PendingDelete,
   expandArtifactContext,
   formatBrainContext,
   shouldRecallBrain,
@@ -76,6 +77,7 @@ export const CHAT_TOOLS_PROMPT =
   // dialog inside a chat turn, so the bar for a destructive call is the
   // student's own words: "tidy up my notes" is a request to reorganise, not a
   // licence to delete, and the cost of asking is one sentence.
+  "A delete never happens immediately: it puts a confirmation card on screen and the student has to tap it. So do not say anything has been deleted until they have — say the card is there and ask them to tap it. " +
   "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which " +
   "item they mean, ask them which one first — deleting is the one action they cannot take back from here. Never delete something as " +
   "a side effect of tidying, reorganising, or making room. " +
@@ -425,6 +427,10 @@ export interface ChatReply {
   outputs?: SessionOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
+  /** A delete the model asked for and the gate held. NOTHING has been deleted;
+   *  the page shows a card and only the student's click carries it out. Never
+   *  persisted — a decision they have not made is not a deliverable. */
+  pendingDelete?: PendingDelete;
   /**
    * The model that ACTUALLY answered, as reported by the provider — not the one
    * we asked for.
@@ -661,6 +667,7 @@ export async function sendChatTurn(
   let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
+  let pendingDelete: PendingDelete | undefined;
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
@@ -676,6 +683,11 @@ export async function sendChatTurn(
     for (const { result } of results) {
       const output = outputFromToolResult(result);
       if (output && !outputs.some((existing) => existing.id === output.id)) outputs.push(output);
+      // Only the FIRST held delete is kept: two confirmation cards at once is a
+      // queue the student has to reason about, and a turn asking to delete two
+      // things is exactly when they should be slowing down, not clicking twice.
+      const held = (result as Record<string, unknown> | null)?.pending_delete;
+      if (!pendingDelete && held && typeof held === "object") pendingDelete = held as PendingDelete;
     }
     messages = [
       ...messages,
@@ -692,7 +704,12 @@ export async function sendChatTurn(
     ];
   }
   const shown = collapseOutputs(outputs);
-  return { ...reply, sources, ...(shown.length ? { outputs: shown } : {}) };
+  return {
+    ...reply,
+    sources,
+    ...(shown.length ? { outputs: shown } : {}),
+    ...(pendingDelete ? { pendingDelete } : {}),
+  };
 }
 
 export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {

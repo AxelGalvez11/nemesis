@@ -9,10 +9,15 @@
 import {
   calendarEventPatch,
   deckDeletionVerdict,
+  describeTarget,
+  destructiveSpec,
+  isDestructiveTool,
   isPatchFailure,
   noteReplacementBody,
+  pendingDeleteInstruction,
   WORKSPACE_AGENT_TOOL_NAMES,
   workspaceId,
+  type PendingDelete,
 } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
@@ -1256,10 +1261,56 @@ async function deleteStudyArtifactTool(args: Record<string, unknown>) {
   return { deleted: true, kind: str(found.row.kind), title: str(found.row.title) };
 }
 
+/**
+ * Look up what a pending delete is about to destroy, for the confirmation card.
+ *
+ * Best effort: a failed lookup costs the card its label, never the student their
+ * confirmation. The guard still runs when they approve.
+ */
+async function pendingDeleteFor(name: string, args: Record<string, unknown>): Promise<PendingDelete | null> {
+  const spec = destructiveSpec(name);
+  if (!spec) return null;
+  const handle = args[spec.handle];
+  let label = spec.table === null ? str(handle) : "";
+  if (spec.table !== null) {
+    const id = workspaceId(handle);
+    if (id) {
+      const { data } = await supabase.from(spec.table).select(spec.labelColumn).eq("id", id).maybeSingle();
+      label = str((data as Record<string, unknown> | null)?.[spec.labelColumn]);
+    }
+  }
+  return {
+    args,
+    recoverable: spec.recoverable,
+    target: describeTarget(spec.noun, label),
+    tool: name,
+  };
+}
+
 /** Run one tool call; ALWAYS resolves to a JSON-stringifiable result (errors
  *  become `{error}` so the model can react instead of the turn dying). */
-export async function executeAgentTool(call: AgentToolCall): Promise<unknown> {
+export async function executeAgentTool(
+  call: AgentToolCall,
+  /** Set ONLY by the student's click on the confirmation card. The model has no
+   *  way to send it, which is the entire point. */
+  options: { confirmed?: boolean } = {},
+): Promise<unknown> {
   const args = parseArgs(call.arguments);
+  // 🔴 THE CONFIRMATION GATE — one place, not a check inside each delete
+  // handler. A per-handler check is one a future tool can forget, and the cost
+  // of forgetting is a delete with no confirmation at all. Adding a name to
+  // DESTRUCTIVE_TOOLS is what puts it behind this line, and a shared test
+  // asserts the map and the tool catalogue never drift apart.
+  if (!options.confirmed && isDestructiveTool(call.name)) {
+    const pending = await pendingDeleteFor(call.name, args);
+    if (pending) {
+      return {
+        confirm_required: true,
+        instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
+        pending_delete: pending,
+      };
+    }
+  }
   try {
     switch (call.name) {
       case "search_library": return await searchLibrary(str(args.query));
