@@ -10,7 +10,7 @@
 // already looking at, and a scraper that alters a grade page is a catastrophe
 // waiting for its first bug report.
 
-import type { PageSnapshot, SnapshotBlock, SnapshotLink } from "./parse.ts";
+import type { PageSnapshot, SnapshotBlock, SnapshotCourseNode, SnapshotLink } from "./parse.ts";
 
 /** Bounds, so a pathological page cannot hang the tab or hand us a payload
  *  nobody can review. A real course page has tens of links, not thousands. */
@@ -128,6 +128,63 @@ function readBlocks(doc: Document, base: string, isItem: (href: string) => boole
   return blocks;
 }
 
+/** Pull "_38534_1" out of "course-list-course-_38534_1". */
+function idSuffix(value: string | null, prefix: string): string | null {
+  if (!value || !value.startsWith(prefix)) return null;
+  const rest = value.slice(prefix.length);
+  return rest || null;
+}
+
+/**
+ * Courses a page declares in its markup rather than in its links.
+ *
+ * 🔴 THE CASE THAT FORCED THIS: Blackboard Ultra renders every course as
+ * `<a href="javascript:void(0);">`. Navigation is a click handler, so the URL
+ * carries no identity and the anchor is one this adapter deliberately discards.
+ * Reading only links found nine courses' worth of nothing on a real
+ * installation.
+ *
+ * Two sources, most-standard first:
+ *   - `[data-course-id]`, which is a plain data attribute any portal might use.
+ *   - `id="course-list-course-…"`, which is Blackboard's own naming.
+ *
+ * Titles and codes are then read from the card's own labelled children
+ * (`course-name-…`, `course-id-…`), falling back to the card's first heading.
+ * Everything is bounded and read-only.
+ */
+function readCourseNodes(doc: Document, base: string): SnapshotCourseNode[] {
+  const cards = new Map<string, Element>();
+
+  for (const el of Array.from(doc.querySelectorAll("[data-course-id]")).slice(0, 200)) {
+    const id = collapse(el.getAttribute("data-course-id"));
+    if (id) cards.set(id, el);
+  }
+  for (const el of Array.from(doc.querySelectorAll('[id^="course-list-course-"]')).slice(0, 200)) {
+    const id = idSuffix(el.getAttribute("id"), "course-list-course-");
+    if (id && !cards.has(id)) cards.set(id, el);
+  }
+
+  const nodes: SnapshotCourseNode[] = [];
+  for (const [courseId, card] of cards) {
+    const named = card.querySelector(`[id="course-name-${CSS.escape(courseId)}"]`);
+    const heading = card.querySelector("h1, h2, h3, h4, h5, .js-course-title-element");
+    const title = collapse(named?.textContent) || collapse(heading?.textContent);
+    if (!title) continue;
+
+    const codeNode = card.querySelector(`[id="course-id-${CSS.escape(courseId)}"]`);
+    const code = collapse(codeNode?.textContent);
+
+    // A card's own anchor is usually javascript:void(0), which absoluteHref
+    // rejects — so this is normally absent, and that is fine. A course with no
+    // URL is still a course.
+    const anchor = card.querySelector("a[href]") as HTMLAnchorElement | null;
+    const href = anchor ? absoluteHref(anchor, base) : null;
+
+    nodes.push({ courseId, title, ...(code ? { code } : {}), ...(href ? { href } : {}) });
+  }
+  return nodes;
+}
+
 /** Describe the page for detection, without reading its links. */
 export function readFacts(doc: Document, href: string): { markers: string[]; url: string } {
   return { markers: readMarkers(doc), url: href };
@@ -137,6 +194,7 @@ export function readFacts(doc: Document, href: string): { markers: string[]; url
 export function readSnapshot(doc: Document, href: string, isItem: (link: string) => boolean): PageSnapshot {
   return {
     blocks: readBlocks(doc, href, isItem),
+    courseNodes: readCourseNodes(doc, href),
     links: readLinks(doc, href),
     title: collapse(doc.title),
     url: href,

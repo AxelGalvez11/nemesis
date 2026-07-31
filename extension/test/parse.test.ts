@@ -275,6 +275,53 @@ test("a course with no usable name is left out rather than shown blank", () => {
   assert.equal(courses.length, 0);
 });
 
+test("BLACKBOARD ULTRA: courses declared in markup, with no usable links at all", () => {
+  // Measured on a real installation. Every course card is
+  //   <article data-course-id="_38534_1">
+  //     <a href="javascript:void(0);">Fall 2026: …</a>
+  //     <div id="course-id-_38534_1">PHCY2112_44997_202640</div>
+  // The anchor's href carries no identity and the DOM adapter drops it, so
+  // reading links alone found nine courses' worth of nothing.
+  const courses = parseSnapshot(
+    snapshot({
+      courseNodes: [
+        { code: "PHCY2112_44997_202640", courseId: "_38534_1", title: "Fall 2026: Hlth Sys,Delvry, and Econ" },
+        { code: "PHCY2119_44999_202640", courseId: "_38536_1", title: "Fall 2026: Integrated Pharmacotherapy 4" },
+      ],
+      links: [],
+      url: "https://blackboard.university.edu/ultra/course",
+    }),
+    "blackboard",
+  );
+  assert.equal(courses.length, 2);
+  assert.equal(courses[0]?.name, "Fall 2026: Hlth Sys,Delvry, and Econ");
+  assert.equal(courses[0]?.code, "PHCY2112_44997_202640");
+  assert.equal(courses[1]?.name, "Fall 2026: Integrated Pharmacotherapy 4");
+});
+
+test("a course node with no title is skipped rather than shown blank", () => {
+  const courses = parseSnapshot(
+    snapshot({ courseNodes: [{ courseId: "_1_1", title: "   " }, { courseId: "_2_1", title: "Real" }] }),
+    "blackboard",
+  );
+  assert.equal(courses.length, 1);
+  assert.equal(courses[0]?.name, "Real");
+});
+
+test("markup-declared and link-declared courses merge without duplicating", () => {
+  const courses = parseSnapshot(
+    snapshot({
+      courseNodes: [{ courseId: "12345", title: "General Chemistry I" }],
+      links: [{ href: "https://canvas.university.edu/courses/12345", text: "Chem" }],
+      url: "https://canvas.university.edu/dashboard",
+    }),
+    "canvas",
+  );
+  assert.equal(courses.length, 1);
+  // Longest-wins still applies across both sources.
+  assert.equal(courses[0]?.name, "General Chemistry I");
+});
+
 test("an unknown portal parses to nothing at all", () => {
   const courses = parseSnapshot(
     snapshot({ links: [{ href: "https://example.com/courses/1", text: "Something" }] }),

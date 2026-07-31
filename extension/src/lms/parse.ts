@@ -50,11 +50,44 @@ export interface SnapshotBlock {
   hint?: string;
 }
 
+/**
+ * A course the page names through ATTRIBUTES rather than through a link.
+ *
+ * 🔴 THIS EXISTS BECAUSE BLACKBOARD ULTRA HAS NO COURSE LINKS. Measured against
+ * a real university installation: every course card is
+ *
+ *     <article id="course-list-course-_38534_1" data-course-id="_38534_1">
+ *       <a id="course-link-_38534_1" href="javascript:void(0);">Fall 2026: …</a>
+ *       <div id="course-id-_38534_1">PHCY2112_44997_202640</div>
+ *
+ * The anchor's href is literally `javascript:void(0);` — navigation happens in
+ * JavaScript, and the course identity lives in the element's `id`. So the
+ * route-based reading that works everywhere else finds exactly nothing, and
+ * the DOM adapter had already dropped those anchors anyway (correctly: a
+ * `javascript:` URL is never something we should keep).
+ *
+ * The lesson generalises past Blackboard: "the URL carries the identity" is a
+ * property of an application's routing, not a law. When it does not hold, the
+ * identity is in the markup instead.
+ */
+export interface SnapshotCourseNode {
+  /** Identity as the page states it, e.g. "_38534_1". */
+  courseId: string;
+  title: string;
+  /** The registrar's code where the card shows one, e.g. "PHCY2112_44997_202640". */
+  code?: string;
+  /** A real navigable URL, when the card has one. Often absent. */
+  href?: string;
+}
+
 export interface PageSnapshot {
   url: string;
   title: string;
   links: readonly SnapshotLink[];
   blocks: readonly SnapshotBlock[];
+  /** Courses the page declares in markup rather than in links. May be empty on
+   *  portals whose routing does carry identity. */
+  courseNodes?: readonly SnapshotCourseNode[];
 }
 
 /** How each product routes to a course. The capture group is the course id,
@@ -229,16 +262,31 @@ export function parseSnapshot(snapshot: PageSnapshot, lms: LmsKind): ScrapedCour
 
   const names = new Map<string, string[]>();
   const homes = new Map<string, string>();
+  const codes = new Map<string, string>();
   const syllabi = new Map<string, Map<string, ScrapedLink>>();
+
+  const ensure = (courseId: string) => {
+    if (!names.has(courseId)) {
+      names.set(courseId, []);
+      syllabi.set(courseId, new Map());
+    }
+  };
+
+  // Courses the page states outright, before any link is considered. On
+  // Blackboard Ultra this is the ONLY source; elsewhere it is simply empty.
+  for (const node of snapshot.courseNodes ?? []) {
+    if (!node.courseId || !node.title.trim()) continue;
+    ensure(node.courseId);
+    names.get(node.courseId)?.push(node.title);
+    if (node.code) codes.set(node.courseId, node.code);
+    if (node.href) homes.set(node.courseId, node.href);
+  }
 
   for (const link of snapshot.links) {
     const courseId = courseIdFrom(link.href, lms);
     if (!courseId) continue;
 
-    if (!names.has(courseId)) {
-      names.set(courseId, []);
-      syllabi.set(courseId, new Map());
-    }
+    ensure(courseId);
     // Only links that stand for the COURSE ITSELF may name it. An assignment,
     // an attached file and a syllabus all live under the course URL and all
     // carry its id, but each is named after itself — and since the longest
@@ -289,10 +337,12 @@ export function parseSnapshot(snapshot: PageSnapshot, lms: LmsKind): ScrapedCour
     // No usable name means we would be offering the student an unnamed folder.
     if (!name) continue;
     const home = homes.get(courseId);
+    const code = codes.get(courseId);
     courses.push({
       items: items.get(courseId) ?? [],
       name,
       syllabusLinks: [...(syllabi.get(courseId)?.values() ?? [])],
+      ...(code ? { code } : {}),
       ...(home ? { url: home } : {}),
     });
   }
