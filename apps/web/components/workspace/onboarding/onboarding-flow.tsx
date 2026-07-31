@@ -24,6 +24,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { useAuth } from "@/components/AuthProvider";
+import { fetchEntitlements } from "@/lib/api";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { type CalendarEvent, saveCalendarEvent } from "@/lib/workspace/calendar-model";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { eventsFrom, type ReadFile, StepSyllabi } from "./step-syllabi";
 import { StepCourses } from "./step-courses";
 import { StepCoursework } from "./step-coursework";
+import { StepUpgrade } from "./step-upgrade";
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
   courses: "Your courses",
@@ -76,6 +78,9 @@ export function OnboardingFlow({ onDone }: OnboardingFlowProps) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  /** Set once the semester is written, to swap the steps for the "you're set
+   *  up" screen. Null means we are still collecting. */
+  const [saved, setSaved] = useState<{ courses: number; events: number } | null>(null);
 
   /** Every course the student will end up with: the ones they typed, the ones
    *  their syllabi named, and the ones they ticked from their portal. */
@@ -146,12 +151,52 @@ export function OnboardingFlow({ onDone }: OnboardingFlowProps) {
     // hold a copy of this student's coursework.
     if (scan) await clearScan();
     library.reload();
+
+    // Everything is written. Only now do we consider showing the upgrade
+    // screen, and only to someone on the free plan — selling a subscriber
+    // their own plan back on day one is worse than saying nothing. A failed
+    // entitlements lookup means we do not know, so we do not ask.
+    let onFreePlan = false;
+    try {
+      const snapshot = await fetchEntitlements();
+      onFreePlan = (snapshot.plan ?? "free").toLowerCase() === "free";
+    } catch {
+      onFreePlan = false;
+    }
+
+    // And only to someone who actually set something up. A student who clicked
+    // straight through without adding a course has just told us they are not
+    // here to buy anything today; answering that with a pricing screen is how
+    // a product starts feeling pushy.
+    const didSomething = allCourses.length > 0 || allEvents.length > 0;
+
+    if (onFreePlan && didSomething) {
+      setSaved({ courses: allCourses.length, events: allEvents.length });
+      setSaving(false);
+      return;
+    }
     onDone("finished");
   }, [allCourses, allEvents, library, onDone, preview, scan, uid]);
 
   const index = stepIndex(step);
   const back = previousStep(step);
   const forward = nextStep(step);
+
+  // Everything is saved; this is the offer screen, and it owns the whole panel.
+  // Closing it counts as finishing, because it already has.
+  if (saved) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-(--ui-bg-primary) p-4 sm:items-center sm:p-8">
+        <div className="flex w-full max-w-2xl flex-col gap-5 rounded-2xl border border-border bg-(--ui-bg-secondary) p-5 shadow-xl sm:p-7">
+          <StepUpgrade
+            courseCount={saved.courses}
+            eventCount={saved.events}
+            onDone={() => onDone("finished")}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-(--ui-bg-primary) p-4 sm:items-center sm:p-8">
