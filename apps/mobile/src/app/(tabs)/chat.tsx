@@ -18,7 +18,6 @@ import {
 } from "react-native";
 import Reanimated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
@@ -43,7 +42,6 @@ import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerM
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
 import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
-import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableCardStack, DeliverableSheet } from "@/components/DeliverableSheet";
 import { ConfirmDeleteCard } from "@/components/ConfirmDeleteCard";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -62,9 +60,9 @@ import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
+import { withAttachmentNote, type AttachedLibraryDoc, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
-import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
+import { DEFAULT_CHAT_EFFORT } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
@@ -109,11 +107,6 @@ const THINKING_ID = "__thinking__";
  *  far enough that it shows up as soon as there is genuinely something below. */
 const JUMP_TO_BOTTOM_AT = 160;
 
-
-// Where the remembered intelligence dial lives, per signed-in account. Same
-// SecureStore idiom as the General settings screen (app/profile/general.tsx),
-// so the choice survives app launches and chat switches.
-const effortStoreKey = (uid: string) => `nemesis_chat_effort_v1_${uid}`;
 
 // 🔴 THE TWO BACKGROUND REFRESHES BELOW MERGE, THEY DO NOT REPLACE, AND THAT
 // IS WHY THE SCREEN NO LONGER GOES BLANK. loadThreadMessages snapshots the
@@ -227,7 +220,7 @@ export default function ChatScreen() {
   // One Library doc attached as context for the NEXT send only — cleared once
   // that turn is sent (see send()'s attachedDoc capture). Deep research is the
   // opposite: a persistent toggle the student switches off themselves.
-  const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  const [attachedDoc, setAttachedDoc] = useState<AttachedLibraryDoc | null>(null);
   // "Add a file": the entry point the phone never had. Everything downstream already
   // existed -- the reader handles PDF/Word/PowerPoint, and the result is the same
   // one-shot attachment a Library note or a photograph makes. A refusal (wrong kind,
@@ -311,22 +304,29 @@ export default function ChatScreen() {
   const photoSendTokenRef = useRef(0);
   const [photo, setPhoto] = useState<ReadPhoto | null>(null);
   const [photoSaved, setPhotoSaved] = useState<"idle" | "saving" | "saved">("idle");
+  // 🔴 THE PICTURE LEFT THE COMPOSER. `photo` outlives its turn because it holds
+  // the words read out of the shot, which is what "Save to Library" writes into a
+  // note — but a THUMBNAIL still sitting in the box after the message is in the
+  // conversation reads as "it didn't send" (owner 2026-07-31: "the image still
+  // persists in the chat composer after the image has been sent into chat
+  // convo"). This flag is what separates the two: once it is true the composer
+  // shows nothing, and the Save offer moves down to the message itself, next to
+  // the picture it would save.
+  const [photoSent, setPhotoSent] = useState(false);
   // "Move to notebook" (owner 2026-07-22) — the destination list, fetched only
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  // Instant/Medium/High — the composer's intelligence dial. A per-USER working
-  // preference (owner 2026-07-23: "the chat should remember which intelligence
-  // mode has been picked because it always defaults to medium"): remembered
-  // across chats AND app launches in SecureStore, hydrated by the effect below,
-  // and deliberately NOT reset by the thread-load effect. DEFAULT_CHAT_EFFORT is
-  // only the fallback before the stored value loads / for a signed-out user.
-  const [effort, setEffort] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
-  // The uid whose stored effort has finished loading — guards the write-through
-  // so switching accounts can't persist one user's dial under another's key
-  // before the new user's value has been read.
-  const effortHydratedFor = useRef<string | null>(null);
-  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  // NO INTELLIGENCE DIAL ANY MORE (owner 2026-07-31: remove Instant/Medium/High,
+  // "thats not necessary for the app"). The control is gone; the MACHINERY is
+  // not. lib/chat-effort.ts still routes every turn — every turn now simply goes
+  // out at DEFAULT_CHAT_EFFORT, which is what the overwhelming majority of turns
+  // already used, and which is the one level that always carries the workspace
+  // tools (see applyChatEffort: High cannot, because the thinking flagship can't
+  // hold tool calls). Pinning here rather than deleting the parameter also means
+  // the stored preference of anyone left on High simply stops applying — with no
+  // picker left, a student stuck on a level that can't save a deck would have had
+  // no way to get off it.
   // How tall the floating composer block is (starter rows / attached-doc chip
   // included). The transcript reserves exactly this much at its foot so it can
   // scroll all the way under the composer without the last line hiding behind
@@ -418,6 +418,12 @@ export default function ChatScreen() {
     // ...and the stand-in row with it, or the old thread's picture keeps pulsing
     // at the bottom of the new one.
     setAnalyzingPhoto(null);
+    // The finished reading, and the offer to save it, belong to the conversation
+    // the shot was taken in — its "Save to Library" line hangs off a message that
+    // is no longer on screen.
+    setPhoto(null);
+    setPhotoSaved("idle");
+    setPhotoSent(false);
     // The confirmation card belongs to the conversation that proposed the
     // delete. Carried into another thread it is a red Delete button floating
     // over an unrelated chat, pointing at something the student can no longer
@@ -444,9 +450,6 @@ export default function ChatScreen() {
     setPlusMenuOpen(false);
     setLibraryPickerOpen(false);
     setAttachedDoc(null);
-    // NB: effort is intentionally NOT reset here — it's a per-user preference
-    // remembered across chats (see the hydrate/persist effects below).
-    setEffortMenuOpen(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
     // A thread/user switch must not leave RecordSession mounted against the
@@ -520,40 +523,6 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [uid, threadId]);
 
-  // Remember the intelligence dial across chats and app launches (owner
-  // 2026-07-23). Hydrate the stored value once per signed-in account; a bad or
-  // missing value falls back to DEFAULT_CHAT_EFFORT. effortHydratedFor gates the
-  // write-through below so this initial load never races the persist effect.
-  useEffect(() => {
-    effortHydratedFor.current = null;
-    if (!uid) {
-      setEffort(DEFAULT_CHAT_EFFORT);
-      return;
-    }
-    let alive = true;
-    void SecureStore.getItemAsync(effortStoreKey(uid))
-      .then((raw) => {
-        if (alive) setEffort(isChatEffort(raw) ? raw : DEFAULT_CHAT_EFFORT);
-      })
-      .catch(() => {
-        if (alive) setEffort(DEFAULT_CHAT_EFFORT);
-      })
-      .finally(() => {
-        if (alive) effortHydratedFor.current = uid;
-      });
-    return () => {
-      alive = false;
-    };
-  }, [uid]);
-
-  // Write the dial through on change — but only once the current user's stored
-  // value has loaded, so a fresh mount / account switch can't clobber storage
-  // with the in-memory default before the read resolves.
-  useEffect(() => {
-    if (!uid || effortHydratedFor.current !== uid) return;
-    void SecureStore.setItemAsync(effortStoreKey(uid), effort).catch(() => {});
-  }, [effort, uid]);
-
   // TopBar: no centered chat/session title in a chat (owner 2026-07-20 — "remove
   // the centered top chat/session title in a chat"). Always blank; only the "…"
   // actions menu (see the setHeaderRight effect below) occupies the header.
@@ -590,6 +559,7 @@ export default function ChatScreen() {
     setAttachedDoc(null);
     setPhoto(null);
     setPhotoSaved("idle");
+    setPhotoSent(false);
     setPhotoDraft(null);
     // A read still running for the picture just removed must not send anything,
     // and its stand-in row must not keep pulsing for a photo that is gone.
@@ -608,7 +578,7 @@ export default function ChatScreen() {
    *  composer passes nothing and everything comes from state as before. */
   const send = useCallback((override?: {
     text?: string;
-    doc?: { content: string; title: string };
+    doc?: AttachedLibraryDoc;
     attachment?: ChatAttachment;
     keepPhoto?: boolean;
   }) => {
@@ -661,10 +631,15 @@ export default function ChatScreen() {
     // router still picks the research lane by itself when a question needs current
     // sources; nothing here forces it.
     const research = false;
-    const chosenEffort = effort;
+    const chosenEffort = DEFAULT_CHAT_EFFORT;
     const userMsg: ChatMsg = {
       at: new Date().toISOString(),
-      content: withAttachmentNote(text, doc?.title ?? null),
+      // A PHOTOGRAPH NAMES ITSELF. "Attached: Photo" under a question is worth
+      // reading when the attachment is a document you can't see; with the shot
+      // itself sitting directly above the words (see UserTurn) the line is
+      // repeating what the picture already says, so images skip it. Named
+      // documents still get it.
+      content: withAttachmentNote(text, doc && doc.kind !== "image" ? doc.title : null),
       role: "user",
       ...(override?.attachment ? { attachments: [override.attachment] } : {}),
     };
@@ -673,15 +648,15 @@ export default function ChatScreen() {
     setLastError(null);
     setInput("");
     setAttachedDoc(null);
-    // The picture normally goes with it: the attachment is one-shot, and a chip
-    // left offering "Save to Library" after the turn has gone would be pointing
-    // at something that is no longer attached to anything.
+    // The picture goes with it either way — the question is only whether the
+    // READING of it is kept.
     //
-    // keepPhoto is the camera's exception. A photo now sends itself the moment it
-    // is taken, so the student never gets a beat in which to tap "Save to
-    // Library" — clearing here would delete the offer before it was ever on
-    // screen. The photo stays available to save while its answer arrives; the
-    // ATTACHMENT is still cleared, so it cannot ride a second turn.
+    // keepPhoto is the camera's path: `photo` holds the words Gemini got out of
+    // the shot, and those are what "Save to Library" writes into a note, so
+    // dropping them here would delete the offer in the frame it appeared. What
+    // does go is the composer's copy of the thumbnail — see photoSent, and the
+    // Save action that moves down onto the message with it.
+    setPhotoSent(Boolean(override?.keepPhoto));
     if (!override?.keepPhoto) {
       setPhoto(null);
       setPhotoSaved("idle");
@@ -820,7 +795,7 @@ export default function ChatScreen() {
           reasoningRef.current = "";
         }
       });
-  }, [input, messages, uid, threadId, attachedDoc, effort, photo]);
+  }, [input, messages, uid, threadId, attachedDoc, photo]);
 
   // A shot the student just took. It ATTACHES; it does not send.
   //
@@ -855,6 +830,7 @@ export default function ChatScreen() {
     // photo kept around for "Save to Library", and its save state.
     setPhoto(null);
     setPhotoSaved("idle");
+    setPhotoSent(false);
   }, []);
 
   // Send a turn that carries a photograph. THIS is where the picture is uploaded
@@ -1545,18 +1521,16 @@ export default function ChatScreen() {
                   // says the picture is being read rather than just sitting there.
                   <AnalyzingPhotoBubble typed={item.typed ?? ""} uri={item.photoUri ?? ""} />
                 ) : item.msg!.role === "user" ? (
-                  <View style={[styles.bubble, styles.userBubble]}>
-                    {item.msg!.attachments?.filter((attachment) => attachment.kind === "image" && attachment.url).map((attachment) => (
-                      <Image
-                        accessibilityLabel={attachment.name}
-                        key={`${attachment.storagePath ?? attachment.url}:${attachment.name}`}
-                        resizeMode="contain"
-                        source={{ uri: attachment.url as string }}
-                        style={styles.messageImage}
-                      />
-                    ))}
-                    <Text style={styles.userText}>{item.msg!.content}</Text>
-                  </View>
+                  <UserTurn
+                    message={item.msg!}
+                    // The Save offer belongs to the picture, so it hangs off the
+                    // message carrying it — and only the LATEST shot, which is
+                    // the one still held in `photo`. Older photos in the same
+                    // thread have already been decided about one way or another.
+                    photo={photo}
+                    photoSaved={photoSaved}
+                    onSavePhoto={savePhotoToLibrary}
+                  />
                 ) : (
                   // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
                   // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
@@ -1687,7 +1661,14 @@ export default function ChatScreen() {
             includes the three starter rows — so the artifact covered the bottom
             third of the screen and washed out the starter rows themselves.
             Nothing to fade means nothing to draw. */}
-        {composerMode === "chat" && hasContent ? <BottomFadeBlur height={composerBlockH} /> : null}
+        {composerMode === "chat" && hasContent ? (
+          // MINUS the row's own top padding: composerBlockH measures the whole
+          // floating block, whose first space(2) is empty air ABOVE the composer
+          // card. Backing that with solid blur pushed the washed-out band a full
+          // line of text higher than the card it exists to back (owner
+          // 2026-07-31: "the blur in the bottom needs to be lower").
+          <BottomFadeBlur height={Math.max(0, composerBlockH - space(2))} />
+        ) : null}
         {/* Jump to the newest message (owner 2026-07-24: "add a downward arrow in
             the chat for when conversations get long so users can scroll all the
             way to the bottom (it should disappear if user is already at the
@@ -1772,17 +1753,19 @@ export default function ChatScreen() {
             // Three conditions, three moments. `photoDraft` is the shot just
             // taken, drawn from the local file so the tile is there the instant
             // the shutter fires. `attachedDoc` is the ordinary attached-thing
-            // case. `photo` outlives both because the chip is also where "Save
-            // to Library" lives, and without it that offer would vanish in the
-            // frame it appeared.
+            // case. `photo` is the finished reading — and it only earns a tile
+            // here while it is still WAITING to be sent. 🔴 photoSent is what
+            // ends that: the chip used to linger after the turn purely to keep
+            // offering "Save to Library", which left a thumbnail sitting in the
+            // box beside a message that already had the same picture in it
+            // (owner 2026-07-31). The offer moved down to the message; this slot
+            // now empties the moment the turn goes.
             attachment={
-              composerMode === "chat" && (attachedDoc || photo || photoDraft) ? (
+              composerMode === "chat" && (attachedDoc || (photo && !photoSent) || photoDraft) ? (
                 <AttachedDocChip
                   title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
                   onRemove={clearAttachment}
                   thumbnailUri={photoDraft ?? photo?.imageUrl ?? null}
-                  onSave={photo ? () => void savePhotoToLibrary() : undefined}
-                  saveState={photoSaved}
                 />
               ) : null
             }
@@ -1796,10 +1779,7 @@ export default function ChatScreen() {
             // object — an event arriving in that slot would be read as one.
             onSend={handleSend}
             onStop={handleStop}
-            onPlus={() => {
-              setEffortMenuOpen(false);
-              setPlusMenuOpen((v) => !v);
-            }}
+            onPlus={() => setPlusMenuOpen((v) => !v)}
             // photoReading counts as sending: the turn is on its way, it is just
             // still getting the words out of the picture first.
             sending={sending || photoReading}
@@ -1815,14 +1795,6 @@ export default function ChatScreen() {
             modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
             compact={composerCompact}
-            effort={effort}
-            effortMenuOpen={effortMenuOpen}
-            // Opening one composer menu closes the other — they anchor to the
-            // same spot, so both open at once would stack.
-            onEffortToggle={() => {
-              setPlusMenuOpen(false);
-              setEffortMenuOpen((v) => !v);
-            }}
           />
         </View>
         {/* BOTH composer menus render AFTER the composer row, and that ordering
@@ -1843,16 +1815,6 @@ export default function ChatScreen() {
           onAttach={() => setLibraryPickerOpen(true)}
           onAddFile={() => void addFileFromDevice()}
           onTakePhoto={() => setCameraOpen(true)}
-        />
-        {/* The intelligence pill's dropdown — anchored above the composer off
-            the same measurements the "+" menu uses, so the two hang at exactly
-            the same height whichever one is open. */}
-        <EffortPopup
-          visible={effortMenuOpen}
-          effort={effort}
-          bottomOffset={composerMenuOffset}
-          onSelect={setEffort}
-          onClose={() => setEffortMenuOpen(false)}
         />
       </View>
     </KeyboardAvoidingView>
@@ -2021,23 +1983,22 @@ function ChatSkeleton() {
   );
 }
 
-/** The one-shot attachment sitting above the composer. A photographed page adds
- *  two things a Library note doesn't have: a thumbnail (so the student can see
- *  WHICH shot is attached without opening anything) and a "Save to Library"
- *  action, which is where "even saved to library if it's a note" actually
- *  lives. Both are optional — an attached note renders exactly as before. */
+/** The one-shot attachment riding inside the composer card. A photographed page
+ *  shows a thumbnail, so the student can check WHICH shot is attached without
+ *  opening anything; an attached Library note gets a named pill.
+ *
+ *  It no longer carries "Save to Library". That action followed the picture into
+ *  the conversation (owner 2026-07-31) — see UserTurn — because keeping it here
+ *  meant keeping the whole chip here after the turn had gone, which is the
+ *  duplicate the owner reported. */
 function AttachedDocChip({
   title,
   onRemove,
   thumbnailUri = null,
-  onSave,
-  saveState = "idle",
 }: {
   title: string;
   onRemove: () => void;
   thumbnailUri?: string | null;
-  onSave?: () => void;
-  saveState?: "idle" | "saving" | "saved";
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -2061,19 +2022,6 @@ function AttachedDocChip({
             <CloseIcon size={11} color="#fff" />
           </Pressable>
         </View>
-        {onSave ? (
-          <Pressable
-            onPress={saveState === "idle" ? onSave : undefined}
-            disabled={saveState !== "idle"}
-            hitSlop={8}
-            accessibilityRole="button"
-            testID="chat-photo-save"
-          >
-            <Text style={[styles.attachChipAction, saveState === "saved" && styles.attachChipActionDone]}>
-              {saveState === "saved" ? "Saved to Library" : saveState === "saving" ? "Saving…" : "Save to Library"}
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
     );
   }
@@ -2085,18 +2033,95 @@ function AttachedDocChip({
           <CloseIcon size={12} color={c.text2} />
         </Pressable>
       </View>
-      {onSave ? (
+    </View>
+  );
+}
+
+/** A photograph in the transcript, at its own shape.
+ *
+ *  🔴 THIS IS THE "WHITE BORDERS" FIX (owner 2026-07-31). The old one drew every
+ *  shot into a fixed 250x220 box with resizeMode="contain" over a surface-colored
+ *  background, so anything that was not exactly that shape — which is every
+ *  phone photo — got pale letterbox bars down two of its sides. Giving the Image
+ *  the picture's OWN aspect ratio leaves no box to show through.
+ *
+ *  The ratio comes from onLoad rather than a separate Image.getSize call: the
+ *  load is happening anyway and its event already carries the real dimensions.
+ *  Until it lands the tile is portrait-ish, because most phone photos are. */
+function MessageImage({ label, uri }: { label?: string; uri: string }) {
+  const styles = useThemedStyles(createStyles);
+  const [ratio, setRatio] = useState(3 / 4);
+  return (
+    <Image
+      accessibilityLabel={label}
+      onLoad={(event) => {
+        const source = event.nativeEvent.source;
+        if (source && source.width > 0 && source.height > 0) setRatio(source.width / source.height);
+      }}
+      // cover, not contain: with the true ratio the two agree everywhere except
+      // at maxHeight, where a very tall shot is cropped rather than shrunk into
+      // a letterboxed sliver.
+      resizeMode="cover"
+      source={{ uri }}
+      style={[styles.messageImage, { aspectRatio: ratio }]}
+      testID="chat-message-image"
+    />
+  );
+}
+
+/** One turn the student sent: their pictures, then their words.
+ *
+ *  🔴 THE PICTURE IS NOT IN THE BUBBLE. It used to be a child of the gray text
+ *  bubble, which put bubble padding around it on top of the letterboxing above —
+ *  together, the "white borders" of the report. ChatGPT, which the owner held up
+ *  beside it, does not do that: the shot stands alone, right-aligned, and the
+ *  words get their own bubble underneath. A photo sent with no question then has
+ *  no empty bubble under it at all.
+ *
+ *  "Save to Library" lives here now. It shows on the most recent photograph
+ *  while it is still unsaved — the moment the offer is worth anything — matched
+ *  by storage path so it can never attach itself to the wrong picture. */
+function UserTurn({
+  message,
+  photo,
+  photoSaved,
+  onSavePhoto,
+}: {
+  message: ChatMsg;
+  photo: ReadPhoto | null;
+  photoSaved: "idle" | "saving" | "saved";
+  onSavePhoto: () => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const images = (message.attachments ?? []).filter((attachment) => attachment.kind === "image" && attachment.url);
+  const savable = photo !== null && images.some((attachment) => attachment.storagePath === photo.storagePath);
+  const body = message.content.trim();
+  return (
+    <View style={styles.userTurn}>
+      {images.map((attachment) => (
+        <MessageImage
+          key={`${attachment.storagePath ?? attachment.url}:${attachment.name}`}
+          label={attachment.name}
+          uri={attachment.url as string}
+        />
+      ))}
+      {savable ? (
         <Pressable
-          onPress={saveState === "idle" ? onSave : undefined}
-          disabled={saveState !== "idle"}
+          onPress={photoSaved === "idle" ? onSavePhoto : undefined}
+          disabled={photoSaved !== "idle"}
           hitSlop={8}
           accessibilityRole="button"
           testID="chat-photo-save"
         >
-          <Text style={[styles.attachChipAction, saveState === "saved" && styles.attachChipActionDone]}>
-            {saveState === "saved" ? "Saved to Library" : saveState === "saving" ? "Saving…" : "Save to Library"}
+          <Text style={[styles.attachChipAction, photoSaved === "saved" && styles.attachChipActionDone]}>
+            {photoSaved === "saved" ? "Saved to Library" : photoSaved === "saving" ? "Saving…" : "Save to Library"}
           </Text>
         </Pressable>
+      ) : null}
+      {body ? (
+        <View style={[styles.bubble, styles.userBubble]}>
+          <Text style={styles.userText}>{body}</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -2111,20 +2136,15 @@ function AttachedDocChip({
  *  with no motion on it reads as stuck, which is exactly the impression the old
  *  behaviour gave during the seconds when it showed nothing at all.
  *
- *  Same bubble and same image size as a finished photo message, so when the real
- *  one replaces it nothing shifts. */
+ *  Laid out exactly like UserTurn — bare picture, words in their own bubble —
+ *  so when the real message replaces it nothing shifts. */
 function AnalyzingPhotoBubble({ typed, uri }: { typed: string; uri: string }) {
   const styles = useThemedStyles(createStyles);
   const opacity = usePulse(true);
+  const body = typed.trim();
   return (
-    <View style={[styles.bubble, styles.userBubble]}>
-      <Image
-        accessibilityLabel="Photo being read"
-        resizeMode="contain"
-        source={{ uri }}
-        style={styles.messageImage}
-      />
-      {typed.trim() ? <Text style={styles.userText}>{typed.trim()}</Text> : null}
+    <View style={styles.userTurn}>
+      <MessageImage label="Photo being read" uri={uri} />
       <Animated.Text
         accessibilityLabel="Analyzing photo"
         style={[styles.analyzingLabel, { opacity }]}
@@ -2132,6 +2152,11 @@ function AnalyzingPhotoBubble({ typed, uri }: { typed: string; uri: string }) {
       >
         Analyzing photo…
       </Animated.Text>
+      {body ? (
+        <View style={[styles.bubble, styles.userBubble]}>
+          <Text style={styles.userText}>{body}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -2149,7 +2174,15 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surface2,
       gap: space(2),
     },
-    messageImage: { width: 250, maxWidth: "100%", height: 220, borderRadius: radius.md, backgroundColor: c.surface },
+    // The student's own turn: pictures and the words bubble stacked at the right
+    // edge. alignSelf stretch so alignItems has the full row width to push
+    // against; without it the column shrinks to its widest child and "right"
+    // stops meaning the screen's right.
+    userTurn: { alignSelf: "stretch", alignItems: "flex-end", gap: space(2) },
+    // NO backgroundColor and NO fixed height — see MessageImage. maxHeight keeps
+    // a tall portrait shot from taking the whole screen; aspectRatio is supplied
+    // per image at render time.
+    messageImage: { width: 240, maxWidth: "78%", maxHeight: 300, borderRadius: radius.lg },
     userText: { ...type.body, color: c.text },
     // Dimmer than the question itself: a status line, not something the
     // student wrote, and gone the moment the answer starts.

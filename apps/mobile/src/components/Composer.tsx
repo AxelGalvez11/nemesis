@@ -4,9 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "./icons";
-import { EffortLabel } from "./ComposerEffortMenu";
 import { LiveWaveform } from "./LiveWaveform";
-import type { ChatEffort } from "@/lib/chat-effort";
 import { composerAction } from "@/lib/composer-send";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
@@ -47,11 +45,11 @@ import { control, space, type } from "@/theme/tokens";
 // Send and record — never both at once, since two accent-filled circles side
 // by side read as one control split in half.
 //
-// The Instant/Medium/High intelligence dial is the BARE TEXT label in the
-// trailing cluster, just left of the mic — the owner's reference screenshot
-// (2026-07-22) puts it exactly there. It has moved twice: three rows inside the
-// "+" menu, then a bordered pill left of the field, now this. The label renders
-// here; ComposerEffortMenu.tsx explains why its dropdown belongs to the caller.
+// NO INTELLIGENCE DIAL. Instant/Medium/High used to be a bare text label in the
+// trailing cluster, just left of the mic. It is gone (owner 2026-07-31: "remove
+// the 'instant, medium, high' because thats not necessary for the app") and so
+// is the menu it opened. The routing behind it is untouched — every turn now
+// simply goes at the default level; see the caller.
 //
 // The accent circle is ACCENT-colored, never a hardcoded green — it follows
 // whatever swatch the student picked in Appearance settings (owner
@@ -123,22 +121,28 @@ function Bounce({
   );
 }
 
-/** The sound-wave glyph on the round accent button that ENTERS record mode —
- *  five bars of mixed height, the same shorthand ChatGPT's voice button uses.
+/** The sound-wave glyph on the round accent button that ENTERS record mode.
+ *
+ *  FOUR bars, symmetric, tallest in the middle, thick with round caps — matched
+ *  to ChatGPT's voice button from the owner's side-by-side (2026-07-31: "change
+ *  the recording icon to be similar to chatgpt"). It used to be five thin bars
+ *  with a DIP in the middle, which is the shape of an audio meter at rest rather
+ *  than of speech, and at 20pt the extra bar just made it look busy next to the
+ *  same-sized mic beside it.
+ *
  *  Local to this file rather than added to the shared icon set, same rule the
  *  other one-off glyphs here follow. */
 function WaveGlyph({ size = 20, color }: { size?: number; color: string }) {
   const bars: [number, number][] = [
-    [5, 5],
-    [9, 8],
-    [12, 3],
-    [15, 8],
-    [19, 5],
+    [6.5, 3.5],
+    [10, 7],
+    [14, 7],
+    [17.5, 3.5],
   ];
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {bars.map(([x, reach]) => (
-        <Line key={x} x1={x} y1={12 - reach} x2={x} y2={12 + reach} stroke={color} strokeWidth={2} strokeLinecap="round" />
+        <Line key={x} x1={x} y1={12 - reach} x2={x} y2={12 + reach} stroke={color} strokeWidth={2.6} strokeLinecap="round" />
       ))}
     </Svg>
   );
@@ -191,9 +195,6 @@ export function Composer({
   modeLocked = false,
   recordingActive = false,
   compact = false,
-  effort,
-  effortMenuOpen = false,
-  onEffortToggle,
   attachment,
   attached = false,
   onStop,
@@ -228,13 +229,6 @@ export function Composer({
    *  to one row so the messages own the screen (owner 2026-07-22). Ignored in
    *  record mode, which is one row either way. */
   compact?: boolean;
-  /** The Instant/Medium/High level to show on the pill. Pair it with
-   *  onEffortToggle — without BOTH, no pill renders (every non-chat caller). */
-  effort?: ChatEffort;
-  /** Whether the caller's EffortPopup is currently showing — only spins the
-   *  pill's chevron; the menu itself is the caller's to render. */
-  effortMenuOpen?: boolean;
-  onEffortToggle?: () => void;
   /** What is riding this turn — the photo tile or the attached-note pill. It
    *  renders INSIDE the card, above the text field, which is where ChatGPT puts
    *  it and where the owner asked for it (2026-07-30: an attachment sitting
@@ -387,13 +381,6 @@ export function Composer({
       <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
     </Bounce>
   );
-  // The intelligence level, as bare text just left of the mic — the owner's
-  // reference screenshot puts it there, in the trailing cluster, not on the
-  // left beside "+" where it spent one revision. The menu it opens is the
-  // CALLER's to render, at the screen root; see ComposerEffortMenu.tsx.
-  const effortLabel = effort && onEffortToggle ? (
-    <EffortLabel effort={effort} open={effortMenuOpen} onToggle={onEffortToggle} />
-  ) : null;
   // Dictation is ALWAYS on the card (owner 2026-07-22: "also add dictation to
   // the chat composer"). It used to share the trailing slot with Send and so
   // vanished the moment you typed a character — which is exactly when someone
@@ -496,7 +483,6 @@ export function Composer({
         {/* Siblings, not wrapped in `trailing` — the compact row's own gap is
             what the shipped spacing was verified at, and `trailing` carries a
             wider one meant for the tall layout. */}
-        {compact ? effortLabel : null}
         {compact ? micButton : null}
         {compact ? sendOrRecordButton : null}
       </View>
@@ -504,7 +490,6 @@ export function Composer({
         <View style={styles.controls}>
           {plusButton}
           <View style={styles.trailing}>
-            {effortLabel}
             {micButton}
             {sendOrRecordButton}
           </View>
