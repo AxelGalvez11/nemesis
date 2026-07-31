@@ -255,9 +255,12 @@ const PRICING_CSS = `
 .nm-banner { max-width:1080px; margin:0 auto 24px; padding:13px 16px; border-radius:12px; font-size:14px; background:var(--nm-surface); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
 .nm-banner-ok { border-color:rgba(28,138,66,0.35); color:#1c7a3f; background:rgba(52,199,89,0.08); }
 .nm-banner-err { border-color:rgba(216,31,51,0.35); color:#b3121f; background:rgba(216,31,51,0.06); }
-/* Two columns since Max was removed. A `repeat(3,1fr)` grid holding two cards
-   leaves a dead third column and shoves both cards off-centre, which reads as a
-   plan that failed to load rather than as a two-plan ladder. */
+/* Two columns since Max was removed. A three-column grid holding two cards leaves
+   a dead third column and shoves both cards off-centre, which reads as a plan that
+   failed to load rather than as a two-plan ladder.
+   NO BACKTICKS IN THIS BLOCK: every line here lives inside the PRICING_CSS template
+   literal, so one backtick in a comment ends the string and the file stops parsing.
+   That is exactly how this comment broke the build the first time. */
 .nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:start; }
 .nm-card { position:relative; background:var(--nm-bg); border:1px solid var(--nm-line); border-radius:20px; padding:26px 24px; display:flex; flex-direction:column;
   box-shadow:0 14px 34px -28px rgba(10,10,14,0.25); }
