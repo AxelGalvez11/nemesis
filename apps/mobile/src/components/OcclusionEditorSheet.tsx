@@ -555,7 +555,19 @@ const createStyles = (c: ThemeColors) =>
     // The page's own column: hint at the top, picture taking the slack, controls
     // pinned under it.
     stage: { flex: 1 },
-    canvasArea: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden", marginBottom: space(2) },
+    // A FLOOR, because there is no scroll view to fall back on. With the
+    // keyboard up (naming a box) the page shrinks, and a pure flex:1 area can
+    // squeeze toward zero — which shows a spinner where the diagram should be,
+    // since `layout` refuses to compute against no space. Better to let the
+    // last hint line clip than to lose the picture you are drawing on.
+    canvasArea: {
+      flex: 1,
+      minHeight: 160,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      marginBottom: space(2),
+    },
 
     empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: space(3), paddingHorizontal: space(2) },
     emptyActions: { flexDirection: "row", alignItems: "center", gap: space(2) },
