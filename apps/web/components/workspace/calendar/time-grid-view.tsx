@@ -10,7 +10,7 @@
 // Layout arithmetic lives in time-grid.ts and gesture bookkeeping in
 // use-time-grid-gestures.ts, both pure of the DOM. This file only paints.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -22,11 +22,13 @@ import { KIND_META } from "./kind-meta";
 import {
   blockGeometry,
   clockOf,
+  FULL_DAY,
+  type HourWindow,
   hourLabels,
-  hourWindow,
   layoutDay,
   nowOffset,
   offsetFor,
+  SCROLL_TO_HOUR,
   windowHeight,
 } from "./time-grid";
 import { type GestureResult, useTimeGridGestures } from "./use-time-grid-gestures";
@@ -53,6 +55,16 @@ interface TimeGridViewProps {
 
 export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot }: TimeGridViewProps) {
   const [now, setNow] = useState<Date | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Open scrolled to the working day. The grid runs midnight to midnight, so
+  // without this every student lands on a screenful of empty small hours and
+  // has to scroll down before the calendar means anything. Set directly rather
+  // than animated: this is the opening position, not a movement to watch.
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (box) box.scrollTop = offsetFor(SCROLL_TO_HOUR * 60, FULL_DAY);
+  }, []);
 
   // Set after mount only: rendering a clock during SSR gives the server and the
   // client different HTML and React discards the whole tree with a hydration
@@ -67,7 +79,11 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
   // Named `hours`, not `window`: the pointer code below and the gesture hook
   // both live near the real `window`, and shadowing it is the kind of thing
   // that reads fine and breaks the first time someone reaches for it.
-  const hours = hourWindow(layouts);
+  //
+  // Always the whole day now. It used to be computed from the events on screen,
+  // which made the grid change length as events moved and left hours that could
+  // not be reached at all.
+  const hours = FULL_DAY;
   const labels = hourLabels(hours);
   const gridHeight = windowHeight(hours);
   const hasAllDay = layouts.some((layout) => layout.allDay.length > 0);
@@ -146,10 +162,17 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
         </div>
       )}
 
-      {/* The grid itself. Rendered at its natural height — the workspace
-          container above already scrolls, and a nested scroll area inside a
-          flex child is the shape that collapses to zero height. */}
-      <div>
+      {/* The grid scrolls INSIDE this box, so the day headings and the all-day
+          strip above stay put while the hours move past them — how Google
+          Calendar behaves, and the point of drawing a whole day.
+
+          The comment that used to sit here said a nested scroll area
+          "collapses to zero height". That is true only when an ancestor is
+          missing min-h-0: a flex child defaults to min-height:auto and refuses
+          to shrink below its content, so the scrollbar lands on the page
+          instead. Every flex ancestor from here to the route now carries
+          min-h-0, which is what makes this work. */}
+      <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
         <div className="flex">
           <div className="relative shrink-0" style={{ height: gridHeight, width: GUTTER_WIDTH }}>
             {labels.map((hour, index) => {
@@ -256,7 +279,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
 interface DayColumnProps {
   day: MonthDay;
   layout: ReturnType<typeof layoutDay> | undefined;
-  window: ReturnType<typeof hourWindow>;
+  window: HourWindow;
   onOpenEvent: (event: CalendarEvent) => void;
   onMoveStart: (nativeEvent: React.PointerEvent, event: CalendarEvent) => void;
   onResizeStart: (nativeEvent: React.PointerEvent, event: CalendarEvent) => void;

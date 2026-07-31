@@ -28,10 +28,21 @@ export const HOUR_HEIGHT = 48;
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */
 export const MIN_BLOCK_MINUTES = 24;
-/** The window shown when a day has no timed events — a working day, not 24
- *  hours of empty rows the student has to scroll past. */
-export const DEFAULT_START_HOUR = 8;
-export const DEFAULT_END_HOUR = 20;
+/**
+ * The grid always draws a WHOLE DAY, midnight to midnight (owner 2026-07-31,
+ * pointing at Google Calendar).
+ *
+ * This replaced a window that started at the working day and stretched to fit
+ * whatever lay outside it. That kept the page short, but it meant the grid
+ * silently changed length as events moved, 01:00 simply did not exist until
+ * something was already there, and a student could not scroll to a time to
+ * create an event at it. A real calendar is the full day and you scroll.
+ */
+export const FULL_DAY: HourWindow = { endHour: 24, startHour: 0 };
+
+/** Where the grid is scrolled to when it opens. Midnight is a wall of empty
+ *  rows; every desktop calendar opens near the working day instead. */
+export const SCROLL_TO_HOUR = 8;
 
 /** Minutes past midnight for "HH:MM", or null if it is not a time. Anything
  *  this rejects is treated as untimed and moved to the all-day strip, which is
@@ -171,24 +182,6 @@ export function blockGeometry(column: number, columns: number): BlockGeometry {
 export interface HourWindow {
   startHour: number;
   endHour: number;
-}
-
-/**
- * The hour range to draw. Starts from a normal working day and widens to fit
- * anything outside it, so an 06:30 clinical or a 21:00 deadline is never
- * scrolled out of existence — but an ordinary week does not render a wall of
- * empty midnight hours either.
- */
-export function hourWindow(days: readonly DayLayout[]): HourWindow {
-  let earliest = DEFAULT_START_HOUR * 60;
-  let latest = DEFAULT_END_HOUR * 60;
-  for (const day of days) {
-    for (const item of day.timed) {
-      earliest = Math.min(earliest, item.startMinute);
-      latest = Math.max(latest, item.endMinute);
-    }
-  }
-  return { endHour: Math.min(24, Math.ceil(latest / 60)), startHour: Math.max(0, Math.floor(earliest / 60)) };
 }
 
 /** Vertical offset in pixels for a minute-of-day inside a window. */
