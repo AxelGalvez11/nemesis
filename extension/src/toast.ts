@@ -1,24 +1,38 @@
-// The small card that appears at the bottom right of a portal page while the
-// extension reads it.
+// The card at the bottom right of a portal page. It is the WHOLE interface.
 //
-// WHY IT EXISTS. The extension's own popup closes the moment you click anywhere
-// else, so pressing "Read this page" and then looking at the page meant staring
-// at a portal with no idea whether anything had happened. On Blackboard Ultra,
-// where the course cards can take half a minute to render, that silence is the
-// whole experience.
+// WHY IT IS THE WHOLE INTERFACE (owner 2026-07-31, pointing at UpAhead). There
+// used to be two surfaces saying different things at once: Chrome's toolbar
+// popup listed the courses, and a small card down here said a number. The
+// popup is the wrong place for any of it — it closes the moment the student
+// clicks the page, and on a slow portal they will, because reading takes the
+// better part of a minute. So everything a student needs to see lives here,
+// on the page, where it survives: what was found, how many, and the way back
+// into Nemesis. The toolbar popup is now only the button that starts it.
 //
-// STYLE: quiet by default. One line of text, a thin spinner, no colour until
-// there is something to say, no logo, no emoji. It should read like the page
-// telling you something, not like an advert interrupting you.
+// WHAT IT SHOWS WHILE IT WORKS. A portal that takes thirty seconds to render
+// looks broken if the card just sits there. So the counts tick up as they are
+// found, a row gets a tick the moment it has anything in it, and a thin
+// indeterminate bar runs under the header. The animation is not decoration —
+// it is the difference between "this is working" and "this is stuck".
 //
-// It lives in a SHADOW ROOT, which matters for two reasons: the portal's
-// stylesheet cannot reach in and break it, and ours cannot leak out and break
-// the portal. An extension that restyles a student's grade page is a bug
-// report.
+// HONEST ROWS. The rows are not fake sequential stages. Courses, coursework
+// and syllabus files all come out of the same read, so each row simply shows
+// what that read has found so far: a hollow circle at zero, a tick once there
+// is something. Nothing is ever shown as finished before it is.
+//
+// STYLE: black and white, thin borders, no logo, no emoji, no colour. It
+// should read like the page telling you something, not like an advert.
+//
+// It lives in a CLOSED SHADOW ROOT: the portal's stylesheet cannot reach in
+// and break it, and ours cannot leak out and restyle a student's grade page.
 
 export type ToastTone = "working" | "done" | "empty" | "error";
 
 const HOST_ID = "nemesis-scan-toast";
+
+/** How many course names to list before summarising the rest. Enough to
+ *  recognise the reading as yours; not so many the card becomes the page. */
+const MAX_LISTED = 8;
 
 const CSS = `
 :host { all: initial; }
@@ -28,59 +42,110 @@ const CSS = `
   bottom: 20px;
   z-index: 2147483647;
   box-sizing: border-box;
+  width: 330px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 240px;
-  max-width: 340px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #ffffff;
   color: #14161a;
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 12px 32px rgba(0,0,0,0.10);
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(8px);
   transition: opacity .18s ease, transform .18s ease;
 }
 .card.in { opacity: 1; transform: translateY(0); }
 @media (prefers-color-scheme: dark) {
   .card {
-    background: #1b1d21;
+    background: #17191d;
     color: #f2f4f7;
     border-color: rgba(255,255,255,0.10);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.45);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 12px 32px rgba(0,0,0,0.5);
   }
 }
-.mark { flex: none; width: 16px; height: 16px; margin-top: 1px; }
-/* A thin ring, not a bouncing dot. Restraint is the brand. */
+
+.head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
+.name { font-weight: 600; letter-spacing: -0.01em; font-size: 13px; }
+.status {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; opacity: .55;
+}
+.close {
+  flex: none; margin: -6px -6px 0 2px; padding: 5px;
+  background: none; border: 0; cursor: pointer; color: inherit; opacity: .3;
+  font: inherit; font-size: 14px; line-height: 1; border-radius: 6px;
+}
+.close:hover { opacity: .8; }
+
+/* The processing animation: a thin bar that sweeps while the page is being
+   read. Present only while working, so its absence means finished. */
+.bar { height: 1.5px; background: currentColor; opacity: .10; overflow: hidden; }
+.bar i {
+  display: block; height: 100%; width: 38%;
+  background: currentColor; opacity: 1;
+  animation: sweep 1.15s ease-in-out infinite;
+}
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(363%); }
+}
+
 .spinner {
-  width: 14px; height: 14px; margin-top: 1px; flex: none;
-  border: 1.5px solid currentColor;
+  width: 11px; height: 11px; flex: none;
+  border: 1.4px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  opacity: .45;
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
-.body { min-width: 0; flex: 1; }
-.title { font-weight: 560; letter-spacing: -0.005em; }
-.detail { margin-top: 2px; opacity: .62; font-size: 12px; }
-.close {
-  flex: none; margin: -4px -4px 0 0; padding: 4px;
-  background: none; border: 0; cursor: pointer; color: inherit; opacity: .35;
-  font: inherit; line-height: 1; border-radius: 6px;
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+  .bar i { animation-duration: 3s; }
 }
-.close:hover { opacity: .75; }
+
+.scroll { overflow-y: auto; padding: 0 14px; }
+.body { padding: 2px 0 0; }
+.title { font-weight: 560; letter-spacing: -0.005em; }
+.detail { margin-top: 2px; opacity: .6; font-size: 12px; }
+
+.rows {
+  margin-top: 10px;
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 10px;
+  padding: 3px 0;
+}
+@media (prefers-color-scheme: dark) { .rows { border-color: rgba(255,255,255,0.09); } }
+.row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; }
+.row .label { min-width: 0; flex: 1; font-size: 12.5px; }
+.row .count {
+  font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 560;
+}
+.row.pending .label, .row.pending .count { opacity: .4; }
+.dot {
+  width: 11px; height: 11px; flex: none; border-radius: 50%;
+  border: 1.4px solid currentColor; opacity: .28;
+}
+.mark { width: 12px; height: 12px; flex: none; }
+.note { padding: 4px 10px 6px; font-size: 11.5px; opacity: .5; }
+
+.courses { margin-top: 10px; display: flex; flex-direction: column; gap: 1px; }
+.course {
+  font-size: 12.5px; padding: 3px 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.more { font-size: 11.5px; opacity: .5; padding-top: 3px; }
+
+.foot { padding: 12px 14px 14px; }
 .action {
-  margin-top: 9px;
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 11px;
-  border: 0; border-radius: 8px;
-  background: #1d1f24; color: #fff;
-  font: inherit; font-size: 12px; font-weight: 560;
+  display: block; width: 100%;
+  padding: 8px 12px;
+  border: 0; border-radius: 9px;
+  background: #17191d; color: #fff;
+  font: inherit; font-size: 12.5px; font-weight: 560;
   cursor: pointer;
 }
 .action:hover { opacity: .88; }
@@ -88,6 +153,31 @@ const CSS = `
   .action { background: #f2f4f7; color: #14161a; }
 }
 `;
+
+/** What the read has turned up so far. Counts only — the card never decides
+ *  what any of it means. */
+export interface ScanProgress {
+  courses: number;
+  items: number;
+  syllabi: number;
+}
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface CardState {
+  tone: ToastTone;
+  title: string;
+  detail?: string;
+  /** Omitted for plain messages (a page that is not a portal, say). */
+  progress?: ScanProgress;
+  courseNames?: readonly string[];
+  action?: ToastAction;
+  /** 0 keeps the card up. */
+  autoHideMs?: number;
+}
 
 interface Handle {
   root: ShadowRoot;
@@ -126,87 +216,125 @@ function ensure(doc: Document): Handle {
   return handle;
 }
 
-/** A tick, drawn rather than imported, so the toast needs no assets. */
+/** A tick, drawn rather than imported, so the card needs no assets. */
 function tick(doc: Document): SVGElement {
   const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "mark");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("fill", "none");
   const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", "M3.5 8.5l3 3 6-7");
+  path.setAttribute("d", "M3 8.5l3.5 3.5L13 4.5");
   path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-width", "1.7");
   path.setAttribute("stroke-linecap", "round");
   path.setAttribute("stroke-linejoin", "round");
   svg.append(path);
   return svg;
 }
 
-/**
- * Show or update the card. PURE-ish: only ever touches its own shadow root.
- *
- * `detail` is optional second-line context. `autoHideMs` of 0 keeps it up.
- */
-export interface ToastAction {
-  label: string;
-  onClick: () => void;
+function el(doc: Document, tag: string, className: string, text?: string): HTMLElement {
+  const node = doc.createElement(tag);
+  node.className = className;
+  // textContent, never innerHTML — much of this text originates on a page we
+  // do not control.
+  if (text !== undefined) node.textContent = text;
+  return node;
 }
 
-export function showToast(
-  doc: Document,
-  tone: ToastTone,
-  title: string,
-  detail?: string,
-  autoHideMs = 0,
-  action?: ToastAction,
-): void {
+/**
+ * One checklist row.
+ *
+ * A row is TICKED once it has found something and hollow while it has not.
+ * It is never shown as finished on the strength of nothing, which is the whole
+ * reason a progress display can be trusted.
+ */
+function progressRow(doc: Document, label: string, count: number): HTMLElement {
+  const row = el(doc, "div", count > 0 ? "row" : "row pending");
+  row.append(count > 0 ? tick(doc) : el(doc, "span", "dot"));
+  row.append(el(doc, "span", "label", label));
+  row.append(el(doc, "span", "count", count > 0 ? String(count) : "—"));
+  return row;
+}
+
+/** Draw or redraw the card. Only ever touches its own shadow root. */
+export function showCard(doc: Document, state: CardState): void {
   const { card } = ensure(doc);
+  const working = state.tone === "working";
   card.replaceChildren();
 
-  if (tone === "working") card.append(Object.assign(doc.createElement("div"), { className: "spinner" }));
-  else if (tone === "done") card.append(tick(doc));
-
-  const body = doc.createElement("div");
-  body.className = "body";
-  const titleEl = doc.createElement("div");
-  titleEl.className = "title";
-  // textContent, never innerHTML — some of this text originates on a page we
-  // do not control.
-  titleEl.textContent = title;
-  body.append(titleEl);
-  if (detail) {
-    const detailEl = doc.createElement("div");
-    detailEl.className = "detail";
-    detailEl.textContent = detail;
-    body.append(detailEl);
-  }
-  if (action) {
-    const button = doc.createElement("button");
-    button.className = "action";
-    button.type = "button";
-    button.textContent = action.label;
-    button.addEventListener("click", action.onClick);
-    body.append(button);
-  }
-  card.append(body);
-
+  const head = el(doc, "div", "head");
+  head.append(el(doc, "span", "name", "Nemesis"));
+  const status = el(doc, "span", "status");
+  if (working) status.append(el(doc, "span", "spinner"));
+  status.append(el(doc, "span", "", working ? "Reading" : "Done"));
+  head.append(status);
   const close = doc.createElement("button");
   close.className = "close";
   close.type = "button";
   close.setAttribute("aria-label", "Dismiss");
   close.textContent = "×";
-  close.addEventListener("click", () => hideToast(doc));
-  card.append(close);
+  close.addEventListener("click", () => hideCard(doc));
+  head.append(close);
+  card.append(head);
+
+  // The sweeping bar exists ONLY while working, so no bar means finished.
+  if (working) {
+    const bar = el(doc, "div", "bar");
+    bar.append(doc.createElement("i"));
+    card.append(bar);
+  }
+
+  const scroll = el(doc, "div", "scroll");
+  const body = el(doc, "div", "body");
+  body.append(el(doc, "div", "title", state.title));
+  if (state.detail) body.append(el(doc, "div", "detail", state.detail));
+
+  if (state.progress) {
+    const rows = el(doc, "div", "rows");
+    rows.append(progressRow(doc, "Courses", state.progress.courses));
+    rows.append(progressRow(doc, "Coursework and dates", state.progress.items));
+    rows.append(progressRow(doc, "Syllabus files", state.progress.syllabi));
+    // Says the quiet part out loud: clicking away does not cancel this.
+    if (working) rows.append(el(doc, "div", "note", "Keep this tab open — this keeps going."));
+    body.append(rows);
+  }
+
+  const names = state.courseNames ?? [];
+  if (names.length > 0) {
+    const list = el(doc, "div", "courses");
+    for (const name of names.slice(0, MAX_LISTED)) list.append(el(doc, "div", "course", name));
+    if (names.length > MAX_LISTED) {
+      list.append(el(doc, "div", "more", `and ${names.length - MAX_LISTED} more`));
+    }
+    body.append(list);
+  }
+
+  scroll.append(body);
+  card.append(scroll);
+
+  if (state.action) {
+    const foot = el(doc, "div", "foot");
+    const button = doc.createElement("button");
+    button.className = "action";
+    button.type = "button";
+    button.textContent = state.action.label;
+    button.addEventListener("click", state.action.onClick);
+    foot.append(button);
+    card.append(foot);
+  } else {
+    // Keeps the bottom padding without an empty control.
+    card.append(el(doc, "div", "foot"));
+  }
 
   requestAnimationFrame(() => card.classList.add("in"));
 
   if (handle?.timer) window.clearTimeout(handle.timer);
-  if (handle && autoHideMs > 0) {
-    handle.timer = window.setTimeout(() => hideToast(doc), autoHideMs);
+  if (handle && state.autoHideMs && state.autoHideMs > 0) {
+    handle.timer = window.setTimeout(() => hideCard(doc), state.autoHideMs);
   }
 }
 
-export function hideToast(doc: Document): void {
+export function hideCard(doc: Document): void {
   const host = doc.getElementById(HOST_ID);
   if (!host) return;
   handle?.card.classList.remove("in");

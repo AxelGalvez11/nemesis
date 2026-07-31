@@ -22,7 +22,7 @@ import { readFacts, readSnapshot } from "./lms/dom.ts";
 import { detectLms, factsFromUrl } from "./lms/detect.ts";
 import { isItemLink, parseSnapshot } from "./lms/parse.ts";
 import { RUNTIME_MESSAGES } from "./messages.ts";
-import { showToast } from "./toast.ts";
+import { type ScanProgress, showCard } from "./toast.ts";
 import type { LmsKind, LmsScan, ScrapedCourse } from "./wire.ts";
 
 /** Where a student goes to turn a reading into Library folders. */
@@ -74,12 +74,17 @@ function readOnce(lms: LmsKind, url: string): ScrapedCourse[] {
   return parseSnapshot(snapshot, lms);
 }
 
-function summarise(courses: readonly ScrapedCourse[]): string {
-  const items = courses.reduce((total, course) => total + course.items.length, 0);
-  const courseWord = courses.length === 1 ? "course" : "courses";
-  if (items === 0) return `${courses.length} ${courseWord}`;
-  return `${courses.length} ${courseWord}, ${items} ${items === 1 ? "item" : "items"}`;
+/** What the card's checklist shows. Counts only — nothing here decides what
+ *  any of it means. */
+function counts(courses: readonly ScrapedCourse[]): ScanProgress {
+  return {
+    courses: courses.length,
+    items: courses.reduce((total, course) => total + course.items.length, 0),
+    syllabi: courses.reduce((total, course) => total + course.syllabusLinks.length, 0),
+  };
 }
+
+const namesOf = (courses: readonly ScrapedCourse[]): string[] => courses.map((course) => course.name);
 
 async function scanThisPage(): Promise<LmsScan> {
   const stamp = () => new Date().toISOString();
@@ -93,17 +98,21 @@ async function scanThisPage(): Promise<LmsScan> {
   if (lms === "unknown") {
     // A page we cannot place is not read at all. Saying so is better than
     // hoovering up a page we do not understand.
-    showToast(
-      document,
-      "error",
-      "This does not look like a school portal",
-      "Open the page that lists your courses, then try again.",
-      6000,
-    );
+    showCard(document, {
+      autoHideMs: 6000,
+      detail: "Open the page that lists your courses, then try again.",
+      title: "This does not look like a school portal",
+      tone: "error",
+    });
     return empty;
   }
 
-  showToast(document, "working", `Reading your ${LABELS[lms]}`, "This can take a moment on a slow portal.");
+  showCard(document, {
+    detail: "This can take a moment on a slow portal.",
+    progress: { courses: 0, items: 0, syllabi: 0 },
+    title: `Reading your ${LABELS[lms]}`,
+    tone: "working",
+  });
 
   let best: ScrapedCourse[] = readOnce(lms, url);
   let stable = 0;
@@ -118,20 +127,27 @@ async function scanThisPage(): Promise<LmsScan> {
     if (grew) best = next;
 
     if (best.length > 0) {
-      showToast(document, "working", `Reading your ${LABELS[lms]}`, `${summarise(best)} so far`);
+      // Redrawn every poll so the counts visibly climb. On a portal that takes
+      // half a minute this IS the difference between working and stuck.
+      showCard(document, {
+        courseNames: namesOf(best),
+        detail: "This can take a moment on a slow portal.",
+        progress: counts(best),
+        title: `Reading your ${LABELS[lms]}`,
+        tone: "working",
+      });
       stable = grew ? 0 : stable + 1;
       if (stable >= STABLE_ROUNDS) break;
     }
   }
 
   if (best.length === 0) {
-    showToast(
-      document,
-      "empty",
-      `No courses found on this ${LABELS[lms]} page`,
-      "Try the page that lists all of your courses.",
-      8000,
-    );
+    showCard(document, {
+      autoHideMs: 8000,
+      detail: "Try the page that lists all of your courses.",
+      title: `No courses found on this ${LABELS[lms]} page`,
+      tone: "empty",
+    });
     const nothing: LmsScan = { courses: [], lms, scannedAt: stamp() };
     save(nothing);
     return nothing;
@@ -141,14 +157,14 @@ async function scanThisPage(): Promise<LmsScan> {
   save(scan);
   // The way back. Without this the student is left on their portal holding a
   // result with no idea where it goes — which is exactly what the owner hit.
-  showToast(
-    document,
-    "done",
-    `Read ${summarise(best)}`,
-    "They become folders in your Library once you bring them in.",
-    0,
-    { label: "Open Nemesis", onClick: () => window.open(APP_URL, "_blank", "noopener") },
-  );
+  showCard(document, {
+    action: { label: "Open Nemesis", onClick: () => window.open(APP_URL, "_blank", "noopener") },
+    courseNames: namesOf(best),
+    detail: "Each one becomes a folder in your Library once you bring it in.",
+    progress: counts(best),
+    title: "Read from your portal",
+    tone: "done",
+  });
   return scan;
 }
 
