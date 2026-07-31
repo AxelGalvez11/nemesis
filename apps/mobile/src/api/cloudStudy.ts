@@ -30,7 +30,7 @@ import {
   type OcclusionMode,
   type OcclusionPayload,
   type OcclusionShape,
-} from "@/lib/study-occlusion";
+} from "@nemesis/shared";
 import { generateUuidV4 } from "@/lib/chat-threads";
 import { fetchAllRows } from "./supabase-paging";
 import { supabase } from "./supabase";

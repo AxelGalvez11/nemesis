@@ -7,13 +7,14 @@ import { Button } from "@/components/desktop-ui/button";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { suggestOcclusionMasks } from "@/lib/workspace/occlusion-suggest-api";
 import {
   clampOcclusionShape,
   normalizeOcclusionRect,
   type OcclusionMode,
   type OcclusionPoint,
   type OcclusionShape,
-} from "@/lib/workspace/study-occlusion";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -53,6 +54,7 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
   const [notes, setNotes] = useState("");
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -165,6 +167,40 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
     setShapes((current) => [...current, shape]);
     setSelectedId(shape.id);
   }
+
+  /** Let the reader find the labelled parts, then hand them over to be adjusted.
+   *
+   *  🔴 THIS PROPOSES, IT DOES NOT DECIDE. Suggested boxes land in the same
+   *  `shapes` state a drag would have produced, so each can be moved, relabelled
+   *  or deleted, and Save stays a separate deliberate click. A reading that saved
+   *  itself would be a deck nobody looked at, which is worse than no deck.
+   *
+   *  Boxes already drawn are kept — asking for help must not delete your work. */
+  const suggest = useCallback(async () => {
+    if (!image?.file || suggesting) return;
+    setSuggesting(true);
+    setError(null);
+    try {
+      const found = await suggestOcclusionMasks(
+        image.file,
+        image.width,
+        image.height,
+        () => crypto.randomUUID(),
+      );
+      if (found.shapes.length === 0) {
+        setError(found.note || "Nothing to hide was found in that image.");
+      } else {
+        setShapes((current) => [...current, ...found.shapes]);
+        // Never silent about what was dropped — quiet truncation reads as
+        // "it found everything".
+        if (found.note) setError(found.note);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't read that image.");
+    } finally {
+      setSuggesting(false);
+    }
+  }, [image, suggesting]);
 
   function setLabel(id: string, label: string) {
     setShapes((current) => current.map((shape) => (shape.id === id ? { ...shape, label } : shape)));
@@ -386,6 +422,14 @@ export function OcclusionEditor({ deckId, tags, sourcePath, onCancel, onSaved }:
             {shapes.length === 1 ? "1 card will be created" : `${shapes.length} cards will be created`}
           </span>
         )}
+        <Button
+          disabled={!image?.file || suggesting}
+          onClick={() => void suggest()}
+          type="button"
+          variant="ghost"
+        >
+          {suggesting ? "Reading…" : "Suggest boxes"}
+        </Button>
         <Button onClick={onCancel} type="button" variant="ghost">Cancel</Button>
         <Button disabled={saving || !image || shapes.length === 0} onClick={() => void save()} type="button" variant="secondary">
           {saving ? "Saving…" : shapes.length > 1 ? `Add ${shapes.length} cards` : "Add card"}
