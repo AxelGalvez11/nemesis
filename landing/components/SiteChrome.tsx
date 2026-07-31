@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
+import { ScrollReveal } from "@/components/ScrollReveal";
 import { captureCtaClick } from "@/lib/posthog";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
@@ -62,6 +63,8 @@ export function SiteChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      {/* One observer for every page's [data-reveal] elements. */}
+      <ScrollReveal />
       <nav className="nav">
         <div className="wrap nav-in">
           <Link className="brand" href="/" aria-label="Nemesis home" onClick={close}>
