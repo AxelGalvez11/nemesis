@@ -9,34 +9,27 @@ import { captureCtaClick } from "@/lib/posthog";
  * is also why this is a plain <img> rather than next/image: next/image has no way
  * to express "pick the source by colour scheme".
  *
- * `frameless` drops the bordered box for the captures that sit inside a device
- * frame, which brings its own edge.
  */
 function Shot({
   name,
   alt,
   width,
   height,
-  priority,
-  frameless,
 }: {
   name: string;
   alt: string;
   width: number;
   height: number;
-  priority?: boolean;
-  frameless?: boolean;
 }) {
   return (
-    <picture className={frameless ? undefined : "shot"}>
+    <picture className="shot">
       <source srcSet={`/nemesis/shots/${name}-dark.png`} media="(prefers-color-scheme: dark)" />
       <img
         src={`/nemesis/shots/${name}-light.png`}
         alt={alt}
         width={width}
         height={height}
-        loading={priority ? "eager" : "lazy"}
-        fetchPriority={priority ? "high" : "auto"}
+        loading="lazy"
         decoding="async"
       />
     </picture>
@@ -44,38 +37,65 @@ function Shot({
 }
 
 /**
- * The laptop and the phone, side by side, holding real captures taken at each
- * device's own viewport. The frames are drawn in CSS — see globals.css for why
- * an outline rather than a photographed machine.
+ * A finished device image: the real capture already composited into a rendered
+ * laptop or phone body.
+ *
+ * These were drawn in CSS first — a rounded border for the lid, a bar for the
+ * base — and the owner's verdict was that they did not look real, which was
+ * right: an outline reads as a diagram of a machine. They are now rendered by
+ * `landing/scripts/render-devices.py` (Pillow), which composites the capture
+ * into a body with an aluminium gradient, a machined edge highlight, black
+ * glass, a notch and island, and a contact shadow.
+ *
+ * RE-RUN THAT SCRIPT WHEN THE APP UI CHANGES. The frames bake in the screenshot,
+ * so a stale device image is a stale product shot — worse than none. The source
+ * captures it reads stay in public/nemesis/shots for exactly that reason.
  */
+function Device({
+  name,
+  alt,
+  width,
+  height,
+  className,
+}: {
+  name: string;
+  alt: string;
+  width: number;
+  height: number;
+  className: string;
+}) {
+  return (
+    <picture className={className}>
+      <source srcSet={`/nemesis/devices/${name}-dark.webp`} media="(prefers-color-scheme: dark)" />
+      <img
+        src={`/nemesis/devices/${name}-light.webp`}
+        alt={alt}
+        width={width}
+        height={height}
+        fetchPriority="high"
+        decoding="async"
+      />
+    </picture>
+  );
+}
+
 function DeviceShowcase() {
   return (
     <div className="devices">
-      <div className="device-mac">
-        <div className="mac-screen">
-          <Shot
-            name="mac-library"
-            alt="Nemesis on a laptop: the library, with folders for art history, constitutional law and structural engineering, a note on the commerce clause open in the editor, and its linked notes listed alongside."
-            width={1440}
-            height={900}
-            priority
-            frameless
-          />
-        </div>
-        <div className="mac-base" />
-      </div>
-      <div className="device-phone">
-        <div className="phone-screen">
-          <Shot
-            name="phone-chat"
-            alt="Nemesis on a phone: an answer about the dormant commerce clause, with a table of leading cases and their exam weight, and a follow-up box at the bottom."
-            width={390}
-            height={844}
-            priority
-            frameless
-          />
-        </div>
-      </div>
+      <Device
+        name="device-mac"
+        className="device-mac"
+        alt="Nemesis on a laptop: the library, with folders for art history, constitutional law and structural engineering, a note on the commerce clause open in the editor, and its linked notes listed alongside."
+        width={2000}
+        height={1269}
+      />
+      <Device
+        name="device-phone"
+        className="device-phone"
+        alt="Nemesis on a phone: an answer about the dormant commerce clause, with a table of leading cases and their exam weight, and a follow-up box at the bottom."
+        width={520}
+        height={1102}
+      />
     </div>
   );
 }

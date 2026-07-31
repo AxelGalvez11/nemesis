@@ -159,55 +159,41 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .hero-note { margin: 14px 0 0; color: var(--text-3); font-size: 13px; letter-spacing: 0.02em; }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   DEVICE FRAMES — a laptop and a phone, drawn rather than photographed.
+   DEVICES — layout only. The machines themselves are finished images.
 
-   A stock photo of a MacBook would drag a light source, a colour temperature
-   and a desk into a page that has none of those. These are OUTLINES: the same
-   hairlines every card on this page uses, closed into the silhouette of a
-   machine. That is also why they survive dark mode without a second asset —
-   there is no rendered chrome to re-light, only strokes of the page's own ink.
+   This block used to DRAW the hardware: a rounded border for the lid, a bar
+   for the base, a groove made of a pseudo-element. The owner's verdict was
+   that it did not look real, and that was right — an outline of a laptop reads
+   as a diagram of a laptop. The bodies are now rendered offline by
+   `landing/scripts/render-devices.py`, which composites the real capture into
+   an aluminium gradient with a machined edge, black glass, a notch, an island
+   and a contact shadow.
 
-   Both screens hold a real capture of the running app at that device's actual
-   viewport: the laptop is a 1440x900 window, the phone a 390x844 one. Neither
-   is a desktop screenshot squeezed into a phone-shaped hole, which is the tell
-   that gives most of these away.
+   Two tones, chosen by <picture> media: space black for the white page, silver
+   for the black one. A single mid-grey body would have washed out on one of
+   them, and greyscale hardware is still black and white — aluminium happens to
+   be grey, so realism and the palette never had to fight.
+
+   Each screen holds a capture taken at that device's own viewport, 1440x900
+   and 390x844. Not one desktop screenshot squeezed into a phone-shaped hole,
+   which is the tell that gives most of these away.
+
+   The images bake the screenshot in, so RE-RUN THE SCRIPT when the app's UI
+   changes. A stale device image is a stale product shot.
    ────────────────────────────────────────────────────────────────────────── */
 .devices {
   position: relative; margin-top: 62px;
   display: flex; justify-content: center; align-items: flex-end;
 }
-.device-mac { width: min(100%, 880px); }
-/* The lid. Padding is the bezel, so the capture keeps its own corners inside. */
-.mac-screen {
-  border: 2px solid var(--line-2); border-radius: 14px; padding: 10px 10px 11px;
-  background: var(--bg);
-}
-.mac-screen picture, .mac-screen img { display: block; width: 100%; height: auto; border-radius: 5px; }
-/* The base is wider than the lid, as it is on the machine. It overflows the
-   column on purpose; nothing here clips. */
-.mac-base {
-  position: relative; width: 112%; margin: 0 -6%; height: 13px;
-  border: 2px solid var(--line-2); border-top: 0; border-radius: 0 0 11px 11px;
-  background: var(--bg);
-}
-/* The finger groove — the one detail that reads "laptop" rather than "monitor". */
-.mac-base::after {
-  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 88px; height: 4px; background: var(--line); border-radius: 0 0 5px 5px;
-}
+.device-mac { display: block; width: min(100%, 1000px); }
+.device-mac img { display: block; width: 100%; height: auto; }
+/* The phone overlaps the laptop's bottom-right. Its rendered shadow is part of
+   the image, so it needs no room reserved beyond its own box. */
 .device-phone {
-  position: absolute; right: 1%; bottom: -28px;
-  width: 17.5%; min-width: 118px; max-width: 208px;
+  position: absolute; right: 0; bottom: -18px;
+  width: 20%; min-width: 124px; max-width: 232px;
 }
-.phone-screen {
-  position: relative; border: 2.5px solid var(--line-2); border-radius: 30px; padding: 6px;
-  background: var(--bg);
-}
-.phone-screen picture, .phone-screen img { display: block; width: 100%; height: auto; border-radius: 24px; }
-/* NO NOTCH OR ISLAND. One was drawn here and removed the same hour: the capture
-   is a real screen with real content at the top, so a filled pill sat squarely
-   on the conversation title and read as a redaction bar. The 390x844 proportion
-   already says "phone" without help. */
+.device-phone img { display: block; width: 100%; height: auto; }
 
 /* section shell. `.alt` used to be an off-white tint; in a two-tone page the
    hairline between sections is the whole separation, so it does nothing now —
@@ -529,12 +515,7 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
   /* The phone keeps overlapping on a narrow screen rather than dropping out:
      it is half the point of the picture. It only grows relative to the lid. */
   .devices { margin-top: 40px; }
-  .device-phone { width: 24%; min-width: 92px; right: -2%; bottom: -18px; }
-  .phone-screen { border-width: 2px; border-radius: 20px; padding: 4px; }
-  .phone-screen img { border-radius: 16px; }
-  .mac-screen { border-radius: 10px; padding: 6px 6px 7px; }
-  .mac-base { height: 9px; }
-  .mac-base::after { width: 54px; height: 3px; }
+  .device-phone { width: 26%; min-width: 88px; right: -3%; bottom: -12px; }
   .band-in { padding: 96px 0; }
   .nav a.ghost { display: none; }
   .foot-grid { grid-template-columns: 1fr; gap: 28px; }
