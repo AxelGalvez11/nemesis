@@ -9,6 +9,14 @@ Deno.test("each phase reads as a plain-English line", () => {
   assertEquals(phaseLabel({ kind: "thinking", deep: false }), "Putting this together");
 });
 
+Deno.test("reading a photo gets a line, not silence", () => {
+  // The photo wait happens BEFORE the turn is sent, and it used to have its own
+  // label in its own style on the wrong side of the screen. It reads as one of
+  // these now, so it must have a phrase — an empty string would leave the
+  // student watching a still picture with nothing happening on it.
+  assertStrictEquals(phaseLabel({ kind: "reading-photo" }), "Reading your photo");
+});
+
 Deno.test("the search line echoes the real question back", () => {
   assertEquals(
     phaseLabel({ kind: "searching", query: "metformin dosing in renal impairment" }),
