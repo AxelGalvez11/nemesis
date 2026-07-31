@@ -17,6 +17,8 @@ import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
+import { executeAgentTool } from "@/lib/workspace/agent-tools";
+import type { PendingDelete } from "@nemesis/shared";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
@@ -92,6 +94,10 @@ export function SessionChat() {
   const [projectId, setProjectId] = useState<string | null>(null);
 
   const [error, setError] = useState<{ sessionId: string; text: string; kind: ChatErrorKind } | null>(null);
+  // A delete the model asked for and the confirmation gate held. Nothing has
+  // been deleted; only the click below carries it out.
+  const [pendingDelete, setPendingDelete] = useState<{ pending: PendingDelete; sessionId: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
@@ -158,6 +164,9 @@ export function SessionChat() {
       } else if (reply.errorText && reply.errorKind) {
         setError({ kind: reply.errorKind, sessionId: targetId, text: reply.errorText });
       }
+      // The gate held a delete. The card goes up alongside the reply, which is
+      // telling them to confirm. Never persisted — closing the tab declines it.
+      if (reply.pendingDelete) setPendingDelete({ pending: reply.pendingDelete, sessionId: targetId });
     } catch (err) {
       if (!isAbortError(err)) {
         setError({ kind: "unreachable", sessionId: targetId, text: "Something went wrong sending that. Try again." });
@@ -168,6 +177,45 @@ export function SessionChat() {
       abortControllers.current.delete(targetId);
     }
   }, []);
+
+  /** 🔴 RE-ENTERS THE SAME EXECUTOR rather than deleting anything itself.
+   *  `confirmed: true` skips only the gate — the uuid check, the row lookup and
+   *  the empty-deck rule all run again, so a card clicked long after the fact
+   *  gets the guard's honest answer instead of doing damage. */
+  const confirmPendingDelete = useCallback(async () => {
+    const held = pendingDelete;
+    if (!held || deleting) return;
+    setDeleting(true);
+    const result = await executeAgentTool(
+      { arguments: JSON.stringify(held.pending.args), id: "confirmed", name: held.pending.tool },
+      { confirmed: true },
+    );
+    const failed = result && typeof result === "object" && "error" in (result as Record<string, unknown>);
+    sessionsStore.upsertAssistantMessage(
+      held.sessionId,
+      new Date().toISOString(),
+      failed
+        ? String((result as { error: unknown }).error)
+        : `Deleted ${held.pending.target}.${held.pending.recoverable ? " It is in your trash if you want it back." : ""}`,
+      undefined,
+      true,
+    );
+    setPendingDelete(null);
+    setDeleting(false);
+  }, [deleting, pendingDelete]);
+
+  const cancelPendingDelete = useCallback(() => {
+    const held = pendingDelete;
+    if (!held) return;
+    sessionsStore.upsertAssistantMessage(
+      held.sessionId,
+      new Date().toISOString(),
+      `Kept ${held.pending.target}. Nothing was deleted.`,
+      undefined,
+      true,
+    );
+    setPendingDelete(null);
+  }, [pendingDelete]);
 
   // "Work within a project" (owner 2026-07-20): with a project picked, the
   // message starts a chat INSIDE that notebook — instructions + sources apply
@@ -516,6 +564,45 @@ export function SessionChat() {
           ) : (
             <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
           )}
+          {/* The tap that has to happen before the chat deletes anything. Sits
+              directly above the composer, over the fade, so it is between the
+              student and their next message rather than something to scroll to.
+              Keep is the plain button; Delete is the only red control here. */}
+          {pendingDelete && pendingDelete.sessionId === selectedId ? (
+            <div
+              className="absolute inset-x-0 bottom-28 z-30 mx-auto w-full max-w-2xl rounded-xl border border-red-500/40 bg-(--ui-chat-surface-background) p-4 shadow-lg"
+              role="alertdialog"
+              data-testid="confirm-delete-card"
+            >
+              <p className="text-sm font-semibold text-(--ui-text-primary)">
+                Delete {pendingDelete.pending.target}?
+              </p>
+              <p className="mt-1 text-sm text-(--ui-text-secondary)">
+                {pendingDelete.pending.recoverable
+                  ? "It moves to your trash, so you can get it back."
+                  : "This cannot be undone."}
+              </p>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="rounded-md border border-(--ui-border) px-4 py-2 text-sm text-(--ui-text-primary) disabled:opacity-60"
+                  disabled={deleting}
+                  onClick={cancelPendingDelete}
+                  type="button"
+                >
+                  Keep
+                </button>
+                <button
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  data-testid="confirm-delete-confirm"
+                  disabled={deleting}
+                  onClick={() => { void confirmPendingDelete(); }}
+                  type="button"
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
           <Composer
             belowStart={NOTEBOOKS_RETIRED || !isFreshThread ? undefined : (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { studyCreationPreferencePrompt } from "@nemesis/shared";
+import { studyCreationPreferencePrompt, type PendingDelete } from "@nemesis/shared";
 import {
   Alert,
   Animated,
@@ -35,6 +35,7 @@ import {
   sendChat,
 } from "@/api/chat";
 import { createNoteWithContent, type CloudLibraryNote } from "@/api/cloudLibrary";
+import { executeAgentTool } from "@/api/agentTools";
 import { storeAndReadPhoto, type ReadPhoto } from "@/api/photos";
 import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
@@ -44,7 +45,9 @@ import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableCardStack, DeliverableSheet } from "@/components/DeliverableSheet";
+import { ConfirmDeleteCard } from "@/components/ConfirmDeleteCard";
 import { GlassSurface } from "@/components/GlassSurface";
+import { usePulse } from "@/components/usePulse";
 import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { ThoughtTrail } from "@/components/ThoughtTrail";
 import { MessageBody } from "@/components/MessageBody";
@@ -63,7 +66,7 @@ import { withAttachmentNote, type BudgetResetKind, type ChatAttachment, type Cha
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT, isChatEffort, type ChatEffort } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
-import { photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
+import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -134,9 +137,15 @@ const effortStoreKey = (uid: string) => `nemesis_chat_effort_v1_${uid}`;
 
 interface Row {
   id: string;
-  kind: "error" | "msg" | "thinking";
+  /** "analyzing" is the student's own message drawn BEFORE it exists — see
+   *  `analyzingPhoto`. It is never persisted and never reaches the wire. */
+  kind: "analyzing" | "confirm-delete" | "error" | "msg" | "thinking";
   msg?: ChatMsg;
   errorText?: string;
+  /** analyzing rows only: the local file:// URI straight off the shutter. */
+  photoUri?: string;
+  /** analyzing rows only: whatever they had typed alongside the picture. */
+  typed?: string;
   /** The artifact cards this row draws — NOT `msg.outputs`. A recording is
    *  written into the conversation twice (once on save, once when its notes
    *  land), so the raw per-message lists would draw the same recording twice,
@@ -264,6 +273,30 @@ export default function ChatScreen() {
   // the vision read. It spins the SEND BUTTON, never the photo (see Composer).
   const [photoReading, setPhotoReading] = useState(false);
   const photoReadingRef = useRef(false);
+  // 🔴 THE PICTURE GOES INTO THE CONVERSATION THE MOMENT SEND IS PRESSED.
+  //
+  // Owner, 2026-07-31: "the app took long for the image to drop in chat, sending
+  // the image to chat should be instant and should have the analyzing label
+  // pulsing immediately". Exactly right, and the cause was ordering: the whole
+  // turn — the student's own message included — waited behind the upload and the
+  // vision read, because sendPhotoTurn only called send() once it had the words
+  // out of the picture. So for several seconds the composer cleared, the send
+  // button span, and the transcript showed NOTHING. Every other kind of message
+  // appears instantly; this one silently did not.
+  //
+  // This holds the local file:// URI and draws the student's message immediately,
+  // pulsing, while the read runs behind it. It is NOT a ChatMsg and is never
+  // persisted — deliberately. A pending row written into the thread is exactly
+  // the trap #364 hit: `chat_messages` is insert-only, so a placeholder that
+  // reaches the cloud can never be rewritten and comes back forever. The real
+  // message is appended by send() when the read lands, and this row disappears
+  // in the same tick.
+  const [analyzingPhoto, setAnalyzingPhoto] = useState<{ typed: string; uri: string } | null>(null);
+  // A delete the model asked for and the gate held. Never persisted: a decision
+  // the student has not made yet is not a deliverable, and closing the app is a
+  // perfectly good way to decline. See packages/shared/destructive-tools.ts.
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleting, setDeleting] = useState(false);
   // Cancels a read that is already in flight. The read cannot be un-started, so
   // this is what stops its RESULT from acting: sendPhotoTurn takes a number on
   // the way in and refuses to send if that number has moved by the time the
@@ -382,6 +415,14 @@ export default function ChatScreen() {
     photoReadingRef.current = false;
     setPhotoReading(false);
     setPhotoDraft(null);
+    // ...and the stand-in row with it, or the old thread's picture keeps pulsing
+    // at the bottom of the new one.
+    setAnalyzingPhoto(null);
+    // The confirmation card belongs to the conversation that proposed the
+    // delete. Carried into another thread it is a red Delete button floating
+    // over an unrelated chat, pointing at something the student can no longer
+    // see the context for. Leaving declines it, which is the safe default.
+    setPendingDelete(null);
     // The thinking preview belongs to the turn that was in flight, so it dies
     // with it — an in-flight reply whose thread was switched away keeps writing
     // into reasoningRef until its epoch check fails, and none of that belongs to
@@ -550,10 +591,12 @@ export default function ChatScreen() {
     setPhoto(null);
     setPhotoSaved("idle");
     setPhotoDraft(null);
-    // A read still running for the picture just removed must not send anything.
+    // A read still running for the picture just removed must not send anything,
+    // and its stand-in row must not keep pulsing for a photo that is gone.
     photoSendTokenRef.current += 1;
     photoReadingRef.current = false;
     setPhotoReading(false);
+    setAnalyzingPhoto(null);
   }, []);
 
   /** Send a turn.
@@ -659,7 +702,14 @@ export default function ChatScreen() {
     void saveThreadMessages(uid, id, base);
     void sendChat(uid, history, text, {
       signal: controller.signal,
-      attachedDoc: doc ? { content: doc.content, title: doc.title } : undefined,
+      // 🔴 `kind` HAS TO TRAVEL. This line rebuilt the doc field by field and
+      // dropped it, which would have left the photograph fix completely inert:
+      // buildAttachmentContext would never see kind === "image", the wire would
+      // still say "Type: Library note", and the model would still answer "I see
+      // a text caption". Exactly the same shape as the card id that was added to
+      // the query and then stripped by the mapper — a hand-rebuilt object is
+      // where new fields go to die. Pass the whole thing.
+      attachedDoc: doc ?? undefined,
       effort: chosenEffort,
       forceResearch: research,
       onDelta: (_delta, accumulated) => {
@@ -741,6 +791,11 @@ export default function ChatScreen() {
           ];
           setMessages(next);
           void saveThreadMessages(uid, id, next);
+          // The gate held a delete on this turn. The card goes up alongside the
+          // model's reply — which, per pendingDeleteInstruction, is telling them
+          // to tap it. Not persisted, so it is gone if they leave and come back,
+          // which is the right default for a delete nobody has approved.
+          if (reply.pendingDelete) setPendingDelete(reply.pendingDelete);
         } else {
           // The user's message stays (it IS the conversation); the failure line
           // renders from transient state and never enters history/persistence.
@@ -791,10 +846,11 @@ export default function ChatScreen() {
     setCameraOpen(false);
     setPhotoDraft(uri);
     // A read still running for the PREVIOUS shot must not send this one's turn,
-    // nor restore the old picture over this one.
+    // nor restore the old picture over this one, nor leave its row pulsing.
     photoSendTokenRef.current += 1;
     photoReadingRef.current = false;
     setPhotoReading(false);
+    setAnalyzingPhoto(null);
     // A new shot replaces whatever the last one left behind — the finished
     // photo kept around for "Save to Library", and its save state.
     setPhoto(null);
@@ -808,6 +864,71 @@ export default function ChatScreen() {
   // words have to be out of the picture before there is anything to send. The
   // waiting shows on the send button, and the typed question is left alone until
   // the read succeeds — a failed upload must not also eat what they wrote.
+  /** The student tapped Delete on the confirmation card.
+   *
+   *  🔴 THIS RE-ENTERS THE SAME EXECUTOR, it does not delete anything itself.
+   *  `confirmed: true` skips only the gate — workspaceId, the row lookup, the
+   *  ownership check and deckDeletionVerdict all run again on the way through.
+   *  So a card tapped after the row is already gone gets the guard's own honest
+   *  answer ("it may already be gone") rather than doing damage, and a card
+   *  cannot become a stored permission slip that outlives its checks.
+   *
+   *  The outcome is written into the thread as a NEW assistant message. An
+   *  insert, never a rewrite: `chat_messages` is insert-only, and editing a
+   *  message in place is exactly what froze the recording card in #364. */
+  const confirmPendingDelete = useCallback(() => {
+    const pending = pendingDelete;
+    if (!pending || !uid || !threadId || deleting) return;
+    setDeleting(true);
+    const id = threadId;
+    // The delete itself belongs to the thread that proposed it and runs to
+    // completion either way. What must NOT happen is the outcome line landing in
+    // whatever thread is on screen when it returns: setMessages writes the
+    // CURRENT thread's array, so without this the confirmation of a delete made
+    // in one conversation could be appended to another. Same epoch guard the
+    // photo read uses, for the same reason.
+    const epoch = epochRef.current;
+    void (async () => {
+      const result = await executeAgentTool(
+        uid,
+        { arguments: JSON.stringify(pending.args), id: "confirmed", name: pending.tool },
+        { confirmed: true },
+      );
+      const failed = result && typeof result === "object" && "error" in (result as Record<string, unknown>);
+      const line = failed
+        ? String((result as { error: unknown }).error)
+        : `Deleted ${pending.target}.${pending.recoverable ? " It is in your trash if you want it back." : ""}`;
+      setPendingDelete(null);
+      setDeleting(false);
+      if (epochRef.current !== epoch) return;
+      setMessages((current) => {
+        const next: ChatMsg[] = [
+          ...current,
+          { at: new Date().toISOString(), content: line, role: "assistant" },
+        ];
+        void saveThreadMessages(uid, id, next);
+        return next;
+      });
+    })();
+  }, [deleting, pendingDelete, threadId, uid]);
+
+  /** Keep. Says so in the transcript rather than just closing, so the record of
+   *  what was decided lives with the conversation that proposed it. */
+  const cancelPendingDelete = useCallback(() => {
+    const pending = pendingDelete;
+    if (!pending || !uid || !threadId) return;
+    const id = threadId;
+    setPendingDelete(null);
+    setMessages((current) => {
+      const next: ChatMsg[] = [
+        ...current,
+        { at: new Date().toISOString(), content: `Kept ${pending.target}. Nothing was deleted.`, role: "assistant" },
+      ];
+      void saveThreadMessages(uid, id, next);
+      return next;
+    });
+  }, [pendingDelete, threadId, uid]);
+
   const sendPhotoTurn = useCallback(() => {
     const uri = photoDraft;
     if (!uid || uri === null || photoReadingRef.current || sendingRef.current) return;
@@ -817,6 +938,12 @@ export default function ChatScreen() {
     // Claim this read. Anything that invalidates the shot bumps the token, and
     // every line after the await is gated on it still being ours.
     const token = (photoSendTokenRef.current += 1);
+    // Into the conversation NOW, from the local file, before a single byte is
+    // uploaded. The composer clears in the same breath so the picture appears to
+    // move out of it and into the thread, which is what the gesture promised.
+    setAnalyzingPhoto({ typed, uri });
+    setPhotoDraft(null);
+    setInput("");
     void (async () => {
       try {
         const read = await storeAndReadPhoto(uid, uri);
@@ -825,12 +952,21 @@ export default function ChatScreen() {
         // attachment restored, no turn sent, no typed text cleared.
         if (photoSendTokenRef.current !== token) return;
         setPhoto(read);
-        // photoAttachmentTitle prefixes "Photo:" — the model is never told a
-        // photograph is a Library note, because where a fact came from changes
-        // how much weight it deserves.
-        const doc = { content: read.text, title: photoAttachmentTitle(read.title) };
+        // `kind: "image"` is load-bearing, not decoration: it routes the wire
+        // text through buildAttachmentContext's PHOTOGRAPH block instead of the
+        // "Type: Library note" one, which is what stopped the model answering
+        // "I see a text caption describing a photograph" (owner 2026-07-31).
+        //
+        // The TITLE is now just "Photo". It used to be photoAttachmentTitle(
+        // read.title), built out of the reading itself, and withAttachmentNote
+        // prints it into the visible bubble — so the student's own message ended
+        // "Attached: Photo: This photograph shows a section of a gym floor. In
+        // the". The picture is directly above that line; naming it is enough.
+        const doc = { content: read.text, kind: "image" as const, title: PHOTO_ATTACHMENT_LABEL };
         setAttachedDoc(doc);
-        setPhotoDraft(null);
+        // The real message is about to land, so the stand-in goes now — same
+        // tick, so there is no frame with both or neither.
+        setAnalyzingPhoto(null);
         // Everything passed explicitly: the setStates above have not flushed, so
         // a send reading state here would go out with no picture on it.
         send({
@@ -848,11 +984,19 @@ export default function ChatScreen() {
           text: photoTurnText(typed, true),
         });
       } catch (cause) {
-        // api/photos.ts throws sentences, so this reaches the screen as-is. The
-        // draft and the typed question both survive, so it can just be sent again.
+        // api/photos.ts throws sentences, so this reaches the screen as-is.
         // Silent when the shot was abandoned: an error about a picture the
         // student already removed is noise about work they cancelled.
         if (photoSendTokenRef.current !== token) return;
+        // 🔴 PUT IT BACK. The draft and the typed question used to survive a
+        // failure by never having been cleared; now they are cleared up front so
+        // the picture can appear in the thread immediately, which means a failure
+        // has to hand both back or the student loses their photo AND their
+        // sentence to a dropped connection. The stand-in row goes at the same
+        // time, so the picture is in exactly one place again — the composer.
+        setAnalyzingPhoto(null);
+        setPhotoDraft(uri);
+        setInput((current) => (current.trim() ? current : typed));
         setLastError(cause instanceof Error ? cause.message : "Couldn't use that photo.");
       } finally {
         // Only if this read is still the current one — a newer attach may have
@@ -882,6 +1026,12 @@ export default function ChatScreen() {
       photoSendTokenRef.current += 1;
       photoReadingRef.current = false;
       setPhotoReading(false);
+      // Stop means stop: the row goes and the picture returns to the composer,
+      // so nothing was silently thrown away by pressing it.
+      setAnalyzingPhoto((pending) => {
+        if (pending) setPhotoDraft(pending.uri);
+        return null;
+      });
     }
     abortRef.current?.abort();
     // Unwound HERE rather than waiting for the request to settle. A native cancel
@@ -1249,7 +1399,19 @@ export default function ChatScreen() {
     msg,
     outputs: artifacts.perMessage[index] ?? [],
   }));
+  // The student's photo message, drawn before it exists. Sits after the real
+  // history and before the thinking dots, which is exactly where the real
+  // message will appear a moment later — so the swap is invisible.
+  if (analyzingPhoto) {
+    rows.push({
+      id: "__analyzing_photo__",
+      kind: "analyzing",
+      photoUri: analyzingPhoto.uri,
+      typed: analyzingPhoto.typed,
+    });
+  }
   if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
+  if (pendingDelete) rows.push({ id: "__confirm_delete__", kind: "confirm-delete" });
   if (sending) {
     // Dots until the first chunk lands, then the SAME "msg" row shape as a
     // finished answer — same key throughout, so FadeIn plays once (on that
@@ -1370,6 +1532,18 @@ export default function ChatScreen() {
                   <View style={styles.errorBubble} testID="chat-error">
                     <Text style={styles.errorText}>{item.errorText}</Text>
                   </View>
+                ) : item.kind === "confirm-delete" ? (
+                  <ConfirmDeleteCard
+                    busy={deleting}
+                    onCancel={cancelPendingDelete}
+                    onConfirm={confirmPendingDelete}
+                    pending={pendingDelete!}
+                  />
+                ) : item.kind === "analyzing" ? (
+                  // The same bubble a sent photo message draws, so nothing moves
+                  // when the real one replaces it — plus the pulsing line that
+                  // says the picture is being read rather than just sitting there.
+                  <AnalyzingPhotoBubble typed={item.typed ?? ""} uri={item.photoUri ?? ""} />
                 ) : item.msg!.role === "user" ? (
                   <View style={[styles.bubble, styles.userBubble]}>
                     {item.msg!.attachments?.filter((attachment) => attachment.kind === "image" && attachment.url).map((attachment) => (
@@ -1928,6 +2102,40 @@ function AttachedDocChip({
   );
 }
 
+/** The student's photo message while the picture is still being read.
+ *
+ *  Owner, 2026-07-31: "sending the image to chat should be instant and should
+ *  have the analyzing label pulsing immediately". Both halves matter — the
+ *  instant part is that this draws from the LOCAL file, so it is on screen
+ *  before any network call starts, and the pulsing part is that a still image
+ *  with no motion on it reads as stuck, which is exactly the impression the old
+ *  behaviour gave during the seconds when it showed nothing at all.
+ *
+ *  Same bubble and same image size as a finished photo message, so when the real
+ *  one replaces it nothing shifts. */
+function AnalyzingPhotoBubble({ typed, uri }: { typed: string; uri: string }) {
+  const styles = useThemedStyles(createStyles);
+  const opacity = usePulse(true);
+  return (
+    <View style={[styles.bubble, styles.userBubble]}>
+      <Image
+        accessibilityLabel="Photo being read"
+        resizeMode="contain"
+        source={{ uri }}
+        style={styles.messageImage}
+      />
+      {typed.trim() ? <Text style={styles.userText}>{typed.trim()}</Text> : null}
+      <Animated.Text
+        accessibilityLabel="Analyzing photo"
+        style={[styles.analyzingLabel, { opacity }]}
+        testID="chat-analyzing-photo"
+      >
+        Analyzing photo…
+      </Animated.Text>
+    </View>
+  );
+}
+
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -1943,6 +2151,9 @@ const createStyles = (c: ThemeColors) =>
     },
     messageImage: { width: 250, maxWidth: "100%", height: 220, borderRadius: radius.md, backgroundColor: c.surface },
     userText: { ...type.body, color: c.text },
+    // Dimmer than the question itself: a status line, not something the
+    // student wrote, and gone the moment the answer starts.
+    analyzingLabel: { ...type.small, color: c.text2 },
     // Assistant is not a bubble — it's a full-width block of markdown.
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },

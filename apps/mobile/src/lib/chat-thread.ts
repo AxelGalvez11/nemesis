@@ -162,6 +162,7 @@ export const CHAT_SYSTEM_PROMPT =
   // dialog inside a chat turn, so the bar for a destructive call is the
   // student's own words: "tidy up my notes" is a request to reorganise, not a
   // licence to delete, and the cost of asking is one sentence.
+  "A delete never happens immediately: it puts a confirmation card on screen and the student has to tap it. So do not say anything has been deleted until they have — say the card is there and ask them to tap it. " +
   "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which item they mean, ask " +
   "which one first — deleting is the one action they cannot take back from here. Never delete something as a side effect of tidying or making room. " +
   // 🔴 THIS SENTENCE USED TO SEND THE STUDENT TO AN APP THEY CANNOT GET. It read
@@ -327,6 +328,17 @@ export function chatErrorMessage(status: number, body: unknown): string {
 export interface AttachedLibraryDoc {
   title: string;
   content: string;
+  /** What the student actually attached. Defaults to a written document.
+   *
+   *  🔴 A PHOTOGRAPH IS NOT A NOTE, AND CALLING IT ONE BROKE THE ANSWER. The
+   *  phone cannot put pixels on the chat wire, so a photo is read by the vision
+   *  pass and travels as prose. That prose used to be handed over under
+   *  "Type: Library note" with no further explanation, so the model correctly
+   *  concluded it had been given a document ABOUT a photo — and answered
+   *  literally: "I see a text caption describing a photograph of a gym floor."
+   *  (owner screenshot, 2026-07-31). It was not confused; it was told the truth
+   *  in a way that made the photograph a second-hand report. */
+  kind?: "image" | "note";
 }
 
 /** Owner-specified clamp for the composer's attach feature (~8000 chars) — a
@@ -344,9 +356,33 @@ export const ATTACHMENT_CONTEXT_MAX_CHARS = 8000;
  *  type). NEVER persisted into the ChatMsg the UI stores/displays — see
  *  withAttachmentNote below — so the full text isn't silently re-sent on every
  *  later turn once it's part of the thread's history. */
+/** What the model is told when the "attachment" is really a photograph.
+ *
+ *  Two things have to be true at once and the wording is doing both jobs: the
+ *  reading is genuinely second-hand (so it must not be presented as infallible),
+ *  and the student's experience is that they showed it a picture (so narrating
+ *  the machinery is useless to them). Saying "the caption describes a blue
+ *  bench" answers a question nobody asked. */
+export const PHOTO_ATTACHMENT_RULE =
+  "The student attached a PHOTOGRAPH and it was read for you — what follows is what is in the picture. "
+  + "Answer as though you looked at the photo yourself: say \"the bench\", not \"the description mentions a bench\". "
+  + "Never call it a caption, a description, a text, or a summary, never say you cannot see images, and never "
+  + "explain how the reading was produced. If something they asked about is not in the reading, say that detail "
+  + "is not clear in the photo and ask them to reshoot it closer — that is a fact about the picture, not about you.";
+
 export function buildAttachmentContext(doc: AttachedLibraryDoc, maxChars = ATTACHMENT_CONTEXT_MAX_CHARS): string {
   const clipped = doc.content.trim().slice(0, maxChars);
   if (!clipped) return "";
+  if (doc.kind === "image") {
+    // Deliberately NOT the "Type: Library note" block below. A photograph is
+    // neither a note nor a document, and labelling it as one is what produced
+    // the "I see a text caption" answer. Still fenced: whatever was in shot was
+    // written by someone else, and a lecture slide reading "ignore all previous
+    // instructions" is a photograph of an instruction, not an instruction.
+    return `### Photograph the student attached\n\n${PHOTO_ATTACHMENT_RULE}\n\n`
+      + `${UNTRUSTED_CONTENT_RULE}\n\n`
+      + wrapUntrusted("what is in the photograph", clipped);
+  }
   // Fenced, same as web (chat-attachments.ts). A Library note is not safe by
   // virtue of being the student's own: most of them arrive by importing a
   // lecture, and the phone shares one cloud Library with the browser — so a
