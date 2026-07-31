@@ -45,8 +45,9 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
-import type { PendingDelete } from "@nemesis/shared";
+import { folderForNewItem, type PendingDelete } from "@nemesis/shared";
 import { recallBrain } from "./brain";
+import { loadKnownCourses } from "./courses";
 import {
   buildFinalNoteMessages,
   buildLiveNotesMessages,
@@ -1005,7 +1006,21 @@ async function updateRecordingLibraryNote(
     // elsewhere back into Recordings — renameNoteById rebuilds the whole path from
     // that argument, so it is a destination, not a default.
     if (rename && isDefaultRecordingTitle(note.title)) {
-      await renameNoteById(uid, noteId, rename, folderOf(note.path));
+      // FILE IT UNDER THE COURSE, now that there is finally something to read.
+      // The note is created before the audio is transcribed, so at creation time
+      // its only text is "Recording · Jul 30 at 5:23 PM" — nothing to match on.
+      // This is the first moment the subject is known, and it is already the
+      // moment the note gets its real name, so both happen in the one write.
+      //
+      // 🔴 ONLY IF IT IS STILL WHERE WE PUT IT. A student who has already moved
+      // this note somewhere of their own has made a decision, and quietly
+      // relocating it afterwards is the "reorganise" behaviour that reads as
+      // data loss. Same guard the rename uses, for the same reason.
+      const currentFolder = folderOf(note.path);
+      const destination = currentFolder === RECORDINGS_LIBRARY_FOLDER
+        ? folderForNewItem("recording", `${rename}\n${content}`, await loadKnownCourses(uid))
+        : currentFolder;
+      await renameNoteById(uid, noteId, rename, destination);
     }
   } catch (cause) {
     console.warn("recording Library note update skipped:", cause instanceof Error ? cause.message : cause);

@@ -232,12 +232,12 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, omit folder and it will be filed in '${GENERATED_NOTES_FOLDER}'. Tell the student you created it and where it is.`,
+        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. Tell the student you created it and where it is.`,
       name: "create_library_note",
       parameters: {
         properties: {
           content: { description: "Markdown body of the note", type: "string" },
-          folder: { description: `Optional requested folder path. Omit it to use '${GENERATED_NOTES_FOLDER}'.`, type: "string" },
+          folder: { description: "Optional folder path, only when the student named one. Omit to file by course.", type: "string" },
           title: { description: "Note title", type: "string" },
         },
         required: ["title", "content"],
@@ -249,12 +249,12 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        `Create and save a slide deck as a structured Library artifact. You MUST use this when the student asks for slides or a presentation. If they did not name a folder, omit folder and it will be filed in '${GENERATED_SLIDES_FOLDER}'. Tell the student the saved path.`,
+        `Create and save a slide deck as a structured Library artifact. You MUST use this when the student asks for slides or a presentation. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. Tell the student the saved path.`,
       name: "create_slide_deck",
       parameters: {
         properties: {
           folder: {
-            description: `Optional requested folder path. Omit it to use '${GENERATED_SLIDES_FOLDER}'.`,
+            description: "Optional folder path, only when the student named one. Omit to file by course.",
             type: "string",
           },
           slides: {
