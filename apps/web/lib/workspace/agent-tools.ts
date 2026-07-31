@@ -1112,7 +1112,7 @@ async function updateCalendarEventTool(args: Record<string, unknown>) {
   // Strip the handle before building the patch: `event_id` is how we found the
   // row, not a field on it, and letting it through would make a call that
   // changes nothing look like a change.
-  const { event_id: _handle, ...fields } = args;
+  const fields = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "event_id"));
   const patch = calendarEventPatch(fields);
   if (isPatchFailure(patch)) return patch;
   const { error } = await supabase.from("calendar_events").update(patch).eq("id", found.id);

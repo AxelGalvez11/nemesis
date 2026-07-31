@@ -198,8 +198,22 @@ export function buildWireMessages(
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
-  const kept = trimHistory(history);
-  const continuityAnchor = buildContinuityAnchor(history, kept);
+  // 🔴 EXPAND BEFORE TRIMMING, never after. The artifact notes are real
+  // characters on the wire — up to ARTIFACT_BODY_BUDGET (4,000) for the newest
+  // one, plus a bracket per message that has outputs. Trimming first and
+  // expanding after would enforce the 24,000-character budget and then walk
+  // straight past it, and an oversized packet is dropped SILENTLY elsewhere in
+  // this codebase rather than erroring. Mobile has done it in this order from
+  // the start; this file briefly did not.
+  //
+  // The anchor is measured against `expanded`, not `history`, on purpose:
+  // buildContinuityAnchor tests `kept.includes(firstUser)` by object identity,
+  // and expandArtifactContext returns NEW objects for messages carrying
+  // outputs. Comparing the two different sets would make the anchor fire for a
+  // message that is actually present.
+  const expanded = expandArtifactContext(history);
+  const kept = trimHistory(expanded);
+  const continuityAnchor = buildContinuityAnchor(expanded, kept);
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
   const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
@@ -225,12 +239,13 @@ export function buildWireMessages(
     },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
     ...(skills ? [{ content: skills, role: "system" as const }] : []),
-    // 🔴 This used to be a bare content+role map, which dropped every message's
-    // `outputs` — so a recording, a deck or a note THIS CONVERSATION had just
-    // produced was invisible on the next turn and "make flashcards from this"
-    // had nothing to bind "this" to. Fixed on iOS first (owner 2026-07-30);
-    // web had the identical hole. Shared module, not a second copy.
-    ...expandArtifactContext(kept).map((msg) => ({ content: msg.content, role: msg.role })),
+    // 🔴 This used to be a bare content+role map over the raw history, which
+    // dropped every message's `outputs` — so a recording, a deck or a note THIS
+    // CONVERSATION had just produced was invisible on the next turn and "make
+    // flashcards from this" had nothing to bind "this" to. Fixed on iOS first
+    // (owner 2026-07-30); web had the identical hole. Shared module, not a
+    // second copy. `kept` is already expanded — see the note above.
+    ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
     // 🔴 The retrieved packet rides its OWN system message. Concatenating it
     // onto the student's sentence — which is what `groundedText` used to do —
     // put unrelated Library notes, deadlines and weak cards immediately after

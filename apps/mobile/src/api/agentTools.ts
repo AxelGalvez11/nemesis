@@ -596,7 +596,9 @@ async function rowById(
 async function updateCalendarEventTool({ args, uid }: ToolContext) {
   const found = await rowById("calendar_events", args.event_id, uid, "Use list_calendar_events to get event ids.");
   if ("error" in found) return found;
-  const { event_id: _handle, ...fields } = args;
+  // `event_id` is the handle that found the row, not a field on it — it must
+  // not reach the patch, or a call that changes nothing looks like a change.
+  const fields = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "event_id"));
   const patch = calendarEventPatch(fields);
   if (isPatchFailure(patch)) return patch;
   // 🔴 updateCalendarEvent takes a WHOLE event, not a patch — toRow writes every
