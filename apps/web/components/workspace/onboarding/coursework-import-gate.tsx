@@ -14,7 +14,7 @@
 // The extension's own button links to /library?import=coursework, which opens
 // this straight away rather than waiting to be noticed.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
@@ -89,7 +89,14 @@ export function CourseworkImportGate() {
     };
   }, [preview, uid]);
 
-  const plan = planImport(scan, picked, newEventId);
+  // 🔴 MEMOISED BECAUSE THE PLAN MINTS IDENTITIES. Calling planImport on every
+  // render gives every event a fresh id each time, and the retry path makes
+  // that visible: a partial failure calls setFailed, which re-renders, which
+  // re-ids everything — so pressing "Bring them in" again writes a SECOND copy
+  // of every event that already saved. Folders survive this (an existing one is
+  // treated as success), events do not. Keyed on the reading and the selection,
+  // which are the only two things that should ever change the plan.
+  const plan = useMemo(() => planImport(scan, picked, newEventId), [scan, picked]);
 
   const bringIn = useCallback(async () => {
     setSaving(true);
