@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://app.enternemesis.com/*", "http://localhost:3000/*"],
+      "matches": ["https://app.enternemesis.com/*", "http://localhost:3200/*", "http://localhost:3000/*"],
       "js": ["dist/content-bridge.js"],
       "run_at": "document_idle"
     }

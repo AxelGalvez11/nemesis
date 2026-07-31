@@ -4,8 +4,12 @@
 // contenteditable input, attachment/deep-research menu, dictation, and
 // send/stop/record controls.
 //
-// Mode vs effort (owner 2026-07-22): the pill next to the send button is the
-// ANSWER EFFORT dial (Instant/Medium/High) — the thing a student changes often.
+// ANSWER EFFORT IS NO LONGER A CONTROL (owner 2026-07-31). The Instant/Medium/
+// High pill next to the send button is gone; every turn now runs at
+// DEFAULT_CHAT_EFFORT. THE FEATURE STAYS — effort is still chosen, still sent,
+// and session-chat/notebook-chat-view still read it through onEffortChange.
+// Only the dial the student had to think about was taken away. The phone lost
+// the same dial in #369, so the two surfaces agree again.
 //
 // RECORD MODE (owner 2026-07-22, second pass). Recording is no longer buried in
 // the "+" menu and no longer takes the composer away:
@@ -36,17 +40,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import {
-  CHAT_EFFORT_HINT,
-  CHAT_EFFORT_LABEL,
-  CHAT_EFFORTS,
-  DEFAULT_CHAT_EFFORT,
-  isChatEffort,
-  type ChatEffort,
-} from "@/lib/workspace/chat-effort";
+import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { publishMicLevel, resetMicLevel, subscribeMicLevel } from "@/lib/workspace/mic-level";
 import { emptyWaveform, pushWaveBar } from "@/lib/workspace/waveform-history";
-import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +52,6 @@ import { RecordingWaveform } from "./recording-waveform";
 export type ComposerMode = "chat" | "record";
 
 const COMPOSER_MODE_STORAGE_KEY = "nemesis.web.composer-mode";
-const COMPOSER_EFFORT_STORAGE_KEY = "nemesis.web.composer-effort";
 
 function isComposerMode(value: string | null): value is ComposerMode {
   return value === "chat" || value === "record";
@@ -68,12 +63,6 @@ function readStoredComposerMode(): ComposerMode {
   return isComposerMode(stored) ? stored : "chat";
 }
 
-function readStoredEffort(): ChatEffort {
-  if (typeof window === "undefined") return DEFAULT_CHAT_EFFORT;
-  const stored = window.localStorage.getItem(COMPOSER_EFFORT_STORAGE_KEY);
-  return isChatEffort(stored) ? stored : DEFAULT_CHAT_EFFORT;
-}
-
 interface ComposerProps {
   busy: boolean;
   centered?: boolean;
@@ -81,8 +70,10 @@ interface ComposerProps {
   placeholder: string;
   mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
-  /** Told the stored level on mount, then on every change, so the sender can
-   *  apply it to the turn. */
+  /** Told the effort once on mount, so the sender can apply it to the turn.
+   *  There is no longer anything that changes it — the dial was removed — but
+   *  the channel stays open so effort remains a real, settable thing rather
+   *  than a constant buried in the sender. */
   onEffortChange?: (effort: ChatEffort) => void;
   onRecordingChange?: (recording: boolean) => void;
   onSubmit: (text: string, files: File[]) => void;
@@ -101,7 +92,6 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
-  const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [libraryOpen, setLibraryOpen] = useState(false);
   // Files dragged from Finder. A COUNTER, not a boolean: dragenter/dragleave
   // fire for every child the pointer crosses, so a boolean flickers off the
@@ -112,18 +102,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
   useEffect(() => {
-    const stored = readStoredEffort();
-    setEffortState(stored);
-    onEffortChange?.(stored);
-    // Read once on mount; the parent is told so its first turn uses it.
+    // The dial is gone, so there is one effort and the parent is told it once.
+    // Deliberately NOT read back from localStorage any more: a student who had
+    // set "High" before the pill was removed would otherwise be pinned to it
+    // forever with nothing on screen to change it.
+    onEffortChange?.(DEFAULT_CHAT_EFFORT);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const setEffort = (next: ChatEffort) => {
-    setEffortState(next);
-    onEffortChange?.(next);
-    try { window.localStorage.setItem(COMPOSER_EFFORT_STORAGE_KEY, next); } catch { /* best-effort */ }
-  };
 
   useEffect(() => {
     if (mode) return;
@@ -547,7 +532,6 @@ export function Composer({ busy, centered = false, placement = "floating", place
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  <EffortPill effort={effort} onChange={setEffort} />
                   {/* Dictation is hidden in record mode: a live microphone is
                       already being captured, so a second one is nonsense. */}
                   {/* Only while dictating, and only wide enough to read as
@@ -723,38 +707,3 @@ function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFil
   );
 }
 
-function EffortPill({ effort, onChange }: { effort: ChatEffort; onChange: (effort: ChatEffort) => void }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          aria-label={`Answer effort: ${CHAT_EFFORT_LABEL[effort]}`}
-          className="h-(--composer-control-size) max-w-40 shrink-0 gap-1 rounded-md px-2 text-xs font-normal text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
-          data-testid="effort-pill"
-          size="sm"
-          variant="ghost"
-        >
-          <span className="truncate">{CHAT_EFFORT_LABEL[effort]}</span>
-          <ChevronDown className="size-2.5 shrink-0 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52 p-1" side="top">
-        <div className="flex flex-col gap-0.5">
-          {CHAT_EFFORTS.map((option) => (
-            <DropdownMenuItem
-              className={cn(
-                "flex-col items-start gap-0 rounded-md px-2.5 py-1.5 text-left",
-                option === effort ? "bg-(--ui-control-active-background) text-foreground" : "text-foreground hover:bg-(--ui-control-hover-background)",
-              )}
-              key={option}
-              onSelect={() => onChange(option)}
-            >
-              <span className="text-sm font-medium">{CHAT_EFFORT_LABEL[option]}</span>
-              <span className="text-[0.6875rem] font-normal text-(--ui-text-tertiary)">{CHAT_EFFORT_HINT[option]}</span>
-            </DropdownMenuItem>
-          ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
