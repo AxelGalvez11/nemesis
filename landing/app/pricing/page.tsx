@@ -6,20 +6,31 @@ import { IconCheck } from "@/components/FeatureIcons";
 export const metadata: Metadata = {
   title: "Pricing · Nemesis",
   description:
-    "Start free. Student $9.99, Agent Pro $19.99, Max $99. Cancel anytime.",
+    "Start free, no card. Student $9.99 a month, Agent Pro $19.99 a month. Cancel anytime.",
   robots: { index: true, follow: true },
 };
+
+// THE CEILING IS $19.99 (owner, 2026-07-31). The $99 Max plan was removed on the
+// same day: the nearest competitor's most expensive plan is $19 a month, so a $99
+// row on this page read as a different category of product rather than as a
+// generous option. Nothing migrated with it — Max had no subscribers. Its Stripe
+// price and its plan_entitlements row are untouched and still resolve, so an old
+// /pricing?plan=max link keeps working; removing those is a live billing change
+// and needs the owner's go-ahead.
+//
+// Free now takes the third card. It was always the recommended starting point in
+// the copy and had no card of its own to click.
 
 // Comparison rows repeat ONLY claims already made on this page's cards:
 // nothing new gets promised in a table cell. A "no" renders as a middot with
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
-  { label: "Lecture recording each month", values: ["20 hours", "70 hours", "200 hours"] },
+  { label: "Lecture recording each month", values: ["2 hours", "20 hours", "70 hours"] },
   { label: "Calendar built from your syllabus", values: ["yes", "yes", "yes"] },
-  { label: "Web-grounded answers with real citations", values: ["no", "yes", "yes"] },
-  { label: "Daily limits", values: ["Standard", "Higher", "Highest"] },
-  { label: "First access to new features", values: ["no", "no", "yes"] },
+  { label: "Web-grounded answers with real citations", values: ["no", "no", "yes"] },
+  { label: "Daily limits", values: ["Starter", "Standard", "Higher"] },
+  { label: "Phone app included", values: ["yes", "yes", "yes"] },
 ] as const;
 
 const BILLING_FAQ = [
@@ -75,6 +86,21 @@ export default function PricingPage() {
           </div>
           <div className="plans">
             <div className="plan">
+              <div className="plan-price">$0<span className="per">/mo</span></div>
+              <h3>Free</h3>
+              <p className="plan-desc">Enough to run a class through it and see.</p>
+              <ul className="plan-features">
+                <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
+                <li><IconCheck size={13} />2 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />A calendar built from your syllabus</li>
+                <li><IconCheck size={13} />The phone app, included</li>
+              </ul>
+              <div className="plan-cta">
+                <a className="btn btn-secondary" href={APP_SIGN_UP}>Get started free</a>
+                <p className="plan-note">No card required</p>
+              </div>
+            </div>
+            <div className="plan">
               <div className="plan-price">$9.99<span className="per">/mo</span></div>
               <h3>Student</h3>
               <p className="plan-desc">The essentials for one semester at a time.</p>
@@ -111,20 +137,6 @@ export default function PricingPage() {
                 <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
-            <div className="plan">
-              <div className="plan-price">$99<span className="per">/mo</span></div>
-              <h3>Max</h3>
-              <p className="plan-desc">For the heaviest study and research weeks.</p>
-              <ul className="plan-features">
-                <li><IconCheck size={13} />Everything in Agent Pro, five times over</li>
-                <li><IconCheck size={13} />200 hours of lecture recording a month</li>
-                <li><IconCheck size={13} />First access to new features</li>
-              </ul>
-              <div className="plan-cta">
-                <PlanCta plan="max" label="Get Max" />
-                <p className="plan-note">Billed monthly, cancel anytime</p>
-              </div>
-            </div>
           </div>
           <div className="pricing-fine">
             <p>Cancel anytime from your account, no phone calls. Your library stays yours on any plan, forever. No ads, no selling your data, no training on your content.</p>
@@ -143,9 +155,9 @@ export default function PricingPage() {
               <thead>
                 <tr>
                   <th scope="col"><span className="sr-only">Feature</span></th>
+                  <th scope="col">Free</th>
                   <th scope="col">Student</th>
                   <th scope="col" className="compare-featured">Agent Pro</th>
-                  <th scope="col">Max</th>
                 </tr>
               </thead>
               <tbody>
