@@ -29,6 +29,15 @@
 
    One typeface: Hanken Grotesk (variable, full wght axis) arrives as a CSS
    variable from next/font in layout.tsx. Emphasis is weight, scale and space.
+
+   2026-07-31 — THE SHAPE CHANGED, THE PALETTE DID NOT. The page now follows the
+   beat order a conversion page uses: a headline that states the job, the product
+   immediately under it, the problem named, three steps, the features, then
+   questions and a close. That came from studying the nearest competitor's page.
+   Their palette did NOT: the owner reaffirmed black and white minimalism on the
+   same day. So every block added below is built out of the tokens already here —
+   hairlines, weight, scale, space. If a future edit wants a colour for emphasis,
+   it is answering the wrong question; use weight.
    ────────────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -124,20 +133,67 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .btn-secondary:hover { border-color: var(--text); }
 .btn-secondary svg { opacity: 0.85; }
 
-/* hero — page ground, type only. The scale IS the design. */
-.hero {
-  position: relative; min-height: 82vh; display: flex; align-items: center;
-  border-bottom: 1px solid var(--line);
-}
-.hero-in { position: relative; padding: 60px 0; max-width: 820px; }
+/* ──────────────────────────────────────────────────────────────────────────
+   HERO. Was the word NEMESIS at 148px, centred in 82vh of nothing: a brand
+   mark, which meant a first-time visitor had to scroll three screens to learn
+   what the product does. It is now a headline that states the job, centred, with
+   a real capture of the running app directly beneath it — the first thing you
+   see is the thing you would be buying.
+
+   The type is still the whole design. Sentence case rather than the old
+   uppercase, because a headline is read and a wordmark is recognised, and
+   uppercase costs a reader roughly a beat per word.
+   ────────────────────────────────────────────────────────────────────────── */
+/* The bottom padding is the phone's overhang plus air: the phone hangs below the
+   laptop base on purpose, and without room it would sit on the next section. */
+.hero { position: relative; padding: 84px 0 52px; }
+.hero-in { position: relative; max-width: 900px; margin: 0 auto; text-align: center; }
 .hero h1 {
-  font-size: clamp(64px, 10.5vw, 148px); line-height: 0.92; letter-spacing: -0.035em;
-  font-weight: 800; margin: 0; text-transform: uppercase;
+  font-size: clamp(40px, 6.6vw, 86px); line-height: 1.0; letter-spacing: -0.04em;
+  font-weight: 800; margin: 0;
 }
 .hero .hero-purpose {
-  margin: 24px 0 0; max-width: 620px; font-size: 18px; line-height: 1.7; color: var(--text-2);
+  margin: 26px auto 0; max-width: 640px; font-size: 18px; line-height: 1.65; color: var(--text-2);
 }
-.hero-cta { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+.hero-cta { display: flex; gap: 14px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
+.hero-note { margin: 14px 0 0; color: var(--text-3); font-size: 13px; letter-spacing: 0.02em; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   DEVICES — layout only. The machines themselves are finished images.
+
+   This block used to DRAW the hardware: a rounded border for the lid, a bar
+   for the base, a groove made of a pseudo-element. The owner's verdict was
+   that it did not look real, and that was right — an outline of a laptop reads
+   as a diagram of a laptop. The bodies are now rendered offline by
+   `landing/scripts/render-devices.py`, which composites the real capture into
+   an aluminium gradient with a machined edge, black glass, a notch, an island
+   and a contact shadow.
+
+   Two tones, chosen by <picture> media: space black for the white page, silver
+   for the black one. A single mid-grey body would have washed out on one of
+   them, and greyscale hardware is still black and white — aluminium happens to
+   be grey, so realism and the palette never had to fight.
+
+   Each screen holds a capture taken at that device's own viewport, 1440x900
+   and 390x844. Not one desktop screenshot squeezed into a phone-shaped hole,
+   which is the tell that gives most of these away.
+
+   The images bake the screenshot in, so RE-RUN THE SCRIPT when the app's UI
+   changes. A stale device image is a stale product shot.
+   ────────────────────────────────────────────────────────────────────────── */
+.devices {
+  position: relative; margin-top: 62px;
+  display: flex; justify-content: center; align-items: flex-end;
+}
+.device-mac { display: block; width: min(100%, 1000px); }
+.device-mac img { display: block; width: 100%; height: auto; }
+/* The phone overlaps the laptop's bottom-right. Its rendered shadow is part of
+   the image, so it needs no room reserved beyond its own box. */
+.device-phone {
+  position: absolute; right: 0; bottom: -18px;
+  width: 20%; min-width: 124px; max-width: 232px;
+}
+.device-phone img { display: block; width: 100%; height: auto; }
 
 /* section shell. `.alt` used to be an off-white tint; in a two-tone page the
    hairline between sections is the whole separation, so it does nothing now —
@@ -185,6 +241,35 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
   line-height: 1.06; font-weight: 700; margin-top: 14px;
 }
 .band p { color: var(--text-2); margin: 16px 0 0; font-size: 17px; line-height: 1.65; max-width: 28em; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THE PROBLEM, stated before the product. A visitor who has not named their own
+   problem does not recognise a solution to it, so this block sits between the
+   hero and the first feature. It is set larger than body copy and narrower than
+   the grid: one paragraph, read once, at the pace of a sentence.
+   ────────────────────────────────────────────────────────────────────────── */
+.problem-in { max-width: 720px; margin: 0 auto; text-align: center; }
+.problem-in h2 {
+  font-size: clamp(30px, 4vw, 48px); letter-spacing: -0.03em; line-height: 1.06;
+  font-weight: 700; margin-top: 14px;
+}
+.problem-in p { color: var(--text-2); margin: 20px 0 0; font-size: 19px; line-height: 1.65; }
+
+/* HOW IT WORKS — three numbered steps. An <ol>, because the order is the
+   content: doing these out of sequence is not a thing you can do. The numerals
+   are the only ornament, and they are type, not chrome. */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.step {
+  border: 1px solid var(--line); border-radius: 4px; padding: 28px 26px 30px;
+  transition: border-color 0.2s ease;
+}
+.step:hover { border-color: var(--line-2); }
+.step-n {
+  font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+  color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+.step h3 { font-size: 20px; margin: 14px 0 8px; letter-spacing: -0.015em; line-height: 1.25; }
+.step p { font-size: 15.5px; line-height: 1.6; color: var(--text-2); margin: 0; }
 
 /* ──────────────────────────────────────────────────────────────────────────
    PRODUCT SHOWCASE: stacked beats, each pairing a real screenshot of the
@@ -317,6 +402,7 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 }
 .closer-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .closer-cta .btn-primary, .closer-cta .btn-secondary { font-size: 13px; padding: 14px 30px; }
+.closer-note { margin: 18px 0 0; color: var(--text-3); font-size: 13px; letter-spacing: 0.02em; }
 
 /* footer */
 .foot { border-top: 1px solid var(--line); padding: 48px 0 40px; }
@@ -424,6 +510,12 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
   .feature-grid { grid-template-columns: 1fr; }
   .plans { grid-template-columns: 1fr; }
   .triad { grid-template-columns: 1fr; }
+  .steps { grid-template-columns: 1fr; }
+  .hero { padding-top: 56px; }
+  /* The phone keeps overlapping on a narrow screen rather than dropping out:
+     it is half the point of the picture. It only grows relative to the lid. */
+  .devices { margin-top: 40px; }
+  .device-phone { width: 26%; min-width: 88px; right: -3%; bottom: -12px; }
   .band-in { padding: 96px 0; }
   .nav a.ghost { display: none; }
   .foot-grid { grid-template-columns: 1fr; gap: 28px; }
