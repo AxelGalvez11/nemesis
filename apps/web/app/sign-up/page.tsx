@@ -121,12 +121,12 @@ export default function SignUpPage() {
         <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
+            <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
             <label htmlFor="signup-email">Account email</label>
-            <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="nemesis-auth-field-group">
+            <input id="signup-password" type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
             <label htmlFor="signup-password">Password</label>
-            <input id="signup-password" type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder="At least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <label className="nemesis-auth-consent">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} aria-label="Agree to the Terms and Privacy Policy" />
