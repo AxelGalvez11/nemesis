@@ -19,7 +19,7 @@
 // rather than each having their own idea.
 
 import type { CalendarEvent, CalendarEventKind } from "@/lib/workspace/calendar-model";
-import type { LmsScan, ScrapedCourse, ScrapedKind } from "@nemesis/shared";
+import type { LmsScan, ScrapedCourse, ScrapedDocument, ScrapedKind } from "@nemesis/shared";
 
 /** The scraped vocabulary is a subset of the calendar's, but the mapping is
  *  written out rather than cast, so adding a kind on either side is a type
@@ -88,31 +88,132 @@ export function eventsFromScan(
   return events;
 }
 
+/** A document the student chose, with the Library folder it belongs in. */
+export interface PlannedDocument {
+  course: string;
+  title: string;
+  /** Full Library path, course first: "Pharmacology 4/Week 3/Lectures". */
+  folderPath: string;
+  kind: ScrapedDocument["kind"];
+  fileType?: string;
+  url?: string;
+}
+
+/**
+ * The Library path a document belongs at. PURE.
+ *
+ * The course is always the outermost folder, then the portal's own folder
+ * names beneath it. Segments are cleaned of slashes here as well as in the
+ * sanitiser — this function is exported and someone will eventually call it
+ * with something that did not come through the wire.
+ */
+export function documentFolderPath(course: string, folder: readonly string[]): string {
+  const clean = (segment: string) => segment.replaceAll("/", " ").replaceAll("\\", " ").trim();
+  return [clean(course), ...folder.map(clean)].filter(Boolean).join("/");
+}
+
+/**
+ * Documents across the picked courses, each with the folder it lands in. PURE.
+ *
+ * `pickedDocuments` is a set of "course + NUL + title" keys. Absent means EVERY
+ * document in the picked courses — which is what a student who never opened
+ * the document list expects, rather than silently importing none.
+ */
+export function documentsFromScan(
+  scan: LmsScan | null,
+  pickedCourses: ReadonlySet<string>,
+  pickedDocuments?: ReadonlySet<string>,
+): PlannedDocument[] {
+  if (!scan) return [];
+  const out: PlannedDocument[] = [];
+  for (const course of scan.courses) {
+    if (!pickedCourses.has(course.name)) continue;
+    for (const doc of course.documents ?? []) {
+      if (pickedDocuments && !pickedDocuments.has(documentKey(course.name, doc.title))) continue;
+      out.push({
+        course: course.name,
+        folderPath: documentFolderPath(course.name, doc.folder),
+        kind: doc.kind,
+        title: doc.title,
+        ...(doc.fileType ? { fileType: doc.fileType } : {}),
+        ...(doc.url ? { url: doc.url } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+/** How a document is identified in the picker. A NUL separator, because a
+ *  course or a title can contain any printable character a portal allows. */
+export function documentKey(course: string, title: string): string {
+  return `${course}\u0000${title}`;
+}
+
 export interface ImportPlan {
   courses: string[];
   events: CalendarEvent[];
   /** Picked rows that carried no date and so cannot go on a calendar. */
   undated: number;
   syllabusLinks: Array<{ course: string; label: string; url: string }>;
+  documents: PlannedDocument[];
+  /**
+   * Every Library folder the import needs, parents included and deduplicated.
+   *
+   * A document three folders deep needs all three to exist, and two documents
+   * in the same folder must not ask for it twice.
+   */
+  folders: string[];
+}
+
+/** Every folder path an import touches, parents first so a creator that is not
+ *  recursive still ends up with a valid tree. PURE. */
+export function foldersFor(courses: readonly string[], documents: readonly PlannedDocument[]): string[] {
+  const all = new Set<string>(courses.map((course) => course.replaceAll("/", " ").trim()).filter(Boolean));
+  for (const doc of documents) {
+    const parts = doc.folderPath.split("/").filter(Boolean);
+    // Add each ancestor, not just the leaf: "A/B/C" needs "A" and "A/B" too.
+    for (let i = 1; i <= parts.length; i += 1) all.add(parts.slice(0, i).join("/"));
+  }
+  // Shallowest first — a parent can never be created after its child.
+  return [...all].sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
 }
 
 /** Everything an import will do, worked out before any of it happens, so the
  *  student can be told. PURE. */
-export function planImport(scan: LmsScan | null, picked: ReadonlySet<string>, newId: () => string): ImportPlan {
+export function planImport(
+  scan: LmsScan | null,
+  picked: ReadonlySet<string>,
+  newId: () => string,
+  pickedDocuments?: ReadonlySet<string>,
+): ImportPlan {
   const courses = coursesFromScan(scan, picked);
   const events = eventsFromScan(scan, picked, newId);
+  const documents = documentsFromScan(scan, picked, pickedDocuments);
   const undated = (scan?.courses ?? [])
     .filter((course: ScrapedCourse) => picked.has(course.name))
     .reduce((total, course) => total + course.items.filter((item) => !item.dueDate).length, 0);
-  return { courses, events, syllabusLinks: syllabusLinksFromScan(scan, picked), undated };
+  return {
+    courses,
+    documents,
+    events,
+    folders: foldersFor(courses, documents),
+    syllabusLinks: syllabusLinksFromScan(scan, picked),
+    undated,
+  };
 }
 
 /** A plain sentence describing what is about to happen. PURE, and deliberately
  *  specific — "imports your coursework" tells a student nothing. */
 export function describePlan(plan: ImportPlan): string {
   const parts: string[] = [];
-  if (plan.courses.length > 0) {
-    parts.push(`${plan.courses.length} ${plan.courses.length === 1 ? "folder" : "folders"} in your Library`);
+  if (plan.folders.length > 0) {
+    // Counts FOLDERS, not courses: once documents come in, a course brings its
+    // own sub-folders and saying "9 folders" when 34 are about to appear is
+    // the kind of small lie that makes a student distrust the whole import.
+    parts.push(`${plan.folders.length} ${plan.folders.length === 1 ? "folder" : "folders"} in your Library`);
+  }
+  if (plan.documents.length > 0) {
+    parts.push(`${plan.documents.length} ${plan.documents.length === 1 ? "document" : "documents"}`);
   }
   if (plan.events.length > 0) {
     parts.push(`${plan.events.length} ${plan.events.length === 1 ? "date" : "dates"} on your calendar`);

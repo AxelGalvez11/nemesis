@@ -103,13 +103,16 @@ export function CourseworkImportGate() {
     setFailed([]);
     const problems: string[] = [];
 
-    for (const course of plan.courses) {
+    // plan.folders, NOT plan.courses: once documents come in, a course brings
+    // its own sub-folders, and they arrive parents-first so a folder is never
+    // created before the one it sits in.
+    for (const folder of plan.folders) {
       try {
-        await library.createFolder(course);
+        await library.createFolder(folder);
       } catch (cause) {
         // Already there is a fine outcome, not a failure.
         const message = cause instanceof Error ? cause.message : "";
-        if (!/exist/i.test(message)) problems.push(`the folder for ${course}`);
+        if (!/exist/i.test(message)) problems.push(`the folder ${folder}`);
       }
     }
     for (const event of plan.events as CalendarEvent[]) {

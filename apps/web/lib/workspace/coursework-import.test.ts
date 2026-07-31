@@ -4,6 +4,9 @@ import { test } from "node:test";
 import {
   coursesFromScan,
   describePlan,
+  documentFolderPath,
+  documentKey,
+  documentsFromScan,
   eventsFromScan,
   planImport,
   syllabusLinksFromScan,
@@ -111,4 +114,82 @@ test("ids are never reused across events", () => {
   counter = 0;
   const events = eventsFromScan(SCAN, new Set(SCAN.courses.map((course) => course.name)), newId);
   assert.equal(new Set(events.map((event) => event.id)).size, events.length);
+});
+
+// ── Documents found by crawling into a course ────────────────────────────────
+
+const WITH_DOCS: LmsScan = {
+  courses: [
+    {
+      documents: [
+        { folder: ["Week 3", "Lectures"], kind: "file", title: "Enzyme kinetics", fileType: "pdf" },
+        { folder: ["Week 3", "Lectures"], kind: "file", title: "Slides 3b", fileType: "pptx" },
+        { folder: ["Week 3"], kind: "page", title: "Overview" },
+        { folder: [], kind: "file", title: "Course handbook", fileType: "pdf" },
+      ],
+      items: [],
+      name: "Integrated Pharmacotherapy 4",
+      syllabusLinks: [],
+    },
+    { documents: [{ folder: ["Unit 1"], kind: "file", title: "Reading" }], items: [], name: "Med Microb", syllabusLinks: [] },
+  ],
+  lms: "blackboard",
+  scannedAt: "2026-07-31T12:00:00.000Z",
+};
+
+const bothCourses = new Set(WITH_DOCS.courses.map((c) => c.name));
+
+test("a document lands under its course, then the portal's own folders", () => {
+  const docs = documentsFromScan(WITH_DOCS, new Set(["Integrated Pharmacotherapy 4"]));
+  assert.equal(docs[0]?.folderPath, "Integrated Pharmacotherapy 4/Week 3/Lectures");
+  assert.equal(docs[3]?.folderPath, "Integrated Pharmacotherapy 4", "a root document sits in the course folder");
+});
+
+test("EVERY ANCESTOR FOLDER IS CREATED, not just the deepest", () => {
+  // "A/B/C" needs A and A/B to exist or the write fails halfway down.
+  const plan = planImport(WITH_DOCS, new Set(["Integrated Pharmacotherapy 4"]), newId);
+  assert.deepEqual(plan.folders, [
+    "Integrated Pharmacotherapy 4",
+    "Integrated Pharmacotherapy 4/Week 3",
+    "Integrated Pharmacotherapy 4/Week 3/Lectures",
+  ]);
+});
+
+test("shared folders are asked for once, and parents come first", () => {
+  const plan = planImport(WITH_DOCS, bothCourses, newId);
+  assert.equal(new Set(plan.folders).size, plan.folders.length, "no duplicates");
+  const depth = plan.folders.map((f) => f.split("/").length);
+  assert.deepEqual([...depth].sort((a, b) => a - b), depth, "shallowest first");
+});
+
+test("a course with no documents field contributes only its own folder", () => {
+  const plan = planImport(SCAN, new Set(["Fall 2026: Prnc of Med Microb"]), newId);
+  assert.deepEqual(plan.folders, ["Fall 2026: Prnc of Med Microb"]);
+  assert.deepEqual(plan.documents, []);
+});
+
+test("picking no documents explicitly is different from not picking at all", () => {
+  const all = documentsFromScan(WITH_DOCS, bothCourses);
+  assert.equal(all.length, 5, "absent means every document");
+  const none = documentsFromScan(WITH_DOCS, bothCourses, new Set());
+  assert.equal(none.length, 0, "an empty picked set means none");
+});
+
+test("one document can be picked out of a course by key", () => {
+  const key = documentKey("Med Microb", "Reading");
+  const docs = documentsFromScan(WITH_DOCS, bothCourses, new Set([key]));
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0]?.title, "Reading");
+});
+
+test("🔴 A FOLDER NAME CANNOT ESCAPE ITS OWN PATH", () => {
+  assert.equal(documentFolderPath("A/B", ["../x"]), "A B/.. x");
+  assert.equal(documentFolderPath("Course", ["a\\b"]), "Course/a b");
+});
+
+test("the description counts folders and documents, not just courses", () => {
+  const plan = planImport(WITH_DOCS, new Set(["Integrated Pharmacotherapy 4"]), newId);
+  const text = describePlan(plan);
+  assert.match(text, /3 folders in your Library/);
+  assert.match(text, /4 documents/);
 });
