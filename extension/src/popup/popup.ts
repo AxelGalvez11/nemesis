@@ -18,7 +18,7 @@ const LABELS: Record<LmsKind, string> = {
   unknown: "your school portal",
 };
 
-const APP_URL = "https://app.enternemesis.com/";
+const APP_URL = "https://app.enternemesis.com/library?import=coursework";
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -93,9 +93,8 @@ async function scan(): Promise<void> {
       return;
     }
 
-    let results: chrome.scripting.InjectionResult<unknown>[];
     try {
-      results = await chrome.scripting.executeScript({
+      await chrome.scripting.executeScript({
         files: ["dist/content-scan.js"],
         target: { allFrames: false, tabId: tab.id },
       });
@@ -104,19 +103,45 @@ async function scan(): Promise<void> {
       return;
     }
 
-    const found = results[0]?.result as LmsScan | undefined;
+    // 🔴 THE RETURN VALUE OF executeScript IS NOT THE SCAN, and waiting on it
+    // was the bug behind "no courses found" appearing while the page's own
+    // card showed nine. The bundle is an IIFE, so what comes back is the
+    // IIFE's completion value — undefined. The scanner stores its own result
+    // instead, and this watches for it.
+    //
+    // This popup will usually be CLOSED before that lands, because a slow
+    // portal takes half a minute and the student is looking at the page. That
+    // is fine and by design: the scan finishes regardless, the page's card
+    // reports it, and reopening this popup shows the result. Watching here is
+    // only for the student who keeps it open.
+    setStatus("Reading this page. You can close this — it keeps going.", "idle");
+    const found = await waitForScan(45_000);
     if (!found || found.courses.length === 0) {
       setStatus(`No courses found on this ${LABELS[lms]} page. Try your dashboard or course list.`, "bad");
       return;
     }
-
-    await chrome.storage.local.set({ [STORAGE_KEY]: found });
     setStatus(describe(found), "good");
     renderCourses(found);
     element("next").hidden = false;
   } finally {
     button.disabled = false;
   }
+}
+
+/** Poll storage until the scanner deposits a reading, or we give up. */
+async function waitForScan(timeoutMs: number): Promise<LmsScan | null> {
+  const started = Date.now();
+  const before = await chrome.storage.local.get(STORAGE_KEY);
+  const previous = JSON.stringify(before[STORAGE_KEY] ?? null);
+  while (Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const bag = await chrome.storage.local.get(STORAGE_KEY);
+    const current = bag[STORAGE_KEY] as LmsScan | undefined;
+    // Only a NEW reading counts; an old one left over from a previous page
+    // would otherwise be reported as the result of this scan.
+    if (current && JSON.stringify(current) !== previous) return current;
+  }
+  return null;
 }
 
 async function restore(): Promise<void> {

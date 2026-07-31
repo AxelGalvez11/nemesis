@@ -19,7 +19,14 @@ async function readStored(): Promise<LmsScan | null> {
   return (bag[STORAGE_KEY] as LmsScan | undefined) ?? null;
 }
 
-chrome.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: { type?: string; scan?: unknown }, _sender, sendResponse) => {
+  if (message?.type === RUNTIME_MESSAGES.SAVE_SCAN) {
+    // Stored exactly as the scanner sent it. This worker deliberately does not
+    // validate or reshape: the app sanitises everything on arrival, and a
+    // second opinion here would only be a second thing to keep in step.
+    void chrome.storage.local.set({ [STORAGE_KEY]: message.scan }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.type === RUNTIME_MESSAGES.GET_STORED) {
     void readStored().then(sendResponse);
     return true; // keeps the channel open for the async reply

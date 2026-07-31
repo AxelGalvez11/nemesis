@@ -21,8 +21,35 @@
 import { readFacts, readSnapshot } from "./lms/dom.ts";
 import { detectLms, factsFromUrl } from "./lms/detect.ts";
 import { isItemLink, parseSnapshot } from "./lms/parse.ts";
+import { RUNTIME_MESSAGES } from "./messages.ts";
 import { showToast } from "./toast.ts";
 import type { LmsKind, LmsScan, ScrapedCourse } from "./wire.ts";
+
+/** Where a student goes to turn a reading into Library folders. */
+const APP_URL = "https://app.enternemesis.com/library?import=coursework";
+
+/**
+ * Hand the finished reading to the service worker, which owns storage.
+ *
+ * 🔴 THE SCANNER SAVES ITS OWN RESULT. Returning it was silently broken twice
+ * over: the bundle is an IIFE so `executeScript` received `undefined` rather
+ * than the scan, and the popup that awaited it closes the moment the student
+ * clicks the page — which they will, because this waits up to forty-five
+ * seconds. Both showed up as a popup insisting "no courses found" while the
+ * page's own card reported nine.
+ */
+function save(scan: LmsScan): void {
+  try {
+    chrome.runtime.sendMessage({ scan, type: RUNTIME_MESSAGES.SAVE_SCAN }, () => {
+      // A dead worker sets lastError; reading it stops Chrome logging an
+      // unchecked-error warning into the student's console on their own portal.
+      void chrome.runtime.lastError;
+    });
+  } catch {
+    // The extension was reloaded or disabled mid-scan. Nothing to do, and
+    // certainly nothing worth throwing over on someone's grade page.
+  }
+}
 
 /** Enough for a slow portal, without hanging on a page that genuinely has no
  *  courses. Thirty seconds was not enough on the installation this was measured
@@ -105,11 +132,24 @@ async function scanThisPage(): Promise<LmsScan> {
       "Try the page that lists all of your courses.",
       8000,
     );
-    return { courses: [], lms, scannedAt: stamp() };
+    const nothing: LmsScan = { courses: [], lms, scannedAt: stamp() };
+    save(nothing);
+    return nothing;
   }
 
-  showToast(document, "done", `Read ${summarise(best)}`, "Open Nemesis to finish bringing them in.", 10_000);
-  return { courses: best, lms, scannedAt: stamp() };
+  const scan: LmsScan = { courses: best, lms, scannedAt: stamp() };
+  save(scan);
+  // The way back. Without this the student is left on their portal holding a
+  // result with no idea where it goes — which is exactly what the owner hit.
+  showToast(
+    document,
+    "done",
+    `Read ${summarise(best)}`,
+    "They become folders in your Library once you bring them in.",
+    0,
+    { label: "Open Nemesis", onClick: () => window.open(APP_URL, "_blank", "noopener") },
+  );
+  return scan;
 }
 
 // chrome.scripting.executeScript awaits a returned promise and uses the

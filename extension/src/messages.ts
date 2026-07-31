@@ -38,10 +38,23 @@ export const EXTENSION_MESSAGES = {
 
 /** Runtime channel, extension-internal. */
 export const RUNTIME_MESSAGES = {
-  /** Popup asks the worker to scan the tab the student is looking at. */
-  SCAN_ACTIVE_TAB: "nemesis:scan-active-tab",
-  /** Worker asks the injected scanner for a reading. */
-  READ_PAGE: "nemesis:read-page",
+  /**
+   * The injected scanner hands its finished reading to the worker.
+   *
+   * 🔴 THE SCANNER SAVES ITS OWN RESULT, and this is why. Two independent
+   * reasons a return value cannot be trusted here:
+   *
+   *  - The bundle is an IIFE, so `chrome.scripting.executeScript` receives the
+   *    IIFE's completion value — `undefined` — not the scan. The popup read
+   *    that as "no courses found" while the page's own status card was happily
+   *    reporting nine.
+   *  - The scan waits up to forty-five seconds for a slow portal to render,
+   *    and a popup closes the instant the student clicks the page. Anything
+   *    awaiting in the popup dies with it.
+   *
+   * Pushing the result to the worker survives both.
+   */
+  SAVE_SCAN: "nemesis:save-scan",
   /** Anyone asks the worker what it is holding. */
   GET_STORED: "nemesis:get-stored",
   CLEAR_STORED: "nemesis:clear-stored",

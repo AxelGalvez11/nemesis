@@ -74,6 +74,19 @@ const CSS = `
   font: inherit; line-height: 1; border-radius: 6px;
 }
 .close:hover { opacity: .75; }
+.action {
+  margin-top: 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px;
+  border: 0; border-radius: 8px;
+  background: #1d1f24; color: #fff;
+  font: inherit; font-size: 12px; font-weight: 560;
+  cursor: pointer;
+}
+.action:hover { opacity: .88; }
+@media (prefers-color-scheme: dark) {
+  .action { background: #f2f4f7; color: #14161a; }
+}
 `;
 
 interface Handle {
@@ -85,7 +98,16 @@ interface Handle {
 let handle: Handle | null = null;
 
 function ensure(doc: Document): Handle {
-  if (handle && doc.getElementById(HOST_ID)) return handle;
+  const existing = doc.getElementById(HOST_ID);
+  if (handle && existing) return handle;
+
+  // 🔴 A LEFTOVER HOST WITH NO HANDLE MEANS THIS SCRIPT WAS INJECTED AGAIN.
+  // Each injection is a fresh module instance, so `handle` starts null while
+  // the previous run's card is still sitting in the page — and without this,
+  // pressing "Read this page" twice stacked two cards on top of each other.
+  // Observed on a real portal.
+  if (existing) existing.remove();
+
   const host = doc.createElement("div");
   host.id = HOST_ID;
   // The host itself must not participate in the page's layout at all.
@@ -125,12 +147,18 @@ function tick(doc: Document): SVGElement {
  *
  * `detail` is optional second-line context. `autoHideMs` of 0 keeps it up.
  */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export function showToast(
   doc: Document,
   tone: ToastTone,
   title: string,
   detail?: string,
   autoHideMs = 0,
+  action?: ToastAction,
 ): void {
   const { card } = ensure(doc);
   card.replaceChildren();
@@ -151,6 +179,14 @@ export function showToast(
     detailEl.className = "detail";
     detailEl.textContent = detail;
     body.append(detailEl);
+  }
+  if (action) {
+    const button = doc.createElement("button");
+    button.className = "action";
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", action.onClick);
+    body.append(button);
   }
   card.append(body);
 
