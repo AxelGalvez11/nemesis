@@ -518,4 +518,149 @@ export const AGENT_TOOLS = [
     },
     type: "function",
   },
+  // ── Editing and removing what already exists ────────────────────────────────
+  //
+  // Short and flat on purpose. Two lines in this file have already steered the
+  // model badly — search_library's "use this before answering anything" and
+  // add_calendar_event's date read-back — because a schema description rides
+  // EVERY turn and outranks the system prompt. A destructive tool that oversells
+  // itself is the worst version of that, so none of these say "always",
+  // "whenever", or "make sure to".
+  {
+    function: {
+      description:
+        "Change an existing Calendar event. Pass only the fields that should change; anything omitted is left alone. "
+        + "Needs the event's id from list_calendar_events.",
+      name: "update_calendar_event",
+      parameters: {
+        properties: {
+          course: { description: "Course name, or empty string to clear it", type: "string" },
+          date: { description: "New date in YYYY-MM-DD", type: "string" },
+          event_id: { description: "The event's id from list_calendar_events", type: "string" },
+          kind: { description: "assignment, exam, rotation, class, or other", type: "string" },
+          note: { description: "Details, or empty string to clear them", type: "string" },
+          time: { description: "New time, or empty string to make it all-day", type: "string" },
+          title: { description: "New title", type: "string" },
+        },
+        required: ["event_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Remove an event from the student's Calendar. Needs the event's id from list_calendar_events.",
+      name: "delete_calendar_event",
+      parameters: {
+        properties: { event_id: { description: "The event's id from list_calendar_events", type: "string" } },
+        required: ["event_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
+        + "Needs the note's id from search_library or read_library_note.",
+      name: "replace_library_note",
+      parameters: {
+        properties: {
+          content: { description: "The note's new full markdown body", type: "string" },
+          note_id: { description: "The note's id from search_library", type: "string" },
+        },
+        required: ["note_id", "content"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move a Library note to the student's trash. It stops appearing in their Library but is recoverable. "
+        + "Needs the note's id from search_library.",
+      name: "delete_library_note",
+      parameters: {
+        properties: { note_id: { description: "The note's id from search_library", type: "string" } },
+        required: ["note_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Change the front or back of one flashcard. Pass only the side that changes. "
+        + "Needs the card's id from read_study_deck.",
+      name: "edit_flashcard",
+      parameters: {
+        properties: {
+          back: { description: "New back/answer text", type: "string" },
+          card_id: { description: "The card's id from read_study_deck", type: "string" },
+          front: { description: "New front/question text", type: "string" },
+        },
+        required: ["card_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Delete one flashcard. This cannot be undone. Needs the card's id from read_study_deck.",
+      name: "delete_flashcard",
+      parameters: {
+        properties: { card_id: { description: "The card's id from read_study_deck", type: "string" } },
+        required: ["card_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Rename a Study deck. Give the deck's current full name and the new name; its folder and cards stay where they are.",
+      name: "rename_study_deck",
+      parameters: {
+        properties: {
+          deck_name: { description: "The deck's current full name from list_study_decks", type: "string" },
+          new_name: { description: "The new deck name", type: "string" },
+        },
+        required: ["deck_name", "new_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Delete a Study deck. Only works on a deck with no cards left in it — a deck that still holds cards has to "
+        + "be removed by the student from the Study screen, because deleting it would destroy their review history.",
+      name: "delete_study_deck",
+      parameters: {
+        properties: { deck_name: { description: "The deck's full name from list_study_decks", type: "string" } },
+        required: ["deck_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Delete a practice test or mind map. This cannot be undone. Needs the id from list_study_artifacts.",
+      name: "delete_study_artifact",
+      parameters: {
+        properties: { artifact_id: { description: "The artifact's id from list_study_artifacts", type: "string" } },
+        required: ["artifact_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
 ] as const;

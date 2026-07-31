@@ -15,10 +15,18 @@
 // the model can tell the student what went wrong, or try a different tool, instead
 // of the whole turn dying with an empty bubble. Error strings are written for the
 // student, because the model repeats them almost verbatim.
+import {
+  calendarEventPatch,
+  deckDeletionVerdict,
+  isPatchFailure,
+  noteReplacementBody,
+  workspaceId,
+} from "@nemesis/shared";
 import { supabase } from "./supabase";
 import {
   createFolder,
   createNoteWithContent,
+  deleteNote,
   fetchLibrary,
   fetchNote,
   moveNote,
@@ -27,7 +35,23 @@ import {
   type CloudLibraryNote,
   type CloudLibrarySnapshot,
 } from "./cloudLibrary";
-import { createStudyMindmap, createStudyTest } from "./studyArtifacts";
+import {
+  deleteCalendarEvent as deleteCloudCalendarEvent,
+  updateCalendarEvent as updateCloudCalendarEvent,
+} from "./cloudCalendar";
+import type { AgendaEventKind } from "@/lib/agenda";
+import {
+  deleteStudyCard,
+  deleteStudyDeck as deleteCloudStudyDeck,
+  fetchCloudStudy,
+  renameStudyDeck as renameCloudStudyDeck,
+  updateStudyCard,
+} from "./cloudStudy";
+import {
+  createStudyMindmap,
+  createStudyTest,
+  deleteStudyArtifact as deleteCloudStudyArtifact,
+} from "./studyArtifacts";
 import {
   clip,
   deckNameParts,
@@ -81,7 +105,7 @@ async function searchLibrary({ args }: ToolContext) {
   const escaped = query.replaceAll("%", "\\%").replaceAll("_", "\\_");
   const { data, error } = await supabase
     .from("readable_library_documents")
-    .select("path,title,content")
+    .select("id,path,title,content")
     .eq("deleted", false)
     .eq("kind", "note")
     .or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`)
@@ -93,7 +117,8 @@ async function searchLibrary({ args }: ToolContext) {
     // A window around the hit, not the first 160 characters — the whole point is
     // to show the model the part that matched.
     const snippet = at >= 0 ? content.slice(Math.max(0, at - 80), at + 160) : content.slice(0, 160);
-    return { path: str(row.path), snippet: snippet.trim(), title: str(row.title) };
+    // id is the stable handle; path is rewritten by rename and move.
+    return { id: str(row.id), path: str(row.path), snippet: snippet.trim(), title: str(row.title) };
   });
   return notes.length > 0 ? { notes } : { notes: [], note: `Nothing in the Library matches '${query}'.` };
 }
@@ -103,13 +128,13 @@ async function readLibraryNote({ args }: ToolContext) {
   if (!path) return { error: "Which note? Use search_library to get its path." };
   const { data, error } = await supabase
     .from("readable_library_documents")
-    .select("path,title,content")
+    .select("id,path,title,content")
     .eq("deleted", false)
     .eq("path", path)
     .maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: `No note at '${path}'. Use search_library to find the right path.` };
-  return { content: clip(str(data.content)), path: str(data.path), title: str(data.title) };
+  return { content: clip(str(data.content)), id: str(data.id), path: str(data.path), title: str(data.title) };
 }
 
 async function createLibraryNote({ args, uid }: ToolContext) {
@@ -279,7 +304,7 @@ async function readStudyDeck({ args }: ToolContext) {
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 20) : 12;
   const { data: cards, error } = await supabase
     .from("study_cards")
-    .select("front,back,card_type,tags,suspended")
+    .select("id,front,back,card_type,tags,suspended")
     .eq("deck_id", deck.id)
     .order("created_at")
     .range(offset, offset + limit - 1);
@@ -293,6 +318,9 @@ async function readStudyDeck({ args }: ToolContext) {
       back: clip(str(card.back), 600),
       card_type: str(card.card_type),
       front: clip(str(card.front), 300),
+      // The handle for edit_flashcard and delete_flashcard. Without it those
+      // tools have nothing to point at and the model guesses.
+      id: str(card.id),
       suspended: card.suspended === true,
       tags: Array.isArray(card.tags) ? card.tags.map(str).filter(Boolean).slice(0, 20) : [],
     })),
@@ -539,6 +567,165 @@ async function addCalendarEvent({ args, uid }: ToolContext) {
  *  default: tsc refuses to compile if a name is added to lib/agent-tools.ts and
  *  not given a handler here, so "the model called a tool we forgot to build"
  *  cannot reach a student. */
+// ── editing and removing ──────────────────────────────────────────────────────
+//
+// Everything below goes through the cloud* helpers for the reason at the top of
+// this file: they write the on-disk cache as well as Supabase. A delete that
+// only reached the cloud would leave the note sitting on the Library screen
+// until the next fetch, which reads as "it didn't work" and invites the student
+// to ask again.
+
+/** The row a destructive verb was pointed at, or an error the model can act on. */
+async function rowById(
+  table: "calendar_events" | "readable_library_documents" | "study_cards" | "study_artifacts",
+  rawId: unknown,
+  uid: string,
+  hint: string,
+): Promise<{ error: string } | { id: string; row: Record<string, unknown> }> {
+  const id = workspaceId(rawId);
+  if (!id) return { error: `That is not a valid id. ${hint}` };
+  const base = supabase.from(table).select("*").eq("id", id).eq("user_id", uid);
+  const { data, error } = await (table === "readable_library_documents"
+    ? base.eq("deleted", false)
+    : base).maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: `Nothing found with that id — it may already be gone. ${hint}` };
+  return { id, row: data as Record<string, unknown> };
+}
+
+async function updateCalendarEventTool({ args, uid }: ToolContext) {
+  const found = await rowById("calendar_events", args.event_id, uid, "Use list_calendar_events to get event ids.");
+  if ("error" in found) return found;
+  const { event_id: _handle, ...fields } = args;
+  const patch = calendarEventPatch(fields);
+  if (isPatchFailure(patch)) return patch;
+  // 🔴 updateCalendarEvent takes a WHOLE event, not a patch — toRow writes every
+  // column. So the current row has to be merged under the change, or "move it to
+  // 3pm" silently wipes the title, course and note it did not mention.
+  const merged = {
+    course: patch.course !== undefined ? patch.course ?? undefined : str(found.row.course) || undefined,
+    date: patch.date ?? str(found.row.date),
+    kind: (patch.kind ?? str(found.row.kind) ?? "other") as AgendaEventKind,
+    note: patch.note !== undefined ? patch.note ?? undefined : str(found.row.note) || undefined,
+    time: patch.time !== undefined ? patch.time ?? undefined : str(found.row.time) || undefined,
+    title: patch.title ?? str(found.row.title),
+  };
+  await updateCloudCalendarEvent(uid, found.id, merged);
+  return {
+    changed: Object.keys(patch),
+    instruction:
+      "Updated. Do not write the event back — the Calendar tab shows it. One short line saying what changed.",
+    title: merged.title,
+    updated: true,
+  };
+}
+
+async function deleteCalendarEventTool({ args, uid }: ToolContext) {
+  const found = await rowById("calendar_events", args.event_id, uid, "Use list_calendar_events to get event ids.");
+  if ("error" in found) return found;
+  await deleteCloudCalendarEvent(uid, found.id);
+  return { deleted: true, title: str(found.row.title) };
+}
+
+async function replaceLibraryNote({ args, uid }: ToolContext) {
+  const found = await rowById("readable_library_documents", args.note_id, uid, "Use search_library to get note ids.");
+  if ("error" in found) return found;
+  if (str(found.row.kind) !== "note") return { error: "That id is a folder, not a note." };
+  const body = noteReplacementBody(args.content);
+  if (!body) return { error: "Nothing to write — a replacement needs a body. Use delete_library_note to remove it." };
+  await updateNoteContent(uid, found.id, body);
+  return { path: str(found.row.path), replaced: true, title: str(found.row.title) };
+}
+
+async function deleteLibraryNoteTool({ args, uid }: ToolContext) {
+  const found = await rowById("readable_library_documents", args.note_id, uid, "Use search_library to get note ids.");
+  if ("error" in found) return found;
+  if (str(found.row.kind) !== "note") {
+    return { error: "That id is a folder. Folders are removed from the Library screen, not from chat." };
+  }
+  // Soft — `deleted` is a flag, so the student can get this back.
+  await deleteNote(uid, found.id);
+  return { deleted: true, recoverable: true, title: str(found.row.title) };
+}
+
+async function editFlashcard({ args, uid }: ToolContext) {
+  const found = await rowById("study_cards", args.card_id, uid, "Use read_study_deck to get card ids.");
+  if ("error" in found) return found;
+  const changed: string[] = [];
+  let front = str(found.row.front);
+  let back = str(found.row.back);
+  if ("front" in args) {
+    const next = str(args.front).trim().slice(0, 12_000);
+    if (!next) return { error: "A card's front cannot be empty." };
+    front = next;
+    changed.push("front");
+  }
+  if ("back" in args) {
+    const next = str(args.back).trim().slice(0, 12_000);
+    if (!next) return { error: "A card's back cannot be empty." };
+    back = next;
+    changed.push("back");
+  }
+  if (changed.length === 0) return { error: "Nothing to change — pass front, back, or both." };
+  // updateStudyCard writes both sides, so the untouched one is carried over from
+  // the row above rather than left to become undefined.
+  await updateStudyCard(uid, found.id, front, back);
+  return { changed, edited: true };
+}
+
+async function deleteFlashcard({ args, uid }: ToolContext) {
+  const found = await rowById("study_cards", args.card_id, uid, "Use read_study_deck to get card ids.");
+  if ("error" in found) return found;
+  await deleteStudyCard(uid, found.id);
+  return { deleted: true, front: clip(str(found.row.front), 120) };
+}
+
+/** The one deck a name refers to, or an error naming the tool that lists them. */
+async function deckByName(wanted: string) {
+  const name = wanted.trim();
+  if (!name) return { error: "Which deck? Use list_study_decks to see the names." };
+  const { data, error } = await supabase.from("study_decks").select("id,name").limit(200);
+  if (error) return { error: error.message };
+  const decks = data ?? [];
+  const matched = matchDeckName(name, decks.map((deck) => str(deck.name)));
+  const deck = matched ? decks.find((row) => str(row.name) === matched) : undefined;
+  if (!deck) return { error: `No unique Study deck matched '${name}'. Use the full name from list_study_decks.` };
+  return { id: str(deck.id), name: str(deck.name) };
+}
+
+async function renameStudyDeckTool({ args, uid }: ToolContext) {
+  const deck = await deckByName(str(args.deck_name));
+  if ("error" in deck) return deck;
+  const nextLeaf = str(args.new_name).trim().slice(0, 120);
+  if (!nextLeaf) return { error: "A deck needs a name." };
+  const { decks } = await fetchCloudStudy(uid);
+  await renameCloudStudyDeck(uid, decks, deck.id, nextLeaf);
+  return { from: deck.name, renamed: true, to: nextLeaf };
+}
+
+async function deleteStudyDeckTool({ args, uid }: ToolContext) {
+  const deck = await deckByName(str(args.deck_name));
+  if ("error" in deck) return deck;
+  const { count, error } = await supabase
+    .from("study_cards")
+    .select("id", { count: "exact", head: true })
+    .eq("deck_id", deck.id);
+  if (error) return { error: error.message };
+  // 🔴 Permanent, and it takes every card's review history with it. Empty decks
+  // only — see deckDeletionVerdict for why that line is where it is.
+  const verdict = deckDeletionVerdict(count ?? 0);
+  if (!verdict.allowed) return { error: verdict.reason };
+  await deleteCloudStudyDeck(uid, deck.id);
+  return { deck: deck.name, deleted: true };
+}
+
+async function deleteStudyArtifactTool({ args, uid }: ToolContext) {
+  const found = await rowById("study_artifacts", args.artifact_id, uid, "Use list_study_artifacts to get ids.");
+  if ("error" in found) return found;
+  await deleteCloudStudyArtifact(found.id);
+  return { deleted: true, kind: str(found.row.kind), title: str(found.row.title) };
+}
+
 const HANDLERS: Record<AgentToolName, ToolHandler> = {
   add_flashcards: addFlashcards,
   add_calendar_event: addCalendarEvent,
@@ -557,6 +744,15 @@ const HANDLERS: Record<AgentToolName, ToolHandler> = {
   read_library_note: readLibraryNote,
   rename_library_note: renameLibraryNote,
   search_library: searchLibrary,
+  update_calendar_event: updateCalendarEventTool,
+  delete_calendar_event: deleteCalendarEventTool,
+  replace_library_note: replaceLibraryNote,
+  delete_library_note: deleteLibraryNoteTool,
+  edit_flashcard: editFlashcard,
+  delete_flashcard: deleteFlashcard,
+  rename_study_deck: renameStudyDeckTool,
+  delete_study_deck: deleteStudyDeckTool,
+  delete_study_artifact: deleteStudyArtifactTool,
 };
 
 /** Handed back with every result that created something, because the model

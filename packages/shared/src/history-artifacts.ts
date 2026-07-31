@@ -21,7 +21,7 @@
 // Field-agnostic by construction: it reports the artifact's KIND and TITLE and, for
 // the newest one, its body. No subject-matter heuristics — a mechanical engineer's
 // lab recording and a law student's seminar are handled by the same two lines.
-import { wrapUntrusted } from "@nemesis/shared";
+import { wrapUntrusted } from "./untrusted-content.ts";
 
 /** The most a single artifact body may add to the wire. The whole history budget
  *  is 24,000 characters (chat-thread.ts), so one artifact may take a sixth of it —
@@ -84,7 +84,7 @@ export function expandArtifactContext<T extends ArtifactCarrier>(
   // Which message owns the body: the last one with an artifact that HAS text.
   let bodyIndex = -1;
   for (let i = history.length - 1; i >= 0; i -= 1) {
-    if ((history[i].outputs ?? []).some((output) => bodyOf(output).length > 0)) {
+    if ((history[i]?.outputs ?? []).some((output) => bodyOf(output).length > 0)) {
       bodyIndex = i;
       break;
     }

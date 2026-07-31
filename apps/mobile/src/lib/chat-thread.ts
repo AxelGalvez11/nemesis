@@ -5,11 +5,17 @@
 // The phone talks to the SAME metered valve as the desktop (nemesis-llm), so
 // there is no client-side token accounting here — just context-window hygiene:
 // send a bounded slice of the transcript, never the whole history.
-import { UNTRUSTED_CONTENT_RULE, WRITING_VOICE, wrapUntrusted } from "@nemesis/shared";
+import {
+  ARTIFACT_REFERENCE_RULE,
+  expandArtifactContext,
+  UNTRUSTED_CONTENT_RULE,
+  WRITING_VOICE,
+  wrapUntrusted,
+} from "@nemesis/shared";
 
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
-import { ARTIFACT_REFERENCE_RULE, expandArtifactContext } from "./history-artifacts.ts";
+
 
 export type ChatRole = "assistant" | "user";
 

@@ -221,12 +221,77 @@ function deckName(card: BrainWeakCard): string {
 }
 
 /**
+ * Words too common to mean anything when two texts share them.
+ *
+ * Deliberately generic English, never subject matter: the moment this list
+ * contains a discipline's vocabulary it stops working for the next student.
+ */
+const STOPWORDS: ReadonlySet<string> = new Set([
+  "about", "after", "again", "against", "because", "been", "before", "being",
+  "between", "both", "cannot", "could", "does", "doing", "down", "during",
+  "each", "from", "further", "have", "having", "here", "into", "just", "like",
+  "make", "more", "most", "much", "only", "other", "over", "same", "should",
+  "some", "such", "than", "that", "their", "them", "then", "there", "these",
+  "they", "this", "those", "through", "under", "until", "very", "well", "were",
+  "what", "when", "where", "which", "while", "with", "would", "your",
+]);
+
+/** Distinctive words in a piece of text: long enough to carry meaning, and not filler. */
+function contentWords(text: string): Set<string> {
+  const words = text.toLowerCase().match(/[a-z][a-z0-9'-]{3,}/g) ?? [];
+  return new Set(words.filter((word) => !STOPWORDS.has(word)));
+}
+
+function sharesVocabulary(asked: ReadonlySet<string>, candidate: string): boolean {
+  if (asked.size === 0) return false;
+  for (const word of contentWords(candidate)) {
+    if (asked.has(word)) return true;
+  }
+  return false;
+}
+
+// Whether the student is asking about their SCHEDULE or their PROGRESS at all.
+//
+// These match the shape of the request, not its subject — "when is it due" and
+// "what am I weak on" are the same sentences for a law student, a nursing
+// student and a machinist. No discipline's vocabulary appears here, and none
+// ever should.
+// ⚠️ THESE MATCH TIME AND DIFFICULTY, NEVER ARTIFACTS. The first draft listed
+// "exam", "test" and "quiz" here, which meant "make me a practice test" — the
+// single most common request in the app — read as a question about the
+// student's timetable and pulled the whole calendar back in. A noun that names
+// a THING THE CHAT CAN BUILD can never be the trigger; only words about WHEN
+// and about STRUGGLING belong. Naming a subject still works on its own through
+// vocabulary overlap below, so nothing is lost by keeping these narrow.
+const SCHEDULE_ASK =
+  /\b(due|overdue|deadlines?|schedules?|scheduled|reschedule[d]?|calendar|upcoming|today|tonight|tomorrow|this week|next week|this month|next month|semester|timetable|agenda)\b|\bwhen (is|are|was|were|do|does|did|should|will)\b/i;
+const PROGRESS_ASK =
+  /\b(weak|weakest|struggl\w+|behind|forget\w*|failing|lapses?|worst|trouble|revise|revising|cram\w*)\b|\b(what|which) should i (stud|review|work|focus|practi)/i;
+
+/**
  * A bounded, injection-fenced context packet shared by web and iOS chat.
  * Notes carry the semantic answer, graph neighbors add one-hop structure,
  * Calendar adds deadlines, and Study adds demonstrated weak spots.
+ *
+ * 🔴 `query` IS NOT OPTIONAL DECORATION. Calendar and Study rows used to ride
+ * along on EVERY turn regardless of what was asked — the edge function fetches
+ * 20 events and the 12 most-failed cards with no filter of any kind, and this
+ * formatter printed the first 8 and 6 of them unconditionally. Ask "make
+ * flashcards from this recording" and the nearest text to the request was a
+ * list of unrelated deadlines and someone's worst cards, which is exactly the
+ * decoy that produced twenty cards on the wrong subject.
+ *
+ * So a Calendar or Study row now has to earn its place: either the student is
+ * asking about their schedule or their progress, or the row shares real
+ * vocabulary with what they typed. Everything else is dropped — and dropping it
+ * costs nothing now that the chat has list_calendar_events, list_study_decks
+ * and read_study_deck to go and fetch on purpose.
  */
-export function formatBrainContext(context: BrainContext | null): string {
+export function formatBrainContext(context: BrainContext | null, query: string): string {
   if (!context) return "";
+  const asked = contentWords(query);
+  const wantsSchedule = SCHEDULE_ASK.test(query);
+  const wantsProgress = PROGRESS_ASK.test(query);
   const notes = [...context.notes]
     .sort((a, b) => b.similarity - a.similarity)
     .filter((hit, index, rows) =>
@@ -240,8 +305,21 @@ export function formatBrainContext(context: BrainContext | null): string {
   const linked = context.linkedNotes
     .filter((note) => !primaryIds.has(note.id))
     .slice(0, 5);
-  const events = context.events.slice(0, 8);
-  const weakCards = context.weakCards.slice(0, 6);
+  const events = context.events
+    .filter((event) =>
+      wantsSchedule ||
+      sharesVocabulary(
+        asked,
+        `${event.title} ${event.course ?? ""} ${event.kind ?? ""} ${event.note ?? ""}`,
+      )
+    )
+    .slice(0, 8);
+  const weakCards = context.weakCards
+    .filter((card) =>
+      wantsProgress ||
+      sharesVocabulary(asked, `${card.front} ${card.back ?? ""} ${deckName(card)}`)
+    )
+    .slice(0, 6);
   const sections: string[] = [];
 
   if (notes.length) {

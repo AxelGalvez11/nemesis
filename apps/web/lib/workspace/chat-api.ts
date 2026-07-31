@@ -5,6 +5,8 @@
 // adds AbortSignal support (mobile has no cancel affordance).
 
 import {
+  ARTIFACT_REFERENCE_RULE,
+  expandArtifactContext,
   formatBrainContext,
   shouldRecallBrain,
   studyCreationKindFromPreferencePrompt,
@@ -175,6 +177,9 @@ export function buildWireMessages(
   // Derived from the decision by default so a caller cannot accidentally
   // describe tools that will not be sent.
   toolsEnabled = toolsAllowed(decision),
+  /** Retrieved background — the second-brain packet. Its OWN system message, on
+   *  purpose; see the block comment on the grounding message below. */
+  groundingContext = "",
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -196,6 +201,7 @@ export function buildWireMessages(
     {
       content: [
         chatSystemPrompt(toolsEnabled),
+        ARTIFACT_REFERENCE_RULE,
         routeInstruction(decision.route),
         // Only when the tools are really riding — see SAVE_INSTRUCTION.
         ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
@@ -205,7 +211,29 @@ export function buildWireMessages(
     },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
     ...(skills ? [{ content: skills, role: "system" as const }] : []),
-    ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
+    // 🔴 This used to be a bare content+role map, which dropped every message's
+    // `outputs` — so a recording, a deck or a note THIS CONVERSATION had just
+    // produced was invisible on the next turn and "make flashcards from this"
+    // had nothing to bind "this" to. Fixed on iOS first (owner 2026-07-30);
+    // web had the identical hole. Shared module, not a second copy.
+    ...expandArtifactContext(kept).map((msg) => ({ content: msg.content, role: msg.role })),
+    // 🔴 The retrieved packet rides its OWN system message. Concatenating it
+    // onto the student's sentence — which is what `groundedText` used to do —
+    // put unrelated Library notes, deadlines and weak cards immediately after
+    // the word "this", making them the nearest antecedent for a pronoun that
+    // meant something else entirely. Retrieved material is not something the
+    // student said. It still sits last, closest to the answer, which is where
+    // it earns its keep when the question really is about their notes.
+    ...(groundingContext.trim()
+      ? [{
+        content:
+          "Background retrieved automatically from this student's workspace. It was NOT said by them and is "
+          + "not what they are pointing at. Use it only where it is relevant to what they actually asked; if it "
+          + "is about a different subject, ignore it.\n\n"
+          + groundingContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     { content: userText, role: "user" },
   ];
 }
@@ -595,11 +623,13 @@ export async function sendChatTurn(
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  const brainContext = formatBrainContext(await brainLookup);
-  if (brainContext) groundedText = `${groundedText}\n\n${brainContext}`;
+  // The question decides which parts of the packet survive — Calendar and Study
+  // rows have to be asked for or share vocabulary with it now, rather than
+  // riding along on every turn. See brain-context.ts.
+  const brainContext = formatBrainContext(await brainLookup, askText);
 
   const toolsEnabled = toolsAllowed(decision);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {

@@ -45,3 +45,14 @@ jobs:
       # elsewhere — so ignoring that folder costs nothing and restores the suite.
       - name: Deno unit tests (mobile app — incl. the analytics privacy core)
         run: deno test --no-check --allow-env --allow-read --ignore=apps/mobile/src/app apps/mobile/src/
+      # packages/shared had 46 test files and NO runner: the Deno steps above
+      # name specific directories and the web's `tsx --test` globs only reach
+      # under apps/web. So 312 passing assertions — the writing voice, the
+      # untrusted-content fence, the brain packet — were being written and never
+      # run, which is worse than having none, because the green tick implied they
+      # were. Found while moving the artifact-context tests here from
+      # apps/mobile/src/lib, where they HAD been running.
+      # Deno runs both flavours in this folder (it supports node:test), so one
+      # line covers all of them.
+      - name: Deno unit tests (shared package — web + iOS both depend on it)
+        run: deno test --no-check --allow-env --allow-read packages/shared/src/

@@ -185,3 +185,5 @@ export * from "./workspace-agent-tools.ts";
 // Cross-surface second-brain retrieval contract and prompt formatter. Web and
 // iOS use the same bounds, graph vocabulary, and injection fence.
 export * from "./brain-context.ts";
+export * from "./history-artifacts.ts";
+export * from "./workspace-commands.ts";
