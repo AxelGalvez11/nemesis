@@ -79,13 +79,13 @@ export default function PricingPage() {
     <SiteChrome>
       <section className="section pricing-hero" id="plans">
         <div className="wrap">
-          <div className="section-head pricing-head">
+          <div className="section-head pricing-head" data-reveal="up">
             <p className="eyebrow">Pricing</p>
             <h2>Start free. Upgrade when you need more.</h2>
             <p>Use Nemesis free every day, no card required. Paid plans raise the limits, and you can cancel anytime.</p>
           </div>
           <div className="plans">
-            <div className="plan">
+            <div className="plan" data-reveal="up">
               <div className="plan-price">$0<span className="per">/mo</span></div>
               <h3>Free</h3>
               <p className="plan-desc">Enough to run a class through it and see.</p>
@@ -100,7 +100,7 @@ export default function PricingPage() {
                 <p className="plan-note">No card required</p>
               </div>
             </div>
-            <div className="plan">
+            <div className="plan" data-reveal="up">
               <div className="plan-price">$9.99<span className="per">/mo</span></div>
               <h3>Student</h3>
               <p className="plan-desc">The essentials for one semester at a time.</p>
@@ -115,7 +115,7 @@ export default function PricingPage() {
                 <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
-            <div className="plan plan-featured">
+            <div className="plan plan-featured" data-reveal="up">
               <span className="plan-badge">Most popular</span>
               <div className="plan-price">$19.99<span className="per">/mo</span></div>
               <h3>Agent Pro</h3>
@@ -146,11 +146,11 @@ export default function PricingPage() {
 
       <section className="section" id="compare">
         <div className="wrap">
-          <div className="section-head pricing-head">
+          <div className="section-head pricing-head" data-reveal="up">
             <p className="eyebrow">Compare</p>
             <h2>Same agent, different limits.</h2>
           </div>
-          <div className="compare-scroll">
+          <div className="compare-scroll" data-reveal="soft">
             <table className="compare">
               <thead>
                 <tr>
@@ -177,11 +177,11 @@ export default function PricingPage() {
 
       <section className="section alt" id="billing">
         <div className="wrap">
-          <div className="section-head pricing-head">
+          <div className="section-head pricing-head" data-reveal="up">
             <p className="eyebrow">Billing</p>
             <h2>The fine print, plainly.</h2>
           </div>
-          <div className="faq">
+          <div className="faq" data-reveal="soft">
             {BILLING_FAQ.map(({ q, a }) => (
               <details key={q}>
                 <summary>{q}</summary>

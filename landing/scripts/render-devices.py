@@ -15,7 +15,7 @@ the one-pixel edge highlight clean.
 from __future__ import annotations
 
 import sys
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import numpy as np
 
 SS = 3  # supersample factor
@@ -107,17 +107,18 @@ def macbook(shot_path: str, tone: str, out_path: str, out_w: int = 2400) -> None
     # is 16:10 and the bezel is thin and even, wider only under the screen.
     lid_w = int(out_w * 0.815) * SS
     bezel = max(2, int(lid_w * 0.0115))
-    chin = int(bezel * 2.25)             # the lid's bottom lip, above the hinge
+    chin = int(bezel * 2.8)              # the lid's bottom lip, above the hinge
     scr_w = lid_w - bezel * 2
     scr_h = int(scr_w / 1.5397)          # 3024x1964
     lid_h = scr_h + bezel + chin
     lid_r = int(lid_w * 0.021)
 
-    # The base: wider than the lid, and thick enough to read as the machine
-    # rather than as a rule under it.
+    # The base: wider than the lid, and THICK. Measured against the reference
+    # mockup this was the biggest miss — a thin base reads as a rule drawn under
+    # a monitor, and thickening it is most of what makes the thing a laptop.
     base_w = int(lid_w * 1.093)
-    base_h = int(lid_h * 0.042)
-    foot_h = int(base_h * 0.42)
+    base_h = int(lid_h * 0.062)
+    foot_h = int(base_h * 0.5)
 
     W = int(out_w * SS)
     H = lid_h + base_h + foot_h + int(lid_h * 0.10)
@@ -163,8 +164,8 @@ def macbook(shot_path: str, tone: str, out_path: str, out_w: int = 2400) -> None
     # The notch. It has to CUT INTO the screenshot to be recognisable — drawn
     # only as deep as the bezel it is flush with, it is a shade change on black
     # and nobody sees it. Bottom corners rounded, top corners run off the top.
-    n_w = int(scr_w * 0.152)
-    n_h = bezel + int(bezel * 1.05)
+    n_w = int(scr_w * 0.192)
+    n_h = bezel + int(bezel * 1.15)
     nx = lid_x + (lid_w - n_w) // 2
     notch = Image.new("RGBA", (n_w, n_h), (0, 0, 0, 0))
     nr = int(bezel * 0.55)
@@ -180,6 +181,20 @@ def macbook(shot_path: str, tone: str, out_path: str, out_w: int = 2400) -> None
         panel((foot_w, foot_h * 2), foot_h, t["base"][1], t["base"][1]),
         ((W - foot_w) // 2, lid_h + base_h - foot_h))
 
+    # A lit front lip along the bottom of the base. On a real machine this is the
+    # chamfer catching the room light, and it is the difference between a body
+    # with depth and a flat dark bar. Brightest in the middle, falling off toward
+    # the corners where the base curves away.
+    lip_h = max(1, int(base_h * 0.15))
+    lip_w = int(base_w * 0.97)
+    grad = np.linspace(0.0, 1.0, lip_w, dtype=np.float32)
+    falloff = (np.clip(1.0 - np.abs(grad - 0.5) * 2.1, 0, 1) ** 0.7)
+    lip_a = (falloff * 190).astype(np.uint8)[None, :].repeat(lip_h, axis=0)
+    lip = Image.merge("RGBA", (
+        *[Image.new("L", (lip_w, lip_h), c) for c in t["edge"]],
+        Image.fromarray(lip_a, "L")))
+    canvas.alpha_composite(lip, ((W - lip_w) // 2, lid_h + base_h - lip_h))
+
     # Finger groove.
     g_w, g_h = int(base_w * 0.11), int(base_h * 0.5)
     groove = Image.new("RGBA", (g_w, g_h * 2), (0, 0, 0, 0))
@@ -189,6 +204,72 @@ def macbook(shot_path: str, tone: str, out_path: str, out_w: int = 2400) -> None
 
     canvas.resize((out_w, H // SS), Image.LANCZOS).save(out_path, quality=88, method=6)
     print(f"{out_path}  {out_w}x{H // SS}")
+
+
+def status_bar(canvas, box, ground_rgb) -> None:
+    """iOS status bar: time on the left, signal / wifi / battery on the right.
+
+    Drawn in ink derived from the strip it sits on, so it works on either the
+    light or the dark capture without a second set of constants. 9:41 is Apple's
+    own mockup time and is what a reader's eye expects here.
+
+    `box` is (x, y, width, height) of the strip, in canvas pixels.
+    """
+    x, y, w, h = box
+    lum = (ground_rgb[0] * 299 + ground_rgb[1] * 587 + ground_rgb[2] * 114) / 1000
+    ink = (16, 16, 18) if lum > 128 else (238, 238, 244)
+    d = ImageDraw.Draw(canvas)
+
+    # Time, optically centred in the strip. SF is the system face; Helvetica is
+    # the fallback so this still renders off a Mac.
+    size = int(h * 0.46)
+    font = None
+    for path, idx in (("/System/Library/Fonts/SFNS.ttf", None),
+                      ("/System/Library/Fonts/HelveticaNeue.ttc", 1),
+                      ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", None)):
+        try:
+            font = ImageFont.truetype(path, size) if idx is None else ImageFont.truetype(path, size, index=idx)
+            break
+        except OSError:
+            continue
+    if font is not None:
+        d.text((x + int(w * 0.088), y + h // 2), "9:41", font=font, fill=(*ink, 255), anchor="lm")
+
+    # Right cluster, laid out from the right edge inward.
+    rx = x + w - int(w * 0.075)
+    # Battery: rounded shell, a nub, and a fill that stops short of full.
+    b_w, b_h = int(w * 0.072), int(h * 0.30)
+    b_x, b_y = rx - b_w, y + (h - b_h) // 2
+    r = max(1, int(b_h * 0.28))
+    d.rounded_rectangle([b_x, b_y, b_x + b_w, b_y + b_h], radius=r, outline=(*ink, 150),
+                        width=max(1, int(b_h * 0.11)))
+    nub_h = int(b_h * 0.38)
+    d.rounded_rectangle([b_x + b_w + max(1, int(b_h * 0.09)), b_y + (b_h - nub_h) // 2,
+                         b_x + b_w + max(2, int(b_h * 0.26)), b_y + (b_h + nub_h) // 2],
+                        radius=max(1, int(nub_h * 0.4)), fill=(*ink, 150))
+    pad = max(1, int(b_h * 0.22))
+    d.rounded_rectangle([b_x + pad, b_y + pad, b_x + pad + int((b_w - pad * 2) * 0.72), b_y + b_h - pad],
+                        radius=max(1, r // 2), fill=(*ink, 255))
+
+    # Wifi: three arcs and a dot, drawn as nested pie slices.
+    wx = b_x - int(w * 0.052)
+    wy = y + h // 2 + int(h * 0.10)
+    for i, frac in enumerate((1.0, 0.66, 0.33)):
+        rr = int(w * 0.026 * frac)
+        d.arc([wx - rr, wy - rr, wx + rr, wy + rr], start=213, end=327,
+              fill=(*ink, 255), width=max(1, int(h * 0.055)))
+    dot = max(1, int(h * 0.05))
+    d.ellipse([wx - dot, wy - dot, wx + dot, wy + dot], fill=(*ink, 255))
+
+    # Cellular: four bars, rising, the last one dimmed.
+    cx = wx - int(w * 0.055)
+    bar_w = max(1, int(w * 0.0115))
+    gap = max(1, int(w * 0.0075))
+    for i in range(4):
+        bh = int(h * (0.11 + 0.055 * i))
+        bx0 = cx - (3 - i) * (bar_w + gap)
+        d.rounded_rectangle([bx0, y + h // 2 + int(h * 0.13) - bh, bx0 + bar_w, y + h // 2 + int(h * 0.13)],
+                            radius=max(1, bar_w // 3), fill=(*ink, 255 if i < 3 else 90))
 
 
 # ── iPhone ───────────────────────────────────────────────────────────────────
@@ -232,7 +313,7 @@ def iphone(shot_path: str, tone: str, out_path: str, out_w: int = 760) -> None:
     # status bar the browser viewport does not have.
     px = np.asarray(shot)
     top_rgb = tuple(int(v) for v in np.median(px[0:2, :, :].reshape(-1, 3), axis=0))
-    status_h_src = int(shot.height * 0.052)
+    status_h_src = int(shot.height * 0.062)
     padded = Image.new("RGB", (shot.width, shot.height + status_h_src), top_rgb)
     padded.paste(shot, (0, status_h_src))
 
@@ -248,6 +329,13 @@ def iphone(shot_path: str, tone: str, out_path: str, out_w: int = 760) -> None:
     ImageDraw.Draw(island).rounded_rectangle([0, 0, i_w - 1, i_h - 1],
                                              radius=i_h // 2, fill=(0, 0, 0, 255))
     canvas.alpha_composite(island, (sx + (scr_w - i_w) // 2, sy + int(scr_h * 0.0135)))
+
+    # Status bar, either side of the island. This is the single biggest tell:
+    # an empty strip beside an island reads as a phone with the screen off, and
+    # every eye that has held a phone knows the time sits at the left of it.
+    # It is device chrome, not a claim the product makes.
+    strip_h = int(scr_h * (status_h_src / padded.height))
+    status_bar(canvas, (sx, sy, scr_w, strip_h), top_rgb)
 
     # Side buttons, drawn as slivers of the band on the outer edge.
     btn = t["edge"]

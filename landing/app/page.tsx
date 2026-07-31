@@ -133,6 +133,9 @@ export default function Home() {
           screens to learn what the thing does. The headline now says the job and the
           product appears immediately under it. */}
       <header className="hero">
+        {/* Graph paper behind the headline, dissolving before the devices.
+            Its own layer so the mask that fades it cannot fade the text. */}
+        <div className="hero-grid" aria-hidden="true" />
         <div className="wrap">
           <div className="hero-in">
             <h1 className="reveal">
@@ -166,7 +169,7 @@ export default function Home() {
           problem does not recognise a solution to it. */}
       <section className="section problem" id="problem">
         <div className="wrap">
-          <div className="problem-in">
+          <div className="problem-in" data-reveal="up">
             <p className="eyebrow">The week before an exam</p>
             <h2>Your course is scattered.</h2>
             <p>
@@ -181,12 +184,12 @@ export default function Home() {
       {/* HOW IT WORKS: three steps, in the order a student hits them. */}
       <section className="section" id="how">
         <div className="wrap">
-          <div className="section-head">
+          <div className="section-head" data-reveal="up">
             <p className="eyebrow">How it works</p>
             <h2>Three steps, then it keeps up on its own.</h2>
           </div>
           <ol className="steps">
-            <li className="step">
+            <li className="step" data-reveal="up">
               <div className="step-n">01</div>
               <h3>Put the course in.</h3>
               <p>
@@ -194,7 +197,7 @@ export default function Home() {
                 Upload it, paste it, or record it. Nothing needs tidying first.
               </p>
             </li>
-            <li className="step">
+            <li className="step" data-reveal="up">
               <div className="step-n">02</div>
               <h3>It builds the material.</h3>
               <p>
@@ -203,7 +206,7 @@ export default function Home() {
                 the file it came from.
               </p>
             </li>
-            <li className="step">
+            <li className="step" data-reveal="up">
               <div className="step-n">03</div>
               <h3>Study it all semester.</h3>
               <p>
@@ -221,7 +224,7 @@ export default function Home() {
           image here is a real capture of the running app. */}
       <section className="section" id="showcase">
         <div className="wrap">
-          <div className="section-head">
+          <div className="section-head" data-reveal="up">
             <p className="eyebrow">Inside Nemesis</p>
             <h2>Everything is built out of your own material.</h2>
           </div>
@@ -229,7 +232,7 @@ export default function Home() {
             {/* The library capture is the hero image, so it is not repeated here:
                 these two beats are what you do with a library once it exists. */}
             <div className="row">
-              <div className="row-copy">
+              <div className="row-copy" data-reveal="soft">
                 <div className="k">Ask</div>
                 <h3>Ask for the thing you need.</h3>
                 <p>
@@ -238,7 +241,7 @@ export default function Home() {
                   It shows the sources it used, so you can check them.
                 </p>
               </div>
-              <div className="row-art">
+              <div className="row-art" data-reveal="zoom">
                 <Shot
                   name="chat"
                   alt="A Nemesis conversation explaining a law topic in bullet points, followed by a table of leading cases with their exam weight."
@@ -249,7 +252,7 @@ export default function Home() {
             </div>
 
             <div className="row">
-              <div className="row-copy">
+              <div className="row-copy" data-reveal="soft">
                 <div className="k">Study</div>
                 <h3>Then actually study it.</h3>
                 <p>
@@ -258,7 +261,7 @@ export default function Home() {
                   today and what can wait, per subject.
                 </p>
               </div>
-              <div className="row-art">
+              <div className="row-art" data-reveal="zoom">
                 <Shot
                   name="study"
                   alt="The Nemesis study screen listing decks for Baroque painting, constitutional law, Spanish and statics, each with counts of new, learning and due cards."
@@ -276,7 +279,7 @@ export default function Home() {
           rather than a line in a list. */}
       <section className="section" id="record">
         <div className="wrap">
-          <div className="section-head">
+          <div className="section-head" data-reveal="up">
             <p className="eyebrow">On your phone</p>
             <h2>Record the lecture. It files itself.</h2>
             <p>
@@ -287,7 +290,7 @@ export default function Home() {
             </p>
           </div>
           <div className="triad">
-            <div className="obj">
+            <div className="obj" data-reveal="up">
               <div className="cap">
                 <div className="k">Quiet rooms</div>
                 <h3>Built for the back row.</h3>
@@ -298,7 +301,7 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div className="obj">
+            <div className="obj" data-reveal="up">
               <div className="cap">
                 <div className="k">Filing</div>
                 <h3>It lands in the right course.</h3>
@@ -309,7 +312,7 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div className="obj">
+            <div className="obj" data-reveal="up">
               <div className="cap">
                 <div className="k">Afterwards</div>
                 <h3>The lecture becomes cards.</h3>
@@ -326,7 +329,7 @@ export default function Home() {
 
       <div className="band">
         <div className="wrap">
-          <div className="band-in">
+          <div className="band-in" data-reveal="up">
             <p className="eyebrow">Any subject</p>
             <h2>Law, nursing, engineering, art history.</h2>
             <p>
@@ -339,11 +342,11 @@ export default function Home() {
 
       <section className="section" id="faq">
         <div className="wrap">
-          <div className="section-head pricing-head">
+          <div className="section-head pricing-head" data-reveal="up">
             <p className="eyebrow">Questions</p>
             <h2>Before you sign up.</h2>
           </div>
-          <div className="faq">
+          <div className="faq" data-reveal="soft">
             {HOME_FAQ.map(({ q, a }) => (
               <details key={q}>
                 <summary>{q}</summary>
@@ -355,7 +358,7 @@ export default function Home() {
       </section>
 
       <section className="closer" id="get">
-        <div className="wrap">
+        <div className="wrap" data-reveal="up">
           <h2>Built from your notes. Sharper every week.</h2>
           <div className="closer-cta">
             <a

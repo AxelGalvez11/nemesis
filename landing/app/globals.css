@@ -147,7 +147,38 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 /* The bottom padding is the phone's overhang plus air: the phone hangs below the
    laptop base on purpose, and without room it would sit on the next section. */
 .hero { position: relative; padding: 84px 0 52px; }
+/* Everything in the hero sits above the grid layer below. */
+.hero > * { position: relative; z-index: 1; }
 .hero-in { position: relative; max-width: 900px; margin: 0 auto; text-align: center; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THE HERO GRID — graph paper behind the headline, dissolving downward.
+
+   Taken from the competitor's hero, which paints an 80px grid with two
+   linear-gradients and stops it above the product shot. Their cells are filled
+   blue-50 with blue-200 lines; ours are page ground with a hairline of the same
+   ink every other rule on this page uses, so it inverts for free and adds no
+   dark-mode branch.
+
+   THE "GRADIENT" IS A MASK, not a colour. In a two-tone page there is no wash
+   to fade into, so the grid itself fades: solid behind the headline, gone by
+   the time the devices arrive. A mask is also the only way to do it without a
+   second element painting over the phone, which hangs below the hero.
+
+   It is its own layer, aria-hidden and pointer-events:none. Masking the element
+   that HOLDS the text would fade the text with it.
+   ────────────────────────────────────────────────────────────────────────── */
+.hero-grid {
+  position: absolute; inset: 0 0 auto 0; height: 660px; z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px),
+    linear-gradient(to right, var(--line) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-position: center top;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 92%);
+}
 .hero h1 {
   font-size: clamp(40px, 6.6vw, 86px); line-height: 1.0; letter-spacing: -0.04em;
   font-weight: 800; margin: 0;
@@ -491,8 +522,9 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .faq details p { margin: 0 0 18px; padding: 0 2px; color: var(--text-2); font-size: 14px; line-height: 1.7; max-width: 60ch; }
 .faq details a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 
-/* entrance — a short rise, no fade. Kept because it costs nothing and is
-   already motion-safe; everything else that moved on this page is gone. */
+/* entrance — a short rise, no fade. The hero is above the fold and always in
+   view, so it plays on load; everything below the fold waits to be scrolled to,
+   which is the block underneath. */
 .reveal { animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 .r2 { animation-delay: 0.08s; }
 .r3 { animation-delay: 0.16s; }
@@ -501,9 +533,49 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
   from { transform: translateY(14px); }
   to { transform: none; }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   SCROLL REVEAL. Each block rises and fades in as it is scrolled to.
+
+   Distances are the competitor's, read off their live DOM: 30px on headings
+   and cards, 20px on body copy and buttons, and a 0.95 scale on a product
+   image, all from opacity 0. They are worth copying because they are
+   restrained — far enough to register as motion, near enough that nothing
+   appears to fly.
+
+   TWO RULES HERE ARE NOT NEGOTIABLE:
+
+   1. THE HIDDEN STATE IS GATED BEHIND `.js-reveal`, which an inline script in
+      layout.tsx puts on <html> before first paint. Their page ships opacity:0
+      in plain CSS — if their script ever fails to run, their page is blank
+      text on blank paper. With the gate, no JS means everything renders
+      visible and nothing is lost but the motion.
+   2. `prefers-reduced-motion` NEUTRALISES ALL OF IT. A reveal is decoration,
+      and it may never be the reason someone cannot read the page. That is also
+      why the inline script checks the same query before adding the class: with
+      reduced motion the hidden state never exists at all.
+   ────────────────────────────────────────────────────────────────────────── */
+[data-reveal] {
+  transition: opacity 0.75s cubic-bezier(0.22, 0.61, 0.36, 1),
+              transform 0.75s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.js-reveal [data-reveal] { opacity: 0; }
+.js-reveal [data-reveal="up"] { transform: translateY(30px); }
+.js-reveal [data-reveal="soft"] { transform: translateY(20px); }
+.js-reveal [data-reveal="zoom"] { transform: scale(0.95); }
+.js-reveal [data-reveal].is-in { opacity: 1; transform: none; }
+
+/* Cards in a row arrive left to right rather than all at once. Delay is on the
+   ITEM, not the observer, so one intersection still drives the whole row. */
+.js-reveal .steps > [data-reveal]:nth-child(2),
+.js-reveal .triad > [data-reveal]:nth-child(2) { transition-delay: 0.09s; }
+.js-reveal .steps > [data-reveal]:nth-child(3),
+.js-reveal .triad > [data-reveal]:nth-child(3) { transition-delay: 0.18s; }
+
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; }
   html { scroll-behavior: auto; }
+  .js-reveal [data-reveal] { opacity: 1; transform: none; transition: none; }
 }
 
 @media (max-width: 820px) {
