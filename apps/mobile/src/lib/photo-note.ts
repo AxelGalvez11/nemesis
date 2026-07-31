@@ -122,6 +122,19 @@ export function photoAttachmentTitle(title: string): string {
 }
 
 /**
+ * What the student sees under their own message when they send a photo.
+ *
+ * 🔴 IT USED TO BE THE READING ITSELF. `photoAttachmentTitle` builds its title
+ * out of the vision text, and `withAttachmentNote` prints "Attached: {title}"
+ * into the visible bubble — so the owner's message read "Attached: Photo: This
+ * photograph shows a section of a gym floor. In the" and stopped mid-sentence
+ * (screenshot, 2026-07-31). The picture is RIGHT THERE above the line. Naming
+ * it is all the line can usefully do; the reading belongs on the wire, not in
+ * their own words back at them.
+ */
+export const PHOTO_ATTACHMENT_LABEL = "Photo";
+
+/**
  * One student-readable line for a failed upload.
  *
  * Storage answers with bare HTTP, and "413" on a screen is not an explanation.

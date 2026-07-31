@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { ActivityIndicator, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { usePulse } from "./usePulse";
 import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
@@ -38,38 +38,6 @@ function ArtifactIcon({ kind, where, color }: { kind: ChatOutput["kind"]; where:
   return <FileIcon size={18} color={color} />;
 }
 
-/** A slow breathe for a card whose work is still running (owner 2026-07-30:
- *  "it should show a processing artifact with a pulsing animation, not just a
- *  regular artifact"). Built on RN's own Animated, the same zero-dep posture as
- *  Skeleton.tsx — reanimated stays reserved for gestures.
- *
- *  The floor is 0.5 rather than Skeleton's 0.35 because this card carries a
- *  title the student is meant to read while it pulses; a skeleton has no words
- *  to lose. Legs are 900ms, slower than a loading shimmer, because this stands
- *  for a minutes-long job rather than a page that is about to appear. */
-function usePulse(active: boolean): Animated.Value {
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!active) {
-      // Settle at full strength — a card that finished mid-fade would keep
-      // whatever partial opacity the loop was stopped on.
-      opacity.setValue(1);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.5, duration: 900, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 900, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-      opacity.setValue(1);
-    };
-  }, [active, opacity]);
-  return opacity;
-}
 
 function formatCreatedAt(iso: string | undefined): string {
   if (!iso) return "";
