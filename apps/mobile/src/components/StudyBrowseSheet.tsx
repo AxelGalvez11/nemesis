@@ -370,9 +370,17 @@ export function StudyBrowseSheet({
         ) : null}
       </View>
       ) : (
-        // A one-line invitation in the box's place, so "pull down" is something
-        // the student is told rather than something they have to guess.
-        <Text style={styles.searchNudge} testID="study-browse-search-nudge">Pull down to search</Text>
+        // 🔴 TAPPABLE, NOT JUST A LABEL — this is the whole reachability of
+        // search on Android. Android's ScrollView clamps its offset to
+        // [0, max]: an overscroll draws the edge glow and NEVER reports a
+        // negative position, so searchRevealed's pull test can never fire there.
+        // With the page toggle gone there is no other way in, and a shipped
+        // surface whose search cannot be opened is not a smaller bug for being
+        // on the second platform. The unit tests cannot catch this: they feed
+        // synthetic negative offsets the platform will not produce.
+        <Pressable onPress={() => setSearchShowing(true)} hitSlop={8} accessibilityRole="button" testID="study-browse-search-nudge">
+          <Text style={styles.searchNudge}>Search</Text>
+        </Pressable>
       )}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}

@@ -1765,7 +1765,12 @@ export default function ChatScreen() {
                 <AttachedDocChip
                   title={attachedDoc?.title ?? photoAttachmentTitle(photo?.title ?? "")}
                   onRemove={clearAttachment}
-                  thumbnailUri={photoDraft ?? photo?.imageUrl ?? null}
+                  // photoSent guards this too, not just the slot above: after a
+                  // photo turn `photo` is still held for its reading, so
+                  // attaching a Library note next would have drawn the SPENT
+                  // photograph's tile — and the thumbnail branch has no room for
+                  // a title, so the note's name would have vanished with it.
+                  thumbnailUri={photoDraft ?? (photoSent ? null : photo?.imageUrl) ?? null}
                 />
               ) : null
             }

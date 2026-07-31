@@ -1084,7 +1084,13 @@ export default function LibraryScreen() {
         ref={rowDrag.registerRow("root:", true, true)}
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
-        top={contentTop}
+        // 🔴 0, NOT contentTop. This zone is the whole LIST area, and the list
+        // now starts at the top of the screen — rows scroll up under the blur.
+        // Left at contentTop, a row let go while it was up there would land on
+        // no target at all and silently not move, which is the third time this
+        // zone would have regressed. It is a faint wash and never takes touches,
+        // so covering the band above costs nothing.
+        top={0}
         bottom={contentBottom}
       />
 
