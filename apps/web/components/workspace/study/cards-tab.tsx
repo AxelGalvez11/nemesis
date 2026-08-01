@@ -20,6 +20,7 @@ import type { StudyReviewSettings } from "./study-chrome";
 import { TextStudyImportDialog } from "./text-import-dialog";
 import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
+import { StudyTableSkeleton } from "./study-skeleton";
 
 const DECK_GROUPS_KEY = "nemesis.web.study-deck-groups";
 
@@ -112,7 +113,7 @@ function loadGroups(): string[] {
 
 export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const confirm = useConfirm();
-  const { cards, decks, deleteDeck, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
+  const { cards, decks, deleteCard, deleteDeck, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -160,6 +161,26 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       setBrowseOpen(false);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't delete the deck.");
+    }
+  }
+
+  // One card. Until now the browser could only delete the whole DECK, so a
+  // student with one bad generated card had to suspend it and live with it.
+  // Asks first, like every other delete here, and quotes the card back so it is
+  // obvious which one is about to go.
+  async function removeCard(cardId: string) {
+    const card = cards.find((item) => item.id === cardId);
+    if (!card) return;
+    const front = card.front.trim();
+    const shown = front.length > 60 ? `${front.slice(0, 60)}…` : front;
+    if (!(await confirm({
+      body: shown ? `“${shown}” is deleted. This can't be undone.` : "This card is deleted. This can't be undone.",
+      title: "Delete this card?",
+    }))) return;
+    try {
+      await deleteCard(cardId);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't delete the card.");
     }
   }
 
@@ -346,7 +367,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     }
   }
 
-  if (status === "loading" || status === "idle") return <div className="grid flex-1 place-items-center text-xs text-muted-foreground">Loading study decks…</div>;
+  if (status === "loading" || status === "idle") return <StudyTableSkeleton />;
   if (status === "error") {
     return (
       <div className="grid flex-1 place-items-center px-6">
@@ -487,7 +508,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       </Dialog>
 
       {actionError && <p className="mx-auto mt-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">{actionError}</p>}
-      <StudyBrowser cards={cards} decks={decks} initialDeckId={selectedDeckId} onAddCard={(deckId) => { selectDeck(deckId); setBrowseOpen(false); setCreateKind("card"); }} onDeleteDeck={(deckId) => void removeDeck(deckId)} onOpenChange={setBrowseOpen} open={browseOpen} />
+      <StudyBrowser cards={cards} decks={decks} initialDeckId={selectedDeckId} onAddCard={(deckId) => { selectDeck(deckId); setBrowseOpen(false); setCreateKind("card"); }} onDeleteCard={(cardId) => void removeCard(cardId)} onDeleteDeck={(deckId) => void removeDeck(deckId)} onOpenChange={setBrowseOpen} open={browseOpen} />
       <ReviewSession cards={cards} deck={selectedDeck} onOpenChange={setReviewOpen} open={reviewOpen} settings={reviewSettings} />
     </div>
   );

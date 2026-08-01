@@ -4,6 +4,8 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+import { Tip } from "./tooltip";
+
 // Text+icon actions underline the label on hover, not the glyph.
 const TEXT_ACTION_ICON = "[&_.codicon]:no-underline [&_svg]:no-underline";
 
@@ -72,16 +74,33 @@ function Button({
   const Comp = asChild ? Slot.Root : "button";
   const hoverDescription = title ?? (typeof props["aria-label"] === "string" && String(size).startsWith("icon") ? props["aria-label"] : undefined);
 
-  return (
+  // 🔴 EVERY ICON BUTTON IN THE APP GETS ITS TOOLTIP FROM HERE (owner
+  // 2026-07-31: "all buttons should have hover preview"). This used to hand
+  // the description to the browser's native `title`, which waits a second or
+  // two, ignores the theme, and can land off-screen. Doing it centrally means
+  // an icon button is labelled by giving it an aria-label — which it needed
+  // for screen readers anyway — rather than by remembering to wrap it.
+  //
+  // A button carrying an explicit `title` gets one too, whatever its size.
+  const button = (
     <Comp
       className={cn(buttonVariants({ variant, size }), className)}
       data-size={size}
       data-slot="button"
       data-variant={variant}
-      title={hoverDescription}
+      // Native tooltip ONLY where Tip is not doing the work, so nobody ever
+      // gets two tooltips a second apart for the same button.
+      title={asChild ? hoverDescription : undefined}
       {...props}
     />
   );
+
+  // asChild is left alone deliberately. It already composes a Slot with
+  // whatever it wraps, and putting a second asChild trigger around that is a
+  // fiddly shape for no gain: those are nearly always links with visible text,
+  // which have no hoverDescription to show in the first place.
+  if (asChild || !hoverDescription) return button;
+  return <Tip label={hoverDescription}>{button}</Tip>;
 }
 
 export { Button, buttonVariants };

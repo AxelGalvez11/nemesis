@@ -18,17 +18,18 @@ interface TitlebarControlsProps {
 export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
   return (
     <div className="fixed left-(--titlebar-controls-left) top-(--titlebar-controls-top) z-70 flex translate-y-0.5 flex-row items-center gap-x-1 pointer-events-auto">
-      <Tip label="Toggle sidebar">
-        <Button
-          aria-label="Toggle sidebar"
-          className={titlebarButtonClass}
-          onClick={onToggleSidebar}
-          size="icon-titlebar"
-          variant="ghost"
-        >
-          <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
-        </Button>
-      </Tip>
+      {/* No <Tip> wrapper any more: Button gives every icon-sized button a
+          tooltip from its aria-label. Wrapping here as well rendered the
+          tooltip twice, stacked on top of itself. */}
+      <Button
+        aria-label="Toggle sidebar"
+        className={titlebarButtonClass}
+        onClick={onToggleSidebar}
+        size="icon-titlebar"
+        variant="ghost"
+      >
+        <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
+      </Button>
     </div>
   );
 }

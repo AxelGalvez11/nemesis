@@ -6,12 +6,10 @@ import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 import {
   blockGeometry,
   clockOf,
-  DEFAULT_END_HOUR,
   DEFAULT_EVENT_MINUTES,
-  DEFAULT_START_HOUR,
+  FULL_DAY,
   HOUR_HEIGHT,
   hourLabels,
-  hourWindow,
   layoutDay,
   minuteAtOffset,
   minutesOf,
@@ -20,6 +18,7 @@ import {
   offsetFor,
   rangeFromDrag,
   resizedRange,
+  SCROLL_TO_HOUR,
   SNAP_MINUTES,
   snapMinute,
   windowHeight,
@@ -110,25 +109,46 @@ test("timed events come back in start order", () => {
 
 // ── The visible window ───────────────────────────────────────────────────────
 
-test("an ordinary day shows a working-day window, not 24 empty hours", () => {
-  const window = hourWindow([layoutDay([event("a", "10:00")])]);
-  assert.deepEqual(window, { endHour: DEFAULT_END_HOUR, startHour: DEFAULT_START_HOUR });
-  assert.equal(hourLabels(window).length, DEFAULT_END_HOUR - DEFAULT_START_HOUR);
+test("THE GRID IS ALWAYS A WHOLE DAY, midnight to midnight", () => {
+  // The window used to be computed from whatever events were on screen. That
+  // made the grid change length as events moved, and left hours that could not
+  // be scrolled to at all — so an event could not be created at 01:00 because
+  // 01:00 was not drawn. A calendar is the full day; you scroll it.
+  assert.deepEqual(FULL_DAY, { endHour: 24, startHour: 0 });
+  assert.equal(hourLabels(FULL_DAY).length, 24);
 });
 
-test("the window widens so an early rotation or a late deadline is never cut off", () => {
-  const early = hourWindow([layoutDay([event("rounds", "06:30")])]);
-  assert.equal(early.startHour, 6);
-  const late = hourWindow([layoutDay([event("deadline", "23:00")])]);
-  assert.equal(late.endHour, 24, "must not overflow past midnight");
+test("every hour of the day has a label, including both edges", () => {
+  const labels = hourLabels(FULL_DAY);
+  assert.equal(labels[0], 0, "midnight is drawn");
+  assert.equal(labels[23], 23, "11pm is drawn");
 });
 
-test("the window spans every day shown, so a week's columns line up", () => {
-  const window = hourWindow([layoutDay([event("a", "07:00")]), layoutDay([event("b", "21:30")])]);
-  assert.equal(window.startHour, 7);
-  // 21:30 plus the drawn 45 minutes runs to 22:15, so the window must reach 23
-  // or the block would be clipped by the bottom edge.
-  assert.equal(window.endHour, 23);
+test("the full day is exactly 24 hour-heights tall", () => {
+  assert.equal(windowHeight(FULL_DAY), 24 * HOUR_HEIGHT);
+});
+
+test("A LATE-NIGHT EVENT IS NEVER CUT OFF, which is why the day runs to midnight", () => {
+  // 23:00 plus the drawn 45 minutes runs to 23:45 — inside the grid, where
+  // before it forced the window to stretch.
+  const layout = layoutDay([event("deadline", "23:00")]);
+  const item = layout.timed[0];
+  assert.ok(item, "the event is laid out");
+  assert.ok(item.endMinute <= 24 * 60, "it ends within the drawn day");
+  assert.ok(offsetFor(item.endMinute, FULL_DAY) <= windowHeight(FULL_DAY));
+});
+
+test("an early-morning event sits above the opening scroll position", () => {
+  // 06:30 is real and reachable now; it simply starts out scrolled above.
+  const layout = layoutDay([event("rounds", "06:30")]);
+  const item = layout.timed[0];
+  assert.ok(item, "the event is laid out");
+  assert.equal(offsetFor(item.startMinute, FULL_DAY), 6.5 * HOUR_HEIGHT);
+});
+
+test("the opening scroll position lands on the working day, not midnight", () => {
+  assert.equal(SCROLL_TO_HOUR, 8);
+  assert.equal(offsetFor(SCROLL_TO_HOUR * 60, FULL_DAY), 8 * HOUR_HEIGHT);
 });
 
 test("offsets and height agree with the window", () => {

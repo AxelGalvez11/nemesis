@@ -620,6 +620,10 @@ export interface UseCloudStudyApi extends StoreState {
   /** Removes the folder and KEEPS its decks, promoting them one level up. */
   dissolveDeckGroup: (group: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
+  /** Throw away ONE card, leaving its deck and every other card alone. There
+   *  was no way to do this at all: a student who generated a bad card could
+   *  suspend it, but never be rid of it. */
+  deleteCard: (cardId: string) => Promise<void>;
   /** Signed-in user id (null in preview / signed-out) — the AI card helpers
    *  need it for the metered completion call. */
   userId: string | null;
@@ -1220,6 +1224,19 @@ export function useCloudStudy(): UseCloudStudyApi {
     });
   }, [preview, userId]);
 
+  // One card, not its deck. Scoped by user_id as well as id so a guessed
+  // identifier cannot reach into somebody else's cards — the same belt-and-
+  // braces every other write here uses, since row-level security should not be
+  // the only thing standing between two students.
+  const deleteCard = useCallback(async (cardId: string) => {
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to delete a card.");
+      const { error } = await supabase.from("study_cards").delete().eq("id", cardId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({ ...state, cards: state.cards.filter((card) => card.id !== cardId) });
+  }, [preview, userId]);
+
   return {
     ...snapshot,
     selectDeck: useCallback((deckId: string | null) => setState({ ...state, selectedDeckId: deckId }), []),
@@ -1232,6 +1249,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     createArtifact,
     updateArtifact,
     deleteArtifact,
+    deleteCard,
     userId,
     gradeCard,
     undoGrade,

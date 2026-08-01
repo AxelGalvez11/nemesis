@@ -12,14 +12,13 @@ import {
   IconLink,
   IconList,
   IconPlus,
-  IconSparkles,
   IconTags,
   IconTextSize,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import {
@@ -40,18 +39,16 @@ import {
 import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
 import { AssistantMarkdown, slugifyHeading } from "@/lib/workspace/chat-markdown";
-import { brainAction } from "@/lib/workspace/brain-api";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { backlinksFor, extractLibraryLinks, findLibraryNote } from "@/lib/workspace/library-links";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
-import { supabase } from "@/lib/supabase";
 
 import { LibraryLiveEditor, type LibraryEditorApi } from "./library-live-editor";
 
 type EditorMode = "edit" | "read";
-type RightPanel = "brain" | "links" | "backlinks" | "contents" | "tags";
+type RightPanel = "links" | "backlinks" | "contents" | "tags";
 
 /** Remembers whether the formatting bar is showing. Server render has no
  *  localStorage, so the value is restored after mount rather than in useState. */
@@ -62,8 +59,13 @@ const EDITOR_MODES = [
   { id: "read", label: "Read" },
 ] as const;
 
+// "Second brain" used to be the first tab here (owner 2026-07-31: removed).
+// The name belongs to the CHAT, which is the thing that gets better the more a
+// student uses it; a note-connection suggester in a sidebar was borrowing it.
+// The brain itself is untouched — lib/workspace/brain-api.ts, the
+// /api/v1/brain route and the chat's retrieval in chat-api.ts all still run.
+// Only this surface is gone.
 const RIGHT_PANELS = [
-  { id: "brain", label: "Second brain", icon: IconSparkles },
   { id: "links", label: "Links on page", icon: IconLink },
   { id: "backlinks", label: "Backlinks", icon: IconArrowNarrowLeft },
   { id: "contents", label: "Table of contents", icon: IconList },
@@ -75,16 +77,6 @@ interface NoteDraft {
   title: string;
   content: string;
   dirty: boolean;
-}
-
-interface OrganizationProposal {
-  confidence: number;
-  id: string;
-  reason: string;
-  relation: string | null;
-  source_document_id: string | null;
-  target_document_id: string | null;
-  trigger_kind: string;
 }
 
 function headingsFromMarkdown(content: string) {
@@ -114,13 +106,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
-  const { notes, selectedPath, select, createNote, saveNote, deleteNote, reload } = useCloudLibrary();
+  const { notes, selectedPath, select, createNote, saveNote, deleteNote } = useCloudLibrary();
   const note = selectedPath ? (notes.find((item) => item.path === selectedPath) ?? null) : null;
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [mode, setMode] = useState<EditorMode>("edit");
-  const [brainProposals, setBrainProposals] = useState<OrganizationProposal[]>([]);
-  const [brainLoading, setBrainLoading] = useState(false);
-  const [brainMessage, setBrainMessage] = useState<string | null>(null);
   // Visible by default (owner 2026-07-28 asked for "commands for bold
   // italicize etc." — the buttons existed but defaulted OFF behind a dropdown,
   // which is indistinguishable from not having them). Persisted, because a
@@ -217,64 +206,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const backlinks = useMemo(() => (note ? backlinksFor(notes, note) : []), [note, notes]);
   const headings = useMemo(() => headingsFromMarkdown(content), [content]);
   const tags = useMemo(() => tagsFromMarkdown(content), [content]);
-
-  const loadBrainProposals = useCallback(async () => {
-    if (!note || navigationRoot) {
-      setBrainProposals([]);
-      return;
-    }
-    setBrainLoading(true);
-    const { data, error } = await supabase
-      .from("library_organization_proposals")
-      .select("id,source_document_id,target_document_id,relation,reason,confidence,trigger_kind")
-      .eq("source_document_id", note.id)
-      .eq("status", "pending")
-      .order("confidence", { ascending: false });
-    setBrainLoading(false);
-    if (error) {
-      setBrainProposals([]);
-      return;
-    }
-    setBrainProposals((data ?? []) as OrganizationProposal[]);
-  }, [navigationRoot, note]);
-
-  useEffect(() => {
-    setBrainMessage(null);
-    void loadBrainProposals();
-  }, [loadBrainProposals]);
-
-  async function decideBrainProposal(
-    proposal: OrganizationProposal,
-    action: "apply" | "reject",
-  ) {
-    setBrainLoading(true);
-    setBrainMessage(null);
-    const ok = await brainAction(action, { proposalId: proposal.id });
-    setBrainLoading(false);
-    if (!ok) {
-      setBrainMessage(action === "apply"
-        ? "That connection could not be added."
-        : "That suggestion could not be dismissed.");
-      return;
-    }
-    await loadBrainProposals();
-    if (action === "apply") {
-      reload();
-      setBrainMessage("Connection added. You can undo it from Brain activity.");
-    }
-  }
-
-  async function organizeCurrentNote() {
-    if (!note) return;
-    setBrainLoading(true);
-    setBrainMessage("Finding useful connections…");
-    const ok = await brainAction("organize", { documentId: note.id });
-    setBrainLoading(false);
-    setBrainMessage(ok
-      ? "Connections reviewed. Strong suggestions appear below."
-      : "The second brain could not review this note right now.");
-    if (ok) await loadBrainProposals();
-  }
 
   function updateDraft(next: { title?: string; content?: string }) {
     if (!note) return;
@@ -496,37 +427,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             ))}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-            {rightPanel === "brain" && (
-              <div className="grid gap-5">
-                <LinkSection title="Suggested connections">
-                  {brainLoading && brainProposals.length === 0
-                    ? <PanelEmpty>Reviewing this note’s neighborhood…</PanelEmpty>
-                    : brainProposals.length === 0
-                      ? <PanelEmpty>No strong suggestions yet. Nemesis proposes connections; it never silently rewrites your note.</PanelEmpty>
-                      : brainProposals.map((proposal) => {
-                        const target = notes.find((item) => item.id === proposal.target_document_id);
-                        return (
-                          <article className="grid gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-control-background) p-3" key={proposal.id}>
-                            <div className="flex items-start justify-between gap-2">
-                              <button className="min-w-0 truncate text-left text-xs font-semibold text-foreground hover:underline" disabled={!target} onClick={() => target && openPathInCurrentTab(target.path)} type="button">{target?.title ?? "Linked note"}</button>
-                              <span className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--theme-primary)_12%,transparent)] px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-wide text-[var(--theme-primary)]">{proposal.relation?.replaceAll("_", " ") ?? "connection"}</span>
-                            </div>
-                            <p className="text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">{proposal.reason}</p>
-                            <div className="flex gap-1.5">
-                              <Button disabled={brainLoading} onClick={() => void decideBrainProposal(proposal, "apply")} size="xs">Add</Button>
-                              <Button disabled={brainLoading} onClick={() => void decideBrainProposal(proposal, "reject")} size="xs" variant="ghost">Not now</Button>
-                            </div>
-                          </article>
-                        );
-                      })}
-                </LinkSection>
-                <Button disabled={brainLoading} onClick={() => void organizeCurrentNote()} size="sm" variant="secondary"><IconSparkles size={14} /> Find connections</Button>
-                {brainMessage && <p aria-live="polite" className="text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">{brainMessage}</p>}
-                <LinkSection title="How it works">
-                  <PanelEmpty>Voyage finds nearby ideas. Nemesis classifies only strong relationships, then waits for you to accept them. Every applied change is logged and undoable.</PanelEmpty>
-                </LinkSection>
-              </div>
-            )}
             {rightPanel === "links" && (
               <LinkSection title="Links on page">
                 {outgoing.length === 0 ? <PanelEmpty>Type [[Note name]] to connect an idea.</PanelEmpty> : outgoing.map((link) => {

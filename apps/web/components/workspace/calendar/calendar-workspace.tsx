@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { cn } from "@/lib/utils";
 import {
   addDays,
   addMonths,
@@ -236,7 +237,10 @@ export function CalendarWorkspace() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) pt-(--titlebar-height)">
-      <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+      {/* Does NOT scroll. It used to, which meant the toolbar and the day
+          headings slid away with the hours. Day and week now scroll inside
+          their own grid; month and year scroll here, below. */}
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <CalendarHeader
           cursor={cursor}
           onAddEvent={openAdd}
@@ -247,7 +251,15 @@ export function CalendarWorkspace() {
           today={today}
           view={view}
         />
-        <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 max-sm:px-2 max-sm:pb-2">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col px-5 pb-5 max-sm:px-2 max-sm:pb-2",
+            // Month and year are one page-sized picture and scroll as a whole.
+            // Day and week must NOT scroll here — their grid scrolls itself,
+            // and a second scrollbar out here would drag the day headings off.
+            (view === "month" || view === "year") && "overflow-y-auto",
+          )}
+        >
           {/* Day and Week are the same time grid with a different column count
               — they were near-duplicate components before, so every fix had to
               be made twice. */}
