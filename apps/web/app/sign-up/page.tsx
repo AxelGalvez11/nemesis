@@ -118,7 +118,12 @@ export default function SignUpPage() {
     >
         <AuthModeSwitch active="sign-up" />
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account will be created.</p> : null}
-        <OAuthButtons disabled={busy} onError={setError} showTermsNote />
+        {/* No `showTermsNote` here, unlike /sign-in: the consent checkbox below already
+            states the Terms and Privacy agreement, and rendering both put the same
+            sentence on this page twice (owner, 2026-07-31). Sign-in keeps the note
+            because it has no checkbox — OAuth there can create an account with nothing
+            else on the page saying so. */}
+        <OAuthButtons disabled={busy} onError={setError} />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
             <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
