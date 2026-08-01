@@ -1,10 +1,22 @@
-// Calendar header — verbatim from desktop calendar/index.tsx §A.4. Title →
-// SegmentedControl(Day/Week/Month/Year) → bordered prev/label/next cluster →
-// primary "Add event" button. There is no "Today" button.
+// Calendar header, laid out the way Google Calendar lays it out (owner
+// 2026-07-31: "i need you to literally copy it entirely").
+//
+// One row, in Google's order: Today, the arrows, the date range, then the
+// controls pushed to the right ending in a view dropdown. What this replaced
+// led with a large bold title and put navigation on the far right, with a
+// four-way segmented control taking the middle of the bar.
+//
+// The palette stays monochrome — the owner confirmed 2026-07-31 that "copy it
+// entirely" is about layout, density and interaction, not Google's blue.
 
 import { Button } from "@/components/desktop-ui/button";
-import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
-import { ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
+import { ChevronDown, ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
 import type { CalendarEventKind } from "@/lib/workspace/calendar-model";
@@ -36,7 +48,11 @@ export function CalendarHeader({
   onAddEvent,
 }: CalendarHeaderProps) {
   return (
-    <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 px-5 pb-4 pt-5 max-lg:grid-cols-1 max-lg:gap-3 max-sm:px-3">
+    // GOOGLE'S TOOLBAR ORDER, one row (owner 2026-07-31: "literally copy it").
+    // Today and the arrows come FIRST, then the date range, then the controls
+    // on the right — the opposite of what this had, which led with a large
+    // title and pushed navigation to the far side.
+    <header className="flex shrink-0 flex-wrap items-center gap-3 px-5 pb-3 pt-4 max-sm:gap-2 max-sm:px-3">
       {/* 1.375rem, not 2rem (owner 2026-07-31, "the header text is too big",
           pointing at Google Calendar).
 
@@ -46,33 +62,40 @@ export function CalendarHeader({
           text is already a quarter larger. Kept in rem rather than pinned to a
           pixel size, because the root font here is the student's own text-size
           setting and the heading should still grow with it. */}
-      <h1 className="truncate text-[1.375rem] font-semibold tracking-[-0.03em] text-foreground">
+      <Button className="rounded-full px-4" onClick={onToday} size="sm" variant="outline">
+        Today
+      </Button>
+      <div className="flex items-center gap-0.5">
+        <Button
+          aria-label={`Previous ${VIEW_UNIT_LABEL[view]}`}
+          className="rounded-full"
+          onClick={() => onStep(-1)}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <ChevronLeft size={18} />
+        </Button>
+        <Button
+          aria-label={`Next ${VIEW_UNIT_LABEL[view]}`}
+          className="rounded-full"
+          onClick={() => onStep(1)}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <ChevronRight size={18} />
+        </Button>
+      </div>
+      {/* Regular weight, not semibold: Google's date range is 22px/400. A bold
+          heading here reads as a page title; this is a position indicator. */}
+      <h1 className="min-w-0 truncate text-[1.375rem] font-normal tracking-[-0.01em] text-foreground">
         {viewLabel(view, cursor)}
       </h1>
-      <div className="justify-self-center max-lg:order-3">
-        <SegmentedControl onChange={onChangeView} options={VIEW_OPTIONS} value={view} />
-      </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label={`Previous ${VIEW_UNIT_LABEL[view]}`}
-            onClick={() => onStep(-1)}
-            size="icon-sm"
-            variant="secondary"
-          >
-            <ChevronLeft size={16} />
-          </Button>
-          <Button onClick={onToday} size="sm" variant="secondary">Today</Button>
-          <Button
-            aria-label={`Next ${VIEW_UNIT_LABEL[view]}`}
-            onClick={() => onStep(1)}
-            size="icon-sm"
-            variant="secondary"
-          >
-            <ChevronRight size={16} />
-          </Button>
-        </div>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         <KindFilter hidden={hiddenKinds} onChange={onChangeHiddenKinds} />
+        {/* A dropdown on the right, where Google keeps it — the four-way
+            segmented control sat in the middle of the bar and took the space
+            the date range needs on a narrow window. */}
+        <ViewMenu onChange={onChangeView} value={view} />
         {/* THE IMPORT BUTTON IS GONE FROM HERE, NOT THE IMPORT (owner
             2026-07-31: "instead of having the syllabus uploader into the
             calendar page, can we have everything run through the chat
@@ -84,5 +107,29 @@ export function CalendarHeader({
         </Button>
       </div>
     </header>
+  );
+}
+
+/** Day / Week / Month / Year as a dropdown, where Google keeps its view picker.
+ *  The current view is the button's own label, so the bar says where you are
+ *  without needing four visible options to compare against. */
+function ViewMenu({ onChange, value }: { onChange: (view: CalendarViewMode) => void; value: CalendarViewMode }) {
+  const current = VIEW_OPTIONS.find((option) => option.id === value);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label="Change view" className="gap-1 rounded-full px-3" size="sm" variant="outline">
+          {current?.label ?? "Week"}
+          <ChevronDown size={14} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-32">
+        {VIEW_OPTIONS.map((option) => (
+          <DropdownMenuItem key={option.id} onSelect={() => onChange(option.id)}>
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

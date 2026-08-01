@@ -4,7 +4,13 @@ import { test } from "node:test";
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 
 import {
+  blockDetail,
   blockGeometry,
+  DEFAULT_EVENT_MINUTES as DEFAULT_MINUTES,
+  INLINE_MIN_PX,
+  MIN_BLOCK_MINUTES,
+  renderedBlockHeight,
+  STACKED_MIN_PX,
   clockOf,
   DEFAULT_EVENT_MINUTES,
   FULL_DAY,
@@ -310,4 +316,42 @@ test("a dragged-out range is one layoutDay reads back at the same length", () =>
   assert.ok(placed);
   assert.equal(placed.endMinute - placed.startMinute, 90);
   assert.equal(offsetFor(placed.endMinute, WINDOW) - offsetFor(placed.startMinute, WINDOW), HOUR_HEIGHT * 1.5);
+});
+
+// ── A block never renders more lines than it can hold ────────────────────────
+
+test("the rendered height is what the box is actually given", () => {
+  // The old guard compared the LAYOUT height against its threshold while the box
+  // was drawn two pixels shorter. Two pixels is exactly the width of the gap a
+  // 45-minute event fell through.
+  assert.equal(renderedBlockHeight(40), 38);
+  assert.equal(renderedBlockHeight(4), 14, "never smaller than the floor");
+});
+
+test("a tall block stacks the title and the time", () => {
+  assert.equal(blockDetail(STACKED_MIN_PX), "stacked");
+  assert.equal(blockDetail(90), "stacked");
+});
+
+test("THE REPORTED BUG: a default-length event does not try to stack", () => {
+  // Owner screenshot 2026-07-31: an event at 10:00 with no end time drew its
+  // title AND its time, and the second line was sliced through the glyphs.
+  // At 36px an hour a 45-minute event is 27px laid out, 25px rendered — room
+  // for one line, not two.
+  const laidOut = (DEFAULT_MINUTES / 60) * HOUR_HEIGHT;
+  const box = renderedBlockHeight(laidOut);
+  assert.ok(box < STACKED_MIN_PX, `a default event is ${box}px, which cannot stack`);
+  assert.equal(blockDetail(box), "inline");
+});
+
+test("the shortest block a layout can produce shows only the title", () => {
+  const box = renderedBlockHeight((MIN_BLOCK_MINUTES / 60) * HOUR_HEIGHT);
+  assert.equal(blockDetail(box), "title");
+});
+
+test("every tier boundary is decided, with no gap between them", () => {
+  assert.equal(blockDetail(STACKED_MIN_PX - 1), "inline");
+  assert.equal(blockDetail(INLINE_MIN_PX), "inline");
+  assert.equal(blockDetail(INLINE_MIN_PX - 1), "title");
+  assert.equal(blockDetail(0), "title");
 });
