@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SlideUpSheet } from "./StudySheet";
@@ -18,7 +18,6 @@ import {
   type OcclusionShape,
 } from "@nemesis/shared";
 import {
-  imageExtensionFor,
   pickedImageMime,
   STUDY_IMAGE_PICKER_TYPES,
   STUDY_IMAGE_REFUSAL,
@@ -47,6 +46,21 @@ import { control, radius, space, type } from "@/theme/tokens";
 // Coordinates: every shape is stored in the picture's OWN pixels, never screen
 // points, so a card drawn on a phone lines up on a laptop. `scale` below is the
 // one place the two spaces meet.
+//
+// A WHOLE PAGE, NOT A BOTTOM SHEET (owner 2026-07-31: "the image occlusion
+// editor is bad UI/UX, it should be full screen too"). Two things were wrong and
+// only fixing both helps:
+//
+//  - It asked for `fullScreen`, which is a CAP on the body's height, not a
+//    height. The sheet still sized itself to its content, so it opened part-way
+//    down the screen with the add-card page showing above it.
+//  - It is declared INSIDE that add-card page, so even a true full-screen
+//    surface would have been full-*page-body*: inset by its padding, starting
+//    under its header. Hence `portal` — see SlideUpSheet.
+//
+// And because it now owns the screen, the picture is sized from the space
+// actually left for it (measured, via `area`) rather than a fixed half of the
+// window, and the buttons stack instead of running off the right edge.
 
 export function OcclusionEditorSheet({
   visible,
@@ -67,7 +81,6 @@ export function OcclusionEditorSheet({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const win = useWindowDimensions();
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [uri, setUri] = useState<string | null>(null);
@@ -90,6 +103,10 @@ export function OcclusionEditorSheet({
   // value) because it is one rectangle on an otherwise still screen — the graph's
   // 200-node problem does not apply here, and the simpler code is worth more.
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** The space left for the picture once the hint and the controls have taken
+   *  theirs — MEASURED, not a fraction of the window. The old half-the-window
+   *  guess was tuned for a part-screen sheet and wastes most of a page. */
+  const [area, setArea] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (visible) return;
@@ -105,6 +122,7 @@ export function OcclusionEditorSheet({
     setMode("hide-all");
     setSaving(false);
     setError(null);
+    setNotice(null);
     setDraft(null);
   }, [visible]);
 
@@ -159,15 +177,13 @@ export function OcclusionEditorSheet({
   }, [adoptImage]);
 
   // How the picture is laid out on screen, and the factor between screen points
-  // and picture pixels. Capped in height so a portrait shot still leaves the
-  // controls visible without scrolling.
+  // and picture pixels. Fitted inside the measured area, so the shot is as big
+  // as the page can make it without ever pushing the controls off the bottom.
   const layout = useMemo(() => {
-    if (!natural) return null;
-    const maxW = win.width - space(8);
-    const maxH = win.height * 0.5;
-    const scale = Math.min(maxW / natural.width, maxH / natural.height);
+    if (!natural || !area || area.width <= 0 || area.height <= 0) return null;
+    const scale = Math.min(area.width / natural.width, area.height / natural.height);
     return { height: natural.height * scale, scale, width: natural.width * scale };
-  }, [natural, win.width, win.height]);
+  }, [natural, area]);
 
   // Kept in a ref as well so the gesture callbacks (which are memoised once)
   // never read a stale layout after a rotation.
@@ -330,7 +346,8 @@ export function OcclusionEditorSheet({
   const canSave = !!uri && !!natural && !!deckId && shapes.length > 0 && !saving;
 
   return (
-    <SlideUpSheet visible={visible} onClose={onClose} title="Image cloze" fullScreen testID="occlusion-editor-sheet">
+    <SlideUpSheet visible={visible} onClose={onClose} title="Image cloze" page portal testID="occlusion-editor-sheet">
+      <View style={styles.stage}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.hint} testID="occlusion-notice">{notice}</Text> : null}
 
@@ -349,10 +366,6 @@ export function OcclusionEditorSheet({
             <MissionButton label="Choose a file" onPress={() => void pickFile()} testID="occlusion-pick-file" />
           </View>
         </View>
-      ) : !layout ? (
-        <View style={styles.empty}>
-          <ActivityIndicator color={c.text2} />
-        </View>
       ) : (
         <>
           <Text style={styles.hint}>
@@ -361,6 +374,23 @@ export function OcclusionEditorSheet({
               : `${shapes.length} box${shapes.length === 1 ? "" : "es"} — ${shapes.length} card${shapes.length === 1 ? "" : "s"}. Tap one to name or remove it, or drag it to move it.`}
           </Text>
 
+          {/* The picture takes whatever room is left. Deliberately NOT inside a
+              scroll view: a Pan that draws boxes and a ScrollView that pans the
+              page are the same downward finger, and the scroll would win. On a
+              full page there is enough room for both without scrolling. */}
+          <View
+            style={styles.canvasArea}
+            onLayout={(event) => {
+              const { height, width } = event.nativeEvent.layout;
+              setArea((current) =>
+                current && current.height === height && current.width === width ? current : { height, width },
+              );
+            }}
+            testID="occlusion-canvas-area"
+          >
+          {!layout ? (
+            <ActivityIndicator color={c.text2} />
+          ) : (
           <GestureDetector gesture={drawGesture}>
             <View style={[styles.canvas, { height: layout.height, width: layout.width }]} testID="occlusion-canvas">
               <Image source={{ uri }} style={{ height: layout.height, width: layout.width }} resizeMode="contain" />
@@ -406,6 +436,8 @@ export function OcclusionEditorSheet({
               ) : null}
             </View>
           </GestureDetector>
+          )}
+          </View>
 
           {selected ? (
             <View style={styles.selectedRow} testID="occlusion-selected">
@@ -443,36 +475,44 @@ export function OcclusionEditorSheet({
             />
           </View>
 
-          <View style={styles.actions}>
-            <View style={styles.retakeRow}>
-              <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={styles.retake} testID="occlusion-retake">
-                <Text style={styles.retakeLabel}>Retake</Text>
-              </Pressable>
-              <Pressable onPress={() => void pickFile()} hitSlop={6} style={styles.retake} testID="occlusion-replace-file">
-                <Text style={styles.retakeLabel}>Choose a file</Text>
-              </Pressable>
-            </View>
-            <MissionButton
-              label={suggesting ? "Reading…" : "Suggest boxes"}
-              variant="secondary"
-              busy={suggesting}
-              disabled={!uri || !natural || suggesting}
-              onPress={() => void suggest()}
-              testID="occlusion-suggest"
-            />
-            <MissionButton
-              label={saving ? "Adding…" : shapes.length > 0 ? `Add ${shapes.length} card${shapes.length === 1 ? "" : "s"}` : "Add cards"}
-              variant="primary"
-              busy={saving}
-              disabled={!canSave}
-              onPress={() => void save()}
-              testID="occlusion-save"
-            />
+          {/* 🔴 STACKED, NOT ONE ROW. Four controls side by side ran off the
+              right edge, and the one that fell off was Add cards — the button
+              the whole page exists to reach. */}
+          <View style={styles.retakeRow}>
+            <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={styles.retake} testID="occlusion-retake">
+              <Text style={styles.retakeLabel}>Retake</Text>
+            </Pressable>
+            <Pressable onPress={() => void pickFile()} hitSlop={6} style={styles.retake} testID="occlusion-replace-file">
+              <Text style={styles.retakeLabel}>Choose a file</Text>
+            </Pressable>
           </View>
-          {!deckId ? <Text style={styles.hint}>Choose a deck on the New cards page first.</Text> : null}
-          {deckId && deckLabel ? <Text style={styles.hint}>Cards go into {deckLabel}.</Text> : null}
+          <View style={styles.actions}>
+            <View style={styles.actionSlot}>
+              <MissionButton
+                label={suggesting ? "Reading…" : "Suggest boxes"}
+                variant="secondary"
+                busy={suggesting}
+                disabled={!uri || !natural || suggesting}
+                onPress={() => void suggest()}
+                testID="occlusion-suggest"
+              />
+            </View>
+            <View style={styles.actionSlot}>
+              <MissionButton
+                label={saving ? "Adding…" : shapes.length > 0 ? `Add ${shapes.length} card${shapes.length === 1 ? "" : "s"}` : "Add cards"}
+                variant="primary"
+                busy={saving}
+                disabled={!canSave}
+                onPress={() => void save()}
+                testID="occlusion-save"
+              />
+            </View>
+          </View>
+          {!deckId ? <Text style={styles.footHint}>Choose a deck on the New cards page first.</Text> : null}
+          {deckId && deckLabel ? <Text style={styles.footHint}>Cards go into {deckLabel}.</Text> : null}
         </>
       )}
+      </View>
 
       <PhotoCaptureSheet visible={cameraOpen} onClose={() => setCameraOpen(false)} onCaptured={onCaptured} />
     </SlideUpSheet>
@@ -512,7 +552,24 @@ const createStyles = (c: ThemeColors) =>
     rowPressed: { backgroundColor: c.surface },
     error: { ...type.small, color: c.danger, backgroundColor: c.surface2, borderRadius: radius.sm, padding: space(2.5), marginBottom: space(2) },
 
-    empty: { alignItems: "center", gap: space(3), paddingVertical: space(8), paddingHorizontal: space(2) },
+    // The page's own column: hint at the top, picture taking the slack, controls
+    // pinned under it.
+    stage: { flex: 1 },
+    // A FLOOR, because there is no scroll view to fall back on. With the
+    // keyboard up (naming a box) the page shrinks, and a pure flex:1 area can
+    // squeeze toward zero — which shows a spinner where the diagram should be,
+    // since `layout` refuses to compute against no space. Better to let the
+    // last hint line clip than to lose the picture you are drawing on.
+    canvasArea: {
+      flex: 1,
+      minHeight: 160,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      marginBottom: space(2),
+    },
+
+    empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: space(3), paddingHorizontal: space(2) },
     emptyActions: { flexDirection: "row", alignItems: "center", gap: space(2) },
     emptyTitle: { ...type.h2, color: c.text, textAlign: "center" },
     emptyBody: { ...type.small, color: c.textHint, textAlign: "center", marginBottom: space(2) },
@@ -520,7 +577,7 @@ const createStyles = (c: ThemeColors) =>
     hint: { ...type.small, color: c.textHint, marginBottom: space(2) },
     fieldLabel: { ...type.micro, color: c.text3, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: space(1.5), marginTop: space(2) },
 
-    canvas: { alignSelf: "center", borderRadius: radius.md, overflow: "hidden", backgroundColor: c.surface2, marginBottom: space(3) },
+    canvas: { alignSelf: "center", borderRadius: radius.md, overflow: "hidden", backgroundColor: c.surface2 },
     // A mask is opaque on purpose — a translucent one lets you read the answer
     // straight through it, which is the whole thing the card is testing.
     mask: { position: "absolute", backgroundColor: c.text, alignItems: "center", justifyContent: "center", borderRadius: 2 },
@@ -549,8 +606,11 @@ const createStyles = (c: ThemeColors) =>
     modeLabelOn: { color: c.accent },
     modeHint: { ...type.micro, color: c.textHint },
 
-    actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space(1) },
-    retakeRow: { flexDirection: "row", alignItems: "center", gap: space(3) },
+    actions: { flexDirection: "row", alignItems: "stretch", gap: space(2) },
+    // MissionButton takes no style prop, so each one rides an equal-width slot.
+    actionSlot: { flex: 1 },
+    retakeRow: { flexDirection: "row", alignItems: "center", gap: space(4), marginBottom: space(2) },
     retake: { paddingVertical: space(2), paddingHorizontal: space(1) },
     retakeLabel: { ...type.small, color: c.text2, fontWeight: "600" },
+    footHint: { ...type.small, color: c.textHint, marginTop: space(2) },
   });

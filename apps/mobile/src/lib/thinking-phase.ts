@@ -26,6 +26,11 @@ export type ThinkingPhase =
    *  line would sit on "Putting this together" while a deck is being written, and a
    *  save of thirty cards takes long enough for that to read as hung. */
   | { kind: "acting"; tools: string[] }
+  /** The student's photograph is being uploaded and read, before the turn that
+   *  asks about it has even been sent. Strictly it is not a model turn — but it
+   *  is the same wait, in the same place on screen, and the owner asked for the
+   *  same line rather than a second kind of pending label (2026-07-31). */
+  | { kind: "reading-photo" }
   | { kind: "writing" };
 
 /** Plain-English phrase per workspace tool. Keys are the tool names in
@@ -109,6 +114,8 @@ export function phaseLabel(phase: ThinkingPhase): string {
       if (!phrase) return "Working in your workspace";
       return rest.length > 0 ? "Working in your workspace" : phrase;
     }
+    case "reading-photo":
+      return "Reading your photo";
     case "writing":
       return "";
   }
