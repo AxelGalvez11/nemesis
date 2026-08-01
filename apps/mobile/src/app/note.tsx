@@ -15,6 +15,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
@@ -28,6 +29,7 @@ import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
 import { MessageBody } from "@/components/MessageBody";
 import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
+import { noteChromeShown } from "@/lib/note-chrome";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
 import { safeLibraryTitle, UNTITLED_NOTE_TITLE } from "@/lib/library-paths";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
@@ -199,6 +201,15 @@ export default function NoteScreen() {
   // it). Refs shadow the LATEST text + dirtiness so the debounced autosave
   // and the unmount flush never read stale closures.
   const [editing, setEditing] = useState(false);
+  // The floating controls get out of the way while a note is being read (owner
+  // 2026-08-01) and come back the moment the student scrolls up. The RULE is in
+  // lib/note-chrome.ts, where it is tested; this is only the plumbing.
+  const [chromeShown, setChromeShown] = useState(true);
+  // The previous scroll offset, in a ref rather than state: it changes on every
+  // scroll event and nothing renders from it, so putting it in state would
+  // re-render the whole note sixty times a second to no effect.
+  const lastScrollY = useRef(0);
+  const chromeReveal = useSharedValue(1);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const draftRef = useRef("");
@@ -468,6 +479,46 @@ export default function NoteScreen() {
     setFindOpen(false);
     setFindQuery("");
   }, []);
+
+  // One curve for both clusters, so the top and the bottom never disagree about
+  // whether the page is "chrome up" or "chrome away".
+  useEffect(() => {
+    chromeReveal.value = withTiming(chromeShown ? 1 : 0, {
+      duration: 200,
+      easing: ReEasing.out(ReEasing.cubic),
+    });
+  }, [chromeShown, chromeReveal]);
+
+  // 🔴 EDIT MODE ALWAYS HAS ITS CONTROLS. The mode pill is how a note is SAVED,
+  // so hiding it would leave a student with unsaved work and no visible way to
+  // commit it. Nothing scrolls this screen's reading list while editing, so
+  // without this reset the controls would simply stay wherever the last read
+  // left them — including away.
+  useEffect(() => {
+    if (editing) setChromeShown(true);
+  }, [editing]);
+
+  /** The reading view's scroll handler. Note the ref read-then-write: each event
+   *  is judged against the previous one, which is what makes this about
+   *  DIRECTION rather than position. */
+  const onBodyScroll = useCallback((offsetY: number) => {
+    const previous = lastScrollY.current;
+    lastScrollY.current = offsetY;
+    setChromeShown((shown) => noteChromeShown(shown, offsetY, previous));
+  }, []);
+
+  // Travel plus fade. Fading alone leaves invisible buttons still catching taps
+  // over the text — hence pointerEvents below — and sliding alone reads as the
+  // page having two extra moving parts. The top cluster leaves upwards and the
+  // bottom one downwards, so each exits by the nearest edge.
+  const chromeStyle = useAnimatedStyle(() => ({
+    opacity: chromeReveal.value,
+    transform: [{ translateY: (chromeReveal.value - 1) * (chromeHeight || 96) }],
+  }));
+  const pillBarStyle = useAnimatedStyle(() => ({
+    opacity: chromeReveal.value,
+    transform: [{ translateY: (1 - chromeReveal.value) * (NOTE_PILL_BAR_HEIGHT + space(6)) }],
+  }));
 
   // --- pill-bar actions -----------------------------------------------------
   const openNoteId = useCallback(
@@ -749,10 +800,14 @@ export default function NoteScreen() {
           Height is MEASURED rather than assumed: the find bar and the link
           notice join this column only sometimes, and a hardcoded inset would
           either clip the title or leave a gap whenever they appear. */}
-      <View
-        style={[styles.chrome, { paddingTop: insets.top + space(2) }]}
+      <Reanimated.View
+        style={[styles.chrome, { paddingTop: insets.top + space(2) }, chromeStyle]}
         onLayout={(e) => setChromeHeight(e.nativeEvent.layout.height)}
-        pointerEvents="box-none"
+        // "none" while away, not just invisible: a faded-out cluster still sits
+        // over the first lines of the note and would eat every tap aimed at
+        // them. box-none the rest of the time, as before, so the note behind
+        // the gap between the two buttons stays touchable.
+        pointerEvents={chromeShown ? "box-none" : "none"}
       >
       {/* Top bar: the back button on the left; on the right, the glass mode pill
           (owner's reference crop): pencil/book read–edit toggle + the "…" menu.
@@ -834,7 +889,7 @@ export default function NoteScreen() {
           <Text style={styles.noticeText}>{notice}</Text>
         </View>
       ) : null}
-      </View>
+      </Reanimated.View>
 
       {doc === undefined ? (
         <View style={[styles.body, { paddingTop: chromeHeight }]} testID="note-skeleton">
@@ -879,10 +934,18 @@ export default function NoteScreen() {
           ref={scrollRef}
           // The note runs UP under the floating chrome and fades out behind the
           // blur — that hand-off is the whole point of the change, so this pad
-          // is the chrome's own measured height and nothing more.
+          // is the chrome's own measured height and nothing more. It does NOT
+          // change when the controls hide: reclaiming that space would reflow
+          // the paragraph being read, which is a far worse trade than a little
+          // empty margin at the top.
           contentContainerStyle={[styles.body, { paddingTop: chromeHeight }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          onScroll={(e) => onBodyScroll(e.nativeEvent.contentOffset.y)}
+          // 16 rather than the default 0 (which fires once per drag): the rule
+          // compares consecutive offsets, and two samples a second would make
+          // every flick look like one enormous downward jump.
+          scrollEventThrottle={16}
         >
           {/* Obsidian-style page (owner 2026-07-20): big bold inline title, then the
               content straight away — no path/updated metadata line between them. */}
@@ -964,7 +1027,10 @@ export default function NoteScreen() {
       {/* The floating bottom pill bar (reading mode only — the editor's bottom is
           the keyboard toolbar) + the three sheets its buttons open. */}
       {doc && !editing ? (
-        <View style={[styles.pillBarWrap, { bottom: insets.bottom + space(2) }]} pointerEvents="box-none">
+        <Reanimated.View
+          style={[styles.pillBarWrap, { bottom: insets.bottom + space(2) }, pillBarStyle]}
+          pointerEvents={chromeShown ? "box-none" : "none"}
+        >
           <NotePillBar
             canForward={nav.canForward}
             recentCount={nav.tabIds.length}
@@ -983,7 +1049,7 @@ export default function NoteScreen() {
               setOutlineAnchor({ x, y });
             }}
           />
-        </View>
+        </Reanimated.View>
       ) : null}
 
       {/* The title field's bar above the keyboard. One action, and the one

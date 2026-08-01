@@ -63,17 +63,31 @@ export const ACCESSORY_RAIL_PADDING = 12 as const;
 export const MIN_ACCESSORY_PILL_WIDTH = 120;
 
 /**
- * The pill's width in points: the screen, less the rail's padding on both sides.
+ * The pill's width in points: the screen, less the rail's padding on both sides,
+ * less anything sharing the rail with it.
  *
  * Full-width-minus-margins rather than shrink-to-fit, because fourteen
  * formatting buttons cannot fit on an iPhone anyway — the bar is meant to scroll,
  * and it can only scroll inside a width somebody gave it.
  *
+ * `reserved` is room set aside for a SIBLING on the same rail — the note
+ * editor's put-the-keyboard-away button (owner 2026-08-01: "add a button put
+ * keyboard down it should sit beside the editing toolbar on the right of it").
+ * It has to be subtracted HERE rather than left to flexbox: the pill's width is
+ * an explicit number precisely because nothing on this rail is allowed to
+ * measure itself, and a sibling laid out beside a pill that still claims the
+ * whole screen would push itself off the right-hand edge.
+ *
  * Never returns 0 or a negative number, however narrow the window is reported
  * as: a zero here is the exact failure this module exists to prevent, so the
  * floor is a real minimum rather than a clamp to nothing.
  */
-export function accessoryPillWidth(windowWidth: number, railPadding: number = ACCESSORY_RAIL_PADDING): number {
+export function accessoryPillWidth(
+  windowWidth: number,
+  railPadding: number = ACCESSORY_RAIL_PADDING,
+  reserved = 0,
+): number {
   if (!Number.isFinite(windowWidth) || windowWidth <= 0) return MIN_ACCESSORY_PILL_WIDTH;
-  return Math.max(MIN_ACCESSORY_PILL_WIDTH, Math.round(windowWidth - railPadding * 2));
+  const usable = windowWidth - railPadding * 2 - Math.max(0, reserved);
+  return Math.max(MIN_ACCESSORY_PILL_WIDTH, Math.round(usable));
 }

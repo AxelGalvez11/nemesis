@@ -49,6 +49,7 @@ import {
   TableIcon,
   UnderlineIcon,
   WikiLinkIcon,
+  KeyboardDownIcon,
 } from "./note-toolbar-icons";
 import { MessageBody } from "./MessageBody";
 import { NoteTableEditor } from "./NoteTableEditor";
@@ -179,7 +180,10 @@ export function NoteBlockEditor({
   // The toolbar's width has to be a NUMBER, not a percentage — see
   // lib/accessory-bar.ts. Taken from the window so rotation can't leave it stale.
   const { width: windowWidth } = useWindowDimensions();
-  const pillWidth = accessoryPillWidth(windowWidth, space(3));
+  // The dismiss button shares the rail, so the pill can no longer claim the
+  // whole screen — see accessoryPillWidth's `reserved`, and the note beside the
+  // rail's styles for why nothing here is allowed to size itself.
+  const pillWidth = accessoryPillWidth(windowWidth, space(3), control.lg + space(2));
 
   // An InputAccessoryView came and went WITH the keyboard for free. A docked
   // view does not, so a dismissed keyboard used to leave the pill stranded at
@@ -442,6 +446,25 @@ export function NoteBlockEditor({
             ))}
           </ScrollView>
         </GlassSurface>
+        {/* Put the keyboard away (owner 2026-08-01: "in editing mode add a
+            button put keyboard down it should sit beside the editing toolbar on
+            the right of it").
+            BESIDE the pill, not inside it: the pill scrolls, and a button that
+            can scroll out of reach is not a way out. Its own round glass, which
+            is also what says it does something to the screen rather than to the
+            text — every glyph inside the pill formats a selection. */}
+        <Pressable
+          onPress={() => Keyboard.dismiss()}
+          style={({ pressed }) => [styles.dismissBtn, pressed && styles.dismissBtnPressed]}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Put the keyboard away"
+          testID="note-keyboard-dismiss"
+        >
+          <GlassSurface style={styles.dismissGlass} fallbackColor={c.glassMenu} opaque shadow>
+            <KeyboardDownIcon size={21} color={c.text} />
+          </GlassSurface>
+        </Pressable>
       </View>
     ),
     [styles, c, applyTool, pillWidth],
@@ -599,7 +622,17 @@ const createStyles = (c: ThemeColors) =>
     // the keyboard's height. Anchored bottom-left-right rather than given a
     // height, so the pill's own size still decides how tall the dock is.
     toolbarDock: { bottom: 0, left: 0, position: "absolute", right: 0 },
-    toolbarRail: { alignItems: "center", paddingBottom: space(2), paddingHorizontal: space(3) },
+    // A ROW now, holding the scrolling pill and the dismiss button beside it.
+    // The pill's width still comes from accessoryPillWidth rather than from
+    // flex, and the gap here is the same space(2) that call reserves — the two
+    // numbers have to agree or the button lands half off the screen.
+    toolbarRail: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2),
+      paddingBottom: space(2),
+      paddingHorizontal: space(3),
+    },
     toolbarPill: {
       borderRadius: radius.pill,
       borderWidth: 1,
@@ -627,4 +660,16 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: "center",
     },
     toolBtnPressed: { backgroundColor: c.surface2 },
+    dismissBtn: { borderRadius: control.lg / 2 },
+    dismissBtnPressed: { opacity: 0.6 },
+    dismissGlass: {
+      width: control.lg,
+      height: control.lg,
+      borderRadius: control.lg / 2,
+      borderWidth: 1,
+      borderColor: c.line,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
   });
