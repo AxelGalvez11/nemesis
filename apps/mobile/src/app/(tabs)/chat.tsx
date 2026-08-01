@@ -64,7 +64,7 @@ import { withAttachmentNote, type AttachedLibraryDoc, type BudgetResetKind, type
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
-import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
+import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoBubbleText, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -2144,7 +2144,9 @@ function UserTurn({
   const styles = useThemedStyles(createStyles);
   const images = (message.attachments ?? []).filter((attachment) => attachment.kind === "image" && attachment.url);
   const savable = photo !== null && images.some((attachment) => attachment.storagePath === photo.storagePath);
-  const body = message.content.trim();
+  // The canned "Read this photo…" ask goes on the wire but must not be read back
+  // to the student as their own words — see photoBubbleText for the whole story.
+  const body = photoBubbleText(message.content, images.length > 0);
   return (
     <View style={styles.userTurn}>
       {images.map((attachment) => (
