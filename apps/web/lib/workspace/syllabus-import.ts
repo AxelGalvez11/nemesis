@@ -10,40 +10,36 @@
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import { jsonSlice } from "@/lib/workspace/study-artifact-content";
+import { buildFromCensus, type VerifiedSyllabus } from "@/lib/workspace/syllabus";
 import {
-  buildSyllabusPrompt,
-  scheduleWindow,
-  SYLLABUS_SYSTEM_PROMPT,
-  type SyllabusExtraction,
-  type VerifiedSyllabus,
-  verifySyllabus,
-} from "@/lib/workspace/syllabus";
+  applyLabels,
+  buildCensusPrompt,
+  CENSUS_SYSTEM_PROMPT,
+  censusEntries,
+  CONTEXT_RADIUS,
+  findDateMentions,
+  HEADER_CHARS,
+  resolveMentions,
+} from "@/lib/workspace/syllabus-dates";
 
 /**
- * How much of the file the model sees.
+ * Roughly how many characters of date context one request may carry.
  *
- * This was 24,000 characters, on the assumption that a long syllabus is mostly
- * policy boilerplate and the schedule sits near the front. A real one says
- * otherwise: a 13-page, 34,927-character pharmacokinetics syllabus keeps every one
- * of its 87 dated sessions between characters 25,736 and 33,348 — the course
- * calendar is an appendix, after the grading policy and the attendance rules.
- * Against that file the old limit returned NOTHING, and looked like a syllabus with
- * no dates in it.
- *
- * So: a ceiling generous enough for a real syllabus, and when a document does run
- * past it, the window is chosen by where the dates are rather than by taking the
- * opening (see scheduleWindow).
+ * The old pipeline sent a WINDOW of the document and hoped the schedule was
+ * inside it. This one sends the neighbourhood of every date it found, so the
+ * document's length stops mattering and only the number of dates does. The
+ * budget keeps a pathological file — a department handbook listing every
+ * deadline of every course — from building a request nothing will answer.
  */
-export const SYLLABUS_TEXT_LIMIT = 60_000;
+export const CENSUS_PROMPT_BUDGET = 60_000;
 
-/** Local yyyy-mm-dd. The calendar stores local dates with no timezone
- *  (calendar-model.ts), so building this from UTC would shift the anchor a day
- *  in negative-offset zones and push every inferred year decision with it. */
-function localDateKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
+/** Below this there is not enough around a date to tell what it is, so the
+ *  entry count is cut instead of squeezing the context further. */
+const MIN_CONTEXT_RADIUS = 150;
+
+/** More dates than any real syllabus has, and well past what MAX_IMPORT_EVENTS
+ *  would let through anyway. */
+const MAX_CENSUS_ENTRIES = 200;
 
 function newEventId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -80,26 +76,63 @@ export async function readSyllabus(options: ReadSyllabusOptions): Promise<Verifi
   // also returns describes the FILE, and the course name is read from the
   // content by verifySyllabus instead.
   const { text: fullText } = await extractFile(file, uid);
-
-  // The model sees this slice, and verification checks quotes against THIS
-  // SAME slice. Verifying against the full text instead would accept a quote
-  // from a part of the document the model was never shown — which can only
-  // happen by coincidence or fabrication.
-  const text = scheduleWindow(fullText, SYLLABUS_TEXT_LIMIT);
-  if (!text.trim()) {
-    return { course: null, term: null, events: [], meetings: [], dropped: [], note: "That file had no readable text." };
+  if (!fullText.trim()) {
+    return { course: null, dropped: [], events: [], meetings: [], note: "That file had no readable text.", term: null };
   }
+
+  // 🔴 THE WHOLE DOCUMENT IS SCANNED, not a window of it.
+  //
+  // Windowing was the old design's answer to a long syllabus, and it was always
+  // a gamble: the owner's file states an immunization deadline in a paragraph
+  // on page 8 and keeps its schedule table on pages 14 to 25, fourteen thousand
+  // characters apart. No single window holds both. Finding dates costs a regular
+  // expression, so there is no reason to look at less than all of it.
+  const resolved = resolveMentions(findDateMentions(fullText), today);
+  if (resolved.length === 0) {
+    return { course: null, dropped: [], events: [], meetings: [], note: "No dates were found in that file.", term: null };
+  }
+
+  // Shrink the context around each date to fit the budget rather than dropping
+  // dates — a cramped label is recoverable, a missing deadline is not. Only
+  // once the context is as small as it can usefully be does the count get cut.
+  const kept = resolved.slice(0, MAX_CENSUS_ENTRIES);
+  const radius = Math.max(
+    MIN_CONTEXT_RADIUS,
+    Math.min(CONTEXT_RADIUS, Math.floor(CENSUS_PROMPT_BUDGET / kept.length / 2)),
+  );
+  const entries = censusEntries(fullText, kept, radius);
+  const header = fullText.slice(0, HEADER_CHARS);
 
   const reply = await postChatCompletion(
     uid,
     [
-      { content: SYLLABUS_SYSTEM_PROMPT, role: "system" },
-      { content: buildSyllabusPrompt(text, localDateKey(today)), role: "user" },
+      { content: CENSUS_SYSTEM_PROMPT, role: "system" },
+      { content: buildCensusPrompt(entries, header), role: "user" },
     ],
     { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
   );
   if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't read that syllabus. Try again.");
 
-  const parsed = jsonSlice(reply.text) as SyllabusExtraction | null;
-  return verifySyllabus(parsed, { newId: newEventId, sourceText: text, today });
+  const parsed = jsonSlice(reply.text) as Record<string, unknown> | null;
+  const outcome = applyLabels(entries, parsed?.labels);
+
+  // Meeting quotes are still checked verbatim, and against exactly what the
+  // model was shown — the opening plus every date context, never the whole
+  // document. A quote from a page it never saw could only be a coincidence or
+  // an invention.
+  const shown = [header, ...entries.map((entry) => entry.context)].join("\n");
+  const result = buildFromCensus(outcome, parsed?.meetings, {
+    course: typeof parsed?.course === "string" && parsed.course.trim() ? parsed.course.trim() : null,
+    newId: newEventId,
+    sourceText: shown,
+    term: typeof parsed?.term === "string" && parsed.term.trim() ? parsed.term.trim() : null,
+  });
+
+  if (resolved.length > kept.length) {
+    result.dropped.push({
+      reason: `Only the first ${MAX_CENSUS_ENTRIES} dates in this file were read`,
+      title: `(${resolved.length - kept.length} more dates)`,
+    });
+  }
+  return result;
 }
