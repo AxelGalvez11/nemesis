@@ -1,29 +1,27 @@
-// The toolbar panel: says what it can see, and starts the read.
+// The toolbar panel: where you are, what it can see, and one button.
 //
-// WHY IT IS THIS SMALL (owner 2026-07-31). It used to carry the whole result —
-// status, course list, counts — and that was the wrong home for all of it. A
-// toolbar popup closes the instant the student clicks the page, and on a slow
-// portal they will, because reading takes the better part of a minute. So a
-// student who pressed the button, looked at their courses rendering, and then
-// reopened this got a panel that had started over. Everything about a reading
-// now lives on the card at the bottom right of the portal, which survives
-// clicks, scrolling and this panel closing.
+// WHY IT DOES NOT CARRY THE RESULT. A toolbar popup closes the instant the
+// student clicks the page, and on a slow portal they will, because reading
+// takes the better part of a minute. So the live reading lives on the card at
+// the bottom right of the portal, which survives clicks and this panel closing.
+// What lives HERE is the state of the flow: what page you are on, what is
+// already in hand, and the next thing to press.
 //
-// This still exists for one real reason: chrome.permissions.request() only
-// works inside a genuine user gesture. The student's press below IS that
-// gesture, which is also the only moment a permission prompt naming their
-// school's domain makes any sense to them.
+// This panel also has to exist for a mechanical reason:
+// chrome.permissions.request() only works inside a genuine user gesture. The
+// student's press below IS that gesture, and it is the only moment a prompt
+// naming their school's domain makes sense to them.
 //
-// IT SAYS WHAT IT SEES, BEFORE YOU PRESS (owner 2026-07-31). Opening the popup
-// is itself the gesture that lets Chrome show us the current tab's address, so
-// there is no reason to make a student press a button to find out whether this
-// page is even a portal. Detection runs on open and the panel says so.
+// IT SAYS WHAT IT SEES BEFORE YOU PRESS. Opening the popup is itself the
+// gesture that lets Chrome show us the current tab's address, so making a
+// student press a button to learn whether the page is even a portal was
+// pointless. Detection runs on open: "Blackboard detected".
 //
 // AND WHEN IT CANNOT TELL, IT ASKS. Detection reads the URL's shape, which is
-// what makes it work on any school's own domain without us knowing the school
+// what makes it work on any school's own domain without knowing the school
 // exists. It cannot cover a portal behind a campus front door or an unusual
-// reverse proxy, and for those a dead end is a bad answer — so the student gets
-// four tiles and can say which portal it is.
+// reverse proxy, and there a dead end is a bad answer — so four tiles appear
+// and the student's own answer beats anything we infer.
 
 import { detectLms, factsFromUrl } from "../lms/detect.ts";
 import { type LmsOverride, OVERRIDE_KEY, RUNTIME_MESSAGES } from "../messages.ts";
@@ -39,8 +37,8 @@ const LABELS: Record<LmsKind, string> = {
 
 const APP_URL = "https://app.enternemesis.com/library?import=coursework";
 
-/** What the panel currently believes it is looking at. Set on open, and again
- *  if the student overrules it with a tile. */
+/** What the panel believes it is looking at. Set on open, and again if the
+ *  student overrules it with a tile. */
 let current: { lms: LmsKind; origin: string; tabId: number } | null = null;
 
 function element<T extends HTMLElement>(id: string): T {
@@ -49,22 +47,59 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-function setStatus(text: string, tone: "idle" | "bad" = "idle"): void {
-  const status = element("status");
-  status.textContent = text;
-  status.dataset.tone = tone;
+/** Which of Open / Read / Bring in is done, current, or still ahead. */
+function setStages(at: "open" | "read" | "bring"): void {
+  const order = ["open", "read", "bring"] as const;
+  const reached = order.indexOf(at);
+  order.forEach((name, index) => {
+    const node = element(`stage-${name}`);
+    if (index < reached) node.dataset.state = "done";
+    else if (index === reached) node.dataset.state = "now";
+    else delete node.dataset.state;
+  });
 }
 
-function showStoredControls(visible: boolean): void {
-  element("next").hidden = !visible;
-  element("clear").hidden = !visible;
+function setDetected(lms: LmsKind): void {
+  const pill = element("detected");
+  const text = element("detected-text");
+  if (lms === "unknown") {
+    pill.dataset.tone = "none";
+    text.textContent = "No portal";
+    return;
+  }
+  delete pill.dataset.tone;
+  // The owner's words: it should say "Blackboard detected".
+  text.textContent = `${LABELS[lms]} detected`;
 }
 
-function describe(scan: LmsScan): string {
-  const items = scan.courses.reduce((total, course) => total + course.items.length, 0);
-  const courseWord = scan.courses.length === 1 ? "course" : "courses";
-  if (items === 0) return `${scan.courses.length} ${courseWord} ready to bring in.`;
-  return `${scan.courses.length} ${courseWord} and ${items} ${items === 1 ? "item" : "items"} ready to bring in.`;
+function setStatus(text: string, meta?: string): void {
+  element("status").textContent = text;
+  const metaNode = element("meta");
+  metaNode.hidden = !meta;
+  metaNode.textContent = meta ?? "";
+}
+
+function setTile(id: string, value: number): void {
+  const tile = element(id);
+  const strong = tile.querySelector("b");
+  if (strong) strong.textContent = String(value);
+  tile.dataset.empty = String(value === 0);
+}
+
+/** "Scanned today, 6:15 PM · Blackboard". Falls back to just the portal name
+ *  when the stamp is unreadable — a wrong time is worse than none. */
+function describeScan(scan: LmsScan): string {
+  const portal = LABELS[scan.lms] ?? "your school portal";
+  const when = new Date(scan.scannedAt);
+  if (Number.isNaN(when.getTime())) return portal;
+  const today = new Date();
+  const sameDay =
+    when.getFullYear() === today.getFullYear() &&
+    when.getMonth() === today.getMonth() &&
+    when.getDate() === today.getDate();
+  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const day = sameDay ? "today" : when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return `Scanned ${day}, ${time} · ${portal}`;
 }
 
 async function activeTab(): Promise<chrome.tabs.Tab | null> {
@@ -72,7 +107,6 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
   return tab ?? null;
 }
 
-/** Reflect a choice in the tiles so the student can see it stuck. */
 function markChosen(lms: LmsKind): void {
   for (const tile of Array.from(element("picker").querySelectorAll<HTMLButtonElement>("button[data-lms]"))) {
     tile.setAttribute("aria-pressed", String(tile.dataset.lms === lms));
@@ -80,19 +114,20 @@ function markChosen(lms: LmsKind): void {
 }
 
 /** Say what we are looking at, and offer the tiles only when we cannot tell. */
-function reflect(lms: LmsKind): void {
+function reflectPage(lms: LmsKind): void {
+  setDetected(lms);
   const scanButton = element<HTMLButtonElement>("scan");
   if (lms === "unknown") {
-    setStatus("This does not look like a school portal.", "bad");
+    setStatus("This does not look like a school portal.");
     element("picker").hidden = false;
-    // NOT disabled: the tiles below are the way forward, and a dead button with
-    // no explanation is what this whole change exists to remove.
     scanButton.disabled = true;
+    setStages("open");
     return;
   }
   element("picker").hidden = true;
-  setStatus(`This looks like ${LABELS[lms]}. Open your course list, then read this page.`);
   scanButton.disabled = false;
+  setStatus("Ready when you are.", "Open the page that lists your courses.");
+  setStages("read");
 }
 
 async function scan(): Promise<void> {
@@ -102,17 +137,16 @@ async function scan(): Promise<void> {
   try {
     const tab = await activeTab();
     if (!tab?.id || !tab.url) {
-      setStatus("No page to read.", "bad");
+      setStatus("No page to read.");
       return;
     }
 
     // Narrowed to a local first: `current?.tabId === tab.id` reads as a guard
-    // but does not narrow `current`, and the version that leans on it only
-    // works by accident.
+    // but does not narrow `current`.
     const seen = current;
     const lms: LmsKind = seen && seen.tabId === tab.id ? seen.lms : "unknown";
     if (lms === "unknown") {
-      setStatus("Tell me which portal this is and I will read it.", "bad");
+      setStatus("Tell me which portal this is and I will read it.");
       element("picker").hidden = false;
       return;
     }
@@ -120,7 +154,7 @@ async function scan(): Promise<void> {
     const origin = new URL(tab.url).origin;
     const granted = await chrome.permissions.request({ origins: [`${origin}/*`] }).catch(() => false);
     if (!granted) {
-      setStatus("Nemesis needs your permission to read this page.", "bad");
+      setStatus("Nemesis needs your permission to read this page.");
       return;
     }
 
@@ -135,22 +169,36 @@ async function scan(): Promise<void> {
         target: { allFrames: false, tabId: tab.id },
       });
     } catch {
-      setStatus("Could not read this page. Try reloading it, then read again.", "bad");
+      setStatus("Could not read this page.", "Try reloading it, then read again.");
       return;
     }
 
     // 🔴 NOTHING IS AWAITED HERE, deliberately. executeScript's return value is
     // not the scan — the bundle is an IIFE, so what comes back is undefined —
     // and waiting on it kept this panel alive pretending to work. The scanner
-    // reports on the page and hands its result to the worker itself. All this
-    // has to do is point at the card and get out of the way.
-    setStatus(`Reading your ${LABELS[lms]}. Watch the card at the bottom right of the page — you can close this.`);
+    // reports on the page and hands its result to the worker itself.
+    setStages("read");
+    setStatus(`Reading your ${LABELS[lms]}.`, "Watch the card at the bottom right — you can close this.");
   } finally {
     button.disabled = false;
   }
 }
 
-/** What is on screen right now, and what we are already holding. */
+function showStored(scan: LmsScan): void {
+  const items = scan.courses.reduce((total, course) => total + course.items.length, 0);
+  // `documents` is optional on the wire: absent means the course was never
+  // walked into, which is not the same as walked and empty.
+  const docs = scan.courses.reduce((total, course) => total + (course.documents?.length ?? 0), 0);
+  element("tiles").hidden = false;
+  setTile("tile-courses", scan.courses.length);
+  setTile("tile-items", items);
+  setTile("tile-docs", docs);
+  setStatus("Ready to bring in.", describeScan(scan));
+  setStages("bring");
+  element("next").hidden = false;
+  element("clear").hidden = false;
+}
+
 async function restore(): Promise<void> {
   const tab = await activeTab();
   if (tab?.id && tab.url) {
@@ -161,9 +209,9 @@ async function restore(): Promise<void> {
     } catch {
       current = null;
     }
-    reflect(lms);
+    reflectPage(lms);
   } else {
-    reflect("unknown");
+    reflectPage("unknown");
   }
 
   const stored = await new Promise<LmsScan | null>((resolve) => {
@@ -172,14 +220,9 @@ async function restore(): Promise<void> {
       resolve((value as LmsScan | null) ?? null);
     });
   });
-  if (!stored || stored.courses.length === 0) {
-    showStoredControls(false);
-    return;
-  }
   // A reading in hand outranks whatever page happens to be open: the student
-  // most likely came back here to finish it, not to scan something else.
-  setStatus(describe(stored));
-  showStoredControls(true);
+  // most likely came back to finish it, not to scan something else.
+  if (stored && stored.courses.length > 0) showStored(stored);
 }
 
 element("scan").addEventListener("click", () => void scan());
@@ -189,19 +232,24 @@ element("next").addEventListener("click", () => {
 element("clear").addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.CLEAR_STORED }, () => {
     void chrome.runtime.lastError;
-    showStoredControls(false);
+    element("tiles").hidden = true;
+    element("next").hidden = true;
+    element("clear").hidden = true;
     setStatus("Cleared. Nothing is stored.");
+    reflectPage(current?.lms ?? "unknown");
   });
 });
 
-for (const tile of element("picker").querySelectorAll<HTMLButtonElement>("button[data-lms]")) {
+for (const tile of Array.from(element("picker").querySelectorAll<HTMLButtonElement>("button[data-lms]"))) {
   tile.addEventListener("click", () => {
     const lms = tile.dataset.lms as LmsKind | undefined;
     if (!lms || !current) return;
     current = { ...current, lms };
     markChosen(lms);
+    setDetected(lms);
     element<HTMLButtonElement>("scan").disabled = false;
-    setStatus(`Reading it as ${LABELS[lms]}. Open your course list, then read this page.`);
+    setStages("read");
+    setStatus(`Reading it as ${LABELS[lms]}.`, "Open the page that lists your courses.");
   });
 }
 

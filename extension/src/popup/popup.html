@@ -7,22 +7,24 @@
       /* Self-contained: an extension page cannot load anything remote, and
          should not want to.
 
-         THIS PANEL IS ONLY THE BUTTON (owner 2026-07-31). It used to list the
-         courses too, which put the same information in two places — and put
-         the more useful copy in the one that vanishes the moment you click the
-         page. Everything about a reading (counts, progress, the course names,
-         the way back) now lives on the card at the bottom right of the portal
-         itself, where it survives. This panel exists because
-         chrome.permissions.request only works inside a real user gesture, and
-         pressing the button below IS that gesture.
+         SHAPE BORROWED FROM UPAHEAD (owner 2026-07-31, with their popup as the
+         reference): a header carrying the mark, the name and a live status
+         pill; a stage strip so you can see where you are in the flow; counts
+         as tiles rather than a sentence; one primary button.
 
-         Black and white, matching the card. No accent colour. */
+         WHAT IS NOT BORROWED: their five stages. Ours has three, because ours
+         has three — Open, Read, Bring in. Drawing five to look busier would be
+         inventing steps a student then goes looking for.
+
+         Black and white, matching the card on the page. No accent colour. */
       :root {
         color-scheme: light dark;
         --bg: #ffffff;
         --fg: #14161a;
         --muted: #6b7280;
+        --faint: #9aa2ae;
         --line: #e5e7eb;
+        --fill: #f4f5f7;
         --solid: #17191d;
         --on-solid: #ffffff;
       }
@@ -31,7 +33,9 @@
           --bg: #17191d;
           --fg: #f2f4f7;
           --muted: #9aa2ae;
+          --faint: #6b7280;
           --line: #2a2e35;
+          --fill: #1f2228;
           --solid: #f2f4f7;
           --on-solid: #14161a;
         }
@@ -42,85 +46,149 @@
         color: var(--fg);
         font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
         margin: 0;
-        padding: 14px;
-        width: 300px;
+        width: 320px;
       }
-      h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 3px; }
-      p.lede { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-      #status { font-size: 12.5px; margin: 0 0 12px; }
-      #status[data-tone="bad"] { color: var(--muted); }
-      button {
-        background: var(--solid);
-        border: 0;
-        border-radius: 9px;
-        color: var(--on-solid);
-        cursor: pointer;
-        font: inherit;
-        font-size: 12.5px;
-        font-weight: 560;
-        padding: 8px 12px;
-        width: 100%;
-      }
-      button[disabled] { cursor: default; opacity: 0.5; }
-      button.secondary {
-        background: transparent;
-        border: 1px solid var(--line);
-        color: var(--fg);
-        font-weight: 500;
-      }
-      .row { display: flex; flex-direction: column; gap: 6px; }
 
-      /* The four-tile picker, shown only when detection cannot place the page.
-         A student on an odd setup — a reverse-proxied portal, an LMS behind a
-         campus front door — can say what it is instead of hitting a dead end. */
-      #picker { margin: 0 0 12px; }
-      #picker p { color: var(--muted); font-size: 12px; margin: 0 0 7px; }
-      .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-      .tiles button {
+      /* ── Header ─────────────────────────────────────────────────────────── */
+      header {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        padding: 12px 14px;
+      }
+      header img { border-radius: 6px; height: 20px; width: 20px; }
+      header h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+      .pill {
+        background: var(--fill);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 560;
+        padding: 2px 7px;
+      }
+      #detected {
+        align-items: center;
+        display: inline-flex;
+        gap: 5px;
+        margin-left: auto;
+      }
+      #detected .dot { background: currentColor; border-radius: 50%; height: 5px; width: 5px; }
+      #detected[data-tone="none"] { color: var(--faint); }
+
+      /* ── Stage strip ────────────────────────────────────────────────────── */
+      .stages { display: grid; gap: 6px; grid-template-columns: repeat(3, 1fr); padding: 12px 14px 0; }
+      .stage span { display: block; }
+      .stage .bar { background: var(--line); border-radius: 999px; height: 3px; }
+      .stage .name {
+        color: var(--faint);
+        font-size: 10.5px;
+        font-weight: 560;
+        letter-spacing: 0.01em;
+        margin-top: 5px;
+      }
+      .stage[data-state="done"] .bar { background: var(--solid); }
+      .stage[data-state="done"] .name { color: var(--muted); }
+      .stage[data-state="now"] .bar { background: var(--solid); }
+      .stage[data-state="now"] .name { color: var(--fg); }
+
+      /* ── Body ───────────────────────────────────────────────────────────── */
+      main { padding: 14px; }
+      #status { font-size: 13px; font-weight: 560; margin: 0; }
+      #meta { color: var(--muted); font-size: 11.5px; margin: 3px 0 0; }
+
+      .tiles { display: grid; gap: 6px; grid-template-columns: repeat(3, 1fr); margin-top: 12px; }
+      .tile { background: var(--fill); border-radius: 9px; padding: 8px 9px; }
+      .tile b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 600; }
+      .tile span { color: var(--muted); display: block; font-size: 10.5px; margin-top: 1px; }
+      .tile[data-empty="true"] b { color: var(--faint); }
+
+      /* ── The four-tile portal picker ────────────────────────────────────── */
+      #picker { margin-top: 12px; }
+      #picker p { color: var(--muted); font-size: 11.5px; margin: 0 0 7px; }
+      .choices { display: grid; gap: 6px; grid-template-columns: 1fr 1fr; }
+      .choices button {
         background: transparent;
         border: 1px solid var(--line);
         color: var(--fg);
         font-weight: 500;
         padding: 7px 8px;
       }
-      .tiles button[aria-pressed="true"] {
+      .choices button[aria-pressed="true"] {
         background: var(--solid);
         border-color: var(--solid);
         color: var(--on-solid);
         font-weight: 560;
       }
+
+      button {
+        border: 0;
+        border-radius: 9px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12.5px;
+        width: 100%;
+      }
+      .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+      .primary { background: var(--solid); color: var(--on-solid); font-weight: 560; padding: 9px 12px; }
+      .primary[disabled] { cursor: default; opacity: 0.4; }
+      .secondary {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--fg);
+        font-weight: 500;
+        padding: 8px 12px;
+      }
       footer {
         border-top: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 11.5px;
-        margin-top: 12px;
-        padding-top: 10px;
+        color: var(--faint);
+        font-size: 11px;
+        padding: 10px 14px 12px;
       }
     </style>
   </head>
   <body>
-    <h1>Nemesis</h1>
-    <p class="lede">Reads the courses already on your school portal. It never changes anything there.</p>
+    <header>
+      <img alt="" src="../icons/icon-48.png" />
+      <h1>Nemesis</h1>
+      <span class="pill">v0.1</span>
+      <span data-tone="none" id="detected"><span class="dot"></span><span id="detected-text">No portal</span></span>
+    </header>
 
-    <p id="status">Open your school portal, then read this page.</p>
+    <div class="stages">
+      <div class="stage" data-state="now" id="stage-open"><span class="bar"></span><span class="name">Open</span></div>
+      <div class="stage" id="stage-read"><span class="bar"></span><span class="name">Read</span></div>
+      <div class="stage" id="stage-bring"><span class="bar"></span><span class="name">Bring in</span></div>
+    </div>
 
-    <div hidden id="picker">
-      <p>If this is your school portal, which one is it?</p>
-      <div class="tiles">
-        <button data-lms="canvas" type="button">Canvas</button>
-        <button data-lms="blackboard" type="button">Blackboard</button>
-        <button data-lms="moodle" type="button">Moodle</button>
-        <button data-lms="brightspace" type="button">Brightspace</button>
+    <main>
+      <p id="status">Open your school portal.</p>
+      <p id="meta" hidden></p>
+
+      <div class="tiles" hidden id="tiles">
+        <div class="tile" id="tile-courses"><b>0</b><span>Courses</span></div>
+        <div class="tile" id="tile-items"><b>0</b><span>Coursework</span></div>
+        <div class="tile" id="tile-docs"><b>0</b><span>Documents</span></div>
       </div>
-    </div>
 
-    <div class="row">
-      <button id="scan" type="button">Read this page</button>
-      <button class="secondary" hidden id="next" type="button">Open Nemesis to finish</button>
-      <button class="secondary" hidden id="clear" type="button">Clear what is stored</button>
-    </div>
+      <div hidden id="picker">
+        <p>If this is your school portal, which one is it?</p>
+        <div class="choices">
+          <button data-lms="canvas" type="button">Canvas</button>
+          <button data-lms="blackboard" type="button">Blackboard</button>
+          <button data-lms="moodle" type="button">Moodle</button>
+          <button data-lms="brightspace" type="button">Brightspace</button>
+        </div>
+      </div>
 
-    <footer>What it finds stays in this browser until you import it.</footer>
+      <div class="actions">
+        <button class="primary" id="scan" type="button">Read this page</button>
+        <button class="secondary" hidden id="next" type="button">Bring into Nemesis</button>
+        <button class="secondary" hidden id="clear" type="button">Clear what is stored</button>
+      </div>
+    </main>
+
+    <footer>What it finds stays in this browser until you bring it in.</footer>
 
     <script src="popup.js" type="module"></script>
   </body>
