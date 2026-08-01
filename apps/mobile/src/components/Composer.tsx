@@ -364,7 +364,7 @@ export function Composer({
           <View style={styles.dictateMiddle}>
             {/* Real levels, from the speech engine's own volumechange events
                 (see useSpeechInput) — the same waveform the recorder draws. */}
-            <LiveWaveform active height={20} testID="composer-dictate-waveform" />
+            <LiveWaveform state="live" height={20} testID="composer-dictate-waveform" />
             {/* The words so far, so a mis-hear is visible before you accept it.
                 One line: this is a glance, not a transcript viewer. */}
             <Text style={styles.dictateText} numberOfLines={1}>
