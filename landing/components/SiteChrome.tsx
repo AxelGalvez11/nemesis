@@ -4,13 +4,20 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
+import { ScrollReveal } from "@/components/ScrollReveal";
 import { captureCtaClick } from "@/lib/posthog";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 
-/** Paid plan ids, as the app and Stripe know them. "plus" is sold as "Student". */
-export type PaidPlan = "plus" | "pro" | "max";
+/** Paid plan ids, as the app and Stripe know them. "plus" is sold as "Student".
+ *
+ *  "max" was removed 2026-07-31 when the owner set a $20/mo ceiling. It is gone from
+ *  the type rather than merely unused on the page, so a future plan card cannot
+ *  reintroduce a $99 tier just by typing a string. The app still ACCEPTS ?plan=max,
+ *  so any link already in the wild keeps working — this governs only what this site
+ *  is allowed to sell. */
+export type PaidPlan = "plus" | "pro";
 
 /**
  * Where a "Get <plan>" button on this site must point.
@@ -56,6 +63,8 @@ export function SiteChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      {/* One observer for every page's [data-reveal] elements. */}
+      <ScrollReveal />
       <nav className="nav">
         <div className="wrap nav-in">
           <Link className="brand" href="/" aria-label="Nemesis home" onClick={close}>

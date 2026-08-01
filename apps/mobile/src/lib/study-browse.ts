@@ -10,7 +10,7 @@
 // as in browse in the web app".)
 
 import { LEECH_LAPSE_THRESHOLD, STUDY_FLAG_COLORS } from "./study-flags.ts";
-import { pathLeaf, pathParent } from "./study-tree.ts";
+import { buildArtifactTreeRows, normalizeGroupPath, pathLeaf, pathParent } from "./study-tree.ts";
 
 export interface BrowseCard {
   id: string;
@@ -231,6 +231,98 @@ export function buildBrowseSections(
     { key: "tags", title: "Tags", rows: tagRows },
     { key: "flags", title: "Flags", rows: flagRows },
   ];
+}
+
+// --- The Decks section as a TREE ---------------------------------------------
+//
+// Owner 2026-07-31: "the decks area should also show nested decks."
+//
+// 🔴 THE OLD FLAT LIST WAS A DELIBERATE CHOICE AND ITS REASON IS STILL TRUE: a
+// Study folder has no row of its own anywhere in the database — it exists only
+// as a "Pharm::Cardio::" prefix inside a deck's own name — so indenting
+// "Week 1" without drawing "Pharm::Cardio" first would be indenting it under
+// nothing, which reads as a layout bug. The fix is not to drop the indent; it is
+// to SYNTHESIZE the missing folder rows, which is what this does. The subline
+// that carried the path instead is then redundant and goes.
+//
+// buildArtifactTreeRows already does this exact job for Tests and Mindmaps, and
+// it is reused rather than reimplemented: two tree builders that disagree about
+// where a deck sits is a bug report waiting to happen. Decks store the folder in
+// `name`, artifacts in `groupName`, so the only adaptation is handing it the
+// parent path under the name it expects.
+
+export type BrowseDeckTreeRow =
+  | { type: "folder"; path: string; label: string; depth: number; count: number; collapsed: boolean }
+  | { type: "deck"; depth: number; row: BrowseSectionRow };
+
+/**
+ * Deck rows arranged under their folders.
+ *
+ * A folder's count is CARDS, not decks — every other number on this page counts
+ * cards, and one column that silently switches units is worse than no number.
+ * It includes everything nested below, so a collapsed folder still says how much
+ * is inside it.
+ */
+export function buildDeckTree(
+  deckRows: readonly BrowseSectionRow[],
+  collapsed: ReadonlySet<string>,
+): BrowseDeckTreeRow[] {
+  // Cards under each folder AND each of its ancestors, in one pass.
+  const cardsUnder = new Map<string, number>();
+  for (const deck of deckRows) {
+    let path = "";
+    for (const part of normalizeGroupPath(deck.parent).split("::").filter(Boolean)) {
+      path = path ? `${path}::${part}` : part;
+      cardsUnder.set(path, (cardsUnder.get(path) ?? 0) + deck.count);
+    }
+  }
+  return buildArtifactTreeRows(
+    deckRows.map((row) => ({ groupName: row.parent, row })),
+    collapsed,
+  ).map((entry) =>
+    entry.type === "folder"
+      ? {
+          collapsed: entry.collapsed,
+          count: cardsUnder.get(entry.path) ?? 0,
+          depth: entry.depth,
+          label: entry.label,
+          path: entry.path,
+          type: "folder" as const,
+        }
+      : { depth: entry.depth, row: entry.artifact.row, type: "deck" as const },
+  );
+}
+
+// --- Pull down to reveal the search box --------------------------------------
+
+/** How far the list has to be dragged PAST its top before the search box comes
+ *  down. Deliberately more than a rubber-band twitch: iOS overscrolls a few
+ *  points on any flick, and a search field that appeared on every one of those
+ *  would be noise. */
+export const SEARCH_REVEAL_PULL = 32;
+
+/** How far back UP the list has to have scrolled before the box goes away
+ *  again. Not zero: releasing a reveal drag settles at exactly 0 and would
+ *  immediately undo itself. */
+export const SEARCH_HIDE_SCROLL = 24;
+
+/**
+ * Whether the search box should be showing.
+ *
+ * Owner 2026-07-31: "the browse page should hide the search bar unless user
+ * swipes down to reveal it" — the iOS convention, where the box lives just above
+ * the list and pulling down brings it into view.
+ *
+ * `offsetY` is the list's scroll position; negative means dragged past the top.
+ * A box with something typed in it NEVER hides: the results on screen are the
+ * result of that text, and hiding the only explanation for them turns a filtered
+ * list into a list that has mysteriously lost most of its cards.
+ */
+export function searchRevealed(showing: boolean, offsetY: number, query: string): boolean {
+  if (query.trim()) return true;
+  if (offsetY < -SEARCH_REVEAL_PULL) return true;
+  if (offsetY > SEARCH_HIDE_SCROLL) return false;
+  return showing;
 }
 
 /** Apply the full filter — scope, exact flag color, deck, tag, and free-text

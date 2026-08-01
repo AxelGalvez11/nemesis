@@ -10,6 +10,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   clampOcclusionShape,
+  occlusionShapeAt,
   normalizeOcclusionRect,
   occlusionCardFront,
   occlusionMaskState,
@@ -84,4 +85,38 @@ Deno.test("payload validation: good data round-trips, unreviewable data is rejec
   assertEquals(mixed?.shapes.length, 2);
   // …but losing the target box kills it: there is nothing left to ask about.
   assertEquals(parseOcclusionPayload({ ...good, shapes: [{ id: "bad", x: "nope" }], targetId: "bad" }), null);
+});
+
+
+// --- Picking up a box that is already there (owner 2026-07-31) ----------------
+
+const box = (id: string, x: number, y: number, w: number, h: number) => ({ id, label: "", x, y, w, h });
+
+Deno.test("occlusionShapeAt: finds the box under the point", () => {
+  const shapes = [box("a", 10, 10, 40, 20), box("b", 100, 100, 30, 30)];
+  assertEquals(occlusionShapeAt(shapes, 20, 15)?.id, "a");
+  assertEquals(occlusionShapeAt(shapes, 110, 120)?.id, "b");
+});
+
+Deno.test("occlusionShapeAt: bare image is null, not the nearest box", () => {
+  assertEquals(occlusionShapeAt([box("a", 10, 10, 40, 20)], 500, 500), null);
+  assertEquals(occlusionShapeAt([], 5, 5), null);
+});
+
+Deno.test("occlusionShapeAt: the edge counts as inside", () => {
+  // The finger lands on the border as often as in the middle, and a box that
+  // ignores its own outline reads as one that cannot be grabbed at all.
+  const shapes = [box("a", 10, 10, 40, 20)];
+  assertEquals(occlusionShapeAt(shapes, 10, 10)?.id, "a");
+  assertEquals(occlusionShapeAt(shapes, 50, 30)?.id, "a");
+  assertEquals(occlusionShapeAt(shapes, 51, 30), null);
+});
+
+Deno.test("occlusionShapeAt: overlapping boxes hand back the one ON TOP", () => {
+  // 🔴 Boxes paint in array order, so the one the finger appears to be on is the
+  // LAST match. Searching forwards would move whatever is underneath — a bug
+  // that only appears once two boxes overlap, which is exactly when it matters.
+  const shapes = [box("under", 0, 0, 100, 100), box("over", 20, 20, 30, 30)];
+  assertEquals(occlusionShapeAt(shapes, 30, 30)?.id, "over");
+  assertEquals(occlusionShapeAt(shapes, 80, 80)?.id, "under");
 });

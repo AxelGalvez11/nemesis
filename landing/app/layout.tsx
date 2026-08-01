@@ -12,6 +12,26 @@ const hanken = Hanken_Grotesk({
   display: "swap",
 });
 
+/**
+ * Arms the scroll-reveal animations BEFORE first paint.
+ *
+ * The hidden state (`opacity: 0`) lives behind `.js-reveal` in globals.css and
+ * this is the only thing that ever adds that class. Two consequences, both
+ * deliberate:
+ *
+ *   - With JavaScript off or broken, the class is never added, the hidden rules
+ *     never match, and the page renders fully visible. A landing page that goes
+ *     blank when one script fails is not a trade worth making for an animation.
+ *   - With `prefers-reduced-motion`, the class is not added either, so the
+ *     hidden state does not exist at all rather than being un-done afterwards.
+ *
+ * It must run before paint. Added after hydration it would show every section,
+ * then hide them, then reveal them again — a flash on every load.
+ */
+const revealScript =
+  "(function(){try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;" +
+  "document.documentElement.classList.add('js-reveal');}catch(e){}})();";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.enternemesis.com"),
   title: "Nemesis: your AI study agent",
@@ -41,7 +61,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={hanken.variable}>
+    // suppressHydrationWarning: the script below adds `js-reveal` to <html> before
+    // React hydrates, so the client tag legitimately differs from the server's and
+    // React logs a mismatch it then refuses to patch. The app's own layout.tsx
+    // suppresses the same warning for the same reason (its theme script).
+    <html lang="en" className={hanken.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: revealScript }} />
+      </head>
       <body>
         <PostHogProvider>{children}</PostHogProvider>
       </body>

@@ -7,119 +7,52 @@
   --auth-faint: #a2a39f;
   --auth-line: #e6e6e2;
   --auth-soft: #f7f7f4;
-  /* Was #e52b42 — the sign-in page has its own stylesheet and never read the
-     theme tokens, so it survived the accent retirement (2026-07-28) and was
-     still showing a red "WELCOME BACK" on an otherwise monochrome app. Renamed
-     to --auth-accent because it is not red any more; the error style below
-     keeps its own red, which is a warning, not an accent. */
   --auth-accent: #404040;
-  /* Surfaces, washes and shadows, named so the dark block below can flip them
-     in one place. These were hardcoded #fff and rgba(20,20,20,…) literals; the
-     page was the last light-only surface in an app that is otherwise dark, and
-     opening it at night was a flashbang. */
-  --auth-page: #fff;
-  --auth-card: #fff;
+  /* The ground every control is cut out of. Named separately from --auth-soft
+     because the floating labels below punch a hole in a border and must paint
+     the EXACT page colour to do it. */
+  --auth-ground: #ffffff;
   --auth-grid: rgba(20, 20, 20, 0.035);
-  --auth-wash-near: rgba(255, 255, 255, 0.72);
-  --auth-wash-far: rgba(255, 255, 255, 0.28);
-  --auth-shadow: rgba(20, 20, 20, 0.055);
-  --auth-shadow-sm: rgba(20, 20, 20, 0.08);
-  --auth-ring: rgba(20, 20, 20, 0.06);
-  --auth-focus-line: #b9bab5;
-  /* Text ON the ink-coloured submit button, so it inverts with everything
-     else rather than staying white on a light button. */
-  --auth-on-ink: #fff;
-  --auth-error-bg: #fff3f4;
-  --auth-error-line: #c0392b;
-  --auth-error-ink: #8a2130;
-  --auth-ok-bg: #f1f7f1;
-  --auth-ok-line: #4f7654;
-  --auth-ok-ink: #36563a;
-  /* Tells the browser to draw native chrome — scrollbars, autofill, the
-     password reveal — to match. Without it the form controls stay light
-     against a dark card. */
-  color-scheme: light;
-  background: var(--auth-page);
+  background: var(--auth-ground);
   color: var(--auth-ink);
   /* Owner 2026-07-28: "the sign in should be centered like chatgpt, keep the
-     grid background of aesthetics."
-     Was a two-column marketing layout — copy on the left over the grid, the card
-     pinned into a white right-hand column. One column now, card centred in the
-     viewport, and the grid that used to live only behind the left column runs
-     across the whole page. The 900px breakpoint further down already collapsed
-     to exactly this, so the narrow layout is unchanged; what changed is that
-     wide viewports get it too. */
+     grid background of aesthetics." The grid stays — ChatGPT has no grid, but
+     that instruction was explicit and nothing about copying their SHAPE
+     requires dropping it. */
   background:
     linear-gradient(var(--auth-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--auth-grid) 1px, transparent 1px),
-    var(--auth-page);
+    var(--auth-ground);
   background-size: 56px 56px;
   display: grid;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif);
   grid-template-columns: minmax(0, 1fr);
   min-height: 100svh;
   position: relative;
 }
 
-/* FOLLOWS THE SYSTEM SETTING (owner 2026-07-31: "does the sign in also has
-   darkmode based on system"). It did not — the workspace, the extension card
-   and the popup all flipped with the OS while this one page stayed white.
-
-   prefers-color-scheme rather than the app's own theme toggle, deliberately:
-   nobody is signed in yet, so there is no stored preference to read. The OS is
-   the only thing that knows, and it is also the right answer for the person
-   who has never had an account.
-
-   Only the variables move. Every rule above is written against them, so the
-   layout, the grid and the wash are identical in both — this is a repaint,
-   not a second design to keep in step. */
-@media (prefers-color-scheme: dark) {
-  .nemesis-auth-shell {
-    --auth-ink: #f2f4f7;
-    --auth-muted: #9aa2ae;
-    --auth-faint: #6b7280;
-    --auth-line: #2a2e35;
-    --auth-soft: #1f2228;
-    --auth-accent: #c9cbd0;
-    --auth-page: #0f1012;
-    --auth-card: #17191d;
-    --auth-grid: rgba(255, 255, 255, 0.04);
-    /* The wash DARKENS here instead of lightening, or it would put a white
-       halo behind the card on a black page. */
-    --auth-wash-near: rgba(15, 16, 18, 0.72);
-    --auth-wash-far: rgba(15, 16, 18, 0.28);
-    --auth-shadow: rgba(0, 0, 0, 0.5);
-    --auth-shadow-sm: rgba(0, 0, 0, 0.45);
-    --auth-ring: rgba(255, 255, 255, 0.09);
-    --auth-focus-line: #4a4e57;
-    /* The submit button is now light, so its label has to be dark. */
-    --auth-on-ink: #14161a;
-    --auth-error-bg: rgba(192, 57, 43, 0.16);
-    --auth-error-line: #c0392b;
-    --auth-error-ink: #f0938a;
-    --auth-ok-bg: rgba(79, 118, 84, 0.18);
-    --auth-ok-line: #4f7654;
-    --auth-ok-ink: #8fce97;
-    color-scheme: dark;
-  }
-
-  /* 🔴 THE MARK IS A BLACK PNG ON TRANSPARENT, so on a black page it vanishes —
-     both the wordmark top-left and the badge on the card were invisible until
-     this, which the first dark screenshot showed plainly. Inverting is safe
-     precisely because the mark is pure greyscale: it comes back white and
-     nothing shifts hue. A white asset would be the alternative, and a second
-     file to keep in step with the first. */
-  .nemesis-auth-brand img,
-  .nemesis-auth-mark img {
-    filter: invert(1);
-  }
+/* DARK. ChatGPT's auth page is a flat near-black at rgb(33,33,33) with white
+   type, and that is the look being copied — but only for a student who already
+   chose dark. Forcing it on someone running the app in light would be copying
+   the colour and losing the point. The app's theme script writes data-theme on
+   <html> before paint, so this never flashes. */
+[data-theme="dark"] .nemesis-auth-shell {
+  --auth-ink: #f7f7f7;
+  --auth-muted: #b4b4b4;
+  --auth-faint: #8f8f8f;
+  --auth-line: rgba(255, 255, 255, 0.16);
+  --auth-soft: rgba(255, 255, 255, 0.06);
+  --auth-accent: #d0d0d0;
+  --auth-ground: #212121;
+  --auth-grid: rgba(255, 255, 255, 0.035);
 }
 
 /* The soft wash the left column used to carry, moved onto the shell. Light
    enough that the grid still reads across the page — the owner asked to KEEP
    it — but enough that the card is not sitting on a busy background. */
 .nemesis-auth-shell::before {
-  background: radial-gradient(120% 80% at 50% 44%, var(--auth-wash-near) 30%, var(--auth-wash-far) 100%);
+  background: radial-gradient(120% 80% at 50% 42%, var(--auth-ground) 26%, transparent 100%);
+  opacity: 0.82;
   content: "";
   inset: 0;
   pointer-events: none;
@@ -145,6 +78,11 @@
   z-index: 3;
 }
 .nemesis-auth-brand img { height: 28px; object-fit: contain; width: 28px; }
+/* The mark is a dark monochrome glyph on transparency, so it vanishes on the
+   dark ground. Inverting is safe precisely because it has no hue to damage —
+   the same trick the landing nav uses. If the logo ever gains colour this has
+   to become a second asset instead. */
+[data-theme="dark"] .nemesis-auth-brand img { filter: invert(1); }
 .nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
 
 /* HIDDEN, not deleted. The marketing copy and its three-step strip are intact in
@@ -162,7 +100,7 @@
   position: relative;
 }
 .nemesis-auth-field::after {
-  background: linear-gradient(180deg, var(--auth-wash-far), var(--auth-card) 72%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), #fff 72%);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -252,13 +190,18 @@
    was overflowing — height was — but a wider card stops the description and the
    two OAuth buttons sitting in a narrow ribbon on a 1512px display, and it lets
    the padding below come down without the form feeling cramped. */
-.nemesis-auth-card { max-width: 520px; width: 100%; }
+/* NO CARD. ChatGPT's sign-in is a 340px stack centred in the viewport with no
+   border, no shadow and no panel behind it — the page itself is the surface. A
+   bordered white box was the single biggest thing making ours look unlike
+   theirs. 360 rather than 340 because our form also carries a password field
+   and, when enabled, a captcha. */
+.nemesis-auth-card { max-width: 360px; width: 100%; }
 .nemesis-auth-card-in {
-  background: var(--auth-card);
-  border: 1px solid var(--auth-line);
-  border-radius: 20px;
-  box-shadow: 0 24px 70px var(--auth-shadow);
-  padding: 30px 38px 26px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
 }
 
 /* THE PASS-THROUGH VARIANT — /auth/callback and /auth/desktop.
@@ -295,46 +238,48 @@
   text-align: center;
 }
 
+/* The mark sits centred above the heading, the way their wordmark does, and
+   loses the grey disc it used to sit in — a filled circle is card furniture and
+   the card is gone. */
 .nemesis-auth-mark {
   align-items: center;
-  background: var(--auth-soft);
-  border-radius: 50%;
+  background: transparent;
   display: flex;
-  height: 44px;
+  height: 34px;
   justify-content: center;
-  margin: 0 auto 16px;
-  width: 44px;
+  margin: 0 auto 22px;
+  width: 34px;
 }
-.nemesis-auth-mark img { height: 21px; width: 21px; }
-.nemesis-auth-eyebrow {
-  color: var(--auth-accent);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  margin: 0 0 10px;
-  text-align: center;
-  text-transform: uppercase;
-}
+.nemesis-auth-mark img { height: 30px; width: 30px; }
+[data-theme="dark"] .nemesis-auth-mark img { filter: invert(1); }
+/* HIDDEN. The tracked-caps eyebrow above the headline is not a thing their page
+   does, and with a 32px headline it was saying the same thing twice. Left in the
+   markup so the pages do not have to change shape to bring it back. */
+.nemesis-auth-eyebrow { display: none; }
+/* 32px / 700 / -0.32px tracking, measured off their live page. */
 .nemesis-auth-card-in h1 {
   color: var(--auth-ink);
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  margin: 0 0 9px;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 26px;
   text-align: center;
 }
+/* Their page carries a heading and nothing else above the buttons. Ours keeps
+   one quiet line because /sign-up has something worth saying about the free
+   plan, but it is small and it does not compete. */
 .nemesis-auth-description {
   color: var(--auth-muted);
-  font-size: 13px;
-  line-height: 1.55;
-  margin: 0 auto 22px;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: -18px auto 26px;
   text-align: center;
 }
 
 .nemesis-auth-mode {
   background: var(--auth-soft);
-  border-radius: 10px;
+  border-radius: 999px;
   display: grid;
   gap: 3px;
   grid-template-columns: 1fr 1fr;
@@ -342,7 +287,7 @@
   padding: 4px;
 }
 .nemesis-auth-mode a {
-  border-radius: 7px;
+  border-radius: 999px;
   color: var(--auth-muted);
   font-size: 10px;
   font-weight: 700;
@@ -354,100 +299,149 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 .nemesis-auth-mode a.is-active {
-  background: var(--auth-card);
-  box-shadow: 0 1px 5px var(--auth-shadow-sm);
+  background: var(--auth-ground);
+  box-shadow: 0 1px 5px rgba(20, 20, 20, 0.08);
   color: var(--auth-ink);
 }
 .nemesis-auth-mode a:not(.is-active):hover { color: var(--auth-ink); }
 
-.nemesis-auth-form { display: grid; gap: 14px; }
-.nemesis-auth-field-group { display: grid; gap: 7px; }
+.nemesis-auth-form { display: grid; gap: 12px; }
+
+/* THE NOTCHED FLOATING LABEL. Their field is a 52px pill whose label sits
+   vertically centred inside it while empty, then rises to straddle the top
+   border, punching a gap in it, the moment the field is focused or filled.
+   There is no separate placeholder — the label IS the placeholder, which is
+   what keeps the form to four controls instead of eight lines of text.
+   * The label is painted with the page's own colour behind it, which is the
+     whole trick: it does not erase the border, it covers a few pixels of it.
+     That is why --auth-ground exists as its own token rather than reusing
+     --auth-soft, which is translucent and would show the line through.
+   * The label comes AFTER the input in the markup so `input:focus + label` can
+     reach it. `for`/`id` still tie them together, so nothing about clicking the
+     label or screen-reader labelling changes.
+   * `:not(:placeholder-shown)` is what detects "has content", so every input
+     here carries placeholder=" " — a real placeholder would keep the label
+     floated permanently and the field would always look filled. */
+.nemesis-auth-field-group { display: block; position: relative; }
 .nemesis-auth-field-group label {
+  background: var(--auth-ground);
   color: var(--auth-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  font-size: 15px;
+  font-weight: 400;
+  left: 20px;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 0 6px;
+  pointer-events: none;
+  position: absolute;
+  text-transform: none;
+  top: 26px;
+  transform: translateY(-50%);
+  transition: top 0.14s ease, font-size 0.14s ease, color 0.14s ease;
 }
+.nemesis-auth-field-group input:focus + label,
+.nemesis-auth-field-group input:not(:placeholder-shown) + label {
+  font-size: 12px;
+  top: 0;
+}
+.nemesis-auth-field-group input:focus + label { color: var(--auth-ink); }
 .nemesis-auth-shell input[type="email"],
 .nemesis-auth-shell input[type="password"],
 .nemesis-auth-shell input[inputmode="numeric"] {
-  background: var(--auth-soft);
-  border: 1px solid transparent;
-  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--auth-line);
+  border-radius: 999px;
   color: var(--auth-ink);
-  font-size: 14px;
+  font-size: 15px;
+  min-height: 52px;
   outline: none;
-  padding: 12px 13px;
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  padding: 0 25px;
+  transition: border-color 0.15s ease;
   width: 100%;
 }
-.nemesis-auth-shell input::placeholder { color: var(--auth-faint); }
+/* The placeholder is a single space that exists only so :placeholder-shown can
+   tell empty from filled — it must never be visible. */
+.nemesis-auth-shell input::placeholder { color: transparent; }
 .nemesis-auth-shell input[type="email"]:focus,
 .nemesis-auth-shell input[type="password"]:focus,
 .nemesis-auth-shell input[inputmode="numeric"]:focus {
-  background: var(--auth-card);
-  border-color: var(--auth-focus-line);
-  box-shadow: 0 0 0 3px var(--auth-ring);
+  border-color: var(--auth-ink);
 }
 
+/* Their Continue: a filled pill the same 52px as everything above it, in
+   sentence case. The tracked uppercase this replaced belonged to the old
+   editorial card. No hover lift — a 52px pill that moves reads as a toy. */
 .nemesis-auth-submit {
   background: var(--auth-ink);
   border: 0;
-  border-radius: 10px;
-  color: var(--auth-on-ink);
+  border-radius: 999px;
+  color: var(--auth-ground);
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  margin-top: 4px;
-  padding: 13px 0;
-  text-transform: uppercase;
-  transition: background 0.15s ease, transform 0.15s ease;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin-top: 6px;
+  min-height: 52px;
+  padding: 0 24px;
+  text-transform: none;
+  transition: opacity 0.15s ease;
 }
-.nemesis-auth-submit:hover:not(:disabled) { background: var(--auth-accent); transform: translateY(-1px); }
+.nemesis-auth-submit:hover:not(:disabled) { opacity: 0.85; }
 .nemesis-auth-submit:disabled { cursor: not-allowed; opacity: 0.42; }
+[data-theme="dark"] .nemesis-auth-submit:disabled { opacity: 0.3; }
 
 .nemesis-auth-error,
 .nemesis-auth-success,
 .nemesis-auth-notice {
-  border-radius: 8px;
+  border-radius: 14px;
   font-size: 12px;
   line-height: 1.5;
   margin: 12px 0 0;
   padding: 10px 12px;
 }
-.nemesis-auth-error { background: var(--auth-error-bg); border-left: 2px solid var(--auth-error-line); color: var(--auth-error-ink); }
-.nemesis-auth-success { background: var(--auth-ok-bg); border-left: 2px solid var(--auth-ok-line); color: var(--auth-ok-ink); }
-.nemesis-auth-notice { background: var(--auth-soft); border-left: 2px solid var(--auth-focus-line); color: var(--auth-muted); }
+.nemesis-auth-error { background: rgba(192, 57, 43, 0.09); border: 1px solid rgba(192, 57, 43, 0.34); color: #d4675a; text-align: center; }
+.nemesis-auth-success { background: rgba(79, 118, 84, 0.10); border: 1px solid rgba(79, 118, 84, 0.32); color: #6f9b76; text-align: center; }
+.nemesis-auth-notice { background: var(--auth-soft); border: 1px solid var(--auth-line); color: var(--auth-muted); text-align: center; }
 
-.nemesis-auth-oauth { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
+/* Their provider buttons: 52px tall, fully rounded, a hairline outline and
+   nothing filled. Measured 340x52 with a 99999px radius and a 1px border at 16%
+   white on their dark ground. */
+.nemesis-auth-oauth { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 .nemesis-auth-oauth-btn {
   align-items: center;
-  background: var(--auth-card);
+  background: transparent;
   border: 1px solid var(--auth-line);
-  border-radius: 10px;
+  border-radius: 999px;
   color: var(--auth-ink);
   cursor: pointer;
   display: flex;
-  font-size: 13px;
-  gap: 10px;
+  font-size: 15px;
+  gap: 11px;
   justify-content: center;
-  padding: 11px 0;
+  min-height: 52px;
+  padding: 0 24px;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.nemesis-auth-oauth-btn:hover:not(:disabled) { background: var(--auth-soft); border-color: #cbccc7; }
+.nemesis-auth-oauth-btn:hover:not(:disabled) { background: var(--auth-soft); border-color: var(--auth-faint); }
 .nemesis-auth-oauth-btn:disabled { cursor: not-allowed; opacity: 0.5; }
-.nemesis-auth-oauth-btn svg { flex: none; height: 16px; width: 16px; }
-.nemesis-auth-oauth-note { color: var(--auth-muted); font-size: 11px; line-height: 1.5; margin: 0; }
+.nemesis-auth-oauth-btn svg { flex: none; height: 18px; width: 18px; }
+.nemesis-auth-oauth-note {
+  color: var(--auth-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 2px 0 0;
+  order: 99;            /* below the divider and the form, as on their page */
+  text-align: center;
+}
 .nemesis-auth-divider {
   align-items: center;
-  color: var(--auth-faint);
+  color: var(--auth-muted);
   display: flex;
-  font-size: 9px;
-  gap: 12px;
-  letter-spacing: 0.15em;
-  margin: 6px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 14px;
+  letter-spacing: 0;
+  margin: 4px 0 2px;
   text-transform: uppercase;
 }
 .nemesis-auth-divider::before,
@@ -470,14 +464,17 @@
   text-underline-offset: 3px;
 }
 .nemesis-auth-link:hover { color: var(--auth-accent); text-decoration-color: var(--auth-accent); }
+/* Their footer is one sentence, centred, with no rule above it — the whitespace
+   is the separation. */
 .nemesis-auth-footer {
-  border-top: 1px solid var(--auth-line);
+  border-top: 0;
   color: var(--auth-muted);
-  font-size: 12px;
+  font-size: 14px;
   margin-top: 22px;
-  padding-top: 18px;
+  padding-top: 0;
   text-align: center;
 }
+.nemesis-auth-footer .nemesis-auth-link { color: var(--auth-ink); font-weight: 500; }
 .nemesis-auth-footer p { margin: 0; }
 /* .nemesis-auth-trust — "Activity logged · Never submits for you" — removed
    2026-07-29 (owner). It was the last 31px of a card that overflowed the window
@@ -506,17 +503,13 @@
 
 @media (max-width: 480px) {
   .nemesis-auth-brand { left: 22px; top: 22px; }
-  /* Horizontal padding was 0 here, which put the text hard against both screen
-     edges on a phone — only the wrapper's 24px stood between a sentence and the
-     bezel. 18px of its own gives the copy somewhere to breathe without pushing
-     the card narrow. */
-  .nemesis-auth-card-in { border: 0; border-radius: 0; box-shadow: none; padding: 20px 18px 8px; }
+  .nemesis-auth-card-in { border: 0; border-radius: 0; box-shadow: none; padding: 20px 0 8px; }
   /* 🔴 THE MINIMAL VARIANT NEEDS SAYING TWICE. `.nemesis-auth-card-in.is-minimal`
      sets `padding: 0` with two classes, which outranks the one-class rule above
-     no matter that this one is inside a media query — specificity does not care
-     about @media. The handoff pages are all minimal, so without this line they
-     were the only screens still running text into the bezel. Inline only: the
-     minimal card deliberately has no vertical padding of its own. */
+     no matter that this one sits inside a media query — specificity does not
+     care about @media. Every handoff page (/auth/desktop, /auth/callback) is
+     minimal, so they were the only screens running text into the phone's
+     bezel, with just the wrapper's 24px between a sentence and the edge. */
   .nemesis-auth-card-in.is-minimal { padding-inline: 18px; }
   /* Mark ends at ~50px here (top 22 + 28 high); 56px clears it symmetrically. */
   .nemesis-auth-panel-wrap { align-items: center; padding: 56px 24px; }

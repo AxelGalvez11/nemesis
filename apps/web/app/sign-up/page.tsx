@@ -118,15 +118,20 @@ export default function SignUpPage() {
     >
         <AuthModeSwitch active="sign-up" />
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account will be created.</p> : null}
-        <OAuthButtons disabled={busy} onError={setError} showTermsNote />
+        {/* No `showTermsNote` here, unlike /sign-in: the consent checkbox below already
+            states the Terms and Privacy agreement, and rendering both put the same
+            sentence on this page twice (owner, 2026-07-31). Sign-in keeps the note
+            because it has no checkbox — OAuth there can create an account with nothing
+            else on the page saying so. */}
+        <OAuthButtons disabled={busy} onError={setError} />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
+            <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
             <label htmlFor="signup-email">Account email</label>
-            <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="nemesis-auth-field-group">
+            <input id="signup-password" type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
             <label htmlFor="signup-password">Password</label>
-            <input id="signup-password" type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder="At least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <label className="nemesis-auth-consent">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} aria-label="Agree to the Terms and Privacy Policy" />

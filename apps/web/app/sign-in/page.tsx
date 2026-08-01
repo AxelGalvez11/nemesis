@@ -161,8 +161,8 @@ export default function SignInPage() {
       >
         <form onSubmit={onSubmitMfa} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
+            <input autoComplete="one-time-code" autoFocus id="signin-mfa-code" inputMode="numeric" maxLength={8} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))} placeholder=" " value={mfaCode} />
             <label htmlFor="signin-mfa-code">Verification code</label>
-            <input autoComplete="one-time-code" autoFocus id="signin-mfa-code" inputMode="numeric" maxLength={8} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))} placeholder="123456" value={mfaCode} />
           </div>
           <button className="nemesis-auth-submit" disabled={mfaBusy || mfaCode.length < 6} type="submit">{mfaBusy ? "Checking…" : "Continue"}</button>
         </form>
@@ -185,12 +185,12 @@ export default function SignInPage() {
         <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
+            <input id="signin-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
             <label htmlFor="signin-email">Account email</label>
-            <input id="signin-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="nemesis-auth-field-group">
+            <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
             <label htmlFor="signin-password">Password</label>
-            <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
           <button className="nemesis-auth-submit" disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>

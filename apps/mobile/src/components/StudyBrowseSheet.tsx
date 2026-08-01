@@ -20,6 +20,8 @@ import {
   applyBrowseFilter,
   buildBrowseRows,
   buildBrowseSections,
+  buildDeckTree,
+  searchRevealed,
   type BrowseRowFilter,
   type BrowseSectionKey,
 } from "@/lib/study-browse";
@@ -59,14 +61,23 @@ import { control, radius, space, type } from "@/theme/tokens";
 // Still deliberately out of scope, as before: web's Anki .apkg export, AI
 // auto-tag, card-type change, and image-occlusion editing.
 
+// REVISED 2026-07-31 (owner). Three changes, and two of them had to land
+// together:
+//
+//  - The Decks/Cards/Card toggle is GONE ("remove the 'decks, cards, card'
+//    toggle"). 🔴 IT WAS ALSO THE ONLY WAY BACK. "All cards" widened the filter
+//    but never changed the page, so dropping the toggle on its own would have
+//    made tapping a deck a one-way door. Each page below the first now carries a
+//    back chevron, and the sheet's title says where you are — which is what the
+//    toggle was really being read for anyway.
+//  - The search box hides until you pull the list down, the iOS convention
+//    ("hide the search bar unless user swipes down to reveal it"). The rule is
+//    in lib/study-browse.ts, where it is tested.
+//  - Decks nest. See buildDeckTree, and the note there about why the flat list
+//    was right until folder rows existed to indent under.
+
 /** Which of the three pages is on screen. */
 type BrowsePage = "sections" | "cards" | "card";
-
-const PAGES: { key: BrowsePage; label: string }[] = [
-  { key: "sections", label: "Decks" },
-  { key: "cards", label: "Cards" },
-  { key: "card", label: "Card" },
-];
 
 /** No row selected — page 2 then lists everything. */
 const ALL_CARDS: BrowseRowFilter = { scope: "all", deckId: null, tag: null, flag: null };
@@ -103,6 +114,13 @@ export function StudyBrowseSheet({
    *  when nothing is selected. */
   const [fromLabel, setFromLabel] = useState("");
   const [collapsed, setCollapsed] = useState<Set<BrowseSectionKey>>(() => new Set(INITIAL_COLLAPSED));
+  /** Deck FOLDERS that are folded shut, by path. Empty = everything open, which
+   *  is deliberate: this list was flat until today, so starting folded would
+   *  make decks the student could see yesterday disappear behind a chevron. */
+  const [deckFolded, setDeckFolded] = useState<Set<string>>(() => new Set());
+  /** Whether the search box is down. Pull the list past its top to bring it in;
+   *  see searchRevealed. */
+  const [searchShowing, setSearchShowing] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editFront, setEditFront] = useState("");
@@ -127,6 +145,8 @@ export function StudyBrowseSheet({
     setRowFilter(ALL_CARDS);
     setFromLabel("");
     setCollapsed(new Set(INITIAL_COLLAPSED));
+    setDeckFolded(new Set());
+    setSearchShowing(false);
     setOpenId(null);
     setEditing(false);
     setError(null);
@@ -139,6 +159,10 @@ export function StudyBrowseSheet({
   // onto 3, with the cause sitting in a field you stopped looking at.
   const sections = useMemo(() => buildBrowseSections(rows, decks, query), [rows, decks, query]);
   const filtered = useMemo(() => applyBrowseFilter(rows, { ...rowFilter, query }), [rows, rowFilter, query]);
+  const deckTree = useMemo(
+    () => buildDeckTree(sections.find((section) => section.key === "decks")?.rows ?? [], deckFolded),
+    [sections, deckFolded],
+  );
   const cardById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
   const deckLeafById = useMemo(() => new Map(decks.map((deck) => [deck.id, pathLeaf(deck.name)])), [decks]);
   const open = openId ? cardById.get(openId) ?? null : null;
@@ -153,6 +177,35 @@ export function StudyBrowseSheet({
       setEditing(false);
     }
   }, [page, open]);
+
+  /** One step back up the three pages. The toggle used to be the only way, and
+   *  the "All cards" link only ever cleared the filter — so page 2 could be
+   *  entered and not left. */
+  function goBack() {
+    if (page === "card") {
+      setPage("cards");
+      setEditing(false);
+      return;
+    }
+    setPage("sections");
+    setRowFilter(ALL_CARDS);
+    setFromLabel("");
+  }
+
+  /** Every list on this sheet reports its scroll position here, so the box
+   *  behaves the same wherever you pull from. */
+  function onListScroll(offsetY: number) {
+    setSearchShowing((showing) => searchRevealed(showing, offsetY, query));
+  }
+
+  function toggleDeckFolder(path: string) {
+    setDeckFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
 
   function toggleSection(key: BrowseSectionKey) {
     setCollapsed((prev) => {
@@ -273,8 +326,27 @@ export function StudyBrowseSheet({
   }
 
   return (
-    <SlideUpSheet visible={visible} onClose={onClose} title="Browse cards" page testID="study-browse-sheet">
-      {/* Search */}
+    <SlideUpSheet
+      visible={visible}
+      onClose={onClose}
+      // The title carries what the toggle used to: which of the three pages you
+      // are on, and — on page 2 — which row you opened.
+      title={page === "sections" ? "Browse cards" : page === "card" ? "Card" : fromLabel || "All cards"}
+      page
+      testID="study-browse-sheet"
+    >
+      {page !== "sections" ? (
+        <Pressable onPress={goBack} hitSlop={8} style={styles.backRow} accessibilityRole="button" testID="study-browse-back">
+          {/* The list chevron, turned to point back the way the Library's does. */}
+          <View style={styles.chevronBack}>
+            <ChevronIcon size={15} color={c.accent} />
+          </View>
+          <Text style={styles.backLabel}>{page === "card" ? fromLabel || "All cards" : "Decks"}</Text>
+        </Pressable>
+      ) : null}
+
+      {/* Search — down only while it is wanted. See searchRevealed. */}
+      {searchShowing ? (
       <View style={styles.searchField}>
         <SearchIcon size={16} color={c.textHint} />
         <TextInput
@@ -297,37 +369,32 @@ export function StudyBrowseSheet({
           </Pressable>
         ) : null}
       </View>
-
-      {/* The page toggle, centred under the search box. Card is unreachable
-          until you've opened one — a third of the control would otherwise lead
-          to a blank page. */}
-      <View style={styles.pageRow}>
-        {PAGES.map((item) => {
-          const disabled = item.key === "card" && !open;
-          const active = page === item.key;
-          return (
-            <Pressable
-              key={item.key}
-              onPress={() => setPage(item.key)}
-              disabled={disabled}
-              style={[styles.pageTab, active && styles.pageTabActive]}
-              accessibilityRole="button"
-              accessibilityState={{ disabled, selected: active }}
-              testID={`study-browse-page-${item.key}`}
-            >
-              <Text style={[styles.pageTabLabel, active && styles.pageTabLabelActive, disabled && styles.pageTabLabelOff]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      ) : (
+        // 🔴 TAPPABLE, NOT JUST A LABEL — this is the whole reachability of
+        // search on Android. Android's ScrollView clamps its offset to
+        // [0, max]: an overscroll draws the edge glow and NEVER reports a
+        // negative position, so searchRevealed's pull test can never fire there.
+        // With the page toggle gone there is no other way in, and a shipped
+        // surface whose search cannot be opened is not a smaller bug for being
+        // on the second platform. The unit tests cannot catch this: they feed
+        // synthetic negative offsets the platform will not produce.
+        <Pressable onPress={() => setSearchShowing(true)} hitSlop={8} accessibilityRole="button" testID="study-browse-search-nudge">
+          <Text style={styles.searchNudge}>Search</Text>
+        </Pressable>
+      )}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* PAGE 1 — Decks / Tags / Flags, each collapsible. */}
       {page === "sections" ? (
-        <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-sections">
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listInner}
+          keyboardShouldPersistTaps="handled"
+          onScroll={(e) => onListScroll(e.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
+          testID="study-browse-sections"
+        >
           {cards.length === 0 && decks.length === 0 ? (
             <Text style={styles.empty}>No decks yet.</Text>
           ) : (
@@ -351,36 +418,75 @@ export function StudyBrowseSheet({
                     <Text style={styles.sectionCount}>{section.rows.length}</Text>
                   </Pressable>
 
-                  {!folded
-                    ? section.rows.length === 0
-                      ? <Text style={styles.sectionEmpty}>{section.key === "decks" ? "No decks yet." : "Nothing here yet."}</Text>
-                      : section.rows.map((row) => (
-                          <Pressable
-                            key={row.id}
-                            onPress={() => openRow(row.filter, row.label)}
-                            style={({ pressed }) => [styles.sectionRow, pressed && styles.pressed]}
-                            accessibilityRole="button"
-                            testID={`study-browse-row-${row.id}`}
-                          >
-                            {row.hex ? <View style={[styles.rowFlagDot, { backgroundColor: row.hex }]} /> : null}
-                            {section.key === "decks" ? <FolderIcon size={20} color={c.text2} strokeWidth={1.8} /> : null}
-                            {/* A deck path is carried by the SUBLINE, not by an
-                                indent. A Study folder has no row of its own — it
-                                exists only as a prefix on a deck's name — so
-                                indenting "Cardiovascular" would indent it under
-                                nothing, which reads as a layout bug rather than a
-                                hierarchy. "Pharmacology" underneath it says the
-                                same thing and is always true. */}
-                            <View style={styles.rowText}>
-                              <Text style={styles.rowLabel} numberOfLines={1}>{row.label}</Text>
-                              {row.parent ? <Text style={styles.rowParent} numberOfLines={1}>{row.parent}</Text> : null}
-                            </View>
-                            <View style={styles.rowCountPill}>
-                              <Text style={styles.rowCount}>{row.count}</Text>
-                            </View>
-                          </Pressable>
-                        ))
-                    : null}
+                  {folded ? null : section.rows.length === 0 ? (
+                    <Text style={styles.sectionEmpty}>{section.key === "decks" ? "No decks yet." : "Nothing here yet."}</Text>
+                  ) : section.key === "decks" ? (
+                    // Decks NEST (owner 2026-07-31). A deck's folder is a prefix
+                    // inside its own name and has no row of its own in the
+                    // database, so buildDeckTree makes those rows up — see the
+                    // note there. The old path SUBLINE is gone with the change:
+                    // the folder heading above the row says the same thing.
+                    deckTree.map((entry) =>
+                      entry.type === "folder" ? (
+                        <Pressable
+                          key={`folder:${entry.path}`}
+                          onPress={() => toggleDeckFolder(entry.path)}
+                          style={({ pressed }) => [styles.sectionRow, { paddingLeft: space(3) + entry.depth * space(4) }, pressed && styles.pressed]}
+                          accessibilityRole="button"
+                          accessibilityState={{ expanded: !entry.collapsed }}
+                          testID={`study-browse-deck-folder-${entry.path}`}
+                        >
+                          <View style={entry.collapsed ? undefined : styles.chevronOpen}>
+                            <ChevronIcon size={13} color={c.text3} />
+                          </View>
+                          <FolderIcon size={20} color={c.text2} strokeWidth={1.8} />
+                          <View style={styles.rowText}>
+                            <Text style={styles.rowLabel} numberOfLines={1}>{entry.label}</Text>
+                          </View>
+                          <View style={styles.rowCountPill}>
+                            <Text style={styles.rowCount}>{entry.count}</Text>
+                          </View>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          key={entry.row.id}
+                          onPress={() => openRow(entry.row.filter, entry.row.label)}
+                          style={({ pressed }) => [styles.sectionRow, { paddingLeft: space(3) + entry.depth * space(4) }, pressed && styles.pressed]}
+                          accessibilityRole="button"
+                          testID={`study-browse-row-${entry.row.id}`}
+                        >
+                          {/* A spacer the width of a folder row's chevron, so deck
+                              names at the same depth line up with folder names
+                              rather than sitting one glyph to the left. */}
+                          <View style={styles.chevronGap} />
+                          <View style={styles.rowText}>
+                            <Text style={styles.rowLabel} numberOfLines={1}>{entry.row.label}</Text>
+                          </View>
+                          <View style={styles.rowCountPill}>
+                            <Text style={styles.rowCount}>{entry.row.count}</Text>
+                          </View>
+                        </Pressable>
+                      ),
+                    )
+                  ) : (
+                    section.rows.map((row) => (
+                      <Pressable
+                        key={row.id}
+                        onPress={() => openRow(row.filter, row.label)}
+                        style={({ pressed }) => [styles.sectionRow, pressed && styles.pressed]}
+                        accessibilityRole="button"
+                        testID={`study-browse-row-${row.id}`}
+                      >
+                        {row.hex ? <View style={[styles.rowFlagDot, { backgroundColor: row.hex }]} /> : null}
+                        <View style={styles.rowText}>
+                          <Text style={styles.rowLabel} numberOfLines={1}>{row.label}</Text>
+                        </View>
+                        <View style={styles.rowCountPill}>
+                          <Text style={styles.rowCount}>{row.count}</Text>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
                 </View>
               );
             })
@@ -392,24 +498,22 @@ export function StudyBrowseSheet({
       {page === "cards" ? (
         <>
           <View style={styles.countRow}>
+            {/* The row's NAME moved up to the sheet title, so this is just the
+                tally. "All cards" is gone with it: the back chevron does that
+                job, and does it without leaving you on a page whose heading no
+                longer matches what it is showing. */}
             <Text style={styles.count} numberOfLines={1} testID="study-browse-count">
-              {fromLabel ? `${fromLabel}  ·  ` : ""}
               {filtered.length} {filtered.length === 1 ? "card" : "cards"}
             </Text>
-            {fromLabel ? (
-              <Pressable
-                onPress={() => {
-                  setRowFilter(ALL_CARDS);
-                  setFromLabel("");
-                }}
-                hitSlop={8}
-                testID="study-browse-clear"
-              >
-                <Text style={styles.clearLabel}>All cards</Text>
-              </Pressable>
-            ) : null}
           </View>
-          <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-list">
+          <ScrollView
+            style={styles.list}
+            contentContainerStyle={styles.listInner}
+            keyboardShouldPersistTaps="handled"
+            onScroll={(e) => onListScroll(e.nativeEvent.contentOffset.y)}
+            scrollEventThrottle={16}
+            testID="study-browse-list"
+          >
             {filtered.length === 0 ? (
               <Text style={styles.empty}>{cards.length === 0 ? "No cards yet." : "No cards match this."}</Text>
             ) : (
@@ -449,7 +553,14 @@ export function StudyBrowseSheet({
 
       {/* PAGE 3 — one card, read then edit. */}
       {page === "card" && open ? (
-        <ScrollView style={styles.list} contentContainerStyle={styles.listInner} keyboardShouldPersistTaps="handled" testID="study-browse-card">
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listInner}
+          keyboardShouldPersistTaps="handled"
+          onScroll={(e) => onListScroll(e.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
+          testID="study-browse-card"
+        >
           <Text style={styles.cardDeck} numberOfLines={1}>
             {deckLeafById.get(open.deckId) ?? ""}
             {open.suspended ? "  ·  Suspended" : ""}
@@ -559,22 +670,15 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: 0,
     },
 
-    // The page toggle. Centred and self-sizing rather than three stretched
-    // thirds, so it reads as a control rather than a tab bar.
-    pageRow: {
-      flexDirection: "row",
-      alignSelf: "center",
-      backgroundColor: c.surface2,
-      borderRadius: radius.pill,
-      padding: 3,
-      marginBottom: space(2),
-      flexShrink: 0,
-    },
-    pageTab: { minWidth: 84, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, paddingHorizontal: space(3) },
-    pageTabActive: { backgroundColor: c.raised },
-    pageTabLabel: { ...type.small, color: c.text3 },
-    pageTabLabelActive: { color: c.text, fontWeight: "600" },
-    pageTabLabelOff: { color: c.textHint },
+    // The way back, in place of the toggle that used to be the only one.
+    backRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingVertical: space(1), marginBottom: space(2), alignSelf: "flex-start" },
+    chevronBack: { transform: [{ rotate: "180deg" }] },
+    backLabel: { ...type.small, color: c.accent, fontWeight: "600" },
+    // Where the search box sits when it is not down.
+    searchNudge: { ...type.micro, color: c.textHint, textAlign: "center", marginBottom: space(2.5) },
+    // As wide as the folder rows' chevron, so a deck name lines up with the
+    // folder names beside it instead of hanging one glyph to the left.
+    chevronGap: { width: 13 },
 
     // Section headers and rows (page 1).
     sectionCard: {
@@ -611,7 +715,6 @@ const createStyles = (c: ThemeColors) =>
     },
     rowText: { flexShrink: 1, marginRight: "auto", gap: 1 },
     rowLabel: { ...type.body, color: c.text },
-    rowParent: { ...type.micro, color: c.textHint },
     rowCountPill: {
       minWidth: 32,
       height: 26,
@@ -632,9 +735,8 @@ const createStyles = (c: ThemeColors) =>
     flagNoneText: { ...type.micro, color: c.text2 },
 
     error: { ...type.small, color: c.danger, marginBottom: space(1.5) },
-    countRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(3), marginBottom: space(1.5) },
+    countRow: { flexDirection: "row", alignItems: "center", marginBottom: space(1.5) },
     count: { ...type.micro, color: c.text3, flexShrink: 1 },
-    clearLabel: { ...type.micro, color: c.accent, fontWeight: "600" },
 
     // This is a full page now, so the list owns all remaining height.
     list: { flex: 1 },

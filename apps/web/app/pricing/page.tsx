@@ -69,24 +69,17 @@ const TIERS: Tier[] = [
     price: "$19.99",
     tagline: "For a full course load, every week.",
   },
-  {
-    cta: "Get Max",
-    cadence: "/ month",
-    // Only claims that are true of the plan TODAY. Speaker-labels-as-a-Max-feature
-    // and a metered High mode are proposals, not shipped behaviour — they belong
-    // here once they are built, and not one day before.
-    features: [
-      "Everything in Agent Pro, five times over",
-      "200 hours of lecture recording each month",
-      "The highest daily limits on everything",
-      "First access to every new power we ship",
-    ],
-    id: "max",
-    name: "Max",
-    price: "$99",
-    tagline: "For the heaviest study and research loads.",
-  },
 ];
+
+// MAX WAS REMOVED 2026-07-31. The owner set a $20/mo ceiling after looking at the
+// nearest competitor, whose most expensive plan is $19 a month — against that, a $99
+// row reads as a different category of product rather than as a generous option.
+//
+// Only the CARD is gone. `plan_entitlements.max`, the Stripe price and the checkout
+// route's "max" branch are all untouched, so an existing subscriber keeps their
+// entitlements and an old ?plan=max link still resolves. Nothing migrated because
+// Max had no subscribers. Retiring the Stripe product is a live billing change and
+// is the owner's call, not a side effect of a pricing-page edit.
 
 const INTENT_KEY = "nemesis.checkout.intent";
 
@@ -262,7 +255,13 @@ const PRICING_CSS = `
 .nm-banner { max-width:1080px; margin:0 auto 24px; padding:13px 16px; border-radius:12px; font-size:14px; background:var(--nm-surface); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
 .nm-banner-ok { border-color:rgba(28,138,66,0.35); color:#1c7a3f; background:rgba(52,199,89,0.08); }
 .nm-banner-err { border-color:rgba(216,31,51,0.35); color:#b3121f; background:rgba(216,31,51,0.06); }
-.nm-tiers { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; max-width:1080px; margin:0 auto; align-items:start; }
+/* Two columns since Max was removed. A three-column grid holding two cards leaves
+   a dead third column and shoves both cards off-centre, which reads as a plan that
+   failed to load rather than as a two-plan ladder.
+   NO BACKTICKS IN THIS BLOCK: every line here lives inside the PRICING_CSS template
+   literal, so one backtick in a comment ends the string and the file stops parsing.
+   That is exactly how this comment broke the build the first time. */
+.nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:start; }
 .nm-card { position:relative; background:var(--nm-bg); border:1px solid var(--nm-line); border-radius:20px; padding:26px 24px; display:flex; flex-direction:column;
   box-shadow:0 14px 34px -28px rgba(10,10,14,0.25); }
 .nm-card-featured { border-color:var(--nm-red); box-shadow:0 0 0 1px var(--nm-red), 0 22px 50px -26px var(--nm-red-soft); }

@@ -31,6 +31,10 @@ export async function suggestOcclusionMasks(
   width: number,
   height: number,
   makeId: (index: number) => string,
+  /** The picture's real content type — JPEG unless it came from Files as a PNG.
+   *  The reader is handed the bytes with this label, and a PNG announced as a
+   *  JPEG is a read that fails for a reason nothing on screen could explain. */
+  mime = "image/jpeg",
 ): Promise<SuggestedMasks> {
   const key = await deviceKey(uid);
   if (!key) throw new OcclusionSuggestError("This device needs to re-connect to your account. Try again.");
@@ -41,7 +45,7 @@ export async function suggestOcclusionMasks(
       fieldName: "file",
       headers: { Authorization: `Bearer ${key}` },
       httpMethod: "POST",
-      mimeType: "image/jpeg",
+      mimeType: mime,
       parameters: {},
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
     });
