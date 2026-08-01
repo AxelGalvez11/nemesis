@@ -40,16 +40,18 @@ function Shot({
  * A finished device image: the real capture already composited into a rendered
  * laptop or phone body.
  *
- * These were drawn in CSS first — a rounded border for the lid, a bar for the
- * base — and the owner's verdict was that they did not look real, which was
- * right: an outline reads as a diagram of a machine. They are now rendered by
- * `landing/scripts/render-devices.py` (Pillow), which composites the capture
- * into a body with an aluminium gradient, a machined edge highlight, black
- * glass, a notch and island, and a contact shadow.
+ * These were drawn in CSS first, then painted by hand in Pillow, and the owner's
+ * verdict both times was that they did not look real — which was right, because
+ * drawn metal reads as a diagram of a machine. The bodies are now Apple's own
+ * published product bezels, composited by `landing/scripts/render-devices.py`.
  *
  * RE-RUN THAT SCRIPT WHEN THE APP UI CHANGES. The frames bake in the screenshot,
  * so a stale device image is a stale product shot — worse than none. The source
  * captures it reads stay in public/nemesis/shots for exactly that reason.
+ *
+ * `width`/`height` must match what the script prints. They are the intrinsic
+ * size the browser reserves space with, so a stale pair moves the whole hero on
+ * load — which is exactly what happened when the bezels changed shape.
  */
 function Device({
   name,
@@ -87,14 +89,14 @@ function DeviceShowcase() {
         className="device-mac"
         alt="Nemesis on a laptop: the library, with folders for art history, constitutional law and structural engineering, a note on the commerce clause open in the editor, and its linked notes listed alongside."
         width={2000}
-        height={1269}
+        height={1316}
       />
       <Device
         name="device-phone"
         className="device-phone"
         alt="Nemesis on a phone: an answer about the dormant commerce clause, with a table of leading cases and their exam weight, and a follow-up box at the bottom."
         width={520}
-        height={1102}
+        height={1063}
       />
     </div>
   );

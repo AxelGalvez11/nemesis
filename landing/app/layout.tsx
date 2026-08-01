@@ -61,7 +61,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={hanken.variable}>
+    // suppressHydrationWarning: the script below adds `js-reveal` to <html> before
+    // React hydrates, so the client tag legitimately differs from the server's and
+    // React logs a mismatch it then refuses to patch. The app's own layout.tsx
+    // suppresses the same warning for the same reason (its theme script).
+    <html lang="en" className={hanken.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: revealScript }} />
       </head>
