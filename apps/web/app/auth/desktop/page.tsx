@@ -35,9 +35,20 @@ export default function DesktopAuthPage() {
   const { loading, session, signInWithOAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [deepLink, setDeepLink] = useState<string | null>(null);
-  // Which device started this, for wording only — never for anything the flow
-  // depends on, so a missing or forged value can only make the copy say "device".
-  const [isPhone, setIsPhone] = useState(false);
+  // 🔴 THE COPY NO LONGER KNOWS WHAT DEVICE THIS IS, and that is the fix.
+  //
+  // `client=phone` sits in the URL, but it was read in an effect, so the FIRST
+  // paint always said "Connecting your Mac." on a phone and swapped to
+  // "Connecting your phone." a moment later. Two different strings of two
+  // different lengths, in a block centred in the viewport, so everything
+  // jumped — the owner caught it mid-swap and the heading was sitting on top of
+  // the description.
+  //
+  // Reading it during render instead is not available here: the server has no
+  // URL search params for a static client page, so it would trade the jump for
+  // a hydration mismatch. Since the value was, by its own comment, "for wording
+  // only", the honest fix is to stop the wording needing it. Nobody is confused
+  // about which device they are holding.
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -45,8 +56,11 @@ export default function DesktopAuthPage() {
 
     const query = new URLSearchParams(window.location.search);
     const state = query.get("state") ?? "";
+    // A plain local, NOT state: it has to survive into the OAuth return URL a
+    // few lines down so the second leg comes back knowing it was a phone. It
+    // never reaches the copy any more, so it cannot cause a re-render or the
+    // text swap that used to make this page jump.
     const phoneClient = query.get("client") === "phone";
-    setIsPhone(phoneClient);
 
     if (!STATE_PATTERN.test(state)) {
       setError("This sign-in link is missing its security code. Start again from the Nemesis app.");
@@ -122,27 +136,13 @@ export default function DesktopAuthPage() {
     // label above it was saying it twice.
     <AuthFrame
       minimal
-      title={
-        error
-          ? "That didn't work."
-          : deepLink
-            ? isPhone
-              ? "One tap to finish."
-              : "One click to finish."
-            : isPhone
-              ? "Connecting your phone."
-              : "Connecting your Mac."
-      }
+      title={error ? "That didn't work." : deepLink ? "One more step." : "Finishing sign-in."}
       description={
         error
           ? error
           : deepLink
-            ? (isPhone
-                ? "You're signed in. Tap Open Nemesis below — your browser may ask permission to open the app; choose Open."
-                : "You're signed in. Press Open Nemesis below — your browser may ask permission to open the app; choose Open.")
-            : (isPhone
-                ? "Nemesis is finishing sign-in in your browser and handing the session to the app."
-                : "Nemesis is finishing sign-in in your browser and handing the session to the desktop app.")
+            ? "You're signed in. Open Nemesis below — your browser may ask permission to open the app; choose Open."
+            : "Nemesis is finishing sign-in in your browser and handing the session over to the app."
       }
       footer={
         error ? (
@@ -159,7 +159,7 @@ export default function DesktopAuthPage() {
           /auth/callback. role="alert" keeps the announcement. */}
       {error ? (
         <p className="nemesis-auth-notice" role="alert">
-          {isPhone ? "Open the Nemesis app and tap Continue with Google or Apple again." : "Open the Nemesis app and press Continue with Google or Apple again."}
+          Open the Nemesis app and start Continue with Google or Apple again.
         </p>
       ) : deepLink ? (
         <>
@@ -167,9 +167,7 @@ export default function DesktopAuthPage() {
             Open Nemesis
           </a>
           <p className="nemesis-auth-notice" role="status">
-            {isPhone
-              ? "Nothing happening? Make sure the Nemesis app is installed, then tap the button again. You can close this tab once the app shows your account."
-              : "Nothing happening? Make sure the Nemesis app is installed and open, then press the button again. You can close this tab once the app shows your account."}
+            Nothing happening? Make sure the Nemesis app is installed, then use the button again. You can close this tab once the app shows your account.
           </p>
         </>
       ) : (
