@@ -1,5 +1,6 @@
 "use client";
 
+import { Hanken_Grotesk } from "next/font/google";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -80,6 +81,20 @@ const TIERS: Tier[] = [
 // entitlements and an old ?plan=max link still resolves. Nothing migrated because
 // Max had no subscribers. Retiring the Stripe product is a live billing change and
 // is the owner's call, not a side effect of a pricing-page edit.
+
+// The marketing site's typeface, loaded ONLY for this route.
+//
+// www.enternemesis.com is set in Hanken Grotesk and the app is set in the system
+// stack. That is normally invisible, but pressing "Get Student" on the marketing
+// site lands here in one hop, and a typeface change across that hop is the single
+// loudest signal that you have left one product for another. Self-hosted by
+// next/font, scoped by a CSS variable on this page's own root, so no other screen
+// in the app pays for it and nothing else changes.
+const pricingSans = Hanken_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-pricing-sans",
+  display: "swap",
+});
 
 const INTENT_KEY = "nemesis.checkout.intent";
 
@@ -165,7 +180,7 @@ function PricingInner() {
   }
 
   return (
-    <main className="nm-pricing">
+    <main className={`nm-pricing ${pricingSans.variable}`}>
       <style>{PRICING_CSS}</style>
 
       <header className="nm-nav">
@@ -176,19 +191,17 @@ function PricingInner() {
       </header>
 
       <section className="nm-hero">
-        <p className="nm-eyebrow">Founding member · early access</p>
-        <h1 className="nm-title">The AI that runs your semester.</h1>
+        <p className="nm-eyebrow">Pricing</p>
+        <h1 className="nm-title">Upgrade when you need more.</h1>
         <p className="nm-sub">
-          Nemesis combines live notes, study tools, research, and cited answers for any course or field in one focused
-          workspace, right in your browser.
+          The free plan keeps working every day, no card required. Paid plans raise the limits, and you can cancel
+          anytime.
         </p>
-        <p className="nm-trialline">Start free, no card required. Paid plans raise the limits — cancel anytime.</p>
       </section>
 
       {checkoutStatus === "success" ? (
         <p className="nm-banner nm-banner-ok">
-          Payment received — you&apos;re a founding member. Your plan is live on this account: open the app and you&apos;re
-          set.
+          Payment received. Your plan is live on this account — open the app and you&apos;re set.
         </p>
       ) : checkoutStatus === "cancelled" ? (
         <p className="nm-banner">Checkout cancelled — no charge was made.</p>
@@ -199,26 +212,35 @@ function PricingInner() {
         {TIERS.map((tier) => (
           <article className={`nm-card${tier.featured ? " nm-card-featured" : ""}`} key={tier.id}>
             {tier.featured ? <span className="nm-tag">Most popular</span> : null}
-            <h2 className="nm-card-name">{tier.name}</h2>
-            <p className="nm-card-tagline">{tier.tagline}</p>
+            {/* Price first, then the name — the marketing page's order. Someone who
+                arrived by pressing "Get Student" is here to check a number. */}
             <p className="nm-price">
               <strong>{tier.price}</strong>
-              <span className="nm-cadence">{tier.cadence}</span>
+              <span className="nm-cadence">/mo</span>
             </p>
-            <p className="nm-trialhint">Billed monthly. Cancel anytime.</p>
-            <button className="nm-cta" disabled={busy === tier.id} onClick={() => onCta(tier)} type="button">
-              {busy === tier.id ? "Opening checkout…" : tier.cta}
-            </button>
+            <h2 className="nm-card-name">{tier.name}</h2>
+            <p className="nm-card-tagline">{tier.tagline}</p>
             <ul className="nm-features">
               {tier.features.map((feature) => (
                 <li key={feature}>
-                  <span className="nm-check" aria-hidden>
-                    ✓
-                  </span>
+                  <svg aria-hidden height="13" viewBox="0 0 16 16" width="13">
+                    <path d="M3 8.5 6.2 11.7 13 4.9" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  </svg>
                   {feature}
                 </li>
               ))}
             </ul>
+            <div className="nm-cta-wrap">
+              <button
+                className={`nm-cta${tier.featured ? " nm-cta-primary" : ""}`}
+                disabled={busy === tier.id}
+                onClick={() => onCta(tier)}
+                type="button"
+              >
+                {busy === tier.id ? "Opening checkout…" : tier.cta}
+              </button>
+              <p className="nm-trialhint">Billed monthly. Cancel anytime.</p>
+            </div>
           </article>
         ))}
       </section>
@@ -239,47 +261,65 @@ export default function PricingPage() {
   );
 }
 
+/* The marketing site's two-tone system, ported (owner 2026-08-01: "still has red and
+   is not the same as the website style"). Someone gets here by pressing a button on
+   www.enternemesis.com, so the two pages are one hop apart and used to look like two
+   different companies: this one had its own crimson, rounded cards and drop shadows.
+
+   INK CHANNELS, not colours. --nm-fg is an "R,G,B" triple, so every grey below is an
+   alpha of the same ink and dark mode is a two-variable swap with nothing else to
+   keep in step. The old sheet hardcoded a white background, which meant this page
+   was a flashbang for anyone using the app in dark mode.
+
+   Emphasis is WEIGHT, never hue: the popular plan gets a heavier border and an
+   inverted chip, because a page with two inks has no third one to signal with.
+
+   NO BACKTICKS ANYWHERE IN THIS BLOCK, comments included: it all lives inside a
+   template literal, so one backtick ends the string and the file stops parsing.
+   TypeScript will not catch it; only the real build will. That has happened here. */
 const PRICING_CSS = `
-.nm-pricing { --nm-bg:#ffffff; --nm-surface:#fafafa; --nm-line:#e4e4e8; --nm-text:#17171a; --nm-dim:#63636d; --nm-red:#d81f33; --nm-red-soft:rgba(216,31,51,0.10);
-  min-height:100vh; background:var(--nm-bg); color:var(--nm-text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+.nm-pricing { --nm-bg:#ffffff; --nm-fg:0,0,0;
+  --nm-text:rgb(var(--nm-fg)); --nm-dim:rgba(var(--nm-fg),0.66); --nm-faint:rgba(var(--nm-fg),0.45);
+  --nm-line:rgba(var(--nm-fg),0.12); --nm-line-2:rgba(var(--nm-fg),0.26); --nm-wash:rgba(var(--nm-fg),0.03);
+  min-height:100vh; background:var(--nm-bg); color:var(--nm-text);
+  font-family:var(--font-pricing-sans),-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
   padding:0 24px 72px; -webkit-font-smoothing:antialiased; }
+[data-theme="dark"] .nm-pricing { --nm-bg:#0b0b0c; --nm-fg:255,255,255; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nm-pricing { --nm-bg:#0b0b0c; --nm-fg:255,255,255; } }
 .nm-nav { display:flex; align-items:center; justify-content:space-between; max-width:1080px; margin:0 auto; padding:22px 4px; }
-.nm-wordmark { font-weight:800; letter-spacing:0.22em; font-size:15px; }
+.nm-wordmark { font-weight:700; letter-spacing:0.22em; font-size:15px; }
 .nm-nav-link { color:var(--nm-dim); text-decoration:none; font-size:14px; font-weight:500; }
 .nm-nav-link:hover { color:var(--nm-text); }
-.nm-hero { max-width:720px; margin:56px auto 40px; text-align:center; }
-.nm-eyebrow { color:var(--nm-red); font-size:12px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 18px; }
-.nm-title { font-size:clamp(30px,5vw,50px); line-height:1.05; letter-spacing:-0.03em; font-weight:800; margin:0 0 18px; text-wrap:balance; }
-.nm-sub { color:var(--nm-dim); font-size:clamp(15px,2.2vw,18px); line-height:1.6; margin:0 auto; max-width:600px; }
-.nm-trialline { color:var(--nm-red); font-size:13.5px; font-weight:600; margin:20px auto 0; }
-.nm-banner { max-width:1080px; margin:0 auto 24px; padding:13px 16px; border-radius:12px; font-size:14px; background:var(--nm-surface); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
-.nm-banner-ok { border-color:rgba(28,138,66,0.35); color:#1c7a3f; background:rgba(52,199,89,0.08); }
-.nm-banner-err { border-color:rgba(216,31,51,0.35); color:#b3121f; background:rgba(216,31,51,0.06); }
+.nm-hero { max-width:560px; margin:72px auto 48px; text-align:center; }
+.nm-eyebrow { color:var(--nm-faint); font-size:12px; font-weight:650; letter-spacing:0.18em; text-transform:uppercase; margin:0 0 14px; }
+.nm-title { font-size:clamp(30px,5vw,50px); line-height:1.06; letter-spacing:-0.03em; font-weight:600; margin:0 0 16px; text-wrap:balance; }
+.nm-sub { color:var(--nm-dim); font-size:17px; line-height:1.6; margin:0 auto; max-width:520px; }
+.nm-banner { max-width:760px; margin:0 auto 24px; padding:13px 16px; border-radius:2px; font-size:14px; background:var(--nm-wash); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
+.nm-banner-ok { border-color:var(--nm-line-2); color:var(--nm-text); }
+.nm-banner-err { border-color:var(--nm-line-2); color:var(--nm-text); }
 /* Two columns since Max was removed. A three-column grid holding two cards leaves
    a dead third column and shoves both cards off-centre, which reads as a plan that
-   failed to load rather than as a two-plan ladder.
-   NO BACKTICKS IN THIS BLOCK: every line here lives inside the PRICING_CSS template
-   literal, so one backtick in a comment ends the string and the file stops parsing.
-   That is exactly how this comment broke the build the first time. */
-.nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:start; }
-.nm-card { position:relative; background:var(--nm-bg); border:1px solid var(--nm-line); border-radius:20px; padding:26px 24px; display:flex; flex-direction:column;
-  box-shadow:0 14px 34px -28px rgba(10,10,14,0.25); }
-.nm-card-featured { border-color:var(--nm-red); box-shadow:0 0 0 1px var(--nm-red), 0 22px 50px -26px var(--nm-red-soft); }
-.nm-tag { position:absolute; top:-11px; left:24px; background:var(--nm-red); color:#fff; font-size:11px; font-weight:700; letter-spacing:0.04em; padding:4px 11px; border-radius:999px; text-transform:uppercase; }
-.nm-card-name { font-size:19px; font-weight:700; margin:0 0 4px; letter-spacing:-0.01em; }
-.nm-card-tagline { color:var(--nm-dim); font-size:13.5px; line-height:1.45; margin:0 0 18px; min-height:38px; }
-.nm-price { margin:0 0 18px; display:flex; align-items:baseline; gap:6px; }
-.nm-price strong { font-size:36px; font-weight:800; letter-spacing:-0.03em; }
-.nm-cadence { color:var(--nm-dim); font-size:14px; }
-.nm-trialhint { color:var(--nm-dim); font-size:12px; margin:-8px 0 14px; }
-.nm-cta { width:100%; border:none; border-radius:12px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; background:#f3f3f5; color:var(--nm-text); border:1px solid var(--nm-line); transition:filter 0.15s, background 0.15s; }
-.nm-cta:hover:not(:disabled) { background:#ebebee; }
-.nm-cta:disabled { opacity:0.6; cursor:default; }
-.nm-card-featured .nm-cta { background:var(--nm-red); border-color:var(--nm-red); color:#fff; }
-.nm-card-featured .nm-cta:hover:not(:disabled) { filter:brightness(1.06); }
-.nm-features { list-style:none; margin:22px 0 0; padding:0; display:grid; gap:12px; }
-.nm-features li { display:flex; gap:10px; font-size:14px; line-height:1.45; color:var(--nm-dim); }
-.nm-check { color:var(--nm-red); font-weight:800; flex:0 0 auto; }
-.nm-fineprint { max-width:680px; margin:40px auto 0; text-align:center; color:var(--nm-dim); font-size:12.5px; line-height:1.6; }
-@media (max-width:820px) { .nm-tiers { grid-template-columns:1fr; max-width:440px; } .nm-card-tagline { min-height:0; } }
+   failed to load rather than as a two-plan ladder. */
+.nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:stretch; }
+.nm-card { position:relative; background:transparent; border:1px solid var(--nm-line); border-radius:2px; padding:32px 28px; display:flex; flex-direction:column; }
+.nm-card-featured { border-color:var(--nm-line-2); border-width:2px; padding:31px 27px; }
+.nm-tag { position:absolute; top:-12px; left:28px; background:var(--nm-text); color:var(--nm-bg); font-size:10.5px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:2px; text-transform:uppercase; }
+.nm-price { margin:0; display:flex; align-items:baseline; gap:2px; font-size:38px; font-weight:750; letter-spacing:-0.02em; }
+.nm-price strong { font-weight:750; }
+.nm-cadence { color:var(--nm-faint); font-size:14px; font-weight:500; letter-spacing:0; }
+.nm-card-name { font-size:19px; font-weight:600; margin:12px 0 6px; letter-spacing:-0.01em; }
+.nm-card-tagline { color:var(--nm-faint); font-size:13.5px; line-height:1.5; margin:0 0 14px; }
+.nm-features { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.nm-features li { display:flex; align-items:flex-start; gap:9px; font-size:14.5px; line-height:1.4; color:var(--nm-dim); }
+.nm-features svg { flex-shrink:0; margin-top:3px; color:var(--nm-text); }
+.nm-cta-wrap { margin-top:auto; padding-top:24px; }
+.nm-cta { width:100%; cursor:pointer; font-family:inherit; font-size:12.5px; font-weight:650; letter-spacing:0.1em; text-transform:uppercase;
+  padding:12px 22px; border-radius:2px; background:transparent; color:var(--nm-text); border:1px solid var(--nm-line-2); transition:border-color 0.15s, opacity 0.15s; }
+.nm-cta:hover:not(:disabled) { border-color:var(--nm-text); }
+.nm-cta-primary { background:var(--nm-text); color:var(--nm-bg); border-color:var(--nm-text); }
+.nm-cta-primary:hover:not(:disabled) { opacity:0.82; }
+.nm-cta:disabled { opacity:0.5; cursor:default; }
+.nm-trialhint { color:var(--nm-faint); font-size:12px; letter-spacing:0.02em; margin:10px 0 0; text-align:center; }
+.nm-fineprint { max-width:640px; margin:36px auto 0; text-align:center; color:var(--nm-faint); font-size:13.5px; line-height:1.7; }
+@media (max-width:820px) { .nm-tiers { grid-template-columns:1fr; max-width:440px; } }
 `;

@@ -63,7 +63,8 @@ function getStatusCheck(path, expectedStatus) {
 htmlCheck("/sign-in", ["NEMESIS", "Re-enter the perimeter"]);
 htmlCheck("/sign-up", ["NEMESIS", "Bring Nemesis online"]);
 htmlCheck("/account", ["Restoring account perimeter"]);
-htmlCheck("/account/billing", ["Restoring account perimeter"]);
+// /account/billing was retired 2026-08-01 and now 307s to /pricing, so there is no
+// HTML of its own to check. /pricing is covered below.
 htmlCheck("/app/ask", ["Nemesis", "Loading"]);
 htmlCheck("/app/explore", ["Nemesis", "Loading"]);
 htmlCheck("/app/monitor", ["Nemesis", "Loading"]);

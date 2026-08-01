@@ -5,18 +5,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { EntitlementSnapshot } from "@nemesis/shared";
-import { BillingPanel } from "@/components/BillingPanel";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
 import { landingUrl } from "@/lib/env";
 import { planLabel } from "@/lib/billing-contract";
 
-interface AccountPortalProps {
-  section: "overview" | "billing";
-  checkoutStatus?: string;
-}
-
-export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
+/**
+ * The signed-in account page. It had a second "billing" section behind
+ * /account/billing until 2026-08-01, when the owner retired that page; plans and
+ * payment now live on /pricing, which already handles the return trip from
+ * Stripe. This component has one section again, so it takes no props.
+ */
+export function AccountPortal() {
   const { loading, session, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -77,8 +77,8 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
           </div>
           <nav aria-label="Account sections">
             <Link href="/sessions">Open Nemesis</Link>
-            <Link className={section === "overview" ? "active" : ""} href="/account">Overview</Link>
-            <Link className={section === "billing" ? "active" : ""} href="/account/billing">Subscription</Link>
+            <Link className="active" href="/account">Overview</Link>
+            <Link href="/pricing">Subscription</Link>
           </nav>
           <button
             className="nemesis-account-signout"
@@ -92,16 +92,13 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
         <section className="nemesis-account-main">
           <div className="nemesis-account-heading">
             <p>Nemesis // browser control plane</p>
-            <h1>{section === "billing" ? "Subscription." : "Your account."}</h1>
+            <h1>Your account.</h1>
             <span>
-              {section === "billing"
-                ? "Manage your Nemesis plan. Payments open securely in Stripe."
-                : "Identity and billing live here. Your courses, notes, recordings, and agent workspace are in the app."}
+              Identity and billing live here. Your courses, notes, recordings, and agent workspace are in the app.
             </span>
           </div>
 
-          {section === "overview" ? (
-            <div className="nemesis-account-overview">
+          <div className="nemesis-account-overview">
               <section className="nemesis-account-card primary-card">
                 <p className="nemesis-account-card-label">Signed in as</p>
                 <h2>{email}</h2>
@@ -109,7 +106,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
                   <span>Plan</span>
                   <strong>{plan === "checking…" || plan === "unavailable" ? plan : planLabel(plan)}</strong>
                 </div>
-                <Link className="nemesis-account-primary-action" href="/account/billing">Manage subscription</Link>
+                <Link className="nemesis-account-primary-action" href="/pricing">Manage subscription</Link>
               </section>
 
               <section className="nemesis-account-card desktop-card">
@@ -126,12 +123,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
                   Works in any modern browser. New features arrive on their own — nothing to install.
                 </p>
               </section>
-            </div>
-          ) : (
-            <div className="nemesis-account-billing">
-              <BillingPanel checkoutStatus={checkoutStatus} />
-            </div>
-          )}
+          </div>
         </section>
       </div>
     </main>
