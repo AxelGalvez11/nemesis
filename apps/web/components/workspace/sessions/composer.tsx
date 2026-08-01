@@ -75,7 +75,14 @@ interface ComposerProps {
    *  the channel stays open so effort remains a real, settable thing rather
    *  than a constant buried in the sender. */
   onEffortChange?: (effort: ChatEffort) => void;
-  onRecordingChange?: (recording: boolean) => void;
+  /** `discard` says WHY capture is ending: true means the student cancelled and
+   *  the audio must be thrown away, false or absent means stop and write it up.
+   *  Both arrive in one call so the recorder cannot act on half the decision. */
+  onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
+  /** Opens the syllabus importer as a popup over the chat. Chat is the front
+   *  door for importing now (owner 2026-07-31), so this is not a shortcut to
+   *  somewhere else — it is where the import lives. */
+  onImportSyllabus?: () => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
@@ -83,7 +90,7 @@ interface ComposerProps {
   belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onImportSyllabus, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +98,9 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
+  /** Standing rule: anything that destroys something asks first. Recorded audio
+   *  is not recoverable, so cancelling mid-capture is exactly that. */
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [libraryOpen, setLibraryOpen] = useState(false);
   // Files dragged from Finder. A COUNTER, not a boolean: dragenter/dragleave
@@ -134,8 +144,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
 
   const setMode = (mode: ComposerMode) => {
     if (recording && activeMode === "record" && mode === "chat") {
-      setRecording(false);
-      onRecordingChange?.(false);
+      // 🔴 THIS USED TO SAVE THE RECORDING. Clearing `recording` is the same
+      // signal a deliberate stop sends, so pressing ✕ mid-capture uploaded,
+      // transcribed and filed the very recording the student was cancelling
+      // (owner-reported 2026-07-31). Cancelling now asks first and then throws
+      // the audio away — see confirmDiscard below. Stop lives in the recording
+      // panel, which is where the recording is.
+      setConfirmDiscard(true);
       return;
     }
     setComposerMode(mode);
@@ -144,6 +159,21 @@ export function Composer({ busy, centered = false, placement = "floating", place
     onRecordingChange?.(false);
     try {
       window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode);
+    } catch {
+      // best-effort
+    }
+  };
+
+  /** Confirmed cancel: bin the audio AND leave record mode, in that order, so
+   *  the recorder reads `discard` before it sees `active` go false. */
+  const discardRecording = () => {
+    setConfirmDiscard(false);
+    setRecording(false);
+    onRecordingChange?.(false, { discard: true });
+    setComposerMode("chat");
+    onModeChange?.("chat");
+    try {
+      window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, "chat");
     } catch {
       // best-effort
     }
@@ -481,7 +511,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       }}
                       type="file"
                     />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onImportSyllabus={onImportSyllabus} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -599,6 +629,35 @@ export function Composer({ busy, centered = false, placement = "floating", place
       </div>
       {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
+      {/* Sits directly above the composer, in the student's way, matching the
+          chat's own delete confirmation. Keep is the plain button; throwing the
+          audio away is the only red control. */}
+      {confirmDiscard && (
+        <div
+          className="absolute inset-x-0 bottom-full z-40 mx-auto mb-3 w-full max-w-md rounded-xl border border-red-500/40 bg-(--ui-bg-elevated) p-4 shadow-lg"
+          data-testid="confirm-discard-recording"
+          role="alertdialog"
+        >
+          <p className="text-sm font-semibold text-(--ui-text-primary)">Throw this recording away?</p>
+          <p className="mt-1 text-xs leading-relaxed text-(--ui-text-secondary)">
+            The audio has not been saved yet and cannot be recovered. To keep it, use Stop instead.
+          </p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button onClick={() => setConfirmDiscard(false)} size="sm" type="button" variant="secondary">
+              Keep recording
+            </Button>
+            <Button
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="confirm-discard-recording-yes"
+              onClick={discardRecording}
+              size="sm"
+              type="button"
+            >
+              Throw it away
+            </Button>
+          </div>
+        </div>
+      )}
       {/* Picked notes APPEND — the file input above replaces, but a Library
           choice is additive to whatever is already attached. */}
       <LibraryPickerDialog
@@ -681,7 +740,7 @@ export function RecordCompanionPanel() {
 // "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
 // Notebooks page is retired. It opens a picker rather than a submenu because
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
-function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onOpenLibrary: () => void }) {
+function AddMenu({ onChooseFiles, onChooseFolder, onImportSyllabus, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onImportSyllabus?: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -702,6 +761,19 @@ function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFil
           <Codicon name="book" size="0.875rem" />
           Library
         </DropdownMenuItem>
+        {/* 🔴 THE ONLY RELIABLE WAY IN. Dropping a syllabus already routes to
+            the importer, but only when the FILENAME says "syllabus" — and the
+            owner's own file is called
+            Fall-2026-PHCY-2105-01-Interprofessional-Education-and-Clinical-
+            Simulation-III.pdf, which says nothing of the kind. A student whose
+            university names files that way had no way to reach the importer
+            from chat at all. Saying what you want beats guessing from a name. */}
+        {onImportSyllabus && (
+          <DropdownMenuItem data-testid="composer-import-syllabus" onSelect={onImportSyllabus}>
+            <Codicon name="calendar" size="0.875rem" />
+            Syllabus
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
