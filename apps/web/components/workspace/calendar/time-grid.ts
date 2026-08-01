@@ -193,6 +193,65 @@ export function blockGeometry(column: number, columns: number): BlockGeometry {
   return { leftPct, widthPct: 100 - leftPct, zIndex: column };
 }
 
+// ── How much of an event a block is tall enough to show ──────────────────────
+
+/**
+ * 🔴 A BLOCK MUST NEVER RENDER MORE LINES THAN IT CAN HOLD.
+ *
+ * Owner-reported 2026-07-31, right after the grid density was retuned: a
+ * 45-minute event drew its title and its time, and the box was too short for
+ * both, so the second line was sliced through the middle of the glyphs. Text cut
+ * horizontally with an ellipsis reads as deliberate; text cut horizontally
+ * through its own letters reads as broken software.
+ *
+ * The old guard was a single `height > 26`, which was tuned when an hour was 48
+ * pixels and silently became wrong at 36 — and it tested the LAYOUT height while
+ * the box is actually rendered two pixels shorter, so it was answering a
+ * slightly different question than the one that matters.
+ *
+ * The thresholds below are the rendered type, added up. At this app's 20px root
+ * font: a title line is 0.6875rem at leading-tight, about 17px; the time line is
+ * 0.625rem, about 16px; the border costs 2px; the padding differs per tier,
+ * which is the point — a short block buys room by giving up padding rather than
+ * by clipping.
+ */
+export type BlockDetail = "stacked" | "inline" | "title";
+
+/** Title above the time, the roomy default: two line boxes + 10px padding + 2px
+ *  border. */
+export const STACKED_MIN_PX = 44;
+/**
+ * Title and time side by side on one line: a 17px line box + 5px padding + 2px
+ * border is 24.2px, so 25 is the first height that holds it.
+ *
+ * Worth being exact rather than rounding up "for safety". An event with no end
+ * time is drawn at DEFAULT_EVENT_MINUTES, which at this density renders at
+ * exactly 25px — and every syllabus deadline and quick-created event has no end
+ * time, so this is the COMMONEST block on the grid. A threshold one pixel
+ * higher would have silently dropped the time from most of the calendar, which
+ * is a worse bug than the clipping it was meant to prevent.
+ */
+export const INLINE_MIN_PX = 25;
+
+/**
+ * What a block of this rendered height can show without clipping.
+ *
+ * Takes the height the box is actually GIVEN, not the height the layout
+ * computed — those differ, and the difference is exactly the gap the old guard
+ * fell through. PURE.
+ */
+export function blockDetail(renderedHeightPx: number): BlockDetail {
+  if (renderedHeightPx >= STACKED_MIN_PX) return "stacked";
+  if (renderedHeightPx >= INLINE_MIN_PX) return "inline";
+  return "title";
+}
+
+/** The height the block is actually drawn at, so the view and this module can
+ *  never disagree about it. */
+export function renderedBlockHeight(layoutHeightPx: number): number {
+  return Math.max(layoutHeightPx - 2, 14);
+}
+
 export interface HourWindow {
   startHour: number;
   endHour: number;
