@@ -4,7 +4,7 @@
 
 import { Button } from "@/components/desktop-ui/button";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
-import { ChevronLeft, ChevronRight, FileText, Plus } from "@/lib/workspace/icons";
+import { ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
 import type { CalendarEventKind } from "@/lib/workspace/calendar-model";
@@ -22,7 +22,6 @@ interface CalendarHeaderProps {
   onStep: (delta: 1 | -1) => void;
   onToday: () => void;
   onAddEvent: (dateKeyStr: string) => void;
-  onImportSyllabus: () => void;
 }
 
 export function CalendarHeader({
@@ -35,7 +34,6 @@ export function CalendarHeader({
   onStep,
   onToday,
   onAddEvent,
-  onImportSyllabus,
 }: CalendarHeaderProps) {
   return (
     <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 px-5 pb-4 pt-5 max-lg:grid-cols-1 max-lg:gap-3 max-sm:px-3">
@@ -75,9 +73,12 @@ export function CalendarHeader({
           </Button>
         </div>
         <KindFilter hidden={hiddenKinds} onChange={onChangeHiddenKinds} />
-        <Button aria-label="Import syllabus" onClick={onImportSyllabus} size="icon-sm" variant="ghost">
-          <FileText size={16} />
-        </Button>
+        {/* THE IMPORT BUTTON IS GONE FROM HERE, NOT THE IMPORT (owner
+            2026-07-31: "instead of having the syllabus uploader into the
+            calendar page, can we have everything run through the chat
+            instead?"). The importer is the same component, opened from the
+            chat composer's Add menu — see sessions/composer.tsx. Removing the
+            control is the ask; removing the feature would not be. */}
         <Button aria-label="Add event" onClick={() => onAddEvent(dateKey(today))} size="icon-sm">
           <Plus size={16} />
         </Button>

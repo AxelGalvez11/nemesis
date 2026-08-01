@@ -116,7 +116,9 @@ export function SessionChat() {
   // deck picker, progress, and error copy all already reviewed — is what runs,
   // rather than a second import path invented for chat.
   const [deckToImport, setDeckToImport] = useState<File | null>(null);
-  const [syllabusImport, setSyllabusImport] = useState<{ file: File; targetId: string } | null>(null);
+  // `file` is null when the student chose "Syllabus" from the chat menu and
+  // has yet to pick one — the dialog shows its own file picker in that case.
+  const [syllabusImport, setSyllabusImport] = useState<{ file: File | null; targetId: string } | null>(null);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -361,7 +363,10 @@ export function SessionChat() {
       : `calendar-${Date.now().toString(36)}`;
     sessionsStore.appendMessage(syllabusImport.targetId, {
       at: new Date().toISOString(),
-      content: `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${syllabusImport.file.name} to your calendar.`,
+      // The file name only exists when a file was DROPPED into chat. Chosen
+      // from the Add menu, the dialog owns the picker, so the message names
+      // the syllabus generically rather than printing "undefined".
+      content: `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${syllabusImport.file?.name ?? "your syllabus"} to your calendar.`,
       outputs: [{
         id: artifactId,
         kind: "event",
@@ -550,6 +555,21 @@ export function SessionChat() {
     });
   }, [createArtifact, preview, selectedId, uid]);
 
+  /**
+   * Open the syllabus importer over the chat, with no file chosen yet.
+   *
+   * Chat is the front door for importing now (owner 2026-07-31). Dropping a
+   * file still works, but it only routes to the importer when the FILENAME
+   * looks like a syllabus — and plenty of universities export
+   * "Fall-2026-PHCY-2105-01-Interprofessional-Education...pdf", which does not.
+   * Asking for the importer by name is the path that always works.
+   */
+  const openSyllabusImport = useCallback(() => {
+    if (preview) return;
+    // A session has to exist before the import can post its result into one.
+    setSyllabusImport({ file: null, targetId: selectedId ?? sessionsStore.create().id });
+  }, [preview, selectedId]);
+
   const openSources = useCallback(() => {
     setRightPanel("sources");
     setRightRailOpen(true);
@@ -627,6 +647,7 @@ export function SessionChat() {
             centered={isFreshThread && composerMode === "chat"}
             mode={composerMode}
             onEffortChange={(effort) => { effortRef.current = effort; }}
+            onImportSyllabus={openSyllabusImport}
             onModeChange={handleModeChange}
             onRecordingChange={handleRecordingChange}
             onStop={handleStop}
