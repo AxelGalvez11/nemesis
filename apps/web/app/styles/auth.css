@@ -13,7 +13,33 @@
      to --auth-accent because it is not red any more; the error style below
      keeps its own red, which is a warning, not an accent. */
   --auth-accent: #404040;
-  background: #fff;
+  /* Surfaces, washes and shadows, named so the dark block below can flip them
+     in one place. These were hardcoded #fff and rgba(20,20,20,…) literals; the
+     page was the last light-only surface in an app that is otherwise dark, and
+     opening it at night was a flashbang. */
+  --auth-page: #fff;
+  --auth-card: #fff;
+  --auth-grid: rgba(20, 20, 20, 0.035);
+  --auth-wash-near: rgba(255, 255, 255, 0.72);
+  --auth-wash-far: rgba(255, 255, 255, 0.28);
+  --auth-shadow: rgba(20, 20, 20, 0.055);
+  --auth-shadow-sm: rgba(20, 20, 20, 0.08);
+  --auth-ring: rgba(20, 20, 20, 0.06);
+  --auth-focus-line: #b9bab5;
+  /* Text ON the ink-coloured submit button, so it inverts with everything
+     else rather than staying white on a light button. */
+  --auth-on-ink: #fff;
+  --auth-error-bg: #fff3f4;
+  --auth-error-line: #c0392b;
+  --auth-error-ink: #8a2130;
+  --auth-ok-bg: #f1f7f1;
+  --auth-ok-line: #4f7654;
+  --auth-ok-ink: #36563a;
+  /* Tells the browser to draw native chrome — scrollbars, autofill, the
+     password reveal — to match. Without it the form controls stay light
+     against a dark card. */
+  color-scheme: light;
+  background: var(--auth-page);
   color: var(--auth-ink);
   /* Owner 2026-07-28: "the sign in should be centered like chatgpt, keep the
      grid background of aesthetics."
@@ -24,9 +50,9 @@
      to exactly this, so the narrow layout is unchanged; what changed is that
      wide viewports get it too. */
   background:
-    linear-gradient(rgba(20, 20, 20, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20, 20, 20, 0.035) 1px, transparent 1px),
-    #fff;
+    linear-gradient(var(--auth-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--auth-grid) 1px, transparent 1px),
+    var(--auth-page);
   background-size: 56px 56px;
   display: grid;
   font-family: Arial, Helvetica, sans-serif;
@@ -35,11 +61,65 @@
   position: relative;
 }
 
+/* FOLLOWS THE SYSTEM SETTING (owner 2026-07-31: "does the sign in also has
+   darkmode based on system"). It did not — the workspace, the extension card
+   and the popup all flipped with the OS while this one page stayed white.
+
+   prefers-color-scheme rather than the app's own theme toggle, deliberately:
+   nobody is signed in yet, so there is no stored preference to read. The OS is
+   the only thing that knows, and it is also the right answer for the person
+   who has never had an account.
+
+   Only the variables move. Every rule above is written against them, so the
+   layout, the grid and the wash are identical in both — this is a repaint,
+   not a second design to keep in step. */
+@media (prefers-color-scheme: dark) {
+  .nemesis-auth-shell {
+    --auth-ink: #f2f4f7;
+    --auth-muted: #9aa2ae;
+    --auth-faint: #6b7280;
+    --auth-line: #2a2e35;
+    --auth-soft: #1f2228;
+    --auth-accent: #c9cbd0;
+    --auth-page: #0f1012;
+    --auth-card: #17191d;
+    --auth-grid: rgba(255, 255, 255, 0.04);
+    /* The wash DARKENS here instead of lightening, or it would put a white
+       halo behind the card on a black page. */
+    --auth-wash-near: rgba(15, 16, 18, 0.72);
+    --auth-wash-far: rgba(15, 16, 18, 0.28);
+    --auth-shadow: rgba(0, 0, 0, 0.5);
+    --auth-shadow-sm: rgba(0, 0, 0, 0.45);
+    --auth-ring: rgba(255, 255, 255, 0.09);
+    --auth-focus-line: #4a4e57;
+    /* The submit button is now light, so its label has to be dark. */
+    --auth-on-ink: #14161a;
+    --auth-error-bg: rgba(192, 57, 43, 0.16);
+    --auth-error-line: #c0392b;
+    --auth-error-ink: #f0938a;
+    --auth-ok-bg: rgba(79, 118, 84, 0.18);
+    --auth-ok-line: #4f7654;
+    --auth-ok-ink: #8fce97;
+    color-scheme: dark;
+  }
+
+  /* 🔴 THE MARK IS A BLACK PNG ON TRANSPARENT, so on a black page it vanishes —
+     both the wordmark top-left and the badge on the card were invisible until
+     this, which the first dark screenshot showed plainly. Inverting is safe
+     precisely because the mark is pure greyscale: it comes back white and
+     nothing shifts hue. A white asset would be the alternative, and a second
+     file to keep in step with the first. */
+  .nemesis-auth-brand img,
+  .nemesis-auth-mark img {
+    filter: invert(1);
+  }
+}
+
 /* The soft wash the left column used to carry, moved onto the shell. Light
    enough that the grid still reads across the page — the owner asked to KEEP
    it — but enough that the card is not sitting on a busy background. */
 .nemesis-auth-shell::before {
-  background: radial-gradient(120% 80% at 50% 44%, rgba(255, 255, 255, 0.72) 30%, rgba(255, 255, 255, 0.28) 100%);
+  background: radial-gradient(120% 80% at 50% 44%, var(--auth-wash-near) 30%, var(--auth-wash-far) 100%);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -82,7 +162,7 @@
   position: relative;
 }
 .nemesis-auth-field::after {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), #fff 72%);
+  background: linear-gradient(180deg, var(--auth-wash-far), var(--auth-card) 72%);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -174,10 +254,10 @@
    the padding below come down without the form feeling cramped. */
 .nemesis-auth-card { max-width: 520px; width: 100%; }
 .nemesis-auth-card-in {
-  background: #fff;
+  background: var(--auth-card);
   border: 1px solid var(--auth-line);
   border-radius: 20px;
-  box-shadow: 0 24px 70px rgba(20, 20, 20, 0.055);
+  box-shadow: 0 24px 70px var(--auth-shadow);
   padding: 30px 38px 26px;
 }
 
@@ -274,8 +354,8 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 .nemesis-auth-mode a.is-active {
-  background: #fff;
-  box-shadow: 0 1px 5px rgba(20, 20, 20, 0.08);
+  background: var(--auth-card);
+  box-shadow: 0 1px 5px var(--auth-shadow-sm);
   color: var(--auth-ink);
 }
 .nemesis-auth-mode a:not(.is-active):hover { color: var(--auth-ink); }
@@ -306,16 +386,16 @@
 .nemesis-auth-shell input[type="email"]:focus,
 .nemesis-auth-shell input[type="password"]:focus,
 .nemesis-auth-shell input[inputmode="numeric"]:focus {
-  background: #fff;
-  border-color: #b9bab5;
-  box-shadow: 0 0 0 3px rgba(20, 20, 20, 0.06);
+  background: var(--auth-card);
+  border-color: var(--auth-focus-line);
+  box-shadow: 0 0 0 3px var(--auth-ring);
 }
 
 .nemesis-auth-submit {
   background: var(--auth-ink);
   border: 0;
   border-radius: 10px;
-  color: #fff;
+  color: var(--auth-on-ink);
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
@@ -337,14 +417,14 @@
   margin: 12px 0 0;
   padding: 10px 12px;
 }
-.nemesis-auth-error { background: #fff3f4; border-left: 2px solid #c0392b; color: #8a2130; }
-.nemesis-auth-success { background: #f1f7f1; border-left: 2px solid #4f7654; color: #36563a; }
-.nemesis-auth-notice { background: var(--auth-soft); border-left: 2px solid #bdbeb9; color: var(--auth-muted); }
+.nemesis-auth-error { background: var(--auth-error-bg); border-left: 2px solid var(--auth-error-line); color: var(--auth-error-ink); }
+.nemesis-auth-success { background: var(--auth-ok-bg); border-left: 2px solid var(--auth-ok-line); color: var(--auth-ok-ink); }
+.nemesis-auth-notice { background: var(--auth-soft); border-left: 2px solid var(--auth-focus-line); color: var(--auth-muted); }
 
 .nemesis-auth-oauth { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
 .nemesis-auth-oauth-btn {
   align-items: center;
-  background: #fff;
+  background: var(--auth-card);
   border: 1px solid var(--auth-line);
   border-radius: 10px;
   color: var(--auth-ink);
