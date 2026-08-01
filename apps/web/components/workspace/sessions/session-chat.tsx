@@ -105,6 +105,13 @@ export function SessionChat() {
   // and re-rendering the thread because a dropdown moved would be waste.
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
+  /** Why the last stop happened. Set in the same commit as `recording`, so the
+   *  recorder never sees capture end without knowing whether to keep the audio. */
+  const [discardRecording, setDiscardRecording] = useState(false);
+  const handleRecordingChange = useCallback((next: boolean, options?: { discard?: boolean }) => {
+    setDiscardRecording(options?.discard === true);
+    setRecording(next);
+  }, []);
   // A deck handed over from the composer. Held here so the Study importer —
   // deck picker, progress, and error copy all already reviewed — is what runs,
   // rather than a second import path invented for chat.
@@ -558,8 +565,11 @@ export function SessionChat() {
               accessToken={authSession?.access_token ?? null}
               active={recording}
               className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3"
+              discard={discardRecording}
               uid={uid}
+              onDiscarded={() => setComposerMode("chat")}
               onFinished={handleRecordingFinished}
+              onRequestStop={() => handleRecordingChange(false)}
             />
           ) : (
             <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
@@ -618,7 +628,7 @@ export function SessionChat() {
             mode={composerMode}
             onEffortChange={(effort) => { effortRef.current = effort; }}
             onModeChange={handleModeChange}
-            onRecordingChange={setRecording}
+            onRecordingChange={handleRecordingChange}
             onStop={handleStop}
             onSubmit={handleSubmit}
             placeholder={projectId ? "Message your notebook" : placeholder}
