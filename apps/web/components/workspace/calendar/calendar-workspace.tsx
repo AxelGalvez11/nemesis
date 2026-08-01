@@ -18,6 +18,7 @@ import {
   addWeeks,
   addYears,
   type CalendarEvent,
+  type CalendarEventKind,
   dateKey,
   deleteCalendarEvent,
   eventsByDate,
@@ -26,6 +27,13 @@ import {
   saveCalendarEvent,
   weekGrid,
 } from "@/lib/workspace/calendar-model";
+
+import {
+  CALENDAR_FILTER_STORAGE_KEY,
+  parseHiddenKinds,
+  serializeHiddenKinds,
+  visibleEvents,
+} from "@/lib/workspace/calendar-filter";
 
 import { CalendarHeader } from "./calendar-header";
 import { type EventDraft, EventFormDialog } from "./event-dialogs";
@@ -68,6 +76,9 @@ export function CalendarWorkspace() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null);
   const [syllabusOpen, setSyllabusOpen] = useState(false);
+  /** Kinds the student has switched OFF. Empty by default, so a category added
+   *  later is visible rather than silently filtered out — see calendar-filter.ts. */
+  const [hiddenKinds, setHiddenKinds] = useState<Set<CalendarEventKind>>(() => new Set());
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   // Also honour ?date= — the link every agent-written event carries. Without
@@ -77,6 +88,7 @@ export function CalendarWorkspace() {
   useEffect(() => {
     setMounted(true);
     setView(loadStoredView());
+    setHiddenKinds(parseHiddenKinds(window.localStorage.getItem(CALENDAR_FILTER_STORAGE_KEY)));
     const requested = new URLSearchParams(window.location.search).get("date");
     const parsed = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? new Date(`${requested}T12:00:00`) : null;
     if (parsed && !Number.isNaN(parsed.getTime())) setCursor(parsed);
@@ -102,7 +114,20 @@ export function CalendarWorkspace() {
     };
   }, [userId, preview]);
 
-  const byDate = useMemo(() => eventsByDate(events), [events]);
+  /** Everything downstream — month chips, the week grid, the agenda — reads
+   *  this, so a hidden kind disappears from every view at once rather than from
+   *  whichever one remembered to filter. */
+  const shownEvents = useMemo(() => visibleEvents(events, hiddenKinds), [events, hiddenKinds]);
+  const byDate = useMemo(() => eventsByDate(shownEvents), [shownEvents]);
+
+  function changeHiddenKinds(next: Set<CalendarEventKind>) {
+    setHiddenKinds(next);
+    try {
+      window.localStorage.setItem(CALENDAR_FILTER_STORAGE_KEY, serializeHiddenKinds(next));
+    } catch {
+      // best-effort; the filter still applies for this session
+    }
+  }
   const monthDays = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth(), today), [cursor, today]);
   const weekDays = useMemo(() => weekGrid(cursor, today), [cursor, today]);
   // Day view is the same grid with one column, so it takes the same shape.
@@ -243,7 +268,9 @@ export function CalendarWorkspace() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <CalendarHeader
           cursor={cursor}
+          hiddenKinds={hiddenKinds}
           onAddEvent={openAdd}
+          onChangeHiddenKinds={changeHiddenKinds}
           onChangeView={setView}
           onImportSyllabus={() => setSyllabusOpen(true)}
           onStep={goStep}
