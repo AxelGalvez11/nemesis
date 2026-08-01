@@ -7,6 +7,7 @@ import {
   PHOTO_MAX_BYTES,
   PHOTO_URL_TTL_SECONDS,
   photoAttachmentTitle,
+  photoBubbleText,
   photoNoteBody,
   photoNoteTitle,
   photoObjectPath,
@@ -144,4 +145,24 @@ Deno.test("photoTurnText: an empty composer with NO photo sends nothing", () => 
 
 Deno.test("photoTurnText: whitespace around a real question is trimmed, not counted", () => {
   assertEquals(photoTurnText("  what is this?  ", true), "what is this?");
+});
+
+Deno.test("photoBubbleText: the canned ask is never read back to the student", () => {
+  // The bug (owner 2026-08-01): send a photograph from an empty box and the app
+  // printed this sentence in the student's own bubble as if they had typed it.
+  assertEquals(photoBubbleText(PHOTO_ANALYSIS_ASK, true), "");
+});
+
+Deno.test("photoBubbleText: a real question shown with a photo is still shown", () => {
+  assertEquals(photoBubbleText("which enzyme is circled here?", true), "which enzyme is circled here?");
+});
+
+Deno.test("photoBubbleText: those exact words WITHOUT a photo are the student's own", () => {
+  // No picture means nothing generated this text, so it can only have been
+  // typed — hiding it would delete a real question.
+  assertEquals(photoBubbleText(PHOTO_ANALYSIS_ASK, false), PHOTO_ANALYSIS_ASK);
+});
+
+Deno.test("photoBubbleText: the rule survives the whitespace a saved thread adds", () => {
+  assertEquals(photoBubbleText(`  ${PHOTO_ANALYSIS_ASK}\n`, true), "");
 });

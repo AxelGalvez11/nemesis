@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { SlideUpSheet } from "./StudySheet";
 import { MessageBody } from "./MessageBody";
 import { MissionButton } from "./mission-ui";
@@ -121,6 +122,20 @@ export function StudyBrowseSheet({
   /** Whether the search box is down. Pull the list past its top to bring it in;
    *  see searchRevealed. */
   const [searchShowing, setSearchShowing] = useState(false);
+  /** 0 = the box is away and the "Search" caption is showing, 1 = the box is
+   *  down. Everything about the reveal reads off this one value so the box and
+   *  the caption can never both be mid-way through their own animation.
+   *
+   *  Owner 2026-08-01: "it does not have an animation to make it feel smooth".
+   *  It was a bare conditional — the box and the caption swapped between two
+   *  frames, and because they are different heights the whole list jumped a row
+   *  with them. */
+  const searchReveal = useSharedValue(0);
+  /** The box's natural height, measured rather than assumed. The field is a
+   *  minHeight row, so a hard-coded number would clip it the moment anything in
+   *  it grew, and a reveal that clips is worse than one that cuts. */
+  const [searchFieldH, setSearchFieldH] = useState(0);
+  const [searchNudgeH, setSearchNudgeH] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editFront, setEditFront] = useState("");
@@ -197,6 +212,34 @@ export function StudyBrowseSheet({
   function onListScroll(offsetY: number) {
     setSearchShowing((showing) => searchRevealed(showing, offsetY, query));
   }
+
+  // The one place the animation is driven from. Deliberately a plain style
+  // animation on a shared value rather than an entering/exiting layout
+  // animation: this sheet can be rendered inside a native Modal (SlideUpSheet's
+  // `portal`), where Reanimated's layout animations are unreliable — the same
+  // reason MiniMenu opens with no entrance at all.
+  useEffect(() => {
+    searchReveal.value = withTiming(searchShowing ? 1 : 0, {
+      duration: 220,
+      easing: ReEasing.out(ReEasing.cubic),
+    });
+  }, [searchShowing, searchReveal]);
+
+  // Height AND opacity together. Height alone slides the list without the box
+  // ever appearing to arrive; opacity alone leaves a hole in the layout the
+  // whole time. The small downward travel is what makes it read as the box
+  // coming DOWN, which is the gesture that asked for it.
+  const searchFieldStyle = useAnimatedStyle(() => ({
+    height: searchFieldH * searchReveal.value,
+    opacity: searchReveal.value,
+    transform: [{ translateY: (searchReveal.value - 1) * 6 }],
+  }));
+  // The caption occupies the slot when the box does not, and gets out of the
+  // way on exactly the same curve so the rows below move once, not twice.
+  const searchNudgeStyle = useAnimatedStyle(() => ({
+    height: searchNudgeH * (1 - searchReveal.value),
+    opacity: 1 - searchReveal.value,
+  }));
 
   function toggleDeckFolder(path: string) {
     setDeckFolded((prev) => {
@@ -345,43 +388,70 @@ export function StudyBrowseSheet({
         </Pressable>
       ) : null}
 
-      {/* Search — down only while it is wanted. See searchRevealed. */}
-      {searchShowing ? (
-      <View style={styles.searchField}>
-        <SearchIcon size={16} color={c.textHint} />
-        <TextInput
-          style={styles.searchInput}
-          value={query}
-          onChangeText={onQueryChange}
-          // Short enough to read whole in the field (owner 2026-07-24: "search
-          // bar should not have text cutoff"), and in textHint, the app's one
-          // genuinely faint tone — text3 was flattened to be identical to body
-          // text, so the old placeholder looked like something already typed.
-          placeholder="Search cards"
-          placeholderTextColor={c.textHint}
-          autoCorrect={false}
-          autoCapitalize="none"
-          testID="study-browse-search"
-        />
-        {query ? (
-          <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityLabel="Clear search">
-            <CloseIcon size={13} color={c.text3} />
-          </Pressable>
-        ) : null}
-      </View>
-      ) : (
-        // 🔴 TAPPABLE, NOT JUST A LABEL — this is the whole reachability of
-        // search on Android. Android's ScrollView clamps its offset to
-        // [0, max]: an overscroll draws the edge glow and NEVER reports a
-        // negative position, so searchRevealed's pull test can never fire there.
-        // With the page toggle gone there is no other way in, and a shipped
-        // surface whose search cannot be opened is not a smaller bug for being
-        // on the second platform. The unit tests cannot catch this: they feed
-        // synthetic negative offsets the platform will not produce.
-        <Pressable onPress={() => setSearchShowing(true)} hitSlop={8} accessibilityRole="button" testID="study-browse-search-nudge">
+      {/* Search — down only while it is wanted (see searchRevealed), and it
+          ANIMATES in and out now rather than blinking between two frames.
+          Both slots stay MOUNTED and collapse to nothing, which is what lets
+          them be measured and what keeps their two curves in step; the old
+          either/or swapped two different-height nodes and shunted the list. */}
+      <Reanimated.View style={[styles.searchClip, searchFieldStyle]} pointerEvents={searchShowing ? "auto" : "none"}>
+        <View
+          style={styles.searchField}
+          // Measured, not assumed. searchField is a minHeight row, so a constant
+          // would clip it the day anything inside grows. Reported from an inner
+          // View because the animated wrapper's height must not be what it
+          // measures — the child lays out at its natural size and is clipped,
+          // which is exactly the reading we want.
+          onLayout={(e) => {
+            const next = e.nativeEvent.layout.height;
+            setSearchFieldH((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+          }}
+        >
+          <SearchIcon size={16} color={c.textHint} />
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={onQueryChange}
+            // Short enough to read whole in the field (owner 2026-07-24: "search
+            // bar should not have text cutoff"), and in textHint, the app's one
+            // genuinely faint tone — text3 was flattened to be identical to body
+            // text, so the old placeholder looked like something already typed.
+            placeholder="Search cards"
+            placeholderTextColor={c.textHint}
+            autoCorrect={false}
+            autoCapitalize="none"
+            testID="study-browse-search"
+          />
+          {query ? (
+            <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityLabel="Clear search">
+              <CloseIcon size={13} color={c.text3} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Reanimated.View>
+      {/* 🔴 TAPPABLE, NOT JUST A LABEL — this is the whole reachability of
+          search on Android. Android's ScrollView clamps its offset to
+          [0, max]: an overscroll draws the edge glow and NEVER reports a
+          negative position, so searchRevealed's pull test can never fire there.
+          With the page toggle gone there is no other way in, and a shipped
+          surface whose search cannot be opened is not a smaller bug for being
+          on the second platform. The unit tests cannot catch this: they feed
+          synthetic negative offsets the platform will not produce.
+          pointerEvents goes dead while the box is down so the collapsed
+          caption can never swallow a tap meant for the field above it. */}
+      <Reanimated.View style={[styles.searchClip, searchNudgeStyle]} pointerEvents={searchShowing ? "none" : "auto"}>
+        <Pressable
+          onPress={() => setSearchShowing(true)}
+          hitSlop={8}
+          accessibilityRole="button"
+          testID="study-browse-search-nudge"
+          onLayout={(e) => {
+            const next = e.nativeEvent.layout.height;
+            setSearchNudgeH((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+          }}
+        >
           <Text style={styles.searchNudge}>Search</Text>
         </Pressable>
-      )}
+      </Reanimated.View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -675,6 +745,10 @@ const createStyles = (c: ThemeColors) =>
     chevronBack: { transform: [{ rotate: "180deg" }] },
     backLabel: { ...type.small, color: c.accent, fontWeight: "600" },
     // Where the search box sits when it is not down.
+    // The animated slot both the box and the caption live in. overflow hidden is
+    // what makes an animated height a REVEAL rather than a squash — without it
+    // the field would compress towards nothing instead of sliding out of view.
+    searchClip: { overflow: "hidden", flexShrink: 0 },
     searchNudge: { ...type.micro, color: c.textHint, textAlign: "center", marginBottom: space(2.5) },
     // As wide as the folder rows' chevron, so a deck name lines up with the
     // folder names beside it instead of hanging one glyph to the left.

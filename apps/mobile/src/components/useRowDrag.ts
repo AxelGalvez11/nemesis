@@ -86,6 +86,17 @@ export interface RowDrag {
        *  suppress it while another mode owns taps — e.g. Study's multi-select,
        *  where a slightly-slow tap must toggle selection, not pop the menu. */
       holdForMenu?: boolean;
+      /** Report this row as `activeKey` on hold even when there is nowhere to
+       *  drop it. Defaults to `draggable`, which is what every list wants.
+       *
+       *  The sidebar's chats want the other combination (owner 2026-08-01: "the
+       *  entire card should appear to be picked up, same goes for side bar
+       *  chats"). Chats have no folders, so dragging one is meaningless — but
+       *  the PICKING UP is the feedback that a hold registered, and without it
+       *  the only thing that happens during the hold is a haptic. With this on,
+       *  a non-draggable row still lifts, and releasing it anywhere opens the
+       *  menu rather than needing to have stayed still. */
+      lift?: boolean;
     },
   ) => ReturnType<typeof Gesture.Pan>;
   /** The row currently being dragged, or null. */
@@ -274,7 +285,16 @@ export function useRowDrag({
   }, []);
 
   const gestureFor = useCallback(
-    (key: string, opts: { draggable: boolean; canDropOn: (targetKey: string) => boolean; holdForMenu?: boolean }) => {
+    (
+      key: string,
+      opts: {
+        draggable: boolean;
+        canDropOn: (targetKey: string) => boolean;
+        holdForMenu?: boolean;
+        lift?: boolean;
+      },
+    ) => {
+      const lifts = opts.lift ?? opts.draggable;
       return Gesture.Pan()
         .runOnJS(true)
         .activateAfterLongPress(HOLD_MS)
@@ -285,10 +305,11 @@ export function useRowDrag({
           // moment the hold registers — the same instant the row lifts. Skipped
           // when the hold leads nowhere (select mode switches both off), because
           // a tap promising something that never happens is worse than none.
-          if (opts.draggable || (opts.holdForMenu ?? true)) hapticHoldRegistered();
-          if (!opts.draggable) return;
-          measureRows();
-          setActiveKey(key);
+          if (opts.draggable || lifts || (opts.holdForMenu ?? true)) hapticHoldRegistered();
+          // Measuring first, then publishing: setActiveKey re-renders, and the
+          // drop targets have to have been read before anything else happens.
+          if (opts.draggable) measureRows();
+          if (lifts) setActiveKey(key);
         })
         .onUpdate((event) => {
           fingerX.value = event.absoluteX;
@@ -320,7 +341,15 @@ export function useRowDrag({
           // caller suppressed it (multi-select owns taps there). The release
           // point (window coords) rides along so a MiniMenu can open right where
           // the finger is.
-          else if (!moved && (opts.holdForMenu ?? true)) onHold(key, event.absoluteX, event.absoluteY);
+          //
+          // A row that cannot be dragged opens the menu WHEREVER it is released,
+          // drift or no drift. MOVE_SLOP exists to tell a deliberate move apart
+          // from a wobbly hold, and with nothing to move onto there is no such
+          // distinction left to draw — insisting on stillness would just mean
+          // some holds silently did nothing.
+          else if ((!moved || !opts.draggable) && (opts.holdForMenu ?? true)) {
+            onHold(key, event.absoluteX, event.absoluteY);
+          }
         })
         // Finalize, not End: it runs whether the gesture ended, was cancelled,
         // or lost the race, so the lifted-row styling can never get stuck on.

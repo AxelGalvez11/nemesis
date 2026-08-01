@@ -22,17 +22,17 @@ import { useTheme } from "@/theme/ThemeProvider";
 // easing to solid over `FADE_SPAN`, then solid the rest of the way down so the
 // band behind the composer is evenly backed.
 
-/** Points over which the blur eases in above the composer.
+/** Points over which the blur eases in at its top edge.
  *
- *  🔴 LOWERED TWICE, AND THE SPAN WAS ONLY HALF OF IT. It went 46 → 28 in
- *  July, and the owner asked again on 2026-07-31 ("the blur in the bottom needs
- *  to be lower"), which is the signal that shaving the same number again is not
- *  the fix. The other half was the CALLER: chat.tsx passed the whole measured
- *  composer block as the solid height, and that block starts with the row's own
- *  top padding — empty space above the card that was being backed with solid
- *  blur for no reason. So the band now starts at the card, and the ramp above it
- *  is this much and no more: roughly a third of what it reached before, which is
- *  a change you can see rather than another few points.
+ *  🔴 THE NUMBER WAS NEVER THE PROBLEM. It went 46 → 28 → 12 across three
+ *  rounds and the owner asked a fourth time (2026-08-01: "the chat bottom blur
+ *  is still too high"). What kept it high was WHERE THE CALLER STARTED IT, not
+ *  how gently it ramped: chat.tsx handed over the whole measured composer
+ *  block, which also contains the block's padding, the landing's starter rows
+ *  and any attachment tile. The caller now positions this against the composer
+ *  card's midpoint instead, and this span is only the softness of that edge.
+ *  Shaving it again would blur the boundary, not move it — if the band ever
+ *  looks too tall again, look at the caller's `height`.
  *
  *  EXPORTED because a scroll view under this has to reserve it: text that came
  *  to rest inside the ramp would sit there permanently washed out. Callers pad

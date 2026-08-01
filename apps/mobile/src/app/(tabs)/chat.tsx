@@ -64,7 +64,7 @@ import { withAttachmentNote, type AttachedLibraryDoc, type BudgetResetKind, type
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
-import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
+import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoBubbleText, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -332,6 +332,11 @@ export default function ChatScreen() {
   // scroll all the way under the composer without the last line hiding behind
   // it — see composerFloat and BottomFadeBlur.
   const [composerBlockH, setComposerBlockH] = useState(0);
+  // The composer CARD alone, without the block's padding, the landing's starter
+  // rows, or an attachment tile. Only the bottom blur uses it, and only because
+  // that blur is positioned against the card rather than against the block —
+  // see the BottomFadeBlur call.
+  const [composerCardH, setComposerCardH] = useState(0);
   // Chat/Record mode pill: which area fills the screen (messages vs. the
   // inline RecordSession) and the three-state UI RecordSession last reported
   // — mirrored here only so the composer can lock the pill mid-recording
@@ -1662,12 +1667,34 @@ export default function ChatScreen() {
             third of the screen and washed out the starter rows themselves.
             Nothing to fade means nothing to draw. */}
         {composerMode === "chat" && hasContent ? (
-          // MINUS the row's own top padding: composerBlockH measures the whole
-          // floating block, whose first space(2) is empty air ABOVE the composer
-          // card. Backing that with solid blur pushed the washed-out band a full
-          // line of text higher than the card it exists to back (owner
-          // 2026-07-31: "the blur in the bottom needs to be lower").
-          <BottomFadeBlur height={Math.max(0, composerBlockH - space(2))} />
+          // 🔴 THIRD TIME ON THIS NUMBER, AND THE FIRST TWO SHAVED THE WRONG
+          // THING. The span went 46 → 28, then the caller stopped including the
+          // block's top padding — and the owner asked again on 2026-08-01: "the
+          // chat bottom blur is still too high. it should be below the composer,
+          // the fade should start halfway of the height of composer."
+          //
+          // That sentence is a POSITION, not a smaller number, which is why
+          // trimming points kept missing. The blur's top edge now lands at the
+          // composer card's own midpoint: everything above the card's waist is
+          // untouched transcript, and the wash only exists where the card is
+          // already covering it.
+          //
+          // Measured from the CARD (composerCardH), never the block: the block
+          // also carries its padding, the landing's starter rows and any
+          // attachment tile, so half of it is a different line on every screen —
+          // and on a chat with a photo attached it sat well above the card,
+          // which is the shape of the bug being fixed.
+          //
+          // Falls back to the old block-derived height for the frame or two
+          // before onCardLayout has reported, so the band cannot flash at full
+          // screen height on mount.
+          <BottomFadeBlur
+            height={
+              composerCardH > 0
+                ? composerCardH / 2 + composerBottomPad
+                : Math.max(0, composerBlockH - space(2))
+            }
+          />
         ) : null}
         {/* Jump to the newest message (owner 2026-07-24: "add a downward arrow in
             the chat for when conversations get long so users can scroll all the
@@ -1800,6 +1827,9 @@ export default function ChatScreen() {
             modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
             compact={composerCompact}
+            onCardLayout={(height) =>
+              setComposerCardH((prev) => (Math.abs(prev - height) > 1 ? height : prev))
+            }
           />
         </View>
         {/* BOTH composer menus render AFTER the composer row, and that ordering
@@ -2114,7 +2144,9 @@ function UserTurn({
   const styles = useThemedStyles(createStyles);
   const images = (message.attachments ?? []).filter((attachment) => attachment.kind === "image" && attachment.url);
   const savable = photo !== null && images.some((attachment) => attachment.storagePath === photo.storagePath);
-  const body = message.content.trim();
+  // The canned "Read this photo…" ask goes on the wire but must not be read back
+  // to the student as their own words — see photoBubbleText for the whole story.
+  const body = photoBubbleText(message.content, images.length > 0);
   return (
     <View style={styles.userTurn}>
       {images.map((attachment) => (

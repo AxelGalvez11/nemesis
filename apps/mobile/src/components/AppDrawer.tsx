@@ -2,14 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Alert, Animated, AppState, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, Easing as ReEasing } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
-import { hapticDrawerOpened, hapticHoldRegistered } from "@/lib/haptics";
+// The hold haptic now fires inside useRowDrag, with the gesture that earns it.
+import { hapticDrawerOpened } from "@/lib/haptics";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor } from "./MiniMenu";
+import { useRowDrag } from "./useRowDrag";
 import { TextPromptSheet, type RowAction } from "./RowActionSheets";
 import { CalendarIcon, ChevronIcon, LibraryIcon, NotebookIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -327,6 +330,9 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const [actionTarget, setActionTarget] = useState<ThreadSummary | null>(null);
   const [actionAt, setActionAt] = useState<MenuAnchor | null>(null);
   const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
+  // Every chat currently on screen, so the hold gesture can find the one it
+  // picked up by id. Rebuilt below from the same list the rows render from.
+  const chatsByIdRef = useRef(new Map<string, ThreadSummary>());
 
   // Count of in-flight local mutations (pin/rename/delete). A refresh while one
   // is still writing to the cloud would re-read the STALE row and
@@ -421,6 +427,37 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     void withPending(() => renameThread(uid, chat.id, clean));
   };
 
+  // The SAME hold gesture the Library and Study trees use (owner 2026-08-01:
+  // "the entire card should appear to be picked up, same goes for side bar
+  // chats"). Adopting it rather than keeping the row's own onLongPress is what
+  // makes the hold two-phase: the Pan activates at HOLD_MS — the moment the row
+  // lifts — and the menu opens on RELEASE. A Pressable's onLongPress only ever
+  // fires once, so there was no "still holding" state to draw.
+  //
+  // 🔴 THE ROW'S onLongPress HAD TO GO WITH IT, or every hold would open two
+  // menus. useRowDrag's own header says so; it is worth repeating here because
+  // this is the file that had one.
+  //
+  // No DragChip here, unlike the trees. That card is positioned in WINDOW
+  // coordinates, and this panel is ~330pt wide with its overflow clipped — the
+  // same reason the MiniMenu below has to escape into a Modal. The row lifts
+  // where it sits instead, which is legible in a list this narrow and needs no
+  // Modal to appear mid-gesture.
+  const rowDrag = useRowDrag({
+    // Nothing to drop onto and nothing to reorder: a chat list is flat and
+    // ordered by recency. Only the hold half of this hook is in use.
+    onDrop: () => {},
+    onHold: (key, x, y) => {
+      const chat = chatsByIdRef.current.get(key);
+      if (!chat) return;
+      // Window coordinates, which is what MiniMenu wants — this panel's own
+      // coordinate space would put the menu in the wrong place the moment it
+      // escapes into the Modal.
+      setActionAt({ x, y });
+      setActionTarget(chat);
+    },
+  });
+
   const rowActions: RowAction[] = actionTarget
     ? [
         { key: "pin", label: actionTarget.pinned ? "Unpin" : "Pin", onPress: () => togglePin(actionTarget) },
@@ -441,27 +478,23 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const shownChats = trimmed ? chats.filter((chat) => chat.title.toLowerCase().includes(trimmed)) : chats;
   const pinnedChats = shownChats.filter((chat) => chat.pinned);
   const otherChats = shownChats.filter((chat) => !chat.pinned);
+  chatsByIdRef.current = new Map(shownChats.map((chat) => [chat.id, chat]));
 
   const renderChatRow = (chat: ThreadSummary) => (
-    <Pressable
+    <ChatRow
       key={chat.id}
-      testID={`drawer-chat-${chat.id}`}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      chat={chat}
+      lifted={rowDrag.activeKey === chat.id}
+      gesture={rowDrag.gestureFor(chat.id, {
+        // Chats have no folders, so there is nowhere to drag one TO. The hold
+        // still has to look like it did something, which is what `lift` is for.
+        canDropOn: () => false,
+        draggable: false,
+        lift: true,
+      })}
       onPress={() => go(`/chat?c=${chat.id}`)}
-      onLongPress={(event) => {
-        hapticHoldRegistered();
-        // pageX/pageY are window coordinates, which is what MiniMenu wants — the
-        // drawer panel is only ~330pt wide and its own coordinate space would
-        // put the menu in the wrong place once it escapes into the Modal.
-        setActionAt({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
-        setActionTarget(chat);
-      }}
-      delayLongPress={300}
-      accessibilityHint="Touch and hold to rename, pin, or delete this chat."
-    >
-      <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
-      <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
-    </Pressable>
+      styles={styles}
+    />
   );
 
   return (
@@ -640,6 +673,65 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   );
 }
 
+/**
+ * One chat in the sidebar, which LIFTS while it is being held.
+ *
+ * Its own component so the animated style is one hook per row rather than a
+ * loop of them in DrawerContent — and so the lift is a plain style animation on
+ * a shared value. A layout animation would have been fewer lines and is exactly
+ * what not to use here: this list lives in a panel that is sometimes behind a
+ * Modal, where those are unreliable.
+ *
+ * Scale plus a raised surface and a shadow, not a colour change: "picked up" is
+ * a statement about depth, and the row already uses its background for the
+ * pressed state.
+ */
+function ChatRow({
+  chat,
+  lifted,
+  gesture,
+  onPress,
+  styles,
+}: {
+  chat: ThreadSummary;
+  lifted: boolean;
+  gesture: ReturnType<typeof Gesture.Pan>;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const lift = useSharedValue(0);
+  useEffect(() => {
+    lift.value = withTiming(lifted ? 1 : 0, {
+      duration: lifted ? 140 : 120,
+      easing: ReEasing.out(ReEasing.cubic),
+    });
+  }, [lift, lifted]);
+  const animated = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + lift.value * 0.04 }],
+    shadowOpacity: lift.value * 0.35,
+    shadowRadius: 4 + lift.value * 12,
+    elevation: lift.value * 10,
+  }));
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Reanimated.View style={[styles.rowLift, animated]}>
+        <Pressable
+          testID={`drawer-chat-${chat.id}`}
+          // No onLongPress. The gesture above owns the hold — see the note on
+          // useRowDrag in DrawerContent for why having both opened two menus.
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed, lifted && styles.rowLifted]}
+          onPress={onPress}
+          accessibilityHint="Touch and hold to rename, pin, or delete this chat."
+        >
+          <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
+          <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
+        </Pressable>
+      </Reanimated.View>
+    </GestureDetector>
+  );
+}
+
 function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; label: string; onPress: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -755,6 +847,13 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: space(2.5), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
     },
     rowPressed: { backgroundColor: c.surface },
+    // The shadow's own colour and offset are static; only its opacity, radius
+    // and the scale animate, which keeps the animated style to properties
+    // Reanimated can drive without re-laying out the list.
+    rowLift: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 } },
+    // Held rows sit on the raised surface so the card reads as solid rather than
+    // as the list showing through whatever is behind it.
+    rowLifted: { backgroundColor: c.surface2, borderWidth: 1, borderColor: c.line },
     rowTitle: { flex: 1, color: c.text2, fontSize: type.small.fontSize + 1, minWidth: 0 },
     rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },

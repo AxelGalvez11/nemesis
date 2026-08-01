@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { daySwipeIntent, gridSwipeIntent, type SwipeIntent } from "@/lib/calendar-gestures";
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { CalendarIcon, PlusIcon, SearchIcon, TrashIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
@@ -160,8 +160,8 @@ export default function CalendarScreen() {
   const [shownDay, setShownDay] = useState(() => dayKeyFromDate(new Date()));
 
   // Calendar owns its whole chrome, matching the native iOS app: year/month
-  // breadcrumb on the left, view/search/add on the right, and the bottom
-  // Today/view/inbox dock. The inbox button remains the way back to Nemesis.
+  // breadcrumb on the left, search/add on the right, and the bottom Today/view
+  // dock. The way back to Nemesis is dragging right, as on every other screen.
   useFocusEffect(
     useCallback(() => {
       setImmersive(true);
@@ -490,7 +490,6 @@ export default function CalendarScreen() {
             setView("yearly");
           }
         }}
-        onList={() => setView(view === "daily" ? "monthly" : "daily")}
         onSearch={() => setSearchOpen((open) => !open)}
         onAdd={() => openAdd(view === "yearly" ? todayKey : shownDay)}
         top={insets.top}
@@ -554,7 +553,38 @@ export default function CalendarScreen() {
                 ]}
                 refreshControl={refreshControl}
               >
-                <Text style={styles.yearTitle}>{shownYear}</Text>
+                {/* ‹ 2026 › — the pager this file's header has claimed since
+                    the view was built, and which until now did not exist
+                    (owner 2026-08-01: "users cannot scroll to other years").
+                    Nothing was ever CAPPED: stepMonth rolls the year over in
+                    both directions and setShownYear has no bound, so every year
+                    forwards and backwards was already reachable. The only way
+                    there was a vertical swipe with nothing on screen to suggest
+                    it, which is indistinguishable from a wall. The swipe still
+                    works; this makes it visible. */}
+                <View style={styles.yearHeadRow}>
+                  <Pressable
+                    style={({ pressed }) => [styles.yearStep, pressed && styles.yearStepPressed]}
+                    onPress={() => setShownYear((year) => year - 1)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Go to ${shownYear - 1}`}
+                    testID="calendar-year-prev"
+                  >
+                    <BackChevronIcon color={c.text2} />
+                  </Pressable>
+                  <Text style={styles.yearTitle}>{shownYear}</Text>
+                  <Pressable
+                    style={({ pressed }) => [styles.yearStep, styles.yearStepNext, pressed && styles.yearStepPressed]}
+                    onPress={() => setShownYear((year) => year + 1)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Go to ${shownYear + 1}`}
+                    testID="calendar-year-next"
+                  >
+                    <BackChevronIcon color={c.text2} />
+                  </Pressable>
+                </View>
                 <View style={styles.yearRule} />
                 <View style={styles.yearGrid}>
                   {Array.from({ length: 12 }, (_, m) => (
@@ -624,7 +654,6 @@ export default function CalendarScreen() {
         bottom={insets.bottom + FAB_BOTTOM}
         onToday={returnToToday}
         onViews={() => setMenuOpen((open) => !open)}
-        onInbox={openDrawer}
         styles={styles}
       />
 
@@ -736,34 +765,13 @@ function BackChevronIcon({ color }: { color: string }) {
   );
 }
 
-function ListViewIcon({ color }: { color: string }) {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24">
-      <Rect x="6.3" y="4" width="13.5" height="6" rx="1.2" stroke={color} strokeWidth={1.8} fill="none" />
-      <Rect x="6.3" y="14" width="13.5" height="6" rx="1.2" stroke={color} strokeWidth={1.8} fill="none" />
-      <Circle cx="3.2" cy="6" r="0.8" fill={color} />
-      <Circle cx="3.2" cy="9" r="0.8" fill={color} />
-      <Circle cx="3.2" cy="16" r="0.8" fill={color} />
-      <Circle cx="3.2" cy="19" r="0.8" fill={color} />
-    </Svg>
-  );
-}
 
-function InboxIcon({ color }: { color: string }) {
-  return (
-    <Svg width={23} height={23} viewBox="0 0 24 24">
-      <Path d="M4 8.2 6.2 4h11.6L20 8.2v10.2a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.4Z" stroke={color} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
-      <Path d="M4.3 13h4.3l1.3 2h4.2l1.3-2h4.3" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
 
 function AppleCalendarHeader({
   view,
   monthName,
   year,
   onBack,
-  onList,
   onSearch,
   onAdd,
   top,
@@ -773,7 +781,6 @@ function AppleCalendarHeader({
   monthName: string;
   year: number;
   onBack: () => void;
-  onList: () => void;
   onSearch: () => void;
   onAdd: () => void;
   top: number;
@@ -793,11 +800,11 @@ function AppleCalendarHeader({
       )}
       <GlassSurface style={styles.headerActionsGlass} fallbackColor={c.glassPanel} shadow>
         <View style={styles.headerActions}>
-          {view === "yearly" ? null : (
-            <Pressable style={styles.headerIconButton} onPress={onList} accessibilityLabel={view === "daily" ? "Open month view" : "Open day view"}>
-              <ListViewIcon color={c.text} />
-            </Pressable>
-          )}
+          {/* No day/month toggle here (owner 2026-08-01: "remove the upper right
+              icon that looks like 2 squares"). THE CONTROL GOES, NOT THE
+              FEATURE — the bottom dock's view button opens Daily/Monthly/Yearly,
+              which is a superset of what this button did (it only flipped
+              between two of the three) and says which view you are in. */}
           <Pressable style={styles.headerIconButton} onPress={onSearch} accessibilityLabel="Search calendar">
             <SearchIcon size={23} color={c.text} strokeWidth={1.9} />
           </Pressable>
@@ -1052,13 +1059,11 @@ function CalendarBottomDock({
   bottom,
   onToday,
   onViews,
-  onInbox,
   styles,
 }: {
   bottom: number;
   onToday: () => void;
   onViews: () => void;
-  onInbox: () => void;
   styles: Styles;
 }) {
   const { colors: c } = useTheme();
@@ -1074,9 +1079,12 @@ function CalendarBottomDock({
           <Pressable style={styles.bottomAction} onPress={onViews} accessibilityLabel="Change calendar view" testID="calendar-view-fab">
             <CalendarIcon size={21} color={c.text} strokeWidth={1.8} />
           </Pressable>
-          <Pressable style={styles.bottomAction} onPress={onInbox} accessibilityLabel="Open Nemesis navigation">
-            <InboxIcon color={c.text} />
-          </Pressable>
+          {/* No inbox button (owner 2026-08-01: "remove the inbox icon in
+              calendar"). THE CONTROL GOES, NOT THE FEATURE — the sidebar still
+              opens by dragging right from anywhere on the grid, which is how
+              every other screen in the app opens it and what gridSwipeIntent /
+              daySwipeIntent already answer "sidebar" for. This button was the
+              calendar's own second way in. */}
         </View>
       </GlassSurface>
     </View>
@@ -1373,6 +1381,10 @@ const createStyles = (c: ThemeColors) =>
     dayPanelBody: { paddingHorizontal: space(4), paddingBottom: FAB_CLEARANCE },
     dayPanelEmpty: { ...type.small, color: c.text3, paddingVertical: space(2) },
     yearBody: { paddingHorizontal: CALENDAR_SIDE, flexGrow: 1 },
+    // The year sits between its two chevrons rather than flush left, because a
+    // pager whose control is at one end and whose label is at the other reads as
+    // two unrelated things.
+    yearHeadRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     yearTitle: {
       fontSize: 44,
       lineHeight: 52,
@@ -1380,6 +1392,11 @@ const createStyles = (c: ThemeColors) =>
       letterSpacing: -1.2,
       color: c.danger,
     },
+    yearStep: { paddingHorizontal: space(2), paddingVertical: space(2) },
+    // One chevron asset, mirrored — the app ships a back chevron and no forward
+    // one, and a scaleX flip is exact where a second hand-drawn path would drift.
+    yearStepNext: { transform: [{ scaleX: -1 }] },
+    yearStepPressed: { opacity: 0.5 },
     yearRule: { height: StyleSheet.hairlineWidth, backgroundColor: c.line, marginBottom: space(3) },
     yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start" },
 

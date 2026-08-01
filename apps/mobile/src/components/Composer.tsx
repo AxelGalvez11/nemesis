@@ -198,6 +198,7 @@ export function Composer({
   attachment,
   attached = false,
   onStop,
+  onCardLayout,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -234,6 +235,14 @@ export function Composer({
    *  it and where the owner asked for it (2026-07-30: an attachment sitting
    *  above the composer "does not actually go into the composer"). */
   attachment?: ReactNode;
+  /** The CARD's own height, reported on every layout.
+   *
+   *  A host that measures the composer's outer block gets a number that also
+   *  contains the block's padding, the landing's starter rows, and whatever
+   *  the attachment slot is holding — fine for reserving scroll space, useless
+   *  for lining anything up with the card itself. chat.tsx needs the latter: it
+   *  starts the bottom blur half way down this card. */
+  onCardLayout?: (height: number) => void;
   /** True when that attachment is actually riding the next turn. It is what
    *  makes an EMPTY box sendable: a photograph is a question by itself, and
    *  with only the typed text consulted the send button never appeared, so the
@@ -297,7 +306,7 @@ export function Composer({
     // been saved yet. That decision belongs to RecordSession's Save/Discard.
     const recordDisabled = modeLocked && !recordingActive;
     return (
-      <View style={[styles.card, styles.cardCompact]}>
+      <View style={[styles.card, styles.cardCompact]} onLayout={(e) => onCardLayout?.(e.nativeEvent.layout.height)}>
         <View style={styles.recordRow}>
           <Bounce
             style={[styles.round, styles.recordToggle, recordingActive && styles.recordToggleOn, recordDisabled && styles.controlOff]}
@@ -341,7 +350,7 @@ export function Composer({
   // middle, accept on the right.
   if (listening) {
     return (
-      <View style={[styles.card, styles.cardCompact]}>
+      <View style={[styles.card, styles.cardCompact]} onLayout={(e) => onCardLayout?.(e.nativeEvent.layout.height)}>
         <View style={styles.recordRow}>
           <Bounce
             style={styles.round}
@@ -355,7 +364,7 @@ export function Composer({
           <View style={styles.dictateMiddle}>
             {/* Real levels, from the speech engine's own volumechange events
                 (see useSpeechInput) — the same waveform the recorder draws. */}
-            <LiveWaveform active height={20} testID="composer-dictate-waveform" />
+            <LiveWaveform state="live" height={20} testID="composer-dictate-waveform" />
             {/* The words so far, so a mis-hear is visible before you accept it.
                 One line: this is a glance, not a transcript viewer. */}
             <Text style={styles.dictateText} numberOfLines={1}>
@@ -471,7 +480,10 @@ export function Composer({
   // buttons remounting is harmless, so the tall layout renders its own copies
   // rather than contorting the tree to move them.
   return (
-    <View style={[styles.card, compact && styles.cardCompact]}>
+    <View
+      style={[styles.card, compact && styles.cardCompact]}
+      onLayout={(e) => onCardLayout?.(e.nativeEvent.layout.height)}
+    >
       {/* ALWAYS rendered, null when there is nothing attached. React reconciles
           unkeyed children by index, and a slot that appeared and disappeared
           would shift the row below it — the same index bookkeeping the comment
