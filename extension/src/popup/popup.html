@@ -69,6 +69,26 @@
         font-weight: 500;
       }
       .row { display: flex; flex-direction: column; gap: 6px; }
+
+      /* The four-tile picker, shown only when detection cannot place the page.
+         A student on an odd setup — a reverse-proxied portal, an LMS behind a
+         campus front door — can say what it is instead of hitting a dead end. */
+      #picker { margin: 0 0 12px; }
+      #picker p { color: var(--muted); font-size: 12px; margin: 0 0 7px; }
+      .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .tiles button {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--fg);
+        font-weight: 500;
+        padding: 7px 8px;
+      }
+      .tiles button[aria-pressed="true"] {
+        background: var(--solid);
+        border-color: var(--solid);
+        color: var(--on-solid);
+        font-weight: 560;
+      }
       footer {
         border-top: 1px solid var(--line);
         color: var(--muted);
@@ -83,6 +103,16 @@
     <p class="lede">Reads the courses already on your school portal. It never changes anything there.</p>
 
     <p id="status">Open your school portal, then read this page.</p>
+
+    <div hidden id="picker">
+      <p>If this is your school portal, which one is it?</p>
+      <div class="tiles">
+        <button data-lms="canvas" type="button">Canvas</button>
+        <button data-lms="blackboard" type="button">Blackboard</button>
+        <button data-lms="moodle" type="button">Moodle</button>
+        <button data-lms="brightspace" type="button">Brightspace</button>
+      </div>
+    </div>
 
     <div class="row">
       <button id="scan" type="button">Read this page</button>

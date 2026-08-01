@@ -21,7 +21,7 @@
 import { readFacts, readSnapshot } from "./lms/dom.ts";
 import { detectLms, factsFromUrl } from "./lms/detect.ts";
 import { isItemLink, parseSnapshot } from "./lms/parse.ts";
-import { RUNTIME_MESSAGES } from "./messages.ts";
+import { type LmsOverride, OVERRIDE_KEY, RUNTIME_MESSAGES } from "./messages.ts";
 import { type ScanProgress, showCard } from "./toast.ts";
 import type { LmsKind, LmsScan, ScrapedCourse } from "./wire.ts";
 
@@ -69,6 +69,29 @@ const LABELS: Record<LmsKind, string> = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * "The student says this page is Moodle", if they said so.
+ *
+ * 🔴 REFUSED UNLESS THE ORIGIN MATCHES. The choice is made in the popup and
+ * left in storage, so it outlives the click that created it. Without the origin
+ * check, choosing "Moodle" on one site and then scanning a different one would
+ * parse the second site as the first student's Moodle. Consumed either way, so
+ * it applies to exactly the one scan it was made for.
+ */
+async function takeOverride(): Promise<LmsKind | null> {
+  try {
+    const bag = await chrome.storage.local.get(OVERRIDE_KEY);
+    const stored = bag[OVERRIDE_KEY] as LmsOverride | undefined;
+    await chrome.storage.local.remove(OVERRIDE_KEY);
+    if (!stored || stored.origin !== window.location.origin) return null;
+    return (stored.lms in LABELS ? stored.lms : null) as LmsKind | null;
+  } catch {
+    // Extension reloaded mid-scan, or storage unavailable. Fall back to
+    // detection rather than failing the whole read.
+    return null;
+  }
+}
+
 function readOnce(lms: LmsKind, url: string): ScrapedCourse[] {
   const snapshot = readSnapshot(document, url, (href) => isItemLink(href, lms));
   return parseSnapshot(snapshot, lms);
@@ -94,7 +117,12 @@ async function scanThisPage(): Promise<LmsScan> {
   const facts = factsFromUrl(url, markers);
   if (!facts) return empty;
 
-  const lms = detectLms(facts);
+  // THE STUDENT'S OWN ANSWER WINS. Detection reads the URL's shape, which is
+  // what lets this work on any school's domain without knowing the school
+  // exists — but it cannot cover a portal behind a campus front door or an
+  // unusual reverse proxy. When they told the popup which one it is, that is
+  // better evidence than anything we can infer, so it is used first.
+  const lms = (await takeOverride()) ?? detectLms(facts);
   if (lms === "unknown") {
     // A page we cannot place is not read at all. Saying so is better than
     // hoovering up a page we do not understand.

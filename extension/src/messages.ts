@@ -62,3 +62,24 @@ export const RUNTIME_MESSAGES = {
 
 /** Where the worker keeps the last scan. */
 export const STORAGE_KEY = "nemesis.scan.v1";
+
+/**
+ * Where the popup leaves "the student says this page is Moodle".
+ *
+ * WHY STORAGE AND NOT AN ARGUMENT. The scanner is injected as a FILE, and
+ * chrome.scripting cannot hand arguments to a file injection — only to an
+ * inline function, which a bundled module is not. So the choice is written
+ * here first and the scanner picks it up on the way in.
+ *
+ * It carries the ORIGIN it was chosen for and the scanner refuses it against
+ * any other, so a stale override cannot make tomorrow's page on a different
+ * site get parsed as somebody's Moodle.
+ */
+export const OVERRIDE_KEY = "nemesis.lms-override.v1";
+
+export interface LmsOverride {
+  /** LmsKind, but this module stays free of wire imports. */
+  lms: string;
+  /** Exact origin the student made this choice on. */
+  origin: string;
+}
