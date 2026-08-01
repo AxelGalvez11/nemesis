@@ -154,15 +154,17 @@ test("the opening scroll position lands on the working day, not midnight", () =>
 test("offsets and height agree with the window", () => {
   const window = { endHour: 20, startHour: 8 };
   assert.equal(offsetFor(8 * 60, window), 0);
-  assert.equal(offsetFor(9 * 60, window), 48);
-  assert.equal(windowHeight(window), 12 * 48);
+  // In terms of HOUR_HEIGHT, not a pinned 48: this asserts that an hour of
+  // time is one hour of grid, which stays true when the density is retuned.
+  assert.equal(offsetFor(9 * 60, window), HOUR_HEIGHT);
+  assert.equal(windowHeight(window), 12 * HOUR_HEIGHT);
 });
 
 // ── The "now" line ───────────────────────────────────────────────────────────
 
 test("the now line is placed inside the window", () => {
   const window = { endHour: 20, startHour: 8 };
-  assert.equal(nowOffset(new Date(2026, 8, 11, 9, 0), window), 48);
+  assert.equal(nowOffset(new Date(2026, 8, 11, 9, 0), window), HOUR_HEIGHT);
 });
 
 test("no now line is drawn when the time is outside the window", () => {

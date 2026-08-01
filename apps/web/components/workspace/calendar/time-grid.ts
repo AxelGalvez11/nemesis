@@ -22,8 +22,22 @@
 
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 
-/** Height of one hour, in pixels. The single knob for grid density. */
-export const HOUR_HEIGHT = 48;
+/**
+ * Height of one hour, in pixels. The single knob for grid density.
+ *
+ * 36, down from 48 (owner 2026-07-31: "the calendar feels too zoomed in at
+ * default 100%", pointing at Google Calendar).
+ *
+ * MEASURED against Google Calendar side by side: its rows are 24px on a 16px
+ * root font, i.e. one and a half times the base text size. This app's root is
+ * 20px, so the like-for-like figure is 30px — and it was drawing 48. A whole
+ * day was 1,152 pixels of scrolling; it is now 864.
+ *
+ * Deliberately not the full way down to 30: every piece of text on this page is
+ * a quarter larger than Google's, so Google's exact density would leave a
+ * half-hour block too short to read its own title.
+ */
+export const HOUR_HEIGHT = 36;
 /** Drawn length of an event, until the data can say how long it really is. */
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */
