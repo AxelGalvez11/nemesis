@@ -294,9 +294,16 @@ const PRICING_CSS = `
 .nm-eyebrow { color:var(--nm-faint); font-size:12px; font-weight:650; letter-spacing:0.18em; text-transform:uppercase; margin:0 0 14px; }
 .nm-title { font-size:clamp(30px,5vw,50px); line-height:1.06; letter-spacing:-0.03em; font-weight:600; margin:0 0 16px; text-wrap:balance; }
 .nm-sub { color:var(--nm-dim); font-size:17px; line-height:1.6; margin:0 auto; max-width:520px; }
+/* Three states, told apart by WEIGHT, because there is no green or red here to
+   tell them apart with. Cancelled is the quiet default. A completed payment is
+   the loudest thing this page ever says, so it gets the inverted ground the
+   popular plan's chip uses. A failure keeps the page ground but takes the full
+   ink and a heavier rule, so it reads as a problem without shouting.
+   These were two identical rules after the colour was removed, which is dead CSS
+   pretending to signal something. */
 .nm-banner { max-width:760px; margin:0 auto 24px; padding:13px 16px; border-radius:2px; font-size:14px; background:var(--nm-wash); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
-.nm-banner-ok { border-color:var(--nm-line-2); color:var(--nm-text); }
-.nm-banner-err { border-color:var(--nm-line-2); color:var(--nm-text); }
+.nm-banner-ok { background:var(--nm-text); border-color:var(--nm-text); color:var(--nm-bg); font-weight:600; }
+.nm-banner-err { border-color:var(--nm-line-2); border-width:2px; padding:12px 15px; color:var(--nm-text); font-weight:600; }
 /* Two columns since Max was removed. A three-column grid holding two cards leaves
    a dead third column and shoves both cards off-centre, which reads as a plan that
    failed to load rather than as a two-plan ladder. */
