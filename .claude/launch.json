@@ -2,22 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "panel-preview",
+      "name": "landing-motion",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /private/tmp/claude-501/-Users-axelgalvez-Desktop-AIcodingProjects-PharmaBro/785f2118-10a1-48c4-a33d-97a7f9d924b8/scratchpad/panel-preview && python3 -m http.server 8934"],
-      "port": 8934
+      "runtimeArgs": ["-c", "npx next start -p 3212"],
+      "port": 3212
     },
     {
       "name": "web",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/apps/web && npx next start -p 3200"],
       "port": 3200
-    },
-    {
-      "name": "landing",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/landing && npx next start -p 3210"],
-      "port": 3210
     }
   ]
 }
