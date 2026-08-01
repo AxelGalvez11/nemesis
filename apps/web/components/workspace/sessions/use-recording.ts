@@ -40,9 +40,19 @@ interface UseRecordingOptions {
   active: boolean;
   accessToken: string | null;
   uid: string | null;
+  /**
+   * Throw the audio away instead of transcribing it when capture stops.
+   *
+   * Read at the moment `active` goes false, so the caller sets this in the same
+   * commit as it clears `active` — "cancel" is one decision, not two.
+   */
+  discard?: boolean;
   /** Called once, when the transcript is back — not when the microphone closes.
    *  The caller keeps the recording panel mounted until this fires. */
   onComplete?: (draft: RecordingArtifactDraft) => void;
+  /** Called after a discard, so the caller can close the panel. Nothing was
+   *  saved, so there is no draft to hand back. */
+  onDiscarded?: () => void;
 }
 
 interface CaptureNodes {
@@ -103,6 +113,35 @@ export function useRecordingSession(options: UseRecordingOptions) {
   const startedAtRef = useRef(0);
   const completeRef = useRef(options.onComplete);
   completeRef.current = options.onComplete;
+  const discardedRef = useRef(options.onDiscarded);
+  discardedRef.current = options.onDiscarded;
+  // Read at stop time rather than passed to a callback: `active` and `discard`
+  // change in the same render, and a callback captured earlier would still be
+  // holding the old answer.
+  const wantsDiscardRef = useRef(false);
+  wantsDiscardRef.current = options.discard === true;
+
+  // ── The student's own pause, which is NOT the silence gate's ───────────────
+  //
+  // Both end up calling MediaRecorder.pause(), so they have to agree about who
+  // is in charge. The rule: while the student has paused, the gate is not
+  // allowed to touch the recorder at all. Without that, the gate's next tick
+  // hears the room, decides there is audio, and resumes a recording the student
+  // deliberately stopped — the microphone would come back on by itself.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  /** Total time spent paused, and when the current pause began. The timer the
+   *  student watches must not run while nothing is being recorded — an hour
+   *  that says 60:00 for 20 minutes of audio is a lie about the file. */
+  const pausedTotalMsRef = useRef(0);
+  const pausedAtRef = useRef(0);
+
+  /** Wall-clock milliseconds actually spent recording, pauses removed. */
+  const runningMs = useCallback((): number => {
+    if (!startedAtRef.current) return 0;
+    const held = pausedTotalMsRef.current + (pausedAtRef.current ? Date.now() - pausedAtRef.current : 0);
+    return Math.max(0, Date.now() - startedAtRef.current - held);
+  }, []);
 
   // Silence gating. `capturedMs` is the audio we will actually be billed for
   // and metered on; wall-clock time is the timer the student watches. The two
@@ -170,6 +209,56 @@ export function useRecordingSession(options: UseRecordingOptions) {
     return chunksRef.current.length ? new Blob(chunksRef.current, { type: recorder.mimeType }) : null;
   }, []);
 
+  /** Close the open capture window, if there is one, into the captured total. */
+  const closeCaptureWindow = useCallback(() => {
+    if (captureSinceRef.current) {
+      capturedMsRef.current += Math.max(0, performance.now() - captureSinceRef.current);
+      captureSinceRef.current = 0;
+    }
+  }, []);
+
+  const pause = useCallback(() => {
+    if (pausedRef.current || !capturingRef.current) return;
+    pausedRef.current = true;
+    pausedAtRef.current = Date.now();
+    closeCaptureWindow();
+    const live = nodesRef.current?.recorder;
+    if (live?.state === "recording") {
+      try { live.pause(); } catch { /* a recorder mid-stop cannot pause */ }
+    }
+    // The meter must go quiet too: a bar still moving beside the word "Paused"
+    // reads as "it is secretly still recording".
+    resetMicLevel();
+    if (mountedRef.current) {
+      setPaused(true);
+      setLevel(0);
+    }
+  }, [closeCaptureWindow]);
+
+  const resume = useCallback(() => {
+    if (!pausedRef.current) return;
+    pausedRef.current = false;
+    if (pausedAtRef.current) {
+      pausedTotalMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = 0;
+    }
+    const live = nodesRef.current?.recorder;
+    if (live?.state === "paused") {
+      try { live.resume(); } catch { /* likewise */ }
+    }
+    // A fresh gate, deliberately. The old one carries however many seconds of
+    // "quiet" accumulated while the student was paused, so reusing it would
+    // have the gate close again the instant they resumed — and the first words
+    // after a pause are the ones they came back for.
+    gateRef.current = createSilenceGate();
+    captureSinceRef.current = performance.now();
+    lastTickRef.current = 0;
+    if (mountedRef.current) {
+      setPaused(false);
+      setGateOpen(true);
+    }
+  }, []);
+
   const transcribe = useCallback(async (blob: Blob, seconds: number): Promise<string> => {
     const { accessToken, uid } = options;
     if (!accessToken || !uid) throw new Error("Sign in to save this recording.");
@@ -230,14 +319,13 @@ export function useRecordingSession(options: UseRecordingOptions) {
     // Measured from the start timestamp, not from `elapsedSeconds` state: that
     // changes every second, and depending on it would rebuild this callback —
     // and therefore re-run the start/stop effect — once a second while recording.
-    const wallClockSeconds = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1_000) : 0;
+    // Time the student was paused is not time the microphone was open, so it
+    // cannot be part of the wall clock the captured audio is measured against.
+    const wallClockSeconds = Math.round(runningMs() / 1_000);
     // Close the capture window that is still open — without this, a recording
     // stopped while the gate was open would count only the time up to its last
     // pause, which for a lecture with no long silences is zero.
-    if (captureSinceRef.current) {
-      capturedMsRef.current += Math.max(0, performance.now() - captureSinceRef.current);
-      captureSinceRef.current = 0;
-    }
+    closeCaptureWindow();
     // What the file actually contains, and therefore what we are billed for and
     // what the student's monthly allowance is charged (owner 2026-07-27 chose
     // the saving goes to the student). The gate never lets this exceed the
@@ -285,7 +373,45 @@ export function useRecordingSession(options: UseRecordingOptions) {
       // Deliberately NOT calling onComplete: the caller unmounts this panel when
       // it fires, and a student whose transcription failed needs to read why.
     }
-  }, [closeRecording, releaseMedia, transcribe]);
+  }, [closeCaptureWindow, closeRecording, releaseMedia, runningMs, transcribe]);
+
+  /**
+   * Throw the recording away. Nothing is uploaded, nothing is transcribed,
+   * nothing is billed.
+   *
+   * 🔴 THE ✕ USED TO SAVE. Leaving record mode mid-capture cleared `active`,
+   * which is the same signal a deliberate stop sends, so cancelling ran the
+   * whole finish path: upload, transcribe, charge the student's allowance, and
+   * drop an artefact card into the chat they had just said they did not want
+   * (owner-reported 2026-07-31). A cancel that produces the thing you cancelled
+   * is not a cancel.
+   */
+  const discard = useCallback(async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    capturingRef.current = false;
+    pausedRef.current = false;
+    try {
+      await closeRecording();
+    } finally {
+      releaseMedia();
+    }
+    // Dropped before anything can reach for them again.
+    chunksRef.current = [];
+    capturedMsRef.current = 0;
+    captureSinceRef.current = 0;
+    pausedTotalMsRef.current = 0;
+    pausedAtRef.current = 0;
+    startedAtRef.current = 0;
+    finishingRef.current = false;
+    if (mountedRef.current) {
+      setPaused(false);
+      setElapsedSeconds(0);
+      setError(null);
+      setStatus("idle");
+    }
+    discardedRef.current?.();
+  }, [closeRecording, releaseMedia]);
 
   const start = useCallback(async () => {
     if (capturingRef.current || finishingRef.current) return;
@@ -308,7 +434,11 @@ export function useRecordingSession(options: UseRecordingOptions) {
     capturedMsRef.current = 0;
     captureSinceRef.current = 0;
     lastTickRef.current = 0;
+    pausedRef.current = false;
+    pausedTotalMsRef.current = 0;
+    pausedAtRef.current = 0;
     waveformRef.current = emptyWaveform();
+    setPaused(false);
     setGateOpen(true);
     capturingRef.current = true;
     setStatus("recording");
@@ -343,6 +473,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
 
       const samples = new Float32Array(analyser.fftSize);
       levelTimerRef.current = window.setInterval(() => {
+        // 🔴 THE GATE MUST NOT OVERRULE THE STUDENT. Both this loop and the
+        // pause button call MediaRecorder.pause()/resume(). If the loop kept
+        // running while the student was paused, its very next tick would hear
+        // the room, decide there was audio, and resume — the microphone would
+        // switch itself back on a tenth of a second after they turned it off.
+        if (pausedRef.current) return;
         analyser.getFloatTimeDomainData(samples);
         const next = frameLevel(samples);
         if (mountedRef.current) setLevel(next);
@@ -393,7 +529,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
       // The gate opens capturing, so the first capture window starts here.
       captureSinceRef.current = performance.now();
       elapsedTimerRef.current = window.setInterval(() => {
-        if (mountedRef.current) setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1_000));
+        // runningMs, not raw wall clock: the number on screen has to stand still
+        // while the recording is paused, or it claims audio that does not exist.
+        if (mountedRef.current) setElapsedSeconds(Math.floor(runningMs() / 1_000));
       }, 1_000);
     } catch (caught) {
       capturingRef.current = false;
@@ -413,8 +551,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
     // Only finish a recording that actually started — `active` is false on the
     // very first render too, and finishing then would fire onComplete for a
     // session that never existed.
-    if (capturingRef.current) void finish();
-  }, [finish, options.active, start]);
+    if (!capturingRef.current) return;
+    // Which of the two endings this is was decided by the caller in the same
+    // commit that cleared `active`.
+    if (wantsDiscardRef.current) void discard();
+    else void finish();
+  }, [discard, finish, options.active, start]);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -423,6 +565,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
   }, [releaseMedia]);
 
   return {
+    /** Throw the recording away. The caller confirms with the student first —
+     *  the audio cannot be recovered. */
+    discard,
     elapsedLabel: formatLiveDuration(elapsedSeconds),
     elapsedSeconds,
     error,
@@ -430,6 +575,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
      *  — not recording" label, so the pause is visible rather than mysterious. */
     gateOpen,
     level,
+    /** True while the STUDENT has paused. Distinct from `gateOpen`, which is the
+     *  app skipping silence on its own — one is a decision, the other is
+     *  housekeeping, and they read very differently on screen. */
+    paused,
+    pause,
+    resume,
     status,
     usage,
     /** Read from an animation frame by the canvas. A ref, not state: ten array
