@@ -46,7 +46,8 @@ export async function POST(req: Request) {
 
     const session = await stripeClient.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${appUrl}/account/billing`,
+      // Back to /pricing: /account/billing was retired 2026-08-01.
+      return_url: `${appUrl}/pricing`,
     });
 
     return json({ url: session.url });
