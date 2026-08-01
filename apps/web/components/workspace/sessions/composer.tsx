@@ -79,6 +79,10 @@ interface ComposerProps {
    *  the audio must be thrown away, false or absent means stop and write it up.
    *  Both arrive in one call so the recorder cannot act on half the decision. */
   onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
+  /** Opens the syllabus importer as a popup over the chat. Chat is the front
+   *  door for importing now (owner 2026-07-31), so this is not a shortcut to
+   *  somewhere else — it is where the import lives. */
+  onImportSyllabus?: () => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
@@ -86,7 +90,7 @@ interface ComposerProps {
   belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onImportSyllabus, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -507,7 +511,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       }}
                       type="file"
                     />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onImportSyllabus={onImportSyllabus} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -736,7 +740,7 @@ export function RecordCompanionPanel() {
 // "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
 // Notebooks page is retired. It opens a picker rather than a submenu because
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
-function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onOpenLibrary: () => void }) {
+function AddMenu({ onChooseFiles, onChooseFolder, onImportSyllabus, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onImportSyllabus?: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -757,6 +761,19 @@ function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFil
           <Codicon name="book" size="0.875rem" />
           Library
         </DropdownMenuItem>
+        {/* 🔴 THE ONLY RELIABLE WAY IN. Dropping a syllabus already routes to
+            the importer, but only when the FILENAME says "syllabus" — and the
+            owner's own file is called
+            Fall-2026-PHCY-2105-01-Interprofessional-Education-and-Clinical-
+            Simulation-III.pdf, which says nothing of the kind. A student whose
+            university names files that way had no way to reach the importer
+            from chat at all. Saying what you want beats guessing from a name. */}
+        {onImportSyllabus && (
+          <DropdownMenuItem data-testid="composer-import-syllabus" onSelect={onImportSyllabus}>
+            <Codicon name="calendar" size="0.875rem" />
+            Syllabus
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

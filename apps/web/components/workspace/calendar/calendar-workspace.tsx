@@ -40,7 +40,6 @@ import { type EventDraft, EventFormDialog } from "./event-dialogs";
 import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
 import { type AnchorRect, QuickCreatePopover, type QuickCreateDraft } from "./quick-create-popover";
-import { SyllabusDialog } from "./syllabus-dialog";
 import { TimeGridView } from "./time-grid-view";
 import type { GestureResult } from "./use-time-grid-gestures";
 import { YearGrid } from "./year-grid";
@@ -75,7 +74,6 @@ export function CalendarWorkspace() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null);
-  const [syllabusOpen, setSyllabusOpen] = useState(false);
   /** Kinds the student has switched OFF. Empty by default, so a category added
    *  later is visible rather than silently filtered out — see calendar-filter.ts. */
   const [hiddenKinds, setHiddenKinds] = useState<Set<CalendarEventKind>>(() => new Set());
@@ -272,7 +270,6 @@ export function CalendarWorkspace() {
           onAddEvent={openAdd}
           onChangeHiddenKinds={changeHiddenKinds}
           onChangeView={setView}
-          onImportSyllabus={() => setSyllabusOpen(true)}
           onStep={goStep}
           onToday={() => setCursor(new Date())}
           today={today}
@@ -333,10 +330,6 @@ export function CalendarWorkspace() {
             setDialog({ draft: { ...draft, kind, ...(title.trim() ? { title: title.trim() } : {}) }, mode: "add" });
           }}
         />
-      )}
-
-      {syllabusOpen && (
-        <SyllabusDialog onClose={() => setSyllabusOpen(false)} onImport={handleImport} uid={preview ? null : userId} />
       )}
 
       {dialog?.mode === "add" && (
