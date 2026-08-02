@@ -22,6 +22,14 @@ export interface ChatRouteDecision {
    *  tool calls only ride the non-thinking model, and this flag is what stops the
    *  effort dial from quietly switching the tools off (chat-effort.ts). */
   savesToWorkspace?: boolean;
+  /** Set when the message is small talk or a question about Nemesis ITSELF
+   *  ("who are you", "hi", "what can you do"). Load-bearing, not a label: route
+   *  "conversation" is also what an unmatched message falls through to, and
+   *  chat-api re-promotes an unmatched conversation to a web search when its
+   *  looser heuristic fires. Without this flag those two cases are
+   *  indistinguishable, and "who are you" bought a paid web search and answered
+   *  about somebody else. A deliberate casual turn must never be re-promoted. */
+  casual?: boolean;
 }
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
 const CURRENT_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|who (?:is|won|leads|runs|owns))\b/i;
@@ -185,7 +193,7 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
     return { route: "current", model: "deepseek-reasoner", searchWeb: true };
   }
   if (CASUAL_PATTERN.test(compact)) {
-    return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+    return { route: "conversation", model: "deepseek-chat", searchWeb: false, casual: true };
   }
   if (LEARNING_PATTERN.test(compact) || compact.length >= 120) {
     return { route: "learning", model: "deepseek-reasoner", searchWeb: false };
