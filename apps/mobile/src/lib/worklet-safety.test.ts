@@ -113,26 +113,66 @@ interface Offence {
   called: string;
 }
 
+/** Every free identifier called as a function inside `body`, minus the ones the
+ *  UI runtime actually provides. */
+function offendingCalls(body: string): string[] {
+  const names: string[] = [];
+  for (const call of body.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const name = call[1];
+    if (UI_THREAD_SAFE.has(name) || WORKLET_HOSTS.includes(name)) continue;
+    // A method call (`obj.foo(`) rides on a captured object, not a free
+    // identifier, so it is a different question and out of scope here.
+    if (body[call.index! - 1] === ".") continue;
+    names.push(name);
+  }
+  return names;
+}
+
+/** The whole `Gesture.Pan().onUpdate(…).runOnJS(true)` chain starting at `start`.
+ *  Walks balanced groups and keeps going while the next thing is another `.`,
+ *  so the scan can ask about the chain as a unit rather than one callback. */
+function gestureChain(source: string, start: number): string {
+  let i = source.indexOf("(", start);
+  if (i === -1) return source.slice(start);
+  while (i < source.length) {
+    const group = balanced(source, i);
+    let j = i + group.length;
+    while (j < source.length && /\s/.test(source[j])) j += 1;
+    if (source[j] !== ".") return source.slice(start, i + group.length);
+    j += 1;
+    while (j < source.length && /[\w$\s]/.test(source[j])) j += 1;
+    if (source[j] !== "(") return source.slice(start, j);
+    i = j;
+  }
+  return source.slice(start);
+}
+
 function scan(source: string, file: string): Offence[] {
   const clean = stripCommentsAndStrings(source);
   const offences: Offence[] = [];
+  const lineAt = (index: number) => clean.slice(0, index).split("\n").length;
+
   const hostPattern = new RegExp(`\\b(${WORKLET_HOSTS.join("|")})\\s*\\(`, "g");
   for (const host of clean.matchAll(hostPattern)) {
-    const openParen = host.index! + host[0].length - 1;
-    const body = balanced(clean, openParen);
-    for (const call of body.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
-      const name = call[1];
-      if (UI_THREAD_SAFE.has(name) || WORKLET_HOSTS.includes(name)) continue;
-      // A method call (`obj.foo(`) rides on a captured object, not a free
-      // identifier, so it is a different question and out of scope here.
-      const before = body[call.index! - 1];
-      if (before === ".") continue;
-      offences.push({
-        file,
-        line: clean.slice(0, host.index!).split("\n").length,
-        host: host[1],
-        called: name,
-      });
+    const body = balanced(clean, host.index! + host[0].length - 1);
+    for (const called of offendingCalls(body)) {
+      offences.push({ file, line: lineAt(host.index!), host: host[1], called });
+    }
+  }
+
+  // react-native-gesture-handler callbacks ALSO run on the UI thread, and they
+  // are the likeliest place for the next instance of this bug — every gesture in
+  // this app today calls project helpers (dayKeyFromDate, occlusionShapeAt,
+  // hapticHoldRegistered…) and is safe ONLY because the chain ends in
+  // .runOnJS(true), which moves the whole handler back to the JS thread.
+  // 🔴 Drop that one call and the handler becomes a worklet with the exact
+  // defect this file exists to prevent — so the chain, not the callback, is the
+  // unit of judgement.
+  for (const gesture of clean.matchAll(/\bGesture\s*\.\s*[A-Z][\w$]*\s*\(/g)) {
+    const chain = gestureChain(clean, gesture.index!);
+    if (/\.\s*runOnJS\s*\(\s*true\s*\)/.test(chain)) continue;
+    for (const called of offendingCalls(chain)) {
+      offences.push({ file, line: lineAt(gesture.index!), host: "Gesture", called });
     }
   }
   return offences;
@@ -171,7 +211,12 @@ Deno.test("no worklet calls a function that only exists on the JS thread", async
     0,
     `A worklet runs on the UI thread, where project functions do not exist. Calling one\n` +
       `throws, and a throw inside a worklet aborts the whole app — it is a crash, not a\n` +
-      `render error. Resolve the value on the JS thread and let the worklet read the number.\n\n` +
+      `render error, and neither tsc, lint, nor expo export will tell you.\n\n` +
+      `Two ways out:\n` +
+      `  - useAnimatedStyle / useDerivedValue: resolve the value on the JS thread and let\n` +
+      `    the worklet read the resulting NUMBER (see PILL_BAR_TRAVEL in app/note.tsx).\n` +
+      `  - a Gesture chain: end it in .runOnJS(true), which is what every gesture in this\n` +
+      `    app already does, and the handler runs on the JS thread where helpers exist.\n\n` +
       report,
   );
 });
@@ -199,6 +244,35 @@ Deno.test("the scanner does not read prose or strings as calls", () => {
     });
   `;
   assertEquals(scan(prose, "graph.tsx"), []);
+});
+
+Deno.test("a gesture that ends in runOnJS(true) may call anything it likes", () => {
+  // This is every gesture in the app today. The handler runs on the JS thread,
+  // so a project helper is not merely allowed, it is the normal case.
+  const safe = `
+    const daySwipe = Gesture.Pan()
+      .onEnd((event) => {
+        const key = dayKeyFromDate(shownDate);
+        setDay(daySwipeIntent(event.translationX, key));
+      })
+      .runOnJS(true);
+  `;
+  assertEquals(scan(safe, "calendar.tsx"), []);
+});
+
+Deno.test("the same gesture WITHOUT runOnJS(true) is the next instance of this bug", () => {
+  const unsafe = `
+    const daySwipe = Gesture.Pan()
+      .onEnd((event) => {
+        const key = dayKeyFromDate(shownDate);
+        setDay(daySwipeIntent(event.translationX, key));
+      });
+  `;
+  assertEquals(scan(unsafe, "calendar.tsx").map((o) => o.called), [
+    "dayKeyFromDate",
+    "setDay",
+    "daySwipeIntent",
+  ]);
 });
 
 Deno.test("arithmetic on captured numbers and shared values stays legal", () => {
