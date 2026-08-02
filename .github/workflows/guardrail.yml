@@ -25,7 +25,23 @@ concurrency:
 jobs:
   guardrail:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 🔴 25, NOT 15. At 15 this gate had not finished a single run in its last
+    # fifteen attempts — every one showed up as "cancelled" or "failure", and it
+    # read like a broken safety check when the suite was in fact passing.
+    #
+    # MEASURED, not guessed. The 2026-08-02 run on PR #381 was killed at 15m16s
+    # having completed 48 of 51 cases (17 CASES x 3 registers), every one of them
+    # green — it died with THREE left. The suite needs roughly 16-17 minutes at
+    # its current size, so the old cap missed by about a minute and threw away
+    # the whole run, and all the real LLM spend with it.
+    #
+    # 25 leaves room for a slow provider day and for a few more cases without
+    # this happening again. It is a ceiling, not a budget: the job still exits as
+    # soon as the suite does, so a healthy run costs the same ~16 minutes it
+    # always did. If CASES grows past ~25, revisit — or split the registers into
+    # a matrix and run the three in parallel, which would cut wall-clock to a
+    # third for the same number of calls.
+    timeout-minutes: 25
     # Skip on fork PRs (no secrets there → the suite would exit 2 for a config reason,
     # not a real breach). Same-repo PRs + manual dispatch run.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
