@@ -31,9 +31,20 @@ Deno.test("a row without reasoning is not an error — it is the normal quiet ca
   for (const meta of [null, undefined, {}, "nope", 7, { thinking: null }, { thinking: "text" }]) {
     assertStrictEquals(thinkingFromMeta(meta), null);
   }
-  // Present but empty is also nothing to show.
-  assertStrictEquals(thinkingFromMeta({ thinking: { ms: 10, text: "   " } }), null);
+  // Empty text is nothing to EXPAND — but the settled "Thought for …" row
+  // survives it, so a turn that measurably thought and kept no body is still a
+  // thinking row with an empty disclosure.
+  //
+  // 🔴 THIS ASSERTION WAS STALE AND RED ON main. chat-threads.ts deliberately
+  // widened the rule on 2026-07-29 (8cf0b96) from `if (!text) return null` to
+  // `if (!text && duration <= 0) return null`, and this line was never moved
+  // with it — it went on asserting the older "no text means no row at all".
+  // Nobody saw it because the CI job that runs the mobile suite was dying two
+  // steps earlier on a missing dependency install.
+  assertEquals(thinkingFromMeta({ thinking: { ms: 10, text: "   " } }), { ms: 10, text: "" });
+  // With no measured duration either, there is genuinely nothing to show.
   assertStrictEquals(thinkingFromMeta({ thinking: { text: "" } }), null);
+  assertStrictEquals(thinkingFromMeta({ thinking: { ms: 0, text: "   " } }), null);
 });
 
 Deno.test("a missing or broken duration still yields readable reasoning", () => {

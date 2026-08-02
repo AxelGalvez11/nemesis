@@ -1,14 +1,24 @@
-# Edge-function unit gate — the cheap, always-on deterministic-safety check.
+# Unit gate — the cheap, always-on deterministic check across EVERY surface.
 #
-# Runs the Deno unit tests for the /ask edge function on every push + PR. Unlike
-# guardrail.yml (integration: real LLM calls, secrets, scoped to PRs into main),
-# these are PURE units — no network, no secrets — so they run broadly and fast.
+# Runs on every push + PR. Unlike guardrail.yml (integration: real LLM calls,
+# secrets, scoped to PRs into main), these are PURE units — no network, no
+# secrets — so they run broadly and fast.
 #
 # They lock the deterministic safety layer: safety.test.ts (preScreen +
 # detectViolations forbidden-pattern detector), citation.test.ts, and
 # routing.test.ts — which asserts the post-enforcement PROFESSIONAL_ROUTING_NOTE
 # trips ZERO detectViolations. That note is appended after the runtime safety
 # scan, so this test IS its guarantee: keep it in CI.
+#
+# TWO JOBS, because the repo has two test runtimes and neither can host the
+# other:
+#   deno-units — edge functions, the mobile app, and packages/shared.
+#   web-units  — apps/web, which runs on Node.
+# Deno CANNOT run the web suite: apps/web imports through the "@/..." alias that
+# Next.js resolves from tsconfig paths, and Deno stops on the first such import
+# ('Import "@/lib/utils" not a dependency'). Trying to fold apps/web into the
+# Deno steps therefore fails before a single web assertion executes. Keep them
+# apart.
 
 name: unit
 
@@ -21,14 +31,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Job name kept as ask-units so any existing branch-protection rule or saved
+  # check reference keeps pointing at the same thing.
   ask-units:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      # 🔴 THE INSTALL IS LOAD-BEARING, NOT BOILERPLATE.
+      # Without it this job died on the THIRD step for at least two days:
+      #   error: Could not resolve "@nemesis/shared", but found it in a
+      #   package.json. Deno expects the node_modules/ directory to be up to date.
+      # Deno resolves a workspace package by walking the FILESYSTEM for
+      # apps/mobile/node_modules/@nemesis/shared. pnpm creates that symlink at
+      # install time (both apps declare "@nemesis/shared": "workspace:*"), and a
+      # bare checkout has no node_modules at all. The workflow used to run
+      # `deno test` straight after checkout, which worked only while the mobile
+      # tests had no cross-package imports; apps/mobile/src/lib/academic-skills.ts
+      # now imports @nemesis/shared, and the whole job has failed ever since.
+      #
+      # Because GitHub runs each `run:` under `bash -e`, that third-step failure
+      # also meant step FOUR never executed — so packages/shared's 51 test files
+      # were not merely failing, they were never started.
+      #
+      # pnpm/action-setup reads the version from the root package.json
+      # "packageManager" field; passing `version:` as well is an error.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install workspace dependencies (so Deno can resolve @nemesis/shared)
+        run: pnpm install --frozen-lockfile
+
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+
       - name: Deno unit tests (ask edge function)
         run: deno test --allow-env supabase/functions/ask/
       - name: Deno unit tests (shared cost attribution)
@@ -41,7 +81,7 @@ jobs:
       # SCREEN is `src/app/test.tsx` (an expo-router route, so it cannot be
       # renamed without changing the in-app URL). Deno tried to load a React
       # screen, failed on the `@/` path alias, and aborted the WHOLE run before a
-      # single test executed. No real test lives under src/app — all 68 are
+      # single test executed. No real test lives under src/app — all of them are
       # elsewhere — so ignoring that folder costs nothing and restores the suite.
       - name: Deno unit tests (mobile app — incl. the analytics privacy core)
         run: deno test --no-check --allow-env --allow-read --ignore=apps/mobile/src/app apps/mobile/src/
@@ -56,3 +96,30 @@ jobs:
       # line covers all of them.
       - name: Deno unit tests (shared package — web + iOS both depend on it)
         run: deno test --no-check --allow-env --allow-read packages/shared/src/
+
+  # apps/web's 92 test files (688 assertions) were wired into NOTHING before this
+  # job existed — not GitHub Actions, and not Vercel either, whose build is a
+  # plain `next build` with no test step (apps/web/vercel.json sets only
+  # framework + crons). The suite passes and always has; the only thing missing
+  # was anything that ran it when nobody typed the command by hand.
+  #
+  # Deliberately a SEPARATE job rather than another step on ask-units: it needs
+  # no Deno, it is the only Node-runtime suite, and keeping it independent means
+  # a red web suite still lets you read the Deno results and vice versa.
+  web-units:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # --filter, not `pnpm test` at the root: the root script goes through
+      # turbo, whose test task declares dependsOn ["^build"], which would build
+      # the whole Next.js app just to run unit tests that never touch the build
+      # output. Calling the package script directly skips that entirely.
+      - name: Node unit tests (web app)
+        run: pnpm --filter @nemesis/web test
