@@ -1,4 +1,4 @@
-// PharmaBro shared contract — FROZEN at the end of Phase 3 (IMPLEMENTATION_PLAN.md §8).
+// Nemesis shared contract — FROZEN at the end of Phase 3 (IMPLEMENTATION_PLAN.md §8).
 //
 // This is the app <-> backend boundary. Phase 6 (mobile) builds against these
 // shapes; changing one after the freeze is a breaking change, so additions
@@ -12,6 +12,10 @@
 
 export * from "./answer.ts";
 export * from "./claim-relation.ts";
+// First-run setup rules. Shared rather than per-app because a student who names
+// a course on their laptop and then opens their phone must get the same answer
+// about whether they are new, and the same tidying of the same typed words.
+export * from "./onboarding.ts";
 export * from "./discovery.ts";
 export * from "./search.ts";
 // How the product writes, shared so the web prompt and the phone prompt cannot
