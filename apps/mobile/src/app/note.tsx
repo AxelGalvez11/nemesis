@@ -97,6 +97,24 @@ const MENU_ITEMS = [
 // can't leave this spacer short and clip the note's last lines behind it.
 const PILL_BAR_HEIGHT = NOTE_PILL_BAR_HEIGHT;
 
+/** How far the pill bar travels to clear the bottom edge when the chrome hides.
+ *
+ *  🔴 COMPUTED HERE, AT MODULE SCOPE, AND NEVER INSIDE THE WORKLET. This value
+ *  used to be written inline as `NOTE_PILL_BAR_HEIGHT + space(6)` inside
+ *  pillBarStyle's useAnimatedStyle callback, and it CRASHED THE APP on every
+ *  single note open (five identical build-26 reports, all SIGABRT). `space` is
+ *  an ordinary JS arrow function from theme/tokens.ts, not a worklet; the
+ *  Reanimated babel plugin captures it by reference, and calling it on the UI
+ *  runtime throws. A throw inside a worklet is not caught by anything — it goes
+ *  Hermes -> __cxa_throw -> abort, so the process dies rather than the screen
+ *  failing gracefully.
+ *
+ *  The rule this encodes: a worklet body may only do arithmetic on numbers it
+ *  captured and on shared values. If you need a token, a helper, or any project
+ *  function, resolve it on the JS thread first and let the worklet read the
+ *  resulting NUMBER. That is what this constant is for. */
+const PILL_BAR_TRAVEL = NOTE_PILL_BAR_HEIGHT + space(6);
+
 /** The title field's keyboard accessory — see the titleField comment for why
  *  the title does NOT get the note's formatting toolbar. */
 const TITLE_TOOLBAR_ID = "note-title-toolbar";
@@ -517,7 +535,7 @@ export default function NoteScreen() {
   }));
   const pillBarStyle = useAnimatedStyle(() => ({
     opacity: chromeReveal.value,
-    transform: [{ translateY: (1 - chromeReveal.value) * (NOTE_PILL_BAR_HEIGHT + space(6)) }],
+    transform: [{ translateY: (1 - chromeReveal.value) * PILL_BAR_TRAVEL }],
   }));
 
   // --- pill-bar actions -----------------------------------------------------
