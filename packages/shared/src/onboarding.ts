@@ -21,15 +21,23 @@
 
 /** A generous ceiling, not a realistic course load.
  *
+ *  🔴 PREFIXED because lms-import.ts already exports MAX_COURSES (60) and
+ *  MAX_COURSE_NAME_CHARS (200) for a DIFFERENT job — capping what the browser
+ *  extension pulls out of a school portal, which is untrusted input from a page
+ *  we do not control. These two cap what a student TYPES. Same words, different
+ *  numbers, different threat model; `export *` from both would have silently
+ *  collided in the shared index. The web app re-exports these under the short
+ *  names its own callers already use.
+ *
  *  A full-time student takes three to eight classes. The cap exists so a paste
  *  accident cannot create four hundred Library folders, not to tell anyone how
  *  much they are allowed to study — someone doubling up on a summer term plus
  *  audits should never hit it. */
-export const MAX_COURSES = 24;
+export const ONBOARDING_MAX_COURSES = 24;
 
 /** Long enough for "Introduction to Comparative Constitutional Law", short
  *  enough to stay a usable folder name. */
-export const MAX_COURSE_NAME_CHARS = 80;
+export const ONBOARDING_MAX_COURSE_NAME_CHARS = 80;
 
 export const STEPS = ["courses", "syllabi", "coursework"] as const;
 
@@ -92,7 +100,7 @@ export function cleanCourseName(raw: string): string | null {
     .replace(/\s+/g, " ")
     .trim();
   if (!stripped) return null;
-  return stripped.slice(0, MAX_COURSE_NAME_CHARS).trim() || null;
+  return stripped.slice(0, ONBOARDING_MAX_COURSE_NAME_CHARS).trim() || null;
 }
 
 /** Case-insensitive identity for a course, used only to spot duplicates. The
@@ -111,7 +119,7 @@ function courseKey(name: string): string {
 export function addCourse(courses: readonly string[], raw: string): string[] {
   const cleaned = cleanCourseName(raw);
   if (!cleaned) return [...courses];
-  if (courses.length >= MAX_COURSES) return [...courses];
+  if (courses.length >= ONBOARDING_MAX_COURSES) return [...courses];
   const key = courseKey(cleaned);
   if (courses.some((existing) => courseKey(existing) === key)) return [...courses];
   return [...courses, cleaned];

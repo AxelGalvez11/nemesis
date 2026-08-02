@@ -17,12 +17,20 @@
 // Add web-only helpers here. Add anything a phone would also ask to the shared
 // file.
 
+// The two caps are PREFIXED in the shared package, because lms-import.ts already
+// owns MAX_COURSES (60) and MAX_COURSE_NAME_CHARS (200) for capping what the
+// browser extension scrapes out of a school portal. Different numbers, different
+// threat model, same words. Aliased back to the short names here so every web
+// caller that already imports them is untouched.
+export {
+  ONBOARDING_MAX_COURSE_NAME_CHARS as MAX_COURSE_NAME_CHARS,
+  ONBOARDING_MAX_COURSES as MAX_COURSES,
+} from "@nemesis/shared";
+
 export {
   addCourse,
   assignCourse,
   cleanCourseName,
-  MAX_COURSE_NAME_CHARS,
-  MAX_COURSES,
   mergeCourses,
   nextStep,
   parseStoredOnboarding,

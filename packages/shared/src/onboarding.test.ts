@@ -12,8 +12,8 @@ import {
   addCourse,
   assignCourse,
   cleanCourseName,
-  MAX_COURSE_NAME_CHARS,
-  MAX_COURSES,
+  ONBOARDING_MAX_COURSE_NAME_CHARS,
+  ONBOARDING_MAX_COURSES,
   mergeCourses,
   nextStep,
   parseStoredOnboarding,
@@ -91,15 +91,15 @@ test("nothing usable returns null instead of an empty folder name", () => {
 });
 
 test("an absurdly long name is capped and left tidy", () => {
-  const cleaned = cleanCourseName("x".repeat(MAX_COURSE_NAME_CHARS + 50));
-  assert.equal(cleaned?.length, MAX_COURSE_NAME_CHARS);
+  const cleaned = cleanCourseName("x".repeat(ONBOARDING_MAX_COURSE_NAME_CHARS + 50));
+  assert.equal(cleaned?.length, ONBOARDING_MAX_COURSE_NAME_CHARS);
 });
 
 test("a name that is only spaces after the cap does not become empty string", () => {
   // 80 characters then a word: slicing lands mid-whitespace, and the trailing
   // trim must not leave "" behind.
-  const cleaned = cleanCourseName(`${"a".repeat(MAX_COURSE_NAME_CHARS)}   tail`);
-  assert.equal(cleaned, "a".repeat(MAX_COURSE_NAME_CHARS));
+  const cleaned = cleanCourseName(`${"a".repeat(ONBOARDING_MAX_COURSE_NAME_CHARS)}   tail`);
+  assert.equal(cleaned, "a".repeat(ONBOARDING_MAX_COURSE_NAME_CHARS));
 });
 
 // ── The course list ──────────────────────────────────────────────────────────
@@ -122,8 +122,8 @@ test("blank input adds nothing", () => {
 
 test("the cap holds", () => {
   let courses: string[] = [];
-  for (let index = 0; index < MAX_COURSES + 10; index += 1) courses = addCourse(courses, `Course ${index}`);
-  assert.equal(courses.length, MAX_COURSES);
+  for (let index = 0; index < ONBOARDING_MAX_COURSES + 10; index += 1) courses = addCourse(courses, `Course ${index}`);
+  assert.equal(courses.length, ONBOARDING_MAX_COURSES);
 });
 
 test("removing a course leaves the rest in order", () => {
