@@ -22,6 +22,7 @@ import {
   parseAuthCallback,
   type SocialProvider,
 } from "@/lib/oauth-deeplink";
+import { syncPurchasesIdentity } from "@/lib/purchases";
 import { registerForPush } from "@/lib/push";
 
 interface AuthState {
@@ -105,6 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.session) {
           identify(data.session.user.id);
           void registerForPush(); // returning user, session already on disk
+          // Purchases run under the Supabase uid so the RevenueCat webhook can
+          // find the student's subscriptions row. Best-effort; never throws.
+          void syncPurchasesIdentity(data.session.user.id);
         }
       })
       .catch(() => setSession(null))
@@ -118,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === "SIGNED_IN") {
           identify(next.user.id);
           void registerForPush(); // best-effort; never blocks sign-in (see push.ts)
+          void syncPurchasesIdentity(next.user.id);
         }
       } else {
         resetAnalyticsUser(); // sign-out → clear the analytics identity

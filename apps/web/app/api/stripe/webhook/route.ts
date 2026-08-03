@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { effectivePlan } from "@nemesis/shared";
 import { NEMESIS_TRIAL_PERIOD_DAYS, planLabel, subscriptionWebhookAction } from "@/lib/billing-contract";
 import { buildWelcomeEmail, sendEmail } from "@/lib/email";
 import { stripeWebhookSecret } from "@/lib/env";
@@ -158,6 +159,15 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
   const priceId = item?.price.id ?? null;
   // Resolve the plan from the actual price id (plus vs pro) — not "any recognized price = plus".
   const plan = planFromStripeStatus(subscription.status, priceId);
+  // Dual-store rule: Stripe owns stripe_plan; the effective `plan` is the best
+  // of both stores, so a Stripe cancellation cannot downgrade someone whose
+  // Apple subscription (apple_plan, written by the RevenueCat webhook) still pays.
+  const { data: existingRow, error: existingRowError } = await admin
+    .from("subscriptions")
+    .select("apple_plan")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existingRowError) throw existingRowError;
   const currentPeriodEndSeconds = subscriptionPeriodEndSeconds(subscription);
   const currentPeriodEnd = typeof currentPeriodEndSeconds === "number"
     ? new Date(currentPeriodEndSeconds * 1000).toISOString()
@@ -168,7 +178,8 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
 
   const { error: subscriptionMirrorError } = await admin.from("subscriptions").upsert({
     user_id: userId,
-    plan,
+    plan: effectivePlan(plan, existingRow?.apple_plan),
+    stripe_plan: plan,
     status: subscription.status,
     stripe_customer_id: customerId,
     stripe_livemode: subscription.livemode,
