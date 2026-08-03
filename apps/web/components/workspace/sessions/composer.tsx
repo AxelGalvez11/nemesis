@@ -442,15 +442,24 @@ export function Composer({ busy, centered = false, placement = "floating", place
           directly behind it to catch the drop. Up here there is nothing behind
           but the message list, so a click-through box would hand the file to
           the page and the browser would NAVIGATE AWAY to it, losing the draft.
-          This is still a DOM child of the root, so the drop bubbles to onDrop. */}
+          This is still a DOM child of the root, so the drop bubbles to onDrop.
+          🔴 THE HIT AREA MUST STAY CONTIGUOUS WITH THE ROOT — the visual gap
+          under the box is PADDING on this wrapper, never a margin. A margin is
+          dead space: the instant the cursor crosses it, dragleave fires with
+          nothing entered in exchange, the depth counter hits zero, and the box
+          unmounts while the student is still carrying the file toward it.
+          (Owner 2026-08-03: "the box disappears when users try to drag to
+          that space" — that was `mb-2` on the box itself.) */}
       {dragOver && activeMode === "chat" && (
         <div
           aria-hidden
-          className="absolute inset-x-0 bottom-full z-30 mb-2 grid h-24 place-content-center justify-items-center gap-1.5 rounded-2xl border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))] backdrop-blur-[0.75rem]"
+          className="absolute inset-x-0 bottom-full z-30 pb-2"
           data-slot="composer-drop-target"
         >
-          <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.15rem" />
-          <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
+          <div className="grid h-24 place-content-center justify-items-center gap-1.5 rounded-2xl border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))] backdrop-blur-[0.75rem]">
+            <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.15rem" />
+            <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
+          </div>
         </div>
       )}
       <div className="relative w-full rounded-[inherit]">
