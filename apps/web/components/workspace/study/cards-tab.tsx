@@ -435,7 +435,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
             // measured 5073px of decks squeezed into 582px, and because nothing
             // ever overflowed the scroller, the page had genuinely nothing to
             // scroll. Owner: "i cannot scroll in this page".
-            "mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)] transition-[outline-color,background-color]",
+            "mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)] transition-[outline-color,background-color]",
             dragItem && dropTarget === "" && "bg-[color-mix(in_srgb,var(--theme-primary)_6%,var(--background))] outline outline-2 outline-[var(--theme-primary)]",
           )}
           data-study-drop-group=""

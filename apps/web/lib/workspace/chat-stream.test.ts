@@ -46,6 +46,30 @@ void (async () => {
   assert.deepEqual(full.toolCalls[0], { arguments: '{"query":"ACE inhibitors"}', id: "call_1", name: "search_library" });
   assert.deepEqual(full.toolCalls[1], { arguments: "{}", id: "call_2", name: "list_study_decks" });
 
+  // Reasoner thoughts (`reasoning_content`) stream through their own handler
+  // and never leak into the answer text — the thinking strip depends on this.
+  const reasoningLines = [
+    '{"choices":[{"delta":{"reasoning_content":"First I will "}}]}',
+    '{"choices":[{"delta":{"reasoning_content":"check the dates."}}]}',
+    '{"choices":[{"delta":{"content":"Here is "}}]}',
+    '{"choices":[{"delta":{"content":"the answer."}}]}',
+  ];
+  const reasoningStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(reasoningLines.map((line) => `data: ${line}\n\n`).join("") + "data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+  const reasoningSeen: string[] = [];
+  let reasoningAccumulated = "";
+  const reasoned = await readCompletionStreamFull(reasoningStream, () => {}, (delta, accumulated) => {
+    reasoningSeen.push(delta);
+    reasoningAccumulated = accumulated;
+  });
+  assert.equal(reasoned.text, "Here is the answer.");
+  assert.deepEqual(reasoningSeen, ["First I will ", "check the dates."]);
+  assert.equal(reasoningAccumulated, "First I will check the dates.");
+
   console.log("chat-stream.test.ts OK");
 })().catch((error) => {
   console.error(error);

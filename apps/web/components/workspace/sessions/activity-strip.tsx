@@ -1,9 +1,10 @@
 // ActivityStrip — desktop's ChatGPT-style "thinking preview" (shell spec §B5,
-// student build), simplified for the non-streaming v1 wire recipe: no
-// per-token phrase derivation and no intent line (there is no reasoning
-// stream to extract one from) — just a live "Thinking" shimmer + timer while
-// a turn is in flight, and a settled "Thought for Xs" caption once it lands
-// (shown only past 2s, non-expandable — no reasoning trail is kept in v1).
+// student build). v2 (owner 2026-08-03: a minute-long static shimmer "wasnt
+// dynamic"): the live placement now accepts a `label` — the tail of the
+// reasoner's streamed thoughts, or a tool verb like "Searching the web" —
+// fed from sendChatTurn via chat-activity.ts. With no label it falls back to
+// the plain "Thinking" shimmer. Settled turns still show only "Thought for
+// Xs" (past 2s, non-expandable — no reasoning trail is kept).
 
 /** "21s" under a minute, "1m 2s" at or above — matches desktop's formatDuration. */
 export function formatDuration(totalSeconds: number): string {
@@ -17,9 +18,11 @@ export function formatDuration(totalSeconds: number): string {
 interface ActivityStripProps {
   placement: "live" | "header";
   seconds: number | null;
+  /** Live copy while thinking (reasoning tail or tool verb); null = "Thinking". */
+  label?: string | null;
 }
 
-export function ActivityStrip({ placement, seconds }: ActivityStripProps) {
+export function ActivityStrip({ placement, seconds, label = null }: ActivityStripProps) {
   if (placement === "live") {
     return (
       <div
@@ -30,7 +33,7 @@ export function ActivityStrip({ placement, seconds }: ActivityStripProps) {
       >
         <div className="flex min-w-0 max-w-full items-center gap-2">
           <span className="nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)">
-            <span className="shimmer min-w-0 truncate">Thinking</span>
+            <span className="shimmer min-w-0 truncate">{label ?? "Thinking"}</span>
           </span>
           {/* No running count while it thinks (owner 2026-08-01). A number
               ticking up invites the student to watch it, and turns a wait into
