@@ -555,21 +555,6 @@ export function SessionChat() {
     });
   }, [createArtifact, preview, selectedId, uid]);
 
-  /**
-   * Open the syllabus importer over the chat, with no file chosen yet.
-   *
-   * Chat is the front door for importing now (owner 2026-07-31). Dropping a
-   * file still works, but it only routes to the importer when the FILENAME
-   * looks like a syllabus — and plenty of universities export
-   * "Fall-2026-PHCY-2105-01-Interprofessional-Education...pdf", which does not.
-   * Asking for the importer by name is the path that always works.
-   */
-  const openSyllabusImport = useCallback(() => {
-    if (preview) return;
-    // A session has to exist before the import can post its result into one.
-    setSyllabusImport({ file: null, targetId: selectedId ?? sessionsStore.create().id });
-  }, [preview, selectedId]);
-
   const openSources = useCallback(() => {
     setRightPanel("sources");
     setRightRailOpen(true);
@@ -647,7 +632,6 @@ export function SessionChat() {
             centered={isFreshThread && composerMode === "chat"}
             mode={composerMode}
             onEffortChange={(effort) => { effortRef.current = effort; }}
-            onImportSyllabus={openSyllabusImport}
             onModeChange={handleModeChange}
             onRecordingChange={handleRecordingChange}
             onStop={handleStop}

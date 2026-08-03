@@ -28,6 +28,7 @@
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { consumeSeededComposerFiles } from "@/lib/workspace/composer-seed";
 import { groupChatAttachments } from "@/lib/workspace/chat-attachments";
@@ -79,10 +80,6 @@ interface ComposerProps {
    *  the audio must be thrown away, false or absent means stop and write it up.
    *  Both arrive in one call so the recorder cannot act on half the decision. */
   onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
-  /** Opens the syllabus importer as a popup over the chat. Chat is the front
-   *  door for importing now (owner 2026-07-31), so this is not a shortcut to
-   *  somewhere else — it is where the import lives. */
-  onImportSyllabus?: () => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
@@ -90,10 +87,9 @@ interface ComposerProps {
   belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onImportSyllabus, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
@@ -376,36 +372,58 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const carriesFiles = (transfer: DataTransfer | null): boolean =>
     Boolean(transfer && Array.from(transfer.types).includes("Files"));
 
-  const onDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!carriesFiles(event.dataTransfer)) return;
-    dragDepth.current += 1;
-    setDragOver(true);
-  };
-
-  const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!carriesFiles(event.dataTransfer)) return;
-    // Without BOTH preventDefaults the browser navigates away to the dropped
-    // file and the whole composer state is lost.
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  };
-
-  const onDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!carriesFiles(event.dataTransfer)) return;
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setDragOver(false);
-  };
-
-  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!carriesFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    dragDepth.current = 0;
-    setDragOver(false);
-    const dropped = Array.from(event.dataTransfer.files);
-    // Appended, never replaced — same rule the "+" picker follows, so a drop
-    // cannot bin notes that were just attached from the Library.
-    if (dropped.length > 0) setFiles((current) => [...current, ...dropped]);
-  };
+  // Owner 2026-08-03, pointing at ChatGPT: "when dropping in a file, the whole
+  // chat should indicate where to drop." So the drag is tracked on WINDOW, not
+  // on the composer's own box — the moment a file enters the app, everywhere is
+  // the target and one overlay says so. The depth counter survives from the old
+  // element version: dragenter/dragleave fire for every boundary the pointer
+  // crosses, so a boolean flickers off between elements.
+  // 🔴 The window-level dragover+drop preventDefaults are what stop the browser
+  // from NAVIGATING AWAY to a dropped file no matter where it lands — that job
+  // used to belong to the composer element and now covers the whole page while
+  // this composer is mounted. Only ONE Composer may be mounted at a time
+  // (session-chat or the retired notebook view) or a single drop would attach
+  // its files twice.
+  useEffect(() => {
+    if (activeMode !== "chat") return;
+    const onWindowDragEnter = (event: DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      dragDepth.current += 1;
+      setDragOver(true);
+    };
+    const onWindowDragOver = (event: DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const onWindowDragLeave = (event: DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragOver(false);
+    };
+    const onWindowDrop = (event: DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      const dropped = Array.from(event.dataTransfer?.files ?? []);
+      // Appended, never replaced — same rule the "+" picker follows, so a drop
+      // cannot bin notes that were just attached from the Library.
+      if (dropped.length > 0) setFiles((current) => [...current, ...dropped]);
+    };
+    window.addEventListener("dragenter", onWindowDragEnter);
+    window.addEventListener("dragover", onWindowDragOver);
+    window.addEventListener("dragleave", onWindowDragLeave);
+    window.addEventListener("drop", onWindowDrop);
+    return () => {
+      window.removeEventListener("dragenter", onWindowDragEnter);
+      window.removeEventListener("dragover", onWindowDragOver);
+      window.removeEventListener("dragleave", onWindowDragLeave);
+      window.removeEventListener("drop", onWindowDrop);
+      dragDepth.current = 0;
+      setDragOver(false);
+    };
+  }, [activeMode]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -424,44 +442,31 @@ export function Composer({ busy, centered = false, placement = "floating", place
         placement === "floating" && (centered ? "top-1/2 -translate-y-1/2" : "bottom-3"),
       )}
       data-slot="composer-root"
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
     >
-      {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
-          chat composer". Owner 2026-08-02: "i need the drop to attach to be a
-          box ABOVE the chat composer" — it used to be an overlay laid across
-          the composer, which blanked out whatever the student had already
-          typed at the exact moment they were adding to it.
-          `bottom-full` floats it above WITHOUT taking layout space. In flow it
-          would shove the composer down out from under a moving cursor, which
-          during a drag is how you drop a file on the wrong thing.
-          🔴 POINTER EVENTS MUST STAY ON. The old overlay set
-          pointer-events-none, and that was only safe because the composer sat
-          directly behind it to catch the drop. Up here there is nothing behind
-          but the message list, so a click-through box would hand the file to
-          the page and the browser would NAVIGATE AWAY to it, losing the draft.
-          This is still a DOM child of the root, so the drop bubbles to onDrop.
-          🔴 THE HIT AREA MUST STAY CONTIGUOUS WITH THE ROOT — the visual gap
-          under the box is PADDING on this wrapper, never a margin. A margin is
-          dead space: the instant the cursor crosses it, dragleave fires with
-          nothing entered in exchange, the depth counter hits zero, and the box
-          unmounts while the student is still carrying the file toward it.
-          (Owner 2026-08-03: "the box disappears when users try to drag to
-          that space" — that was `mb-2` on the box itself.) */}
-      {dragOver && activeMode === "chat" && (
-        <div
-          aria-hidden
-          className="absolute inset-x-0 bottom-full z-30 pb-2"
-          data-slot="composer-drop-target"
-        >
-          <div className="grid h-24 place-content-center justify-items-center gap-1.5 rounded-2xl border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))] backdrop-blur-[0.75rem]">
-            <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.15rem" />
-            <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
-          </div>
-        </div>
-      )}
+      {/* The whole-app drop indicator (owner 2026-08-03, after two rounds of a
+          small box above the composer kept confusing people: "the whole chat
+          should indicate where to drop", pointing at ChatGPT's overlay).
+          Purely visual — the WINDOW listeners above are the real drop surface,
+          so pointer-events stays OFF and the overlay can never steal a drop or
+          a click. Rendered through a portal to <body>:
+          🔴 the floating composer root is CSS-TRANSFORMED (-translate-x-1/2),
+          and a transformed ancestor hijacks position:fixed — as a child of the
+          composer this overlay would pin to the composer pill, not the screen. */}
+      {dragOver && activeMode === "chat" && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            aria-hidden
+            className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-black/45 p-6 backdrop-blur-[2px]"
+            data-slot="composer-drop-target"
+          >
+            <div className="grid place-items-center justify-items-center gap-2 rounded-3xl border-2 border-dashed border-(--theme-primary) bg-(--ui-bg-elevated) px-12 py-9 shadow-2xl">
+              <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.75rem" />
+              <span className="text-lg font-semibold text-foreground">Add anything</span>
+              <span className="text-sm text-(--ui-text-secondary)">Drop files here to add them to the conversation</span>
+            </div>
+          </div>,
+          document.body,
+        )}
       <div className="relative w-full rounded-[inherit]">
         {/* The composer surface itself stays clear while a file is over it, so
             the draft underneath remains readable. */}
@@ -520,21 +525,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       ref={fileInputRef}
                       type="file"
                     />
-                    <input
-                      className="sr-only"
-                      multiple
-                      onChange={(event) => {
-                        const picked = Array.from(event.target.files ?? []);
-                        if (picked.length > 0) setFiles((current) => [...current, ...picked]);
-                        event.target.value = "";
-                      }}
-                      ref={(node) => {
-                        folderInputRef.current = node;
-                        node?.setAttribute("webkitdirectory", "");
-                      }}
-                      type="file"
-                    />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onImportSyllabus={onImportSyllabus} onOpenLibrary={() => setLibraryOpen(true)} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -763,7 +754,14 @@ export function RecordCompanionPanel() {
 // "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
 // Notebooks page is retired. It opens a picker rather than a submenu because
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
-function AddMenu({ onChooseFiles, onChooseFolder, onImportSyllabus, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onImportSyllabus?: () => void; onOpenLibrary: () => void }) {
+//
+// Folder and Syllabus were REMOVED (owner 2026-08-03: "it should only allow
+// files — syllabus is a type of file"). Syllabus routing still exists: sending
+// a file whose NAME matches looksLikeSyllabus in session-chat opens the
+// calendar importer. Known gap, accepted with that decision: a syllabus whose
+// filename says nothing (Fall-2026-PHCY-2105-01-….pdf) no longer has a chat
+// entry point until detection reads content instead of the name.
+function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -776,27 +774,10 @@ function AddMenu({ onChooseFiles, onChooseFolder, onImportSyllabus, onOpenLibrar
           <Codicon name="file-media" size="0.875rem" />
           Files
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onChooseFolder}>
-          <Codicon name="folder" size="0.875rem" />
-          Folder
-        </DropdownMenuItem>
         <DropdownMenuItem data-testid="composer-add-library" onSelect={onOpenLibrary}>
           <Codicon name="book" size="0.875rem" />
           Library
         </DropdownMenuItem>
-        {/* 🔴 THE ONLY RELIABLE WAY IN. Dropping a syllabus already routes to
-            the importer, but only when the FILENAME says "syllabus" — and the
-            owner's own file is called
-            Fall-2026-PHCY-2105-01-Interprofessional-Education-and-Clinical-
-            Simulation-III.pdf, which says nothing of the kind. A student whose
-            university names files that way had no way to reach the importer
-            from chat at all. Saying what you want beats guessing from a name. */}
-        {onImportSyllabus && (
-          <DropdownMenuItem data-testid="composer-import-syllabus" onSelect={onImportSyllabus}>
-            <Codicon name="calendar" size="0.875rem" />
-            Syllabus
-          </DropdownMenuItem>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
