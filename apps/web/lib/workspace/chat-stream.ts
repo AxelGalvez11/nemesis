@@ -20,7 +20,7 @@ interface RawToolCallDelta {
 }
 
 interface StreamChoice {
-  delta?: { content?: unknown; tool_calls?: RawToolCallDelta[] };
+  delta?: { content?: unknown; reasoning_content?: unknown; tool_calls?: RawToolCallDelta[] };
 }
 
 /** Extract visible text from one OpenAI-compatible SSE data payload. */
@@ -43,12 +43,17 @@ export function completionDelta(data: string): string {
 export async function readCompletionStreamFull(
   body: ReadableStream<Uint8Array> | null,
   onDelta?: CompletionDeltaHandler,
+  onReasoning?: CompletionDeltaHandler,
 ): Promise<CompletionStreamResult> {
   if (!body) return { text: "", toolCalls: [] };
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let accumulated = "";
+  // The reasoner's thoughts (DeepSeek `reasoning_content`). Never part of the
+  // answer text — surfaced separately so the thinking strip can show live
+  // progress instead of a static shimmer while the model works.
+  let accumulatedReasoning = "";
   const toolCalls = new Map<number, StreamedToolCall>();
 
   const consumeLine = (rawLine: string) => {
@@ -67,6 +72,10 @@ export async function readCompletionStreamFull(
     if (typeof delta.content === "string" && delta.content) {
       accumulated += delta.content;
       onDelta?.(delta.content, accumulated);
+    }
+    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+      accumulatedReasoning += delta.reasoning_content;
+      onReasoning?.(delta.reasoning_content, accumulatedReasoning);
     }
     for (const fragment of delta.tool_calls ?? []) {
       const index = typeof fragment.index === "number" ? fragment.index : 0;

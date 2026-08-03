@@ -105,6 +105,10 @@ export function SessionChat() {
   // and re-rendering the thread because a dropdown moved would be waste.
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
+  /** What the thinking strip says right now — a live phrase from the model's
+   *  streamed thoughts or a tool verb ("Searching the web"). Keyed to a
+   *  session so a label from a backgrounded turn never shows on another chat. */
+  const [liveActivity, setLiveActivity] = useState<{ label: string; sessionId: string } | null>(null);
   /** Why the last stop happened. Set in the same commit as `recording`, so the
    *  recorder never sees capture end without knowing whether to keep the audio. */
   const [discardRecording, setDiscardRecording] = useState(false);
@@ -158,7 +162,9 @@ export function SessionChat() {
     try {
       const reply = await sendChatTurn(targetUid, history, text, controller.signal, (_delta, accumulated) => {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
-      }, effort);
+      }, effort, (label) => {
+        setLiveActivity(label ? { label, sessionId: targetId } : null);
+      });
       if (reply.text) {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources, true, reply.outputs);
       } else if (reply.outputs?.length) {
@@ -184,6 +190,9 @@ export function SessionChat() {
       sessionsStore.setWorking(targetId, false);
       turnStartedAt.current.delete(targetId);
       abortControllers.current.delete(targetId);
+      // Only this turn's own label — a newer turn on another session may
+      // already own the strip.
+      setLiveActivity((current) => (current?.sessionId === targetId ? null : current));
     }
   }, []);
 
@@ -577,7 +586,7 @@ export function SessionChat() {
               onRequestStop={() => handleRecordingChange(false)}
             />
           ) : (
-            <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
+            <Thread activity={liveActivity?.sessionId === selectedId ? liveActivity.label : null} busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
           )}
           {/* The tap that has to happen before the chat deletes anything. Sits
               directly above the composer, over the fade, so it is between the

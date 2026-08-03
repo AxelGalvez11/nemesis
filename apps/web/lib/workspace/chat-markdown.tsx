@@ -91,9 +91,14 @@ function markdownComponents(
         // a bare number sitting in the prose.
         if (!source) return null;
         const host = hostnameOf(source.url);
+        // 🔴 PINNED IN PIXELS ON PURPOSE (owner 2026-08-03: "they should be
+        // smaller"). The app's text-size dial IS the root font-size, so em/rem
+        // here scale with it — at large text settings these chips ballooned
+        // into bubbles taller than the line. A citation marker is a footnote,
+        // not prose: it stays chip-sized at every text scale.
         return (
           <a
-            className="mx-0.5 inline-flex items-center gap-1 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-1.5 py-px align-baseline text-[0.78em] font-medium text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
+            className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-[4px] rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-[7px] align-baseline text-[11px] leading-[16px] font-medium text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
             href={source.url}
             rel="noopener noreferrer"
             target="_blank"
@@ -101,7 +106,7 @@ function markdownComponents(
           >
             {host && (
               // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-              <img alt="" className="size-3 rounded-full" src={faviconUrl(host)} />
+              <img alt="" className="size-[11px] rounded-full" src={faviconUrl(host)} />
             )}
             {sourceLabel(source.url) ?? host}
           </a>

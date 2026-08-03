@@ -35,7 +35,9 @@ export function StudyTableSkeleton() {
         <Skeleton className="h-7 w-20 rounded-xl" />
       </div>
 
-      <div className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+      {/* Borderless like the real table (owner 2026-08-03) — a skeleton that
+          draws the border the content then drops reads as a flicker. */}
+      <div className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
         {/* The header is REAL TEXT, not bars. It is known before the data
             arrives, and showing what is known beats greying it out. */}
         <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold text-muted-foreground">

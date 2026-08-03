@@ -28,12 +28,14 @@ interface AssistantMessageProps {
   animateReveal?: boolean;
   pending: boolean;
   liveSeconds: number | null;
+  /** Live thinking-strip copy while pending; null = the plain shimmer. */
+  activity?: string | null;
   durationSeconds: number | null;
   error: TurnError | null;
   onOpenSources?: () => void;
 }
 
-export function AssistantMessage({ message, animateReveal = false, pending, liveSeconds, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
+export function AssistantMessage({ message, animateReveal = false, pending, liveSeconds, activity = null, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
   if (!message && !pending && !error) return null;
 
   const visibleText = message?.content || null;
@@ -58,7 +60,7 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
             {message.outputs.map((output) => <OutputCard key={output.id} output={output} />)}
           </div>
         )}
-        {pending && <ActivityStrip placement="live" seconds={liveSeconds} />}
+        {pending && <ActivityStrip label={activity} placement="live" seconds={liveSeconds} />}
         {error && <AssistantErrorRow error={error} />}
       </div>
       {visibleText && <AssistantFooter onOpenSources={onOpenSources} sources={message?.sources ?? []} text={visibleText} />}

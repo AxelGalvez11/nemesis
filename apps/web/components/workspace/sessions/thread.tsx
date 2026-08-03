@@ -20,6 +20,8 @@ interface ThreadProps {
   turns: ThreadTurn[];
   busy: boolean;
   liveSeconds: number | null;
+  /** Live thinking-strip copy for the in-flight turn; null = plain shimmer. */
+  activity?: string | null;
   error: TurnError | null;
   centeredComposer?: boolean;
   onEditMessage: (at: string, content: string) => void;
@@ -40,7 +42,7 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, activity = null, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const initialAssistantMessages = useRef(new Set(turns.flatMap((turn) => turn.assistant ? [turn.assistant.at] : [])));
   const isEmpty = turns.length === 0;
@@ -118,6 +120,7 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                     >
                       {turn.user && <UserMessage message={turn.user} onEdit={onEditMessage} />}
                       <AssistantMessage
+                        activity={isLast && busy ? activity : null}
                         durationSeconds={turnDurationSeconds(turn)}
                         error={isLast ? error : null}
                         liveSeconds={isLast && busy ? liveSeconds : null}

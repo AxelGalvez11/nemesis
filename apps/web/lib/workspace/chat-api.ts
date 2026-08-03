@@ -18,6 +18,7 @@ import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
+import { activityLabel, reasoningPhrase } from "@/lib/workspace/chat-activity";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
@@ -457,6 +458,9 @@ export interface ChatCompletionOptions {
   signal?: AbortSignal;
   decision?: ChatRouteDecision;
   onDelta?: CompletionDeltaHandler;
+  /** Streamed reasoner thoughts (DeepSeek `reasoning_content`). Only fires on
+   *  streaming turns from a reasoning model; plain models never emit it. */
+  onReasoning?: CompletionDeltaHandler;
   /** OpenAI-format tool schemas; the valve forwards them verbatim. */
   tools?: readonly unknown[];
 }
@@ -514,7 +518,7 @@ export async function postChatCompletion(
     let toolCalls: AgentToolCall[] = [];
     let answeringModel: string | undefined;
     if (options.onDelta) {
-      const streamed = await readCompletionStreamFull(res.body, options.onDelta);
+      const streamed = await readCompletionStreamFull(res.body, options.onDelta, options.onReasoning);
       text = streamed.text.trim() ? streamed.text : null;
       toolCalls = streamed.toolCalls;
     } else {
@@ -623,6 +627,11 @@ export async function sendChatTurn(
   signal?: AbortSignal,
   onDelta?: CompletionDeltaHandler,
   effort: ChatEffort = DEFAULT_CHAT_EFFORT,
+  /** Live thinking-strip copy (owner 2026-08-03: the static "Thinking" shimmer
+   *  on a minute-long turn "wasn't dynamic"). Fed from two places: the
+   *  reasoner's streamed thoughts and the agent's tool rounds. null = back to
+   *  the plain shimmer. */
+  onActivity?: (label: string | null) => void,
 ): Promise<ChatReply> {
   // Route and search on what the student TYPED. Reading the attached deck too
   // meant one slide citing a recent year bought a paid web search on every
@@ -652,7 +661,9 @@ export async function sendChatTurn(
     ? recallBrain(askText)
     : Promise.resolve(null);
   if (needsWeb) {
+    onActivity?.("Searching the web");
     const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
+    onActivity?.(null);
     sources = result.sources;
     groundedText = result.context
       ? `${userText}\n\n${result.context}`
@@ -668,6 +679,19 @@ export async function sendChatTurn(
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   let pendingDelete: PendingDelete | undefined;
+  // Reasoner thoughts arrive many times a second; the strip only needs a new
+  // phrase every few hundred milliseconds to read as alive.
+  let lastPhraseAt = 0;
+  const onReasoning: CompletionDeltaHandler | undefined = onActivity
+    ? (_delta, accumulated) => {
+        const now = Date.now();
+        if (now - lastPhraseAt < 350) return;
+        const phrase = reasoningPhrase(accumulated);
+        if (!phrase) return;
+        lastPhraseAt = now;
+        onActivity(phrase);
+      }
+    : undefined;
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
@@ -675,11 +699,14 @@ export async function sendChatTurn(
       decision,
       onDelta,
       signal,
+      ...(onReasoning ? { onReasoning } : {}),
       ...(offerTools ? { tools: AGENT_TOOLS } : {}),
     });
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
+    onActivity?.(activityLabel(calls));
     const results = await Promise.all(calls.map(async (call) => ({ call, result: await executeAgentTool(call) })));
+    onActivity?.(null);
     for (const { result } of results) {
       const output = outputFromToolResult(result);
       if (output && !outputs.some((existing) => existing.id === output.id)) outputs.push(output);
@@ -704,6 +731,7 @@ export async function sendChatTurn(
     ];
   }
   const shown = collapseOutputs(outputs);
+  onActivity?.(null);
   return {
     ...reply,
     sources,
