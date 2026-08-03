@@ -30,9 +30,12 @@ export type ToastTone = "working" | "done" | "empty" | "error";
 
 const HOST_ID = "nemesis-scan-toast";
 
-/** How many course names to list before summarising the rest. Enough to
- *  recognise the reading as yours; not so many the card becomes the page. */
-const MAX_LISTED = 8;
+// Owner 2026-08-01: "I need it to have a scrollability to see more courses."
+// There WAS a cap here (8, then "and N more"), which is why a student with a
+// full timetable could not see their own courses listed. The card always had
+// an overflow-y scroll; the names simply never reached it. Every course is
+// listed now and the LIST scrolls inside the card, so the counts above it and
+// the button below it both stay put while you look through them.
 
 const CSS = `
 :host { all: initial; }
@@ -132,11 +135,19 @@ const CSS = `
 .mark { width: 12px; height: 12px; flex: none; }
 .note { padding: 4px 10px 6px; font-size: 11.5px; opacity: .5; }
 
-.courses { margin-top: 10px; display: flex; flex-direction: column; gap: 1px; }
+.courses {
+  margin-top: 10px; display: flex; flex-direction: column; gap: 1px;
+  /* Scrolls on its own so a long timetable never pushes the counts out of
+     the card. ~9 rows tall, then it scrolls. */
+  max-height: 180px; overflow-y: auto; overscroll-behavior: contain;
+}
 .course {
   font-size: 12.5px; padding: 3px 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: baseline; gap: 8px;
 }
+.course-name { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.course-count { font-variant-numeric: tabular-nums; font-size: 11.5px; opacity: .55; }
+.course-count.none { opacity: .3; }
 .more { font-size: 11.5px; opacity: .5; padding-top: 3px; }
 
 .foot { padding: 12px 14px 14px; }
@@ -160,6 +171,14 @@ export interface ScanProgress {
   courses: number;
   items: number;
   syllabi: number;
+  /**
+   * Slides, readings and pages found by walking INSIDE the courses.
+   *
+   * Optional on purpose, and the row is hidden when it is absent: the course
+   * list is read before any course is opened, and a "Documents 0" sitting there
+   * during that phase reads as "there are none" rather than "not looked yet".
+   */
+  documents?: number;
 }
 
 export interface ToastAction {
@@ -174,6 +193,18 @@ export interface CardState {
   /** Omitted for plain messages (a page that is not a portal, say). */
   progress?: ScanProgress;
   courseNames?: readonly string[];
+  /**
+   * How many documents came out of each course, keyed by course name.
+   *
+   * Owner 2026-08-01: "the lower right panel should show how many documents
+   * picked up from each course." A single total cannot tell a student that
+   * eight courses gave up their slides and the ninth gave up nothing — which
+   * is exactly the case worth seeing, because that ninth one is the problem.
+   *
+   * A course missing from the map was never opened, and shows no number at
+   * all rather than a nought. Same distinction the scan itself keeps.
+   */
+  documentsByCourse?: Readonly<Record<string, number>>;
   action?: ToastAction;
   /** 0 keeps the card up. */
   autoHideMs?: number;
@@ -294,6 +325,9 @@ export function showCard(doc: Document, state: CardState): void {
     rows.append(progressRow(doc, "Courses", state.progress.courses));
     rows.append(progressRow(doc, "Coursework and dates", state.progress.items));
     rows.append(progressRow(doc, "Syllabus files", state.progress.syllabi));
+    if (state.progress.documents !== undefined) {
+      rows.append(progressRow(doc, "Slides and readings", state.progress.documents));
+    }
     // Says the quiet part out loud: clicking away does not cancel this.
     if (working) rows.append(el(doc, "div", "note", "Keep this tab open — this keeps going."));
     body.append(rows);
@@ -302,9 +336,16 @@ export function showCard(doc: Document, state: CardState): void {
   const names = state.courseNames ?? [];
   if (names.length > 0) {
     const list = el(doc, "div", "courses");
-    for (const name of names.slice(0, MAX_LISTED)) list.append(el(doc, "div", "course", name));
-    if (names.length > MAX_LISTED) {
-      list.append(el(doc, "div", "more", `and ${names.length - MAX_LISTED} more`));
+    for (const name of names) {
+      const row = el(doc, "div", "course");
+      row.append(el(doc, "span", "course-name", name));
+      const found = state.documentsByCourse?.[name];
+      // Absent means "not opened" and stays blank. 0 means "opened, empty" and
+      // says so — the difference the student could not previously see.
+      if (found !== undefined) {
+        row.append(el(doc, "span", found > 0 ? "course-count" : "course-count none", String(found)));
+      }
+      list.append(row);
     }
     body.append(list);
   }

@@ -13,7 +13,6 @@ import {
   IconList,
   IconPlus,
   IconTags,
-  IconTextSize,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -33,31 +32,35 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { EmptyState } from "@/components/desktop-ui/empty-state";
-import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
 import { AssistantMarkdown, slugifyHeading } from "@/lib/workspace/chat-markdown";
+import { isEditableNote } from "@/lib/workspace/note-markdown";
+
+import { NoteEditor } from "./note-editor";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { backlinksFor, extractLibraryLinks, findLibraryNote } from "@/lib/workspace/library-links";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
 
-import { LibraryLiveEditor, type LibraryEditorApi } from "./library-live-editor";
-
-type EditorMode = "edit" | "read";
+// Owner 2026-08-01: a note is READ here, never authored. The markdown editor
+// (library-live-editor + its decorations) is no longer mounted by this screen.
+//
+// Why the whole editor and not another round of hiding: the syntax characters
+// were always still IN the note, only painted at zero width, so deleting into
+// a construct orphaned its partner marker and the leftover became visible —
+// `**bold**` minus its word parses as `****`, a horizontal rule. And every
+// construct the decorator was never taught (images, checkboxes, autolinks,
+// escapes) rendered raw with no deletion at all. Rendering through
+// AssistantMarkdown — the same real renderer the chat uses — ends both:
+// there are no hidden characters to leak, because the markdown is converted
+// to formatted output rather than disguised.
+//
+// Notes are written and corrected by the chat (create/replace/append/rename
+// in lib/workspace/agent-tools.ts). The title below stays typeable.
 type RightPanel = "links" | "backlinks" | "contents" | "tags";
-
-/** Remembers whether the formatting bar is showing. Server render has no
- *  localStorage, so the value is restored after mount rather than in useState. */
-const EDITING_BAR_KEY = "nemesis.library.editing-bar";
-
-const EDITOR_MODES = [
-  { id: "edit", label: "Edit" },
-  { id: "read", label: "Read" },
-] as const;
 
 // "Second brain" used to be the first tab here (owner 2026-07-31: removed).
 // The name belongs to the CHAT, which is the thing that gets better the more a
@@ -109,12 +112,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const { notes, selectedPath, select, createNote, saveNote, deleteNote } = useCloudLibrary();
   const note = selectedPath ? (notes.find((item) => item.path === selectedPath) ?? null) : null;
   const [openPaths, setOpenPaths] = useState<string[]>([]);
-  const [mode, setMode] = useState<EditorMode>("edit");
-  // Visible by default (owner 2026-07-28 asked for "commands for bold
-  // italicize etc." — the buttons existed but defaulted OFF behind a dropdown,
-  // which is indistinguishable from not having them). Persisted, because a
-  // preference that resets on every note is not a preference.
-  const [editingBarOpen, setEditingBarOpen] = useState(true);
   const [rightPanel, setRightPanel] = useState<RightPanel>("links");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -127,15 +124,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const [navigation, setNavigation] = useState<{ entries: string[]; index: number }>({ entries: [], index: -1 });
   const draftRef = useRef<NoteDraft | null>(null);
   const replaceTabPathRef = useRef<string | null>(null);
-  const editorApiRef = useRef<LibraryEditorApi | null>(null);
-
-  useEffect(() => {
-    try {
-      // Only an explicit "hidden" overrides the default — a first-time student
-      // should meet the buttons, not have to find them in a menu.
-      if (window.localStorage.getItem(EDITING_BAR_KEY) === "0") setEditingBarOpen(false);
-    } catch { /* private mode */ }
-  }, []);
 
   useEffect(() => {
     if (!selectedPath) return;
@@ -256,7 +244,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
       const created = await createNote({ title: "Untitled note", folder: "", content: "" });
       setOpenPaths((paths) => paths.includes(created.path) ? paths : [...paths, created.path]);
       openPath(created.path);
-      setMode("edit");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Couldn't create a new note.");
     }
@@ -388,20 +375,13 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             <Button aria-label="Previous note" disabled={navigation.index <= 0} onClick={() => travelHistory(-1)} size="icon-xs" variant="ghost"><IconArrowLeft /></Button>
             <Button aria-label="Next note" disabled={navigation.index >= navigation.entries.length - 1} onClick={() => travelHistory(1)} size="icon-xs" variant="ghost"><IconArrowRight /></Button>
           </div>
-          <input aria-label="Note title" className={cn("min-w-48 flex-1 bg-transparent px-1 py-1 text-lg font-semibold tracking-tight text-foreground outline-none placeholder:text-(--ui-text-quaternary)", mode !== "edit" && "cursor-default")} onChange={(event) => updateDraft({ title: event.target.value })} placeholder="Untitled note" readOnly={mode !== "edit"} spellCheck tabIndex={mode === "edit" ? 0 : -1} value={title} />
-          <SegmentedControl className="bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]" onChange={setMode} options={EDITOR_MODES} value={mode} />
+          {/* The TITLE stays editable. Renaming is not authoring: it is one
+              plain-text field that can never contain a markdown construct, so
+              it cannot produce the stray-marker bug the body could. */}
+          <input aria-label="Note title" className="min-w-48 flex-1 bg-transparent px-1 py-1 text-lg font-semibold tracking-tight text-foreground outline-none placeholder:text-(--ui-text-quaternary)" onChange={(event) => updateDraft({ title: event.target.value })} placeholder="Untitled note" spellCheck value={title} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => {
-                setMode("edit");
-                setEditingBarOpen((open) => {
-                  const next = !open;
-                  try { window.localStorage.setItem(EDITING_BAR_KEY, next ? "1" : "0"); } catch { /* private mode */ }
-                  return next;
-                });
-              }}><IconTextSize /> {editingBarOpen ? "Hide editing bar" : "Show editing bar"}</DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setConfirmDelete(true)} variant="destructive"><IconTrash /> Delete note</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -410,10 +390,38 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
 
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-12 pt-5 max-sm:px-4">
-            {mode === "edit" ? (
-              <LibraryLiveEditor apiRef={editorApiRef} autoFocus={note.content.trim().length === 0} key={note.id} onChange={(next) => updateDraft({ content: next })} showToolbar={editingBarOpen} value={content} />
+            {/* Notes are WRITTEN here and READ below. The editor understands
+                everything the renderer does — headings, lists, tables, maths,
+                task lists — but a note holding something it cannot model
+                (raw HTML, a footnote, front matter) stays read-only rather
+                than being quietly flattened by the first save. Same rule as
+                the crawler: say what you cannot handle, never mangle it. */}
+            {/* 🔴 WAIT FOR THE TEXT BEFORE MOUNTING THE EDITOR. `note` is set a
+                render before `content` is — the effect above copies the note
+                into local state — so mounting on `note` alone seeded the editor
+                with an EMPTY document and then never re-read it, because it is
+                keyed on the note id and deliberately owns the document from
+                then on. Observed exactly that: the note open, its links listed
+                in the sidebar from the same `content`, and a blank page.
+                `draftRef` is set in that same effect, so this is the honest
+                test of "the text for THIS note has arrived". */}
+            {note && draftRef.current?.id === note.id && isEditableNote(content) ? (
+              <NoteEditor
+                className="note-editor min-h-[28rem] bg-transparent p-1"
+                key={note.id}
+                markdown={content}
+                noteId={note.id}
+                onChange={(next) => updateDraft({ content: next })}
+              />
             ) : (
-              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags obsidianUnderline onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
+              <>
+                {note && draftRef.current?.id === note.id && (
+                  <p className="mb-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">
+                    This note contains formatting the editor cannot safely change yet, so it is shown as read-only.
+                  </p>
+                )}
+                <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags obsidianUnderline onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
+              </>
             )}
           </div>
         </div>
@@ -453,12 +461,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
                     className="w-full truncate rounded-lg py-1.5 pr-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground"
                     key={`${heading.label}:${index}`}
                     onClick={() => {
-                      // Edit mode renders CodeMirror (no heading DOM ids), so
-                      // route the jump through the editor's imperative API.
-                      if (mode === "edit") {
-                        editorApiRef.current?.scrollToHeading(heading.label);
-                        return;
-                      }
+                      // The rendered article carries heading DOM ids, so the
+                      // jump is a plain scrollIntoView. (It used to need the
+                      // editor's imperative API, because CodeMirror has no
+                      // heading elements to scroll to.)
                       document.getElementById(slugifyHeading(heading.label))?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
                     style={{ paddingLeft: `${Math.max(0.5, (heading.depth - 1) * 0.75 + 0.5)}rem` }}

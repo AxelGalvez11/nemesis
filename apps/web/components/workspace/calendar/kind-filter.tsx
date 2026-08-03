@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
-import { Check, SlidersHorizontal } from "@/lib/workspace/icons";
+import { Check, RefreshCw, SlidersHorizontal } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 import type { CalendarEventKind } from "@/lib/workspace/calendar-model";
 import { describeFilter, toggleKind } from "@/lib/workspace/calendar-filter";
@@ -69,49 +69,63 @@ export function KindFilter({ hidden, onChange }: KindFilterProps) {
         )}
       </Button>
 
+      {/* Owner 2026-08-02: "remove the assignment, class, rotation etc names,
+          it should only show colours." So this is a row of swatches now, not a
+          labelled list — which is also why it is horizontal: five identical
+          squares stacked in a column read as a list with its words missing.
+
+          🔴 THE NAME IS REMOVED FROM THE SCREEN, NOT FROM THE CONTROL. Each
+          swatch still carries its name as a hover tooltip and as its accessible
+          name, so the filter is still operable with a screen reader and still
+          learnable by anyone who has not memorised which hue is which. Dropping
+          the word entirely would have made a working control unusable rather
+          than quieter. */}
       {open && (
         <div
-          className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-1.5 shadow-lg"
+          className="absolute right-0 z-50 mt-1 flex items-center gap-1 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-1.5 shadow-lg"
           data-testid="calendar-kind-filter"
           role="group"
         >
-          <p className="px-2 pb-1 pt-1.5 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-(--ui-text-quaternary)">
-            Show
-          </p>
           {KIND_ORDER.map((kind) => {
             const shown = !hidden.has(kind);
             return (
               <button
                 aria-checked={shown}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] hover:bg-(--chrome-action-hover)"
+                aria-label={KIND_META[kind].label}
+                className="grid size-7 shrink-0 place-items-center rounded-lg hover:bg-(--chrome-action-hover)"
                 key={kind}
                 onClick={() => onChange(toggleKind(hidden, kind))}
                 role="menuitemcheckbox"
+                title={KIND_META[kind].label}
                 type="button"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "grid size-4 shrink-0 place-items-center rounded-[0.25rem] border",
+                    "grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+                    // Hidden reads as an empty outline, shown as a filled dot.
+                    // With no words left, this contrast IS the state.
                     shown ? "border-transparent" : "border-(--ui-stroke-secondary)",
                     shown && KIND_META[kind].dot,
                   )}
                 >
-                  {shown && <Check size={11} strokeWidth={3} />}
-                </span>
-                <span className={cn("truncate", !shown && "text-(--ui-text-quaternary)")}>
-                  {KIND_META[kind].label}
+                  {shown && <Check size={10} strokeWidth={3} />}
                 </span>
               </button>
             );
           })}
+          {/* Sits at the end of the row rather than under it, and only appears
+              when something is actually hidden. Without a way back, a swatch
+              row with no words is a filter a student can get lost inside. */}
           {filtering && (
             <button
-              className="mt-1 w-full rounded-lg px-2 py-1.5 text-left text-[0.75rem] text-(--theme-primary) hover:bg-(--chrome-action-hover)"
+              aria-label="Show everything"
+              className="ml-0.5 grid size-7 shrink-0 place-items-center rounded-lg border-l border-(--ui-stroke-tertiary) pl-0.5 text-(--theme-primary) hover:bg-(--chrome-action-hover)"
               onClick={() => onChange(new Set())}
+              title="Show everything"
               type="button"
             >
-              Show everything
+              <RefreshCw size={13} />
             </button>
           )}
         </div>
