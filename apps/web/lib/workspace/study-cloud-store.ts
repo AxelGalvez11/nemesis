@@ -496,6 +496,25 @@ function reset() {
   setState(EMPTY_STATE);
 }
 
+/**
+ * Re-read Study from the database after something OUTSIDE this store wrote to
+ * it — in practice, the chat's agent tools (add_practice_test, add_flashcards,
+ * and friends), which write straight to Supabase.
+ *
+ * Owner 2026-08-01: "i asked the chat to create an organic chemistry quiz but
+ * it routed to tests but it wasnt there." The row was always saved correctly.
+ * The Study page simply never heard about it: the Library store keeps a live
+ * Supabase channel open and refreshes itself, and this store has none, so its
+ * in-memory list stayed as it was and the new test only appeared after a full
+ * page reload. Module-level on purpose — the writer is not a React component
+ * and has no hook to call.
+ *
+ * A no-op when nobody is signed in, so it is always safe to call.
+ */
+export function refreshStudyAfterExternalWrite(): void {
+  if (loadedForUserId) void loadStudy(loadedForUserId);
+}
+
 export interface CreateDeckInput {
   name: string;
   description?: string;

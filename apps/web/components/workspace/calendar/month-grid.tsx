@@ -22,15 +22,39 @@ interface MonthGridProps {
 
 export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay }: MonthGridProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
-      <div className="grid shrink-0 grid-cols-7 border-b border-(--ui-stroke-tertiary) text-sm font-medium text-(--ui-text-secondary)">
+    // Owner 2026-08-01, again 2026-08-02: month view could not scroll. Two
+    // rules on THIS div caused it. `min-h-0` lets a flex child shrink below its
+    // own content, and `overflow-hidden` then swallowed whatever no longer fit
+    // — so the parent's `overflow-y-auto` was never told there was more, and
+    // there was nothing to scroll.
+    //
+    // MEASURED on the live app, August 2026, 1440x727:
+    //   before  this div 624 tall holding 766 of content  → 142px CLIPPED,
+    //           scroller 651 = content 651, scrolled 0px. The last week of the
+    //           month simply did not exist.
+    //   after   this div 766 = its content, scroller 651 of 793 → scrolls 142.
+    //
+    // 🔴 THE CLIP IS HERE, NOT ON THE SCROLLER. The scroller two levels up is
+    // correct and always was; it reported "nothing to scroll" because this div
+    // had already hidden the overflow. Do not go looking for the bug up there.
+    <div className="flex flex-1 flex-col border border-(--ui-stroke-tertiary) bg-background">
+      {/* Pinned, because the month now genuinely scrolls. Without this the day
+          names scroll away with the weeks and the bottom of a long month is
+          seven unlabelled columns — the same complaint that put the day and
+          week headings outside their own scroller. Needs its own background:
+          a transparent sticky row lets the week rows slide visibly under it. */}
+      <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 border-b border-(--ui-stroke-tertiary) bg-background text-sm font-medium text-(--ui-text-secondary)">
         {WEEKDAY_LABELS.map((label) => (
           <div className="px-3 py-2 text-right" key={label}>
             {label}
           </div>
         ))}
       </div>
-      <div className="grid flex-1 grid-cols-7 grid-rows-6">
+      {/* `grid-rows-6` is repeat(6, minmax(0,1fr)) — the 0 floor lets a row
+          shrink under its own cells, which is how six weeks got crushed into
+          one screen. A real 6rem floor per row means a month is genuinely as
+          tall as its content, and still stretches to fill a big window. */}
+      <div className="grid flex-1 grid-cols-7 auto-rows-[minmax(6rem,1fr)]">
         {days.map((day) => (
           <DayCell day={day} events={eventsByDay.get(day.key) ?? []} key={day.key} onOpenEvent={onOpenEvent} onPick={onPickDay} />
         ))}

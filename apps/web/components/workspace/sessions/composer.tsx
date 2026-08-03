@@ -429,19 +429,33 @@ export function Composer({ busy, centered = false, placement = "floating", place
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
+          chat composer". Owner 2026-08-02: "i need the drop to attach to be a
+          box ABOVE the chat composer" — it used to be an overlay laid across
+          the composer, which blanked out whatever the student had already
+          typed at the exact moment they were adding to it.
+          `bottom-full` floats it above WITHOUT taking layout space. In flow it
+          would shove the composer down out from under a moving cursor, which
+          during a drag is how you drop a file on the wrong thing.
+          🔴 POINTER EVENTS MUST STAY ON. The old overlay set
+          pointer-events-none, and that was only safe because the composer sat
+          directly behind it to catch the drop. Up here there is nothing behind
+          but the message list, so a click-through box would hand the file to
+          the page and the browser would NAVIGATE AWAY to it, losing the draft.
+          This is still a DOM child of the root, so the drop bubbles to onDrop. */}
+      {dragOver && activeMode === "chat" && (
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-full z-30 mb-2 grid h-24 place-content-center justify-items-center gap-1.5 rounded-2xl border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))] backdrop-blur-[0.75rem]"
+          data-slot="composer-drop-target"
+        >
+          <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.15rem" />
+          <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
+        </div>
+      )}
       <div className="relative w-full rounded-[inherit]">
-        {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
-            chat composer". pointer-events-none so the overlay cannot eat the
-            drop it is advertising. */}
-        {dragOver && activeMode === "chat" && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[inherit] border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))]"
-            data-slot="composer-drop-target"
-          >
-            <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
-          </div>
-        )}
+        {/* The composer surface itself stays clear while a file is over it, so
+            the draft underneath remains readable. */}
         <div
           className="group/composer-surface relative z-4 isolate grid grid-rows-[auto_1fr] overflow-hidden rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))]"
           data-slot="composer-surface"

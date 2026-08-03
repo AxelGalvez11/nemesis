@@ -46,7 +46,12 @@
         color: var(--fg);
         font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
         margin: 0;
-        width: 320px;
+        /* Owner 2026-08-01: "make the browser popup bigger". Chrome caps a
+           popup at 800x600; 420 wide leaves the course names room to read
+           instead of truncating, and the min-height stops the panel
+           snapping between sizes as the flow moves stage to stage. */
+        width: 420px;
+        min-height: 380px;
       }
 
       /* ── Header ─────────────────────────────────────────────────────────── */
@@ -171,20 +176,17 @@
         <div class="tile" id="tile-docs"><b>0</b><span>Documents</span></div>
       </div>
 
-      <div hidden id="picker">
-        <p>If this is your school portal, which one is it?</p>
-        <div class="choices">
-          <button data-lms="canvas" type="button">Canvas</button>
-          <button data-lms="blackboard" type="button">Blackboard</button>
-          <button data-lms="moodle" type="button">Moodle</button>
-          <button data-lms="brightspace" type="button">Brightspace</button>
-        </div>
-      </div>
+      <!-- The "which portal is this?" picker is GONE (owner 2026-08-01: "it
+           should not ask user for school website type, it should detect it
+           automatically"). Asking a student to name their own LMS is asking
+           them to know a word the product invented; detection reads the URL's
+           shape and gets it right on the portals we support. -->
 
       <div class="actions">
-        <button class="primary" id="scan" type="button">Read this page</button>
-        <button class="secondary" hidden id="next" type="button">Bring into Nemesis</button>
-        <button class="secondary" hidden id="clear" type="button">Clear what is stored</button>
+        <!-- One button. "Bring into Nemesis" and "Clear what is stored" both
+             went (owner 2026-08-01): bringing it in happens in the app, and
+             the card on the page is the way there. -->
+        <button class="primary" id="scan" type="button">Scan</button>
       </div>
     </main>
 

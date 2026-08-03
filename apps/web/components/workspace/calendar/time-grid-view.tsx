@@ -146,7 +146,12 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
               </span>
               <span
                 className={cn(
-                  "mt-0.5 grid size-[2.875rem] place-items-center rounded-full text-[1.625rem] font-normal leading-none tabular-nums",
+                  // Owner 2026-08-02: "these numbers are too big". Was 1.625rem
+                  // in a 2.875rem circle — Google's proportions, but Google's
+                  // root is 16px and this app's is 20px, so copying the RATIO
+                  // (see the note above) landed a quarter larger than the thing
+                  // it was matching. Sized against this app's own text instead.
+                  "mt-0.5 grid size-[2.125rem] place-items-center rounded-full text-[1.125rem] font-normal leading-none tabular-nums",
                   day.isToday ? "bg-foreground text-background" : "text-foreground",
                 )}
               >

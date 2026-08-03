@@ -130,20 +130,27 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
           <p className="px-0.5 text-[0.6875rem] tabular-nums text-muted-foreground">{slotLabel(draft)}</p>
 
           <div className="flex flex-wrap gap-1">
+            {/* Colour only, per the owner. The name survives as the tooltip and
+                the accessible name — a picker whose options cannot be told
+                apart by anyone who has not learned the palette is not a picker.
+                The chosen one is ringed rather than merely brighter: opacity
+                alone is not a state you can see against five bright dots. */}
             {KIND_ORDER.map((option) => (
               <button
+                aria-label={KIND_META[option].label}
                 aria-pressed={kind === option}
                 className={cn(
-                  "rounded-full px-2 py-0.5 text-[0.6875rem] font-medium transition-opacity",
-                  KIND_META[option].chip,
-                  kind === option ? "ring-1 ring-current" : "opacity-55 hover:opacity-100",
+                  "size-5 rounded-full transition-opacity",
+                  KIND_META[option].dot,
+                  kind === option
+                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
+                    : "opacity-45 hover:opacity-100",
                 )}
                 key={option}
                 onClick={() => setKind(option)}
+                title={KIND_META[option].label}
                 type="button"
-              >
-                {KIND_META[option].label}
-              </button>
+              />
             ))}
           </div>
 

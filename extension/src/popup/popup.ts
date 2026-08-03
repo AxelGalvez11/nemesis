@@ -35,7 +35,6 @@ const LABELS: Record<LmsKind, string> = {
   unknown: "your school portal",
 };
 
-const APP_URL = "https://app.enternemesis.com/library?import=coursework";
 
 /** What the panel believes it is looking at. Set on open, and again if the
  *  student overrules it with a tile. */
@@ -107,24 +106,27 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
   return tab ?? null;
 }
 
-function markChosen(lms: LmsKind): void {
-  for (const tile of Array.from(element("picker").querySelectorAll<HTMLButtonElement>("button[data-lms]"))) {
-    tile.setAttribute("aria-pressed", String(tile.dataset.lms === lms));
-  }
-}
-
-/** Say what we are looking at, and offer the tiles only when we cannot tell. */
+/**
+ * Say what we are looking at.
+ *
+ * Owner 2026-08-01: "it should not ask user for school website type, it should
+ * detect it automatically." There used to be a four-way picker here for when
+ * detection came up empty. It is gone — a student should not be asked to name
+ * the software their school bought. Detection reads the URL's shape, which is
+ * what lets this work on any institution's own domain.
+ *
+ * When we genuinely cannot tell, the honest move is to say so and leave Scan
+ * disabled, not to hand the problem back as a quiz.
+ */
 function reflectPage(lms: LmsKind): void {
   setDetected(lms);
   const scanButton = element<HTMLButtonElement>("scan");
   if (lms === "unknown") {
-    setStatus("This does not look like a school portal.");
-    element("picker").hidden = false;
+    setStatus("This does not look like a school portal.", "Open the page that lists your courses.");
     scanButton.disabled = true;
     setStages("open");
     return;
   }
-  element("picker").hidden = true;
   scanButton.disabled = false;
   setStatus("Ready when you are.", "Open the page that lists your courses.");
   setStages("read");
@@ -146,8 +148,7 @@ async function scan(): Promise<void> {
     const seen = current;
     const lms: LmsKind = seen && seen.tabId === tab.id ? seen.lms : "unknown";
     if (lms === "unknown") {
-      setStatus("Tell me which portal this is and I will read it.");
-      element("picker").hidden = false;
+      setStatus("This does not look like a school portal.", "Open the page that lists your courses.");
       return;
     }
 
@@ -195,8 +196,7 @@ function showStored(scan: LmsScan): void {
   setTile("tile-docs", docs);
   setStatus("Ready to bring in.", describeScan(scan));
   setStages("bring");
-  element("next").hidden = false;
-  element("clear").hidden = false;
+
 }
 
 async function restore(): Promise<void> {
@@ -225,32 +225,11 @@ async function restore(): Promise<void> {
   if (stored && stored.courses.length > 0) showStored(stored);
 }
 
+// One control. "Bring into Nemesis" and "Clear what is stored" are gone
+// (owner 2026-08-01): the card on the page carries the way into the app, and
+// the reading is replaced by the next scan rather than needing to be swept up
+// by hand. CLEAR_STORED still exists on the worker — nothing that writes to a
+// student's browser should lose its off switch just because a button moved.
 element("scan").addEventListener("click", () => void scan());
-element("next").addEventListener("click", () => {
-  void chrome.tabs.create({ url: APP_URL });
-});
-element("clear").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.CLEAR_STORED }, () => {
-    void chrome.runtime.lastError;
-    element("tiles").hidden = true;
-    element("next").hidden = true;
-    element("clear").hidden = true;
-    setStatus("Cleared. Nothing is stored.");
-    reflectPage(current?.lms ?? "unknown");
-  });
-});
-
-for (const tile of Array.from(element("picker").querySelectorAll<HTMLButtonElement>("button[data-lms]"))) {
-  tile.addEventListener("click", () => {
-    const lms = tile.dataset.lms as LmsKind | undefined;
-    if (!lms || !current) return;
-    current = { ...current, lms };
-    markChosen(lms);
-    setDetected(lms);
-    element<HTMLButtonElement>("scan").disabled = false;
-    setStages("read");
-    setStatus(`Reading it as ${LABELS[lms]}.`, "Open the page that lists your courses.");
-  });
-}
 
 void restore();
