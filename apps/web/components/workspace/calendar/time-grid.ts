@@ -22,16 +22,41 @@
 
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 
-/** Height of one hour, in pixels. The single knob for grid density. */
-export const HOUR_HEIGHT = 48;
+/**
+ * Height of one hour, in pixels. The single knob for grid density.
+ *
+ * 36, down from 48 (owner 2026-07-31: "the calendar feels too zoomed in at
+ * default 100%", pointing at Google Calendar).
+ *
+ * MEASURED against Google Calendar side by side: its rows are 24px on a 16px
+ * root font, i.e. one and a half times the base text size. This app's root is
+ * 20px, so the like-for-like figure is 30px — and it was drawing 48. A whole
+ * day was 1,152 pixels of scrolling; it is now 864.
+ *
+ * Deliberately not the full way down to 30: every piece of text on this page is
+ * a quarter larger than Google's, so Google's exact density would leave a
+ * half-hour block too short to read its own title.
+ */
+export const HOUR_HEIGHT = 36;
 /** Drawn length of an event, until the data can say how long it really is. */
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */
 export const MIN_BLOCK_MINUTES = 24;
-/** The window shown when a day has no timed events — a working day, not 24
- *  hours of empty rows the student has to scroll past. */
-export const DEFAULT_START_HOUR = 8;
-export const DEFAULT_END_HOUR = 20;
+/**
+ * The grid always draws a WHOLE DAY, midnight to midnight (owner 2026-07-31,
+ * pointing at Google Calendar).
+ *
+ * This replaced a window that started at the working day and stretched to fit
+ * whatever lay outside it. That kept the page short, but it meant the grid
+ * silently changed length as events moved, 01:00 simply did not exist until
+ * something was already there, and a student could not scroll to a time to
+ * create an event at it. A real calendar is the full day and you scroll.
+ */
+export const FULL_DAY: HourWindow = { endHour: 24, startHour: 0 };
+
+/** Where the grid is scrolled to when it opens. Midnight is a wall of empty
+ *  rows; every desktop calendar opens near the working day instead. */
+export const SCROLL_TO_HOUR = 8;
 
 /** Minutes past midnight for "HH:MM", or null if it is not a time. Anything
  *  this rejects is treated as untimed and moved to the all-day strip, which is
@@ -168,27 +193,68 @@ export function blockGeometry(column: number, columns: number): BlockGeometry {
   return { leftPct, widthPct: 100 - leftPct, zIndex: column };
 }
 
+// ── How much of an event a block is tall enough to show ──────────────────────
+
+/**
+ * 🔴 A BLOCK MUST NEVER RENDER MORE LINES THAN IT CAN HOLD.
+ *
+ * Owner-reported 2026-07-31, right after the grid density was retuned: a
+ * 45-minute event drew its title and its time, and the box was too short for
+ * both, so the second line was sliced through the middle of the glyphs. Text cut
+ * horizontally with an ellipsis reads as deliberate; text cut horizontally
+ * through its own letters reads as broken software.
+ *
+ * The old guard was a single `height > 26`, which was tuned when an hour was 48
+ * pixels and silently became wrong at 36 — and it tested the LAYOUT height while
+ * the box is actually rendered two pixels shorter, so it was answering a
+ * slightly different question than the one that matters.
+ *
+ * The thresholds below are the rendered type, added up. At this app's 20px root
+ * font: a title line is 0.6875rem at leading-tight, about 17px; the time line is
+ * 0.625rem, about 16px; the border costs 2px; the padding differs per tier,
+ * which is the point — a short block buys room by giving up padding rather than
+ * by clipping.
+ */
+export type BlockDetail = "stacked" | "inline" | "title";
+
+/** Title above the time, the roomy default: two line boxes + 10px padding + 2px
+ *  border. */
+export const STACKED_MIN_PX = 44;
+/**
+ * Title and time side by side on one line: a 17px line box + 5px padding + 2px
+ * border is 24.2px, so 25 is the first height that holds it.
+ *
+ * Worth being exact rather than rounding up "for safety". An event with no end
+ * time is drawn at DEFAULT_EVENT_MINUTES, which at this density renders at
+ * exactly 25px — and every syllabus deadline and quick-created event has no end
+ * time, so this is the COMMONEST block on the grid. A threshold one pixel
+ * higher would have silently dropped the time from most of the calendar, which
+ * is a worse bug than the clipping it was meant to prevent.
+ */
+export const INLINE_MIN_PX = 25;
+
+/**
+ * What a block of this rendered height can show without clipping.
+ *
+ * Takes the height the box is actually GIVEN, not the height the layout
+ * computed — those differ, and the difference is exactly the gap the old guard
+ * fell through. PURE.
+ */
+export function blockDetail(renderedHeightPx: number): BlockDetail {
+  if (renderedHeightPx >= STACKED_MIN_PX) return "stacked";
+  if (renderedHeightPx >= INLINE_MIN_PX) return "inline";
+  return "title";
+}
+
+/** The height the block is actually drawn at, so the view and this module can
+ *  never disagree about it. */
+export function renderedBlockHeight(layoutHeightPx: number): number {
+  return Math.max(layoutHeightPx - 2, 14);
+}
+
 export interface HourWindow {
   startHour: number;
   endHour: number;
-}
-
-/**
- * The hour range to draw. Starts from a normal working day and widens to fit
- * anything outside it, so an 06:30 clinical or a 21:00 deadline is never
- * scrolled out of existence — but an ordinary week does not render a wall of
- * empty midnight hours either.
- */
-export function hourWindow(days: readonly DayLayout[]): HourWindow {
-  let earliest = DEFAULT_START_HOUR * 60;
-  let latest = DEFAULT_END_HOUR * 60;
-  for (const day of days) {
-    for (const item of day.timed) {
-      earliest = Math.min(earliest, item.startMinute);
-      latest = Math.max(latest, item.endMinute);
-    }
-  }
-  return { endHour: Math.min(24, Math.ceil(latest / 60)), startHour: Math.max(0, Math.floor(earliest / 60)) };
 }
 
 /** Vertical offset in pixels for a minute-of-day inside a window. */

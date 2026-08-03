@@ -631,6 +631,38 @@
   margin-block: 1rem 0.25rem;
 }
 
+/* Tables read as data, not as a card dropped into the answer (owner
+   2026-07-31, ChatGPT as the reference). A rounded outer box around every
+   table made a three-row comparison look like a separate component the answer
+   had attached; ChatGPT rules the rows and leaves the edges open, so the table
+   stays part of the sentence around it. Scoped to assistant markdown, so the
+   real tables elsewhere in the app (Study decks, Calendar) are untouched. */
+[data-slot='aui_assistant-message-content'] .aui-md :where(table) {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(th, td) {
+  border: 0;
+  border-block-end: 1px solid var(--ui-stroke-tertiary);
+  padding-block: 0.4rem;
+  padding-inline: 0 1.25rem;
+  background: transparent;
+}
+
+/* The header rule is the only strong line; the last row has nothing under it,
+   which is what stops the table looking like a closed box. */
+[data-slot='aui_assistant-message-content'] .aui-md :where(thead th) {
+  border-block-end-color: var(--ui-stroke-secondary, var(--ui-stroke-tertiary));
+  font-weight: 600;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(tbody tr:last-child td) {
+  border-block-end: 0;
+}
+
 [data-slot='aui_assistant-message-content'] .aui-md > :first-child,
 [data-slot='aui_assistant-message-content'] .aui-md > :first-child > :first-child {
   margin-top: 0;

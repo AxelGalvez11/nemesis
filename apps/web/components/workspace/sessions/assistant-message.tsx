@@ -120,11 +120,11 @@ function AssistantFooter({ text, sources, onOpenSources }: { text: string; sourc
         className="relative flex flex-row items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
         data-slot="aui_msg-actions"
       >
-        <Tip label="Copy">
-          <Button aria-label="Copy" onClick={handleCopy} size="icon-xs" variant="ghost">
-            <Codicon name={copied ? "check" : "copy"} size="0.875rem" />
-          </Button>
-        </Tip>
+        {/* No <Tip> wrapper: Button tooltips every icon-sized button from its
+            aria-label, and wrapping here too rendered it twice. */}
+        <Button aria-label="Copy" onClick={handleCopy} size="icon-xs" variant="ghost">
+          <Codicon name={copied ? "check" : "copy"} size="0.875rem" />
+        </Button>
       </div>
     </div>
   );

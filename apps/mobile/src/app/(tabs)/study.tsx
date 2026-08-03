@@ -33,7 +33,7 @@ import {
   type StudyModeKey,
 } from "@/components/StudyModeMenu";
 import { DragChip } from "@/components/DragChip";
-import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { FolderPickerSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
 import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
@@ -194,7 +194,14 @@ export default function StudyScreen() {
 
   // Long-press row actions (owner 2026-07-22, same ask as the Library's).
   const [rowTarget, setRowTarget] = useState<StudyRowTarget | null>(null);
-  const [rowSheet, setRowSheet] = useState<"actions" | "rename" | "move" | "merge" | null>(null);
+  const [rowSheet, setRowSheet] = useState<"rename" | "move" | "merge" | null>(null);
+  // 🔴 THE MENU IS AT THE FINGER NOW, NOT A BOTTOM SHEET (owner 2026-07-31:
+  // "holding on items in the study page should ... work like in the library").
+  // The Library moved to a touch-anchored MiniMenu a week ago; Study kept the
+  // sheet the two screens originally shared, so the same hold on two lists that
+  // look alike did two different things. "actions" left the rowSheet union with
+  // it — this anchor replaces that state entirely.
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
   const [mergeDecks, setMergeDecks] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
@@ -253,6 +260,16 @@ export default function StudyScreen() {
   const exitSelect = useCallback(() => {
     setSelectMode(false);
     setSelectedKeys(new Set());
+  }, []);
+
+  /** Enter select mode, optionally pre-ticking the row the menu opened over —
+   *  the Library's "Select" action, now that Study has the same menu. Closing
+   *  the menu first keeps the two overlays from fighting for the same tap. */
+  const enterSelectMode = useCallback((prekey?: string) => {
+    setMenuAnchor(null);
+    setActionsOpen(false);
+    setSelectedKeys(prekey ? new Set([prekey]) : new Set());
+    setSelectMode(true);
   }, []);
 
   /** True once a real fetch has landed this session — the guard that stops a
@@ -325,6 +342,7 @@ export default function StudyScreen() {
 
   const closeRowSheets = useCallback(() => {
     setRowSheet(null);
+    setMenuAnchor(null);
     setRowTarget(null);
     setMergeDecks(null);
     setRowError(null);
@@ -359,6 +377,8 @@ export default function StudyScreen() {
   const confirmDelete = useCallback(
     (target: StudyRowTarget) => {
       setRowSheet(null);
+      // The MiniMenu has no self-dismiss, so it would sit behind the OS alert.
+      setMenuAnchor(null);
       const doomed = target.kind === "folder" ? decksInGroup(decks, target.path) : [];
       const cardCount =
         target.kind === "deck"
@@ -422,17 +442,20 @@ export default function StudyScreen() {
   // Row keys are "deck:<id>" / "folder:<group path>". Dropping onto a folder
   // runs the same move the menu's "Move to…" does.
   const openRowMenu = useCallback(
-    (rowKey: string) => {
+    // x/y are the release point in WINDOW coordinates — useRowDrag hands them
+    // over so the menu can open under the finger, which is what makes this feel
+    // like the Library's.
+    (rowKey: string, x: number, y: number) => {
       const rest = rowKey.slice(rowKey.indexOf(":") + 1);
       if (rowKey.startsWith("folder:")) {
         setRowTarget({ kind: "folder", label: pathLeaf(rest), path: rest });
-        setRowSheet("actions");
+        setMenuAnchor({ x, y });
         return;
       }
       const deck = decks.find((d) => d.id === rest);
       if (!deck) return;
       setRowTarget({ kind: "deck", id: deck.id, name: deck.name });
-      setRowSheet("actions");
+      setMenuAnchor({ x, y });
     },
     [decks],
   );
@@ -616,10 +639,20 @@ export default function StudyScreen() {
   // being moved, its own subtree is struck out (a folder can't go inside itself).
   const groupOptions = allGroupPaths(decks.map((deck) => deck.name));
   const rowLabel = rowTarget ? (rowTarget.kind === "deck" ? pathLeaf(rowTarget.name) : rowTarget.label) : "";
+  // Each action clears the anchor as it hands off: a MiniMenu only dismisses
+  // itself when its BACKDROP is tapped, so without this the menu would still be
+  // sitting there behind the sheet it just opened. Rename/Move keep rowTarget
+  // for the follow-on sheet; the others don't need it.
   const rowActions: RowAction[] = rowTarget
     ? [
-        { key: "rename", label: "Rename", onPress: () => setRowSheet("rename") },
-        { key: "move", label: "Move to…", onPress: () => setRowSheet("move") },
+        { key: "rename", label: "Rename", onPress: () => { setMenuAnchor(null); setRowSheet("rename"); } },
+        { key: "move", label: "Move to…", onPress: () => { setMenuAnchor(null); setRowSheet("move"); } },
+        {
+          key: "select",
+          label: "Select",
+          onPress: () =>
+            enterSelectMode(rowTarget.kind === "deck" ? `deck:${rowTarget.id}` : `folder:${rowTarget.path}`),
+        },
         { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(rowTarget) },
       ]
     : [];
@@ -837,15 +870,15 @@ export default function StudyScreen() {
         fingerY={rowDrag.fingerY}
       />
 
-      {/* Long-press row actions (owner 2026-07-22) — the same three sheets the
-          Library tree uses, so the two trees behave identically. */}
-      <RowActionsSheet
-        visible={rowSheet === "actions"}
-        title={rowLabel}
-        subtitle={rowTarget?.kind === "folder" ? "Folder" : "Deck"}
+      {/* Held-row actions: a MiniMenu at the finger, matching the Library
+          (owner 2026-07-31). Rendered at this screen's root, not inside a panel,
+          so no `portal` — the anchor is already in window coordinates. */}
+      <MiniMenu
+        visible={menuAnchor !== null}
+        anchor={menuAnchor}
         actions={rowActions}
         onClose={closeRowSheets}
-        testID="study-row-actions"
+        testID="study-row-menu"
       />
       <TextPromptSheet
         visible={rowSheet === "rename"}
@@ -905,11 +938,7 @@ export default function StudyScreen() {
           setAddSheetStep("new-cards");
           setAddSheetOpen(true);
         }}
-        onSelect={() => {
-          setActionsOpen(false);
-          setSelectedKeys(new Set());
-          setSelectMode(true);
-        }}
+        onSelect={() => enterSelectMode()}
         onSorting={(anchor) => {
           setActionsOpen(false);
           setSortMenuAnchor(anchor);

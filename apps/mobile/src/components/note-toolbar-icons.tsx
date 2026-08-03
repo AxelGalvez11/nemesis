@@ -181,3 +181,19 @@ export function TableIcon({ size = 22, color, strokeWidth = 1.7 }: IconProps) {
     </Svg>
   );
 }
+
+/** Put the keyboard away — the keyboard slab with an arrow leaving it downwards,
+ *  which is how iOS itself draws this action. Lives with the toolbar glyphs
+ *  because it sits on the toolbar's rail, even though it formats nothing. */
+export function KeyboardDownIcon({ size = 22, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="2.5" y="4" width="19" height="11" rx="2" stroke={color} strokeWidth={strokeWidth} {...base} />
+      {/* Two short key rows rather than a full grid: at 22pt a real keyboard
+          layout turns into grey mush, where two rows still read as "keyboard". */}
+      <Line x1="6" y1="7.8" x2="18" y2="7.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.5" y1="11.4" x2="15.5" y2="11.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M12 17v4m0 0-2.4-2.4M12 21l2.4-2.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}

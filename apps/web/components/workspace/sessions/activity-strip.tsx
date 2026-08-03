@@ -14,14 +14,6 @@ export function formatDuration(totalSeconds: number): string {
   return `${minutes}m ${rest}s`;
 }
 
-function ActivityTimerText({ seconds }: { seconds: number }) {
-  return (
-    <span className="text-[length:var(--conversation-caption-font-size)] tabular-nums text-(--ui-text-tertiary)">
-      {formatDuration(seconds)}
-    </span>
-  );
-}
-
 interface ActivityStripProps {
   placement: "live" | "header";
   seconds: number | null;
@@ -40,7 +32,10 @@ export function ActivityStrip({ placement, seconds }: ActivityStripProps) {
           <span className="nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)">
             <span className="shimmer min-w-0 truncate">Thinking</span>
           </span>
-          {seconds !== null && <ActivityTimerText seconds={seconds} />}
+          {/* No running count while it thinks (owner 2026-08-01). A number
+              ticking up invites the student to watch it, and turns a wait into
+              a stopwatch. The elapsed time still appears once — as "Thought
+              for Xs" below — where it reads as a fact, not a countdown. */}
         </div>
       </div>
     );

@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { Animated, Easing, Keyboard, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { GestureDetector } from "react-native-gesture-handler";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Animated, Easing, Keyboard, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon } from "./icons";
@@ -38,6 +38,7 @@ export function SlideUpSheet({
   children,
   fullScreen = false,
   page = false,
+  portal = false,
   hideClose = false,
   compactTitle = false,
   headerDivider = false,
@@ -55,6 +56,17 @@ export function SlideUpSheet({
    *  tap target, or collapsed resting state. Used by Study flows whose work
    *  needs the whole phone rather than a taller bottom sheet. */
   page?: boolean;
+  /** Render into a native Modal instead of inline, so the surface is measured
+   *  against the WINDOW rather than whatever view it was declared in.
+   *
+   *  🔴 A sheet declared inside another panel is NOT full screen, however much
+   *  it asks to be. `styles.layer` is StyleSheet.absoluteFill, and an absolutely
+   *  positioned child resolves against its parent's content box — so the image
+   *  cloze editor, declared inside the add-card page's body, was inset by that
+   *  page's padding and started below its header. MiniMenu already carries the
+   *  same escape hatch, added for the same reason one level down (see its
+   *  `portal` prop). Only reach for it when the sheet really is nested. */
+  portal?: boolean;
   hideClose?: boolean;
   compactTitle?: boolean;
   headerDivider?: boolean;
@@ -86,22 +98,47 @@ export function SlideUpSheet({
   // don't surface it, which is how it shipped. Restored 2026-07-23. Also drops
   // the keyboard on open, since this is an inline view (not a native modal) the
   // keyboard would otherwise cover.
+  // A portalled sheet lives in a native Modal, which is mounted or not — there
+  // is no "present but transparent to touches" state to hide in, so it has to
+  // outlive `visible` by exactly the length of the close animation or the sheet
+  // would vanish instead of sliding away. Inline sheets ignore this entirely.
+  const [portalMounted, setPortalMounted] = useState(visible);
+
   useEffect(() => {
-    if (visible) Keyboard.dismiss();
+    if (visible) {
+      Keyboard.dismiss();
+      setPortalMounted(true);
+    }
     Animated.timing(progress, {
       toValue: visible ? 1 : 0,
       duration: visible ? 260 : 200,
       easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
       useNativeDriver: true,
-    }).start();
+    }).start(({ finished }) => {
+      if (finished && !visible) setPortalMounted(false);
+    });
   }, [visible, progress]);
 
   // Slides off the bottom of the window, not just its own height, so it starts
   // fully offscreen regardless of how tall the content ends up being.
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
 
-  if (page) {
+  /** Inline by default; inside a native Modal when the sheet is nested. */
+  const wrap = (body: ReactNode) => {
+    if (!portal) return body;
+    if (!portalMounted) return null;
     return (
+      <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
+        {/* Gesture-handler needs its own root inside a Modal: the Modal is a
+            separate native view tree, and without this the image cloze editor's
+            box-drawing Pan simply never fires. */}
+        <GestureHandlerRootView style={styles.flex}>{body}</GestureHandlerRootView>
+      </Modal>
+    );
+  };
+
+  if (page) {
+    return wrap(
       <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
         <Animated.View
           style={[
@@ -131,11 +168,11 @@ export function SlideUpSheet({
             </View>
           </View>
         </Animated.View>
-      </View>
+      </View>,
     );
   }
 
-  return (
+  return wrap(
     <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
           The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
@@ -169,7 +206,7 @@ export function SlideUpSheet({
           </Animated.View>
         </GlassSurface>
       </Animated.View>
-    </View>
+    </View>,
   );
 }
 
@@ -188,6 +225,7 @@ const createStyles = (c: ThemeColors) =>
     // bar 30, the Study "…" menu 40. A hidden sheet takes no touches
     // (pointerEvents above), so a high layer costs nothing when closed.
     layer: { zIndex: 60 },
+    flex: { flex: 1 },
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
     sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: c.line, borderBottomWidth: 0 },
     pageWrap: { position: "absolute", left: 0, right: 0, top: 0 },

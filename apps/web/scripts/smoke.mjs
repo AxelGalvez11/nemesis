@@ -60,10 +60,24 @@ function getStatusCheck(path, expectedStatus) {
   });
 }
 
-htmlCheck("/sign-in", ["NEMESIS", "Re-enter the perimeter"]);
-htmlCheck("/sign-up", ["NEMESIS", "Bring Nemesis online"]);
-htmlCheck("/account", ["Restoring account perimeter"]);
-htmlCheck("/account/billing", ["Restoring account perimeter"]);
+// Markers refreshed 2026-08-01. All three asserted copy that no longer exists:
+// "Re-enter the perimeter" and "Bring Nemesis online" were the auth pages' eyebrow
+// and description, removed when those pages were reshaped, and "Restoring account
+// perimeter" had already gone from AccountPortal. A smoke check pinned to decorative
+// copy fails on every wording change, so these now assert the headings, which are
+// the actual contract: if the h1 is missing the page did not render.
+htmlCheck("/sign-in", ["NEMESIS", "Sign in to Nemesis"]);
+htmlCheck("/sign-up", ["NEMESIS", "Create your account"]);
+// Signed out, /account is only its loading shell — there is no stable copy beyond it.
+htmlCheck("/account", ["Loading"]);
+// /account/billing was retired 2026-08-01 and 307s to /pricing, so it has no HTML of
+// its own. /pricing took over as the one subscription surface, and it had no smoke
+// check at all, so it gets one here rather than losing coverage in the swap.
+//
+// The title is the only stable marker: the page is a client component behind a
+// Suspense boundary with a null fallback (it reads ?checkout=), so the server HTML
+// carries none of the plan names or prices.
+htmlCheck("/pricing", ["Nemesis — Pricing"]);
 htmlCheck("/app/ask", ["Nemesis", "Loading"]);
 htmlCheck("/app/explore", ["Nemesis", "Loading"]);
 htmlCheck("/app/monitor", ["Nemesis", "Loading"]);

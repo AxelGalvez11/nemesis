@@ -504,6 +504,13 @@
 @media (max-width: 480px) {
   .nemesis-auth-brand { left: 22px; top: 22px; }
   .nemesis-auth-card-in { border: 0; border-radius: 0; box-shadow: none; padding: 20px 0 8px; }
+  /* 🔴 THE MINIMAL VARIANT NEEDS SAYING TWICE. `.nemesis-auth-card-in.is-minimal`
+     sets `padding: 0` with two classes, which outranks the one-class rule above
+     no matter that this one sits inside a media query — specificity does not
+     care about @media. Every handoff page (/auth/desktop, /auth/callback) is
+     minimal, so they were the only screens running text into the phone's
+     bezel, with just the wrapper's 24px between a sentence and the edge. */
+  .nemesis-auth-card-in.is-minimal { padding-inline: 18px; }
   /* Mark ends at ~50px here (top 22 + 28 high); 56px clears it symmetrically. */
   .nemesis-auth-panel-wrap { align-items: center; padding: 56px 24px; }
 }

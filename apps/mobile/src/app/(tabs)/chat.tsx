@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { studyCreationPreferencePrompt, type PendingDelete } from "@nemesis/shared";
 import {
   Alert,
@@ -45,8 +45,8 @@ import { BottomFadeBlur, BOTTOM_FADE_SPAN } from "@/components/BottomFadeBlur";
 import { DeliverableCardStack, DeliverableSheet } from "@/components/DeliverableSheet";
 import { ConfirmDeleteCard } from "@/components/ConfirmDeleteCard";
 import { GlassSurface } from "@/components/GlassSurface";
-import { usePulse } from "@/components/usePulse";
-import { ArrowDownIcon, CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
+import { ArrowDownIcon, CalendarIcon, CloseIcon, LibraryIcon, StudyIcon, type IconProps } from "@/components/icons";
+import { CHAT_STARTERS, type ChatStarterKey } from "@/lib/chat-starters";
 import { ThoughtTrail } from "@/components/ThoughtTrail";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
@@ -64,7 +64,7 @@ import { withAttachmentNote, type AttachedLibraryDoc, type BudgetResetKind, type
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
 import { DEFAULT_CHAT_EFFORT } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
-import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoNoteBody, photoTurnText } from "@/lib/photo-note";
+import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoBubbleText, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
 import { settledLabel, type ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
@@ -332,6 +332,11 @@ export default function ChatScreen() {
   // scroll all the way under the composer without the last line hiding behind
   // it — see composerFloat and BottomFadeBlur.
   const [composerBlockH, setComposerBlockH] = useState(0);
+  // The composer CARD alone, without the block's padding, the landing's starter
+  // rows, or an attachment tile. Only the bottom blur uses it, and only because
+  // that blur is positioned against the card rather than against the block —
+  // see the BottomFadeBlur call.
+  const [composerCardH, setComposerCardH] = useState(0);
   // Chat/Record mode pill: which area fills the screen (messages vs. the
   // inline RecordSession) and the three-state UI RecordSession last reported
   // — mirrored here only so the composer can lock the pill mid-recording
@@ -1662,12 +1667,34 @@ export default function ChatScreen() {
             third of the screen and washed out the starter rows themselves.
             Nothing to fade means nothing to draw. */}
         {composerMode === "chat" && hasContent ? (
-          // MINUS the row's own top padding: composerBlockH measures the whole
-          // floating block, whose first space(2) is empty air ABOVE the composer
-          // card. Backing that with solid blur pushed the washed-out band a full
-          // line of text higher than the card it exists to back (owner
-          // 2026-07-31: "the blur in the bottom needs to be lower").
-          <BottomFadeBlur height={Math.max(0, composerBlockH - space(2))} />
+          // 🔴 THIRD TIME ON THIS NUMBER, AND THE FIRST TWO SHAVED THE WRONG
+          // THING. The span went 46 → 28, then the caller stopped including the
+          // block's top padding — and the owner asked again on 2026-08-01: "the
+          // chat bottom blur is still too high. it should be below the composer,
+          // the fade should start halfway of the height of composer."
+          //
+          // That sentence is a POSITION, not a smaller number, which is why
+          // trimming points kept missing. The blur's top edge now lands at the
+          // composer card's own midpoint: everything above the card's waist is
+          // untouched transcript, and the wash only exists where the card is
+          // already covering it.
+          //
+          // Measured from the CARD (composerCardH), never the block: the block
+          // also carries its padding, the landing's starter rows and any
+          // attachment tile, so half of it is a different line on every screen —
+          // and on a chat with a photo attached it sat well above the card,
+          // which is the shape of the bug being fixed.
+          //
+          // Falls back to the old block-derived height for the frame or two
+          // before onCardLayout has reported, so the band cannot flash at full
+          // screen height on mount.
+          <BottomFadeBlur
+            height={
+              composerCardH > 0
+                ? composerCardH / 2 + composerBottomPad
+                : Math.max(0, composerBlockH - space(2))
+            }
+          />
         ) : null}
         {/* Jump to the newest message (owner 2026-07-24: "add a downward arrow in
             the chat for when conversations get long so users can scroll all the
@@ -1800,6 +1827,9 @@ export default function ChatScreen() {
             modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
             compact={composerCompact}
+            onCardLayout={(height) =>
+              setComposerCardH((prev) => (Math.abs(prev - height) > 1 ? height : prev))
+            }
           />
         </View>
         {/* BOTH composer menus render AFTER the composer row, and that ordering
@@ -1928,36 +1958,50 @@ function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
  *  automatically once that turn sends (see send()) or manually via the "x". */
 // The landing starters — icon + label rows in the ChatGPT reference's language
 // (owner 2026-07-20). Tapping one only PREFILLS the composer and focuses it;
-// nothing sends until the student does. Each maps to something this phone chat
-// genuinely delivers: conversational quizzing, an explanation, or a question the
-// router grounds with a live web search.
-const STARTERS = [
-  { key: "quiz", label: "Quiz me on a topic", prefill: "Quiz me on ", Icon: StudyIcon },
-  { key: "explain", label: "Explain a concept", prefill: "Explain ", Icon: SparkleIcon },
-  { key: "lookup", label: "Look something up", prefill: "Look up ", Icon: SearchIcon },
-] as const;
+// nothing sends until the student does.
+//
+// ABOUT THIS APP, not about studying in general (owner 2026-07-31: "change the
+// landing chat suggestions to be related to the app functions like 'organize my
+// library', or 'check my calendar'"). "Quiz me on a topic" / "Explain a concept"
+// / "Look something up" are things any chat window does; nothing in them told a
+// student that THIS one can read their notes, file them, and see their week.
+// Each row names a tool this chat actually holds — list_calendar_events,
+// search_library + move_library_note, add_flashcards — so none of them is a
+// promise the turn cannot keep.
+//
+// The rows themselves live in lib/chat-starters.ts so they can be tested; the
+// glyphs stay here, because icons.tsx pulls in react-native-svg. Typed by key,
+// so a starter without an icon is a compile error rather than a blank row.
+const STARTER_ICONS: Record<ChatStarterKey, (props: IconProps) => ReactElement> = {
+  calendar: CalendarIcon,
+  flashcards: StudyIcon,
+  library: LibraryIcon,
+};
 
 function StarterRows({ onPick }: { onPick: (text: string) => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   return (
     <View style={styles.starters} testID="chat-starters">
-      {STARTERS.map(({ key, label, prefill, Icon }) => (
-        <Pressable
-          key={key}
-          onPress={() => onPick(prefill)}
-          style={({ pressed }) => [styles.starterRow, pressed && styles.starterRowPressed]}
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          testID={`chat-starter-${key}`}
-        >
-          {/* Gray on purpose (owner 2026-07-22) — the other exception to the
-              flat text: these are prompts for a question the student hasn't
-              asked yet, so they sit back from real conversation text. */}
-          <Icon size={19} color={c.textHint} />
-          <Text style={styles.starterLabel}>{label}</Text>
-        </Pressable>
-      ))}
+      {CHAT_STARTERS.map(({ key, label, prefill }) => {
+        const Icon = STARTER_ICONS[key];
+        return (
+          <Pressable
+            key={key}
+            onPress={() => onPick(prefill)}
+            style={({ pressed }) => [styles.starterRow, pressed && styles.starterRowPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            testID={`chat-starter-${key}`}
+          >
+            {/* Gray on purpose (owner 2026-07-22) — the other exception to the
+                flat text: these are prompts for a question the student hasn't
+                asked yet, so they sit back from real conversation text. */}
+            <Icon size={19} color={c.textHint} />
+            <Text style={styles.starterLabel}>{label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -2100,7 +2144,9 @@ function UserTurn({
   const styles = useThemedStyles(createStyles);
   const images = (message.attachments ?? []).filter((attachment) => attachment.kind === "image" && attachment.url);
   const savable = photo !== null && images.some((attachment) => attachment.storagePath === photo.storagePath);
-  const body = message.content.trim();
+  // The canned "Read this photo…" ask goes on the wire but must not be read back
+  // to the student as their own words — see photoBubbleText for the whole story.
+  const body = photoBubbleText(message.content, images.length > 0);
   return (
     <View style={styles.userTurn}>
       {images.map((attachment) => (
@@ -2141,30 +2187,38 @@ function UserTurn({
  *  with no motion on it reads as stuck, which is exactly the impression the old
  *  behaviour gave during the seconds when it showed nothing at all.
  *
+ *  🔴 THE LABEL IS THE THINKING PREVIEW NOW, not a second pending style (owner
+ *  2026-07-31: "the 'analyzing' [should] work like the thinking preview, it
+ *  should be on the left side"). It was a hand-rolled pulsing Text that
+ *  inherited RIGHT alignment from userTurn, so the one wait that happens before
+ *  a turn looked nothing like the wait that happens after it. The picture and
+ *  the words keep their own right-hand column; the line sits under them on the
+ *  left, in the exact slot "Thinking it through" takes a moment later — and they
+ *  can never overlap, because sendPhotoTurn clears this row in the same tick it
+ *  calls send().
+ *
  *  Laid out exactly like UserTurn — bare picture, words in their own bubble —
  *  so when the real message replaces it nothing shifts. */
 function AnalyzingPhotoBubble({ typed, uri }: { typed: string; uri: string }) {
   const styles = useThemedStyles(createStyles);
-  const opacity = usePulse(true);
   const body = typed.trim();
   return (
-    <View style={styles.userTurn}>
-      <MessageImage label="Photo being read" uri={uri} />
-      <Animated.Text
-        accessibilityLabel="Analyzing photo"
-        style={[styles.analyzingLabel, { opacity }]}
-        testID="chat-analyzing-photo"
-      >
-        Analyzing photo…
-      </Animated.Text>
-      {body ? (
-        <View style={[styles.bubble, styles.userBubble]}>
-          <Text style={styles.userText}>{body}</Text>
-        </View>
-      ) : null}
+    <View style={styles.analyzingTurn}>
+      <View style={styles.userTurn}>
+        <MessageImage label="Photo being read" uri={uri} />
+        {body ? (
+          <View style={[styles.bubble, styles.userBubble]}>
+            <Text style={styles.userText}>{body}</Text>
+          </View>
+        ) : null}
+      </View>
+      <ThinkingLine phase={READING_PHOTO_PHASE} testID="chat-analyzing-photo" />
     </View>
   );
 }
+
+/** Module-level so the row isn't handed a fresh object on every render. */
+const READING_PHOTO_PHASE: ThinkingPhase = { kind: "reading-photo" };
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
@@ -2191,7 +2245,9 @@ const createStyles = (c: ThemeColors) =>
     userText: { ...type.body, color: c.text },
     // Dimmer than the question itself: a status line, not something the
     // student wrote, and gone the moment the answer starts.
-    analyzingLabel: { ...type.small, color: c.text2 },
+    // The photo turn while it is being read: the student's own right-hand
+    // column, with the thinking line underneath it at the left margin.
+    analyzingTurn: { alignSelf: "stretch", gap: space(2) },
     // Assistant is not a bubble — it's a full-width block of markdown.
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },

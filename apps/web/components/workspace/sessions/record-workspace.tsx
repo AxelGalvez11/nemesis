@@ -8,6 +8,7 @@
 // you speak, so there is nothing to show; what replaces them is an honest
 // statement of what is happening and what will exist when you stop.
 
+import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import { isCapturing, isFinishing, recordingStatusCopy } from "@/lib/workspace/recording-capture";
@@ -20,8 +21,14 @@ interface RecordWorkspaceProps {
   accessToken?: string | null;
   active?: boolean;
   className?: string;
+  /** Set in the same commit that clears `active` to cancel instead of save. */
+  discard?: boolean;
   uid?: string | null;
   onFinished?: (draft: RecordingArtifactDraft) => void;
+  onDiscarded?: () => void;
+  /** Asks the owner of `active` to clear it — the panel does not own the flag,
+   *  so Stop has to say so rather than do it. */
+  onRequestStop?: () => void;
 }
 
 
@@ -30,10 +37,13 @@ export function RecordWorkspace({
   accessToken = null,
   active = false,
   className,
+  discard = false,
   uid = null,
+  onDiscarded,
   onFinished,
+  onRequestStop,
 }: RecordWorkspaceProps) {
-  const recording = useRecordingSession({ accessToken, active, onComplete: onFinished, uid });
+  const recording = useRecordingSession({ accessToken, active, discard, onComplete: onFinished, onDiscarded, uid });
   const capturing = isCapturing(recording.status);
   const finishing = isFinishing(recording.status);
 
@@ -49,7 +59,17 @@ export function RecordWorkspace({
       <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
         <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Recording</h2>
         <div className={cn("ml-auto flex items-center gap-2.5 text-(--ui-text-quaternary)", (capturing || finishing) && "text-foreground")}>
-          {capturing && <span aria-hidden className="size-2 animate-pulse rounded-full bg-[var(--theme-primary)]" />}
+          {/* The pulsing dot is the universal "live" sign, so it must stop
+              pulsing when the recording is not live. */}
+          {capturing && (
+            <span
+              aria-hidden
+              className={cn(
+                "size-2 rounded-full",
+                recording.paused ? "bg-(--ui-text-quaternary)" : "animate-pulse bg-[var(--theme-primary)]",
+              )}
+            />
+          )}
           <span className="text-[0.6875rem]">{recordingStatusCopy(recording.status)}</span>
           <span className="min-w-10 text-right font-mono text-[0.6875rem] tabular-nums">{recording.elapsedLabel}</span>
         </div>
@@ -84,7 +104,7 @@ export function RecordWorkspace({
         ) : capturing ? (
           <div className="w-full max-w-lg text-center">
             <div className="mx-auto mb-5 h-20 w-full">
-              <RecordingWaveform active={recording.gateOpen} bars={recording.waveformRef} />
+              <RecordingWaveform active={recording.gateOpen && !recording.paused} bars={recording.waveformRef} />
             </div>
             <p className="font-mono text-2xl tabular-nums text-foreground">{recording.elapsedLabel}</p>
             {/* The paragraph that used to sit under this explained the silence
@@ -92,12 +112,50 @@ export function RecordWorkspace({
                 (owner 2026-07-28) — the waveform and this one label already say
                 whether audio is going in, which is the only thing a student
                 needs while the room is quiet. The behaviour is unchanged. */}
+            {/* Three states, not two. "Paused" is the student's own decision and
+                has to look different from the app skipping a quiet room by
+                itself, or pressing pause looks like it did nothing. */}
             <p className={cn(
               "mt-2 text-[0.6875rem] font-medium transition-colors",
-              recording.gateOpen ? "text-[var(--theme-primary)]" : "text-(--ui-text-quaternary)",
+              recording.paused
+                ? "text-(--ui-text-secondary)"
+                : recording.gateOpen
+                  ? "text-[var(--theme-primary)]"
+                  : "text-(--ui-text-quaternary)",
             )}>
-              {recording.gateOpen ? "Picking up audio" : "Quiet — paused"}
+              {recording.paused ? "Paused" : recording.gateOpen ? "Picking up audio" : "Quiet — skipping"}
             </p>
+
+            {/* Pause and stop, together, where the recording is. Stop ends the
+                session and writes it up; pause keeps it open. Cancelling is the
+                ✕ on the composer and is deliberately NOT here — leaving and
+                binning should not be neighbours. */}
+            <div className="mt-6 flex items-center justify-center gap-2">
+              <Button
+                aria-label={recording.paused ? "Resume recording" : "Pause recording"}
+                aria-pressed={recording.paused}
+                className="min-w-28 gap-2 rounded-full"
+                data-testid="record-pause-toggle"
+                title={recording.paused ? "Start recording again" : "Stop recording for a moment, without ending it"}
+                onClick={() => (recording.paused ? recording.resume() : recording.pause())}
+                type="button"
+                variant="secondary"
+              >
+                <Codicon name={recording.paused ? "play" : "debug-pause"} size="0.875rem" />
+                {recording.paused ? "Resume" : "Pause"}
+              </Button>
+              <Button
+                aria-label="Stop recording"
+                className="min-w-28 gap-2 rounded-full"
+                data-testid="record-stop"
+                title="End the recording and write it up"
+                onClick={onRequestStop}
+                type="button"
+              >
+                <Codicon name="debug-stop" size="0.875rem" />
+                Stop
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="max-w-sm text-center">

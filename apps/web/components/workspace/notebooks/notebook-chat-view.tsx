@@ -66,9 +66,20 @@ export function NotebookChatView() {
     createdAt: artifact.createdAt,
   })), [recordingArtifacts]);
 
-  const handleRecordingChange = useCallback((active: boolean) => {
+  /** Why the last stop happened, set alongside `recording` so the recorder
+   *  never has to guess whether to keep the audio. */
+  const [discardRecording, setDiscardRecording] = useState(false);
+  const handleRecordingChange = useCallback((active: boolean, options?: { discard?: boolean }) => {
+    setDiscardRecording(options?.discard === true);
     setRecording(active);
     if (active) setRecordCanvasOpen(true);
+  }, []);
+
+  /** Nothing was saved, so there is nothing to file — just close the canvas. */
+  const handleRecordingDiscarded = useCallback(() => {
+    setRecording(false);
+    setRecordCanvasOpen(false);
+    setComposerMode("chat");
   }, []);
 
   // Recorder pressed on the notebook home: the home creates this chat, sets
@@ -153,10 +164,13 @@ export function NotebookChatView() {
           {composerMode === "record" && recordCanvasOpen ? (
             <RecordWorkspace
               accessToken={session?.access_token ?? null}
-              active
+              active={recording}
               className="mb-2 mt-4 min-h-0 flex-1"
+              discard={discardRecording}
               uid={uid}
+              onDiscarded={handleRecordingDiscarded}
               onFinished={handleRecordingFinished}
+              onRequestStop={() => handleRecordingChange(false)}
             />
           ) : (
             <NotebookTranscript messages={messages} working={working} />

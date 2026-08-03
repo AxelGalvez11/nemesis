@@ -8,6 +8,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { CourseworkImportGate } from "@/components/workspace/onboarding/coursework-import-gate";
+import { OnboardingGate } from "@/components/workspace/onboarding/onboarding-gate";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
@@ -25,5 +27,18 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     return <main className="nemesis-account-loading">Loading…</main>;
   }
 
-  return <WorkspaceShell>{children}</WorkspaceShell>;
+  return (
+    <WorkspaceShell>
+      {children}
+      {/* Renders nothing unless this is a genuinely new account — see
+          OnboardingGate for the two guards that decide. Mounted here rather
+          than on one page so a student landing anywhere in the workspace gets
+          the same welcome. */}
+      <OnboardingGate />
+      {/* And for everyone past their first day: if the extension is holding a
+          reading of their school portal, offer to bring it in. Without this a
+          scan had nowhere to go once onboarding was over. */}
+      <CourseworkImportGate />
+    </WorkspaceShell>
+  );
 }

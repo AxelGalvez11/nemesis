@@ -4,8 +4,12 @@
 // contenteditable input, attachment/deep-research menu, dictation, and
 // send/stop/record controls.
 //
-// Mode vs effort (owner 2026-07-22): the pill next to the send button is the
-// ANSWER EFFORT dial (Instant/Medium/High) — the thing a student changes often.
+// ANSWER EFFORT IS NO LONGER A CONTROL (owner 2026-07-31). The Instant/Medium/
+// High pill next to the send button is gone; every turn now runs at
+// DEFAULT_CHAT_EFFORT. THE FEATURE STAYS — effort is still chosen, still sent,
+// and session-chat/notebook-chat-view still read it through onEffortChange.
+// Only the dial the student had to think about was taken away. The phone lost
+// the same dial in #369, so the two surfaces agree again.
 //
 // RECORD MODE (owner 2026-07-22, second pass). Recording is no longer buried in
 // the "+" menu and no longer takes the composer away:
@@ -36,17 +40,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import {
-  CHAT_EFFORT_HINT,
-  CHAT_EFFORT_LABEL,
-  CHAT_EFFORTS,
-  DEFAULT_CHAT_EFFORT,
-  isChatEffort,
-  type ChatEffort,
-} from "@/lib/workspace/chat-effort";
+import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { publishMicLevel, resetMicLevel, subscribeMicLevel } from "@/lib/workspace/mic-level";
 import { emptyWaveform, pushWaveBar } from "@/lib/workspace/waveform-history";
-import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +52,6 @@ import { RecordingWaveform } from "./recording-waveform";
 export type ComposerMode = "chat" | "record";
 
 const COMPOSER_MODE_STORAGE_KEY = "nemesis.web.composer-mode";
-const COMPOSER_EFFORT_STORAGE_KEY = "nemesis.web.composer-effort";
 
 function isComposerMode(value: string | null): value is ComposerMode {
   return value === "chat" || value === "record";
@@ -68,12 +63,6 @@ function readStoredComposerMode(): ComposerMode {
   return isComposerMode(stored) ? stored : "chat";
 }
 
-function readStoredEffort(): ChatEffort {
-  if (typeof window === "undefined") return DEFAULT_CHAT_EFFORT;
-  const stored = window.localStorage.getItem(COMPOSER_EFFORT_STORAGE_KEY);
-  return isChatEffort(stored) ? stored : DEFAULT_CHAT_EFFORT;
-}
-
 interface ComposerProps {
   busy: boolean;
   centered?: boolean;
@@ -81,10 +70,19 @@ interface ComposerProps {
   placeholder: string;
   mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
-  /** Told the stored level on mount, then on every change, so the sender can
-   *  apply it to the turn. */
+  /** Told the effort once on mount, so the sender can apply it to the turn.
+   *  There is no longer anything that changes it — the dial was removed — but
+   *  the channel stays open so effort remains a real, settable thing rather
+   *  than a constant buried in the sender. */
   onEffortChange?: (effort: ChatEffort) => void;
-  onRecordingChange?: (recording: boolean) => void;
+  /** `discard` says WHY capture is ending: true means the student cancelled and
+   *  the audio must be thrown away, false or absent means stop and write it up.
+   *  Both arrive in one call so the recorder cannot act on half the decision. */
+  onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
+  /** Opens the syllabus importer as a popup over the chat. Chat is the front
+   *  door for importing now (owner 2026-07-31), so this is not a shortcut to
+   *  somewhere else — it is where the import lives. */
+  onImportSyllabus?: () => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
@@ -92,7 +90,7 @@ interface ComposerProps {
   belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onImportSyllabus, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -100,8 +98,10 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
+  /** Standing rule: anything that destroys something asks first. Recorded audio
+   *  is not recoverable, so cancelling mid-capture is exactly that. */
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
-  const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [libraryOpen, setLibraryOpen] = useState(false);
   // Files dragged from Finder. A COUNTER, not a boolean: dragenter/dragleave
   // fire for every child the pointer crosses, so a boolean flickers off the
@@ -112,18 +112,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
   useEffect(() => {
-    const stored = readStoredEffort();
-    setEffortState(stored);
-    onEffortChange?.(stored);
-    // Read once on mount; the parent is told so its first turn uses it.
+    // The dial is gone, so there is one effort and the parent is told it once.
+    // Deliberately NOT read back from localStorage any more: a student who had
+    // set "High" before the pill was removed would otherwise be pinned to it
+    // forever with nothing on screen to change it.
+    onEffortChange?.(DEFAULT_CHAT_EFFORT);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const setEffort = (next: ChatEffort) => {
-    setEffortState(next);
-    onEffortChange?.(next);
-    try { window.localStorage.setItem(COMPOSER_EFFORT_STORAGE_KEY, next); } catch { /* best-effort */ }
-  };
 
   useEffect(() => {
     if (mode) return;
@@ -149,8 +144,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
 
   const setMode = (mode: ComposerMode) => {
     if (recording && activeMode === "record" && mode === "chat") {
-      setRecording(false);
-      onRecordingChange?.(false);
+      // 🔴 THIS USED TO SAVE THE RECORDING. Clearing `recording` is the same
+      // signal a deliberate stop sends, so pressing ✕ mid-capture uploaded,
+      // transcribed and filed the very recording the student was cancelling
+      // (owner-reported 2026-07-31). Cancelling now asks first and then throws
+      // the audio away — see confirmDiscard below. Stop lives in the recording
+      // panel, which is where the recording is.
+      setConfirmDiscard(true);
       return;
     }
     setComposerMode(mode);
@@ -159,6 +159,21 @@ export function Composer({ busy, centered = false, placement = "floating", place
     onRecordingChange?.(false);
     try {
       window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode);
+    } catch {
+      // best-effort
+    }
+  };
+
+  /** Confirmed cancel: bin the audio AND leave record mode, in that order, so
+   *  the recorder reads `discard` before it sees `active` go false. */
+  const discardRecording = () => {
+    setConfirmDiscard(false);
+    setRecording(false);
+    onRecordingChange?.(false, { discard: true });
+    setComposerMode("chat");
+    onModeChange?.("chat");
+    try {
+      window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, "chat");
     } catch {
       // best-effort
     }
@@ -414,19 +429,42 @@ export function Composer({ busy, centered = false, placement = "floating", place
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <div className="relative w-full rounded-[inherit]">
-        {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
-            chat composer". pointer-events-none so the overlay cannot eat the
-            drop it is advertising. */}
-        {dragOver && activeMode === "chat" && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[inherit] border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))]"
-            data-slot="composer-drop-target"
-          >
+      {/* Owner 2026-07-28: "the webapp should allows drag and drop into the
+          chat composer". Owner 2026-08-02: "i need the drop to attach to be a
+          box ABOVE the chat composer" — it used to be an overlay laid across
+          the composer, which blanked out whatever the student had already
+          typed at the exact moment they were adding to it.
+          `bottom-full` floats it above WITHOUT taking layout space. In flow it
+          would shove the composer down out from under a moving cursor, which
+          during a drag is how you drop a file on the wrong thing.
+          🔴 POINTER EVENTS MUST STAY ON. The old overlay set
+          pointer-events-none, and that was only safe because the composer sat
+          directly behind it to catch the drop. Up here there is nothing behind
+          but the message list, so a click-through box would hand the file to
+          the page and the browser would NAVIGATE AWAY to it, losing the draft.
+          This is still a DOM child of the root, so the drop bubbles to onDrop.
+          🔴 THE HIT AREA MUST STAY CONTIGUOUS WITH THE ROOT — the visual gap
+          under the box is PADDING on this wrapper, never a margin. A margin is
+          dead space: the instant the cursor crosses it, dragleave fires with
+          nothing entered in exchange, the depth counter hits zero, and the box
+          unmounts while the student is still carrying the file toward it.
+          (Owner 2026-08-03: "the box disappears when users try to drag to
+          that space" — that was `mb-2` on the box itself.) */}
+      {dragOver && activeMode === "chat" && (
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-full z-30 pb-2"
+          data-slot="composer-drop-target"
+        >
+          <div className="grid h-24 place-content-center justify-items-center gap-1.5 rounded-2xl border-2 border-dashed border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--dt-input))] backdrop-blur-[0.75rem]">
+            <Codicon className="text-(--theme-primary)" name="cloud-upload" size="1.15rem" />
             <span className="text-xs font-medium text-(--ui-text-secondary)">Drop to attach</span>
           </div>
-        )}
+        </div>
+      )}
+      <div className="relative w-full rounded-[inherit]">
+        {/* The composer surface itself stays clear while a file is over it, so
+            the draft underneath remains readable. */}
         <div
           className="group/composer-surface relative z-4 isolate grid grid-rows-[auto_1fr] overflow-hidden rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))]"
           data-slot="composer-surface"
@@ -496,7 +534,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       }}
                       type="file"
                     />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onChooseFolder={() => folderInputRef.current?.click()} onImportSyllabus={onImportSyllabus} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
                   // The "+" slot becomes the record control: this is the button
@@ -547,7 +585,6 @@ export function Composer({ busy, centered = false, placement = "floating", place
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  <EffortPill effort={effort} onChange={setEffort} />
                   {/* Dictation is hidden in record mode: a live microphone is
                       already being captured, so a second one is nonsense. */}
                   {/* Only while dictating, and only wide enough to read as
@@ -615,6 +652,35 @@ export function Composer({ busy, centered = false, placement = "floating", place
       </div>
       {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
+      {/* Sits directly above the composer, in the student's way, matching the
+          chat's own delete confirmation. Keep is the plain button; throwing the
+          audio away is the only red control. */}
+      {confirmDiscard && (
+        <div
+          className="absolute inset-x-0 bottom-full z-40 mx-auto mb-3 w-full max-w-md rounded-xl border border-red-500/40 bg-(--ui-bg-elevated) p-4 shadow-lg"
+          data-testid="confirm-discard-recording"
+          role="alertdialog"
+        >
+          <p className="text-sm font-semibold text-(--ui-text-primary)">Throw this recording away?</p>
+          <p className="mt-1 text-xs leading-relaxed text-(--ui-text-secondary)">
+            The audio has not been saved yet and cannot be recovered. To keep it, use Stop instead.
+          </p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button onClick={() => setConfirmDiscard(false)} size="sm" type="button" variant="secondary">
+              Keep recording
+            </Button>
+            <Button
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="confirm-discard-recording-yes"
+              onClick={discardRecording}
+              size="sm"
+              type="button"
+            >
+              Throw it away
+            </Button>
+          </div>
+        </div>
+      )}
       {/* Picked notes APPEND — the file input above replaces, but a Library
           choice is additive to whatever is already attached. */}
       <LibraryPickerDialog
@@ -697,7 +763,7 @@ export function RecordCompanionPanel() {
 // "Library" (owner 2026-07-23) is the in-chat way into saved work now that the
 // Notebooks page is retired. It opens a picker rather than a submenu because
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
-function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onOpenLibrary: () => void }) {
+function AddMenu({ onChooseFiles, onChooseFolder, onImportSyllabus, onOpenLibrary }: { onChooseFiles: () => void; onChooseFolder: () => void; onImportSyllabus?: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -718,43 +784,21 @@ function AddMenu({ onChooseFiles, onChooseFolder, onOpenLibrary }: { onChooseFil
           <Codicon name="book" size="0.875rem" />
           Library
         </DropdownMenuItem>
+        {/* 🔴 THE ONLY RELIABLE WAY IN. Dropping a syllabus already routes to
+            the importer, but only when the FILENAME says "syllabus" — and the
+            owner's own file is called
+            Fall-2026-PHCY-2105-01-Interprofessional-Education-and-Clinical-
+            Simulation-III.pdf, which says nothing of the kind. A student whose
+            university names files that way had no way to reach the importer
+            from chat at all. Saying what you want beats guessing from a name. */}
+        {onImportSyllabus && (
+          <DropdownMenuItem data-testid="composer-import-syllabus" onSelect={onImportSyllabus}>
+            <Codicon name="calendar" size="0.875rem" />
+            Syllabus
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-function EffortPill({ effort, onChange }: { effort: ChatEffort; onChange: (effort: ChatEffort) => void }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          aria-label={`Answer effort: ${CHAT_EFFORT_LABEL[effort]}`}
-          className="h-(--composer-control-size) max-w-40 shrink-0 gap-1 rounded-md px-2 text-xs font-normal text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
-          data-testid="effort-pill"
-          size="sm"
-          variant="ghost"
-        >
-          <span className="truncate">{CHAT_EFFORT_LABEL[effort]}</span>
-          <ChevronDown className="size-2.5 shrink-0 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52 p-1" side="top">
-        <div className="flex flex-col gap-0.5">
-          {CHAT_EFFORTS.map((option) => (
-            <DropdownMenuItem
-              className={cn(
-                "flex-col items-start gap-0 rounded-md px-2.5 py-1.5 text-left",
-                option === effort ? "bg-(--ui-control-active-background) text-foreground" : "text-foreground hover:bg-(--ui-control-hover-background)",
-              )}
-              key={option}
-              onSelect={() => onChange(option)}
-            >
-              <span className="text-sm font-medium">{CHAT_EFFORT_LABEL[option]}</span>
-              <span className="text-[0.6875rem] font-normal text-(--ui-text-tertiary)">{CHAT_EFFORT_HINT[option]}</span>
-            </DropdownMenuItem>
-          ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}

@@ -1,0 +1,126 @@
+"use client";
+
+// Talking to the browser extension, from the app's side.
+//
+// The extension puts a small content script on this origin which answers three
+// questions over window.postMessage: are you there, what did you read, and
+// forget it. This module wraps that in promises with timeouts, because a
+// question nobody answers must not leave the UI spinning — "not installed" is
+// the overwhelmingly common case and has to resolve quickly and quietly.
+//
+// 🔴 EVERY REPLY IS SANITISED BEFORE IT IS RETURNED. `sanitiseScan` is not a
+// formality here: any script on this page can post a message wearing the
+// extension's name, and even a genuine extension is relaying a school portal
+// written by professors, teaching assistants and classmates. The sanitiser is
+// the app's own boundary and runs on the receiving side precisely so that a
+// spoofed, buggy or compromised sender changes nothing about what we accept.
+// See packages/shared/src/lms-import.ts for what it enforces and why it
+// deliberately does not filter wording.
+
+import { type LmsScan, sanitiseScan } from "@nemesis/shared";
+
+/** Kept in step with extension/src/messages.ts. Both sides are in this repo, so
+ *  a mismatch is a bug, not a compatibility problem. */
+const FROM_APP = "nemesis-app";
+const FROM_EXTENSION = "nemesis-extension";
+
+const APP_MESSAGES = {
+  CLEAR_SCAN: "nemesis:clear-scan",
+  PING: "nemesis:ping",
+  REQUEST_SCAN: "nemesis:request-scan",
+} as const;
+
+const EXTENSION_MESSAGES = {
+  CLEARED: "nemesis:cleared",
+  PONG: "nemesis:pong",
+  SCAN: "nemesis:scan",
+} as const;
+
+/**
+ * How long to wait for the extension to answer.
+ *
+ * Short on purpose. The reply is a local postMessage round trip — microseconds
+ * when the extension exists. Anything approaching this budget means it does
+ * not, and the student should not watch a spinner to be told so.
+ */
+const REPLY_TIMEOUT_MS = 600;
+
+interface ExtensionReply {
+  source?: unknown;
+  type?: unknown;
+  requestId?: unknown;
+  payload?: unknown;
+}
+
+function newRequestId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Ask the extension one question and wait for its matching answer.
+ *
+ * Resolves with null on timeout rather than rejecting: "no extension" is an
+ * ordinary state of the world, not an error, and making every caller wrap this
+ * in a try/catch would guarantee someone forgets.
+ */
+function ask(type: string, expect: string): Promise<unknown> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const requestId = newRequestId();
+    let settled = false;
+
+    const finish = (value: unknown) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("message", onMessage);
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    function onMessage(event: MessageEvent) {
+      // Same window, same origin, and the id WE generated. The last of those is
+      // what stops one stray reply from resolving an unrelated question.
+      if (event.source !== window || event.origin !== window.location.origin) return;
+      const data = event.data as ExtensionReply | null;
+      if (!data || typeof data !== "object") return;
+      if (data.source !== FROM_EXTENSION || data.type !== expect || data.requestId !== requestId) return;
+      finish(data.payload ?? null);
+    }
+
+    const timer = setTimeout(() => finish(null), REPLY_TIMEOUT_MS);
+    window.addEventListener("message", onMessage);
+    window.postMessage({ requestId, source: FROM_APP, type }, window.location.origin);
+  });
+}
+
+/** Is the extension installed on this browser? */
+export async function extensionInstalled(): Promise<boolean> {
+  return (await ask(APP_MESSAGES.PING, EXTENSION_MESSAGES.PONG)) !== null;
+}
+
+/**
+ * The most recent portal reading the extension is holding, cleaned.
+ *
+ * Returns null when the extension is absent or has nothing. A scan that arrives
+ * but survives sanitising as empty comes back as an empty LmsScan, so callers
+ * can tell "nothing scanned yet" from "scanned, found nothing" and say the
+ * right thing.
+ */
+export async function requestScan(): Promise<LmsScan | null> {
+  const raw = await ask(APP_MESSAGES.REQUEST_SCAN, EXTENSION_MESSAGES.SCAN);
+  if (raw === null || raw === undefined) return null;
+  return sanitiseScan(raw);
+}
+
+/** Tell the extension to drop what it holds. Called after a successful import
+ *  so a student's coursework does not sit in extension storage forever. */
+export async function clearScan(): Promise<void> {
+  await ask(APP_MESSAGES.CLEAR_SCAN, EXTENSION_MESSAGES.CLEARED);
+}
+
+/** Where a student goes to get it. Not yet a Chrome Web Store listing — see
+ *  extension/README.md for the state of that. */
+export const EXTENSION_HELP_URL = "https://app.enternemesis.com/help/extension";

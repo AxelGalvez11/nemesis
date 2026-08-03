@@ -90,6 +90,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const [groupOpen, setGroupOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   // Row key currently renaming: "item:<id>" or "group:<name>".
@@ -114,9 +115,26 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     } catch { /* best effort */ }
   }, [groupStorageKey]);
   useEffect(() => () => pointerCleanupRef.current?.(), []);
+  // Chat hands over a ?artifact=<id> deep link after it creates one. This used
+  // to setOpenedId — but `items` was stale whenever chat had just written the
+  // row (this store keeps no live channel; see refreshStudyAfterExternalWrite
+  // in study-cloud-store.ts), so the lookup found nothing and the student
+  // landed on a Tests page with no new test on it (owner 2026-08-01).
+  //
+  // Now that the list refreshes, it HIGHLIGHTS rather than opens: a test is
+  // one attempt only, so dropping a student straight into their single go at
+  // it — fullscreen, unasked — is the wrong door. Show them where it is.
   useEffect(() => {
     const artifactId = searchParams.get("artifact");
-    if (artifactId && items.some((item) => item.id === artifactId)) setOpenedId(artifactId);
+    if (!artifactId || !items.some((item) => item.id === artifactId)) return;
+    setHighlightedId(artifactId);
+    // After paint, so the row exists to scroll to.
+    const raf = requestAnimationFrame(() => {
+      document.querySelector(`[data-testid="artifact-${artifactId}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const fade = window.setTimeout(() => setHighlightedId(null), 4000);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(fade); };
   }, [items, searchParams]);
 
   function persistGroups(next: string[]) {
@@ -393,6 +411,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           onCancelRename={() => setRenamingId(null)}
           onCommitRename={(next) => void renameItem(item, next)}
           onDelete={() => void removeItem(item)}
+          highlighted={highlightedId === item.id}
           onOpen={() => setOpenedId(item.id)}
           onPointerDragStart={(event, id) => beginDrag(event, { id, kind: "item" })}
           onStartRename={() => setRenamingId(node.id)}
@@ -608,6 +627,8 @@ interface ItemRowProps {
   grid: string;
   dragging: boolean;
   dropTarget: boolean;
+  /** Just arrived from chat — ring it so the student can see which one is new. */
+  highlighted: boolean;
   renaming: boolean;
   onOpen: () => void;
   onStartRename: () => void;
@@ -620,7 +641,7 @@ interface ItemRowProps {
   depth: number;
 }
 
-function ItemRow({ item, meta, depth, grid, dragging, dropTarget, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
+function ItemRow({ item, meta, depth, grid, dragging, dropTarget, highlighted, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
   return (
     <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>
       <div
@@ -630,6 +651,7 @@ function ItemRow({ item, meta, depth, grid, dragging, dropTarget, renaming, onOp
           grid,
           dragging && "opacity-50",
           dropTarget && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
+          highlighted && "bg-[color-mix(in_srgb,var(--theme-primary)_10%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
         )}
         data-artifact-drop-item={item.id}
         data-testid={`artifact-${item.id}`}

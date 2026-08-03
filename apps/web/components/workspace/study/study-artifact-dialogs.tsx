@@ -275,11 +275,32 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
     }
   }
 
+  // Owner 2026-08-01: "test should not be able to be retaken." A test whose
+  // answers you have already seen measures memory of the review screen, not of
+  // the material — and the score the Tests table shows would drift upward for
+  // a reason that has nothing to do with learning. One attempt, kept.
+  const alreadyTaken = content.attempts.length > 0 && !saved;
+
   return (
     <Dialog onOpenChange={(next) => { if (!next) onClose(); }} open>
-      <DialogContent className="max-w-xl">
-        {!finished && question ? (
-          <>
+      {/* Fullscreen, matching flashcard review (review-session.tsx) — owner
+          2026-08-01: "the tests should be fullscreen like the flashcards." */}
+      <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-y-auto rounded-none border-0 px-7 py-6" showCloseButton>
+        {alreadyTaken ? (
+          <div className="mx-auto flex w-full max-w-xl flex-col justify-center">
+            <DialogHeader>
+              <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
+              <DialogDescription data-testid="test-already-taken">
+                You have already taken this test — {artifactScoreLabel(artifact)}. Each test is
+                answered once, so the score stays a real measure of what you knew.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button onClick={onClose} type="button" variant="secondary">Close</Button>
+            </DialogFooter>
+          </div>
+        ) : !finished && question ? (
+          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center">
             <DialogHeader>
               <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
               <DialogDescription>Question {index + 1} of {questions.length}</DialogDescription>
@@ -321,9 +342,9 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 {picks.length + 1 === questions.length ? "Finish" : "Next"}
               </Button>
             </DialogFooter>
-          </>
+          </div>
         ) : attempt ? (
-          <>
+          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center">
             <DialogHeader>
               <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
               <DialogDescription data-testid="test-score">
@@ -367,7 +388,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
               <p className="text-sm">Perfect run — nothing missed.</p>
             )}
             <DialogFooter><Button onClick={onClose} type="button" variant="secondary">Done</Button></DialogFooter>
-          </>
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>

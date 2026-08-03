@@ -23,6 +23,7 @@
 // meetingToAnchorEvent below.
 
 import type { CalendarEvent, CalendarEventKind } from "@/lib/workspace/calendar-model";
+import type { CensusOutcome } from "@/lib/workspace/syllabus-dates";
 
 /** Ceiling on what one import may create. A syllabus with more rows than this
  *  is far more likely to be a parsing failure than a real course, and an
@@ -84,6 +85,20 @@ export interface DroppedItem {
   reason: string;
 }
 
+/** What the date census found, so the review screen can say "30 dates in this
+ *  syllabus, 28 brought in" instead of quietly showing whatever survived. The
+ *  old pipeline's failure was invisible precisely because it had no such
+ *  count. */
+export interface ImportCensus {
+  /** Real dates located in the document, by code. */
+  found: number;
+  /** Judged not to be scheduled items — a policy revision date, a citation. */
+  notScheduled: number;
+  /** Located but never labelled. Should be zero; when it is not, the student
+   *  is told rather than left to notice a missing exam in week nine. */
+  unlabelled: number;
+}
+
 export interface VerifiedSyllabus {
   course: string | null;
   term: string | null;
@@ -92,6 +107,8 @@ export interface VerifiedSyllabus {
   /** Recurring patterns, kept separate because they are lossy — see below. */
   meetings: SyllabusMeeting[];
   dropped: DroppedItem[];
+  /** Present when the import ran through the date census. */
+  census?: ImportCensus;
   /** Set when there is genuinely nothing to import, so the caller says that
    *  rather than rendering an empty confirmation screen. */
   note?: string;
@@ -378,6 +395,114 @@ export function verifySyllabus(raw: SyllabusExtraction | null, options: VerifyOp
     result.note =
       dropped.length > 0
         ? "Nothing in that file could be matched back to a date in the text."
+        : "No dates or class times were found in that file.";
+  }
+  return result;
+}
+
+/** Check the model's recurring-meeting patterns. Unlike a dated row, a meeting
+ *  line ("Lecture MWF 9:00-9:50 in Bell 204") IS one contiguous run of text, so
+ *  the verbatim-quote check still works here and is kept. */
+export function verifyMeetings(raw: unknown, sourceText: string, dropped: DroppedItem[]): SyllabusMeeting[] {
+  const meetings: SyllabusMeeting[] = [];
+  for (const meeting of Array.isArray(raw) ? raw : []) {
+    const title = typeof meeting?.title === "string" ? meeting.title.trim() : "";
+    if (!title) continue;
+    if (typeof meeting.sourceQuote !== "string" || !quoteAppearsIn(meeting.sourceQuote, sourceText)) {
+      dropped.push({ reason: "Not found in the syllabus text", title });
+      continue;
+    }
+    const days = Array.isArray(meeting.daysOfWeek)
+      ? meeting.daysOfWeek.filter((day: unknown): day is number => Number.isInteger(day) && (day as number) >= 0 && (day as number) <= 6)
+      : [];
+    if (days.length === 0) {
+      dropped.push({ reason: "No weekdays given for the repeating schedule", title });
+      continue;
+    }
+    meetings.push({ ...meeting, daysOfWeek: days, title });
+  }
+  return meetings;
+}
+
+export interface CensusBuildOptions {
+  sourceText: string;
+  course: string | null;
+  term: string | null;
+  newId: () => string;
+}
+
+/**
+ * Turn a labelled date census into events the student can review.
+ *
+ * The contrast with verifySyllabus is the whole design: there, a date arrived
+ * from the model and had to earn its place. Here the date came from the
+ * document by way of a regular expression, so it is already true — what the
+ * model supplied is only the NAME, and a name that is missing costs a line in
+ * the census summary rather than a lost deadline. PURE.
+ */
+export function buildFromCensus(
+  outcome: CensusOutcome,
+  rawMeetings: unknown,
+  options: CensusBuildOptions,
+): VerifiedSyllabus {
+  const { course, newId, sourceText, term } = options;
+  const dropped: DroppedItem[] = [];
+  const events: CalendarEvent[] = [];
+  const seen = new Set<string>();
+
+  for (const item of outcome.labelled) {
+    const date = item.entry.resolved.date;
+    // A syllabus states the same deadline in a table and again in prose. Dedupe
+    // BEFORE the cap, so restated dates never spend the budget that real
+    // trailing items need.
+    const key = `${item.title.toLowerCase()}|${date}`;
+    if (seen.has(key)) continue;
+    if (events.length >= MAX_IMPORT_EVENTS) {
+      dropped.push({ reason: `Over the ${MAX_IMPORT_EVENTS}-event import limit`, title: item.title });
+      continue;
+    }
+    seen.add(key);
+
+    const event: CalendarEvent = {
+      date,
+      id: newId(),
+      kind: toValidKind(item.kind),
+      // Written as the student's own, not the agent's: an 'agent' event routes
+      // to a read-only dialog with no edit and no delete, so a wrong date would
+      // be permanent.
+      source: "manual",
+      title: item.title,
+    };
+    if (course) event.course = course;
+    event.note = `From your syllabus: “${item.entry.context.slice(0, 300)}”`;
+    events.push(event);
+  }
+
+  for (const entry of outcome.unlabelled) {
+    dropped.push({
+      reason: `The date ${entry.resolved.date} was found in the syllabus but could not be named`,
+      title: `(unnamed, ${entry.resolved.date})`,
+    });
+  }
+
+  events.sort((a, b) => (a.date === b.date ? (a.time ?? "").localeCompare(b.time ?? "") : a.date.localeCompare(b.date)));
+
+  const result: VerifiedSyllabus = {
+    census: {
+      found: outcome.labelled.length + outcome.skipped.length + outcome.unlabelled.length,
+      notScheduled: outcome.skipped.length,
+      unlabelled: outcome.unlabelled.length,
+    },
+    course,
+    dropped,
+    events,
+    meetings: verifyMeetings(rawMeetings, sourceText, dropped),
+    term,
+  };
+  if (result.events.length === 0 && result.meetings.length === 0) {
+    result.note =
+      result.census!.found > 0
+        ? "Dates were found in that file, but none of them looked like something to put in your calendar."
         : "No dates or class times were found in that file.";
   }
   return result;

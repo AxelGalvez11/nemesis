@@ -10,20 +10,25 @@ import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// The three pieces behind "long hold to open up minimenu for rename, delete, or
-// move" (owner 2026-07-22), shared by the Library tree and the Study deck tree
-// because both asks were identical:
+// What "long hold to open up minimenu for rename, delete, or move" (owner
+// 2026-07-22) opens once you have picked one, shared by the Library tree and the
+// Study deck tree because both asks were identical:
 //
-//   RowActionsSheet  — the menu itself, listing what you can do to the row
 //   TextPromptSheet  — the one-field dialog Rename opens
 //   FolderPickerSheet — the destination list Move opens
 //
-// The menu and the picker ride SlideUpSheet, so they inherit the drag-to-expand
-// every bottom sheet in the app has. The PROMPT deliberately doesn't: it's a
-// small centered dialog instead, because (a) a rename field that can be dragged
-// to full screen is odd, and (b) these are inline views rather than native
-// modals, so a bottom-anchored prompt would sit underneath the very keyboard it
-// just raised. Centering it in the space above the keyboard avoids that outright.
+// The MENU itself used to live here too, as RowActionsSheet — a bottom sheet.
+// Both screens now open a MiniMenu under the finger instead (Library 2026-07-23,
+// Study 2026-07-31), so the sheet had no callers left and went with the change.
+// `RowAction` stayed: it is the shape both screens still describe their actions
+// in, and MiniMenu reads the same fields.
+//
+// The picker rides SlideUpSheet, so it inherits the drag-to-expand every bottom
+// sheet in the app has. The PROMPT deliberately doesn't: it's a small centered
+// dialog instead, because (a) a rename field that can be dragged to full screen
+// is odd, and (b) these are inline views rather than native modals, so a
+// bottom-anchored prompt would sit underneath the very keyboard it just raised.
+// Centering it in the space above the keyboard avoids that outright.
 
 export interface RowAction {
   key: string;
@@ -31,45 +36,6 @@ export interface RowAction {
   /** Red label + confirm step. Delete uses it. */
   destructive?: boolean;
   onPress: () => void;
-}
-
-/** The long-press menu. `title` is the row you pressed, so there's never a doubt
- *  about which deck or note the actions are about to hit. */
-export function RowActionsSheet({
-  visible,
-  title,
-  subtitle,
-  actions,
-  onClose,
-  testID,
-}: {
-  visible: boolean;
-  title: string;
-  subtitle?: string;
-  actions: RowAction[];
-  onClose: () => void;
-  testID?: string;
-}) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <SlideUpSheet visible={visible} onClose={onClose} title={title} testID={testID ?? "row-actions-sheet"}>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      <View style={styles.actionList}>
-        {actions.map((action) => (
-          <Pressable
-            key={action.key}
-            onPress={action.onPress}
-            style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
-            accessibilityRole="button"
-            accessibilityLabel={action.label}
-            testID={`row-action-${action.key}`}
-          >
-            <Text style={[styles.actionLabel, action.destructive && styles.actionLabelDestructive]}>{action.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </SlideUpSheet>
-  );
 }
 
 /** One-field dialog — Rename, and the Library's New folder. Autofocuses, selects
@@ -330,13 +296,6 @@ export function FolderPickerSheet({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     rowPressed: { backgroundColor: c.surface },
-    subtitle: { ...type.micro, color: c.text3, marginBottom: space(1) },
-
-    // Long-press menu.
-    actionList: { paddingTop: space(1) },
-    actionRow: { paddingVertical: space(3.5), paddingHorizontal: space(2), borderRadius: radius.sm },
-    actionLabel: { ...type.body, color: c.text },
-    actionLabelDestructive: { color: c.danger },
 
     // Rename / new-folder dialog: centered in whatever the keyboard leaves.
     promptCenter: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },

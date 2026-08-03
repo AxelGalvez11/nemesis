@@ -196,7 +196,28 @@ export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>
           private processing input for the notes, while the student sees the
           single large microphone waveform before and after stopping. */}
       <View style={styles.meter} testID="record-waveform-view">
-        <LiveWaveform active={recording} height={72} testID="record-waveform" />
+        {/* Three states, and the middle one is the point (owner 2026-08-01:
+            "grayed waveform thats active and dynamic, when user begins actually
+            recording the waveform should switch to blue"). ARMED — ready, not
+            capturing — moves in grey so the meter never looks broken while a
+            student waits for the lecturer to start.
+
+            REVIEWABLE IS "off", NOT "armed", and that is a deliberate reading of
+            the brief rather than an oversight: once there is a transcript
+            waiting for Save or Discard the mic is genuinely shut, and a strip
+            still waving would say it is listening when it is not.
+
+            The blue is c.info, a FIXED colour rather than the student's chosen
+            accent. It has to be: the accent defaults to graphite, so on most
+            phones "switches to accent" would have been no visible switch at
+            all. This is the one place in the app that steps outside the accent
+            system, and it does so because the whole ask is a colour CHANGE. */}
+        <LiveWaveform
+          state={recording ? "live" : reviewable ? "off" : "armed"}
+          color={c.info}
+          height={72}
+          testID="record-waveform"
+        />
         {!recording ? (
           <Text style={styles.meterLabel}>
             {reviewable

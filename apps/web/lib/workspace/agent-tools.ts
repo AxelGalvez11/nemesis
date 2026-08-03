@@ -22,6 +22,7 @@ import {
   type PendingDelete,
 } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
+import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
@@ -1321,6 +1322,30 @@ async function pendingDeleteFor(name: string, args: Record<string, unknown>): Pr
   };
 }
 
+/**
+ * Tools that CHANGE the student's Study page.
+ *
+ * These write straight to Supabase, which is correct — but the Study store
+ * holds its list in memory and, unlike the Library store, keeps no live channel
+ * open to hear about outside writes. Without a nudge the page shows a stale
+ * list, which is how a quiz the chat genuinely saved was not on the Tests page
+ * (owner 2026-08-01).
+ *
+ * One set in one place, checked at the dispatch site — the same reasoning as
+ * the confirmation gate below. A per-handler call is one a future tool forgets,
+ * and forgetting it means silently losing the student's work on screen.
+ */
+const STUDY_WRITING_TOOLS = new Set([
+  "add_flashcards",
+  "add_mindmap",
+  "add_practice_test",
+  "delete_flashcard",
+  "delete_study_artifact",
+  "delete_study_deck",
+  "edit_flashcard",
+  "rename_study_deck",
+]);
+
 /** Run one tool call; ALWAYS resolves to a JSON-stringifiable result (errors
  *  become `{error}` so the model can react instead of the turn dying). */
 export async function executeAgentTool(
@@ -1351,36 +1376,55 @@ export async function executeAgentTool(
         };
       }
     }
-    switch (call.name) {
-      case "search_library": return await searchLibrary(str(args.query));
-      case "read_library_note": return await readLibraryNote(str(args.path));
-      case "create_library_note": return await createLibraryNote(str(args.title), str(args.content), str(args.folder));
-      case "create_slide_deck": return await createSlideDeck(args);
-      case "append_library_note": return await appendLibraryNote(str(args.path), str(args.content));
-      case "create_library_folder": return await createLibraryFolder(str(args.path));
-      case "rename_library_note": return await renameLibraryNote(str(args.path), str(args.title));
-      case "move_library_note": return await moveLibraryNote(str(args.path), str(args.folder));
-      case "list_study_decks": return await listStudyDecks();
-      case "read_study_deck": return await readStudyDeck(str(args.deck_name), Number(args.offset), Number(args.limit));
-      case "list_study_artifacts": return await listStudyArtifacts(str(args.kind));
-      case "read_study_artifact": return await readStudyArtifact(str(args.id));
-      case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : []);
-      case "add_practice_test": return await addPracticeTest(args);
-      case "add_mindmap": return await addMindmap(args);
-      case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
-      case "add_calendar_event": return await addCalendarEvent(args);
-      case "update_calendar_event": return await updateCalendarEventTool(args);
-      case "delete_calendar_event": return await deleteCalendarEventTool(args);
-      case "replace_library_note": return await replaceLibraryNoteTool(args);
-      case "delete_library_note": return await deleteLibraryNoteTool(args);
-      case "edit_flashcard": return await editFlashcardTool(args);
-      case "delete_flashcard": return await deleteFlashcardTool(args);
-      case "rename_study_deck": return await renameStudyDeckTool(args);
-      case "delete_study_deck": return await deleteStudyDeckTool(args);
-      case "delete_study_artifact": return await deleteStudyArtifactTool(args);
-      default: return { error: `Unknown tool '${call.name}'.` };
-    }
+    const result = await dispatchTool(call, args, options);
+    // A write the student cannot see is a write that did not happen, as far as
+    // they are concerned. Only on success: a failed tool must not blank the list.
+    if (STUDY_WRITING_TOOLS.has(call.name) && !isToolError(result)) refreshStudyAfterExternalWrite();
+    return result;
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "Tool failed." };
+  }
+}
+
+function isToolError(result: unknown): boolean {
+  return typeof result === "object" && result !== null && "error" in result;
+}
+
+/** The dispatch table itself. Split out so executeAgentTool can act on the
+ *  RESULT of a tool without wrapping every case in bookkeeping. */
+async function dispatchTool(
+  call: AgentToolCall,
+  args: Record<string, unknown>,
+  options: { confirmed?: boolean },
+): Promise<unknown> {
+  void options;
+  switch (call.name) {
+    case "search_library": return await searchLibrary(str(args.query));
+    case "read_library_note": return await readLibraryNote(str(args.path));
+    case "create_library_note": return await createLibraryNote(str(args.title), str(args.content), str(args.folder));
+    case "create_slide_deck": return await createSlideDeck(args);
+    case "append_library_note": return await appendLibraryNote(str(args.path), str(args.content));
+    case "create_library_folder": return await createLibraryFolder(str(args.path));
+    case "rename_library_note": return await renameLibraryNote(str(args.path), str(args.title));
+    case "move_library_note": return await moveLibraryNote(str(args.path), str(args.folder));
+    case "list_study_decks": return await listStudyDecks();
+    case "read_study_deck": return await readStudyDeck(str(args.deck_name), Number(args.offset), Number(args.limit));
+    case "list_study_artifacts": return await listStudyArtifacts(str(args.kind));
+    case "read_study_artifact": return await readStudyArtifact(str(args.id));
+    case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : []);
+    case "add_practice_test": return await addPracticeTest(args);
+    case "add_mindmap": return await addMindmap(args);
+    case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
+    case "add_calendar_event": return await addCalendarEvent(args);
+    case "update_calendar_event": return await updateCalendarEventTool(args);
+    case "delete_calendar_event": return await deleteCalendarEventTool(args);
+    case "replace_library_note": return await replaceLibraryNoteTool(args);
+    case "delete_library_note": return await deleteLibraryNoteTool(args);
+    case "edit_flashcard": return await editFlashcardTool(args);
+    case "delete_flashcard": return await deleteFlashcardTool(args);
+    case "rename_study_deck": return await renameStudyDeckTool(args);
+    case "delete_study_deck": return await deleteStudyDeckTool(args);
+    case "delete_study_artifact": return await deleteStudyArtifactTool(args);
+    default: return { error: `Unknown tool '${call.name}'.` };
   }
 }

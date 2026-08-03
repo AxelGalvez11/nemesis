@@ -78,7 +78,10 @@ export async function POST(req: Request) {
       if (hasOpenSubscription) {
         const portal = await stripeClient.billingPortal.sessions.create({
           customer: customerId,
-          return_url: `${appUrl}/account/billing`,
+          // /pricing, not the retired /account/billing portal. An existing subscriber
+          // who picks a plan is sent to Stripe's portal instead of a second checkout, and
+          // /pricing is where they pressed the button.
+          return_url: `${appUrl}/pricing`,
         });
         return json({ url: portal.url, mode: "portal" });
       }
@@ -133,8 +136,11 @@ export async function POST(req: Request) {
       payment_method_collection: checkoutTerms.payment_method_collection,
       payment_method_types: checkoutTerms.payment_method_types,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/account/billing?checkout=success`,
-      cancel_url: `${appUrl}/account/billing?checkout=cancelled`,
+      // /pricing renders both of these states already, and it is the page the student
+      // was on when they started. /account/billing was retired 2026-08-01; it now
+      // redirects here, which is what keeps already-open Stripe sessions working.
+      success_url: `${appUrl}/pricing?checkout=success`,
+      cancel_url: `${appUrl}/pricing?checkout=cancelled`,
       subscription_data: {
         ...checkoutTerms.subscription_data,
         metadata: { user_id: user.id, plan },

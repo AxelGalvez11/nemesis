@@ -155,6 +155,31 @@ export function photoUploadError(status: number): string {
 export const PHOTO_ANALYSIS_ASK = "Read this photo and explain what it shows.";
 
 /**
+ * What the student's own bubble should SHOW for a turn, given its stored text
+ * and whether a picture is riding on it.
+ *
+ * 🔴 THE CANNED ASK IS FOR THE MODEL, NOT FOR THE STUDENT TO READ BACK.
+ * PHOTO_ANALYSIS_ASK has to exist — a photo sent from an empty box still has to
+ * ask something, and an empty turn is dropped before it reaches the wire — but
+ * it lands in the message's `content`, which is BOTH the wire text and the text
+ * the bubble draws. So pressing send on a bare photograph put those words in the
+ * student's mouth (owner 2026-08-01: "the chat is still outputting 'read this
+ * photo and explain what it shows' even though user didnt send that").
+ *
+ * A DISPLAY RULE, not a send-side one, for two reasons: the wire text is
+ * load-bearing, and a rule applied on the way to the screen also repairs every
+ * photo turn already sitting in a saved thread.
+ *
+ * The picture is required. A student who TYPES that exact sentence, with no
+ * photo attached, is asking a real question and must see it back.
+ */
+export function photoBubbleText(content: string, hasImage: boolean): string {
+  const clean = content.trim();
+  if (hasImage && clean === PHOTO_ANALYSIS_ASK) return "";
+  return clean;
+}
+
+/**
  * What a turn actually asks, given what was typed and whether a photo is riding
  * along.
  *

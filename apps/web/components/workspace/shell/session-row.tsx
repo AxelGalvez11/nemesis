@@ -124,9 +124,17 @@ export function SidebarSessionRow({
           onResume();
         }}
       >
-        <SidebarRowLead className="overflow-hidden">
-          <SidebarRowDot isWorking={isWorking} />
-        </SidebarRowLead>
+        {/* The lead slot exists ONLY for a session that is actually running
+            (owner 2026-07-31, ChatGPT as the reference). Every row used to
+            carry a grey bullet, which said nothing — every row has one, so it
+            distinguishes nothing — and ate the width that made titles read
+            "Dormant commer…". A running session still gets its pulsing dot,
+            because that one IS information. */}
+        {isWorking && (
+          <SidebarRowLead className="overflow-hidden">
+            <SidebarRowDot isWorking />
+          </SidebarRowLead>
+        )}
         <SidebarRowLabel className="flex-1 font-normal group-hover:text-foreground group-data-[working=true]:text-foreground/90">
           {title}
         </SidebarRowLabel>

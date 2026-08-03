@@ -218,8 +218,9 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 }
 .device-mac { display: block; width: min(100%, 1000px); }
 .device-mac img { display: block; width: 100%; height: auto; }
-/* The phone overlaps the laptop's bottom-right. Its rendered shadow is part of
-   the image, so it needs no room reserved beyond its own box. */
+/* The phone overlaps the laptop's bottom-right. Both are Apple bezels on bare
+   transparency — no baked shadow, because Apple's guidelines forbid painting one
+   on — so the box is exactly the hardware and nothing extra needs reserving. */
 .device-phone {
   position: absolute; right: 0; bottom: -18px;
   width: 20%; min-width: 124px; max-width: 232px;

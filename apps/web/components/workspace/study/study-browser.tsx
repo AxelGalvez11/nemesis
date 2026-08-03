@@ -38,6 +38,9 @@ interface StudyBrowserProps {
   initialDeckId: string | null;
   onAddCard: (deckId: string) => void;
   onDeleteDeck: (deckId: string) => void;
+  /** Throw away the card being edited. The menu could only delete the whole
+   *  DECK before, which is not a substitute for getting rid of one bad card. */
+  onDeleteCard: (cardId: string) => void;
 }
 
 const CARD_TYPES: { id: StudyCardType; label: string }[] = [
@@ -85,7 +88,7 @@ function buildRailEntries(decks: StudyDeck[], collapsed: ReadonlySet<string>): R
   return entries;
 }
 
-export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, onAddCard, onDeleteDeck }: StudyBrowserProps) {
+export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, onAddCard, onDeleteCard, onDeleteDeck }: StudyBrowserProps) {
   const { updateCard, setCardSuspended, userId } = useCloudStudy();
   const previewMode = useWorkspacePreview();
   const [scope, setScope] = useState(`deck:${initialDeckId ?? decks[0]?.id ?? ""}`);
@@ -407,6 +410,10 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                       <DropdownMenuItem onSelect={() => void toggleSuspended()}><IconPlayerPause /> {activeCard.suspended ? "Unsuspend card" : "Suspend card"}</DropdownMenuItem>
+                      {/* Sits directly under Suspend, because they are the two
+                          ways to stop seeing a card and a student choosing
+                          between them should see both at once. */}
+                      <DropdownMenuItem onSelect={() => onDeleteCard(activeCard.id)} variant="destructive"><IconTrash /> Delete card</DropdownMenuItem>
                       {deckId && <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem data-testid="auto-tag-open" onSelect={() => { setAutoTagResult(null); setAutoTagOpen(true); }}><IconSparkles /> Auto-tag deck</DropdownMenuItem>
