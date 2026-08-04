@@ -58,8 +58,7 @@ const FLASHCARD_CRAFT: ChatSkill = {
     "The front must be answerable exactly one way. Never write a prompt like 'Tell me about X' or a yes/no question, and never write a front whose answer could be several different things.",
     "Include the detail that distinguishes this item from its neighbours — the reason a student confuses two drugs, two enzymes, or two dates is the thing the card must isolate.",
     "Never put a list of more than about four items on one card. Split the list into separate cards, or write it as a cloze per item.",
-    "Follow the learner's selected format exactly. Set card_type on every card to basic, cloze, or reversed; a mix should contain the requested blend rather than silently choosing one style.",
-    "Use cloze deletion ({{c1::hidden text}}) only when the learner selected cloze or a mix and the fact makes sense inside its sentence; use plain front/back when the question stands on its own.",
+    "Card types are AUTO — never ask the learner to configure them. Choose per card from the content: basic for one-way facts, reversed when both directions matter (term/definition), cloze ({{c1::hidden text}}) when the fact lives inside its sentence. Set card_type on every card. If the learner stated a format themselves, follow it exactly.",
     "When the student asks you to CREATE flashcards, you MUST call list_study_decks and then add_flashcards. Do not print the requested deck as a prose list in chat; the saved tool result is the deliverable.",
     "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
     "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
@@ -108,7 +107,7 @@ const TEST_CRAFT: ChatSkill = {
   instructions: [
     "SKILL — writing exam questions that measure understanding:",
     "When the student asks you to CREATE a test, you MUST call add_practice_test. Do not print the requested test and answer key in chat; the saved tool result is the deliverable.",
-    "Follow the question count, difficulty, and question types the learner selected in the preceding turn exactly.",
+    "Count, difficulty, and format are AUTO — never ask the learner to configure them. Size the test to the material: roughly one question per distinct testable concept, no fewer than 5 and no more than 15, multiple-choice, at mixed difficulty. If the learner stated preferences (a count, a difficulty, a focus) in this request or earlier in the conversation, follow those exactly.",
     EXAM_ITEM_RULES,
   ].join("\n"),
   match:

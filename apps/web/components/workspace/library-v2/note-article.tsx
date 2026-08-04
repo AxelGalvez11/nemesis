@@ -54,6 +54,16 @@ interface NoteDraft {
   dirty: boolean;
 }
 
+/** The learning loop's three verbs on a note (owner 2026-08-03: "a lecture
+ *  could simply show: Teach me · Flashcards · Test"). */
+export type NoteStudyAction = "teach" | "flashcards" | "test";
+
+const STUDY_ACTIONS: ReadonlyArray<{ action: NoteStudyAction; icon: string; label: string; title: string }> = [
+  { action: "teach", icon: "mortar-board", label: "Teach me", title: "Learn this in chat, step by step, with understanding checks" },
+  { action: "flashcards", icon: "layers", label: "Flashcards", title: "Turn this into flashcards — card types chosen from the content" },
+  { action: "test", icon: "checklist", label: "Test", title: "Generate a practice test sized to this material" },
+];
+
 interface NoteArticleProps {
   note: CloudLibraryNote;
   notes: readonly CloudLibraryNote[];
@@ -69,12 +79,15 @@ interface NoteArticleProps {
   onOpenSource: (id: string) => void;
   openableSourceIds: ReadonlySet<string>;
   onDelete: (noteId: string) => Promise<void>;
+  /** A study verb was clicked — the page opens chat with this note attached
+   *  and the request already sent. */
+  onStudyAction: (action: NoteStudyAction) => void;
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
   /** Wraps ONLY the note body — the ToC queries its h1-h4 by position. */
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -198,6 +211,23 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           spellCheck
           value={title}
         />
+        {/* The learning loop's front door: three verbs, everything else stays
+            behind them (no counts, no formats, no dialogs — Auto). */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5" data-testid="note-study-actions">
+          {STUDY_ACTIONS.map(({ action, icon, label, title: actionTitle }) => (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) px-2.5 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary) transition-colors hover:border-(--ui-stroke-secondary) hover:text-foreground"
+              data-testid={`note-study-${action}`}
+              key={action}
+              onClick={() => onStudyAction(action)}
+              title={actionTitle}
+              type="button"
+            >
+              <Codicon className="text-(--ui-text-tertiary)" name={icon} size="0.75rem" />
+              {label}
+            </button>
+          ))}
+        </div>
         {sources.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="note-sources">
             {sources.map((source) => {
