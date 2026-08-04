@@ -61,6 +61,7 @@ export function LibraryDocsPage() {
   const [articleContent, setArticleContent] = useState("");
   const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const [sourcesVersion, setSourcesVersion] = useState(0);
   const [sourceNoteIds, setSourceNoteIds] = useState<string[]>([]);
   const [reveal, setReveal] = useState<LibraryTreeReveal | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
@@ -103,12 +104,12 @@ export function LibraryDocsPage() {
     router.push(libraryBase);
   }, [libraryBase, router]);
 
-  const { importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
+  const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
+  const { importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, onSourcesChanged: bumpSources, saveNote, uid });
 
-  // Source files: one load per account (fixtures when signed out / previewing).
-  // The table doesn't exist until the file-storage migrations land, so a real
-  // account quietly gets [] — pills stay inert and the tree shows no Sources
-  // rows, which is the truthful state.
+  // Source files: loaded per account (fixtures when signed out / previewing)
+  // and re-loaded whenever an import stores an original or a folder operation
+  // re-files them (sourcesVersion bumps).
   useEffect(() => {
     let cancelled = false;
     setSourcesLoaded(false);
@@ -120,7 +121,7 @@ export function LibraryDocsPage() {
     return () => {
       cancelled = true;
     };
-  }, [uid]);
+  }, [sourcesVersion, uid]);
 
   // Keep the store's selection in step with the URL — the Graph pre-warms it
   // the other way around, and live-refresh repair logic keys off it.
@@ -202,6 +203,7 @@ export function LibraryDocsPage() {
               onNavigate={() => narrowViewport && setNavOpen(false)}
               onOpenNote={openPath}
               onOpenSource={openSource}
+              onSourcesChanged={bumpSources}
               openNotePath={note?.path ?? null}
               openSourceId={openedSource?.id ?? null}
               revealFolder={reveal}

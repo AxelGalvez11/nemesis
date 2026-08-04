@@ -60,6 +60,8 @@ interface DocsNavProps {
   /** Id of the source file open in the center, for its row highlight. */
   openSourceId: string | null;
   onOpenSource: (id: string) => void;
+  /** Fired when imports/folder ops changed stored files — parent re-loads. */
+  onSourcesChanged?: () => void;
   /** Breadcrumb reveal request from the center pane. */
   revealFolder?: LibraryTreeReveal | null;
   onOpenNote: (path: string) => void;
@@ -69,7 +71,7 @@ interface DocsNavProps {
   showBack?: boolean;
 }
 
-export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpenSource, revealFolder, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
+export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
   const isHomeActive = homeActive ?? openNotePath === null;
   const router = useRouter();
   const pathname = usePathname();
@@ -99,7 +101,7 @@ export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpe
     onNavigate?.();
   };
 
-  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, saveNote, uid });
+  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, onSourcesChanged, saveNote, uid });
 
   const attachNotesToChat = (noteIds: string[]) => {
     const chosen = notes.filter((note) => noteIds.includes(note.id));
@@ -212,38 +214,24 @@ export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpe
               folder={visibleTree}
               onAttachNotes={attachNotesToChat}
               onCreateFolder={(path) => void createFolder(path)}
-              onDeleteFolder={(path) => void deleteFolder(path)}
+              onDeleteFolder={(path) => void deleteFolder(path).then(() => onSourcesChanged?.())}
               onDeleteNote={(id) => void deleteNote(id)}
-              onMoveFolder={(source, target) => void moveFolder(source, target)}
+              onMoveFolder={(source, target) => void moveFolder(source, target).then(() => onSourcesChanged?.())}
               onMoveNote={(id, target) => void moveNote(id, target)}
-              onRenameFolder={(path, title) => void renameFolder(path, title)}
+              onRenameFolder={(path, title) => void renameFolder(path, title).then(() => onSourcesChanged?.())}
               onRenameNote={(id, title) => void renameNote(id, title)}
               onSelect={open}
               renderFolderExtras={(treeFolder, depth) => {
                 const folderSources = sourcesInFolder(sources, treeFolder.path);
                 if (folderSources.length === 0) return null;
                 return (
-                  <div data-testid="tree-sources">
-                    <p className="mt-1 mb-0.5 select-none text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-quaternary)" style={libraryTreeIndentStyle(depth + 1)}>
-                      Sources
-                    </p>
-                    {folderSources.map((source) => (
-                      <div key={source.id} style={libraryTreeIndentStyle(depth + 1)}>
-                        <button
-                          className={cn(
-                            "row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs",
-                            source.id === openSourceId ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
-                          )}
-                          onClick={() => { onOpenSource(source.id); onNavigate?.(); }}
-                          title={`${source.fileName}${formatSourceSize(source.sizeBytes) ? ` · ${formatSourceSize(source.sizeBytes)}` : ""}`}
-                          type="button"
-                        >
-                          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={librarySourceKindIcon(source.kind)} size="0.6875rem" />
-                          <span className="truncate">{source.fileName}</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <SourcesGroup
+                    depth={depth}
+                    onNavigate={onNavigate}
+                    onOpenSource={onOpenSource}
+                    openSourceId={openSourceId}
+                    sources={folderSources}
+                  />
                 );
               }}
               revealFolder={revealFolder}
@@ -254,6 +242,59 @@ export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpe
       </div>
       <LibraryCreateDialog kind={createKind ?? "note"} onOpenChange={(value) => !value && setCreateKind(null)} open={createKind !== null} />
     </aside>
+  );
+}
+
+/** A folder's Sources, as their own COLLAPSIBLE node inside the tree (owner:
+ *  "sources need to be … under a folder so that sources are collapsable").
+ *  Renders like a folder row — chevron, name, count — starting closed so the
+ *  tree stays notes-first; it opens itself when the file being viewed lives
+ *  inside, so a deep link is never pointing at a hidden row. */
+function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }: {
+  sources: readonly LibrarySource[];
+  depth: number;
+  openSourceId: string | null;
+  onOpenSource: (id: string) => void;
+  onNavigate?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const holdsOpenSource = openSourceId !== null && sources.some((source) => source.id === openSourceId);
+
+  useEffect(() => {
+    if (holdsOpenSource) setOpen(true);
+  }, [holdsOpenSource]);
+
+  return (
+    <div data-testid="tree-sources">
+      <div style={libraryTreeIndentStyle(depth)}>
+        <button
+          aria-expanded={open}
+          className="row-hover flex w-full min-w-0 items-center gap-1 rounded-md px-1 py-1 text-left text-xs font-medium text-foreground"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" />
+          <span className="truncate">Sources</span>
+          <span className="ml-auto shrink-0 pr-1 text-[0.65rem] font-normal text-(--ui-text-quaternary)">{sources.length}</span>
+        </button>
+      </div>
+      {open && sources.map((source) => (
+        <div key={source.id} style={libraryTreeIndentStyle(depth + 1)}>
+          <button
+            className={cn(
+              "row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs",
+              source.id === openSourceId ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
+            )}
+            onClick={() => { onOpenSource(source.id); onNavigate?.(); }}
+            title={`${source.fileName}${formatSourceSize(source.sizeBytes) ? ` · ${formatSourceSize(source.sizeBytes)}` : ""}`}
+            type="button"
+          >
+            <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={librarySourceKindIcon(source.kind)} size="0.6875rem" />
+            <span className="truncate">{source.fileName}</span>
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 

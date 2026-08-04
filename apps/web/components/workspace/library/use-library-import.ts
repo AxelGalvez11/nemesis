@@ -3,26 +3,28 @@
 // One import pipeline, two sidebars: the classic Library tree and the docs-nav
 // both accept the same files and file them the same way.
 //
-// WHAT HAPPENS TO A DOCUMENT (PDF/Word/PowerPoint): its text is extracted by
-// the server (/api/notebooks/extract/file), then THE LIBRARIAN files it —
-// one model pass that turns the document into clean, cross-linked topic pages
-// under the student's own folders, and adds Related links to a few genuinely
-// related existing notes (see library-librarian.ts, incl. the Personal-folder
-// exemption). If the model is unreachable or its plan doesn't validate, the
-// import falls back to exactly the old behaviour — one raw-text note under
-// "Imported" with a `## Related` section — so organizing is only ever an
-// upgrade, never a new way to lose a file.
+// WHAT HAPPENS TO A DOCUMENT (PDF/Word/PowerPoint/image): its text is
+// extracted by the server (/api/notebooks/extract/file), THE LIBRARIAN files
+// it — one model pass that turns the document into clean, cross-linked topic
+// pages under the student's own folders, and adds Related links to a few
+// genuinely related existing notes (see library-librarian.ts, incl. the
+// Personal-folder exemption) — and THE ORIGINAL FILE IS KEPT: uploaded to the
+// private library-sources bucket and filed under the same folder, so it shows
+// in that folder's Sources group and opens from the note's source pills
+// (owner 2026-08-03: "yes it needs to be stored so that users can click on
+// it"). Each created page records its lineage in library_provenance with the
+// stored file's id.
+//
+// If the model is unreachable or its plan doesn't validate, the import falls
+// back to the old behaviour — one raw-text note under "Imported" — but the
+// original is STILL kept (filed under "Imported") and stamped, so organizing
+// quality never decides whether the student keeps their file.
 //
 // Markdown/text files are the student's OWN notes: saved verbatim, never
-// reorganized. Images keep the plain path too (their extraction is a caption,
-// not a document). Per-file try/catch so one unreadable file does not abandon
-// the rest of the batch.
-//
-// The original bytes are NOT kept anywhere yet — extraction is text in, text
-// out. When the file-storage layer lands (needs the owner-approved
-// migrations), this hook is the choke point that starts uploading originals;
-// provenance stamping below is already attempted and simply no-ops until its
-// INSERT policy exists.
+// reorganized, and not duplicated into storage — the note IS the content.
+// Every storage/provenance write is best-effort: an import never fails
+// because a stamp or upload did. Per-file try/catch so one unreadable file
+// does not abandon the rest of the batch.
 
 import { useState } from "react";
 
@@ -31,6 +33,7 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { extractFile, isExtractable, isImage } from "@/lib/workspace/chat-attachments";
 import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
+import { uploadLibrarySource, type LibrarySource } from "@/lib/workspace/library-sources";
 import {
   applyLibrarianPlan,
   buildLibrarianMessages,
@@ -54,21 +57,43 @@ interface UseLibraryImportArgs {
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
   /** Called with the last successfully imported note's path, to open it. */
   onImported: (lastPath: string) => void;
+  /** Called once per batch that stored at least one original file, so the
+   *  surface can refresh its Sources listing. */
+  onSourcesChanged?: () => void;
 }
 
-export function useLibraryImport({ uid, notes, folders, createNote, saveNote, onImported }: UseLibraryImportArgs) {
+export function useLibraryImport({ uid, notes, folders, createNote, saveNote, onImported, onSourcesChanged }: UseLibraryImportArgs) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
+  /** Best-effort provenance stamp linking a note to its stored original. */
+  const recordProvenance = async (noteId: string, fileName: string, sourceId: string | null, location?: object | null) => {
+    if (!uid) return;
+    try {
+      await supabase.from("library_provenance").insert({
+        document_id: noteId,
+        location: location ?? {},
+        source_id: sourceId,
+        source_kind: "upload",
+        source_path: fileName,
+        user_id: uid,
+      });
+    } catch {
+      // A missing stamp costs a pill, never an import.
+    }
+  };
+
   /** The librarian pass for one document. Returns the first created page's
-   *  path, or null when anything at all went wrong (caller falls back). */
-  const organizeDocument = async (fileName: string, text: string): Promise<string | null> => {
+   *  path, or null when anything at all went wrong (caller falls back). The
+   *  stored original (if the upload succeeded) is threaded into every page's
+   *  provenance stamp so pills open the file. */
+  const organizeDocument = async (file: File, text: string): Promise<{ path: string; stored: LibrarySource | null } | null> => {
     if (!uid || text.trim().length < LIBRARIAN_MIN_CHARS) return null;
     try {
       const reply = await postChatCompletion(
         uid,
         buildLibrarianMessages({
-          fileName,
+          fileName: file.name,
           outline: librarianOutline(notes.map((note) => note.path), folders),
           text,
         }),
@@ -76,27 +101,17 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
       );
       const plan = parseLibrarianPlan(reply.text ?? "", notes.map((note) => note.path));
       if (!plan) return null;
+      const stored = await uploadLibrarySource(uid, file, plan.folder);
       const firstPath = await applyLibrarianPlan(plan, {
         createNote,
         findNote: (path) => {
           const found = notes.find((note) => note.path.toLocaleLowerCase() === path.toLocaleLowerCase());
           return found ? { content: found.content, id: found.id, title: found.title } : null;
         },
-        recordSource: async (noteId, location) => {
-          // Best-effort provenance: the table is SELECT-only until its
-          // migration lands, so this fails quietly today and starts lighting
-          // up source pills the moment the INSERT policy exists.
-          await supabase.from("library_provenance").insert({
-            document_id: noteId,
-            location: location ?? {},
-            source_kind: "upload",
-            source_path: fileName,
-            user_id: uid,
-          });
-        },
+        recordSource: (noteId, location) => recordProvenance(noteId, file.name, stored?.id ?? null, location),
         saveNote,
       });
-      return firstPath || null;
+      return firstPath ? { path: firstPath, stored } : null;
     } catch {
       return null;
     }
@@ -108,13 +123,15 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
     setImporting(true);
     const failures: string[] = [];
     let lastPath: string | null = null;
+    let storedAny = false;
     for (const file of files) {
       try {
         if (isExtractable(file)) {
           const { text, title } = await extractFile(file, uid);
-          const organizedPath = isImage(file) ? null : await organizeDocument(file.name, text);
-          if (organizedPath) {
-            lastPath = organizedPath;
+          const organized = isImage(file) ? null : await organizeDocument(file, text);
+          if (organized) {
+            lastPath = organized.path;
+            storedAny = storedAny || organized.stored !== null;
           } else {
             const note = await createNote({
               // A camera filename ("IMG_4821.HEIC") makes a useless note title, so for a picture the
@@ -125,6 +142,11 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
               content: composeImportedNote(text, findRelatedTitles(text, notes)),
             });
             lastPath = note.path;
+            if (uid) {
+              const stored = await uploadLibrarySource(uid, file, "Imported");
+              storedAny = storedAny || stored !== null;
+              await recordProvenance(note.id, file.name, stored?.id ?? null);
+            }
           }
         } else {
           const title = file.name.replace(/\.(?:md|markdown|txt)$/i, "").trim() || "Untitled note";
@@ -136,6 +158,7 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
       }
     }
     setImporting(false);
+    if (storedAny) onSourcesChanged?.();
     if (lastPath) onImported(lastPath);
     if (failures.length) setImportError(failures.join(" · "));
   };

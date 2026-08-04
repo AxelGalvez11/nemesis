@@ -5,21 +5,16 @@
 // under each course or topic … Notes = organized knowledge, Sources = original
 // uploaded material", kept visibly separate so notes never mix with raw files.
 //
-// This module is the READ side. It is backed by a `library_sources` table and
-// a private `library-sources` storage bucket, NEITHER OF WHICH EXISTS YET —
-// they are the two owner-approved migrations tracked as the file-storage task.
-// Until they land, loadLibrarySources returns [] for signed-in users (the
-// query errors quietly) and the preview fixtures below carry the design for
-// the signed-out demo and the dev-preview harness. The moment the migrations
-// exist, imports start uploading originals and this module lights up with no
-// further code changes.
+// Backed by the `library_sources` table and the private `library-sources`
+// storage bucket (supabase/migrations/20260804010000, owner-approved:
+// "yes it needs to be stored so that users can click on it"). Bucket keys
+// follow the library-images pattern: `<user_id>/<uuid>.<ext>`, owner-only
+// RLS, opened via short-lived signed URLs minted client-side.
 //
-// Expected table shape (mirrors readable_library_documents conventions):
-//   id uuid pk · user_id uuid · folder_path text · file_name text ·
-//   mime_type text · size_bytes bigint · storage_path text ·
-//   created_at timestamptz · deleted boolean
-// Bucket keys follow the library-images pattern: `<user_id>/<uuid>.<ext>`,
-// owner-only RLS, opened via short-lived signed URLs minted client-side.
+// Every write here is BEST-EFFORT: an import must never fail because the
+// original couldn't be kept — worst case the student has the notes and no
+// file behind them, which is exactly what they had before storage existed.
+// The preview fixtures below carry the design for the signed-out demo.
 
 import { supabase } from "@/lib/supabase";
 
@@ -168,5 +163,79 @@ export async function librarySourceUrl(source: LibrarySource): Promise<string | 
     return error || !data ? null : data.signedUrl;
   } catch {
     return null;
+  }
+}
+
+function normalizeSourceFolder(folderPath: string): string {
+  return folderPath.split("/").map((segment) => segment.trim()).filter(Boolean).join("/");
+}
+
+/** Keep the ORIGINAL file: upload the bytes and file them under a folder.
+ *  Returns the stored row, or null when anything failed (bucket rejects the
+ *  type/size, network, …) — callers continue without an original. If the row
+ *  insert fails after the upload succeeded, the orphaned object is removed
+ *  best-effort so storage doesn't accumulate unlisted bytes. */
+export async function uploadLibrarySource(uid: string, file: File, folderPath: string): Promise<LibrarySource | null> {
+  try {
+    const extension = file.name.split(".").pop()?.toLocaleLowerCase() ?? "";
+    const key = `${uid}/${crypto.randomUUID()}${extension && extension !== file.name ? `.${extension}` : ""}`;
+    const uploaded = await supabase.storage.from("library-sources").upload(key, file, {
+      contentType: file.type || undefined,
+      upsert: false,
+    });
+    if (uploaded.error) return null;
+    const { data, error } = await supabase
+      .from("library_sources")
+      .insert({
+        file_name: file.name.slice(0, 512),
+        folder_path: normalizeSourceFolder(folderPath),
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        storage_path: key,
+        user_id: uid,
+      })
+      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at")
+      .single();
+    if (error || !data) {
+      await supabase.storage.from("library-sources").remove([key]);
+      return null;
+    }
+    return rowToLibrarySource(data as SourceRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Folder maintenance: when the note tree renames/moves/deletes a folder, its
+ *  source files must follow or they'd silently vanish from the tree (their
+ *  folder_path would point at a folder that no longer exists). `remap` returns
+ *  the new folder path, the same path for untouched rows, or null for "this
+ *  folder is gone" (soft-deletes the file row; the bytes stay recoverable).
+ *  Best-effort by design — folder operations never fail on source upkeep. */
+export async function remapLibrarySourceFolders(
+  uid: string,
+  remap: (folderPath: string) => string | null,
+): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from("library_sources")
+      .select("id,folder_path")
+      .eq("user_id", uid)
+      .eq("deleted", false)
+      .limit(500);
+    if (error || !data) return;
+    const updates = (data as { id: string; folder_path: string | null }[])
+      .map((row) => {
+        const current = row.folder_path ?? "";
+        const next = remap(current);
+        if (next === current) return null;
+        return next === null
+          ? supabase.from("library_sources").update({ deleted: true }).eq("id", row.id).eq("user_id", uid)
+          : supabase.from("library_sources").update({ folder_path: next }).eq("id", row.id).eq("user_id", uid);
+      })
+      .filter((update): update is NonNullable<typeof update> => update !== null);
+    if (updates.length) await Promise.all(updates);
+  } catch {
+    // Folder ops must not fail on source upkeep.
   }
 }
