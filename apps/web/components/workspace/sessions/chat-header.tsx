@@ -28,7 +28,7 @@ const TITLEBAR_HEADER_BASE_CLASS =
   "workspace-page-header pointer-events-none relative z-3 flex h-11 w-full min-w-0 shrink-0 items-center justify-start gap-3 overflow-hidden bg-(--ui-chat-surface-background) px-[max(0.75rem,var(--titlebar-content-inset,0rem))] pr-[calc(var(--titlebar-tools-right,0.75rem)+var(--titlebar-tools-width,0px)+0.75rem)]";
 const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 
-export function ChatHeader({ session, onOpenRail, railOpen }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean }) {
+export function ChatHeader({ session, onOpenRail, railOpen, hideRail = false }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean; hideRail?: boolean }) {
   const confirm = useConfirm();
   const [menuOpen, setMenuOpen] = useState(false);
   const title = session?.title || "New chat";
@@ -81,7 +81,10 @@ export function ChatHeader({ session, onOpenRail, railOpen }: { session: Workspa
           </DropdownMenuContent>
         </DropdownMenu>
       </div>}
-      {!railOpen && (
+      {/* No rail opener while recording (owner 2026-08-04) — the record box
+          owns the surface, and a sources/outputs rail has nothing to say
+          about audio that is still being captured. */}
+      {!railOpen && !hideRail && (
         <Button aria-label="Open chat sidebar" className="pointer-events-auto ml-auto shrink-0" onClick={onOpenRail} size="icon-xs" variant="ghost">
           <IconLayoutSidebarRightExpand />
         </Button>

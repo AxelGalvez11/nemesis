@@ -1,8 +1,9 @@
-// What the thinking strip says while a turn is in flight (owner 2026-08-03:
-// "the thinking preview took forever and it wasnt dynamic"). Two live sources:
-// the reasoner's streamed thoughts (tail phrase) and the agent's tool rounds
-// (a plain verb about the student's own workspace). Pure module so both can
-// be tested without dragging the chat wire code into node:test.
+// What the thinking strip says while a turn is in flight: a curated verb per
+// tool round ("Searching the web", "Making flashcards"), nothing else. The
+// strip used to also surface the reasoner's own streamed text, but that tail
+// echoes raw search snippets ("Result 1: …") and the owner called it verbose
+// noise (2026-08-04) — so the model's thoughts are never shown, only what is
+// being DONE to the student's workspace. Pure module for node:test.
 
 import type { AgentToolCall } from "@/lib/workspace/agent-tools";
 
@@ -42,18 +43,4 @@ export function activityLabel(calls: ReadonlyArray<Pick<AgentToolCall, "name">>)
   const first = calls[0];
   if (!first) return "Working on it";
   return TOOL_ACTIVITY[first.name] ?? "Working on it";
-}
-
-/** The last legible line of the model's running thoughts, trimmed to strip
- *  width. Streams arrive mid-sentence, so the tail is often a fragment —
- *  that is fine, it updates every few hundred milliseconds and reads as
- *  live progress, which is the whole point. */
-export function reasoningPhrase(reasoning: string): string | null {
-  const lines = reasoning.split(/\n+/);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]!.replace(/^[-*#>\s]+/, "").replace(/\*\*/g, "").trim();
-    if (line.length < 4) continue;
-    return line.length <= 90 ? line : `…${line.slice(-90).trimStart()}`;
-  }
-  return null;
 }

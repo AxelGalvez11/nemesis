@@ -13,6 +13,7 @@ import {
   parseMindmapContent,
   parseTestContent,
   scoreAttempt,
+  scoreTone,
 } from "./study-artifact-content";
 
 const QUESTION = { answer: 1, options: ["Alpha", "Beta", "Gamma", "Delta"], q: "Which receptor?", why: "Beta-1 drives rate." };
@@ -77,6 +78,17 @@ test("scoring splits hits from misses and best attempt prefers the top ratio", (
   const best = bestAttempt([attempt, { ...attempt, at: "later", missed: [], score: 2 }]);
   assert.equal(best?.score, 2);
   assert.equal(bestAttempt([]), null);
+});
+
+test("score tone bands the best attempt at 80/60 and stays neutral untaken", () => {
+  const attempt = { at: "2026-08-04T00:00:00Z", missed: [], score: 8, total: 10 };
+  assert.equal(scoreTone([attempt]), "strong");
+  assert.equal(scoreTone([{ ...attempt, score: 6 }]), "mid");
+  assert.equal(scoreTone([{ ...attempt, score: 5 }]), "weak");
+  // The colour follows the BEST attempt, same as the label next to it.
+  assert.equal(scoreTone([{ ...attempt, score: 2 }, attempt]), "strong");
+  assert.equal(scoreTone([]), "none");
+  assert.equal(scoreTone([{ ...attempt, score: 0, total: 0 }]), "none");
 });
 
 test("missed questions become recall-style flashcards", () => {

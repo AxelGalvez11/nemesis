@@ -43,7 +43,9 @@ import {
 } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
-import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
+import type { ScoreTone } from "@/lib/workspace/study-artifact-content";
+
+import { artifactScoreLabel, artifactScoreTone, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
 import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 import { StudyTableSkeleton } from "./study-skeleton";
@@ -60,7 +62,17 @@ const UNGROUPED = UNGROUPED_LABEL;
  *  so a student moving between the two tabs reads one shape. */
 const INDENT_REM = 1.1;
 
-const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
+// Two data columns only — the Items count column is gone (owner 2026-08-04:
+// "remove the 'items' column in tests").
+const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_2.25rem]";
+
+/** Score column colour by band — quiet neutral until a test has been taken. */
+const SCORE_TONE_CLASS: Record<ScoreTone, string> = {
+  strong: "text-emerald-500",
+  mid: "text-amber-500",
+  weak: "text-rose-500",
+  none: "text-(--ui-text-quaternary)",
+};
 
 // FOLDERS NEST HERE, exactly as they do on the Cards tab (owner 2026-07-29:
 // the Tests page "doesnt have same functionality as cards page").
@@ -395,12 +407,6 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
     }
   }
 
-  /** Items anywhere beneath a folder, so a parent's count includes what is
-   *  nested inside it rather than only its direct children. */
-  function countInside(node: ArtifactTreeNode<StudyArtifact>): number {
-    return node.children.reduce((total, child) => total + (child.item ? 1 : countInside(child)), 0);
-  }
-
   /**
    * One row, and everything under it.
    *
@@ -422,6 +428,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           item={item}
           key={node.id}
           meta={isTests ? artifactScoreLabel(item) : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          metaTone={isTests ? artifactScoreTone(item) : "none"}
           onCancelRename={() => setRenamingId(null)}
           onCommitRename={(next) => void renameItem(item, next)}
           onDelete={() => void removeItem(item)}
@@ -448,7 +455,6 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       >
         <GroupRow
           collapsed={collapsed.has(node.id)}
-          count={countInside(node)}
           depth={depth}
           dragging={beingDragged}
           grid={ROW_GRID}
@@ -529,8 +535,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           )}
           data-artifact-drop-group=""
         >
-          <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
-            <span className="pl-[19px]">Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
+          <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] font-semibold", ROW_GRID)}>
+            <span className="pl-[19px]">Folder</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
           {/* min-h so there is somewhere to aim once every row is inside a
               folder — without it the card shrink-wraps its rows and the "drop
@@ -614,7 +620,6 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
 interface GroupRowProps {
   label: string;
-  count: number;
   /** How deep in the folder tree, for the row's indent. 0 is the top level. */
   depth: number;
   grid: string;
@@ -631,7 +636,7 @@ interface GroupRowProps {
   suppressClick: () => boolean;
 }
 
-function GroupRow({ label, count, collapsed, depth, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, onToggle, suppressClick }: GroupRowProps) {
+function GroupRow({ label, collapsed, depth, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, onToggle, suppressClick }: GroupRowProps) {
   // Every folder row is now a real folder someone made. The old exception —
   // "Ungrouped", a placeholder for "no folder" that could not be renamed,
   // deleted or dragged — is gone with the flat list: loose items sit at the top
@@ -643,7 +648,7 @@ function GroupRow({ label, count, collapsed, depth, grid, dragging, renaming, on
     <div
       aria-expanded={!collapsed}
       aria-label={label}
-      className={cn("grid w-full cursor-grab items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]", grid, dragging && "opacity-50")}
+      className={cn("grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]", grid, dragging && "opacity-50")}
       onClick={() => {
         if (renaming || suppressClick()) return;
         onToggle();
@@ -670,7 +675,6 @@ function GroupRow({ label, count, collapsed, depth, grid, dragging, renaming, on
           ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={label} />
           : <span className="truncate">{label}</span>}
       </span>
-      <span className="text-center tabular-nums text-(--ui-text-secondary)">{count}</span>
       <span className="text-center tabular-nums text-(--ui-text-quaternary)">—</span>
       <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} removal={REMOVE_FOLDER} />
     </div>
@@ -681,6 +685,8 @@ function GroupRow({ label, count, collapsed, depth, grid, dragging, renaming, on
 interface ItemRowProps {
   item: StudyArtifact;
   meta: string;
+  /** Colour band for the meta cell — scores only; dates stay neutral. */
+  metaTone: ScoreTone;
   grid: string;
   dragging: boolean;
   dropTarget: boolean;
@@ -698,13 +704,13 @@ interface ItemRowProps {
   depth: number;
 }
 
-function ItemRow({ item, meta, depth, grid, dragging, dropTarget, highlighted, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
+function ItemRow({ item, meta, metaTone, depth, grid, dragging, dropTarget, highlighted, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
   return (
     <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>
       <div
         aria-label={item.title}
         className={cn(
-          "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+          "grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
           grid,
           dragging && "opacity-50",
           dropTarget && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
@@ -738,8 +744,7 @@ function ItemRow({ item, meta, depth, grid, dragging, dropTarget, highlighted, r
             ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={item.title} />
             : <span className="truncate">{item.title}</span>}
         </span>
-        <span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span>
-        <span className="text-center tabular-nums text-(--ui-text-quaternary)">{meta}</span>
+        <span className={cn("text-center tabular-nums", SCORE_TONE_CLASS[metaTone])}>{meta}</span>
         <StudyRowMenu kindLabel={item.kind === "test" ? "Test" : "Mindmap"} onDelete={onDelete} onRename={onStartRename} />
       </div>
     </StudyRowContextMenu>

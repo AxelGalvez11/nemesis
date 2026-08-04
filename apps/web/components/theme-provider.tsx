@@ -55,7 +55,14 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 //
 //   dial 100% -> root 20px  -> nav 16.25px  (ChatGPT parity, the default)
 //   dial 115% -> root 23px  -> nav 18.7px   (still one step up the dial)
-const SCALE_FACTOR = 1.25;
+//
+// Owner 2026-08-04: "make the default scale be around 90% of the current
+// scale now. so the new 100% scale becomes that." One step below ChatGPT
+// parity, everywhere, without moving the dial: 1.25 x 0.9 = 1.125.
+//
+//   dial 100% -> root 18px  (the new default render)
+//   dial 115% -> root 20.7px
+const SCALE_FACTOR = 1.125;
 const DEFAULT_SCALE = 100;
 
 /** Percentage to hand the root element. Kept next to SCALE_FACTOR so the two can

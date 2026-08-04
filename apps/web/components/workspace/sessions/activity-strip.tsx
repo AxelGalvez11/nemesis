@@ -18,11 +18,14 @@ export function formatDuration(totalSeconds: number): string {
 interface ActivityStripProps {
   placement: "live" | "header";
   seconds: number | null;
-  /** Live copy while thinking (reasoning tail or tool verb); null = "Thinking". */
+  /** Live copy while thinking (a tool verb); null = "Thinking". */
   label?: string | null;
+  /** Settled-line verb — "Thought" for answers, "Recorded" for recordings
+   *  (owner 2026-08-04: recordings get the same line, "recorded for 1 min"). */
+  verb?: "Thought" | "Recorded";
 }
 
-export function ActivityStrip({ placement, seconds, label = null }: ActivityStripProps) {
+export function ActivityStrip({ placement, seconds, label = null, verb = "Thought" }: ActivityStripProps) {
   if (placement === "live") {
     return (
       <div
@@ -48,7 +51,7 @@ export function ActivityStrip({ placement, seconds, label = null }: ActivityStri
 
   return (
     <p className="mb-1 flex items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)">
-      {`Thought for ${formatDuration(seconds)}`}
+      {`${verb} for ${formatDuration(seconds)}`}
     </p>
   );
 }

@@ -29,6 +29,8 @@ import {
   parseMindmapContent,
   parseTestContent,
   scoreAttempt,
+  scoreTone,
+  type ScoreTone,
   type TestContent,
 } from "@/lib/workspace/study-artifact-content";
 import { generateStudyArtifact } from "@/lib/workspace/study-generate";
@@ -40,6 +42,12 @@ export function artifactScoreLabel(artifact: StudyArtifact): string {
   if (!content) return artifact.kind === "test" ? "—" : "";
   const best = bestAttempt(content.attempts);
   return best ? `${Math.round((best.score / best.total) * 100)}%` : "Not taken";
+}
+
+/** Colour band to pair with artifactScoreLabel in the tests table. */
+export function artifactScoreTone(artifact: StudyArtifact): ScoreTone {
+  const content = artifact.kind === "test" ? parseTestContent(artifact.content) : null;
+  return scoreTone(content?.attempts ?? []);
 }
 
 /* ------------------------------------------------------------------ */

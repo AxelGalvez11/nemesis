@@ -63,6 +63,23 @@
   }
 }
 
+/* Library sidebar peek (owner 2026-08-04): hovering the "Library" crumb
+   slides the rounded tree panel in over the page. Small and quick — a
+   reveal, not a production. */
+@keyframes library-peek {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.library-peek-panel {
+  animation: library-peek 160ms ease-out;
+}
+
 @font-face {
   font-family: 'Collapse';
   font-style: normal;
@@ -404,14 +421,18 @@
     /* Pill cap narrower than the thread column (owner 2026-07-20: composer
        "bigger but less lengthy" — chunkier contents, shorter run). */
     --composer-pill-max-width: 42rem;
-    --composer-control-size: 1.875rem;
-    --composer-control-primary-size: 2rem;
+    /* Control sizes stepped down 2026-08-04 (owner: "the chat composer and
+       other buttons/components feel too big") — ~23px secondary / ~25px
+       primary at the 18px root (the same day's 90% rebase), against
+       ChatGPT's ~28px controls. */
+    --composer-control-size: 1.3rem;
+    --composer-control-primary-size: 1.4rem;
     --composer-control-gap: 0.25rem;
     --composer-row-gap: 0.25rem;
     --composer-ring-strength: 1;
-    --composer-surface-pad-x: 0.625rem;
-    --composer-surface-pad-y: 0.5rem;
-    --composer-input-min-height: 2rem;
+    --composer-surface-pad-x: 0.5rem;
+    --composer-surface-pad-y: 0.375rem;
+    --composer-input-min-height: 1.75rem;
     --composer-input-max-height: 9.375rem;
     --composer-input-inline-min-width: 8rem;
     --composer-fallback-height: 3.5rem;

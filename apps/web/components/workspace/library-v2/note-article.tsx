@@ -35,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
@@ -73,7 +74,10 @@ interface NoteArticleProps {
   onOpenWikiTarget: (target: string, fromPath: string) => void;
   /** Breadcrumb folder click — expands that folder in the left tree. */
   onRevealFolder: (path: string) => void;
-  onOpenHome: () => void;
+  /** The "Library" crumb is the sidebar's control (owner 2026-08-04):
+   *  hovering peeks the tree over the page, clicking locks or unlocks it. */
+  onLibraryClick: () => void;
+  onLibraryHover: (hovering: boolean) => void;
   /** Open a source FILE's page. Pills whose source id isn't in
    *  `openableSourceIds` stay inert text (nothing to open yet). */
   onOpenSource: (id: string) => void;
@@ -87,7 +91,7 @@ interface NoteArticleProps {
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onLibraryClick, onLibraryHover, onOpenSource, openableSourceIds, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -192,12 +196,22 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
       <header className="mb-1">
         <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <DocsCrumbs className="flex-1" onOpenHome={onOpenHome} onRevealFolder={onRevealFolder} path={folderPath} />
+          <DocsCrumbs className="flex-1" onLibraryClick={onLibraryClick} onLibraryHover={onLibraryHover} onRevealFolder={onRevealFolder} path={folderPath} />
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" data-testid="note-study-actions">
+                {/* The learning loop's front door lives here now (owner
+                    2026-08-04: "move the 'teach me, flashcards, and test'
+                    into the note actions"). Still all Auto — no counts, no
+                    formats, no dialogs behind any of them. */}
+                {STUDY_ACTIONS.map(({ action, icon, label, title: actionTitle }) => (
+                  <DropdownMenuItem data-testid={`note-study-${action}`} key={action} onSelect={() => onStudyAction(action)} title={actionTitle}>
+                    <Codicon className="text-(--ui-text-tertiary)" name={icon} size="0.875rem" /> {label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setConfirmDelete(true)} variant="destructive"><IconTrash /> Delete note</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -211,23 +225,6 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           spellCheck
           value={title}
         />
-        {/* The learning loop's front door: three verbs, everything else stays
-            behind them (no counts, no formats, no dialogs — Auto). */}
-        <div className="mt-2.5 flex flex-wrap items-center gap-1.5" data-testid="note-study-actions">
-          {STUDY_ACTIONS.map(({ action, icon, label, title: actionTitle }) => (
-            <button
-              className="inline-flex items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) px-2.5 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary) transition-colors hover:border-(--ui-stroke-secondary) hover:text-foreground"
-              data-testid={`note-study-${action}`}
-              key={action}
-              onClick={() => onStudyAction(action)}
-              title={actionTitle}
-              type="button"
-            >
-              <Codicon className="text-(--ui-text-tertiary)" name={icon} size="0.75rem" />
-              {label}
-            </button>
-          ))}
-        </div>
         {sources.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="note-sources">
             {sources.map((source) => {
@@ -288,6 +285,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
               obsidianTags
               obsidianUnderline
               onWikiLink={(target) => onOpenWikiTarget(target, note.path)}
+              singleDollarMath
               text={content}
             />
           </>

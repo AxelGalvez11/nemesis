@@ -300,6 +300,19 @@ export function bestAttempt(attempts: TestAttempt[]): TestAttempt | null {
   return best;
 }
 
+/** Colour band for the tests table's Score column. Cut at 80/60 — a
+ *  content-agnostic strong/mid/weak read, not any course's grading scale. */
+export type ScoreTone = "strong" | "mid" | "weak" | "none";
+
+export function scoreTone(attempts: TestAttempt[]): ScoreTone {
+  const best = bestAttempt(attempts);
+  if (!best || best.total <= 0) return "none";
+  const pct = (best.score / best.total) * 100;
+  if (pct >= 80) return "strong";
+  if (pct >= 60) return "mid";
+  return "weak";
+}
+
 /** Missed questions as flashcard drafts — question on the front, the correct
  *  option plus the explanation on the back (active recall, not recognition). */
 export function missedQuestionCards(questions: TestQuestion[], missed: TestMiss[]): Array<{ front: string; back: string }> {

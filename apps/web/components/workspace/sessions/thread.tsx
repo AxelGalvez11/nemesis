@@ -49,6 +49,21 @@ export function Thread({ turns, busy, liveSeconds, activity = null, error, cente
   const lastTurn = turns[turns.length - 1];
   const assistantScrollKey = `${turns.length}:${lastTurn?.assistant?.content.length ?? 0}`;
 
+  // Whether the reader has scrolled up, mirrored in a ref so the follow
+  // effect can consult it without re-subscribing. State drives the jump
+  // button; the ref gates auto-follow.
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const awayRef = useRef(false);
+  const setAway = useCallback((value: boolean) => {
+    awayRef.current = value;
+    setAwayFromBottom(value);
+  }, []);
+  const onViewportScroll = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    setAway(el.scrollHeight - (el.scrollTop + el.clientHeight) > JUMP_TO_BOTTOM_AT);
+  }, [setAway]);
+
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -56,22 +71,17 @@ export function Thread({ turns, busy, liveSeconds, activity = null, error, cente
     if (lastPair) el.scrollTo({ top: Math.max(0, lastPair.offsetTop - 8), behavior: "smooth" });
   }, [turns.length]);
 
+  // Follow the streaming answer ONLY while the reader is already at the end
+  // (owner 2026-08-04: "the chat answer automatically scrolls downward when
+  // trying to read"). Scrolling up parks the transcript; returning to the
+  // end — by hand or via the jump button — resumes following. Instant, not
+  // smooth: a smooth glide is itself a scroll the reader has to fight, and
+  // its in-flight scroll events would read as "away from bottom".
   useEffect(() => {
     const el = viewportRef.current;
-    if (!el || !lastTurn?.assistant) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el || !lastTurn?.assistant || awayRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
   }, [assistantScrollKey, lastTurn?.assistant]);
-
-  // Jump to the newest message (owner 2026-07-24). Absent, not disabled, while
-  // the transcript is already at the end — a control that cannot do anything
-  // should not be on screen. The threshold keeps it from blinking on the tail of
-  // a momentum scroll or a rubber-band.
-  const [awayFromBottom, setAwayFromBottom] = useState(false);
-  const onViewportScroll = useCallback(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    setAwayFromBottom(el.scrollHeight - (el.scrollTop + el.clientHeight) > JUMP_TO_BOTTOM_AT);
-  }, []);
 
   // Re-check whenever the content grows: a streaming answer lengthens the page
   // under a reader who has scrolled up, and a scroll event never fires for that.
@@ -79,12 +89,16 @@ export function Thread({ turns, busy, liveSeconds, activity = null, error, cente
     onViewportScroll();
   }, [assistantScrollKey, turns.length, onViewportScroll]);
 
+  // Jump to the newest message (owner 2026-07-24). Absent, not disabled, while
+  // the transcript is already at the end — a control that cannot do anything
+  // should not be on screen. The threshold keeps it from blinking on the tail of
+  // a momentum scroll or a rubber-band.
   const jumpToBottom = useCallback(() => {
     const el = viewportRef.current;
     if (!el) return;
     el.scrollTo({ behavior: "smooth", top: el.scrollHeight });
-    setAwayFromBottom(false);
-  }, []);
+    setAway(false);
+  }, [setAway]);
 
   return (
     <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">

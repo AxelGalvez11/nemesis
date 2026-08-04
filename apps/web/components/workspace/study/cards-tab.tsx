@@ -463,7 +463,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           )}
           data-study-drop-group=""
         >
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] font-semibold">
             <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span><span />
           </div>
           <div className="py-1.5">
@@ -585,7 +585,7 @@ function DeckRow(props: DeckRowProps) {
         <div
           aria-label={node.label}
           className={cn(
-            "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+            "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
             highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
             ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
           )}
