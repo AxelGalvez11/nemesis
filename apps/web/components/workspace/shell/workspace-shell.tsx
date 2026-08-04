@@ -29,7 +29,12 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 // surface's own sidebar stands alone, and that sidebar carries the Back control
 // that leaves the surface. No floating nav-reopen control is offered here —
 // leaving the route is the only way back, which keeps the exit unambiguous.
-const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set(["/library", "/dev-preview/workspace/library"]);
+const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set([
+  "/library",
+  "/library/classic",
+  "/dev-preview/workspace/library",
+  "/dev-preview/workspace/library-classic",
+]);
 const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides"]);
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",

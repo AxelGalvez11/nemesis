@@ -68,6 +68,20 @@ export function obsidianTagsToMarkdown(text: string): string {
   }).join("\n");
 }
 
+/**
+ * The base route Library-surface links should build on, from the pathname the
+ * surface is mounted at. Keeps each mount self-contained: the docs Library at
+ * /library, the classic fallback at /library/classic, and both of their
+ * dev-preview harness mounts, without any of them leaking navigations into the
+ * others. Order matters — longest prefix first.
+ */
+export function libraryRouteBase(pathname: string): string {
+  if (pathname.startsWith("/dev-preview/workspace/library-classic")) return "/dev-preview/workspace/library-classic";
+  if (pathname.startsWith("/dev-preview/workspace/")) return "/dev-preview/workspace/library";
+  if (pathname.startsWith("/library/classic")) return "/library/classic";
+  return "/library";
+}
+
 export function normalizeLibraryFolder(value: string): string {
   return value
     .replace(/\\/g, "/")

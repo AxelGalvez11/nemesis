@@ -73,6 +73,24 @@ const processor = unified()
   .use(remarkStringify, NOTE_STRINGIFY_OPTIONS);
 
 /**
+ * Undo the serializer's escaping of wiki links.
+ *
+ * remark-stringify escapes every literal `[` in text (`\[`), so a note
+ * containing `[[Torts]]` came back from a save as `\[\[Torts]]` — at which
+ * point the `[[...]]` regexes in library-links.ts no longer match and the
+ * link DIES the first time its note is edited. (Untouched notes were safe:
+ * hasEdits compares against the normalised original, which was escaped the
+ * same way. Only real edits wrote the breakage.) Wiki links are our syntax,
+ * not markdown's, so the serializer cannot be taught about them; instead
+ * every serialised output passes through here. Applied in BOTH
+ * normalizeNoteMarkdown and docToMarkdown — they must stay in agreement or
+ * hasEdits sees a phantom diff on every untouched note.
+ */
+export function restoreWikiBrackets(markdown: string): string {
+  return markdown.replace(/\\\[(?=\\?\[)/g, "[").replace(/\[\\\[/g, "[[");
+}
+
+/**
  * Put a note through the pipeline without changing a word of it.
  *
  * This is what the editor's output will look like, so it is also the honest way
@@ -80,7 +98,7 @@ const processor = unified()
  * anything — see `wouldReformat`.
  */
 export function normalizeNoteMarkdown(markdown: string): string {
-  return String(processor.processSync(markdown));
+  return restoreWikiBrackets(String(processor.processSync(markdown)));
 }
 
 /**

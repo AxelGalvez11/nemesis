@@ -18,7 +18,7 @@ import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
-import { NOTE_GFM_OPTIONS, NOTE_STRINGIFY_OPTIONS } from "./note-markdown";
+import { NOTE_GFM_OPTIONS, NOTE_STRINGIFY_OPTIONS, restoreWikiBrackets } from "./note-markdown";
 import { noteSchema } from "./note-schema";
 
 /** A minimal mdast shape — typed here so this file needs no extra dependency. */
@@ -263,7 +263,9 @@ export function docToMarkdown(doc: PmNode): string {
     const built = blockToMd(child);
     if (built) children.push(built);
   });
-  return serializer.stringify({ children, type: "root" } as never);
+  // restoreWikiBrackets: keep [[wiki links]] alive across a save — must stay
+  // in lockstep with normalizeNoteMarkdown (see its comment in note-markdown).
+  return restoreWikiBrackets(serializer.stringify({ children, type: "root" } as never));
 }
 
 /** Parse and serialise in one hop — what a save does to an untouched note. */

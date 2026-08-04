@@ -112,3 +112,20 @@ test("an ordinary note is editable", () => {
   assert.equal(isEditableNote("# Title\n\n- a\n- b\n\n$E = mc^2$\n"), true);
   assert.equal(isEditableNote("| A | B |\n| --- | --- |\n| 1 | 2 |\n"), true);
 });
+
+// ── Wiki links must survive the serializer ────────────────────────────────────
+// remark-stringify escapes literal "[", which used to turn [[Torts]] into
+// \[\[Torts]] on the first real edit — killing the link. restoreWikiBrackets
+// runs on every serialised output; these pin the contract.
+
+test("a note full of wiki links normalises byte-for-byte", () => {
+  const linked = "See [[Torts]] and [[Contract Law|K]] before class.\n";
+  assert.equal(normalizeNoteMarkdown(linked), linked);
+  assert.equal(wouldReformat(linked), false);
+  assert.equal(hasEdits(linked, normalizeNoteMarkdown(linked)), false);
+});
+
+test("wiki links inside lists and headings survive too", () => {
+  const linked = "## [[Commerce power]]\n\n- Contrasts with: [[Dormant commerce]]\n";
+  assert.equal(normalizeNoteMarkdown(linked), linked);
+});
