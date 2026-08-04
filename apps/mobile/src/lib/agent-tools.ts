@@ -232,7 +232,7 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. Tell the student you created it and where it is.`,
+        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. When the note draws on web sources, cite inline: end the claim with a link whose text is just a number, like [1](https://the-source-url), numbering sources in order. The Library renders these as small source pills and builds the note's Sources section from them automatically — never write a manual "Sources" list. Tell the student you created it and where it is.`,
       name: "create_library_note",
       parameters: {
         properties: {
@@ -287,7 +287,7 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Add text to the END of an existing Library note, keeping everything already in it. Use this to add to a note rather than rewriting one. Get the path from search_library.",
+        "Add text to the END of an existing Library note, keeping everything already in it. Use this to add to a note rather than rewriting one. Get the path from search_library. Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section.",
       name: "append_library_note",
       parameters: {
         properties: {
@@ -564,7 +564,8 @@ export const AGENT_TOOLS = [
     function: {
       description:
         "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
-        + "Needs the note's id from search_library or read_library_note.",
+        + "Needs the note's id from search_library or read_library_note. "
+        + "Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section; never write a manual \"Sources\" list.",
       name: "replace_library_note",
       parameters: {
         properties: {

@@ -12,11 +12,14 @@
 // is supposed to be a NOTE" — obsidian.md/help lands on a note titled Home).
 // Bare /library shows a note named Home if the student has one, else their
 // most recently edited note; a brand-new empty account gets a seeded Home
-// note it fully owns. Folders are deliberately NOT pages either (owner: "the
-// entirety should be notes only"): clicking a folder anywhere reveals it in
-// the left tree instead of navigating. A rename is recovered by note id, and
-// a genuinely missing target says so instead of silently showing something
-// else. Navigation uses router.push, so the browser's own Back walks the trail.
+// note it fully owns. A FOLDER IS A PAGE TOO (owner 2026-08-04, superseding
+// the earlier reveal-only rule: "like in notion how a folder is like a
+// note"): clicking a folder opens the folder's own note — an ordinary note
+// inside it named after it, created on first open (library-folder-note.ts) —
+// so the URL stays ?note=… and there is still no ?folder= route. A rename is
+// recovered by note id, and a genuinely missing target says so instead of
+// silently showing something else. Navigation uses router.push, so the
+// browser's own Back walks the trail.
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,6 +32,7 @@ import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
 import { seedChatIntent } from "@/lib/workspace/composer-seed";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { findFolderNote, folderNoteTitle, isFolderNote, parentFolderOf } from "@/lib/workspace/library-folder-note";
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
 import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
@@ -108,26 +112,38 @@ export function LibraryDocsPage() {
     [libraryBase, router],
   );
 
-  // Folders are never pages: a folder click (breadcrumb, home card) expands
-  // and scrolls the left tree to it — Obsidian's behavior. The nonce lets the
-  // same crumb be clicked twice in a row.
-  const revealFolder = useCallback(
-    (path: string) => {
-      setNavOpen(true);
-      setReveal((current) => ({ nonce: (current?.nonce ?? 0) + 1, path }));
+  // A folder IS a page (owner 2026-08-04: "like in notion how a folder is
+  // like a note"): opening a folder opens its own note — created right here
+  // the first time, which is the "automatically" — and, when the sidebar is
+  // showing, also orients the tree to that folder. This replaced the older
+  // reveal-only Obsidian behavior.
+  const openFolderPage = useCallback(
+    async (folderPath: string) => {
+      if (navOpen) setReveal((current) => ({ nonce: (current?.nonce ?? 0) + 1, path: folderPath }));
+      const existing = findFolderNote(notes, folderPath);
+      if (existing) {
+        openPath(existing.path);
+        return;
+      }
+      const created = await createNote({ title: folderNoteTitle(folderPath), folder: folderPath, content: "" });
+      openPath(created.path);
     },
-    [setNavOpen],
+    [createNote, navOpen, notes, openPath],
   );
 
   const goHome = useCallback(() => {
     router.push(libraryBase);
   }, [libraryBase, router]);
 
-  // The "Library" crumb is the sidebar's control (owner 2026-08-04): hovering
-  // PEEKS the tree as a floating panel, clicking LOCKS it open (or unlocks
-  // it). Peek is transient and wide-viewport only — touch has no hover, so
-  // narrow keeps its drawer. The grace timer lets the pointer cross the gap
-  // between the crumb and the panel without the panel vanishing mid-journey.
+  // The floating "Library" heading at the TOP-LEFT is the sidebar's control
+  // (owner 2026-08-04, circling the panel's own heading: "i meant the library
+  // to be this one, not the other library word"): hovering it — or the strip
+  // of left edge below it — PEEKS the tree as a floating panel, and clicking
+  // LOCKS it open (or unlocks it). The word sits exactly where the panel's
+  // own heading lands, so the peek feels like the same word growing a panel
+  // around itself. Peek is transient and wide-viewport only — touch has no
+  // hover, so narrow keeps its drawer. The grace timer lets the pointer cross
+  // gaps without the panel vanishing mid-journey.
   const [peek, setPeek] = useState(false);
   const peekTimerRef = useRef<number | null>(null);
   const clearPeekTimer = useCallback(() => {
@@ -219,6 +235,9 @@ export function LibraryDocsPage() {
 
   const outline = useMemo(() => (note ? extractNoteOutline(articleContent) : []), [articleContent, note]);
   const openableSourceIds = useMemo(() => new Set(librarySources.map((source) => source.id)), [librarySources]);
+  // When the open note IS a folder's page, the folder row in the tree is the
+  // thing that should read as selected — the note itself has no row there.
+  const selectedFolderPath = note && isFolderNote(note) ? parentFolderOf(note.path) : null;
 
   const openedSource =
     requestedSource !== null && !note ? (librarySources.find((source) => source.id === requestedSource) ?? null) : null;
@@ -272,28 +291,32 @@ export function LibraryDocsPage() {
           {navOpen && narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
           {/* Locked = docked in flow with a gutter around the rounded panel.
               Unlocked-but-hovered = the same panel floating OVER the page
-              (Notion-style peek), kept alive while the pointer stays on it. */}
+              (Notion-style peek), kept alive while the pointer stays on it.
+              The peek starts at the very top: its own "Library" heading lands
+              exactly where the floating trigger word was, and clicking that
+              heading is how the peek becomes a lock. */}
           <div
             className={cn(
               navOpen && !narrowViewport && "flex shrink-0 py-2 pl-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
               navOpen && narrowViewport && "absolute inset-y-0 left-0 z-40 p-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
-              // Peek starts BELOW the crumb row so the "Library" trigger stays
-              // visible and clickable while the panel is out — clicking it is
-              // how the peek becomes a lock.
-              !navOpen && "library-peek-panel absolute bottom-2 left-2 top-[calc(var(--titlebar-height)+3.25rem)] z-40",
+              !navOpen && "library-peek-panel absolute bottom-2 left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-40",
             )}
             data-testid={navOpen ? "library-sidebar-locked" : "library-sidebar-peek"}
             onMouseEnter={!navOpen ? () => handleLibraryHover(true) : undefined}
             onMouseLeave={!navOpen ? () => handleLibraryHover(false) : undefined}
           >
             <DocsNav
+              headingTitle={navOpen ? "Hide the sidebar" : "Keep the sidebar open"}
+              onHeadingClick={narrowViewport ? undefined : handleLibraryClick}
               onNavigate={() => narrowViewport && setNavOpen(false)}
+              onOpenFolderNote={(path) => void openFolderPage(path)}
               onOpenNote={openPath}
               onOpenSource={openSource}
               onSourcesChanged={bumpSources}
               openNotePath={note?.path ?? null}
               openSourceId={openedSource?.id ?? null}
               revealFolder={reveal}
+              selectedFolderPath={selectedFolderPath}
               showBack={libraryFullScreen && !narrowViewport}
               sources={librarySources}
             />
@@ -301,32 +324,67 @@ export function LibraryDocsPage() {
         </>
       )}
 
-      {/* Wide viewports open the sidebar from the "Library" crumb; this
-          floating opener stays for narrow viewports (no hover there) and for
-          pages with no crumb row to hover (missing note, empty library). */}
-      {!navOpen && (narrowViewport || (!note && !openedSource)) && (
+      {/* Unlocked on a wide viewport: the "Library" word stays at the exact
+          spot the panel's heading occupies when open — hovering it, or the
+          strip of left edge below it, peeks the sidebar; clicking locks it
+          (owner 2026-08-04: "if user hovers over this or below it then the
+          library sidebar should open"). */}
+      {!navOpen && !narrowViewport && (
+        <>
+          <button
+            className="absolute left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-30 rounded-lg px-3 pb-1 pt-2.5 text-left"
+            data-testid="library-sidebar-trigger"
+            onClick={handleLibraryClick}
+            onMouseEnter={() => handleLibraryHover(true)}
+            onMouseLeave={() => handleLibraryHover(false)}
+            title="Show the sidebar"
+            type="button"
+          >
+            <span className="workspace-page-title hover:text-(--ui-text-secondary)">Library</span>
+          </button>
+          <div
+            aria-hidden
+            className="absolute bottom-0 left-0 top-[calc(var(--titlebar-height)+3.5rem)] z-30 w-9"
+            data-testid="library-sidebar-hover-strip"
+            onMouseEnter={() => handleLibraryHover(true)}
+            onMouseLeave={() => handleLibraryHover(false)}
+          />
+        </>
+      )}
+
+      {/* Narrow viewports have no hover — they keep the icon opener + drawer. */}
+      {!navOpen && narrowViewport && (
         <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2 z-20" onClick={() => setNavOpen(true)} size="icon-xs" variant="ghost">
           <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
         </Button>
       )}
 
       <main className="flex h-full min-w-0 flex-1">
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain" ref={scrollRef}>
+        {/* With the sidebar away, the floating "Library" word owns the top-left
+            corner — the page inset keeps breadcrumbs from sliding under it on
+            narrower windows. */}
+        <div
+          className={cn(
+            "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain",
+            !navOpen && !narrowViewport && "pl-24",
+          )}
+          ref={scrollRef}
+        >
           {loading ? (
             <ArticleSkeleton />
           ) : note ? (
             <NoteArticle
               articleRef={articleRef}
+              librarySources={librarySources}
               note={note}
               notes={notes}
               onContentChange={setArticleContent}
               onDelete={removeNote}
-              onLibraryClick={handleLibraryClick}
-              onLibraryHover={handleLibraryHover}
+              onGoHome={goHome}
+              onOpenFolder={(path) => void openFolderPage(path)}
               onOpenPath={openPath}
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
-              onRevealFolder={revealFolder}
               onStudyAction={startStudyAction}
               openableSourceIds={openableSourceIds}
               saveNote={saveNote}
@@ -339,10 +397,9 @@ export function LibraryDocsPage() {
             ) : openedSource ? (
               <DocsSource
                 notesFromSource={sourceNotes}
-                onLibraryClick={handleLibraryClick}
-                onLibraryHover={handleLibraryHover}
+                onGoHome={goHome}
+                onOpenFolder={(path) => void openFolderPage(path)}
                 onOpenPath={openPath}
-                onRevealFolder={revealFolder}
                 source={openedSource}
               />
             ) : (

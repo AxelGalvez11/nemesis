@@ -178,6 +178,57 @@ export const noteSchema = new Schema({
       ] as const,
     },
 
+    // A cited source, atomic like wiki_link: [1](https://…) in markdown, a
+    // favicon pill in the editor (note-citations.ts owns the format). The
+    // number and target are attributes, so editing the prose around a
+    // citation can never corrupt it.
+    citation: {
+      atom: true,
+      attrs: { href: {}, n: { default: 1 } },
+      group: "inline",
+      inline: true,
+      parseDOM: [
+        {
+          getAttrs: (dom) => ({
+            href: (dom as HTMLElement).getAttribute("data-href") ?? "",
+            n: Number.parseInt((dom as HTMLElement).getAttribute("data-n") ?? "", 10) || 1,
+          }),
+          tag: "span[data-citation]",
+        },
+      ],
+      toDOM: (node) => [
+        "span",
+        { "data-citation": "", "data-href": node.attrs.href as string, "data-n": String(node.attrs.n as number) },
+        String(node.attrs.n as number),
+      ] as const,
+    },
+
+    // A picture. Inline, like mdast's image node, and atomic — there is
+    // nothing inside a picture a caret could edit. Clicking opens a preview
+    // (note-editor.tsx); WITHOUT this node the converter silently dropped
+    // images from any note a student edited.
+    image: {
+      atom: true,
+      attrs: { alt: { default: "" }, src: {}, title: { default: null } },
+      draggable: false,
+      group: "inline",
+      inline: true,
+      parseDOM: [
+        {
+          getAttrs: (dom) => ({
+            alt: (dom as HTMLElement).getAttribute("alt") ?? "",
+            src: (dom as HTMLElement).getAttribute("src") ?? "",
+            title: (dom as HTMLElement).getAttribute("title"),
+          }),
+          tag: "img[src]",
+        },
+      ],
+      toDOM: (node) => [
+        "img",
+        { alt: node.attrs.alt as string, src: node.attrs.src as string, title: node.attrs.title as string | null },
+      ] as const,
+    },
+
     // Inline maths, atomic for the same reason as math_block.
     math_inline: {
       atom: true,

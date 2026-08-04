@@ -77,7 +77,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: `Create a new Library note for the student. Use markdown. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one.`,
+      description: `Create a new Library note for the student. Use markdown. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one. When the note draws on web sources, cite inline: end the claim with a link whose text is just a number, like [1](https://the-source-url), numbering sources in order. The Library renders these as small source pills and builds the note's Sources section from them automatically — never write a manual "Sources" list.`,
       name: "create_library_note",
       parameters: {
         properties: {
@@ -121,7 +121,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Append markdown to an existing Library note without replacing its current contents.",
+      description: "Append markdown to an existing Library note without replacing its current contents. Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section.",
       name: "append_library_note",
       parameters: {
         properties: {
@@ -378,7 +378,8 @@ export const AGENT_TOOLS = [
     function: {
       description:
         "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
-        + "Needs the note's id from search_library or read_library_note.",
+        + "Needs the note's id from search_library or read_library_note. "
+        + "Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section; never write a manual \"Sources\" list.",
       name: "replace_library_note",
       parameters: {
         properties: {

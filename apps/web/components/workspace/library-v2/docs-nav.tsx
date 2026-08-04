@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { isFolderNote } from "@/lib/workspace/library-folder-note";
 import { buildLibraryTree, countLibraryNotes, filterLibraryTree, type LibrarySortMode } from "@/lib/workspace/library-tree";
 import { seedComposerFiles } from "@/lib/workspace/composer-seed";
 import { cn } from "@/lib/utils";
@@ -62,12 +63,20 @@ interface DocsNavProps {
   /** Breadcrumb reveal request from the center pane. */
   revealFolder?: LibraryTreeReveal | null;
   onOpenNote: (path: string) => void;
+  /** Folders are pages: a folder row opens the folder's own note. */
+  onOpenFolderNote: (path: string) => void;
+  /** Folder whose page is open — its tree row shows selected. */
+  selectedFolderPath?: string | null;
+  /** The "Library" heading toggles the sidebar (owner 2026-08-04: the
+   *  heading IS the sidebar's control — hover peeks, click locks/unlocks). */
+  onHeadingClick?: () => void;
+  headingTitle?: string;
   /** Close the drawer after navigating (narrow viewports only). */
   onNavigate?: () => void;
   showBack?: boolean;
 }
 
-export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onNavigate, showBack = false }: DocsNavProps) {
+export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onHeadingClick, headingTitle, onNavigate, showBack = false }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -80,9 +89,13 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
+  // A folder's own note never shows as a child row — the folder row IS the
+  // way into it, the way Notion never lists a page inside itself.
+  const treeNotes = useMemo(() => notes.filter((note) => !isFolderNote(note)), [notes]);
+  const tree = useMemo(() => buildLibraryTree(treeNotes, folders, sortMode), [folders, sortMode, treeNotes]);
   const visibleTree = useMemo(() => filterLibraryTree(tree, query), [query, tree]);
-  const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
+  // Counted over ALL notes: a library holding only folder pages is not empty.
+  const totalCount = notes.length;
   const loading = status === "idle" || status === "loading";
   const noMatches = query.trim().length > 0 && countLibraryNotes(visibleTree) === 0 && visibleTree.folders.length === 0;
 
@@ -131,7 +144,26 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
         )}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="workspace-page-title">Library</h1>
+            {/* The heading is the sidebar's own switch (owner 2026-08-04,
+                circling it: "i meant the library to be this one"): while the
+                panel peeks it sits exactly where the floating trigger word
+                was, so the click that lands here locks the peek in place —
+                and clicking it again lets the sidebar go. */}
+            {onHeadingClick ? (
+              <h1>
+                <button
+                  className="workspace-page-title cursor-pointer rounded-md hover:text-(--ui-text-secondary)"
+                  data-testid="library-heading-toggle"
+                  onClick={onHeadingClick}
+                  title={headingTitle}
+                  type="button"
+                >
+                  Library
+                </button>
+              </h1>
+            ) : (
+              <h1 className="workspace-page-title">Library</h1>
+            )}
             {status === "error" && <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>}
           </div>
           <div className="flex gap-0.5">
@@ -209,9 +241,14 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
               onDeleteNote={(id) => void deleteNote(id)}
               onMoveFolder={(source, target) => void moveFolder(source, target).then(() => onSourcesChanged?.())}
               onMoveNote={(id, target) => void moveNote(id, target)}
+              onOpenFolderNote={(path) => {
+                onOpenFolderNote(path);
+                onNavigate?.();
+              }}
               onRenameFolder={(path, title) => void renameFolder(path, title).then(() => onSourcesChanged?.())}
               onRenameNote={(id, title) => void renameNote(id, title)}
               onSelect={open}
+              selectedFolderPath={selectedFolderPath}
               renderFolderExtras={(treeFolder, depth) => {
                 const folderSources = sourcesInFolder(sources, treeFolder.path);
                 if (folderSources.length === 0) return null;

@@ -1,29 +1,25 @@
 "use client";
 
-// The breadcrumb strip above a note or source file. Folders are NEVER pages
-// (owner 2026-08-03: "the entirety should be notes only" — same as Obsidian's
-// help site, where a folder only expands in the sidebar). So clicking a
-// folder crumb REVEALS that folder in the left tree — it opens and scrolls to
-// it, without leaving what you're reading. The "Library" crumb is the
-// sidebar's own control (owner 2026-08-04): hovering it peeks the tree over
-// the page, clicking it locks the sidebar open (or unlocks it again). Home is
-// a NOTE in that tree, so nothing here navigates.
+// The breadcrumb strip above a note or source file. Crumbs NAVIGATE, the way
+// Notion's do (owner 2026-08-04: "a folder is like a note"): a folder crumb
+// opens that folder's own page — an ordinary note created on first open, see
+// library-folder-note.ts — and the "Library" crumb goes to the Library home
+// note. The sidebar's control is no longer here: it is the floating "Library"
+// heading at the top-left of the page (library-docs-page.tsx).
 
 import { cn } from "@/lib/utils";
 
 interface DocsCrumbsProps {
   /** Slash-joined folder chain to render. "" renders just "Library". */
   path: string;
-  /** Lock or unlock the sidebar. */
-  onLibraryClick: () => void;
-  /** Pointer entered/left the "Library" crumb — drives the hover peek. */
-  onLibraryHover: (hovering: boolean) => void;
-  /** Expand + scroll the left tree to this folder (Obsidian folder behavior). */
-  onRevealFolder: (path: string) => void;
+  /** The "Library" crumb — go to the Library home note. */
+  onGoHome: () => void;
+  /** A folder crumb — open that folder's page (creating it if needed). */
+  onOpenFolder: (path: string) => void;
   className?: string;
 }
 
-export function DocsCrumbs({ path, onLibraryClick, onLibraryHover, onRevealFolder, className }: DocsCrumbsProps) {
+export function DocsCrumbs({ path, onGoHome, onOpenFolder, className }: DocsCrumbsProps) {
   const segments = path.split("/").map((segment) => segment.trim()).filter(Boolean);
   const crumbClass = "min-w-0 truncate rounded-sm hover:text-foreground hover:underline underline-offset-2";
 
@@ -34,11 +30,9 @@ export function DocsCrumbs({ path, onLibraryClick, onLibraryHover, onRevealFolde
     >
       <button
         className={cn(crumbClass, "shrink-0")}
-        data-testid="library-sidebar-trigger"
-        onClick={onLibraryClick}
-        onMouseEnter={() => onLibraryHover(true)}
-        onMouseLeave={() => onLibraryHover(false)}
-        title="Show the sidebar"
+        data-testid="library-home-crumb"
+        onClick={onGoHome}
+        title="Go to your Library home"
         type="button"
       >
         Library
@@ -50,8 +44,8 @@ export function DocsCrumbs({ path, onLibraryClick, onLibraryHover, onRevealFolde
             <span className="text-(--ui-text-quaternary)">/</span>
             <button
               className={crumbClass}
-              onClick={() => onRevealFolder(target)}
-              title={`Show ${segment} in the sidebar`}
+              onClick={() => onOpenFolder(target)}
+              title={`Open ${segment}`}
               type="button"
             >
               {segment}
