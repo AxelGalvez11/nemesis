@@ -243,6 +243,23 @@ export function Composer({ busy, centered = false, placement = "floating", place
     setListening(false);
   }, [closeDictationMeter]);
 
+  /** ✓ — stop listening and keep everything heard, ready to edit or send. */
+  const acceptDictation = () => {
+    stopDictation();
+    inputRef.current?.focus();
+  };
+
+  /** ✕ — stop listening and put the box back to what it held before the mic
+   *  opened; what was heard is discarded (ChatGPT's cancel). */
+  const cancelDictation = () => {
+    stopDictation();
+    const element = inputRef.current;
+    if (element) {
+      element.textContent = dictationBaseRef.current;
+      setHasText(dictationBaseRef.current.trim().length > 0);
+    }
+  };
+
   /** The microphone the waveform reads. Separate from the one the Web Speech
    *  API opens for itself, because that one is not reachable — see the note on
    *  startDictation. */
@@ -589,9 +606,17 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     2026-07-22) — there is nothing to type while recording, and
                     this keeps web identical to the phone's record row. */}
                 {activeMode === "chat" ? (
+                  <>
                   <div
                     aria-multiline="true"
-                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
+                    // display:none while dictating, NOT unmounted: the
+                    // recogniser writes into this node by ref on every result,
+                    // and the ChatGPT-style dictation strip below stands in
+                    // for it visually (owner screenshot 2026-08-04).
+                    className={cn(
+                      "min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60",
+                      listening && "hidden",
+                    )}
                     contentEditable
                     data-placeholder={placeholder}
                     data-slot="composer-rich-input"
@@ -621,6 +646,16 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     ref={inputRef}
                     role="textbox"
                   />
+                  {listening && (
+                    // ChatGPT's dictation shape (owner screenshot 2026-08-04):
+                    // a dotted leader running the width of the box into a live
+                    // waveform; ✕/✓ sit where the send button was.
+                    <div className="flex min-h-(--composer-input-min-height) items-center gap-2.5 pr-1" data-slot="composer-dictation-strip">
+                      <span aria-hidden className="min-w-8 flex-1 border-t-2 border-dotted border-(--ui-stroke-secondary)" />
+                      <AudioWaveform active className="h-6 w-24 shrink-0" label="Dictation audio waveform" />
+                    </div>
+                  )}
+                  </>
                 ) : (
                   // The live waveform lives in the recording panel ONLY (owner
                   // 2026-08-03: "it should not show the waveform on the
@@ -630,7 +665,9 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     {recording && !recordingPaused && !recordingBusy && (
                       <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-(--theme-primary)" />
                     )}
-                    {recordingBusy ? "Writing it up…" : recording ? (recordingPaused ? "Paused" : "Recording…") : "Ready to record"}
+                    {/* No "Recording…" word while capturing (owner 2026-08-04) —
+                        the pulsing dot and the box's waveform already say it. */}
+                    {recordingBusy ? "Writing it up…" : recording ? (recordingPaused ? "Paused" : "") : "Ready to record"}
                   </p>
                 )}
               </div>
@@ -642,11 +679,17 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       movement — the text going into the box is the real
                       feedback; this says the microphone is hearing you at all,
                       which is the thing a silent box cannot tell you. */}
-                  {activeMode === "chat" && listening && (
-                    <AudioWaveform active className="h-6 w-20 shrink-0" label="Dictation audio waveform" />
-                  )}
-                  {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={13} /></Button>}
-                  {activeMode === "record" ? (
+                  {activeMode === "chat" && !listening && <Button aria-label="Dictate" className="size-(--composer-control-size) rounded-full" onClick={startDictation} size="icon" variant="ghost"><Mic size={13} /></Button>}
+                  {activeMode === "chat" && listening ? (
+                    <>
+                      <Button aria-label="Cancel dictation" className="size-(--composer-control-size) shrink-0 rounded-full" data-testid="composer-dictation-cancel" onClick={cancelDictation} size="icon" variant="ghost">
+                        <Codicon name="close" size="0.7rem" />
+                      </Button>
+                      <Button aria-label="Finish dictation" className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-foreground p-0 text-background hover:bg-foreground/90" data-testid="composer-dictation-accept" onClick={acceptDictation} size="icon">
+                        <Codicon name="check" size="0.7rem" />
+                      </Button>
+                    </>
+                  ) : activeMode === "record" ? (
                     // The waveform button turned into this ✕ — the way OUT and
                     // the way to END (owner 2026-08-03). Mid-capture, setMode's
                     // guard turns the press into the end dialog — finish or

@@ -39,6 +39,13 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
   if (!message && !pending && !error) return null;
 
   const visibleText = message?.content || null;
+  // A recording message gets the same settled line an answer gets, with its
+  // own verb: "Recorded for 1m 0s" (owner 2026-08-04). Only when there is no
+  // thought duration — a turn is one or the other.
+  const recordedSeconds =
+    durationSeconds === null
+      ? (message?.outputs?.find((output) => output.kind === "recording")?.durationSeconds ?? null)
+      : null;
 
   return (
     <div
@@ -53,7 +60,7 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
         className="wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground"
         data-slot="aui_assistant-message-content"
       >
-        {!pending && <ActivityStrip placement="header" seconds={durationSeconds} />}
+        {!pending && <ActivityStrip placement="header" seconds={recordedSeconds ?? durationSeconds} verb={recordedSeconds !== null ? "Recorded" : "Thought"} />}
         {visibleText && <AssistantMarkdown sources={message?.sources} text={visibleText} />}
         {message?.outputs && message.outputs.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">

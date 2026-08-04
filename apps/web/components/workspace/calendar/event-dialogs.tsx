@@ -15,7 +15,6 @@ import { useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/desktop-ui/select";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import type { CalendarEvent, CalendarEventKind } from "@/lib/workspace/calendar-model";
 import { Trash2 } from "@/lib/workspace/icons";
@@ -125,19 +124,29 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
               {" "}through {event.recurrence.until}.
             </p>
           ) : null}
-          <Select onValueChange={(value) => setKind(value as CalendarEventKind)} value={kind}>
-            <SelectTrigger aria-label="Event type" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {KIND_ORDER.map((option) => (
-                <SelectItem key={option} value={option}>
-                  <span className={cn("size-1.5 rounded-full", KIND_META[option].dot)} />
-                  {KIND_META[option].label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Colour dots, not a labeled type dropdown (owner 2026-08-04:
+              "remove the 'assignment,exam etc.' picker and replace with color
+              selectors") — the same row the quick-create card uses. The name
+              survives as the tooltip and accessible label. */}
+          <div aria-label="Event color" className="flex flex-wrap gap-1.5 px-0.5" role="group">
+            {KIND_ORDER.map((option) => (
+              <button
+                aria-label={KIND_META[option].label}
+                aria-pressed={kind === option}
+                className={cn(
+                  "size-5 rounded-full transition-opacity",
+                  KIND_META[option].dot,
+                  kind === option
+                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
+                    : "opacity-45 hover:opacity-100",
+                )}
+                key={option}
+                onClick={() => setKind(option)}
+                title={KIND_META[option].label}
+                type="button"
+              />
+            ))}
+          </div>
           <Input onChange={(e) => setCourse(e.target.value)} placeholder="Course (optional)" value={course} />
           <Textarea
             className="min-h-16"

@@ -673,7 +673,7 @@ export function SessionChat() {
   return (
     <div className="relative isolate flex h-full min-w-0 overflow-hidden bg-(--ui-chat-surface-background)">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
+        <ChatHeader hideRail={composerMode === "record" || recordingBusy} onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
           {composerMode === "record" || recordingBusy ? (
             <RecordWorkspace

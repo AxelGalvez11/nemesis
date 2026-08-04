@@ -422,8 +422,9 @@
        "bigger but less lengthy" — chunkier contents, shorter run). */
     --composer-pill-max-width: 42rem;
     /* Control sizes stepped down 2026-08-04 (owner: "the chat composer and
-       other buttons/components feel too big") — 26px secondary / 28px
-       primary at the 20px root, against ChatGPT's ~28px controls. */
+       other buttons/components feel too big") — ~23px secondary / ~25px
+       primary at the 18px root (the same day's 90% rebase), against
+       ChatGPT's ~28px controls. */
     --composer-control-size: 1.3rem;
     --composer-control-primary-size: 1.4rem;
     --composer-control-gap: 0.25rem;
