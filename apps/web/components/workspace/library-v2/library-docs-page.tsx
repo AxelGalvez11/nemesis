@@ -123,6 +123,41 @@ export function LibraryDocsPage() {
     router.push(libraryBase);
   }, [libraryBase, router]);
 
+  // The "Library" crumb is the sidebar's control (owner 2026-08-04): hovering
+  // PEEKS the tree as a floating panel, clicking LOCKS it open (or unlocks
+  // it). Peek is transient and wide-viewport only — touch has no hover, so
+  // narrow keeps its drawer. The grace timer lets the pointer cross the gap
+  // between the crumb and the panel without the panel vanishing mid-journey.
+  const [peek, setPeek] = useState(false);
+  const peekTimerRef = useRef<number | null>(null);
+  const clearPeekTimer = useCallback(() => {
+    if (peekTimerRef.current !== null) {
+      window.clearTimeout(peekTimerRef.current);
+      peekTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => clearPeekTimer, [clearPeekTimer]);
+  const handleLibraryHover = useCallback(
+    (hovering: boolean) => {
+      if (narrowViewport || navOpen) return;
+      clearPeekTimer();
+      if (hovering) {
+        setPeek(true);
+        return;
+      }
+      peekTimerRef.current = window.setTimeout(() => {
+        peekTimerRef.current = null;
+        setPeek(false);
+      }, 220);
+    },
+    [clearPeekTimer, narrowViewport, navOpen],
+  );
+  const handleLibraryClick = useCallback(() => {
+    clearPeekTimer();
+    setPeek(false);
+    setNavOpen(narrowViewport ? true : !navOpen);
+  }, [clearPeekTimer, narrowViewport, navOpen, setNavOpen]);
+
   // Teach me / Flashcards / Test on the open note (owner 2026-08-03, the
   // learning loop): the note rides along as the same virtual .md attachment
   // "Attach to AI chat" builds, and the request is sent the moment Sessions
@@ -232,13 +267,26 @@ export function LibraryDocsPage() {
 
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-bg-chrome)">
-      {navOpen && (
+      {(navOpen || (peek && !narrowViewport)) && (
         <>
-          {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
-          <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
+          {navOpen && narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
+          {/* Locked = docked in flow with a gutter around the rounded panel.
+              Unlocked-but-hovered = the same panel floating OVER the page
+              (Notion-style peek), kept alive while the pointer stays on it. */}
+          <div
+            className={cn(
+              navOpen && !narrowViewport && "flex shrink-0 py-2 pl-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
+              navOpen && narrowViewport && "absolute inset-y-0 left-0 z-40 p-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
+              // Peek starts BELOW the crumb row so the "Library" trigger stays
+              // visible and clickable while the panel is out — clicking it is
+              // how the peek becomes a lock.
+              !navOpen && "library-peek-panel absolute bottom-2 left-2 top-[calc(var(--titlebar-height)+3.25rem)] z-40",
+            )}
+            data-testid={navOpen ? "library-sidebar-locked" : "library-sidebar-peek"}
+            onMouseEnter={!navOpen ? () => handleLibraryHover(true) : undefined}
+            onMouseLeave={!navOpen ? () => handleLibraryHover(false) : undefined}
+          >
             <DocsNav
-              homeActive={!requestedPath && !requestedSource}
-              onGoHome={goHome}
               onNavigate={() => narrowViewport && setNavOpen(false)}
               onOpenNote={openPath}
               onOpenSource={openSource}
@@ -253,7 +301,10 @@ export function LibraryDocsPage() {
         </>
       )}
 
-      {!navOpen && (
+      {/* Wide viewports open the sidebar from the "Library" crumb; this
+          floating opener stays for narrow viewports (no hover there) and for
+          pages with no crumb row to hover (missing note, empty library). */}
+      {!navOpen && (narrowViewport || (!note && !openedSource)) && (
         <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2 z-20" onClick={() => setNavOpen(true)} size="icon-xs" variant="ghost">
           <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
         </Button>
@@ -270,7 +321,8 @@ export function LibraryDocsPage() {
               notes={notes}
               onContentChange={setArticleContent}
               onDelete={removeNote}
-              onOpenHome={goHome}
+              onLibraryClick={handleLibraryClick}
+              onLibraryHover={handleLibraryHover}
               onOpenPath={openPath}
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
@@ -287,7 +339,8 @@ export function LibraryDocsPage() {
             ) : openedSource ? (
               <DocsSource
                 notesFromSource={sourceNotes}
-                onOpenHome={goHome}
+                onLibraryClick={handleLibraryClick}
+                onLibraryHover={handleLibraryHover}
                 onOpenPath={openPath}
                 onRevealFolder={revealFolder}
                 source={openedSource}

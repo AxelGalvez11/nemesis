@@ -591,7 +591,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                 {activeMode === "chat" ? (
                   <div
                     aria-multiline="true"
-                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[1rem] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
+                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
                     contentEditable
                     data-placeholder={placeholder}
                     data-slot="composer-rich-input"
@@ -643,9 +643,9 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       feedback; this says the microphone is hearing you at all,
                       which is the thing a silent box cannot tell you. */}
                   {activeMode === "chat" && listening && (
-                    <AudioWaveform active className="h-7 w-24 shrink-0" label="Dictation audio waveform" />
+                    <AudioWaveform active className="h-6 w-20 shrink-0" label="Dictation audio waveform" />
                   )}
-                  {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
+                  {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={13} /></Button>}
                   {activeMode === "record" ? (
                     // The waveform button turned into this ✕ — the way OUT and
                     // the way to END (owner 2026-08-03). Mid-capture, setMode's
@@ -660,7 +660,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       size="icon"
                       type="button"
                     >
-                      <Codicon name="close" size="0.875rem" />
+                      <Codicon name="close" size="0.7rem" />
                     </Button>
                   ) : busy ? (
                     <Button
@@ -678,7 +678,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                       onClick={submit}
                       size="icon"
                     >
-                      <Codicon name="arrow-up" size="0.875rem" />
+                      <Codicon name="arrow-up" size="0.7rem" />
                     </Button>
                   ) : (
                     // Nothing to send, so the primary button is the way INTO
@@ -752,7 +752,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
  *  from the codicon set so it matches the meter above the field exactly. */
 function WaveformMark() {
   return (
-    <span aria-hidden className="flex h-3.5 items-center gap-[2px]">
+    <span aria-hidden className="flex h-3 items-center gap-[2px]">
       {[0.5, 1, 0.7, 0.35].map((scale, index) => (
         <span className="w-[2px] rounded-full bg-current" key={index} style={{ height: `${scale * 100}%` }} />
       ))}
@@ -831,7 +831,7 @@ function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; 
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button aria-label="Add to chat" className="size-(--composer-control-size) shrink-0 rounded-full text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground" size="icon" type="button" variant="ghost">
-          <Codicon name="add" size="1rem" />
+          <Codicon name="add" size="0.8rem" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44" side="top" sideOffset={8}>

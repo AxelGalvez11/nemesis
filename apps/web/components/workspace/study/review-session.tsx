@@ -411,11 +411,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 {occlusionPayload ? (
                   <OcclusionCardView payload={occlusionPayload} revealed={revealed} />
                 ) : (
-                  <AssistantMarkdown className="text-lg font-medium leading-8" htmlSubSup obsidianUnderline text={frontText} />
+                  <AssistantMarkdown className="text-lg font-medium leading-8" htmlSubSup obsidianUnderline singleDollarMath text={frontText} />
                 )}
                 {showBack && (
                   <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
-                    <AssistantMarkdown className="text-lg leading-8 text-foreground" htmlSubSup obsidianUnderline text={current.back} />
+                    <AssistantMarkdown className="text-lg leading-8 text-foreground" htmlSubSup obsidianUnderline singleDollarMath text={current.back} />
                   </div>
                 )}
                 {/* A small collapsible window rather than a block that shoves the
@@ -449,7 +449,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                       <div className="max-h-64 overflow-y-auto px-3.5 pb-3">
                         {explainBusy
                           ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
-                          : <AssistantMarkdown className="text-[0.8125rem] leading-relaxed" htmlSubSup obsidianUnderline text={explainText} />}
+                          : <AssistantMarkdown className="text-[0.8125rem] leading-relaxed" htmlSubSup obsidianUnderline singleDollarMath text={explainText} />}
                       </div>
                     )}
                   </div>

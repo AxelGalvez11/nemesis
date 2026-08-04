@@ -71,7 +71,9 @@ export function DocsToc({ outline, articleRef, scrollRef }: DocsTocProps) {
           <li key={`${entry.label}:${index}`}>
             <button
               className={cn(
-                "-ml-px w-full truncate border-l py-1 pr-1 text-left text-xs transition-colors",
+                // Long headings WRAP — truncate chopped them mid-word (owner
+                // screenshot 2026-08-04: "Third Row: Comfort and Conven").
+                "-ml-px w-full break-words border-l py-1 pr-1 text-left text-xs leading-snug transition-colors",
                 index === activeIndex
                   ? "border-[var(--theme-primary)] font-medium text-foreground"
                   : "border-transparent text-(--ui-text-tertiary) hover:text-foreground",

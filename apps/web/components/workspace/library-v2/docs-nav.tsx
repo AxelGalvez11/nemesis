@@ -15,7 +15,7 @@
 // the center reveal folders HERE (expand + scroll) instead of navigating —
 // folders are never pages.
 
-import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconHome, IconArrowsSort } from "@tabler/icons-react";
+import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconArrowsSort } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -52,9 +52,6 @@ import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "../library/use-library-
 interface DocsNavProps {
   /** Path of the open note, or null when no note is open. */
   openNotePath: string | null;
-  /** True only on the actual home page — a source file view is neither Home
-   *  nor a tree note, so both highlights stay off there. */
-  homeActive?: boolean;
   /** Source files, grouped per folder inside the tree. */
   sources: readonly LibrarySource[];
   /** Id of the source file open in the center, for its row highlight. */
@@ -65,14 +62,12 @@ interface DocsNavProps {
   /** Breadcrumb reveal request from the center pane. */
   revealFolder?: LibraryTreeReveal | null;
   onOpenNote: (path: string) => void;
-  onGoHome: () => void;
   /** Close the drawer after navigating (narrow viewports only). */
   onNavigate?: () => void;
   showBack?: boolean;
 }
 
-export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
-  const isHomeActive = homeActive ?? openNotePath === null;
+export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onNavigate, showBack = false }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -117,7 +112,11 @@ export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpe
   };
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
+    // A rounded floating panel, not a flush rail (owner 2026-08-04: "make the
+    // library sidebar into a rounded box shape"). The wrapper in
+    // library-docs-page decides WHERE it sits (docked in flow, or peeking
+    // over the page); this aside only knows its own box.
+    <aside className="flex h-full w-64 shrink-0 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) shadow-[0_3px_12px_rgba(0,0,0,0.05)]">
       <div className="workspace-page-header px-3 pb-1 pt-2.5">
         {showBack && (
           <Button
@@ -177,18 +176,10 @@ export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpe
 
       {importError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" role="alert">{importError}</p>}
 
+      {/* No Home button (owner 2026-08-04): Home is a NOTE — it sits in the
+          tree like any other note, and bare /library already lands on it. */}
       <div className="px-3 pb-1.5">
-        <button
-          className={cn(
-            "row-hover flex w-full items-center gap-2 rounded-md px-2 py-1.25 text-left text-xs font-medium",
-            isHomeActive ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
-          )}
-          onClick={() => { onGoHome(); onNavigate?.(); }}
-          type="button"
-        >
-          <IconHome size={14} stroke={1.7} /> Home
-        </button>
-        <div className="mt-1.5">
+        <div>
           <SearchField
             aria-label="Search notes"
             containerClassName="w-full rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 opacity-100"

@@ -92,23 +92,25 @@ function markdownComponents(
         if (!source) return null;
         const host = hostnameOf(source.url);
         // 🔴 PINNED IN PIXELS ON PURPOSE (owner 2026-08-03: "they should be
-        // smaller"). The app's text-size dial IS the root font-size, so em/rem
-        // here scale with it — at large text settings these chips ballooned
-        // into bubbles taller than the line. A citation marker is a footnote,
-        // not prose: it stays chip-sized at every text scale.
+        // smaller"; 2026-08-04: "still too big"). The app's text-size dial IS
+        // the root font-size, so em/rem here scale with it. Second shrink
+        // dropped the site-name text entirely: a citation is now a favicon
+        // dot the height of the surrounding text — the name lives in the
+        // tooltip and in alt text, not in the prose.
         return (
           <a
-            className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-[4px] rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-[7px] align-baseline text-[11px] leading-[16px] font-medium text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
+            className="mx-[2px] inline-flex size-[16px] translate-y-[3px] items-center justify-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) align-baseline no-underline hover:bg-(--ui-control-hover-background)"
             href={source.url}
             rel="noopener noreferrer"
             target="_blank"
-            title={source.title || source.url}
+            title={source.title ? `${source.title} — ${sourceLabel(source.url) ?? host ?? source.url}` : source.url}
           >
-            {host && (
+            {host ? (
               // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-              <img alt="" className="size-[11px] rounded-full" src={faviconUrl(host)} />
+              <img alt={sourceLabel(source.url) ?? host} className="size-[12px] rounded-full" src={faviconUrl(host)} />
+            ) : (
+              <span className="text-[9px] leading-none font-medium text-(--ui-text-tertiary)">{citeIndex}</span>
             )}
-            {sourceLabel(source.url) ?? host}
           </a>
         );
       }
@@ -243,6 +245,7 @@ export function AssistantMarkdown({
   obsidianTags = false,
   obsidianUnderline = false,
   htmlSubSup = false,
+  singleDollarMath = false,
 }: {
   className?: string;
   text: string;
@@ -263,6 +266,12 @@ export function AssistantMarkdown({
    *  cards imported from Anki keep chemistry formatting (H<sub>2</sub>O) as
    *  bare tags. Same safe pre-process trick, never rehype-raw. */
   htmlSubSup?: boolean;
+  /** Treat `$x$` as inline math. OFF by default so model prose like
+   *  "$0.20 per million input tokens and $1.20" stays money, not italics
+   *  (owner screenshot 2026-08-04). Note surfaces turn it on — Obsidian
+   *  users write `$x$` on purpose. `$$x$$`, `\(x\)` and `\[x\]` render as
+   *  math in BOTH modes (normalizeMathDelimiters emits the $$ forms). */
+  singleDollarMath?: boolean;
 }) {
   const taggedMarkdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
   const highlighted = obsidianHighlights
@@ -282,7 +291,7 @@ export function AssistantMarkdown({
       <ReactMarkdown
         components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources)}
         rehypePlugins={[rehypeKatex]}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: singleDollarMath }]]}
       >
         {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(cited) : cited)}
       </ReactMarkdown>
