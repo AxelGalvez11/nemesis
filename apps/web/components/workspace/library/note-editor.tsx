@@ -75,6 +75,14 @@ interface NoteEditorProps {
   className?: string;
   wikiLinks?: NoteEditorWikiLinks;
   noteLinks?: NoteEditorLinks;
+  /** The live view, for the article's toolbar (null again on unmount). */
+  onViewReady?: (view: EditorView | null) => void;
+  /** Editing focus — what shows and hides the toolbar. Blur is debounced so
+   *  a click that lands on the toolbar never counts as leaving. */
+  onFocusChange?: (focused: boolean) => void;
+  /** Fired after EVERY transaction (caret moves included) so the toolbar's
+   *  active states track the selection, not just the text. */
+  onTransaction?: () => void;
 }
 
 /**
@@ -308,6 +316,61 @@ class ImageView {
   }
 }
 
+/** A list item that carries a checkbox (checked true/false — null items are
+ *  plain bullets and use the default rendering). The box is real and
+ *  clickable; ticking it writes the attribute, which saves as "- [x]". */
+class TaskItemView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private readonly plain: boolean;
+  private box: HTMLInputElement | null = null;
+
+  constructor(node: PmNode, view: EditorView, getPos: () => number | undefined) {
+    this.plain = node.attrs.checked === null;
+    const li = document.createElement("li");
+    if (this.plain) {
+      this.dom = li;
+      this.contentDOM = li;
+      return;
+    }
+    li.className = "note-task-item";
+    li.dataset.checked = String(node.attrs.checked === true);
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "note-task-box";
+    box.checked = node.attrs.checked === true;
+    box.contentEditable = "false";
+    box.addEventListener("mousedown", (event) => event.preventDefault());
+    // No preventDefault here: cancelling a checkbox's click makes the browser
+    // REVERT the tick after the handler returns. The native toggle stands,
+    // and update() keeps the box aligned with the document from then on.
+    box.addEventListener("click", () => {
+      const pos = getPos();
+      if (pos === undefined) return;
+      const current = view.state.doc.nodeAt(pos);
+      if (!current) return;
+      view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { checked: current.attrs.checked !== true }));
+    });
+    const content = document.createElement("div");
+    content.className = "note-task-content";
+    li.append(box, content);
+    this.dom = li;
+    this.contentDOM = content;
+    this.box = box;
+  }
+
+  update(node: PmNode): boolean {
+    if (node.type !== noteSchema.nodes.list_item) return false;
+    // Growing or losing the box changes the DOM shape — rebuild instead.
+    if ((node.attrs.checked === null) !== this.plain) return false;
+    if (this.box) {
+      this.box.checked = node.attrs.checked === true;
+      this.dom.dataset.checked = String(node.attrs.checked === true);
+    }
+    return true;
+  }
+}
+
 /** A truly empty note shows the "Start writing…" hint (globals.css owns the
  *  words) instead of a bare cursor that reads as broken. */
 const emptyHintPlugin = new Plugin({
@@ -335,13 +398,14 @@ function meltedText(node: PmNode): string | null {
   return null;
 }
 
-export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, noteLinks }: NoteEditorProps) {
+export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, noteLinks, onViewReady, onFocusChange, onTransaction }: NoteEditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
+  const blurTimer = useRef<number | null>(null);
   // Read inside the ProseMirror callbacks, which are created once per note and
   // would otherwise capture the first render's props forever.
-  const latest = useRef({ markdown, noteLinks, onChange, wikiLinks });
-  latest.current = { markdown, noteLinks, onChange, wikiLinks };
+  const latest = useRef({ markdown, noteLinks, onChange, onFocusChange, onTransaction, onViewReady, wikiLinks });
+  latest.current = { markdown, noteLinks, onChange, onFocusChange, onTransaction, onViewReady, wikiLinks };
 
   useEffect(() => {
     const mount = host.current;
@@ -376,6 +440,9 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, n
       dispatchTransaction(transaction) {
         const next = editor.state.apply(transaction);
         editor.updateState(next);
+        // The toolbar re-reads active states after every transaction — caret
+        // moves included, or Bold would not light up on entering bold text.
+        latest.current.onTransaction?.();
         // Only a transaction that CHANGED the document can change the note.
         // Moving the caret must not mark a note dirty.
         if (!transaction.docChanged) return;
@@ -408,6 +475,7 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, n
       nodeViews: {
         citation: (node) => new CitationView(node, latest.current.noteLinks),
         image: (node) => new ImageView(node, latest.current.noteLinks),
+        list_item: (node, editorView, getPos) => new TaskItemView(node, editorView, getPos as () => number | undefined),
         math_block: (node, editorView, getPos) => new MathBlockView(node, editorView, getPos),
         math_inline: (node) => new MathInlineView(node),
         wiki_link: (node) => new WikiLinkView(node, latest.current.wikiLinks),
@@ -415,8 +483,37 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, n
       state,
     });
     view.current = editor;
+    latest.current.onViewReady?.(editor);
+
+    // Focus drives the toolbar. Blur waits a beat: moving from the text to a
+    // toolbar control (whose mousedown is prevented) must not read as leaving
+    // the note, and the fade needs to lose the race against a re-focus.
+    const clearBlurTimer = () => {
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
+    };
+    const onFocus = () => {
+      clearBlurTimer();
+      latest.current.onFocusChange?.(true);
+    };
+    const onBlur = () => {
+      clearBlurTimer();
+      blurTimer.current = window.setTimeout(() => {
+        blurTimer.current = null;
+        latest.current.onFocusChange?.(false);
+      }, 120);
+    };
+    editor.dom.addEventListener("focus", onFocus);
+    editor.dom.addEventListener("blur", onBlur);
 
     return () => {
+      editor.dom.removeEventListener("focus", onFocus);
+      editor.dom.removeEventListener("blur", onBlur);
+      clearBlurTimer();
+      latest.current.onFocusChange?.(false);
+      latest.current.onViewReady?.(null);
       editor.destroy();
       view.current = null;
     };

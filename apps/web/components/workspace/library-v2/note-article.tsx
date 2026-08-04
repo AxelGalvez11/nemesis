@@ -19,7 +19,8 @@
 // only while nothing is unsaved here.
 
 import { IconArrowNarrowLeft, IconDots, IconTrash } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { EditorView } from "prosemirror-view";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -49,6 +50,7 @@ import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
 import { NoteEditor, type NoteEditorLinks } from "../library/note-editor";
+import { NoteToolbar } from "../library/note-toolbar";
 import { DocsCrumbs } from "./docs-crumbs";
 
 interface NoteDraft {
@@ -103,6 +105,12 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sources, setSources] = useState<NoteSource[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  // The formatting bar: shown while the editor is focused (or its heading
+  // menu is open), so the page reads as documentation until you click in.
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const [editorFocused, setEditorFocused] = useState(false);
+  const [toolbarPinned, setToolbarPinned] = useState(false);
+  const [, bumpEditorState] = useReducer((count: number) => count + 1, 0);
   const draftRef = useRef<NoteDraft | null>(null);
 
   // Draft lifecycle — carried over from library-main.tsx: save a dirty draft
@@ -217,6 +225,14 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
+      {/* Sticky and zero-height: at rest the pill sits in the crumb row's
+          empty middle; scrolled, it rides along the top of the page. It only
+          APPEARS while the student is editing. */}
+      <NoteToolbar
+        onPinnedChange={setToolbarPinned}
+        view={editorView}
+        visible={editable && (editorFocused || toolbarPinned)}
+      />
       <header className="mb-1">
         <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
           <DocsCrumbs className="flex-1" onGoHome={onGoHome} onOpenFolder={onOpenFolder} path={folderPath} />
@@ -294,6 +310,9 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
             noteId={note.id}
             noteLinks={noteLinks}
             onChange={(next) => updateDraft({ content: next })}
+            onFocusChange={setEditorFocused}
+            onTransaction={bumpEditorState}
+            onViewReady={setEditorView}
             wikiLinks={wikiLinks}
           />
         ) : textArrived ? (

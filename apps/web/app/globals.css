@@ -357,6 +357,71 @@ a { color: inherit; text-decoration: none; }
   border-radius: 0.75rem;
   cursor: zoom-in;
 }
+/* ── The note's formatting bar ─────────────────────────────────────────────
+   A single slim pill (owner 2026-08-04: "keep it minimal"), visible only
+   while the editor is focused. The anchor is sticky with zero height, so the
+   bar overlays the page instead of pushing it — clicking into a note must
+   not make the text jump. */
+.note-toolbar-anchor {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 35;
+  height: 0;
+}
+.note-toolbar {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0.25rem;
+  border: 1px solid var(--ui-stroke-tertiary);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--ui-bg-elevated) 94%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+  transform: translateX(-50%);
+  opacity: 1;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.note-toolbar-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-0.25rem);
+}
+.note-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.5rem;
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+}
+.note-toolbar-button:hover { background: var(--ui-control-hover-background); color: var(--ui-text-primary); }
+.note-toolbar-button-active { background: color-mix(in srgb, var(--theme-primary) 12%, transparent); color: var(--theme-primary); }
+.note-toolbar-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.note-toolbar-picker:hover { background: var(--ui-control-hover-background); color: var(--ui-text-primary); }
+.note-toolbar-rule { width: 1px; height: 1rem; margin: 0 0.25rem; background: var(--ui-stroke-tertiary); }
+/* Checklist items: a real box you can tick (saved as "- [x]"). */
+.note-prosemirror li.note-task-item { display: flex; gap: 0.5rem; align-items: flex-start; list-style: none; }
+.note-task-box { margin-top: 0.45rem; accent-color: var(--theme-primary); cursor: pointer; }
+.note-task-content { flex: 1; min-width: 0; }
+li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text-tertiary); text-decoration: line-through; }
 /* An empty note needs to say so, or it reads as broken. */
 .note-prosemirror p.is-empty-first::before {
   content: "Start writing, or ask the chat to draft this note.";
