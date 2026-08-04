@@ -56,7 +56,7 @@ export function DocsNav({ openNotePath, onOpenNote, onGoHome, onNavigate, showBa
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, error, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
+  const { status, notes, folders, error, reload, createNote, saveNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
@@ -74,7 +74,7 @@ export function DocsNav({ openNotePath, onOpenNote, onGoHome, onNavigate, showBa
     onNavigate?.();
   };
 
-  const { importError, importFiles, importing } = useLibraryImport({ createNote, notes, onImported: open, uid });
+  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, saveNote, uid });
 
   const attachNotesToChat = (noteIds: string[]) => {
     const chosen = notes.filter((note) => noteIds.includes(note.id));

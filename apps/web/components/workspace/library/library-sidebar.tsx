@@ -49,7 +49,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   const importInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
+  const { status, notes, folders, error, selectedPath, select, reload, createNote, saveNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
@@ -95,7 +95,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   };
 
   // Import pipeline shared with the docs-nav — see use-library-import.ts.
-  const { importError, importFiles, importing } = useLibraryImport({ createNote, notes, onImported: openPath, uid });
+  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
 
   const importNotes = async (files: File[]) => {
     await importFiles(files);

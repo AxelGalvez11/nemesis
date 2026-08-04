@@ -72,7 +72,7 @@ export function LibraryDocsPage() {
     router.push(libraryBase);
   }, [libraryBase, router]);
 
-  const { importFiles, importing } = useLibraryImport({ createNote, notes, onImported: openPath, uid });
+  const { importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
 
   // Keep the store's selection in step with the URL — the Graph pre-warms it
   // the other way around, and live-refresh repair logic keys off it.
