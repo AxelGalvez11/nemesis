@@ -42,6 +42,8 @@ import { EditorState, Plugin } from "prosemirror-state";
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
 import { useEffect, useRef } from "react";
 
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
+import { citationSourceId } from "@/lib/workspace/note-citations";
 import { docToMarkdown, markdownToDoc } from "@/lib/workspace/note-doc";
 import { hasEdits } from "@/lib/workspace/note-markdown";
 import { noteSchema } from "@/lib/workspace/note-schema";
@@ -53,6 +55,16 @@ export interface NoteEditorWikiLinks {
   onOpen: (target: string) => void;
 }
 
+/** Clicks on the note's OUTWARD links — owner 2026-08-04: "a research report
+ *  should be able to have hyperlinks that route to the source page … clicking
+ *  on should reveal a preview". */
+export interface NoteEditorLinks {
+  /** A link or citation was clicked: an http(s) URL, or "?source=<id>". */
+  onOpen: (href: string) => void;
+  /** A picture was clicked — the article opens its lightbox. */
+  onOpenImage: (src: string, alt: string) => void;
+}
+
 interface NoteEditorProps {
   /** The note as stored. Only read when the note IDENTITY changes — see below. */
   markdown: string;
@@ -62,6 +74,7 @@ interface NoteEditorProps {
   noteId: string;
   className?: string;
   wikiLinks?: NoteEditorWikiLinks;
+  noteLinks?: NoteEditorLinks;
 }
 
 /**
@@ -215,6 +228,86 @@ class WikiLinkView {
   }
 }
 
+/** A single plain left click, not a modifier gesture or a drag-select. */
+function plainClick(event: MouseEvent): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.detail === 1;
+}
+
+/** A citation pill: the chat's favicon-dot look, atomic in the document.
+ *  Web citations show the site's favicon (number fallback when there is
+ *  none); Library-source citations show a file glyph. Click opens the
+ *  source; double-click melts to raw [n](target) text like a wiki link. */
+class CitationView {
+  dom: HTMLElement;
+
+  constructor(node: PmNode, noteLinks: NoteEditorLinks | undefined) {
+    const href = node.attrs.href as string;
+    const n = node.attrs.n as number;
+    const sourceId = citationSourceId(href);
+    const host = sourceId ? null : hostnameOf(href);
+
+    this.dom = document.createElement("span");
+    this.dom.className = "note-citation";
+    this.dom.title = sourceId
+      ? "Open this source file — double-click to edit the citation"
+      : `${sourceLabel(href) ?? host ?? href} — double-click to edit the citation`;
+
+    if (sourceId) {
+      const glyph = document.createElement("span");
+      glyph.className = "codicon codicon-file note-citation-glyph";
+      glyph.setAttribute("aria-hidden", "true");
+      this.dom.appendChild(glyph);
+    } else if (host) {
+      const icon = document.createElement("img");
+      icon.className = "note-citation-favicon";
+      icon.alt = sourceLabel(href) ?? host;
+      icon.src = faviconUrl(host);
+      // A dead favicon service must degrade to the number, not a broken image.
+      icon.addEventListener("error", () => {
+        icon.replaceWith(this.numberSpan(n));
+      });
+      this.dom.appendChild(icon);
+    } else {
+      this.dom.appendChild(this.numberSpan(n));
+    }
+
+    this.dom.addEventListener("mousedown", (event) => {
+      if (!plainClick(event)) return;
+      event.preventDefault();
+      noteLinks?.onOpen(href);
+    });
+  }
+
+  private numberSpan(n: number): HTMLElement {
+    const span = document.createElement("span");
+    span.className = "note-citation-n";
+    span.textContent = String(n);
+    return span;
+  }
+}
+
+/** A picture in the note. Click opens the article's lightbox preview; the
+ *  node stays atomic, so Backspace removes the whole image cleanly. */
+class ImageView {
+  dom: HTMLElement;
+
+  constructor(node: PmNode, noteLinks: NoteEditorLinks | undefined) {
+    const src = node.attrs.src as string;
+    const alt = (node.attrs.alt as string) || "";
+    const image = document.createElement("img");
+    image.className = "note-image";
+    image.src = src;
+    image.alt = alt;
+    image.title = (node.attrs.title as string | null) ?? "Click to view full size";
+    image.addEventListener("mousedown", (event) => {
+      if (!plainClick(event)) return;
+      event.preventDefault();
+      noteLinks?.onOpenImage(src, alt);
+    });
+    this.dom = image;
+  }
+}
+
 /** A truly empty note shows the "Start writing…" hint (globals.css owns the
  *  words) instead of a bare cursor that reads as broken. */
 const emptyHintPlugin = new Plugin({
@@ -233,6 +326,7 @@ const emptyHintPlugin = new Plugin({
  *  (Block maths edits through its own in-place LaTeX box — see MathBlockView.) */
 function meltedText(node: PmNode): string | null {
   if (node.type === noteSchema.nodes.math_inline) return `$${node.attrs.latex as string}$`;
+  if (node.type === noteSchema.nodes.citation) return `[${node.attrs.n as number}](${node.attrs.href as string})`;
   if (node.type === noteSchema.nodes.wiki_link) {
     const target = node.attrs.target as string;
     const label = node.attrs.label as string | null;
@@ -241,13 +335,13 @@ function meltedText(node: PmNode): string | null {
   return null;
 }
 
-export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks }: NoteEditorProps) {
+export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, noteLinks }: NoteEditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   // Read inside the ProseMirror callbacks, which are created once per note and
   // would otherwise capture the first render's props forever.
-  const latest = useRef({ markdown, onChange, wikiLinks });
-  latest.current = { markdown, onChange, wikiLinks };
+  const latest = useRef({ markdown, noteLinks, onChange, wikiLinks });
+  latest.current = { markdown, noteLinks, onChange, wikiLinks };
 
   useEffect(() => {
     const mount = host.current;
@@ -288,10 +382,23 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks }:
         const produced = docToMarkdown(next.doc);
         if (hasEdits(original, produced)) latest.current.onChange(produced);
       },
-      // Double-clicking an inline equation or a wiki link melts it back to
-      // its raw text so a one-character typo is a direct edit — not a request
-      // to the AI. The input rules (or the next reopen) re-form it. Block
-      // maths edits itself in place instead (MathBlockView).
+      // A plain click on ordinary linked text opens the link, the way the
+      // wiki-link atoms already behave — the note's links are for FOLLOWING
+      // (owner 2026-08-04); the caret still lands anywhere else in the prose.
+      handleClick(editorView, pos, event) {
+        if (!plainClick(event)) return false;
+        const open = latest.current.noteLinks?.onOpen;
+        if (!open) return false;
+        const clicked = editorView.state.doc.nodeAt(pos);
+        const link = clicked?.isText ? clicked.marks.find((mark) => mark.type === noteSchema.marks.link) : undefined;
+        if (!link) return false;
+        open(link.attrs.href as string);
+        return true;
+      },
+      // Double-clicking an inline equation, wiki link or citation melts it
+      // back to its raw text so a one-character typo is a direct edit — not a
+      // request to the AI. The input rules (or the next reopen) re-form it.
+      // Block maths edits itself in place instead (MathBlockView).
       handleDoubleClickOn(editorView, _pos, node, nodePos) {
         const raw = meltedText(node);
         if (raw === null) return false;
@@ -299,6 +406,8 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks }:
         return true;
       },
       nodeViews: {
+        citation: (node) => new CitationView(node, latest.current.noteLinks),
+        image: (node) => new ImageView(node, latest.current.noteLinks),
         math_block: (node, editorView, getPos) => new MathBlockView(node, editorView, getPos),
         math_inline: (node) => new MathInlineView(node),
         wiki_link: (node) => new WikiLinkView(node, latest.current.wikiLinks),

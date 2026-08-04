@@ -129,3 +129,48 @@ test("wiki links in a bullet list survive the round trip", () => {
   const linked = "- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]\n";
   assert.equal(roundTrip(linked), linked);
 });
+
+// ── Citations and images (owner 2026-08-04) ──────────────────────────────────
+// A citation is a link whose whole text is a number — an atomic pill in the
+// editor. An image is an atomic inline node. Both must survive the round trip
+// byte for byte, because before the image node existed the converter SILENTLY
+// ATE every picture in an edited note.
+
+test("a [1](url) citation becomes an atom and serialises back unchanged", () => {
+  const cited = "T-cells mature in the thymus [1](https://pubmed.ncbi.nlm.nih.gov/123).\n";
+  const doc = markdownToDoc(cited);
+  const atom = doc.firstChild!.child(1);
+  assert.equal(atom.type.name, "citation");
+  assert.equal(atom.attrs.href, "https://pubmed.ncbi.nlm.nih.gov/123");
+  assert.equal(atom.attrs.n, 1);
+  assert.equal(roundTrip(cited), cited);
+});
+
+test("a Library-source citation keeps its ?source= target", () => {
+  const cited = "Slide 12 covers this [2](?source=abc-123).\n";
+  assert.equal(roundTrip(cited), cited);
+  const atom = markdownToDoc(cited).firstChild!.child(1);
+  assert.equal(atom.attrs.href, "?source=abc-123");
+});
+
+test("a link whose text is prose stays an ordinary link, not a citation", () => {
+  const doc = markdownToDoc("See [the study](https://example.edu/x).\n");
+  const text = doc.firstChild!.child(1);
+  assert.ok(text.isText, "prose links must stay editable text");
+  assert.equal(text.marks.some((mark) => mark.type.name === "link"), true);
+});
+
+test("an image survives the round trip instead of being eaten", () => {
+  const withImage = "The pathway:\n\n![complement cascade](https://example.edu/cascade.png)\n";
+  const doc = markdownToDoc(withImage);
+  const paragraph = doc.child(1);
+  assert.equal(paragraph.firstChild?.type.name, "image");
+  assert.equal(paragraph.firstChild?.attrs.src, "https://example.edu/cascade.png");
+  assert.equal(paragraph.firstChild?.attrs.alt, "complement cascade");
+  assert.equal(roundTrip(withImage), normalizeNoteMarkdown(withImage));
+});
+
+test("an image with a title keeps it", () => {
+  const titled = '![diagram](https://example.edu/d.png "Figure 3")\n';
+  assert.equal(roundTrip(titled), normalizeNoteMarkdown(titled));
+});

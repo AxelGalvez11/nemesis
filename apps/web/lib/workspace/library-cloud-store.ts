@@ -45,8 +45,10 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     title: "The commerce clause",
     updatedAt: "",
     createdAt: "",
+    // Carries inline [n](url) citations on purpose: the preview demos the
+    // citation pills and the derived Sources footer (owner 2026-08-04).
     content:
-      "# The commerce clause\n\n**Rule:** Congress may regulate the channels of interstate commerce, its instrumentalities, and activities that substantially affect it.\n\n## Key points\n- The substantial-effects prong is the broadest of the three\n- Aggregation: small local acts count once you add them up\n\n## Related\n- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]",
+      "# The commerce clause\n\n**Rule:** Congress may regulate the channels of interstate commerce, its instrumentalities, and activities that substantially affect it [1](https://constitution.congress.gov/browse/essay/artI-S8-C3-1/ALDE_00013403/).\n\n## Key points\n- The substantial-effects prong is the broadest of the three [2](https://www.law.cornell.edu/wex/commerce_clause)\n- Aggregation: small local acts count once you add them up [1](https://constitution.congress.gov/browse/essay/artI-S8-C3-1/ALDE_00013403/)\n\n## Related\n- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]",
   },
   {
     id: "preview-beams",
@@ -54,8 +56,10 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     title: "Bending stress",
     updatedAt: "",
     createdAt: "",
+    // The embedded data-URI diagram demos the image node + click-to-preview
+    // lightbox (owner 2026-08-04) without any network dependency.
     content:
-      "# Bending stress\n\nStress varies linearly from the neutral axis:\n\n$$\n\\sigma = \\frac{M y}{I}\n$$\n\nwhere $M$ is the bending moment and $I$ the second moment of area.\n\n| Section | Second moment $I$ | Typical use |\n| --- | --- | --- |\n| Rectangle | $b h^3 / 12$ | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
+      "# Bending stress\n\nStress varies linearly from the neutral axis:\n\n$$\n\\sigma = \\frac{M y}{I}\n$$\n\nwhere $M$ is the bending moment and $I$ the second moment of area.\n\n![A point load at midspan of a simply supported beam](data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20220%2080'%3E%3Crect%20x='20'%20y='40'%20width='180'%20height='8'%20rx='2'%20fill='%236b7280'/%3E%3Cpath%20d='M30%2048l-10%2016h20z'%20fill='%239ca3af'/%3E%3Cpath%20d='M190%2048l-10%2016h20z'%20fill='%239ca3af'/%3E%3Cpath%20d='M110%2012v22'%20stroke='%23ef4444'%20stroke-width='3'/%3E%3Cpath%20d='M110%2040l-6-10h12z'%20fill='%23ef4444'/%3E%3C/svg%3E)\n\n| Section | Second moment $I$ | Typical use |\n| --- | --- | --- |\n| Rectangle | $b h^3 / 12$ | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
   },
   {
     id: "preview-baroque",

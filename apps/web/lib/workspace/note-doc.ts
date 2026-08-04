@@ -19,6 +19,7 @@ import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
 import { splitWikiLinks } from "./library-links";
+import { CITATION_TEXT_RE } from "./note-citations";
 import { NOTE_GFM_OPTIONS, NOTE_STRINGIFY_OPTIONS, restoreWikiBrackets } from "./note-markdown";
 import { noteSchema } from "./note-schema";
 
@@ -34,6 +35,7 @@ interface MdNode {
   lang?: string | null;
   url?: string;
   title?: string | null;
+  alt?: string | null;
   align?: (string | null)[];
   [key: string]: unknown;
 }
@@ -82,7 +84,18 @@ function inlineFrom(nodes: readonly MdNode[], marks: readonly string[] = []): Pm
       case "inlineMath":
         out.push(noteSchema.nodes.math_inline!.create({ latex: node.value ?? "" }));
         break;
+      case "image":
+        out.push(noteSchema.nodes.image!.create({ alt: node.alt ?? "", src: node.url ?? "", title: node.title ?? null }));
+        break;
       case "link": {
+        // A link whose whole text is a small number is a CITATION — an atomic
+        // favicon pill, not an underlined run of prose (note-citations.ts).
+        const only = node.children?.length === 1 ? node.children[0] : null;
+        const citeText = only?.type === "text" ? (only.value ?? "").trim() : "";
+        if (CITATION_TEXT_RE.test(citeText)) {
+          out.push(noteSchema.nodes.citation!.create({ href: node.url ?? "", n: Number.parseInt(citeText, 10) }));
+          break;
+        }
         const link = noteSchema.marks.link!.create({ href: node.url ?? "", title: node.title ?? null });
         for (const child of inlineFrom(node.children ?? [], marks)) {
           out.push(child.mark([...child.marks, link]));
@@ -179,6 +192,12 @@ function inlineToMd(node: PmNode): MdNode[] {
   if (node.type === noteSchema.nodes.hard_break) return [{ type: "break" }];
   if (node.type === noteSchema.nodes.math_inline) {
     return [{ type: "inlineMath", value: node.attrs.latex as string }];
+  }
+  if (node.type === noteSchema.nodes.citation) {
+    return [{ children: [{ type: "text", value: String(node.attrs.n as number) }], type: "link", url: node.attrs.href as string }];
+  }
+  if (node.type === noteSchema.nodes.image) {
+    return [{ alt: (node.attrs.alt as string) || "", title: node.attrs.title as string | null, type: "image", url: node.attrs.src as string }];
   }
   if (node.type === noteSchema.nodes.wiki_link) {
     const target = node.attrs.target as string;

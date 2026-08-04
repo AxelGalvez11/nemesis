@@ -60,6 +60,13 @@ interface LibraryTreeViewProps {
   onRenameFolder?: (path: string, title: string) => void;
   onCreateFolder?: (path: string) => void;
   onAttachNotes?: (noteIds: string[]) => void;
+  /** Folders are pages (owner 2026-08-04, Notion model): when set, clicking a
+   *  folder row OPENS the folder's own note (and expands it); only the
+   *  chevron toggles. Absent — the classic surface — a row click just
+   *  expands/collapses, exactly as before. */
+  onOpenFolderNote?: (path: string) => void;
+  /** Folder whose page is open in the center — its row shows as selected. */
+  selectedFolderPath?: string | null;
   /** Expand ancestors of (and scroll to) this folder when the value changes. */
   revealFolder?: LibraryTreeReveal | null;
   /** Extra rows rendered inside an expanded folder AFTER its notes — the docs
@@ -361,13 +368,14 @@ function TreeContents(props: TreeContentsProps) {
 }
 
 function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolder }) {
-  const { folder, depth = 0, dragItem, dropTarget, revealFolder } = props;
+  const { folder, depth = 0, dragItem, dropTarget, revealFolder, onOpenFolderNote } = props;
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const invalidTarget = dragItem?.kind === "folder" && (dragItem.path === folder.path || folder.path.startsWith(`${dragItem.path}/`));
   const highlighted = !invalidTarget && dropTarget === folder.path;
   const key = `folder:${folder.path}`;
   const multiSelected = props.selectedKeys.has(key);
+  const pageOpen = props.selectedFolderPath != null && props.selectedFolderPath === folder.path;
 
   // Reveal-from-outside (breadcrumbs): open when we're on the revealed path,
   // scroll when we ARE its end. Also fires when this node mounts while a
@@ -384,9 +392,10 @@ function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolde
     <div>
       <div ref={rowRef} style={indentStyle(depth)}>
         <SidebarRowShell className={cn(
+          !pageOpen && "row-hover",
           highlighted && "outline outline-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)]",
           dragItem?.kind === "folder" && dragItem.path === folder.path && "opacity-50",
-          multiSelected && "bg-(--ui-row-active-background)",
+          (multiSelected || pageOpen) && "bg-(--ui-row-active-background)",
         )}>
           <SidebarRowBody
             aria-expanded={open}
@@ -397,12 +406,31 @@ function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolde
             onClick={(event) => {
               if (props.onPointerClick()) return;
               if (props.onRowModifiers(event, key)) return;
-              setOpen((value) => !value);
+              // Folders are pages: the row OPENS the folder's note and makes
+              // sure its children are visible; only the chevron collapses.
+              // Without the handler (classic surface) a click still toggles.
+              if (onOpenFolderNote) {
+                setOpen(true);
+                onOpenFolderNote(folder.path);
+              } else {
+                setOpen((value) => !value);
+              }
             }}
             onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); props.onContext({ item: { kind: "folder", path: folder.path, title: folder.name }, x: event.clientX, y: event.clientY }); }}
             onPointerDown={(event) => props.onPointerDragStart(event, { kind: "folder", path: folder.path, title: folder.name })}
           >
-            <SidebarRowLead><Codicon className="text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" /></SidebarRowLead>
+            <SidebarRowLead
+              onClick={onOpenFolderNote
+                ? (event) => {
+                    event.stopPropagation();
+                    setOpen((value) => !value);
+                  }
+                : undefined}
+              role={onOpenFolderNote ? "button" : undefined}
+              title={onOpenFolderNote ? (open ? "Collapse" : "Expand") : undefined}
+            >
+              <Codicon className="text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" />
+            </SidebarRowLead>
             <SidebarRowLabel className="font-medium text-foreground">{folder.name}</SidebarRowLabel>
           </SidebarRowBody>
         </SidebarRowShell>

@@ -38,14 +38,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { backlinksFor, findLibraryNote } from "@/lib/workspace/library-links";
 import { loadNoteSources, sourceKindIcon, sourceKindLabel, type NoteSource } from "@/lib/workspace/library-provenance";
+import { librarySourceKindIcon, type LibrarySource } from "@/lib/workspace/library-sources";
+import { citationSourceId, extractNoteCitations, isSafeExternalHref } from "@/lib/workspace/note-citations";
 import { isEditableNote } from "@/lib/workspace/note-markdown";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
-import { NoteEditor } from "../library/note-editor";
+import { NoteEditor, type NoteEditorLinks } from "../library/note-editor";
 import { DocsCrumbs } from "./docs-crumbs";
 
 interface NoteDraft {
@@ -72,16 +75,17 @@ interface NoteArticleProps {
   onContentChange: (content: string) => void;
   onOpenPath: (path: string) => void;
   onOpenWikiTarget: (target: string, fromPath: string) => void;
-  /** Breadcrumb folder click — expands that folder in the left tree. */
-  onRevealFolder: (path: string) => void;
-  /** The "Library" crumb is the sidebar's control (owner 2026-08-04):
-   *  hovering peeks the tree over the page, clicking locks or unlocks it. */
-  onLibraryClick: () => void;
-  onLibraryHover: (hovering: boolean) => void;
+  /** Breadcrumb folder click — opens that folder's own page (Notion model,
+   *  owner 2026-08-04: "a folder is like a note"). */
+  onOpenFolder: (path: string) => void;
+  /** The "Library" crumb goes to the Library home note. */
+  onGoHome: () => void;
   /** Open a source FILE's page. Pills whose source id isn't in
    *  `openableSourceIds` stay inert text (nothing to open yet). */
   onOpenSource: (id: string) => void;
   openableSourceIds: ReadonlySet<string>;
+  /** All stored source files — names the rows in the Sources footer. */
+  librarySources: readonly LibrarySource[];
   onDelete: (noteId: string) => Promise<void>;
   /** A study verb was clicked — the page opens chat with this note attached
    *  and the request already sent. */
@@ -91,13 +95,14 @@ interface NoteArticleProps {
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onLibraryClick, onLibraryHover, onOpenSource, openableSourceIds, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onGoHome, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sources, setSources] = useState<NoteSource[]>([]);
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const draftRef = useRef<NoteDraft | null>(null);
 
   // Draft lifecycle — carried over from library-main.tsx: save a dirty draft
@@ -163,6 +168,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
   }, [note.id]);
 
   const backlinks = useMemo(() => backlinksFor(notes, note), [note, notes]);
+  const citations = useMemo(() => extractNoteCitations(content), [content]);
   const editable = isEditableNote(content);
   const textArrived = draftRef.current?.id === note.id;
   const folderPath = note.path.split("/").filter(Boolean).slice(0, -1).join("/");
@@ -175,6 +181,23 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
       onOpen: (target: string) => onOpenWikiTarget(target, note.path),
     }),
     [note.path, notes, onOpenWikiTarget],
+  );
+  // Outward links: a web citation or hyperlink opens in a new tab (only ever
+  // http(s) — a note must not be able to run javascript: on click), a
+  // ?source= citation opens that file's page, a picture opens the lightbox.
+  const noteLinks = useMemo<NoteEditorLinks>(
+    () => ({
+      onOpen: (href) => {
+        const sourceId = citationSourceId(href);
+        if (sourceId) {
+          onOpenSource(sourceId);
+          return;
+        }
+        if (isSafeExternalHref(href)) window.open(href, "_blank", "noopener,noreferrer");
+      },
+      onOpenImage: (src, alt) => setLightbox({ alt, src }),
+    }),
+    [onOpenSource],
   );
 
   function updateDraft(next: { title?: string; content?: string }) {
@@ -196,7 +219,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
       <header className="mb-1">
         <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <DocsCrumbs className="flex-1" onLibraryClick={onLibraryClick} onLibraryHover={onLibraryHover} onRevealFolder={onRevealFolder} path={folderPath} />
+          <DocsCrumbs className="flex-1" onGoHome={onGoHome} onOpenFolder={onOpenFolder} path={folderPath} />
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>
@@ -269,6 +292,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
             key={note.id}
             markdown={content}
             noteId={note.id}
+            noteLinks={noteLinks}
             onChange={(next) => updateDraft({ content: next })}
             wikiLinks={wikiLinks}
           />
@@ -279,7 +303,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
             </p>
             <AssistantMarkdown
               className="[&_h1]:!mb-3 [&_h1]:!mt-8 [&_h1]:!text-[2.25rem] [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-7 [&_h2]:!text-[1.5rem] [&_h2]:!font-semibold [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-[1.25rem] [&_h4]:!mt-4 [&_h4]:!text-[1rem] [&_p]:!leading-relaxed"
-              externalLinksInNewTab={false}
+              externalLinksInNewTab
               isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))}
               obsidianHighlights
               obsidianTags
@@ -291,6 +315,27 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           </>
         ) : null}
       </div>
+
+      {/* Derived, never hand-written: the Sources section is built FROM the
+          note's inline citations (owner 2026-08-04: "inline citation pills
+          and a bottom sources section for any that require sources"), so a
+          note with no citations simply has no section, and the list can
+          never disagree with the prose. */}
+      {citations.length > 0 && (
+        <footer className="mt-10 border-t border-(--ui-stroke-tertiary) pt-4" data-testid="note-citation-sources">
+          <h2 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Sources</h2>
+          <ol className="grid gap-1">
+            {citations.map((citation) => (
+              <CitationSourceRow
+                citation={citation}
+                key={citation.href}
+                onOpenSource={onOpenSource}
+                source={citationSourceId(citation.href) ? (librarySources.find((item) => item.id === citationSourceId(citation.href)) ?? null) : null}
+              />
+            ))}
+          </ol>
+        </footer>
+      )}
 
       {backlinks.length > 0 && (
         <footer className="mt-10 border-t border-(--ui-stroke-tertiary) pt-4" data-testid="note-backlinks">
@@ -321,6 +366,63 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           <DialogFooter><Button onClick={() => setConfirmDelete(false)} variant="ghost">Cancel</Button><Button onClick={() => void removeNote()} variant="destructive">Delete note</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* A picture in the note, full size (owner 2026-08-04: "if there is an
+          image … clicking on should reveal a preview"). */}
+      <Dialog onOpenChange={(open) => !open && setLightbox(null)} open={lightbox !== null}>
+        <DialogContent className="max-w-4xl" data-testid="note-image-lightbox">
+          <DialogHeader className="sr-only"><DialogTitle>{lightbox?.alt || "Image preview"}</DialogTitle></DialogHeader>
+          {lightbox && (
+            // eslint-disable-next-line @next/next/no-img-element -- arbitrary note-embedded URL; next/image can't optimize it
+            <img alt={lightbox.alt || "Image from this note"} className="max-h-[78vh] w-full rounded-lg object-contain" src={lightbox.src} />
+          )}
+          {lightbox?.alt && <p className="text-center text-xs text-(--ui-text-tertiary)">{lightbox.alt}</p>}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+/** One row of the Sources footer: a Library file row opens the file's page,
+ *  a web row opens the site in a new tab. Both lead with the citation's
+ *  number so the pill in the prose and the row down here read as one. */
+function CitationSourceRow({ citation, source, onOpenSource }: {
+  citation: { n: number; href: string };
+  source: LibrarySource | null;
+  onOpenSource: (id: string) => void;
+}) {
+  const sourceId = citationSourceId(citation.href);
+  const rowClass = "group flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground";
+  const numberChip = (
+    <span className="flex size-[15px] shrink-0 items-center justify-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) text-[9px] font-medium leading-none text-(--ui-text-tertiary)">
+      {citation.n}
+    </span>
+  );
+
+  if (sourceId) {
+    return (
+      <li>
+        <button className={rowClass} onClick={() => onOpenSource(sourceId)} type="button">
+          {numberChip}
+          <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={source ? librarySourceKindIcon(source.kind) : "file"} size="0.75rem" />
+          <span className="truncate">{source ? source.fileName : "A file from your Library"}</span>
+        </button>
+      </li>
+    );
+  }
+
+  const host = hostnameOf(citation.href);
+  return (
+    <li>
+      <a className={rowClass} href={citation.href} rel="noopener noreferrer" target="_blank">
+        {numberChip}
+        {host && (
+          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+          <img alt="" className="size-[12px] shrink-0 rounded-full" src={faviconUrl(host)} />
+        )}
+        <span className="truncate font-medium">{sourceLabel(citation.href) ?? host ?? citation.href}</span>
+        {host && <span className="truncate text-(--ui-text-quaternary)">{host}</span>}
+      </a>
+    </li>
   );
 }
