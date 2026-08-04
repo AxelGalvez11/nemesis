@@ -420,6 +420,32 @@ a { color: inherit; text-decoration: none; }
 }
 .note-toolbar-picker:hover { background: var(--ui-control-hover-background); color: var(--ui-text-primary); }
 .note-toolbar-rule { width: 1px; height: 1rem; margin: 0 0.25rem; background: var(--ui-stroke-tertiary); }
+/* The typed-input panel for link/image/equation — a real surface where
+   window.prompt used to be (owner 2026-08-04: "all the buttons in the
+   formatting toolbar should have UI especially the math equation button"). */
+.note-toolbar-input {
+  position: absolute;
+  top: 2.5rem;
+  left: 50%;
+  z-index: 36;
+  width: 21rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.625rem;
+  border: 1px solid var(--ui-stroke-tertiary);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--ui-bg-elevated) 97%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
+  transform: translateX(-50%);
+}
+.note-toolbar-math-preview {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--ui-bg-secondary);
+  overflow-x: auto;
+  text-align: center;
+}
 /* Checklist items: a real box you can tick (saved as "- [x]"). */
 .note-prosemirror li.note-task-item { display: flex; gap: 0.5rem; align-items: flex-start; list-style: none; }
 .note-task-box { margin-top: 0.45rem; accent-color: var(--theme-primary); cursor: pointer; }
