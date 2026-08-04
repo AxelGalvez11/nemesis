@@ -21,6 +21,18 @@ interface MonthGridProps {
 }
 
 export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay }: MonthGridProps) {
+  // monthGrid() always hands over 42 cells — six weeks — but many months fit
+  // in five (or four). Rendering a whole trailing week of grey next-month days
+  // was a sixth of the height the view did not need, and height is exactly
+  // what "fully viewable with no scroll" (owner 2026-08-03) is short of. The
+  // model stays untouched; the view just drops trailing weeks that contain no
+  // day of the month. Leading weeks always contain day 1, so only the tail
+  // can be all-outside.
+  const weeks: MonthDay[][] = [];
+  for (let index = 0; index < days.length; index += 7) weeks.push(days.slice(index, index + 7));
+  while (weeks.length > 1 && weeks[weeks.length - 1]!.every((day) => !day.inMonth)) weeks.pop();
+  const visibleDays = weeks.flat();
+
   return (
     // Owner 2026-08-01, again 2026-08-02: month view could not scroll. Two
     // rules on THIS div caused it. `min-h-0` lets a flex child shrink below its
@@ -28,34 +40,37 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay }: MonthGr
     // — so the parent's `overflow-y-auto` was never told there was more, and
     // there was nothing to scroll.
     //
-    // MEASURED on the live app, August 2026, 1440x727:
-    //   before  this div 624 tall holding 766 of content  → 142px CLIPPED,
-    //           scroller 651 = content 651, scrolled 0px. The last week of the
-    //           month simply did not exist.
-    //   after   this div 766 = its content, scroller 651 of 793 → scrolls 142.
+    // 🔴 THE CLIP WAS HERE, NOT ON THE SCROLLER. The scroller two levels up is
+    // correct and always was. This div must never carry `min-h-0` — with
+    // min-height at its default `auto` it can never shrink below its rows, so
+    // an oversized month grows the page and the outer scroller takes over.
     //
-    // 🔴 THE CLIP IS HERE, NOT ON THE SCROLLER. The scroller two levels up is
-    // correct and always was; it reported "nothing to scroll" because this div
-    // had already hidden the overflow. Do not go looking for the bug up there.
-    <div className="flex flex-1 flex-col border border-(--ui-stroke-tertiary) bg-background">
-      {/* Pinned, because the month now genuinely scrolls. Without this the day
-          names scroll away with the weeks and the bottom of a long month is
-          seven unlabelled columns — the same complaint that put the day and
-          week headings outside their own scroller. Needs its own background:
-          a transparent sticky row lets the week rows slide visibly under it. */}
-      <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 border-b border-(--ui-stroke-tertiary) bg-background text-sm font-medium text-(--ui-text-secondary)">
+    // Owner 2026-08-03: "it looks too boxy... the monthly view should be fully
+    // viewable in default mode (no scroll needed)". Two changes together:
+    // the frame is now the app's card (rounded, elevated, hairline border)
+    // instead of a bare rectangle, and the row floor came down from 6rem to
+    // 4.5rem — on a 1440x727 window that is at most 6x79px + header ≈ 515px in
+    // 651px of room, so a month fits with air to spare and rows stretch to
+    // share whatever height the window really has.
+    // bg-background, NOT --ui-bg-elevated (owner 2026-08-04: "nemesis dark
+    // mode is 100% black style, not gray") — elevated renders grey in dark.
+    <div className="flex flex-1 flex-col rounded-xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+      {/* Pinned for the rare window too short even for the relaxed grid.
+          Needs its own background and the frame's top radius, or it paints
+          square corners over the rounded card. */}
+      <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 rounded-t-[inherit] border-b border-(--ui-stroke-tertiary) bg-background text-sm font-medium text-(--ui-text-secondary)">
         {WEEKDAY_LABELS.map((label) => (
           <div className="px-3 py-2 text-right" key={label}>
             {label}
           </div>
         ))}
       </div>
-      {/* `grid-rows-6` is repeat(6, minmax(0,1fr)) — the 0 floor lets a row
-          shrink under its own cells, which is how six weeks got crushed into
-          one screen. A real 6rem floor per row means a month is genuinely as
-          tall as its content, and still stretches to fill a big window. */}
-      <div className="grid flex-1 grid-cols-7 auto-rows-[minmax(6rem,1fr)]">
-        {days.map((day) => (
+      {/* The 4.5rem floor keeps rows readable when a window really is tiny —
+          then, and only then, the outer scroller comes back. overflow-hidden
+          here is safe (no min-h-0: the grid can grow, never shrink below its
+          rows) and clips square cell-hover tints to the card's bottom radius. */}
+      <div className="grid flex-1 grid-cols-7 auto-rows-[minmax(4.5rem,1fr)] overflow-hidden rounded-b-[calc(0.75rem-1px)]">
+        {visibleDays.map((day) => (
           <DayCell day={day} events={eventsByDay.get(day.key) ?? []} key={day.key} onOpenEvent={onOpenEvent} onPick={onPickDay} />
         ))}
       </div>
@@ -82,7 +97,10 @@ function DayCell({ day, events, onOpenEvent, onPick }: DayCellProps) {
   return (
     <div
       className={cn(
-        "group relative flex min-h-24 flex-col gap-1 border-b border-r border-(--ui-stroke-tertiary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
+        // Hairlines one step softer than the frame (quaternary vs tertiary):
+        // 42 individually boxed cells is what read as "graph paper" (owner
+        // 2026-08-03, "too boxy") — the rhythm stays, the ink goes down.
+        "group relative flex flex-col gap-1 border-b border-r border-(--ui-stroke-quaternary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
         day.inMonth && isWeekend && "bg-(--ui-bg-quaternary)/10",
         !day.inMonth && "bg-(--ui-bg-quaternary)/20",
       )}
@@ -110,7 +128,7 @@ function DayCell({ day, events, onOpenEvent, onPick }: DayCellProps) {
           flex-1 and fills the cell, so without this it would swallow every
           click on the empty space under the last chip — which is most of the
           cell, and exactly where people click to make an event. */}
-      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col gap-0.5">
+      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
         {visible.map((event) => (
           <button
             className={cn(

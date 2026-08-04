@@ -27,7 +27,10 @@ export const VIEW_UNIT_LABEL: Record<CalendarViewMode, string> = {
 
 export const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const MAX_CHIPS_PER_DAY = 4;
+// 3, not 4: with the month grid sized to FIT the window (owner 2026-08-03,
+// "the monthly view should be fully viewable... no scroll"), a busy day gets
+// about 100px — three chips and the "+N more" link is what actually fits.
+export const MAX_CHIPS_PER_DAY = 3;
 export const AGENDA_WINDOW_DAYS = 30;
 
 export const CALENDAR_VIEW_STORAGE_KEY = "nemesis.calendar.view";

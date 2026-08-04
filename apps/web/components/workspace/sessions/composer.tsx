@@ -11,16 +11,19 @@
 // Only the dial the student had to think about was taken away. The phone lost
 // the same dial in #369, so the two surfaces agree again.
 //
-// RECORD MODE (owner 2026-07-22, second pass). Recording is no longer buried in
-// the "+" menu and no longer takes the composer away:
+// RECORD MODE (owner 2026-07-22; controls reshaped 2026-08-03: "the composer
+// in record mode should contain the 'start button' … the way to end recording
+// is to click on the 'x'"). Recording is not buried in the "+" menu and does
+// not take the composer away:
 //   - the primary button is the way IN when there is nothing to send (waveform
-//     icon), and the same button turns into an ✕ that is the way OUT;
-//   - the field's slot becomes a live meter — nothing to type while recording;
-//   - "+" becomes the record control (start, then stop) — it is what actually
-//     drives the recorder, via onRecordingChange → RecordWorkspace's `active`;
+//     icon), and the same button becomes the ✕ that ENDS the recording;
+//   - the "+" slot is the capture control: Start, then Pause/Continue. It
+//     drives the recorder via onRecordingChange → RecordWorkspace's `active`,
+//     and pauses through onRecordingPauseToggle into the same hook;
+//   - the field's slot is a quiet status line — the live waveform lives in the
+//     recording panel ONLY (owner 2026-08-03: "it should not show the waveform
+//     on the composer, only in the box");
 //   - dictation is hidden, because a live microphone is already captured.
-// The meter is real: levels come from the recorder's own AudioContext through
-// lib/workspace/mic-level.ts, so nothing here opens a second microphone stream.
 //
 // The primary button is --theme-primary, the accent the student picked in
 // Appearance settings (crimson by default, green/blue/orange/purple if chosen)
@@ -80,6 +83,14 @@ interface ComposerProps {
    *  the audio must be thrown away, false or absent means stop and write it up.
    *  Both arrive in one call so the recorder cannot act on half the decision. */
   onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
+  /** True while the student has paused capture. Lifted from the recorder so
+   *  Pause/Continue can live here while the hook lives in the recording panel. */
+  recordingPaused?: boolean;
+  /** True while a finished recording is still uploading/transcribing. Start is
+   *  disabled meanwhile — the recorder cannot begin a second capture until the
+   *  write-up lands. */
+  recordingBusy?: boolean;
+  onRecordingPauseToggle?: () => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
@@ -89,16 +100,17 @@ interface ComposerProps {
   belowCenter?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart, belowCenter }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, recordingPaused = false, recordingBusy = false, onRecordingPauseToggle, onSubmit, onStop, showRecordCompanion = true, belowStart, belowCenter }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
-  /** Standing rule: anything that destroys something asks first. Recorded audio
-   *  is not recoverable, so cancelling mid-capture is exactly that. */
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  /** ✕ pressed mid-capture. Ending is a fork — write it up, or bin it — and
+   *  the standing rule is that anything destructive asks first, so the fork is
+   *  a dialog rather than a guess. */
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [libraryOpen, setLibraryOpen] = useState(false);
   // Files dragged from Finder. A COUNTER, not a boolean: dragenter/dragleave
@@ -142,13 +154,12 @@ export function Composer({ busy, centered = false, placement = "floating", place
 
   const setMode = (mode: ComposerMode) => {
     if (recording && activeMode === "record" && mode === "chat") {
-      // 🔴 THIS USED TO SAVE THE RECORDING. Clearing `recording` is the same
-      // signal a deliberate stop sends, so pressing ✕ mid-capture uploaded,
-      // transcribed and filed the very recording the student was cancelling
-      // (owner-reported 2026-07-31). Cancelling now asks first and then throws
-      // the audio away — see confirmDiscard below. Stop lives in the recording
-      // panel, which is where the recording is.
-      setConfirmDiscard(true);
+      // 🔴 ✕ IS THE WAY TO END, BUT NEVER SILENTLY. It first saved outright —
+      // which uploaded and filed the very recording the student was cancelling
+      // (owner-reported 2026-07-31) — and then it only discarded. Now (owner
+      // 2026-08-03: "the way to end recording is to click on the 'x'") it asks
+      // which end this is: finish and write it up, or throw the audio away.
+      setConfirmEnd(true);
       return;
     }
     setComposerMode(mode);
@@ -162,10 +173,21 @@ export function Composer({ busy, centered = false, placement = "floating", place
     }
   };
 
+  /** Confirmed finish: end capture and let the recorder write it up. Record
+   *  mode deliberately STAYS open — the panel is showing upload/transcribe
+   *  progress — and closes on its own when the parent hears onFinished.
+   *  Flipping the mode here would unmount the panel mid-flight and lose the
+   *  recording silently. */
+  const finishRecording = () => {
+    setConfirmEnd(false);
+    setRecording(false);
+    onRecordingChange?.(false);
+  };
+
   /** Confirmed cancel: bin the audio AND leave record mode, in that order, so
    *  the recorder reads `discard` before it sees `active` go false. */
   const discardRecording = () => {
-    setConfirmDiscard(false);
+    setConfirmEnd(false);
     setRecording(false);
     onRecordingChange?.(false, { discard: true });
     setComposerMode("chat");
@@ -530,29 +552,35 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onOpenLibrary={() => setLibraryOpen(true)} />
                   </>
                 ) : (
-                  // The "+" slot becomes the record control: this is the button
-                  // that actually starts and stops capture (RecordWorkspace
-                  // listens to onRecordingChange), not a decoration.
+                  // The "+" slot is the capture control (owner 2026-08-03):
+                  // Start, and once live, Pause/Continue. Ending lives on the ✕
+                  // — one way in, one way out. Starting drives the recorder via
+                  // onRecordingChange → RecordWorkspace's `active`; pausing
+                  // goes through onRecordingPauseToggle into the same hook.
                   <Button
-                    aria-label={recording ? "Stop recording" : "Start recording"}
+                    aria-label={!recording ? "Start recording" : recordingPaused ? "Continue recording" : "Pause recording"}
                     aria-pressed={recording}
                     className={cn(
-                      "size-(--composer-control-size) shrink-0 rounded-full",
-                      recording
-                        ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        : "text-(--theme-primary) hover:bg-(--chrome-action-hover)",
+                      "h-(--composer-control-size) shrink-0 gap-1.5 rounded-full px-3.5 text-xs font-semibold",
+                      recording && !recordingPaused
+                        ? "bg-(--ui-control-active-background) text-foreground hover:bg-(--chrome-action-hover)"
+                        : "bg-(--theme-primary) text-white hover:opacity-90",
                     )}
                     data-testid="composer-record-toggle"
+                    disabled={recordingBusy}
                     onClick={() => {
-                      const next = !recording;
-                      setRecording(next);
-                      onRecordingChange?.(next);
+                      if (!recording) {
+                        setRecording(true);
+                        onRecordingChange?.(true);
+                        return;
+                      }
+                      onRecordingPauseToggle?.();
                     }}
-                    size="icon"
                     type="button"
-                    variant={recording ? "default" : "ghost"}
+                    variant="ghost"
                   >
-                    <Codicon name={recording ? "debug-stop" : "record"} size="1rem" />
+                    <Codicon name={!recording ? "record" : recordingPaused ? "play" : "debug-pause"} size="0.875rem" />
+                    {!recording ? "Start" : recordingPaused ? "Continue" : "Pause"}
                   </Button>
                 )}
               </div>
@@ -594,7 +622,16 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     role="textbox"
                   />
                 ) : (
-                  <AudioWaveform active={recording} />
+                  // The live waveform lives in the recording panel ONLY (owner
+                  // 2026-08-03: "it should not show the waveform on the
+                  // composer, only in the box") — this slot just says where
+                  // things stand.
+                  <p className="flex min-h-(--composer-input-min-height) items-center gap-2 px-1 text-[0.8125rem] text-(--ui-text-tertiary)" data-slot="composer-record-status">
+                    {recording && !recordingPaused && !recordingBusy && (
+                      <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-(--theme-primary)" />
+                    )}
+                    {recordingBusy ? "Writing it up…" : recording ? (recordingPaused ? "Paused" : "Recording…") : "Ready to record"}
+                  </p>
                 )}
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
@@ -610,14 +647,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
                   )}
                   {activeMode === "chat" && <Button aria-label={listening ? "Stop dictating" : "Dictate"} aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
                   {activeMode === "record" ? (
-                    // The waveform button turned into this ✕ — the way out.
-                    // Mid-capture, setMode's guard turns the press into a stop
-                    // first rather than binning an unsaved transcript; the mode
-                    // then closes on its own when RecordWorkspace has saved and
-                    // fired onFinished. Either way this button means "leave",
-                    // which is why it says so — "+" is the stop control.
+                    // The waveform button turned into this ✕ — the way OUT and
+                    // the way to END (owner 2026-08-03). Mid-capture, setMode's
+                    // guard turns the press into the end dialog — finish or
+                    // discard, chosen out loud, never silently either. With no
+                    // capture live it just leaves record mode.
                     <Button
-                      aria-label="Leave record mode"
+                      aria-label={recording ? "End recording" : "Leave record mode"}
                       className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-(--theme-primary) p-0 text-white hover:opacity-90"
                       data-testid="composer-record-exit"
                       onClick={() => setMode("chat")}
@@ -667,31 +703,36 @@ export function Composer({ busy, centered = false, placement = "floating", place
       {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
       {activeMode === "chat" && belowCenter && <div className="relative z-3 mt-3 flex justify-center">{belowCenter}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
-      {/* Sits directly above the composer, in the student's way, matching the
-          chat's own delete confirmation. Keep is the plain button; throwing the
-          audio away is the only red control. */}
-      {confirmDiscard && (
+      {/* ✕ pressed mid-capture. Sits directly above the composer, in the
+          student's way, matching the chat's own delete confirmation. Ending is
+          a fork — write it up, or bin it — and neither happens on its own (the
+          2026-07-31 lesson: an ✕ that saved silently filed the recording the
+          student was cancelling). Discard is the only red control. */}
+      {confirmEnd && (
         <div
-          className="absolute inset-x-0 bottom-full z-40 mx-auto mb-3 w-full max-w-md rounded-xl border border-red-500/40 bg-(--ui-bg-elevated) p-4 shadow-lg"
-          data-testid="confirm-discard-recording"
+          className="absolute inset-x-0 bottom-full z-40 mx-auto mb-3 w-full max-w-md rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 shadow-lg"
+          data-testid="composer-end-recording"
           role="alertdialog"
         >
-          <p className="text-sm font-semibold text-(--ui-text-primary)">Throw this recording away?</p>
+          <p className="text-sm font-semibold text-(--ui-text-primary)">End this recording?</p>
           <p className="mt-1 text-xs leading-relaxed text-(--ui-text-secondary)">
-            The audio has not been saved yet and cannot be recovered. To keep it, use Stop instead.
+            Finish turns it into notes. Discard throws the audio away — that cannot be undone.
           </p>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button onClick={() => setConfirmDiscard(false)} size="sm" type="button" variant="secondary">
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <Button onClick={() => setConfirmEnd(false)} size="sm" type="button" variant="secondary">
               Keep recording
             </Button>
             <Button
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="confirm-discard-recording-yes"
+              data-testid="composer-end-discard"
               onClick={discardRecording}
               size="sm"
               type="button"
             >
-              Throw it away
+              Discard
+            </Button>
+            <Button data-testid="composer-end-finish" onClick={finishRecording} size="sm" type="button">
+              Finish and write it up
             </Button>
           </div>
         </div>

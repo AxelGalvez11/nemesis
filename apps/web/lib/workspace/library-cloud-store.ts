@@ -19,6 +19,7 @@ import {
   upsertLiveFolder,
   type LiveAction,
 } from "./library-live";
+import { LIBRARY_HOME_SEED } from "./library-home";
 import { titleFromPath, type CloudLibraryNote } from "./library-tree";
 import { fetchAllRows } from "./supabase-paging";
 
@@ -27,6 +28,17 @@ import { fetchAllRows } from "./supabase-paging";
 // "what subject this app is for" from the demo content. They also appear in every
 // screenshot taken from the dev-preview harness, so they double as marketing material.
 const PREVIEW_NOTES: CloudLibraryNote[] = [
+  {
+    // First on purpose: bare /library lands on the Home NOTE (owner
+    // 2026-08-04, Obsidian help-site model — no dashboard page), and the
+    // preview should demo exactly that.
+    id: "preview-home",
+    path: "Home.md",
+    title: "Home",
+    updatedAt: "",
+    createdAt: "",
+    content: LIBRARY_HOME_SEED,
+  },
   {
     id: "preview-commerce",
     path: "Constitutional law/Commerce power/The commerce clause.md",

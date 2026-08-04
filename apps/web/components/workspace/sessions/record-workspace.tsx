@@ -8,7 +8,8 @@
 // you speak, so there is nothing to show; what replaces them is an honest
 // statement of what is happening and what will exist when you stop.
 
-import { Button } from "@/components/desktop-ui/button";
+import { useEffect } from "react";
+
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import { isCapturing, isFinishing, recordingStatusCopy } from "@/lib/workspace/recording-capture";
@@ -16,6 +17,13 @@ import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts
 
 import { RecordingWaveform } from "./recording-waveform";
 import { useRecordingSession } from "./use-recording";
+
+/** The recorder's own pause/resume, handed up so the composer can host the
+ *  Pause/Continue button while the hook stays down here with the microphone. */
+export interface RecordControls {
+  pause: () => void;
+  resume: () => void;
+}
 
 interface RecordWorkspaceProps {
   accessToken?: string | null;
@@ -26,13 +34,21 @@ interface RecordWorkspaceProps {
   uid?: string | null;
   onFinished?: (draft: RecordingArtifactDraft) => void;
   onDiscarded?: () => void;
-  /** Asks the owner of `active` to clear it — the panel does not own the flag,
-   *  so Stop has to say so rather than do it. */
-  onRequestStop?: () => void;
+  /** Told whenever the student's own pause flips, so the composer's control
+   *  can read Continue while the panel reads Paused — one source of truth. */
+  onPausedChange?: (paused: boolean) => void;
+  /** Told while a finished recording is still uploading/transcribing. The
+   *  parent MUST keep this panel mounted while true — unmounting mid-flight
+   *  loses the recording silently (finish() checks mountedRef). */
+  onBusyChange?: (busy: boolean) => void;
+  /** Hands pause/resume up on mount and null on unmount. */
+  registerControls?: (controls: RecordControls | null) => void;
 }
 
 
-/** Recording canvas for Sessions and active Notebook recordings. */
+/** Recording canvas for Sessions and active Notebook recordings. The controls
+ *  live on the COMPOSER now (owner 2026-08-03: Start → Pause/Continue there,
+ *  ✕ ends) — this panel is the display: waveform, clock, and state. */
 export function RecordWorkspace({
   accessToken = null,
   active = false,
@@ -41,11 +57,26 @@ export function RecordWorkspace({
   uid = null,
   onDiscarded,
   onFinished,
-  onRequestStop,
+  onPausedChange,
+  onBusyChange,
+  registerControls,
 }: RecordWorkspaceProps) {
   const recording = useRecordingSession({ accessToken, active, discard, onComplete: onFinished, onDiscarded, uid });
   const capturing = isCapturing(recording.status);
   const finishing = isFinishing(recording.status);
+
+  useEffect(() => {
+    onPausedChange?.(recording.paused);
+  }, [onPausedChange, recording.paused]);
+
+  useEffect(() => {
+    onBusyChange?.(finishing);
+  }, [finishing, onBusyChange]);
+
+  useEffect(() => {
+    registerControls?.({ pause: recording.pause, resume: recording.resume });
+    return () => registerControls?.(null);
+  }, [recording.pause, recording.resume, registerControls]);
 
   return (
     <section
@@ -125,37 +156,9 @@ export function RecordWorkspace({
             )}>
               {recording.paused ? "Paused" : recording.gateOpen ? "Picking up audio" : "Quiet — skipping"}
             </p>
-
-            {/* Pause and stop, together, where the recording is. Stop ends the
-                session and writes it up; pause keeps it open. Cancelling is the
-                ✕ on the composer and is deliberately NOT here — leaving and
-                binning should not be neighbours. */}
-            <div className="mt-6 flex items-center justify-center gap-2">
-              <Button
-                aria-label={recording.paused ? "Resume recording" : "Pause recording"}
-                aria-pressed={recording.paused}
-                className="min-w-28 gap-2 rounded-full"
-                data-testid="record-pause-toggle"
-                title={recording.paused ? "Start recording again" : "Stop recording for a moment, without ending it"}
-                onClick={() => (recording.paused ? recording.resume() : recording.pause())}
-                type="button"
-                variant="secondary"
-              >
-                <Codicon name={recording.paused ? "play" : "debug-pause"} size="0.875rem" />
-                {recording.paused ? "Resume" : "Pause"}
-              </Button>
-              <Button
-                aria-label="Stop recording"
-                className="min-w-28 gap-2 rounded-full"
-                data-testid="record-stop"
-                title="End the recording and write it up"
-                onClick={onRequestStop}
-                type="button"
-              >
-                <Codicon name="debug-stop" size="0.875rem" />
-                Stop
-              </Button>
-            </div>
+            {/* The Pause/Stop row that lived here moved to the COMPOSER (owner
+                2026-08-03: Start → Pause/Continue there, ✕ ends). The panel
+                keeps the waveform, the clock, and the state — display only. */}
           </div>
         ) : (
           <div className="max-w-sm text-center">
