@@ -61,7 +61,8 @@ interface NoteArticleProps {
   onContentChange: (content: string) => void;
   onOpenPath: (path: string) => void;
   onOpenWikiTarget: (target: string, fromPath: string) => void;
-  onOpenFolder: (path: string) => void;
+  /** Breadcrumb folder click — expands that folder in the left tree. */
+  onRevealFolder: (path: string) => void;
   onOpenHome: () => void;
   /** Open a source FILE's page. Pills whose source id isn't in
    *  `openableSourceIds` stay inert text (nothing to open yet). */
@@ -73,7 +74,7 @@ interface NoteArticleProps {
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onRevealFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -178,7 +179,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
       <header className="mb-1">
         <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <DocsCrumbs className="flex-1" onOpenFolder={onOpenFolder} onOpenHome={onOpenHome} path={folderPath} />
+          <DocsCrumbs className="flex-1" onOpenHome={onOpenHome} onRevealFolder={onRevealFolder} path={folderPath} />
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>

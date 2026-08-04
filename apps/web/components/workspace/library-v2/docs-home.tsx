@@ -18,8 +18,9 @@ interface DocsHomeProps {
   tree: LibraryTreeFolder;
   notes: readonly CloudLibraryNote[];
   onOpenPath: (path: string) => void;
-  /** Open a folder's own page (its notes + its Sources area). */
-  onOpenFolder: (path: string) => void;
+  /** Folder-name click — expands that folder in the left tree (folders are
+   *  never pages; Obsidian behavior). */
+  onRevealFolder: (path: string) => void;
   onCreateNote: () => void;
   onImport: () => void;
 }
@@ -47,7 +48,7 @@ function editedLabel(updatedAt: string): string | null {
   return new Date(stamp).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-export function DocsHome({ tree, notes, onOpenPath, onOpenFolder, onCreateNote, onImport }: DocsHomeProps) {
+export function DocsHome({ tree, notes, onOpenPath, onRevealFolder, onCreateNote, onImport }: DocsHomeProps) {
   const recent = [...notes]
     .filter((note) => note.content.trim().length > 0 || note.title.trim().length > 0)
     .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
@@ -117,7 +118,8 @@ export function DocsHome({ tree, notes, onOpenPath, onOpenFolder, onCreateNote, 
                       <div className="flex items-center justify-between gap-2">
                         <button
                           className="flex min-w-0 items-center gap-1.5 rounded-sm text-[0.8125rem] font-semibold text-foreground hover:underline underline-offset-2"
-                          onClick={() => onOpenFolder(folder.path)}
+                          onClick={() => onRevealFolder(folder.path)}
+                          title={`Show ${folder.name} in the sidebar`}
                           type="button"
                         >
                           <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="folder" size="0.8125rem" />

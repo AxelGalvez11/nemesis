@@ -1,9 +1,10 @@
 "use client";
 
-// The breadcrumb strip above a note, folder or source page. Every crumb is a
-// LINK, the way docs sites work: "Library" goes home, each folder name opens
-// that folder's own page (its notes + its Sources area). The current page
-// itself is never in the strip — its name is the h1 right below.
+// The breadcrumb strip above a note or source file. Folders are NEVER pages
+// (owner 2026-08-03: "the entirety should be notes only" — same as Obsidian's
+// help site, where a folder only expands in the sidebar). So clicking a
+// folder crumb REVEALS that folder in the left tree — it opens and scrolls to
+// it, without leaving what you're reading. "Library" opens the home page.
 
 import { cn } from "@/lib/utils";
 
@@ -11,11 +12,12 @@ interface DocsCrumbsProps {
   /** Slash-joined folder chain to render. "" renders just "Library". */
   path: string;
   onOpenHome: () => void;
-  onOpenFolder: (path: string) => void;
+  /** Expand + scroll the left tree to this folder (Obsidian folder behavior). */
+  onRevealFolder: (path: string) => void;
   className?: string;
 }
 
-export function DocsCrumbs({ path, onOpenHome, onOpenFolder, className }: DocsCrumbsProps) {
+export function DocsCrumbs({ path, onOpenHome, onRevealFolder, className }: DocsCrumbsProps) {
   const segments = path.split("/").map((segment) => segment.trim()).filter(Boolean);
   const crumbClass = "min-w-0 truncate rounded-sm hover:text-foreground hover:underline underline-offset-2";
 
@@ -32,7 +34,12 @@ export function DocsCrumbs({ path, onOpenHome, onOpenFolder, className }: DocsCr
         return (
           <span className="flex min-w-0 items-center gap-1" key={target}>
             <span className="text-(--ui-text-quaternary)">/</span>
-            <button className={crumbClass} onClick={() => onOpenFolder(target)} type="button">
+            <button
+              className={crumbClass}
+              onClick={() => onRevealFolder(target)}
+              title={`Show ${segment} in the sidebar`}
+              type="button"
+            >
               {segment}
             </button>
           </span>

@@ -4,7 +4,7 @@
 // Exercises the pure path-splitting logic the Library sidebar depends on: nesting, sibling
 // sort order, the blank-title → filename fallback, and skipping a malformed (empty-path) row.
 import assert from "node:assert/strict";
-import { buildLibraryTree, countLibraryNotes, filterLibraryTree, findLibraryFolder, titleFromPath } from "./library-tree";
+import { buildLibraryTree, countLibraryNotes, filterLibraryTree, titleFromPath } from "./library-tree";
 
 // titleFromPath strips a known note extension off the last path segment.
 assert.equal(titleFromPath("A/B/My File.md"), "My File");
@@ -151,19 +151,5 @@ const none = filterLibraryTree(wiki, "zzz-no-match");
 assert.equal(none.folders.length + none.notes.length, 0);
 assert.equal(wiki.folders.length, 3);
 assert.equal(wiki.folders.find((folder) => folder.name === "Contract Law")?.notes.length, 2);
-
-// findLibraryFolder walks a slash path to the folder node (the folder pages'
-// lookup). Root for blank, exact node for a known path, null for a made-up
-// one, and stray slashes/spaces are forgiven.
-assert.equal(findLibraryFolder(wiki, ""), wiki);
-assert.equal(findLibraryFolder(wiki, "Contract Law")?.notes.length, 2);
-assert.equal(findLibraryFolder(wiki, "Empty course")?.path, "Empty course");
-assert.equal(findLibraryFolder(wiki, "Contract Law/Nowhere"), null);
-assert.equal(findLibraryFolder(wiki, "Nope"), null);
-assert.equal(findLibraryFolder(wiki, "/Contract Law/")?.path, "Contract Law");
-
-const nested = buildLibraryTree([{ path: "A/B/C/deep.md", title: "Deep" }]);
-assert.equal(findLibraryFolder(nested, "A/B/C")?.notes[0]?.title, "Deep");
-assert.equal(findLibraryFolder(nested, "A/B")?.folders[0]?.name, "C");
 
 console.log("library-tree.test.ts OK");

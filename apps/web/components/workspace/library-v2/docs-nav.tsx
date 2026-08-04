@@ -7,9 +7,16 @@
 // itself is the classic LibraryTreeView, so drag-to-move, rename,
 // multi-select and "Attach to AI chat" all keep working exactly as before;
 // only the frame around it is new.
+//
+// Each folder also shows its SOURCES — the original uploaded files its notes
+// were built from — as an indented group under the folder's notes, visibly
+// separate (owner: "Notes = organized knowledge, Sources = original uploaded
+// material"). Clicking one opens the original in the center. Breadcrumbs in
+// the center reveal folders HERE (expand + scroll) instead of navigating —
+// folders are never pages.
 
 import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconHome, IconArrowsSort } from "@tabler/icons-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -35,7 +42,9 @@ import { seedComposerFiles } from "@/lib/workspace/composer-seed";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY } from "@/components/workspace/shell/sidebar-primitives";
 
-import { LibraryTreeView } from "../library/library-tree-view";
+import { formatSourceSize, librarySourceKindIcon, sourcesInFolder, type LibrarySource } from "@/lib/workspace/library-sources";
+
+import { LibraryTreeView, libraryTreeIndentStyle, type LibraryTreeReveal } from "../library/library-tree-view";
 import { LibraryTreeBlankState } from "../library/library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "../library/library-create-dialog";
 import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "../library/use-library-import";
@@ -43,9 +52,16 @@ import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "../library/use-library-
 interface DocsNavProps {
   /** Path of the open note, or null when no note is open. */
   openNotePath: string | null;
-  /** True only on the actual home page — folder and source pages are neither
-   *  Home nor a tree note, so both highlights stay off there. */
+  /** True only on the actual home page — a source file view is neither Home
+   *  nor a tree note, so both highlights stay off there. */
   homeActive?: boolean;
+  /** Source files, grouped per folder inside the tree. */
+  sources: readonly LibrarySource[];
+  /** Id of the source file open in the center, for its row highlight. */
+  openSourceId: string | null;
+  onOpenSource: (id: string) => void;
+  /** Breadcrumb reveal request from the center pane. */
+  revealFolder?: LibraryTreeReveal | null;
   onOpenNote: (path: string) => void;
   onGoHome: () => void;
   /** Close the drawer after navigating (narrow viewports only). */
@@ -53,7 +69,7 @@ interface DocsNavProps {
   showBack?: boolean;
 }
 
-export function DocsNav({ openNotePath, homeActive, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
+export function DocsNav({ openNotePath, homeActive, sources, openSourceId, onOpenSource, revealFolder, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
   const isHomeActive = homeActive ?? openNotePath === null;
   const router = useRouter();
   const pathname = usePathname();
@@ -72,6 +88,11 @@ export function DocsNav({ openNotePath, homeActive, onOpenNote, onGoHome, onNavi
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
   const loading = status === "idle" || status === "loading";
   const noMatches = query.trim().length > 0 && countLibraryNotes(visibleTree) === 0 && visibleTree.folders.length === 0;
+
+  // A reveal can't land inside a search-pruned tree — clear the filter first.
+  useEffect(() => {
+    if (revealFolder) setQuery("");
+  }, [revealFolder]);
 
   const open = (path: string) => {
     onOpenNote(path);
@@ -198,6 +219,34 @@ export function DocsNav({ openNotePath, homeActive, onOpenNote, onGoHome, onNavi
               onRenameFolder={(path, title) => void renameFolder(path, title)}
               onRenameNote={(id, title) => void renameNote(id, title)}
               onSelect={open}
+              renderFolderExtras={(treeFolder, depth) => {
+                const folderSources = sourcesInFolder(sources, treeFolder.path);
+                if (folderSources.length === 0) return null;
+                return (
+                  <div data-testid="tree-sources">
+                    <p className="mt-1 mb-0.5 select-none text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-quaternary)" style={libraryTreeIndentStyle(depth + 1)}>
+                      Sources
+                    </p>
+                    {folderSources.map((source) => (
+                      <div key={source.id} style={libraryTreeIndentStyle(depth + 1)}>
+                        <button
+                          className={cn(
+                            "row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs",
+                            source.id === openSourceId ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
+                          )}
+                          onClick={() => { onOpenSource(source.id); onNavigate?.(); }}
+                          title={`${source.fileName}${formatSourceSize(source.sizeBytes) ? ` · ${formatSourceSize(source.sizeBytes)}` : ""}`}
+                          type="button"
+                        >
+                          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={librarySourceKindIcon(source.kind)} size="0.6875rem" />
+                          <span className="truncate">{source.fileName}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }}
+              revealFolder={revealFolder}
               selectedPath={openNotePath}
             />
           </div>

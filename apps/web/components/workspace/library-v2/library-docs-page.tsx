@@ -7,14 +7,15 @@
 // THE URL IS THE TRUTH about what is open:
 //   /library                 → the home page
 //   /library?note=<path>     → that note, as a docs article
-//   /library?folder=<path>   → that folder's page: its notes and its Sources
 //   /library?source=<id>     → one source FILE (the original upload)
-// The classic screen rendered whatever the store had selected, which on a
-// cold deep link briefly meant "the first note that loaded"; here nothing
-// renders until the param resolves, a rename is recovered by note id, and a
-// genuinely missing target says so instead of silently showing something
-// else. Navigation uses router.push, so the browser's own Back walks the
-// trail — no custom tab strip or history buttons.
+// Folders are deliberately NOT pages (owner: "the entirety should be notes
+// only" — Obsidian's model): clicking a folder anywhere (breadcrumb, home
+// card) reveals it in the left tree instead of navigating. The classic screen
+// rendered whatever the store had selected, which on a cold deep link briefly
+// meant "the first note that loaded"; here nothing renders until the param
+// resolves, a rename is recovered by note id, and a genuinely missing target
+// says so instead of silently showing something else. Navigation uses
+// router.push, so the browser's own Back walks the trail.
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,14 +29,14 @@ import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsiv
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
 import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
-import { loadLibrarySources, sourcesInFolder, type LibrarySource } from "@/lib/workspace/library-sources";
-import { buildLibraryTree, findLibraryFolder } from "@/lib/workspace/library-tree";
+import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
+import { buildLibraryTree } from "@/lib/workspace/library-tree";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
 
 import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
-import { DocsFolder } from "./docs-folder";
+import type { LibraryTreeReveal } from "../library/library-tree-view";
 import { DocsHome } from "./docs-home";
 import { DocsNav } from "./docs-nav";
 import { DocsSource } from "./docs-source";
@@ -52,7 +53,6 @@ export function LibraryDocsPage() {
   const { open: navOpen, setOpen: setNavOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.library-sidebar");
   const searchParams = useSearchParams();
   const requestedPath = searchParams.get("note");
-  const requestedFolder = searchParams.get("folder");
   const requestedSource = searchParams.get("source");
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -62,6 +62,7 @@ export function LibraryDocsPage() {
   const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [sourceNoteIds, setSourceNoteIds] = useState<string[]>([]);
+  const [reveal, setReveal] = useState<LibraryTreeReveal | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastOpenIdRef = useRef<string | null>(null);
@@ -79,20 +80,23 @@ export function LibraryDocsPage() {
     [libraryBase, router, select],
   );
 
-  const openFolder = useCallback(
-    (path: string) => {
-      router.push(`${libraryBase}?folder=${encodeURIComponent(path)}`);
-      scrollRef.current?.scrollTo({ top: 0 });
-    },
-    [libraryBase, router],
-  );
-
   const openSource = useCallback(
     (id: string) => {
       router.push(`${libraryBase}?source=${encodeURIComponent(id)}`);
       scrollRef.current?.scrollTo({ top: 0 });
     },
     [libraryBase, router],
+  );
+
+  // Folders are never pages: a folder click (breadcrumb, home card) expands
+  // and scrolls the left tree to it — Obsidian's behavior. The nonce lets the
+  // same crumb be clicked twice in a row.
+  const revealFolder = useCallback(
+    (path: string) => {
+      setNavOpen(true);
+      setReveal((current) => ({ nonce: (current?.nonce ?? 0) + 1, path }));
+    },
+    [setNavOpen],
   );
 
   const goHome = useCallback(() => {
@@ -103,8 +107,8 @@ export function LibraryDocsPage() {
 
   // Source files: one load per account (fixtures when signed out / previewing).
   // The table doesn't exist until the file-storage migrations land, so a real
-  // account quietly gets [] — pills stay inert and folder pages show no
-  // Sources section, which is the truthful state.
+  // account quietly gets [] — pills stay inert and the tree shows no Sources
+  // rows, which is the truthful state.
   useEffect(() => {
     let cancelled = false;
     setSourcesLoaded(false);
@@ -140,11 +144,8 @@ export function LibraryDocsPage() {
   const outline = useMemo(() => (note ? extractNoteOutline(articleContent) : []), [articleContent, note]);
   const openableSourceIds = useMemo(() => new Set(librarySources.map((source) => source.id)), [librarySources]);
 
-  const openedFolder = requestedFolder !== null && !note ? findLibraryFolder(tree, requestedFolder) : null;
   const openedSource =
-    requestedSource !== null && !note && !requestedFolder
-      ? (librarySources.find((source) => source.id === requestedSource) ?? null)
-      : null;
+    requestedSource !== null && !note ? (librarySources.find((source) => source.id === requestedSource) ?? null) : null;
 
   // "Notes from this file" on a source page — provenance walked in reverse.
   useEffect(() => {
@@ -186,7 +187,7 @@ export function LibraryDocsPage() {
     router.replace(libraryBase);
   }
 
-  const deepLinkPending = Boolean(requestedPath || requestedFolder || requestedSource);
+  const deepLinkPending = Boolean(requestedPath || requestedSource);
   const missingRequested = Boolean(requestedPath) && !note && status === "loaded";
 
   return (
@@ -196,12 +197,16 @@ export function LibraryDocsPage() {
           {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
           <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
             <DocsNav
-              homeActive={!note && !requestedFolder && !requestedSource}
+              homeActive={!note && !requestedSource}
               onGoHome={goHome}
               onNavigate={() => narrowViewport && setNavOpen(false)}
               onOpenNote={openPath}
+              onOpenSource={openSource}
               openNotePath={note?.path ?? null}
+              openSourceId={openedSource?.id ?? null}
+              revealFolder={reveal}
               showBack={libraryFullScreen && !narrowViewport}
+              sources={librarySources}
             />
           </div>
         </>
@@ -224,38 +229,25 @@ export function LibraryDocsPage() {
               notes={notes}
               onContentChange={setArticleContent}
               onDelete={removeNote}
-              onOpenFolder={openFolder}
               onOpenHome={goHome}
               onOpenPath={openPath}
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
+              onRevealFolder={revealFolder}
               openableSourceIds={openableSourceIds}
               saveNote={saveNote}
             />
           ) : missingRequested ? (
             <MissingPanel description="It may have been renamed or deleted on another device." onGoHome={goHome} title="That note isn't here" />
-          ) : requestedFolder !== null ? (
-            openedFolder ? (
-              <DocsFolder
-                folder={openedFolder}
-                onOpenFolder={openFolder}
-                onOpenHome={goHome}
-                onOpenPath={openPath}
-                onOpenSource={openSource}
-                sources={sourcesInFolder(librarySources, openedFolder.path)}
-              />
-            ) : (
-              <MissingPanel description="It may have been renamed or emptied on another device." onGoHome={goHome} title="That folder isn't here" />
-            )
           ) : requestedSource !== null ? (
             !sourcesLoaded ? (
               <ArticleSkeleton />
             ) : openedSource ? (
               <DocsSource
                 notesFromSource={sourceNotes}
-                onOpenFolder={openFolder}
                 onOpenHome={goHome}
                 onOpenPath={openPath}
+                onRevealFolder={revealFolder}
                 source={openedSource}
               />
             ) : (
@@ -266,8 +258,8 @@ export function LibraryDocsPage() {
               notes={notes}
               onCreateNote={() => void createBlankNote()}
               onImport={() => importInputRef.current?.click()}
-              onOpenFolder={openFolder}
               onOpenPath={openPath}
+              onRevealFolder={revealFolder}
               tree={tree}
             />
           )}
