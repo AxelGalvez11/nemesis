@@ -19,7 +19,7 @@ import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
-import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -738,7 +738,7 @@ export async function searchWebContext(uid: string, query: string, signal?: Abor
   if (!key) return { context: "", sources: [] };
   try {
     const response = await fetch("/api/workspace/search", {
-      body: JSON.stringify({ query, limit: 5 }),
+      body: JSON.stringify({ query, limit: MAX_WEB_RESULTS }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       method: "POST",
       signal,

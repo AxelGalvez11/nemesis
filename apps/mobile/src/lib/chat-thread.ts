@@ -417,7 +417,7 @@ export function forcedResearchDecision(): ChatRouteDecision {
  *  formatWebSearchContext (that module's trigger heuristics are NOT ported;
  *  the phone's ONLY search trigger is chat-routing.ts's `searchWeb` decision). */
 export function formatWebSearchContext(results: ChatSource[]): string {
-  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 10);
   if (usable.length === 0) return "";
   return [
     "Live web search results (use these for current facts and cite the relevant URL in the answer):",

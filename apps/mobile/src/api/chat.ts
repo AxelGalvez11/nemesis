@@ -184,13 +184,16 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
   if (!key) return { context: "", sources: [] };
   try {
     const res = await fetch(SEARCH_URL, {
-      body: JSON.stringify({ limit: 5, query }),
+      // Ten results, not five (owner 2026-08-04) — depth fields (medicine,
+      // law, engineering) rarely settle in five hits, and a search costs one
+      // unit however many results come back. Mirrors web's MAX_WEB_RESULTS.
+      body: JSON.stringify({ limit: 10, query }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };
     const body = (await res.json()) as { data?: { web?: ChatSource[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 5);
+    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 10);
     return { context: formatWebSearchContext(sources), sources };
   } catch {
     return { context: "", sources: [] };

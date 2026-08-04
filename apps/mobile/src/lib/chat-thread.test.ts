@@ -110,7 +110,7 @@ Deno.test("chatErrorMessage: budget, auth, server, and fallback shapes", () => {
   assertEquals(chatErrorMessage(400, null), "Something went wrong sending that. Try again.");
 });
 
-Deno.test("formatWebSearchContext: formats up to 5 usable results, empty string when none", () => {
+Deno.test("formatWebSearchContext: formats up to 10 usable results, empty string when none", () => {
   const results: ChatSource[] = [
     { title: "Next.js 16", url: "https://nextjs.org/blog/16", description: "Release notes." },
     { title: "", url: "https://example.com/no-title", description: "Has a description, no title." },
@@ -122,7 +122,9 @@ Deno.test("formatWebSearchContext: formats up to 5 usable results, empty string 
   assertMatch(formatted, /2\. https:\/\/example\.com\/no-title/); // falls back to the URL as the title
   assertEquals(formatted.includes("dropped"), false); // no-url result is excluded
   assertEquals(formatWebSearchContext([]), "");
-  assertEquals(formatWebSearchContext(Array.from({ length: 8 }, (_, i) => ({ title: `t${i}`, url: `https://x.test/${i}`, description: "" }))).match(/URL:/g)?.length, 5);
+  // Ten results reach the model, not five (owner 2026-08-04: depth fields
+  // need more sources; a search costs one unit regardless of count).
+  assertEquals(formatWebSearchContext(Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, url: `https://x.test/${i}`, description: "" }))).match(/URL:/g)?.length, 10);
 });
 
 Deno.test("completionText: extracts assistant text, rejects empty/malformed", () => {

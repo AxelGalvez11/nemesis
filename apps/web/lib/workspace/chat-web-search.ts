@@ -33,11 +33,17 @@ export function buildFreshSearchQuery(query: string, now = new Date()): string {
   return `${query.trim()} current as of ${date}`;
 }
 
+/** How many web results reach the model. Ten, not five (owner 2026-08-04):
+ *  a medicine, law, or engineering question rarely settles inside the first
+ *  five hits, a search costs one metered unit regardless of how many results
+ *  it returns, and five more snippets are only a few hundred extra tokens. */
+export const MAX_WEB_RESULTS = 10;
+
 /** The results that actually reach the model, in the exact order they are numbered in the prompt.
  *  The sources stored on the message MUST come from this same list: the answer's inline [n] markers
  *  are resolved positionally, so a list filtered differently would point a pill at the wrong source. */
 export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
-  return results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+  return results.filter((result) => result.url && (result.title || result.description)).slice(0, MAX_WEB_RESULTS);
 }
 
 export function formatWebSearchContext(results: ChatWebResult[]): string {
