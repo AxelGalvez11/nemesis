@@ -41,3 +41,32 @@ export interface QuotaExceededError {
   limit: number;
   plan: PlanCode | string;
 }
+
+// ---------------------------------------------------------------------------
+// Dual-store subscriptions (owner decision 2026-08-03: "the higher plan wins").
+//
+// A student can hold a Stripe subscription (web) and an Apple subscription
+// (iPhone) at the same time. The `subscriptions` table keeps one row per user;
+// each store writes its OWN column (`stripe_plan` / `apple_plan`) and the
+// effective `plan` — the only column the edge functions read — is always the
+// best of the two. When one side lapses, the other takes over automatically
+// instead of a last-webhook-wins race silently downgrading a paying student.
+// ---------------------------------------------------------------------------
+
+/** Rank of the paid ladder. Unknown strings rank as free so a bad write can
+ *  never grant access, only fail to. */
+const PLAN_RANK: Readonly<Record<string, number>> = { free: 0, plus: 1, pro: 2, max: 3 };
+
+export function planRank(plan: string | null | undefined): number {
+  return PLAN_RANK[plan ?? "free"] ?? 0;
+}
+
+/** The plan a user is actually entitled to, given what each store says. */
+export function effectivePlan(
+  stripePlan: string | null | undefined,
+  applePlan: string | null | undefined,
+): PlanCode {
+  const winner = planRank(applePlan) > planRank(stripePlan) ? applePlan : stripePlan;
+  const rank = planRank(winner);
+  return rank === 3 ? "max" : rank === 2 ? "pro" : rank === 1 ? "plus" : "free";
+}
