@@ -4,6 +4,7 @@ import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
+import { isSlimmableOfficeName, OFFICE_SLIM_THRESHOLD_BYTES, slimOfficeArchive } from "@/lib/workspace/office-slim";
 import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 
 // Sized for a real lecture deck, which is the main thing students attach.
@@ -106,27 +107,71 @@ function attachmentRecord(file: File): SessionAttachment {
   };
 }
 
-/** Keep images as first-class conversation history. Text extraction lets the
- * model read a picture, but it cannot make the original pixels reappear on a
- * second device; that requires one private durable object plus its metadata in
- * chat_messages.meta.attachments. */
-async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
-  const base = attachmentRecord(file);
-  if (!uid || !isImage(file)) return base;
-  const extension = file.name.toLowerCase().match(/\.(png|jpe?g|webp|heic|heif)$/)?.[1] ?? "jpg";
-  const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+/** Bucket ceiling for a stored chat document — the library-sources bucket
+ *  refuses anything larger, so don't burn an upload round-trip finding out. */
+const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
+
+/** The mime the bucket allowlist expects per document kind. The browser's own
+ *  file.type is usually right but arrives empty from some drag sources. */
+const DOCUMENT_MIME: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+/** Which storage bucket a persisted attachment lives in — images have their
+ *  own bucket; documents share the Library's sources bucket (same 50 MB cap,
+ *  same owner-only policies). The preview dialog re-signs through this. */
+export function attachmentBucket(attachment: Pick<SessionAttachment, "mime">): string {
+  return attachment.mime?.startsWith("image/") ? "library-images" : "library-sources";
+}
+
+function attachmentId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const storagePath = `${uid}/chat/${id}.${extension}`;
+}
+
+/** Keep attachments as first-class conversation history. Text extraction lets
+ * the model read a file, but it cannot make the original reappear on a second
+ * device or in a preview popup; that requires one private durable object plus
+ * its metadata in chat_messages.meta.attachments. Images always stored; PDF /
+ * Word / PowerPoint originals stored since 2026-08-04 (owner: "does the webapp
+ * save documents and are they readable?") up to the bucket's 50 MB ceiling —
+ * an oversized original is skipped, its text still reaches the model. */
+async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
+  const base = attachmentRecord(file);
+  if (!uid) return base;
+
+  if (isImage(file)) {
+    const extension = file.name.toLowerCase().match(/\.(png|jpe?g|webp|heic|heif)$/)?.[1] ?? "jpg";
+    const storagePath = `${uid}/chat/${attachmentId()}.${extension}`;
+    try {
+      const uploaded = await supabase.storage.from("library-images").upload(storagePath, file, {
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
+      if (uploaded.error) return base;
+      const signed = await supabase.storage.from("library-images").createSignedUrl(storagePath, 31_536_000);
+      if (signed.error || !signed.data?.signedUrl) return { ...base, storagePath };
+      return { ...base, storagePath, url: signed.data.signedUrl };
+    } catch {
+      return base;
+    }
+  }
+
+  const extension = DOCUMENT_EXTENSIONS.find((ext) => file.name.toLowerCase().endsWith(ext));
+  if (!extension || file.size > MAX_STORED_DOCUMENT_BYTES) return base;
+  const mime = DOCUMENT_MIME[extension] ?? file.type;
+  const storagePath = `${uid}/chat/${attachmentId()}${extension}`;
   try {
-    const uploaded = await supabase.storage.from("library-images").upload(storagePath, file, {
-      contentType: file.type || "image/jpeg",
+    const uploaded = await supabase.storage.from("library-sources").upload(storagePath, file, {
+      contentType: mime,
       upsert: false,
     });
     if (uploaded.error) return base;
-    const signed = await supabase.storage.from("library-images").createSignedUrl(storagePath, 31_536_000);
-    if (signed.error || !signed.data?.signedUrl) return { ...base, storagePath };
-    return { ...base, storagePath, url: signed.data.signedUrl };
+    const signed = await supabase.storage.from("library-sources").createSignedUrl(storagePath, 31_536_000);
+    return { ...base, mime, storagePath, ...(signed.data?.signedUrl ? { url: signed.data.signedUrl } : {}) };
   } catch {
     return base;
   }
@@ -159,8 +204,22 @@ export interface ExtractedFile {
 export async function extractFile(file: File, uid: string | null): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key) throw new Error("Sign in to read this attachment.");
+  // A deck bigger than the route's 25 MB ceiling is almost entirely pictures;
+  // its words fit in under 1 MB. Strip the media in the browser and send THAT,
+  // so the file is read instead of refused (owner's 123.8 MB immunology deck:
+  // slimmed to 0.11 MB, all 37 slides extracted). Slimming failure falls back
+  // to the original — the route then answers with its own honest error.
+  let payload = file;
+  if (isSlimmableOfficeName(file.name) && file.size > OFFICE_SLIM_THRESHOLD_BYTES) {
+    try {
+      const slimmed = slimOfficeArchive(new Uint8Array(await file.arrayBuffer()));
+      if (slimmed.byteLength < file.size) payload = new File([slimmed as BlobPart], file.name, { type: file.type });
+    } catch {
+      // Not a real zip, or hostile contents — the route's own guards decide.
+    }
+  }
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", payload);
   const response = await fetch("/api/notebooks/extract/file", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}` },
