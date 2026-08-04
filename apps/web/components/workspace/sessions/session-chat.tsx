@@ -16,6 +16,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { chatDisplayText, draftAttachmentRecords, partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { executeAgentTool } from "@/lib/workspace/agent-tools";
@@ -425,6 +426,24 @@ export function SessionChat() {
     },
     [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
   );
+
+  // One-shot intent from a Library note's Teach me / Flashcards / Test button
+  // (owner 2026-08-03, the learning loop): the student clicked a verb, so the
+  // request is SENT on arrival with the note attached — not parked in the
+  // composer for a second confirmation. The seed is not consumed until auth
+  // has an id: handleSubmit drops turns without one, and consuming early
+  // would swallow the click on a slow session rehydrate. Ref-guarded so the
+  // intent fires exactly once even as handleSubmit's identity changes. In the
+  // signed-out preview there is never an id, so the verb lands here as plain
+  // navigation — nothing to send with, nothing crashes.
+  const chatIntentConsumedRef = useRef(false);
+  useEffect(() => {
+    if (chatIntentConsumedRef.current || !uid) return;
+    chatIntentConsumedRef.current = true;
+    const intent = consumeSeededChatIntent();
+    if (!intent) return;
+    void handleSubmit(intent.prompt, intent.files);
+  }, [handleSubmit, uid]);
 
   const handleStop = useCallback(() => {
     if (!selectedId) return;

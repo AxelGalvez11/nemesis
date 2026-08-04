@@ -27,6 +27,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
+import { seedChatIntent } from "@/lib/workspace/composer-seed";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
@@ -41,7 +42,7 @@ import type { LibraryTreeReveal } from "../library/library-tree-view";
 import { DocsNav } from "./docs-nav";
 import { DocsSource } from "./docs-source";
 import { DocsToc } from "./docs-toc";
-import { NoteArticle } from "./note-article";
+import { NoteArticle, type NoteStudyAction } from "./note-article";
 
 export function LibraryDocsPage() {
   const router = useRouter();
@@ -121,6 +122,29 @@ export function LibraryDocsPage() {
   const goHome = useCallback(() => {
     router.push(libraryBase);
   }, [libraryBase, router]);
+
+  // Teach me / Flashcards / Test on the open note (owner 2026-08-03, the
+  // learning loop): the note rides along as the same virtual .md attachment
+  // "Attach to AI chat" builds, and the request is sent the moment Sessions
+  // mounts — the student clicked a verb, not "open a composer". Prompts are
+  // phrased to trip the matching chat skill (teach → guided teaching with
+  // understanding checks; flashcards/tests → the Auto-defaults craft skills).
+  const startStudyAction = useCallback(
+    (action: NoteStudyAction) => {
+      if (!note) return;
+      const attachment = new File([note.content], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" });
+      const prompt =
+        action === "teach"
+          ? `Teach me "${note.title}" from my attached notes — step by step, checking my understanding as we go.`
+          : action === "flashcards"
+            ? `Make flashcards from "${note.title}".`
+            : `Make a practice test from "${note.title}".`;
+      seedChatIntent({ files: [attachment], prompt });
+      const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+      router.push(`${navigationRoot}/sessions`);
+    },
+    [note, pathname, router],
+  );
 
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
 
@@ -251,6 +275,7 @@ export function LibraryDocsPage() {
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
               onRevealFolder={revealFolder}
+              onStudyAction={startStudyAction}
               openableSourceIds={openableSourceIds}
               saveNote={saveNote}
             />

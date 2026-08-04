@@ -17,3 +17,28 @@ export function consumeSeededComposerFiles(): File[] | null {
   pendingFiles = null;
   return files;
 }
+
+// One-shot chat INTENT — a message that should be SENT on arrival, not typed.
+// Used by the learning loop's note actions (Teach me / Flashcards / Test,
+// owner 2026-08-03): the student clicked a verb on a note, so Sessions sends
+// the request immediately with the note attached instead of parking it in the
+// composer for a second confirmation.
+
+export interface SeededChatIntent {
+  /** Sent as the student's message the moment Sessions mounts. */
+  prompt: string;
+  files: File[];
+}
+
+let pendingIntent: SeededChatIntent | null = null;
+
+export function seedChatIntent(intent: SeededChatIntent): void {
+  pendingIntent = intent.prompt.trim() ? { prompt: intent.prompt, files: [...intent.files] } : null;
+}
+
+/** Returns the seeded intent exactly once, then clears it. */
+export function consumeSeededChatIntent(): SeededChatIntent | null {
+  const intent = pendingIntent;
+  pendingIntent = null;
+  return intent;
+}
