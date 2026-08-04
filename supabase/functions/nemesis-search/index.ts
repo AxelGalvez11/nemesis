@@ -9,8 +9,9 @@
 //     → validates key → plan (subscriptions) → daily + monthly unit budgets
 //       (plan_entitlements 'nemesis_search_daily_units'/'nemesis_search_monthly_units'
 //       + usage_counters 'nemesis_search_units'/'nemesis_search_units_month') → tries
-//       Linkup (cheapest), then Tavily, then Firecrawl (first one to answer wins) →
-//       records usage_events. All three are translated to Firecrawl's response shape.
+//       Tavily first (advanced depth — quality), then Linkup, then Firecrawl (first
+//       to answer wins) → records usage_events. All three are translated to
+//       Firecrawl's response shape.
 //   POST /nemesis-search/v2/scrape   Authorization: Bearer <device key>
 //     → same gate, forwards to Firecrawl's /v2/scrape (no scrape role for Tavily/Linkup).
 //       One search or one scrape = one unit.
@@ -22,8 +23,8 @@
 // SUPABASE_SERVICE_ROLE_KEY (platform-injected), FIRECRAWL_API_KEY (server-side upstream
 // key; when unset — and no fallback provider is configured either — this returns 503
 // with a plain explanation instead of leaking the gap to students as a cryptic parse
-// error), LINKUP_API_KEY (cheapest primary for /v2/search), and TAVILY_API_KEY (search
-// fallback that sits between Linkup and Firecrawl; its free 1,000/mo is a safety net).
+// error), TAVILY_API_KEY (the quality-first primary for /v2/search since 2026-08-04),
+// and LINKUP_API_KEY (the cheaper fallback that sits between Tavily and Firecrawl).
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -63,8 +64,10 @@ const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
  *  competitor-economics-2026-07.md, "about a penny a search") — unlike the token
  *  prices in nemesis-llm, no provider bills us a line item per call, so events carry
  *  price_estimated: true and a report must not present them as exact. */
-const UNIT_USD: Record<string, number> = { firecrawl: 0.01, linkup: 0.005, tavily: 0.008 }
-const PRICE_REV = '2026-07-24'
+// Tavily at ADVANCED depth bills 2 API credits per search (~$0.016), double its
+// basic rate — the price of the 2026-08-04 quality-first flip.
+const UNIT_USD: Record<string, number> = { firecrawl: 0.01, linkup: 0.005, tavily: 0.016 }
+const PRICE_REV = '2026-08-04'
 
 /** Which app is calling. MIRROR of resolveClient in _shared/llm-cost.ts. */
 function resolveClient(header: string | null, keyLabel: string | null): string {
@@ -197,8 +200,9 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
   }
 }
 
-/** Tavily fallback for /v2/search, answered in Firecrawl's response shape so the
- *  desktop SDK parses it identically. Search only — scrape stays Firecrawl. */
+/** Tavily — the PRIMARY for /v2/search (owner 2026-08-04: quality over the
+ *  half-cent saving), answered in Firecrawl's response shape so the desktop
+ *  SDK parses it identically. Search only — scrape stays Firecrawl. */
 async function tavilySearch(body: Record<string, unknown>): Promise<Response | null> {
   if (!TAVILY_KEY) {
     return null
@@ -208,7 +212,9 @@ async function tavilySearch(body: Record<string, unknown>): Promise<Response | n
     body: JSON.stringify({
       max_results: typeof body.limit === 'number' ? body.limit : 5,
       query: String(body.query ?? ''),
-      search_depth: 'basic'
+      // Advanced depth re-ranks and reads deeper into pages — the better
+      // snippets are the point of putting Tavily first. Costs 2 credits.
+      search_depth: 'advanced'
     }),
     headers: { Authorization: `Bearer ${TAVILY_KEY}`, 'Content-Type': 'application/json' },
     method: 'POST'
@@ -238,9 +244,9 @@ async function tavilySearch(body: Record<string, unknown>): Promise<Response | n
   })
 }
 
-/** Linkup fallback for /v2/search — second in line behind Tavily, ahead of Firecrawl.
- *  Same Firecrawl-shaped response as tavilySearch so the desktop SDK parses it
- *  identically; Linkup's {name,url,content} maps to {title,url,description}. */
+/** Linkup fallback for /v2/search — the cheaper second line behind Tavily,
+ *  ahead of Firecrawl. Same Firecrawl-shaped response as tavilySearch so the
+ *  desktop SDK parses it identically; {name,url,content} → {title,url,description}. */
 async function linkupSearch(body: Record<string, unknown>): Promise<Response | null> {
   if (!LINKUP_KEY) {
     return null
@@ -414,24 +420,25 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
 
   const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
-  // Cost routing: Linkup is the cheapest per search (~$0.005 vs Tavily ~$0.008) AND
-  // self-reports higher accuracy, so SEARCHES try it first, then Tavily (whose free
-  // 1,000/mo tier is a useful safety net when Linkup is down), then Firecrawl last.
-  // Tavily/Linkup have no scrape role, so SCRAPES go straight to Firecrawl, which is
-  // what it's actually good at. (Reordered from Tavily-first 2026-07-17.)
+  // Quality routing (owner 2026-08-04: "linkup gives worser results" — flip):
+  // SEARCHES try Tavily at advanced depth first (~$0.016/search), then Linkup
+  // (~$0.005, the cost-first primary from 2026-07-17 until today), then
+  // Firecrawl last. At current volume the difference is pennies a month;
+  // result quality is what students actually feel. Tavily/Linkup have no
+  // scrape role, so SCRAPES go straight to Firecrawl.
   if (route === '/v2/search') {
-    const primary = await linkupSearch(body)
+    const primary = await tavilySearch(body)
 
     if (primary) {
-      void recordUsage(ctx, 'search', detail, 'linkup', client)
+      void recordUsage(ctx, 'search', detail, 'tavily', client)
 
       return primary
     }
 
-    const secondary = await tavilySearch(body)
+    const secondary = await linkupSearch(body)
 
     if (secondary) {
-      void recordUsage(ctx, 'search', detail, 'tavily', client)
+      void recordUsage(ctx, 'search', detail, 'linkup', client)
 
       return secondary
     }
