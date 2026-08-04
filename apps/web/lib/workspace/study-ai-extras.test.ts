@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   autoTagTargets,
   buildAutoTagMessages,
-  buildExplainMessages,
+  explainCardContext,
+  explainQuestionContext,
+  explainSeedMessages,
   isLeechCard,
   LEECH_LAPSES,
   parseAutoTags,
@@ -23,36 +25,51 @@ test("cloze markers strip down to their answers", () => {
   assert.equal(stripClozeMarkers("no cloze here"), "no cloze here");
 });
 
-test("explain messages carry both sides without cloze noise", () => {
-  const messages = buildExplainMessages({ back: "bradykinin builds up", front: "{{c1::Lisinopril}} causes cough" });
-  assert.equal(messages.length, 2);
-  assert.ok(messages[1]?.content.includes("Front: Lisinopril causes cough"));
-  assert.ok(messages[1]?.content.includes("Back: bradykinin builds up"));
-  const oneSided = buildExplainMessages({ back: "", front: "{{c1::ACE}} inhibitors" });
-  assert.ok(oneSided[1]?.content.includes("the answer is inside the front text"));
+test("card context carries both sides without cloze noise", () => {
+  const context = explainCardContext({ back: "bradykinin builds up", front: "{{c1::Lisinopril}} causes cough" });
+  assert.ok(context.includes("Flashcard front: Lisinopril causes cough"));
+  assert.ok(context.includes("Flashcard back: bradykinin builds up"));
+  const oneSided = explainCardContext({ back: "", front: "{{c1::ACE}} inhibitors" });
+  assert.ok(oneSided.includes("the answer is inside the front text"));
 });
 
-// Owner 2026-07-28: "research skills for ai for better mnemonics, analogies,
-// explanations should be in simple technical english." The four moves are the
-// whole point of the prompt, so they are pinned here rather than left to drift.
-test("the explain prompt asks for meaning, mechanism, analogy and an optional hook", () => {
-  const [system] = buildExplainMessages({ back: "b", front: "f" });
+test("question context labels the correct option and a wrong pick", () => {
+  const context = explainQuestionContext({
+    answerIndex: 2,
+    options: ["Aspirin", "No anticoagulation", "Start a DOAC", "Warfarin"],
+    pickedIndex: 1,
+    q: "Next step for a CHA2DS2-VASc of 3?",
+  });
+  assert.ok(context.includes("C. Start a DOAC (correct)"));
+  assert.ok(context.includes("B. No anticoagulation (the student's pick)"));
+  assert.match(context, /tempting but wrong/);
+  const rightFirstTry = explainQuestionContext({ answerIndex: 0, options: ["a", "b"], pickedIndex: 0, q: "q" });
+  assert.ok(rightFirstTry.includes("A. a (correct, the student's pick)"));
+  assert.doesNotMatch(rightFirstTry, /tempting but wrong/);
+});
+
+// Owner 2026-08-04: "make it be a dynamic answer not hardcoded format." The
+// prompt must NOT march every item through a fixed template — that is the
+// exact complaint this revision fixes — while keeping the standing values:
+// simple technical English (owner 2026-07-28), field-agnostic, no invention.
+test("the explain prompt adapts its shape instead of forcing a template", () => {
+  const [system, seed] = explainSeedMessages("Flashcard front: f\nFlashcard back: b");
   assert.ok(system);
-  assert.match(system.content, /what the answer MEANS/);
-  assert.match(system.content, /explain WHY it is true/);
-  assert.match(system.content, /ONE concrete analogy/);
-  assert.match(system.content, /ONE memory hook only if a genuinely good one exists/);
-  // A forced mnemonic is one more thing to memorise — skipping must be allowed.
-  assert.match(system.content, /skip this step entirely/);
+  assert.ok(seed?.content.endsWith("Explain this to me."));
+  assert.match(system.content, /the way THIS item needs explaining/);
+  assert.match(system.content, /Do not follow a fixed template/);
+  assert.doesNotMatch(system.content, /\(1\)|\(2\)|\(3\)|\(4\)/);
+  // Follow-ups are first-class now — the mini side chat is a conversation.
+  assert.match(system.content, /follow-up questions/i);
 });
 
 test("the explain prompt keeps the technical terms and stays field-agnostic", () => {
-  const [system] = buildExplainMessages({ back: "b", front: "f" });
+  const [system] = explainSeedMessages("x");
   assert.ok(system);
   // "Simple technical English" is not "simple English": the term is what the
   // exam asks for, so the language AROUND it is what gets simplified.
   assert.match(system.content!, /KEEP the technical terms/);
-  assert.match(system.content!, /define each one in plain words/);
+  assert.match(system.content!, /plain words/);
   // The app serves a law student and a mech-eng student too — the old prompt
   // said "health-sciences student" and biased every analogy toward medicine.
   assert.doesNotMatch(system.content!, /health[- ]sciences/i);

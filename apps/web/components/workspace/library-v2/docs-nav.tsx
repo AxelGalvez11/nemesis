@@ -15,13 +15,14 @@
 // the center reveal folders HERE (expand + scroll) instead of navigating —
 // folders are never pages.
 
-import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconArrowsSort } from "@tabler/icons-react";
+import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconArrowsSort, IconTypography } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -67,16 +68,22 @@ interface DocsNavProps {
   onOpenFolderNote: (path: string) => void;
   /** Folder whose page is open — its tree row shows selected. */
   selectedFolderPath?: string | null;
-  /** The "Library" heading toggles the sidebar (owner 2026-08-04: the
-   *  heading IS the sidebar's control — hover peeks, click locks/unlocks). */
-  onHeadingClick?: () => void;
-  headingTitle?: string;
   /** Close the drawer after navigating (narrow viewports only). */
   onNavigate?: () => void;
   showBack?: boolean;
+  /** Docked = a flat, flush column like a docs site's nav; floating = the
+   *  rounded panel used for the hover peek and the narrow drawer. */
+  frame?: "docked" | "floating";
+  /** Owner 2026-08-04: "change the 'hide automatically' option to the
+   *  library '...' settings menu. make it lock on by default" — both of
+   *  these live in the Library tools menu and persist per browser. */
+  autoHide: boolean;
+  onAutoHideChange: (next: boolean) => void;
+  toolbarHidden: boolean;
+  onToolbarHiddenChange: (next: boolean) => void;
 }
 
-export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onHeadingClick, headingTitle, onNavigate, showBack = false }: DocsNavProps) {
+export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, frame = "docked", autoHide, onAutoHideChange, toolbarHidden, onToolbarHiddenChange }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -88,10 +95,27 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  // Tree operations used to fail into the void: every rename/move/delete was
+  // a floating promise, so a collision or a signed-out session looked like a
+  // dead button (owner 2026-08-04: "some buttons show non UI"). Every one now
+  // lands here and shows its message where import errors already show.
+  const [opError, setOpError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!opError) return;
+    const timer = window.setTimeout(() => setOpError(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [opError]);
+  const guarded = (label: string, work: Promise<unknown>) => {
+    work.catch((cause: unknown) => setOpError(cause instanceof Error ? cause.message : `Couldn't ${label}.`));
+  };
 
   // A folder's own note never shows as a child row — the folder row IS the
   // way into it, the way Notion never lists a page inside itself.
   const treeNotes = useMemo(() => notes.filter((note) => !isFolderNote(note)), [notes]);
+  // "My order" sorts by the hand positions the phone writes; with none, it is
+  // indistinguishable from A–Z — offering it would be a button that does
+  // nothing, so it only appears once a real arrangement exists.
+  const hasHandOrder = useMemo(() => notes.some((note) => typeof note.position === "number"), [notes]);
   const tree = useMemo(() => buildLibraryTree(treeNotes, folders, sortMode), [folders, sortMode, treeNotes]);
   const visibleTree = useMemo(() => filterLibraryTree(tree, query), [query, tree]);
   // Counted over ALL notes: a library holding only folder pages is not empty.
@@ -125,11 +149,19 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
   };
 
   return (
-    // A rounded floating panel, not a flush rail (owner 2026-08-04: "make the
-    // library sidebar into a rounded box shape"). The wrapper in
-    // library-docs-page decides WHERE it sits (docked in flow, or peeking
-    // over the page); this aside only knows its own box.
-    <aside className="flex h-full w-64 shrink-0 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) shadow-[0_3px_12px_rgba(0,0,0,0.05)]">
+    // Docked, this is a flat flush column with a hairline edge — the way a
+    // docs site's nav sits (owner 2026-08-04: "i need library to be like …
+    // developer [docs]: like obsidian.md/help"). The rounded floating box
+    // survives as the hover-peek and the narrow drawer. The wrapper in
+    // library-docs-page decides WHERE it sits; this aside only knows its box.
+    <aside
+      className={cn(
+        "flex h-full w-64 shrink-0 flex-col overflow-hidden bg-(--ui-sidebar-surface-background)",
+        frame === "docked"
+          ? "border-r border-(--ui-stroke-tertiary)"
+          : "rounded-xl border border-(--ui-stroke-tertiary) shadow-[0_3px_12px_rgba(0,0,0,0.05)]",
+      )}
+    >
       <div className="workspace-page-header px-3 pb-1 pt-2.5">
         {showBack && (
           <Button
@@ -144,26 +176,9 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
         )}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            {/* The heading is the sidebar's own switch (owner 2026-08-04,
-                circling it: "i meant the library to be this one"): while the
-                panel peeks it sits exactly where the floating trigger word
-                was, so the click that lands here locks the peek in place —
-                and clicking it again lets the sidebar go. */}
-            {onHeadingClick ? (
-              <h1>
-                <button
-                  className="workspace-page-title cursor-pointer rounded-md hover:text-(--ui-text-secondary)"
-                  data-testid="library-heading-toggle"
-                  onClick={onHeadingClick}
-                  title={headingTitle}
-                  type="button"
-                >
-                  Library
-                </button>
-              </h1>
-            ) : (
-              <h1 className="workspace-page-title">Library</h1>
-            )}
+            {/* A plain heading — never a control (owner 2026-08-04: "no
+                collapse button"). Hiding is the auto-hide mode's job. */}
+            <h1 className="workspace-page-title">Library</h1>
             {status === "error" && <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>}
           </div>
           <div className="flex gap-0.5">
@@ -180,6 +195,22 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
               type="file"
             />
             <Button aria-label="New note" onClick={() => void createBlankNote()} size="icon-xs" title="New note" type="button" variant="ghost"><IconFilePlus /></Button>
+            {/* One visible switch for the note formatting bar (owner
+                2026-08-04: "make a formatting button appear next to the
+                '...'"). Dimmed = the bar stays hidden while editing. */}
+            <Button
+              aria-label={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
+              aria-pressed={!toolbarHidden}
+              className={cn(toolbarHidden && "opacity-45")}
+              data-testid="library-format-toggle"
+              onClick={() => onToolbarHiddenChange(!toolbarHidden)}
+              size="icon-xs"
+              title={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
+              type="button"
+              variant="ghost"
+            >
+              <IconTypography />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button aria-label="Library tools" size="icon-xs" title="Library tools" type="button" variant="ghost"><IconDots /></Button>
@@ -189,7 +220,7 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
                   <DropdownMenuSubTrigger><IconArrowsSort /> Sort</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="min-w-40" sideOffset={6}>
                     <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
-                      <DropdownMenuRadioItem value="manual">My order</DropdownMenuRadioItem>
+                      {(hasHandOrder || sortMode === "manual") && <DropdownMenuRadioItem value="manual">My order</DropdownMenuRadioItem>}
                       <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
@@ -200,6 +231,19 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setCreateKind("folder")}><IconFolderPlus /> New folder</DropdownMenuItem>
                 <DropdownMenuItem disabled={importing} onSelect={() => importInputRef.current?.click()}><IconFileImport /> {importing ? "Importing…" : "Import notes or documents"}</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* Owner 2026-08-04: "change the 'hide automatically' option
+                    to the library '...' settings menu. make it lock on by
+                    default". On, the sidebar lives on the left edge: hover
+                    brings it out, leaving lets it go — no collapse button.
+                    Persists per browser. */}
+                <DropdownMenuCheckboxItem
+                  checked={autoHide}
+                  data-testid="library-autohide-toggle"
+                  onCheckedChange={(value) => onAutoHideChange(value === true)}
+                >
+                  Hide sidebar automatically
+                </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -207,6 +251,7 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
       </div>
 
       {importError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" role="alert">{importError}</p>}
+      {opError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" data-testid="library-op-error" role="alert">{opError}</p>}
 
       {/* No Home button (owner 2026-08-04): Home is a NOTE — it sits in the
           tree like any other note, and bare /library already lands on it. */}
@@ -236,17 +281,17 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
             <LibraryTreeView
               folder={visibleTree}
               onAttachNotes={attachNotesToChat}
-              onCreateFolder={(path) => void createFolder(path)}
-              onDeleteFolder={(path) => void deleteFolder(path).then(() => onSourcesChanged?.())}
-              onDeleteNote={(id) => void deleteNote(id)}
-              onMoveFolder={(source, target) => void moveFolder(source, target).then(() => onSourcesChanged?.())}
-              onMoveNote={(id, target) => void moveNote(id, target)}
+              onCreateFolder={(path) => guarded("create that folder", createFolder(path))}
+              onDeleteFolder={(path) => guarded("delete that folder", deleteFolder(path).then(() => onSourcesChanged?.()))}
+              onDeleteNote={(id) => guarded("delete that note", deleteNote(id))}
+              onMoveFolder={(source, target) => guarded("move that folder", moveFolder(source, target).then(() => onSourcesChanged?.()))}
+              onMoveNote={(id, target) => guarded("move that note", moveNote(id, target))}
               onOpenFolderNote={(path) => {
                 onOpenFolderNote(path);
                 onNavigate?.();
               }}
-              onRenameFolder={(path, title) => void renameFolder(path, title).then(() => onSourcesChanged?.())}
-              onRenameNote={(id, title) => void renameNote(id, title)}
+              onRenameFolder={(path, title) => guarded("rename that folder", renameFolder(path, title).then(() => onSourcesChanged?.()))}
+              onRenameNote={(id, title) => guarded("rename that note", renameNote(id, title))}
               onSelect={open}
               selectedFolderPath={selectedFolderPath}
               renderFolderExtras={(treeFolder, depth) => {

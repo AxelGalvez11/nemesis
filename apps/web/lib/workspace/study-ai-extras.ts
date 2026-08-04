@@ -27,49 +27,60 @@ export function stripClozeMarkers(text: string): string {
   return text.replace(/\{\{c\d+::(.*?)(?:::[^}]*)?\}\}/g, "$1");
 }
 
-// Owner 2026-07-28: "research skills for ai for better mnemonics, analogies,
-// explanations should be in simple technical english."
-//
-// The old prompt asked for "one memorable hook or contrast" and left the rest to
-// the model, which reliably produced a restatement of the card. This one names
-// the four moves that make an explanation stick, in the order a learner needs
-// them, and each is drawn from what actually works:
-//
-//   1. Meaning first — you cannot elaborate on something you have not understood.
-//   2. The mechanism — elaborative interrogation: answering "why is this true"
-//      beats re-reading, because it forces the causal link into memory.
-//   3. ONE concrete analogy — a familiar system carries the structure of an
-//      unfamiliar one. Concrete beats clever; a vague analogy teaches nothing.
-//   4. ONE memory hook — the keyword method: an acronym, a sound-alike, or a
-//      vivid image. Deliberately optional. A forced mnemonic is extra to
-//      memorise, so the instruction says to skip it rather than invent one.
-//
-// "Simple technical English" is the owner's phrase and it is not the same as
-// "simple English": the technical term is what the exam asks for, so it stays —
-// what gets simplified is the language AROUND it.
-//
-// NOT health-sciences. This app is field-agnostic (a law student and a
-// mechanical-engineering student both use it), and the old prompt's
-// "health-sciences student" quietly biased every analogy toward medicine.
+// Owner 2026-08-04: "make it be a dynamic answer not hardcoded format" and
+// "the explain should be like a mini side chat." The old prompt marched every
+// card through the same four numbered moves (meaning → why → analogy → hook),
+// which read as a template stamped onto anything. This one keeps the values
+// that survived every revision — simple technical English (owner 2026-07-28),
+// field-agnostic examples, no invented facts, no emojis — but hands the SHAPE
+// of the answer back to the model: a definition card, a tricky multiple-choice
+// distractor, and a derivation each need a different kind of explanation. It
+// also runs a conversation now, not a one-shot: follow-up turns arrive as
+// ordinary chat history after the seeded first exchange.
 const EXPLAIN_SYSTEM =
-  "You are Nemesis's study coach, explaining one flashcard to the student who is revising it. Any subject — law, engineering, medicine, history, anything. " +
-  "Work in this order: (1) say what the answer MEANS in one plain sentence; (2) explain WHY it is true — the mechanism, the reasoning, or the rule behind it, because understanding the cause is what makes it stick; " +
-  "(3) give ONE concrete analogy to something the student already knows from everyday life, and make it structural, not decorative — the analogy has to carry the same relationship as the real thing; " +
-  "(4) give ONE memory hook only if a genuinely good one exists: an acronym, a sound-alike for a hard term, or a vivid image tied to the answer. A forced mnemonic is one more thing to memorise — if nothing good comes, skip this step entirely and say nothing about it. " +
-  "Write in simple technical English: KEEP the technical terms, since those are what the student is being tested on, but define each one in plain words the first time it appears, and keep every sentence around fifteen words. No filler, no throat-clearing, no restating the card back at them. " +
-  "Stay under 150 words. Short paragraphs or a short list. Never use emojis. " +
-  "Work only from the card and well-established textbook knowledge — never invent a fact, a number, or a citation. If the card is too thin to explain properly, say what is missing rather than padding.";
+  "You are Nemesis's study coach, in a small side chat pinned next to the flashcard or test question a student is working on. Any subject — law, engineering, medicine, history, anything. " +
+  "Explain the item the way THIS item needs explaining: sometimes the mechanism or rule behind the answer, sometimes a worked example, sometimes the precise distinction that separates the right answer from the tempting wrong one. Do not follow a fixed template, and do not force an analogy or mnemonic — use one only when it genuinely earns its place. " +
+  "Write in simple technical English: KEEP the technical terms, since those are what the student is tested on, but define each one in plain words the first time it appears. " +
+  "Be brief — usually under 150 words, shorter for follow-ups. Plain paragraphs; a list only when it truly helps. Never use emojis. " +
+  "Work only from the item shown and well-established textbook knowledge — never invent a fact, a number, or a citation. If the item is too thin to explain properly, say what is missing. " +
+  "Answer follow-up questions directly, like a tutor sitting beside them.";
 
-export function buildExplainMessages(card: { front: string; back: string }): WireMsg[] {
-  const front = stripClozeMarkers(card.front).trim();
-  const back = stripClozeMarkers(card.back).trim();
+/** The seeded opening of an explain chat: system + the item as the first ask.
+ *  Follow-up turns are appended after these by the caller. */
+export function explainSeedMessages(context: string): WireMsg[] {
   return [
     { content: EXPLAIN_SYSTEM, role: "system" },
-    {
-      content: `Explain this flashcard to me.\n\nFront: ${front}\n${back ? `Back: ${back}` : "Back: (the answer is inside the front text)"}`,
-      role: "user",
-    },
+    { content: `${context}\n\nExplain this to me.`, role: "user" },
   ];
+}
+
+/** What the side chat knows about a flashcard. */
+export function explainCardContext(card: { front: string; back: string }): string {
+  const front = stripClozeMarkers(card.front).trim();
+  const back = stripClozeMarkers(card.back).trim();
+  return `Flashcard front: ${front}\nFlashcard back: ${back || "(the answer is inside the front text)"}`;
+}
+
+/** What the side chat knows about a test question — including what the
+ *  student picked, so a wrong pick gets talked about, not just the right one. */
+export function explainQuestionContext(input: {
+  q: string;
+  options: string[];
+  answerIndex: number;
+  pickedIndex: number | null;
+}): string {
+  const lines = input.options.map((option, index) => {
+    const letter = String.fromCharCode(65 + index);
+    const marks = [index === input.answerIndex ? "correct" : null, input.pickedIndex === index ? "the student's pick" : null]
+      .filter(Boolean)
+      .join(", ");
+    return `${letter}. ${option}${marks ? ` (${marks})` : ""}`;
+  });
+  const pickedNote =
+    input.pickedIndex !== null && input.pickedIndex !== input.answerIndex
+      ? "\nThe student picked a wrong option — explain why their pick was tempting but wrong, as well as why the correct one is right."
+      : "";
+  return `Test question: ${input.q}\n${lines.join("\n")}${pickedNote}`;
 }
 
 const MAX_AUTOTAG_CARDS = 60;

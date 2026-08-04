@@ -1,6 +1,6 @@
 "use client";
 
-import { IconChevronRight, IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
+import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -9,9 +9,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
-import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
-import { buildExplainMessages, stripClozeMarkers } from "@/lib/workspace/study-ai-extras";
+import { explainCardContext } from "@/lib/workspace/study-ai-extras";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
@@ -20,6 +19,7 @@ import type { StudyGrade } from "@/lib/workspace/study-scheduler";
 import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
 import { cn } from "@/lib/utils";
 
+import { ExplainChat, type ExplainTurn } from "./explain-chat";
 import { OcclusionCardView } from "./occlusion-card";
 import type { StudyReviewSettings } from "./study-chrome";
 
@@ -59,15 +59,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [editFront, setEditFront] = useState("");
   const [editBack, setEditBack] = useState("");
   const [editTags, setEditTags] = useState("");
-  // Explain-this-card: one metered call per card, cached for the session so
-  // re-opening the panel (or retrying the card) never bills twice.
-  const explainCacheRef = useRef(new Map<string, string>());
-  const [explainFor, setExplainFor] = useState<string | null>(null);
-  const [explainText, setExplainText] = useState("");
-  const [explainBusy, setExplainBusy] = useState(false);
-  // Open on request — asking for an explanation is asking to read it. The
-  // header can fold it away again without discarding it.
-  const [explainOpen, setExplainOpen] = useState(true);
+  // The Explain side chat: transcripts cache per card for the sitting, so
+  // reopening a card never bills twice; the panel itself lives to the RIGHT
+  // of the card (owner 2026-08-04) and streams into explain-chat.tsx.
+  const explainCache = useRef(new Map<string, ExplainTurn[]>());
+  const [explainOpen, setExplainOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -105,9 +101,10 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     ? retryIds.includes(current.id) || (progressById[current.id] ?? 0) > 0 ? "learn" : current.repetitions === 0 ? "new" : "due"
     : null;
 
-  // A new card on deck closes the previous card's explanation.
+  // A new card on deck closes the panel — opening it is a deliberate ask per
+  // card, so advancing through a deck never quietly bills every card.
   useEffect(() => {
-    setExplainFor(null);
+    setExplainOpen(false);
   }, [currentId]);
 
   // Occlusion cards render their image with masks; the payload is only ever
@@ -203,49 +200,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       setError(cause instanceof Error ? cause.message : "Couldn't suspend the card.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function explainCurrent() {
-    if (!current || explainBusy) return;
-    if (explainFor === current.id) {
-      setExplainFor(null);
-      return;
-    }
-    // Every fresh request opens the window: a student who folded it away on the
-    // last card is asking to READ this one, not to be handed a closed box.
-    setExplainOpen(true);
-    const cached = explainCacheRef.current.get(current.id);
-    if (cached) {
-      setExplainText(cached);
-      setExplainFor(current.id);
-      return;
-    }
-    setExplainFor(current.id);
-    setExplainText("");
-    setExplainBusy(true);
-    setError(null);
-    try {
-      let text: string;
-      if (previewMode) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        const front = stripClozeMarkers(current.front);
-        text = `**The idea:** ${front}\n\n**Why it works:** ${stripClozeMarkers(current.back) || "The answer sits inside the highlighted part of the card."}\n\n**Hook:** tie it to a patient story you remember.`;
-      } else {
-        if (!userId) throw new Error("Sign in to use AI explanations.");
-        const reply = await postChatCompletion(userId, buildExplainMessages(current), {
-          decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
-        });
-        if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't explain this card. Try again.");
-        text = reply.text;
-      }
-      explainCacheRef.current.set(current.id, text);
-      setExplainText(text);
-    } catch (cause) {
-      setExplainFor(null);
-      setError(cause instanceof Error ? cause.message : "Couldn't explain this card.");
-    } finally {
-      setExplainBusy(false);
     }
   }
 
@@ -354,17 +308,18 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                     Undo
                   </Button>
                 )}
+                {/* Icon only (owner 2026-08-04: "the 'explain' button in
+                    flashcards needs to only have the icon"). */}
                 <Button
-                  aria-pressed={explainFor === current.id}
-                  className="text-xs"
+                  aria-label="Have Nemesis explain this card"
+                  aria-pressed={explainOpen}
                   data-testid="explain-card"
-                  disabled={explainBusy}
-                  onClick={() => void explainCurrent()}
-                  size="sm"
+                  onClick={() => setExplainOpen((open) => !open)}
+                  size="icon-xs"
                   title="Have Nemesis explain this card"
                   variant="ghost"
                 >
-                  <IconSparkles size={13} /> Explain
+                  <IconSparkles />
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -406,56 +361,36 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 </DropdownMenu>
               </div>
             </div>
-            <section className={cn("grid min-h-0 place-items-start overflow-y-auto bg-background px-4 py-12 text-center", settings.flashcardOutline && "rounded-3xl border border-(--ui-stroke-secondary) shadow-sm")}>
-              <div className={cn("mx-auto w-full max-w-5xl", settings.flipAnimation && "animate-in fade-in-0 duration-300")}>
-                {occlusionPayload ? (
-                  <OcclusionCardView payload={occlusionPayload} revealed={revealed} />
-                ) : (
-                  <AssistantMarkdown className="text-lg font-medium leading-8" htmlSubSup obsidianUnderline singleDollarMath text={frontText} />
-                )}
-                {showBack && (
-                  <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
-                    <AssistantMarkdown className="text-lg leading-8 text-foreground" htmlSubSup obsidianUnderline singleDollarMath text={current.back} />
-                  </div>
-                )}
-                {/* A small collapsible window rather than a block that shoves the
-                    card up the page (owner 2026-07-28). It opens on request —
-                    the student just asked for it — and the header collapses it
-                    back to one line so the card is readable again without
-                    throwing the explanation away. */}
-                {explainFor === current.id && (
-                  <div className="mx-auto mt-6 max-w-xl overflow-hidden rounded-xl border border-(--ui-stroke-secondary) bg-[rgb(247_247_248)] text-left dark:bg-[rgb(29_29_31)]" data-testid="explain-panel">
-                    <button
-                      aria-expanded={explainOpen}
-                      className="flex w-full items-center gap-1.5 px-3.5 py-2 text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-                      onClick={() => setExplainOpen((open) => !open)}
-                      // The window keydown handler below binds Space to "Show
-                      // answer" and 1-4 to grading, and it only ignores inputs
-                      // and textareas — not buttons. Once this header has focus,
-                      // Space would toggle the panel AND reveal the card in the
-                      // same press. Stopping the native event here keeps the
-                      // button's own activation and hides it from that listener.
-                      onKeyDown={(event) => { if (event.key === " " || event.key === "Enter") event.stopPropagation(); }}
-                      type="button"
-                    >
-                      <IconChevronRight
-                        className={cn("shrink-0 text-(--ui-text-quaternary) transition-transform", explainOpen && "rotate-90")}
-                        size={13}
-                      />
-                      <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Nemesis explains</span>
-                      {explainBusy && <span className="ml-auto text-[0.65rem] text-(--ui-text-quaternary)">thinking…</span>}
-                    </button>
-                    {explainOpen && (
-                      <div className="max-h-64 overflow-y-auto px-3.5 pb-3">
-                        {explainBusy
-                          ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
-                          : <AssistantMarkdown className="text-[0.8125rem] leading-relaxed" htmlSubSup obsidianUnderline singleDollarMath text={explainText} />}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
+            {/* The Explain side chat rides to the RIGHT of the card (owner
+                2026-08-04) — the card column narrows instead of the panel
+                covering it; on small screens the panel stacks below. */}
+            <div className={cn("grid min-h-0 grid-cols-1 gap-4", explainOpen && "lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]")}>
+              <section className={cn("grid min-h-0 place-items-start overflow-y-auto bg-background px-4 py-12 text-center", settings.flashcardOutline && "rounded-3xl border border-(--ui-stroke-secondary) shadow-sm")}>
+                <div className={cn("mx-auto w-full max-w-5xl", settings.flipAnimation && "animate-in fade-in-0 duration-300")}>
+                  {occlusionPayload ? (
+                    <OcclusionCardView payload={occlusionPayload} revealed={revealed} />
+                  ) : (
+                    <AssistantMarkdown className="text-base font-medium leading-7" htmlSubSup obsidianUnderline singleDollarMath text={frontText} />
+                  )}
+                  {showBack && (
+                    <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
+                      <AssistantMarkdown className="text-base leading-7 text-foreground" htmlSubSup obsidianUnderline singleDollarMath text={current.back} />
+                    </div>
+                  )}
+                </div>
+              </section>
+              {explainOpen && (
+                <ExplainChat
+                  cache={explainCache.current}
+                  className="max-h-80 lg:max-h-none"
+                  context={explainCardContext(current)}
+                  contextKey={current.id}
+                  onClose={() => setExplainOpen(false)}
+                  previewMode={Boolean(previewMode)}
+                  userId={userId}
+                />
+              )}
+            </div>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
             <div className="grid justify-items-center gap-3">
               <div className="flex items-center justify-center gap-4 text-xs font-medium tabular-nums" data-testid="review-counts" title="New · Learning · Due left in this session">

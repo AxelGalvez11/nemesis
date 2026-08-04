@@ -536,7 +536,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           data-artifact-drop-group=""
         >
           <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] font-semibold", ROW_GRID)}>
-            <span className="pl-[19px]">Folder</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
+            {/* Owner 2026-08-04: "rename folder in tests to 'tests'". */}
+            <span className="pl-[19px]">{isTests ? "Tests" : "Folder"}</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
           {/* min-h so there is somewhere to aim once every row is inside a
               folder — without it the card shrink-wraps its rows and the "drop

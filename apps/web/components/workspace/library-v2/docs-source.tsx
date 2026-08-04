@@ -20,20 +20,14 @@ import {
   type LibrarySource,
 } from "@/lib/workspace/library-sources";
 
-import { DocsCrumbs } from "./docs-crumbs";
-
 interface DocsSourceProps {
   source: LibrarySource;
   /** Notes whose provenance cites this file (may be empty). */
   notesFromSource: readonly CloudLibraryNote[];
   onOpenPath: (path: string) => void;
-  /** Breadcrumb folder click — opens that folder's page (see DocsCrumbs). */
-  onOpenFolder: (path: string) => void;
-  /** The "Library" crumb goes to the Library home note. */
-  onGoHome: () => void;
 }
 
-export function DocsSource({ source, notesFromSource, onOpenPath, onOpenFolder, onGoHome }: DocsSourceProps) {
+export function DocsSource({ source, notesFromSource, onOpenPath }: DocsSourceProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [resolving, setResolving] = useState(true);
 
@@ -61,7 +55,8 @@ export function DocsSource({ source, notesFromSource, onOpenPath, onOpenFolder, 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
       <header>
-        <DocsCrumbs onGoHome={onGoHome} onOpenFolder={onOpenFolder} path={source.folderPath} />
+        {/* No breadcrumbs (owner 2026-08-04) — the tree shows where this
+            file lives; the page just IS the file. */}
         <h1 className="mt-2 flex items-center gap-2.5 text-[1.375rem] font-bold tracking-tight text-foreground">
           <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={librarySourceKindIcon(source.kind)} size="1.125rem" />
           <span className="min-w-0 break-words">{source.fileName}</span>
