@@ -42,5 +42,5 @@ export const LIBRARY_HOME_SEED = `Welcome to your Library — one connected wiki
 
 - Left: your folders, notes, and source files.
 - Right: the outline of the page you are reading.
-- Breadcrumbs reveal a page's folder in the sidebar.
+- Every folder is a page too — open one and it lists the notes inside it.
 `;

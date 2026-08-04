@@ -1,10 +1,12 @@
 "use client";
 
 // The middle pane of the docs-style Library: one note, presented like a docs
-// article. Breadcrumbs, an editable title (renaming is not authoring — one
+// article — no breadcrumbs (owner 2026-08-04: "remove the breadcrumbs from
+// the library"; obsidian.md/help has none either — the tree and the links ARE
+// the navigation). An editable title (renaming is not authoring — one
 // plain-text field that can never hold a markdown construct), source pills
-// showing where the note came from, the body, and a "Linked from" footer
-// built from backlinks.
+// showing where the note came from, the body, a derived index of children on
+// container pages, and a "Linked from" footer built from backlinks.
 //
 // LOOKS LIKE DOCUMENTATION, EDITS LIKE GOOGLE DOCS (owner 2026-08-03). There
 // is no Edit button and no mode: the body IS the editor, always. Click
@@ -41,6 +43,8 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+import { folderIndexFor } from "@/lib/workspace/library-folder-index";
+import { isHomeNote } from "@/lib/workspace/library-home";
 import { backlinksFor, findLibraryNote } from "@/lib/workspace/library-links";
 import { loadNoteSources, sourceKindIcon, sourceKindLabel, type NoteSource } from "@/lib/workspace/library-provenance";
 import { librarySourceKindIcon, type LibrarySource } from "@/lib/workspace/library-sources";
@@ -51,7 +55,6 @@ import { cn } from "@/lib/utils";
 
 import { NoteEditor, type NoteEditorLinks } from "../library/note-editor";
 import { NoteToolbar } from "../library/note-toolbar";
-import { DocsCrumbs } from "./docs-crumbs";
 
 interface NoteDraft {
   id: string;
@@ -77,11 +80,9 @@ interface NoteArticleProps {
   onContentChange: (content: string) => void;
   onOpenPath: (path: string) => void;
   onOpenWikiTarget: (target: string, fromPath: string) => void;
-  /** Breadcrumb folder click — opens that folder's own page (Notion model,
-   *  owner 2026-08-04: "a folder is like a note"). */
+  /** A subfolder row in the container index — opens that folder's own page
+   *  (Notion model, owner 2026-08-04: "a folder is like a note"). */
   onOpenFolder: (path: string) => void;
-  /** The "Library" crumb goes to the Library home note. */
-  onGoHome: () => void;
   /** Open a source FILE's page. Pills whose source id isn't in
    *  `openableSourceIds` stay inert text (nothing to open yet). */
   onOpenSource: (id: string) => void;
@@ -95,9 +96,12 @@ interface NoteArticleProps {
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
   /** Wraps ONLY the note body — the ToC queries its h1-h4 by position. */
   articleRef: React.RefObject<HTMLDivElement | null>;
+  /** Owner 2026-08-04: "there needs to be a way to hide to formatting
+   *  toolbar" — off, the bar never appears; editing itself is untouched. */
+  toolbarEnabled: boolean;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onGoHome, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef, toolbarEnabled }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -177,9 +181,13 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 
   const backlinks = useMemo(() => backlinksFor(notes, note), [note, notes]);
   const citations = useMemo(() => extractNoteCitations(content), [content]);
+  // Container pages (the Home note, folder notes) list what lives inside
+  // them — derived at render, never stored, so it can never drift (owner
+  // 2026-08-04: "shouldnt the library home note automatically link to all
+  // the notes within it?").
+  const containerIndex = useMemo(() => folderIndexFor(note, notes), [note, notes]);
   const editable = isEditableNote(content);
   const textArrived = draftRef.current?.id === note.id;
-  const folderPath = note.path.split("/").filter(Boolean).slice(0, -1).join("/");
   // The editor resolves and follows [[links]] itself; both callbacks read the
   // freshest notes list through refs inside the editor, so a note created a
   // moment ago counts as available on the next render of its node.
@@ -225,17 +233,19 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
-      {/* Sticky and zero-height: at rest the pill sits in the crumb row's
-          empty middle; scrolled, it rides along the top of the page. It only
-          APPEARS while the student is editing. */}
+      {/* Sticky and zero-height: at rest the pill sits in the top row's empty
+          middle; scrolled, it rides along the top of the page. It only
+          APPEARS while the student is editing — and never when the student
+          switched it off in the Library tools menu. */}
       <NoteToolbar
         onPinnedChange={setToolbarPinned}
         view={editorView}
-        visible={editable && (editorFocused || toolbarPinned)}
+        visible={toolbarEnabled && editable && (editorFocused || toolbarPinned)}
       />
       <header className="mb-1">
-        <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <DocsCrumbs className="flex-1" onGoHome={onGoHome} onOpenFolder={onOpenFolder} path={folderPath} />
+        {/* No breadcrumbs (owner 2026-08-04) — just the quiet save state and
+            the note's own menu, riding the top right like a docs page. */}
+        <div className="flex items-center justify-end gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>
@@ -258,7 +268,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
         </div>
         <input
           aria-label="Note title"
-          className="mt-2 w-full bg-transparent text-[1.75rem] font-bold tracking-tight text-foreground outline-none placeholder:text-(--ui-text-quaternary)"
+          className="mt-2 w-full bg-transparent text-[2rem] font-bold tracking-[-0.02em] text-foreground outline-none placeholder:text-(--ui-text-quaternary)"
           onChange={(event) => updateDraft({ title: event.target.value })}
           placeholder="Untitled note"
           spellCheck
@@ -334,6 +344,44 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           </>
         ) : null}
       </div>
+
+      {/* Container pages list their contents — folders first, then notes, in
+          the sidebar's own order. Click a folder and you are reading ITS
+          page, which lists ITS contents: the whole library is reachable by
+          reading, like a wiki. */}
+      {containerIndex && (containerIndex.folders.length > 0 || containerIndex.notes.length > 0) && (
+        <section className="mt-8" data-testid="note-folder-index">
+          <h2 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">
+            {isHomeNote(note) ? "In your library" : "In this folder"}
+          </h2>
+          <ul className="grid gap-0.5">
+            {containerIndex.folders.map((folder) => (
+              <li key={folder.path}>
+                <button
+                  className="flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                  onClick={() => onOpenFolder(folder.path)}
+                  type="button"
+                >
+                  <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="folder" size="0.8125rem" />
+                  <span className="truncate">{folder.name}</span>
+                </button>
+              </li>
+            ))}
+            {containerIndex.notes.map((child) => (
+              <li key={child.id}>
+                <button
+                  className="flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                  onClick={() => onOpenPath(child.path)}
+                  type="button"
+                >
+                  <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="file" size="0.8125rem" />
+                  <span className="truncate">{child.title || child.path.split("/").pop()}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Derived, never hand-written: the Sources section is built FROM the
           note's inline citations (owner 2026-08-04: "inline citation pills

@@ -13,12 +13,12 @@
 import type { CloudLibraryNote } from "./library-tree";
 
 /** Case-insensitive, extension-blind comparison key for one path segment. */
-function segmentKey(segment: string): string {
+export function segmentKey(segment: string): string {
   return segment.trim().replace(/\.(md|markdown|txt)$/i, "").toLocaleLowerCase();
 }
 
 /** Comparison key for a whole folder path ("A/B" === "a/b "). */
-function folderKey(path: string): string {
+export function folderKey(path: string): string {
   return path.split("/").map((segment) => segment.trim()).filter(Boolean).map(segmentKey).join("/");
 }
 

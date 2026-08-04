@@ -283,6 +283,15 @@ const PREVIEW_TEST_CONTENT = {
       q: "What follows once a law facially discriminates against out-of-state commerce?",
       why: "Facial discrimination is virtually per se invalid absent no non-discriminatory alternative.",
     },
+    // The attempts above score out of FOUR questions, and the second sitting
+    // missed this one (picked: 2) — the review screen needs the question to
+    // exist to show that red "your pick" row.
+    {
+      answer: 0,
+      options: ["The market-participant doctrine", "Field preemption", "The dormant commerce clause", "Ex parte Young"],
+      q: "Which exception lets a state favor its own residents when it buys or sells in the market?",
+      why: "A state acting as a market participant may prefer its own citizens without dormant-commerce scrutiny.",
+    },
   ],
 };
 const PREVIEW_MAP_CONTENT = {
