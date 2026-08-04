@@ -17,7 +17,10 @@ interface NotebookComposerProps {
   large?: boolean;
   onModeChange?: (mode: ComposerMode) => void;
   onEffortChange?: (effort: ChatEffort) => void;
-  onRecordingChange?: (recording: boolean) => void;
+  onRecordingChange?: (recording: boolean, options?: { discard?: boolean }) => void;
+  onRecordingPauseToggle?: () => void;
+  recordingBusy?: boolean;
+  recordingPaused?: boolean;
   showRecordCompanion?: boolean;
   mode?: ComposerMode;
 }
@@ -30,6 +33,9 @@ export function NotebookComposer({
   onModeChange,
   onEffortChange,
   onRecordingChange,
+  onRecordingPauseToggle,
+  recordingBusy,
+  recordingPaused,
   showRecordCompanion,
   mode,
 }: NotebookComposerProps) {
@@ -40,10 +46,13 @@ export function NotebookComposer({
       onEffortChange={onEffortChange}
       onModeChange={onModeChange}
       onRecordingChange={onRecordingChange}
+      onRecordingPauseToggle={onRecordingPauseToggle}
       onStop={() => undefined}
       onSubmit={onSubmit}
       placement="inline"
       placeholder={placeholder}
+      recordingBusy={recordingBusy}
+      recordingPaused={recordingPaused}
       showRecordCompanion={showRecordCompanion}
     />
   );

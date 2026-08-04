@@ -23,7 +23,7 @@ import { NotebookTranscript } from "./notebook-transcript";
 import { useNotebooks } from "./notebooks-store";
 import { SessionRightRail, type SessionRailPanel, type SessionRailSource } from "../sessions/session-right-rail";
 import { type ComposerMode } from "../sessions/composer";
-import { RecordWorkspace } from "../sessions/record-workspace";
+import { RecordWorkspace, type RecordControls } from "../sessions/record-workspace";
 
 const PREVIEW_REPLY =
   "This is a preview build — replies here are canned. Sign in on the real app to chat about this notebook.";
@@ -81,6 +81,25 @@ export function NotebookChatView() {
     setRecordCanvasOpen(false);
     setComposerMode("chat");
   }, []);
+
+  /** Pause/Continue lives on the COMPOSER (owner 2026-08-03); the hook stays
+   *  in RecordWorkspace, which hands its controls up and reports `paused`
+   *  back — same shape as session-chat, so the two surfaces cannot drift. */
+  const [recordingPaused, setRecordingPaused] = useState(false);
+  /** True while a finished recording is still uploading/transcribing — the
+   *  panel must stay mounted through it or the recording is lost silently. */
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const recordControlsRef = useRef<RecordControls | null>(null);
+  const registerRecordControls = useCallback((controls: RecordControls | null) => {
+    recordControlsRef.current = controls;
+    if (!controls) setRecordingPaused(false);
+  }, []);
+  const handleRecordingPauseToggle = useCallback(() => {
+    const controls = recordControlsRef.current;
+    if (!controls) return;
+    if (recordingPaused) controls.resume();
+    else controls.pause();
+  }, [recordingPaused]);
 
   // Recorder pressed on the notebook home: the home creates this chat, sets
   // the one-shot intent, and navigates here — pick it up and go live.
@@ -161,16 +180,18 @@ export function NotebookChatView() {
         </div>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-6">
-          {composerMode === "record" && recordCanvasOpen ? (
+          {(composerMode === "record" && recordCanvasOpen) || recordingBusy ? (
             <RecordWorkspace
               accessToken={session?.access_token ?? null}
               active={recording}
               className="mb-2 mt-4 min-h-0 flex-1"
               discard={discardRecording}
               uid={uid}
+              onBusyChange={setRecordingBusy}
               onDiscarded={handleRecordingDiscarded}
               onFinished={handleRecordingFinished}
-              onRequestStop={() => handleRecordingChange(false)}
+              onPausedChange={setRecordingPaused}
+              registerControls={registerRecordControls}
             />
           ) : (
             <NotebookTranscript messages={messages} working={working} />
@@ -183,8 +204,11 @@ export function NotebookChatView() {
                 onEffortChange={(effort) => { effortRef.current = effort; }}
                 onModeChange={setComposerMode}
                 onRecordingChange={handleRecordingChange}
+                onRecordingPauseToggle={handleRecordingPauseToggle}
                 onSubmit={submit}
                 placeholder={`Message ${selected.name}…`}
+                recordingBusy={recordingBusy}
+                recordingPaused={recordingPaused}
                 showRecordCompanion={!recording}
                 mode={composerMode}
                 working={working}

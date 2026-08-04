@@ -118,9 +118,13 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
     useTimeGridGestures({ days, hours, onCommit: onMoveEvent, onOpenEvent, onPickSlot });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-(--ui-stroke-tertiary) bg-background">
+    // The app's card frame (owner 2026-08-03, "follow the design system"), and
+    // --ui-* strokes throughout instead of the legacy shadcn border-border —
+    // that parallel palette never got the dark-mode contrast tuning, which is
+    // why these hairlines read slightly off next to everything else in dark.
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
       {/* Day headings, pinned above the scrolling grid. */}
-      <div className="flex shrink-0 border-b border-border">
+      <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary)">
         {/* Google labels the gutter with the timezone the grid is drawn in.
             Worth copying literally: a student reading a syllabus written in
             another timezone needs to know which one these rows mean. Taken
@@ -140,7 +144,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
             // — and converted by RATIO to this app's 20px root rather than
             // pinned to Google's pixels, so the whole header still scales with
             // the student's text-size setting.
-            <div className="group relative flex flex-col items-center justify-center border-l border-border pb-1.5 pt-2" key={day.key}>
+            <div className="group relative flex flex-col items-center justify-center border-l border-(--ui-stroke-quaternary) pb-1.5 pt-2" key={day.key}>
               <span className="text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-(--ui-text-tertiary)">
                 {day.date.toLocaleDateString(undefined, { weekday: "short" })}
               </span>
@@ -178,7 +182,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
           rather than at an invented hour on the grid. Rendered only when
           something is in it, so an ordinary week keeps the space. */}
       {hasAllDay && (
-        <div className="flex shrink-0 border-b border-border bg-(--ui-bg-quaternary)/30">
+        <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary)/30">
           <div
             className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
             style={{ width: GUTTER_WIDTH }}
@@ -187,7 +191,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
           </div>
           <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
             {layouts.map((layout, index) => (
-              <div className="flex flex-col gap-0.5 border-l border-border p-1" key={days[index]?.key ?? index}>
+              <div className="flex flex-col gap-0.5 border-l border-(--ui-stroke-quaternary) p-1" key={days[index]?.key ?? index}>
                 {layout.allDay.map((event) => (
                   <button
                     className={cn(
@@ -260,7 +264,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
             <div aria-hidden className="pointer-events-none absolute inset-0">
               {labels.map((hour) => (
                 <div
-                  className="absolute inset-x-0 border-t border-border/60"
+                  className="absolute inset-x-0 border-t border-(--ui-stroke-quaternary)"
                   key={hour}
                   style={{ top: offsetFor(hour * 60, hours) }}
                 />
@@ -335,7 +339,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
   const timed = layout?.timed ?? [];
 
   return (
-    <div className="relative border-l border-border">
+    <div className="relative border-l border-(--ui-stroke-quaternary)">
       {timed.map((item) => {
         const top = offsetFor(item.startMinute, window);
         const height = offsetFor(item.endMinute, window) - top;
@@ -354,7 +358,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
           // blocks stayed 15% translucent. Staggered blocks sit ON TOP of each
           // other, so a see-through one reads as a muddy colour, not a stack.
           <div
-            className="absolute overflow-hidden rounded-md bg-card shadow-sm"
+            className="absolute overflow-hidden rounded-md bg-(--ui-bg-elevated) shadow-sm"
             key={item.event.id}
             style={{
               height: boxHeight,
@@ -371,7 +375,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
                 the student just finished moving. */}
             <button
               className={cn(
-                "flex size-full cursor-grab overflow-hidden rounded-md border border-border/70 px-1.5 text-left font-medium leading-tight transition-shadow hover:shadow-md active:cursor-grabbing",
+                "flex size-full cursor-grab overflow-hidden rounded-md border border-(--ui-stroke-tertiary) px-1.5 text-left font-medium leading-tight transition-shadow hover:shadow-md active:cursor-grabbing",
                 // Each tier pays for its extra line by giving up padding, so the
                 // content always fits the box rather than being sliced by it.
                 detail === "stacked" && "flex-col py-1 text-[0.6875rem]",

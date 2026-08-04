@@ -17,7 +17,7 @@
 // a folder writes group_name and survives a reload. It only LOOKS broken when
 // the tab has no folder yet, because then there is nothing to drop onto.
 
-import { IconArrowRight, IconChecklist, IconFolder, IconFolderPlus, IconSitemap, IconTrash } from "@tabler/icons-react";
+import { IconArrowRight, IconChecklist, IconChevronDown, IconChevronRight, IconFolderPlus, IconSitemap, IconTrash } from "@tabler/icons-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
 import { AgentEmptyState } from "./agent-empty-state";
 import { REMOVE_FOLDER, StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
+import { StudyTableSkeleton } from "./study-skeleton";
 
 interface GroupedStudyTabProps {
   kind: "tests" | "mindmaps";
@@ -54,9 +55,10 @@ interface GroupedStudyTabProps {
 /** Display name for items with no folder. Stored as "" on the row itself. */
 const UNGROUPED = UNGROUPED_LABEL;
 
-/** Indent per folder level. Matches the Cards tab so a student moving between
- *  the two tabs reads the same shape. */
-const INDENT_PX = 14;
+/** Indent per folder level, in rem — the Cards tab's exact number (owner
+ *  2026-08-03: the two trees "should be identical including collapse icon"),
+ *  so a student moving between the two tabs reads one shape. */
+const INDENT_REM = 1.1;
 
 const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
 
@@ -76,7 +78,7 @@ const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_6rem_2.25rem]";
 export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const confirm = useConfirm();
   const searchParams = useSearchParams();
-  const { artifacts, deleteArtifact, updateArtifact } = useCloudStudy();
+  const { artifacts, deleteArtifact, error, reload, status, updateArtifact } = useCloudStudy();
   const isTests = kind === "tests";
   const artifactKind: StudyArtifactKind = isTests ? "test" : "mindmap";
   const label = isTests ? "Tests" : "Mindmaps";
@@ -95,6 +97,18 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   // Row key currently renaming: "item:<id>" or "group:<name>".
   const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  // Folder open/closed — the Cards tab's exact mechanism (owner 2026-08-03:
+  // the two trees "should be identical including collapse icon").
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  function toggleGroup(id: string) {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const [drag, setDrag] = useState<ArtifactDrag | null>(null);
   const dragRef = useRef<ArtifactDrag | null>(null);
@@ -433,6 +447,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         key={node.id}
       >
         <GroupRow
+          collapsed={collapsed.has(node.id)}
           count={countInside(node)}
           depth={depth}
           dragging={beingDragged}
@@ -443,9 +458,26 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           onDelete={() => void removeGroup(node.path)}
           onPointerDragStart={(event) => beginDrag(event, { kind: "group", name: node.path })}
           onStartRename={() => setRenamingId(node.id)}
+          onToggle={() => toggleGroup(node.id)}
           renaming={renamingId === node.id}
+          suppressClick={() => performance.now() < ignoreClickUntilRef.current}
         />
-        {node.children.map((child) => renderNode(child, depth + 1))}
+        {/* Children stay INSIDE the drop wrapper (see the comment above) even
+            now that folders collapse — a drop onto a closed folder still
+            resolves through the wrapper. */}
+        {!collapsed.has(node.id) && node.children.map((child) => renderNode(child, depth + 1))}
+      </div>
+    );
+  }
+
+  if (status === "loading" || status === "idle") return <StudyTableSkeleton />;
+  if (status === "error") {
+    return (
+      <div className="grid flex-1 place-items-center px-6">
+        <div className="max-w-sm rounded-2xl border border-destructive/20 bg-destructive/5 p-5 text-center">
+          <p className="text-sm font-semibold">Study couldn’t load</p><p className="mt-1 text-xs text-muted-foreground">{error}</p>
+          <Button className="mt-4" onClick={reload} variant="secondary">Try again</Button>
+        </div>
       </div>
     );
   }
@@ -498,7 +530,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           data-artifact-drop-group=""
         >
           <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
-            <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
+            <span className="pl-[19px]">Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
           {/* min-h so there is somewhere to aim once every row is inside a
               folder — without it the card shrink-wraps its rows and the "drop
@@ -588,27 +620,52 @@ interface GroupRowProps {
   grid: string;
   dragging: boolean;
   renaming: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
   onStartRename: () => void;
   onCommitRename: (next: string) => void;
   onCancelRename: () => void;
   onDelete: () => void;
   onPointerDragStart: (event: React.PointerEvent) => void;
+  /** True right after a drag ended, so the release does not read as a click. */
+  suppressClick: () => boolean;
 }
 
-function GroupRow({ label, count, depth, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart }: GroupRowProps) {
+function GroupRow({ label, count, collapsed, depth, grid, dragging, renaming, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, onToggle, suppressClick }: GroupRowProps) {
   // Every folder row is now a real folder someone made. The old exception —
   // "Ungrouped", a placeholder for "no folder" that could not be renamed,
   // deleted or dragged — is gone with the flat list: loose items sit at the top
   // level of the tree instead of under a heading that stood for nothing.
+  //
+  // Row shape, chevron, hover and click-to-collapse are the Cards tab's
+  // DeckRow, verbatim (owner 2026-08-03: "identical including collapse icon").
   const row = (
     <div
-      className={cn("grid items-center px-5 py-2 text-xs cursor-grab active:cursor-grabbing", grid, dragging && "opacity-50")}
+      aria-expanded={!collapsed}
+      aria-label={label}
+      className={cn("grid w-full cursor-grab items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]", grid, dragging && "opacity-50")}
+      onClick={() => {
+        if (renaming || suppressClick()) return;
+        onToggle();
+      }}
+      onKeyDown={(event) => {
+        if (renaming) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onToggle();
+        } else if (event.key === "F2") {
+          event.preventDefault();
+          onStartRename();
+        }
+      }}
       // The 5px threshold in beginDrag is what keeps this from stealing clicks
       // on the row's own "…" menu — a press that never travels is not a drag.
       onPointerDown={(event) => { if (!renaming) onPointerDragStart(event); }}
+      role="button"
+      tabIndex={0}
     >
-      <span className="flex min-w-0 items-center gap-1.5 font-semibold" style={{ paddingLeft: depth * INDENT_PX }}>
-        <IconFolder className="shrink-0 text-(--ui-text-tertiary)" size={13} />
+      <span className="flex min-w-0 items-center gap-1.5 font-semibold" style={{ paddingLeft: `${depth * INDENT_REM}rem` }}>
+        {collapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />}
         {renaming
           ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={label} />
           : <span className="truncate">{label}</span>}
@@ -647,7 +704,7 @@ function ItemRow({ item, meta, depth, grid, dragging, dropTarget, highlighted, r
       <div
         aria-label={item.title}
         className={cn(
-          "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) active:cursor-grabbing",
+          "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
           grid,
           dragging && "opacity-50",
           dropTarget && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
@@ -673,7 +730,10 @@ function ItemRow({ item, meta, depth, grid, dragging, dropTarget, highlighted, r
         role="button"
         tabIndex={0}
       >
-        <span className="flex min-w-0 items-center pl-5" style={{ paddingLeft: 20 + depth * INDENT_PX }}>
+        <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: `${depth * INDENT_REM}rem` }}>
+          {/* The invisible chevron-width spacer the Cards tab uses, so item
+              titles line up with folder labels at every depth. */}
+          <span className="w-[13px] shrink-0" />
           {renaming
             ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={item.title} />
             : <span className="truncate">{item.title}</span>}

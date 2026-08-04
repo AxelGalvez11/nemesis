@@ -1,4 +1,11 @@
-// Year view — verbatim from desktop calendar/index.tsx §A.10 (YearGrid + MiniMonth).
+// Year view — from desktop calendar/index.tsx §A.10 (YearGrid + MiniMonth).
+//
+// Owner 2026-08-03: "the year mode doesnt have the same type of dark mode."
+// This was the one calendar view still styled with the legacy shadcn tokens
+// (border-border / bg-card / text-muted-foreground) — a parallel hand-set
+// palette that never got the dark-mode contrast tuning the real --ui-* cascade
+// did, so its borders and greys sat visibly off next to Month. Everything here
+// now uses the same --ui-* tokens as its sibling views.
 
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 import { monthGrid } from "@/lib/workspace/calendar-model";
@@ -13,7 +20,7 @@ interface YearGridProps {
 
 export function YearGrid({ eventsByDay, onSelectMonth, today, year }: YearGridProps) {
   return (
-    <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-2xl border border-border bg-card p-3 sm:grid-cols-3 xl:grid-cols-4">
+    <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-3 shadow-[0_3px_12px_rgba(0,0,0,0.04)] sm:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 12 }, (_, month) => (
         <MiniMonth
           days={monthGrid(year, month, today)}
@@ -41,7 +48,7 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
 
   return (
     <button
-      className="flex flex-col gap-1.5 rounded-xl border border-border p-2 text-left transition-colors hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background)"
+      className="flex flex-col gap-1.5 rounded-xl border border-(--ui-stroke-tertiary) p-2 text-left transition-colors hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background)"
       onClick={() => onSelectMonth(year, month)}
       type="button"
     >
@@ -51,7 +58,7 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
           <div className={cn("flex flex-col items-center gap-0.5", !day.inMonth && "opacity-30")} key={day.key}>
             <span
               className={cn(
-                "grid size-4 place-items-center rounded-full text-[0.5625rem] tabular-nums text-muted-foreground",
+                "grid size-4 place-items-center rounded-full text-[0.5625rem] tabular-nums text-(--ui-text-tertiary)",
                 day.isToday && "bg-(--theme-primary) font-semibold text-primary-foreground",
               )}
             >

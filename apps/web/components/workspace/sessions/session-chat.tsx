@@ -37,7 +37,7 @@ import { ProjectPill } from "./project-pill";
 import { Thread } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
-import { RecordWorkspace } from "./record-workspace";
+import { RecordWorkspace, type RecordControls } from "./record-workspace";
 import { SyllabusDialog } from "../calendar/syllabus-dialog";
 
 /** Where a recording's notes are filed. Its own folder so a semester of
@@ -132,6 +132,27 @@ export function SessionChat() {
     setDiscardRecording(options?.discard === true);
     setRecording(next);
   }, []);
+  /** Pause/Continue lives on the COMPOSER (owner 2026-08-03) while the hook
+   *  lives in RecordWorkspace — the panel hands its controls up through
+   *  registerControls and reports `paused` back down one way, so the button
+   *  and the panel can never disagree. */
+  const [recordingPaused, setRecordingPaused] = useState(false);
+  /** True while a finished recording is still uploading/transcribing. The
+   *  panel MUST stay mounted through this — unmounting mid-flight loses the
+   *  recording silently — so the render below keeps it up even if the student
+   *  has already left record mode. */
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const recordControlsRef = useRef<RecordControls | null>(null);
+  const registerRecordControls = useCallback((controls: RecordControls | null) => {
+    recordControlsRef.current = controls;
+    if (!controls) setRecordingPaused(false);
+  }, []);
+  const handleRecordingPauseToggle = useCallback(() => {
+    const controls = recordControlsRef.current;
+    if (!controls) return;
+    if (recordingPaused) controls.resume();
+    else controls.pause();
+  }, [recordingPaused]);
   // A deck handed over from the composer. Held here so the Study importer —
   // deck picker, progress, and error copy all already reviewed — is what runs,
   // rather than a second import path invented for chat.
@@ -635,16 +656,18 @@ export function SessionChat() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
-          {composerMode === "record" ? (
+          {composerMode === "record" || recordingBusy ? (
             <RecordWorkspace
               accessToken={authSession?.access_token ?? null}
               active={recording}
               className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3"
               discard={discardRecording}
               uid={uid}
+              onBusyChange={setRecordingBusy}
               onDiscarded={() => setComposerMode("chat")}
               onFinished={handleRecordingFinished}
-              onRequestStop={() => handleRecordingChange(false)}
+              onPausedChange={setRecordingPaused}
+              registerControls={registerRecordControls}
             />
           ) : (
             <Thread activity={liveActivity?.sessionId === selectedId ? liveActivity.label : null} busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
@@ -707,8 +730,11 @@ export function SessionChat() {
             onEffortChange={(effort) => { effortRef.current = effort; }}
             onModeChange={handleModeChange}
             onRecordingChange={handleRecordingChange}
+            onRecordingPauseToggle={handleRecordingPauseToggle}
             onStop={handleStop}
             onSubmit={handleSubmit}
+            recordingBusy={recordingBusy}
+            recordingPaused={recordingPaused}
             placeholder={projectId ? "Message your notebook" : placeholder}
             showRecordCompanion={false}
           />
