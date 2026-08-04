@@ -15,7 +15,7 @@
 // the center reveal folders HERE (expand + scroll) instead of navigating —
 // folders are never pages.
 
-import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconArrowsSort, IconTypography } from "@tabler/icons-react";
+import { IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconArrowsSort } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -71,19 +71,20 @@ interface DocsNavProps {
   /** Close the drawer after navigating (narrow viewports only). */
   onNavigate?: () => void;
   showBack?: boolean;
-  /** Docked = a flat, flush column like a docs site's nav; floating = the
-   *  rounded panel used for the hover peek and the narrow drawer. */
-  frame?: "docked" | "floating";
   /** Owner 2026-08-04: "change the 'hide automatically' option to the
-   *  library '...' settings menu. make it lock on by default" — both of
-   *  these live in the Library tools menu and persist per browser. */
+   *  library '...' settings menu. make it lock on by default" — lives in the
+   *  Library tools menu and persists per browser. */
   autoHide: boolean;
   onAutoHideChange: (next: boolean) => void;
-  toolbarHidden: boolean;
-  onToolbarHiddenChange: (next: boolean) => void;
+  /** True while this panel owns an open popup (the tools menu, the New
+   *  folder dialog). The hover-peek page keeps the panel out while held —
+   *  the menu portals outside the panel, so the pointer "leaving" for it
+   *  must not retract the sidebar under the open menu (owner 2026-08-04:
+   *  "the sidebar doesnt disspaear if users click on the '...' button"). */
+  onHoldOpenChange?: (held: boolean) => void;
 }
 
-export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, frame = "docked", autoHide, onAutoHideChange, toolbarHidden, onToolbarHiddenChange }: DocsNavProps) {
+export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, autoHide, onAutoHideChange, onHoldOpenChange }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -94,7 +95,14 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Tell the hover-peek page while a popup owned by this panel is up, so the
+  // sidebar can't slide away underneath it.
+  useEffect(() => {
+    onHoldOpenChange?.(toolsMenuOpen || createKind !== null);
+  }, [createKind, onHoldOpenChange, toolsMenuOpen]);
   // Tree operations used to fail into the void: every rename/move/delete was
   // a floating promise, so a collision or a signed-out session looked like a
   // dead button (owner 2026-08-04: "some buttons show non UI"). Every one now
@@ -149,19 +157,12 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
   };
 
   return (
-    // Docked, this is a flat flush column with a hairline edge — the way a
-    // docs site's nav sits (owner 2026-08-04: "i need library to be like …
-    // developer [docs]: like obsidian.md/help"). The rounded floating box
-    // survives as the hover-peek and the narrow drawer. The wrapper in
-    // library-docs-page decides WHERE it sits; this aside only knows its box.
-    <aside
-      className={cn(
-        "flex h-full w-64 shrink-0 flex-col overflow-hidden bg-(--ui-sidebar-surface-background)",
-        frame === "docked"
-          ? "border-r border-(--ui-stroke-tertiary)"
-          : "rounded-xl border border-(--ui-stroke-tertiary) shadow-[0_3px_12px_rgba(0,0,0,0.05)]",
-      )}
-    >
+    // ALWAYS the rounded panel (owner 2026-08-04, with a screenshot of it:
+    // "the side bar should always be like this, dont make it not round") —
+    // docked, peeking, or as the narrow drawer, the box itself never changes.
+    // The wrapper in library-docs-page decides WHERE it sits; this aside only
+    // knows its box.
+    <aside className="flex h-full w-64 shrink-0 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) shadow-[0_3px_12px_rgba(0,0,0,0.05)]">
       <div className="workspace-page-header px-3 pb-1 pt-2.5">
         {showBack && (
           <Button
@@ -195,23 +196,10 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
               type="file"
             />
             <Button aria-label="New note" onClick={() => void createBlankNote()} size="icon-xs" title="New note" type="button" variant="ghost"><IconFilePlus /></Button>
-            {/* One visible switch for the note formatting bar (owner
-                2026-08-04: "make a formatting button appear next to the
-                '...'"). Dimmed = the bar stays hidden while editing. */}
-            <Button
-              aria-label={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
-              aria-pressed={!toolbarHidden}
-              className={cn(toolbarHidden && "opacity-45")}
-              data-testid="library-format-toggle"
-              onClick={() => onToolbarHiddenChange(!toolbarHidden)}
-              size="icon-xs"
-              title={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
-              type="button"
-              variant="ghost"
-            >
-              <IconTypography />
-            </Button>
-            <DropdownMenu>
+            {/* The formatting-bar switch lives in the NOTE's own header now
+                (owner 2026-08-04: "the formatting button should not be in
+                sidebar, it should be in the note"). */}
+            <DropdownMenu onOpenChange={setToolsMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button aria-label="Library tools" size="icon-xs" title="Library tools" type="button" variant="ghost"><IconDots /></Button>
               </DropdownMenuTrigger>

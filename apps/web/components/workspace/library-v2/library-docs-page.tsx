@@ -85,10 +85,11 @@ export function LibraryDocsPage() {
   // '...' settings menu. make it lock on by default" + "the library sidebar
   // should open when user hovers mouse on the left side, no collapse button."
   // Auto-hide OFF (the default): the sidebar is simply always there on wide
-  // viewports, like a docs site's nav — nothing collapses it. ON: it lives
-  // hidden at the left edge and slides out while the pointer is over that
-  // edge (or the panel itself), then lets go. The formatting-bar switch is
-  // the button beside the "…" in the panel header.
+  // viewports — nothing collapses it. ON: it lives hidden at the left edge
+  // and slides out while the pointer is over that edge (or the panel
+  // itself), then lets go. The formatting-bar switch rides the open note's
+  // own header (owner 2026-08-04: "the formatting button should not be in
+  // sidebar, it should be in the note").
   const [autoHide, setAutoHide] = usePersistentFlag("nemesis.web.library-sidebar-autohide", false);
   const [toolbarHidden, setToolbarHidden] = usePersistentFlag("nemesis.web.note-toolbar-hidden", false);
   // What the layout actually obeys: the drawer state on narrow viewports;
@@ -182,6 +183,14 @@ export function LibraryDocsPage() {
   // only — touch has no hover, so narrow keeps its drawer. The grace timer
   // lets the pointer cross gaps without the panel vanishing mid-journey.
   const [peek, setPeek] = useState(false);
+  // The peeked panel's own popups (the "…" menu, the New folder dialog)
+  // portal OUTSIDE the panel, so using them reads as the pointer leaving.
+  // While one is open the panel is held out regardless of hover; `peek`
+  // keeps tracking the pointer honestly underneath, so on close the panel
+  // stays if the pointer is back on it and retracts if it isn't (owner
+  // 2026-08-04: "the sidebar doesnt disspaear if users click on the '...'
+  // button on the sidebar").
+  const [navHeld, setNavHeld] = useState(false);
   const peekTimerRef = useRef<number | null>(null);
   const clearPeekTimer = useCallback(() => {
     if (peekTimerRef.current !== null) {
@@ -318,18 +327,17 @@ export function LibraryDocsPage() {
 
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-bg-chrome)">
-      {(sidebarLocked || (peek && !narrowViewport)) && (
+      {(sidebarLocked || ((peek || navHeld) && !narrowViewport)) && (
         <>
           {sidebarLocked && narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
-          {/* Locked = a flat, flush docs-nav column (Obsidian Help's shape).
-              Unlocked-but-hovered = a rounded panel floating OVER the page
-              (Notion-style peek), kept alive while the pointer stays on it.
-              The peek starts at the very top: its own "Library" heading lands
-              exactly where the floating trigger word was, and clicking that
-              heading is how the peek becomes a lock. */}
+          {/* The panel is ALWAYS the same rounded box (owner 2026-08-04:
+              "the side bar should always be like this, dont make it not
+              round"). Locked, it sits in the row with a small gutter and
+              pushes the page; unlocked-but-hovered it floats OVER the page
+              (Notion-style peek), kept alive while the pointer stays on it. */}
           <div
             className={cn(
-              sidebarLocked && !narrowViewport && "flex shrink-0 pt-[var(--titlebar-height)]",
+              sidebarLocked && !narrowViewport && "flex shrink-0 p-2 pl-2.5 pt-[calc(var(--titlebar-height)+0.5rem)]",
               sidebarLocked && narrowViewport && "absolute inset-y-0 left-0 z-40 p-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
               !sidebarLocked && "library-peek-panel absolute bottom-2 left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-40",
             )}
@@ -339,21 +347,19 @@ export function LibraryDocsPage() {
           >
             <DocsNav
               autoHide={autoHide}
-              frame={sidebarLocked && !narrowViewport ? "docked" : "floating"}
               onAutoHideChange={setAutoHide}
+              onHoldOpenChange={setNavHeld}
               onNavigate={() => narrowViewport && setNavOpen(false)}
               onOpenFolderNote={(path) => void openFolderPage(path)}
               onOpenNote={openPath}
               onOpenSource={openSource}
               onSourcesChanged={bumpSources}
-              onToolbarHiddenChange={setToolbarHidden}
               openNotePath={note?.path ?? null}
               openSourceId={openedSource?.id ?? null}
               revealFolder={reveal}
               selectedFolderPath={selectedFolderPath}
               showBack={libraryFullScreen && !narrowViewport}
               sources={librarySources}
-              toolbarHidden={toolbarHidden}
             />
           </div>
         </>
@@ -419,9 +425,10 @@ export function LibraryDocsPage() {
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
               onStudyAction={startStudyAction}
+              onToolbarHiddenChange={setToolbarHidden}
               openableSourceIds={openableSourceIds}
               saveNote={saveNote}
-              toolbarEnabled={!toolbarHidden}
+              toolbarHidden={toolbarHidden}
             />
           ) : missingRequested ? (
             <MissingPanel description="It may have been renamed or deleted on another device." onGoHome={goHome} title="That note isn't here" />

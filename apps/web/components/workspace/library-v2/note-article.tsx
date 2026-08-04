@@ -20,7 +20,7 @@
 // unchanged: 650ms autosave, dirty-draft save on switch, remote edits adopted
 // only while nothing is unsaved here.
 
-import { IconArrowNarrowLeft, IconDots, IconTrash } from "@tabler/icons-react";
+import { IconArrowNarrowLeft, IconDots, IconTrash, IconTypography } from "@tabler/icons-react";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
@@ -97,11 +97,15 @@ interface NoteArticleProps {
   /** Wraps ONLY the note body — the ToC queries its h1-h4 by position. */
   articleRef: React.RefObject<HTMLDivElement | null>;
   /** Owner 2026-08-04: "there needs to be a way to hide to formatting
-   *  toolbar" — off, the bar never appears; editing itself is untouched. */
-  toolbarEnabled: boolean;
+   *  toolbar" and "the formatting button should not be in sidebar, it
+   *  should be in the note" — the switch rides this note's header, the
+   *  choice persists per browser (page-level localStorage flag). Hidden,
+   *  the bar never appears; editing itself is untouched. */
+  toolbarHidden: boolean;
+  onToolbarHiddenChange: (hidden: boolean) => void;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef, toolbarEnabled }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef, toolbarHidden, onToolbarHiddenChange }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -240,7 +244,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
       <NoteToolbar
         onPinnedChange={setToolbarPinned}
         view={editorView}
-        visible={toolbarEnabled && editable && (editorFocused || toolbarPinned)}
+        visible={!toolbarHidden && editable && (editorFocused || toolbarPinned)}
       />
       <header className="mb-1">
         {/* No breadcrumbs (owner 2026-08-04) — just the quiet save state and
@@ -248,6 +252,25 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
         <div className="flex items-center justify-end gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
+            {/* The formatting-bar switch (owner 2026-08-04: "the formatting
+                button should not be in sidebar, it should be in the note").
+                Dimmed = the bar stays hidden while editing. Only shown on
+                notes the editor (and so the bar) can actually work on. */}
+            {editable && (
+              <Button
+                aria-label={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
+                aria-pressed={!toolbarHidden}
+                className={cn(toolbarHidden && "opacity-45")}
+                data-testid="note-format-toggle"
+                onClick={() => onToolbarHiddenChange(!toolbarHidden)}
+                size="icon-xs"
+                title={toolbarHidden ? "Show the formatting toolbar" : "Hide the formatting toolbar"}
+                type="button"
+                variant="ghost"
+              >
+                <IconTypography />
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end" data-testid="note-study-actions">
