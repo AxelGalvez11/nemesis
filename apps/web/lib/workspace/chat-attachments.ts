@@ -4,6 +4,7 @@ import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
+import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
 import { isSlimmableOfficeName, OFFICE_SLIM_THRESHOLD_BYTES, slimOfficeArchive } from "@/lib/workspace/office-slim";
 import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 
@@ -171,7 +172,19 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
     });
     if (uploaded.error) return base;
     const signed = await supabase.storage.from("library-sources").createSignedUrl(storagePath, 31_536_000);
-    return { ...base, mime, storagePath, ...(signed.data?.signedUrl ? { url: signed.data.signedUrl } : {}) };
+    // The stored document is also FILED as a Library source (owner
+    // 2026-08-04: uploads are course material — notes made from them cite
+    // them with [n](?source=<id>) pills, and syllabi/lectures belong in the
+    // Library, not just in a chat bucket). Deduped by name+size, so
+    // re-attaching the same file reuses its row.
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath);
+    return {
+      ...base,
+      mime,
+      storagePath,
+      ...(sourceId ? { sourceId } : {}),
+      ...(signed.data?.signedUrl ? { url: signed.data.signedUrl } : {}),
+    };
   } catch {
     return base;
   }
@@ -283,6 +296,9 @@ export interface AttachmentSource {
   label: string;
   type: string;
   content: string;
+  /** Library source row for this file — teaches the model the ?source= id
+   *  its note citations must use. */
+  sourceId?: string;
 }
 
 /**
@@ -319,12 +335,18 @@ export function fitAttachmentBlocks(
     // student actually typed — anything placed before that marker would be
     // classified as part of their message and routed on.
     const rule = blocks.length === 0 ? `${UNTRUSTED_CONTENT_RULE}\n\n` : "";
+    // A filed document teaches the model its citation id here, in the app's
+    // own header (never inside the untrusted fence) — this is what lets
+    // "make notes from this lecture" produce pills that open the original.
+    const sourceLine = source.sourceId
+      ? `\nStored in the student's Library as source ${source.sourceId} — when writing notes from this file, cite passages inline as [n](?source=${source.sourceId}).`
+      : "";
     // Header OUTSIDE the fence (chat-skills.ts matches on it, and the student's
     // own filename belongs to the app), content INSIDE it. The label is repeated
     // on the fence line by wrapUntrusted so the model can tell two fenced blocks
     // apart without leaving the fence.
     blocks.push(
-      `### Attachment: ${source.label}\nType: ${source.type || "unknown"}\n\n` +
+      `### Attachment: ${source.label}\nType: ${source.type || "unknown"}${sourceLine}\n\n` +
       rule +
       wrapUntrusted(source.label, `${clipped}${notice}`),
     );
@@ -378,12 +400,20 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     return { content, label: relativePath(file) || file.name, type: file.type };
   }));
 
+  // Marry each file's text to its Library source id (persistChatAttachment
+  // and the extraction map share the order of `files`), so the wire blocks
+  // can teach the model what to cite.
+  const sourcedBlocks = sources.map((source, index) => {
+    const sourceId = attachments[index]?.sourceId;
+    return sourceId ? { ...source, sourceId } : source;
+  });
+
   return {
     attachments,
     displayText,
     // Per-file extracted text, in the same order as `files` — the caller's
     // content gates (is this a syllabus?) read these instead of re-extracting.
-    sources,
-    wireText: `${text.trim()}\n\n${fitAttachmentBlocks(sources).join("\n\n")}`.trim(),
+    sources: sourcedBlocks,
+    wireText: `${text.trim()}\n\n${fitAttachmentBlocks(sourcedBlocks).join("\n\n")}`.trim(),
   };
 }

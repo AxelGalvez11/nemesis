@@ -26,6 +26,18 @@ export interface ExplainTurn {
   text: string;
 }
 
+/** Owner 2026-08-04: "the nemesis 'explain' should be able to remake, alter,
+ *  flashcards and test questions." The host owns HOW a revision is built and
+ *  applied (structured call + store write); the panel owns the button, the
+ *  busy state, and the confirmation turn. */
+export interface ExplainRevise {
+  /** What the button names — "question" or "card". */
+  noun: string;
+  /** Build and apply the revision from this transcript. Resolve to null on
+   *  success, or a student-readable problem. */
+  apply: (turns: ExplainTurn[]) => Promise<string | null>;
+}
+
 interface ExplainChatProps {
   /** One transcript per item — card id or `${artifactId}:${questionIndex}`. */
   contextKey: string;
@@ -36,6 +48,8 @@ interface ExplainChatProps {
   previewMode: boolean;
   userId: string | null;
   className?: string;
+  /** Present = the panel can rewrite the item it is explaining. */
+  revise?: ExplainRevise;
 }
 
 /** Three quiet dots that breathe while the model thinks. */
@@ -63,10 +77,11 @@ function previewAnswer(context: string, followUp: string | null): string {
   return `The heart of it: ${firstLine}\n\nWork from what the item gives you toward the answer one step at a time, and notice which step the item is really testing — that step is the one worth remembering. Ask a follow-up if any link in the chain feels loose.`;
 }
 
-export function ExplainChat({ cache, className, context, contextKey, onClose, previewMode, userId }: ExplainChatProps) {
+export function ExplainChat({ cache, className, context, contextKey, onClose, previewMode, revise, userId }: ExplainChatProps) {
   const [turns, setTurns] = useState<ExplainTurn[]>(() => cache.get(contextKey) ?? []);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [revising, setRevising] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -152,6 +167,29 @@ export function ExplainChat({ cache, className, context, contextKey, onClose, pr
     void ask(text, turns);
   }
 
+  async function runRevise() {
+    if (!revise || revising || busy) return;
+    const key = contextKey;
+    setRevising(true);
+    setError(null);
+    try {
+      const problem = await revise.apply(turns);
+      if (keyRef.current !== key) return;
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      const confirmation: ExplainTurn = { role: "assistant", text: `Done — I've rewritten this ${revise.noun}. It updates everywhere it appears.` };
+      const nextTurns = [...(cache.get(key) ?? turns), confirmation];
+      cache.set(key, nextTurns);
+      setTurns(nextTurns);
+    } catch (cause) {
+      if (keyRef.current === key) setError(cause instanceof Error ? cause.message : `Couldn't rewrite this ${revise.noun}.`);
+    } finally {
+      if (keyRef.current === key) setRevising(false);
+    }
+  }
+
   return (
     <aside
       className={cn(
@@ -190,6 +228,21 @@ export function ExplainChat({ cache, className, context, contextKey, onClose, pr
           </div>
         )}
       </div>
+      {revise && !previewMode && (
+        <div className="flex items-center gap-2 border-t border-(--ui-stroke-tertiary) px-3.5 py-1.5">
+          <Button
+            data-testid="explain-revise"
+            disabled={busy || revising}
+            onClick={() => void runRevise()}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {revising ? "Rewriting…" : `Rewrite this ${revise.noun}`}
+          </Button>
+          <span className="min-w-0 truncate text-[0.65rem] text-(--ui-text-quaternary)">Uses what you said here</span>
+        </div>
+      )}
       <form
         className="flex items-center gap-1.5 border-t border-(--ui-stroke-tertiary) py-2 pl-3.5 pr-2"
         onSubmit={(event) => {
