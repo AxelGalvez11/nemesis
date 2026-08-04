@@ -54,11 +54,16 @@ export interface RowRemoval {
 const DELETE_ROW: RowRemoval = { label: "Delete", icon: <IconTrash />, destructive: true };
 export const REMOVE_FOLDER: RowRemoval = { label: "Remove folder", icon: <IconFolderMinus />, destructive: false };
 
-function RowActionItems({ Item, onRename, onDelete, removal }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void; removal: RowRemoval }) {
+function RowActionItems({ Item, onRename, onDelete, removal, onDeleteForever }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void; removal: RowRemoval; onDeleteForever?: () => void }) {
   return (
     <>
       <Item onSelect={onRename}><IconPencil /> Rename</Item>
       <Item onSelect={onDelete} variant={removal.destructive ? "destructive" : "default"}>{removal.icon} {removal.label}</Item>
+      {/* Folders carry BOTH verbs (owner 2026-08-03: "card deck folders still
+          cannot be deleted"): "Remove folder" above keeps the decks and stays
+          grey; this one takes the decks with it and is red like every other
+          real delete. Its caller owns the confirmation. */}
+      {onDeleteForever && <Item onSelect={onDeleteForever} variant="destructive"><IconTrash /> Delete folder and decks</Item>}
     </>
   );
 }
@@ -79,9 +84,11 @@ interface StudyRowMenuProps {
   onDelete: () => void;
   /** Defaults to the red "Delete"; pass REMOVE_FOLDER when nothing is lost. */
   removal?: RowRemoval;
+  /** Folder rows only: the destructive delete-with-contents. */
+  onDeleteForever?: () => void;
 }
 
-export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW }: StudyRowMenuProps) {
+export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW, onDeleteForever }: StudyRowMenuProps) {
   return (
     <DropdownMenu>
       {/* 🔴 THE TIP GOES OUTSIDE THE DROPDOWN TRIGGER, not around the button.
@@ -109,19 +116,19 @@ export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_R
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="end" className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onRename={onRename} removal={removal} />
+        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 /** Wraps a row so right-clicking it offers the same Rename/Delete. */
-export function StudyRowContextMenu({ children, onRename, onDelete, removal = DELETE_ROW }: { children: React.ReactNode; onRename: () => void; onDelete: () => void; removal?: RowRemoval }) {
+export function StudyRowContextMenu({ children, onRename, onDelete, removal = DELETE_ROW, onDeleteForever }: { children: React.ReactNode; onRename: () => void; onDelete: () => void; removal?: RowRemoval; onDeleteForever?: () => void }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onRename={onRename} removal={removal} />
+        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
       </ContextMenuContent>
     </ContextMenu>
   );

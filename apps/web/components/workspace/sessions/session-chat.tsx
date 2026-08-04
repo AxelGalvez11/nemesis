@@ -15,7 +15,8 @@ import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
-import { partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { chatDisplayText, draftAttachmentRecords, partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { executeAgentTool } from "@/lib/workspace/agent-tools";
 import type { PendingDelete } from "@nemesis/shared";
@@ -23,13 +24,14 @@ import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effor
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
-import { saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
+import { loadCalendarEvents, saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
 import { requestRecordingNote } from "@/lib/workspace/recording-note";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 
 
 import { ChatHeader } from "./chat-header";
+import { ChatSuggestions } from "./chat-suggestions";
 import { Composer, type ComposerMode } from "./composer";
 import { ProjectPill } from "./project-pill";
 import { Thread } from "./thread";
@@ -75,9 +77,23 @@ function titleFromPrompt(text: string) {
   return compact.length <= 54 ? compact : `${compact.slice(0, 54).trimEnd()}…`;
 }
 
+function isDocumentFile(file: File): boolean {
+  return /\.(pdf|docx|pptx)$/i.test(file.name);
+}
+
 function looksLikeSyllabus(file: File): boolean {
-  return /\.(pdf|docx|pptx)$/i.test(file.name) &&
+  return isDocumentFile(file) &&
     /(syllabus|course[\s_-]*(schedule|outline)|class[\s_-]*schedule)/i.test(file.name);
+}
+
+/** The student's own words asking for a calendar import. This is what catches
+ *  real syllabi whose filenames say nothing ("Fall-2026-PHCY-2105-01-….pdf")
+ *  — the owner attached four of those with "here are my syllabuses, put them
+ *  into the calendar" and the old name-only gate sent them all to the generic
+ *  text path, where the model surfaced 3 dates out of four courses. Kept
+ *  narrow on purpose: "what's the deadline in this paper?" must NOT trigger. */
+function asksForCalendarImport(text: string): boolean {
+  return /syllab/i.test(text) || (/\b(add|put|import|load)\b/i.test(text) && /calendar|schedule/i.test(text));
 }
 
 export function SessionChat() {
@@ -120,9 +136,10 @@ export function SessionChat() {
   // deck picker, progress, and error copy all already reviewed — is what runs,
   // rather than a second import path invented for chat.
   const [deckToImport, setDeckToImport] = useState<File | null>(null);
-  // `file` is null when the student chose "Syllabus" from the chat menu and
-  // has yet to pick one — the dialog shows its own file picker in that case.
-  const [syllabusImport, setSyllabusImport] = useState<{ file: File | null; targetId: string } | null>(null);
+  // A QUEUE, front file first: attaching several syllabi at once walks the
+  // reviewed importer through them one dialog at a time (owner 2026-08-03
+  // attached four). Closing a dialog — imported or cancelled — advances it.
+  const [syllabusImport, setSyllabusImport] = useState<{ files: File[]; targetId: string } | null>(null);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -288,18 +305,23 @@ export function SessionChat() {
       // Route it through the same quote-verified review flow as Calendar's own
       // importer instead of asking the chat model to rediscover dates and call
       // add_calendar_event repeatedly (the path that mis-mapped this account).
-      const syllabus = files.length === 1 && looksLikeSyllabus(files[0]!) ? files[0]! : null;
-      if (syllabus && !preview) {
+      // The gate: a filename that says syllabus, OR the student's own words
+      // asking for a calendar import while documents are attached. Only when
+      // EVERY attached file qualifies — a syllabus mixed in with lecture notes
+      // stays a normal question rather than being split into two flows.
+      const importIntent = asksForCalendarImport(text);
+      const syllabusFiles = files.filter((file) => looksLikeSyllabus(file) || (importIntent && isDocumentFile(file)));
+      if (syllabusFiles.length > 0 && syllabusFiles.length === files.length && !preview) {
         const targetId = selectedId ?? sessionsStore.create().id;
         const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
-        if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || syllabus.name));
+        if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || syllabusFiles[0]!.name));
         sessionsStore.appendMessage(targetId, {
           at: new Date().toISOString(),
-          content: `${text.trim()}${text.trim() ? "\n\n" : ""}Attachments: ${syllabus.name}`,
+          content: chatDisplayText(text, syllabusFiles),
           role: "user",
         });
         setError(null);
-        setSyllabusImport({ file: syllabus, targetId });
+        setSyllabusImport({ files: syllabusFiles, targetId });
         return;
       }
 
@@ -309,8 +331,8 @@ export function SessionChat() {
       }
       const targetId = selectedId ?? sessionsStore.create().id;
       const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
-      const prepared = await prepareChatAttachments(text, files, uid);
-      if (!prepared.displayText) return;
+      const displayText = chatDisplayText(text, files);
+      if (!displayText) return;
       if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || files[0]?.name || "New session"));
       setError(null);
       const preferenceQuestion =
@@ -318,8 +340,7 @@ export function SessionChat() {
       if (preferenceQuestion) {
         sessionsStore.appendMessage(targetId, {
           at: new Date().toISOString(),
-          ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
-          content: prepared.displayText,
+          content: displayText,
           role: "user",
         });
         sessionsStore.appendMessage(targetId, {
@@ -330,27 +351,55 @@ export function SessionChat() {
         return;
       }
 
-      if (preview) {
-        sessionsStore.appendMessage(targetId, {
-          at: new Date().toISOString(),
-          ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
-          content: prepared.displayText,
-          role: "user",
-        });
+      const previewReply = () => {
         sessionsStore.setWorking(targetId, true);
         window.setTimeout(() => {
           sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: PREVIEW_REPLY, role: "assistant" });
           sessionsStore.setWorking(targetId, false);
         }, 900);
+      };
+
+      if (files.length === 0) {
+        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: displayText, role: "user" });
+        if (preview) return previewReply();
+        void runTurn(uid, targetId, history, text.trim());
         return;
       }
 
-      sessionsStore.appendMessage(targetId, {
+      // FILES ATTACHED. The message goes up NOW and the thinking strip says
+      // "Reading your files…" — extraction used to run first, one file at a
+      // time, with the composer already cleared and nothing else on screen
+      // (owner 2026-08-03: "the chat lags behind when user uploads files").
+      // The optimistic message is local-only (appendPending); resolvePending
+      // afterwards writes the ONE cloud copy, with the durable attachment
+      // records — appendMessage's cloud upsert keeps the first write of an id
+      // forever, so appending early and patching later would freeze the
+      // name-only chips into the record.
+      const messageId = typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      sessionsStore.appendPending(targetId, {
         at: new Date().toISOString(),
-        ...(prepared.attachments.length ? { attachments: prepared.attachments } : {}),
-        content: prepared.displayText,
+        attachments: draftAttachmentRecords(files),
+        content: displayText,
+        id: messageId,
         role: "user",
       });
+      sessionsStore.setWorking(targetId, true);
+      setLiveActivity({ label: "Reading your files…", sessionId: targetId });
+      let prepared: Awaited<ReturnType<typeof prepareChatAttachments>>;
+      try {
+        prepared = await prepareChatAttachments(text, files, uid);
+      } catch {
+        sessionsStore.resolvePending(targetId, messageId, { content: displayText });
+        sessionsStore.setWorking(targetId, false);
+        setLiveActivity((current) => (current?.sessionId === targetId ? null : current));
+        setError({ kind: "generic", sessionId: targetId, text: "Couldn't read the attached files — try sending them again." });
+        return;
+      }
+      sessionsStore.resolvePending(targetId, messageId, { attachments: prepared.attachments, content: prepared.displayText });
+      setLiveActivity((current) => (current?.sessionId === targetId && current.label === "Reading your files…" ? null : current));
+      if (preview) return previewReply();
       void runTurn(uid, targetId, history, prepared.wireText);
     },
     [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
@@ -363,25 +412,37 @@ export function SessionChat() {
 
   const importSyllabusEvents = useCallback(async (events: CalendarEvent[]) => {
     if (!uid || preview || !syllabusImport) throw new Error("Sign in to import a syllabus.");
+    // What is already on the calendar decides what happens next: exact repeats
+    // (same name, same day) are skipped, so importing the same syllabus twice
+    // cannot double every deadline — and time collisions are saved but called
+    // out, because which one moves is the student's decision, not the
+    // importer's (owner 2026-08-03: "recognize... if there are dates that
+    // conflict").
+    const existing = (await loadCalendarEvents({ preview: false, userId: uid })).events;
+    const split = splitCalendarConflicts(events, existing);
     const saved: CalendarEvent[] = [];
-    for (const event of events) saved.push(await saveCalendarEvent(event, { preview: false, userId: uid }));
-    if (!saved.length) return;
+    for (const event of split.toSave) saved.push(await saveCalendarEvent(event, { preview: false, userId: uid }));
+    const summary = conflictSummary(split);
+    if (!saved.length && !summary) return;
     const firstDate = [...saved].sort((a, b) => a.date.localeCompare(b.date))[0]?.date;
     const artifactId = typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `calendar-${Date.now().toString(36)}`;
+    const sourceName = syllabusImport.files[0]?.name ?? "your syllabus";
+    const added = saved.length
+      ? `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${sourceName} to your calendar.`
+      : `Nothing new to add from ${sourceName}.`;
     sessionsStore.appendMessage(syllabusImport.targetId, {
       at: new Date().toISOString(),
-      // The file name only exists when a file was DROPPED into chat. Chosen
-      // from the Add menu, the dialog owns the picker, so the message names
-      // the syllabus generically rather than printing "undefined".
-      content: `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${syllabusImport.file?.name ?? "your syllabus"} to your calendar.`,
-      outputs: [{
-        id: artifactId,
-        kind: "event",
-        route: `/calendar${firstDate ? `?date=${encodeURIComponent(firstDate)}` : ""}`,
-        title: `${saved.length} syllabus event${saved.length === 1 ? "" : "s"}`,
-      }],
+      content: [added, summary].filter(Boolean).join(" "),
+      ...(saved.length ? {
+        outputs: [{
+          id: artifactId,
+          kind: "event" as const,
+          route: `/calendar${firstDate ? `?date=${encodeURIComponent(firstDate)}` : ""}`,
+          title: `${saved.length} syllabus event${saved.length === 1 ? "" : "s"}`,
+        }],
+      } : {}),
       role: "assistant",
     });
   }, [preview, syllabusImport, uid]);
@@ -637,6 +698,9 @@ export function SessionChat() {
                 value={projectId}
               />
             )}
+            belowCenter={isFreshThread && composerMode === "chat" && !busy ? (
+              <ChatSuggestions onPick={(prompt) => { void handleSubmit(prompt, []); }} />
+            ) : undefined}
             busy={busy}
             centered={isFreshThread && composerMode === "chat"}
             mode={composerMode}
@@ -656,10 +720,15 @@ export function SessionChat() {
         onOpenChange={(next) => { if (!next) setDeckToImport(null); }}
         open={deckToImport !== null}
       />
-      {syllabusImport ? (
+      {syllabusImport && syllabusImport.files.length > 0 ? (
         <SyllabusDialog
-          initialFile={syllabusImport.file}
-          onClose={() => setSyllabusImport(null)}
+          // Keyed per file so each syllabus in the queue gets a fresh dialog;
+          // closing one (imported or cancelled) advances to the next.
+          key={`${syllabusImport.targetId}:${syllabusImport.files.length}:${syllabusImport.files[0]!.name}`}
+          initialFile={syllabusImport.files[0]!}
+          onClose={() => setSyllabusImport((current) =>
+            current && current.files.length > 1 ? { ...current, files: current.files.slice(1) } : null,
+          )}
           onImport={importSyllabusEvents}
           uid={preview ? null : uid}
         />

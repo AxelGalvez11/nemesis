@@ -113,7 +113,7 @@ function loadGroups(): string[] {
 
 export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const confirm = useConfirm();
-  const { cards, decks, deleteCard, deleteDeck, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
+  const { cards, decks, deleteCard, deleteDeck, deleteDeckGroup, dissolveDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -206,6 +206,29 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       persistGroups(extraGroups.filter((group) => !isWithinGroup(group, path)));
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't remove the folder.");
+    }
+  }
+
+  // The other folder verb (owner 2026-08-03: "card deck folders still cannot
+  // be deleted" — remove-but-keep was not what they were reaching for). This
+  // one deletes the folder AND every deck inside it, so the confirmation
+  // quotes the full cost before anything happens.
+  async function destroyGroup(path: string) {
+    const inside = decks.filter((deck) => isWithinGroup(deck.name, path));
+    const leaf = pathLeaf(path);
+    const body = inside.length === 0
+      ? "The folder is empty — nothing else is deleted."
+      : `Its ${inside.length} deck${inside.length === 1 ? "" : "s"} and all of their cards are deleted with it. This can't be undone.`;
+    if (!(await confirm({
+      body,
+      title: `Delete the folder “${leaf}” and everything in it?`,
+    }))) return;
+    setActionError(null);
+    try {
+      await deleteDeckGroup(path);
+      persistGroups(extraGroups.filter((group) => !isWithinGroup(group, path)));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't delete the folder.");
     }
   }
 
@@ -457,6 +480,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
                 onCancelRename={() => setRenamingId(null)}
                 onCommitRename={(target, next) => void commitRename(target, next)}
                 onDelete={(target) => void (target.deck ? removeDeck(target.deck.id) : removeGroup(target.groupPath))}
+                onDeleteFolder={(target) => void destroyGroup(target.groupPath)}
                 onOpenDeck={openDeck}
                 onPointerClick={() => performance.now() < ignoreClickUntilRef.current}
                 onPointerDragStart={beginPointerDrag}
@@ -531,10 +555,12 @@ interface DeckRowProps {
   onCommitRename: (node: DeckTreeNode, next: string) => void;
   onCancelRename: () => void;
   onDelete: (node: DeckTreeNode) => void;
+  /** Folder rows only: delete the folder AND the decks inside it. */
+  onDeleteFolder: (node: DeckTreeNode) => void;
 }
 
 function DeckRow(props: DeckRowProps) {
-  const { node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, renamingId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick, onStartRename, onCommitRename, onCancelRename, onDelete } = props;
+  const { node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, renamingId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick, onStartRename, onCommitRename, onCancelRename, onDelete, onDeleteFolder } = props;
   const counts = countsForNode(node, cards);
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
@@ -555,7 +581,7 @@ function DeckRow(props: DeckRowProps) {
           button inside a button is invalid HTML that browsers silently unnest.
           Clicking opens immediately — there is no double-click gesture to
           disambiguate against, so no grace delay is needed. */}
-      <StudyRowContextMenu onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined}>
+      <StudyRowContextMenu onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined}>
         <div
           aria-label={node.label}
           className={cn(
@@ -592,7 +618,7 @@ function DeckRow(props: DeckRowProps) {
           <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
-          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined} />
+          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined} />
         </div>
       </StudyRowContextMenu>
       {!isCollapsed && node.children.map((child) => <DeckRow {...props} depth={depth + 1} key={child.id} node={child} />)}

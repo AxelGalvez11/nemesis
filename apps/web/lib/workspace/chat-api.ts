@@ -153,9 +153,15 @@ export const CHAT_SYSTEM_PROMPT = chatSystemPrompt(true);
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —
- *  the valve's own caps are the final authority). */
-export const HISTORY_CHAR_BUDGET = 24_000;
-export const HISTORY_MAX_MESSAGES = 30;
+ *  the valve's own caps are the final authority).
+ *
+ *  60k, up from 24k on 2026-08-03: a turn that carried attached-file text got
+ *  evicted from history on the VERY NEXT turn at 24k, so "what did slide 10
+ *  say" right after uploading the deck drew a blank — the chat literally
+ *  lagged one turn behind the student's own files. 60k chars is ~15k tokens,
+ *  which alongside the attachment budget still fits the model window. */
+export const HISTORY_CHAR_BUDGET = 60_000;
+export const HISTORY_MAX_MESSAGES = 40;
 
 export function trimHistory(
   history: SessionMessage[],

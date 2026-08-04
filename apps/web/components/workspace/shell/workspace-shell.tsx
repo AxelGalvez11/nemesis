@@ -76,7 +76,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     IMMERSIVE_ROUTES.has(normalizedPathname) ||
     (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(normalizedPathname));
 
-  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
+  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.nav-rail");
   const sidebarVisible = sidebarOpen && !focusMode;
 
   useEffect(() => {

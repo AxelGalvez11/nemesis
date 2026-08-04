@@ -65,8 +65,11 @@ export function OutputCard({ output }: { output: SessionOutput }) {
       // so the card sits a step off the surface in BOTH themes — a hardcoded
       // #f5f5f5 reads as grey in light and as a bright patch in dark.
       aria-busy={pending}
+      // CHIP-SCALE, not billboard (owner 2026-08-03: "the chat artifacts are
+      // too big"). Sized to sit alongside the PDF attachment chips rather than
+      // spanning the prose column.
       className={cn(
-        "flex w-full max-w-md items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) px-3.5 py-3 text-left shadow-[0_2px_8px_rgba(0,0,0,0.035)] transition-colors",
+        "flex w-full max-w-xs items-center gap-2.5 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2 text-left shadow-[0_2px_8px_rgba(0,0,0,0.035)] transition-colors",
         "bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)]",
         pending
           // Not just a spinner bolted on: the whole card breathes, which is what
@@ -85,16 +88,16 @@ export function OutputCard({ output }: { output: SessionOutput }) {
       }}
       type="button"
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--ui-base)_10%,transparent)] text-(--ui-text-secondary)">
-        <Codicon name={pending ? "sync" : KIND_ICON[output.kind]} size="0.9rem" />
+      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--ui-base)_10%,transparent)] text-(--ui-text-secondary)">
+        <Codicon name={pending ? "sync" : KIND_ICON[output.kind]} size="0.85rem" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.875rem] font-medium text-foreground">{output.title}</span>
-        <span className="block truncate text-[0.72rem] text-(--ui-text-tertiary)">
+        <span className="block truncate text-[0.8125rem] font-medium text-foreground">{output.title}</span>
+        <span className="block truncate text-[0.6875rem] text-(--ui-text-tertiary)">
           {pending ? "Writing up your notes…" : outputMetaLine(output)}
         </span>
       </span>
-      {!pending && <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="chevron-right" size="0.8rem" />}
+      {!pending && <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="chevron-right" size="0.75rem" />}
     </button>
   );
 }

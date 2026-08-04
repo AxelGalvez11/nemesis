@@ -14,11 +14,14 @@ import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 //
 // The ceiling that matters is the model's context, not these numbers:
 // deepseek-chat and deepseek-reasoner both carry 64k tokens (~256k chars).
-// 90k chars of attachments is roughly 23k tokens, which alongside
-// HISTORY_CHAR_BUDGET (24k chars) and a skill packet (5k) still leaves the
-// model over half its window to think in.
+// 🔴 The TOTAL was 90k until 2026-08-03, and it is why four attached syllabi
+// came back as "I could only see two — the others didn't come through": two
+// big files filled the budget and the rest landed in the "Not read" block,
+// working as designed and useless in practice. 150k chars is ~38k tokens,
+// which with HISTORY_CHAR_BUDGET (60k chars) and a skill packet (5k) still
+// fits the window; the server valve's own caps remain the final authority.
 export const MAX_ATTACHMENT_CHARS = 60_000;
-export const MAX_TOTAL_CHARS = 90_000;
+export const MAX_TOTAL_CHARS = 150_000;
 export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
 /** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
  *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
@@ -276,13 +279,31 @@ export function fitAttachmentBlocks(
   return blocks;
 }
 
+/** The sent message as the transcript should show it — the typed text plus the
+ *  one-line attachment summary. Synchronous, so the message can appear the
+ *  instant Send is pressed instead of after extraction. */
+export function chatDisplayText(text: string, files: readonly File[]): string {
+  return `${text.trim()}${attachmentSummary(files)}`.trim();
+}
+
+/** Chip metadata alone — names and kinds, no storage round-trip. This is what
+ *  the optimistic message carries while prepareChatAttachments is still
+ *  running; the durable records (images gain signed URLs) replace it after. */
+export function draftAttachmentRecords(files: readonly File[]): SessionAttachment[] {
+  return files.map((file) => attachmentRecord(file));
+}
+
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
-  const displayText = `${text.trim()}${attachmentSummary(files)}`.trim();
+  const displayText = chatDisplayText(text, files);
   if (!files.length) return { attachments: [] as SessionAttachment[], displayText, wireText: text.trim() };
 
   const attachments = await Promise.all(files.map((file) => persistChatAttachment(file, uid)));
-  const sources: AttachmentSource[] = [];
-  for (const file of files) {
+  // All files extract AT ONCE. This used to be one await per file, which for
+  // four lecture PDFs meant four full server round-trips end to end — minutes
+  // of nothing happening on screen (owner 2026-08-03: "the chat lags behind
+  // when user uploads files"). Promise.all keeps the order of `files`, which
+  // fitAttachmentBlocks depends on for its budget arithmetic.
+  const sources: AttachmentSource[] = await Promise.all(files.map(async (file) => {
     let content = "";
     try {
       if (isReadableText(file)) content = await file.text();
@@ -295,8 +316,8 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     } catch (cause) {
       content = cause instanceof Error ? cause.message : "This attachment could not be read.";
     }
-    sources.push({ content, label: relativePath(file) || file.name, type: file.type });
-  }
+    return { content, label: relativePath(file) || file.name, type: file.type };
+  }));
 
   return {
     attachments,

@@ -638,6 +638,7 @@ export interface UseCloudStudyApi extends StoreState {
   /** Delete a folder AND every deck (and card) beneath it. */
   /** Removes the folder and KEEPS its decks, promoting them one level up. */
   dissolveDeckGroup: (group: string) => Promise<void>;
+  deleteDeckGroup: (group: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
   /** Throw away ONE card, leaving its deck and every other card alone. There
    *  was no way to do this at all: a student who generated a bad card could
@@ -1243,6 +1244,35 @@ export function useCloudStudy(): UseCloudStudyApi {
     });
   }, [preview, userId]);
 
+  // The destructive sibling of dissolveDeckGroup (owner 2026-08-03: "card deck
+  // folders still cannot be deleted" — remove-but-keep was not the ask). Both
+  // verbs exist now: "Remove folder" promotes the decks, this one deletes
+  // them, cards cascading via the study_cards FK. The caller owns the
+  // confirmation dialog; this function assumes the student already said yes.
+  const deleteDeckGroup = useCallback(async (rawGroup: string) => {
+    const group = normalizeGroupPath(rawGroup);
+    if (!group) return;
+    const doomed = decksInGroup(state.decks, group);
+    if (doomed.length === 0) return;
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to delete a folder.");
+      const { error } = await supabase
+        .from("study_decks")
+        .delete()
+        .in("id", doomed.map((deck) => deck.id))
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const goneIds = new Set(doomed.map((deck) => deck.id));
+    const decks = state.decks.filter((deck) => !goneIds.has(deck.id));
+    setState({
+      ...state,
+      decks,
+      cards: state.cards.filter((card) => !goneIds.has(card.deckId)),
+      selectedDeckId: state.selectedDeckId && goneIds.has(state.selectedDeckId) ? (decks[0]?.id ?? null) : state.selectedDeckId,
+    });
+  }, [preview, userId]);
+
   // One card, not its deck. Scoped by user_id as well as id so a guessed
   // identifier cannot reach into somebody else's cards — the same belt-and-
   // braces every other write here uses, since row-level security should not be
@@ -1279,6 +1309,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     renameDeck,
     renameDeckGroup,
     dissolveDeckGroup,
+    deleteDeckGroup,
     moveDeckGroup,
     deleteDeck,
   };

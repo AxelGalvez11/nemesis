@@ -51,18 +51,20 @@ test("a deck too big to send says so instead of silently losing its back half", 
 
 test("attachments past the total budget are reported, never dropped in silence", () => {
   // It takes more than one file to exhaust the total: the per-file cap clips a
-  // single huge deck long before the shared budget runs out. Two full-size
-  // decks spend it, so the third is the one that never reaches the model.
+  // single huge deck long before the shared budget runs out. Enough full-size
+  // decks to spend the whole budget (computed, not hardcoded, so raising the
+  // budgets does not quietly turn this into a test of nothing), then one more
+  // — the one that never reaches the model.
   const full = "y".repeat(MAX_ATTACHMENT_CHARS);
+  const fullCount = Math.ceil(MAX_TOTAL_CHARS / MAX_ATTACHMENT_CHARS);
   const blocks = fitAttachmentBlocks([
-    { label: "first.pptx", type: "application/pptx", content: full },
-    { label: "second.pptx", type: "application/pptx", content: full },
-    { label: "third.pptx", type: "application/pptx", content: "the third deck" },
+    ...Array.from({ length: fullCount }, (_, index) => ({ label: `deck-${index}.pptx`, type: "application/pptx", content: full })),
+    { label: "last.pptx", type: "application/pptx", content: "the final deck" },
   ]);
 
   const joined = blocks.join("\n");
-  assert.ok(joined.includes("third.pptx"), "the student must learn this file was not read");
-  assert.ok(!joined.includes("the third deck"), "and its content genuinely did not fit");
+  assert.ok(joined.includes("last.pptx"), "the student must learn this file was not read");
+  assert.ok(!joined.includes("the final deck"), "and its content genuinely did not fit");
   assert.ok(joined.includes("Not read"), "skipped files get their own labelled block");
 });
 

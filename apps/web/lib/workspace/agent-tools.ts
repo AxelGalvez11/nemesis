@@ -26,10 +26,16 @@ import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-stor
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
+import { splitCalendarConflicts } from "./calendar-conflicts";
 import { balanceAnswerPositions } from "./test-answer-balance";
 
 const MAX_NOTE_CHARS = 8_000;
-const MAX_LIST = 30;
+// 🔴 30 made the model deny things that exist. list_study_decks orders by
+// NAME, so with more than 30 decks anything past the alphabetical cutoff was
+// invisible — the chat saved 22 cards to a deck and then told the owner the
+// deck wasn't in the deck list (2026-08-03). 200 names is still only a few
+// hundred tokens.
+const MAX_LIST = 200;
 const GENERATED_NOTES_FOLDER = "Nemesis/Notes";
 const GENERATED_SLIDES_FOLDER = "Nemesis/Slides";
 const GENERATED_TESTS_GROUP = "Generated tests";
@@ -959,8 +965,26 @@ async function listStudyArtifacts(kind: string) {
       status: str(artifact.status),
       title: str(artifact.title),
       updated_at: str(artifact.updated_at),
+      // A test the student has TAKEN says so right in the list. Without this
+      // the model had no idea an attempt happened unless it read the whole
+      // artifact — "i just did the tests" got "did you?" back (2026-08-03).
+      ...testAttemptSummary(artifact.content),
     })),
   };
+}
+
+/** For a test artifact: how many sittings and how the last one went, straight
+ *  from the content column the list query already fetches. Empty object for
+ *  anything that is not a taken test, so other kinds gain no noise. */
+function testAttemptSummary(content: unknown): { attempts?: number; last_score?: string; last_taken_at?: string } {
+  if (!content || typeof content !== "object") return {};
+  const attempts = (content as { attempts?: unknown }).attempts;
+  if (!Array.isArray(attempts) || attempts.length === 0) return {};
+  const last = attempts[attempts.length - 1] as { at?: unknown; score?: unknown; total?: unknown };
+  const summary: { attempts: number; last_score?: string; last_taken_at?: string } = { attempts: attempts.length };
+  if (typeof last?.score === "number" && typeof last?.total === "number") summary.last_score = `${last.score}/${last.total}`;
+  if (typeof last?.at === "string") summary.last_taken_at = last.at;
+  return summary;
 }
 
 async function readStudyArtifact(id: string) {
@@ -1076,6 +1100,49 @@ async function addCalendarEvent(args: Record<string, unknown>) {
   if (!title) return { error: "Event title is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Date must be YYYY-MM-DD." };
   const kindRaw = str(args.kind).trim().toLowerCase();
+
+  // Look before writing (owner 2026-08-03: conflicts must be recognized, not
+  // discovered later on the calendar). Same rules as the syllabus importer,
+  // via the same lib/workspace/calendar-conflicts helpers: an event with this
+  // name already on this date is NOT added again; a clock overlap is added
+  // and reported so the model can say so. One date's rows is a tiny read.
+  const time = str(args.time).trim().slice(0, 40) || null;
+  const sameDay = await supabase.from("calendar_events").select("id,title,date,time,end_time").eq("date", date);
+  if (!sameDay.error) {
+    const existing: CalendarConflictEvent[] = (sameDay.data ?? []).map((row) => ({
+      date: str(row.date),
+      id: str(row.id),
+      kind: "other",
+      title: str(row.title),
+      ...(row.time ? { time: str(row.time) } : {}),
+      ...(row.end_time ? { endTime: str(row.end_time) } : {}),
+    }));
+    const incoming: CalendarConflictEvent = { date, id: "incoming", kind: "other", title, ...(time ? { time } : {}) };
+    const split = splitCalendarConflicts([incoming], existing);
+    if (split.duplicates.length > 0) {
+      return {
+        added: false,
+        already_on_calendar: true,
+        instruction: `"${title}" is already on the calendar for ${date} — nothing was added. Tell the student it was already there.`,
+      };
+    }
+    const clash = split.clashes[0];
+    if (clash) {
+      const clashNote = `Heads up: it overlaps "${clash.existing.title}"${clash.existing.time ? ` at ${clash.existing.time}` : ""} on ${date}. Mention this to the student in one short line.`;
+      return addCalendarEventRow(args, { date, kindRaw, time, title }, clashNote);
+    }
+  }
+  return addCalendarEventRow(args, { date, kindRaw, time, title }, null);
+}
+
+type CalendarConflictEvent = Parameters<typeof splitCalendarConflicts>[0][number];
+
+async function addCalendarEventRow(
+  args: Record<string, unknown>,
+  fields: { date: string; kindRaw: string; time: string | null; title: string },
+  clashNote: string | null,
+) {
+  const { date, kindRaw, time, title } = fields;
   const { data, error } = await supabase.from("calendar_events").insert({
     course: str(args.course).trim().slice(0, 200) || null,
     date,
@@ -1088,7 +1155,7 @@ async function addCalendarEvent(args: Record<string, unknown>) {
     // in AGENT_TOOLS to change it with. The student asked for this event, so it
     // is theirs to correct. Provenance stays readable in `note`.
     source: "manual",
-    time: str(args.time).trim().slice(0, 40) || null,
+    time,
     title,
   }).select("id").single();
   if (error || !data) return { error: error?.message ?? "Couldn't add that event." };
@@ -1116,7 +1183,8 @@ async function addCalendarEvent(args: Record<string, unknown>) {
       "Saved. This tool shows the student NO card and NO artifact — the calendar itself is where the event lives, "
       + "and they already have it open. Do NOT write the event back: no dates, no table, no list. "
       + "When every event in this batch is in, reply with ONE short line: \"I've put the events into your calendar.\" "
-      + "Add a second short line only if something could not be added, naming just those.",
+      + "Add a second short line only if something could not be added, naming just those."
+      + (clashNote ? ` ${clashNote}` : ""),
     title,
   };
 }

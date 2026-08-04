@@ -585,7 +585,7 @@ export const sessionsStore = {
    * past MAX_MESSAGES_PER_SESSION mid-compose), because re-adding a message the
    * student has since dismissed would be worse than losing the card.
    */
-  resolvePending(id: string, messageId: string, patch: { content: string; outputs?: SessionOutput[] }) {
+  resolvePending(id: string, messageId: string, patch: { content: string; outputs?: SessionOutput[]; attachments?: SessionAttachment[] }) {
     ensureHydrated();
     const session = state.sessions.find((s) => s.id === id);
     const existing = session?.messages.find((message) => message.id === messageId);
@@ -594,6 +594,9 @@ export const sessionsStore = {
       ...existing,
       content: patch.content,
       ...(patch.outputs ? { outputs: patch.outputs } : {}),
+      // The optimistic user message carries name-only chips; the resolved one
+      // swaps in the durable records (images gain their signed URLs).
+      ...(patch.attachments ? { attachments: patch.attachments } : {}),
     };
     setState({
       ...state,

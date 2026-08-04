@@ -119,7 +119,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const narrowViewport = useMediaQuery("(max-width: 768px)");
-  const { open: linksSidebarOpen, setOpen: setLinksSidebarOpen } = useResponsiveSidebar(narrowViewport);
+  const { open: linksSidebarOpen, setOpen: setLinksSidebarOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.library-right-panel");
   const [draggedTab, setDraggedTab] = useState<string | null>(null);
   const [navigation, setNavigation] = useState<{ entries: string[]; index: number }>({ entries: [], index: -1 });
   const draftRef = useRef<NoteDraft | null>(null);
