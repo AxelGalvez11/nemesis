@@ -52,11 +52,13 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay }: MonthGr
     // 4.5rem — on a 1440x727 window that is at most 6x79px + header ≈ 515px in
     // 651px of room, so a month fits with air to spare and rows stretch to
     // share whatever height the window really has.
-    <div className="flex flex-1 flex-col rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+    // bg-background, NOT --ui-bg-elevated (owner 2026-08-04: "nemesis dark
+    // mode is 100% black style, not gray") — elevated renders grey in dark.
+    <div className="flex flex-1 flex-col rounded-xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
       {/* Pinned for the rare window too short even for the relaxed grid.
           Needs its own background and the frame's top radius, or it paints
           square corners over the rounded card. */}
-      <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 rounded-t-[inherit] border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) text-sm font-medium text-(--ui-text-secondary)">
+      <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 rounded-t-[inherit] border-b border-(--ui-stroke-tertiary) bg-background text-sm font-medium text-(--ui-text-secondary)">
         {WEEKDAY_LABELS.map((label) => (
           <div className="px-3 py-2 text-right" key={label}>
             {label}

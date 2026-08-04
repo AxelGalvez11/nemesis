@@ -5,17 +5,18 @@
 // reading; right side a table of contents for that note."
 //
 // THE URL IS THE TRUTH about what is open:
-//   /library                 → the home page
+//   /library                 → the landing NOTE (see lib/workspace/library-home)
 //   /library?note=<path>     → that note, as a docs article
 //   /library?source=<id>     → one source FILE (the original upload)
-// Folders are deliberately NOT pages (owner: "the entirety should be notes
-// only" — Obsidian's model): clicking a folder anywhere (breadcrumb, home
-// card) reveals it in the left tree instead of navigating. The classic screen
-// rendered whatever the store had selected, which on a cold deep link briefly
-// meant "the first note that loaded"; here nothing renders until the param
-// resolves, a rename is recovered by note id, and a genuinely missing target
-// says so instead of silently showing something else. Navigation uses
-// router.push, so the browser's own Back walks the trail.
+// THERE IS NO HOME DASHBOARD (owner 2026-08-04: "this isnt a NOTE, the 'home'
+// is supposed to be a NOTE" — obsidian.md/help lands on a note titled Home).
+// Bare /library shows a note named Home if the student has one, else their
+// most recently edited note; a brand-new empty account gets a seeded Home
+// note it fully owns. Folders are deliberately NOT pages either (owner: "the
+// entirety should be notes only"): clicking a folder anywhere reveals it in
+// the left tree instead of navigating. A rename is recovered by note id, and
+// a genuinely missing target says so instead of silently showing something
+// else. Navigation uses router.push, so the browser's own Back walks the trail.
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,22 +28,20 @@ import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
 import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
-import { buildLibraryTree } from "@/lib/workspace/library-tree";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
 
 import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
 import type { LibraryTreeReveal } from "../library/library-tree-view";
-import { DocsHome } from "./docs-home";
 import { DocsNav } from "./docs-nav";
 import { DocsSource } from "./docs-source";
 import { DocsToc } from "./docs-toc";
 import { NoteArticle } from "./note-article";
-import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "../library/use-library-import";
 
 export function LibraryDocsPage() {
   const router = useRouter();
@@ -56,7 +55,7 @@ export function LibraryDocsPage() {
   const requestedSource = searchParams.get("source");
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, select, createNote, saveNote, deleteNote } = useCloudLibrary();
+  const { status, notes, select, createNote, saveNote, deleteNote } = useCloudLibrary();
 
   const [articleContent, setArticleContent] = useState("");
   const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
@@ -67,10 +66,29 @@ export function LibraryDocsPage() {
   const articleRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastOpenIdRef = useRef<string | null>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const seededHomeRef = useRef(false);
 
   const loading = status === "idle" || status === "loading";
-  const note = requestedPath ? (notes.find((item) => item.path === requestedPath) ?? null) : null;
+  // Bare /library = the landing NOTE, never a dashboard: a note named Home if
+  // one exists, else the most recently edited note. The URL stays bare — it
+  // means "the landing note", the way obsidian.md/help means Home.
+  const landingNote = useMemo(() => pickLibraryLandingNote(notes), [notes]);
+  const note = requestedPath
+    ? (notes.find((item) => item.path === requestedPath) ?? null)
+    : requestedSource !== null
+      ? null
+      : landingNote;
+
+  // A brand-new EMPTY account gets a seeded Home note — created once, owned by
+  // the student, and never resurrected: accounts with any notes at all land on
+  // a note they already have instead.
+  useEffect(() => {
+    if (status !== "loaded" || notes.length > 0 || !uid || seededHomeRef.current) return;
+    seededHomeRef.current = true;
+    createNote({ title: "Home", folder: "", content: LIBRARY_HOME_SEED }).catch(() => {
+      seededHomeRef.current = false;
+    });
+  }, [createNote, notes.length, status, uid]);
 
   const openPath = useCallback(
     (path: string) => {
@@ -105,7 +123,6 @@ export function LibraryDocsPage() {
   }, [libraryBase, router]);
 
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
-  const { importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, onSourcesChanged: bumpSources, saveNote, uid });
 
   // Source files: loaded per account (fixtures when signed out / previewing)
   // and re-loaded whenever an import stores an original or a folder operation
@@ -141,7 +158,6 @@ export function LibraryDocsPage() {
     if (renamed) router.replace(`${libraryBase}?note=${encodeURIComponent(renamed.path)}`);
   }, [libraryBase, note, notes, requestedPath, router, status]);
 
-  const tree = useMemo(() => buildLibraryTree(notes, folders, "az"), [folders, notes]);
   const outline = useMemo(() => (note ? extractNoteOutline(articleContent) : []), [articleContent, note]);
   const openableSourceIds = useMemo(() => new Set(librarySources.map((source) => source.id)), [librarySources]);
 
@@ -188,7 +204,6 @@ export function LibraryDocsPage() {
     router.replace(libraryBase);
   }
 
-  const deepLinkPending = Boolean(requestedPath || requestedSource);
   const missingRequested = Boolean(requestedPath) && !note && status === "loaded";
 
   return (
@@ -198,7 +213,7 @@ export function LibraryDocsPage() {
           {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
           <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
             <DocsNav
-              homeActive={!note && !requestedSource}
+              homeActive={!requestedPath && !requestedSource}
               onGoHome={goHome}
               onNavigate={() => narrowViewport && setNavOpen(false)}
               onOpenNote={openPath}
@@ -222,7 +237,7 @@ export function LibraryDocsPage() {
 
       <main className="flex h-full min-w-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain" ref={scrollRef}>
-          {loading && deepLinkPending ? (
+          {loading ? (
             <ArticleSkeleton />
           ) : note ? (
             <NoteArticle
@@ -256,32 +271,17 @@ export function LibraryDocsPage() {
               <MissingPanel description="It may have been removed, or its link is out of date." onGoHome={goHome} title="That file isn't here" />
             )
           ) : (
-            <DocsHome
-              notes={notes}
-              onCreateNote={() => void createBlankNote()}
-              onImport={() => importInputRef.current?.click()}
-              onOpenPath={openPath}
-              onRevealFolder={revealFolder}
-              tree={tree}
-            />
+            // Zero notes: the seed effect above is creating Home right now for
+            // signed-in accounts, so this is a blink — or, if that write
+            // failed, an honest empty state rather than a dashboard.
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6">
+              <EmptyState description="Make your first note, or import a document from the sidebar." title="Your Library is empty" />
+              <Button onClick={() => void createBlankNote()} size="sm" variant="secondary">New note</Button>
+            </div>
           )}
         </div>
         {note && <DocsToc articleRef={articleRef} outline={outline} scrollRef={scrollRef} />}
       </main>
-
-      <input
-        accept={LIBRARY_IMPORT_ACCEPT}
-        className="hidden"
-        disabled={importing}
-        multiple
-        onChange={(event) => {
-          void importFiles(Array.from(event.target.files ?? [])).then(() => {
-            if (importInputRef.current) importInputRef.current.value = "";
-          });
-        }}
-        ref={importInputRef}
-        type="file"
-      />
     </div>
   );
 }

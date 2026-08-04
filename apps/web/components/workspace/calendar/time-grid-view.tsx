@@ -122,7 +122,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
     // --ui-* strokes throughout instead of the legacy shadcn border-border —
     // that parallel palette never got the dark-mode contrast tuning, which is
     // why these hairlines read slightly off next to everything else in dark.
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
       {/* Day headings, pinned above the scrolling grid. */}
       <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary)">
         {/* Google labels the gutter with the timezone the grid is drawn in.
@@ -358,7 +358,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
           // blocks stayed 15% translucent. Staggered blocks sit ON TOP of each
           // other, so a see-through one reads as a muddy colour, not a stack.
           <div
-            className="absolute overflow-hidden rounded-md bg-(--ui-bg-elevated) shadow-sm"
+            className="absolute overflow-hidden rounded-md bg-background shadow-sm"
             key={item.event.id}
             style={{
               height: boxHeight,

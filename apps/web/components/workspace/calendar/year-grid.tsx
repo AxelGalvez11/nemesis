@@ -20,7 +20,7 @@ interface YearGridProps {
 
 export function YearGrid({ eventsByDay, onSelectMonth, today, year }: YearGridProps) {
   return (
-    <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-3 shadow-[0_3px_12px_rgba(0,0,0,0.04)] sm:grid-cols-3 xl:grid-cols-4">
+    <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary) bg-background p-3 shadow-[0_3px_12px_rgba(0,0,0,0.04)] sm:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 12 }, (_, month) => (
         <MiniMonth
           days={monthGrid(year, month, today)}
