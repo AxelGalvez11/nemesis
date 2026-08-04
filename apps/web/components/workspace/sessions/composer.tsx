@@ -85,9 +85,11 @@ interface ComposerProps {
   showRecordCompanion?: boolean;
   /** Rendered under the pill, aligned to its left edge (the Projects chip). */
   belowStart?: ReactNode;
+  /** Rendered under the pill, centered (the empty-chat suggestion chips). */
+  belowCenter?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart, belowCenter }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -567,6 +569,27 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     data-slot="composer-rich-input"
                     onInput={(event) => setHasText((event.currentTarget.textContent ?? "").trim().length > 0)}
                     onKeyDown={handleKeyDown}
+                    // 🔴 PLAIN TEXT ONLY. A contenteditable pastes HTML wholesale
+                    // by default, so copying a message out of a chat — where the
+                    // selection sweeps up attachment chips, citation pills, and
+                    // artifact cards — pasted those COMPONENTS into the box
+                    // (owner 2026-08-03: "copying a chat prompt from another
+                    // chat also copies the component"). Pasted FILES (a
+                    // screenshot, a copied PDF) become attachments instead,
+                    // matching what dropping them does.
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      const pastedFiles = Array.from(event.clipboardData?.files ?? []);
+                      if (pastedFiles.length > 0) {
+                        setFiles((current) => [...current, ...pastedFiles]);
+                        return;
+                      }
+                      const text = event.clipboardData?.getData("text/plain") ?? "";
+                      // execCommand is the one insertion path that keeps the
+                      // caret position and the undo stack in a contenteditable.
+                      if (text) document.execCommand("insertText", false, text);
+                      setHasText((event.currentTarget.textContent ?? "").trim().length > 0);
+                    }}
                     ref={inputRef}
                     role="textbox"
                   />
@@ -642,6 +665,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
         </div>
       </div>
       {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
+      {activeMode === "chat" && belowCenter && <div className="relative z-3 mt-3 flex justify-center">{belowCenter}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
       {/* Sits directly above the composer, in the student's way, matching the
           chat's own delete confirmation. Keep is the plain button; throwing the

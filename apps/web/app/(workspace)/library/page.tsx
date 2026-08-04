@@ -21,7 +21,7 @@ export default function LibraryPage() {
   // place sitting right next to it.
   const { libraryFullScreen } = useTheme();
   const narrowViewport = useMediaQuery("(max-width: 768px)");
-  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
+  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.library-sidebar");
   const searchParams = useSearchParams();
   const { notes, select } = useCloudLibrary();
   const requestedPath = searchParams.get("note");

@@ -36,3 +36,25 @@ export function withSidebarOpen(state: SidebarState, narrowViewport: boolean, op
 export function onNarrowViewport(state: SidebarState): SidebarState {
   return { ...state, narrowOpen: false };
 }
+
+// Persistence codec for the WIDE preference only. The narrow overlay is
+// transient by design and must never be restored. Explicit sentinels rather
+// than "true"/"false": commit 327436e5's library-full-screen bug came from a
+// `!== "false"` read where an unset key silently meant the wrong default.
+
+/** Parses a stored wide-viewport preference; null = nothing usable stored. */
+export function parseStoredSidebar(value: string | null): boolean | null {
+  if (value === "open") return true;
+  if (value === "closed") return false;
+  return null;
+}
+
+/** Applies a stored preference to the wide side of the state, if there is one. */
+export function withStoredSidebar(state: SidebarState, stored: string | null): SidebarState {
+  const wideOpen = parseStoredSidebar(stored);
+  return wideOpen === null ? state : { ...state, wideOpen };
+}
+
+export function encodeSidebarPreference(open: boolean): "open" | "closed" {
+  return open ? "open" : "closed";
+}

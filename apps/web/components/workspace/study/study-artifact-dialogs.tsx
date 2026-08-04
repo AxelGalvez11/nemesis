@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
+import { Codicon } from "@/components/desktop-ui/codicon";
 import {
   Dialog,
   DialogContent,
@@ -281,87 +282,123 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // a reason that has nothing to do with learning. One attempt, kept.
   const alreadyTaken = content.attempts.length > 0 && !saved;
 
+  // Beautified 2026-08-03 (owner: "the tests look ugly, beautify them") —
+  // same three states, same one-attempt rule, same testids; what changed is
+  // purely how it reads: a real progress bar, lettered options with verdict
+  // icons, a score that looks like a score. Behavior of note that survives
+  // untouched: CLICKING AN OPTION IS THE ANSWER (it locks and reveals), and
+  // Next is a separate deliberate step.
+  const answered = picks.length + (picked !== null ? 1 : 0);
   return (
     <Dialog onOpenChange={(next) => { if (!next) onClose(); }} open>
       {/* Fullscreen, matching flashcard review (review-session.tsx) — owner
           2026-08-01: "the tests should be fullscreen like the flashcards." */}
       <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-y-auto rounded-none border-0 px-7 py-6" showCloseButton>
         {alreadyTaken ? (
-          <div className="mx-auto flex w-full max-w-xl flex-col justify-center">
-            <DialogHeader>
-              <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
-              <DialogDescription data-testid="test-already-taken">
+          <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center gap-4 text-center">
+            <span className="grid size-12 place-items-center rounded-full bg-[color-mix(in_srgb,var(--ui-base)_8%,transparent)] text-(--ui-text-secondary)">
+              <Codicon name="checklist" size="1.25rem" />
+            </span>
+            <DialogHeader className="items-center">
+              <DialogTitle className="text-base">{artifact.title}</DialogTitle>
+              <DialogDescription className="text-center leading-relaxed" data-testid="test-already-taken">
                 You have already taken this test — {artifactScoreLabel(artifact)}. Each test is
                 answered once, so the score stays a real measure of what you knew.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="mt-4">
-              <Button onClick={onClose} type="button" variant="secondary">Close</Button>
-            </DialogFooter>
+            <Button onClick={onClose} type="button" variant="secondary">Close</Button>
           </div>
         ) : !finished && question ? (
-          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center">
-            <DialogHeader>
-              <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
-              <DialogDescription>Question {index + 1} of {questions.length}</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-3">
-              <p className="text-sm font-medium leading-relaxed">{question.q}</p>
-              <div className="grid gap-2" data-testid="test-options">
-                {question.options.map((option, optionIndex) => {
-                  const isPicked = picked === optionIndex;
-                  const isCorrect = optionIndex === question.answer;
-                  return (
-                    <button
-                      className={cn(
-                        "rounded-xl border border-(--ui-stroke-secondary) px-3 py-2 text-left text-sm transition-colors",
-                        picked === null && "hover:bg-(--ui-control-hover-background)",
-                        picked !== null && isCorrect && "border-emerald-600/60 bg-emerald-600/10",
-                        picked !== null && isPicked && !isCorrect && "border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_10%,transparent)]",
-                      )}
-                      disabled={picked !== null}
-                      key={optionIndex}
-                      onClick={() => choose(optionIndex)}
-                      type="button"
-                    >
-                      {option}
-                    </button>
-                  );
-                })}
+          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center gap-6">
+            <div className="grid gap-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <DialogTitle className="truncate text-sm font-medium text-(--ui-text-secondary)">{artifact.title}</DialogTitle>
+                <DialogDescription className="shrink-0 tabular-nums">Question {index + 1} of {questions.length}</DialogDescription>
               </div>
-              {picked !== null && (
-                <p className="rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-3 py-2 text-xs leading-relaxed text-(--ui-text-secondary)" data-testid="test-why">
-                  {picked === question.answer ? "Correct. " : `Not quite — the answer is "${question.options[question.answer]}". `}
-                  {question.why}
-                </p>
-              )}
+              {/* The bar carries the "how far along am I" job the old text-only
+                  counter did alone; it fills as answers LOCK, not as pages turn. */}
+              <div aria-hidden className="h-1 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--ui-base)_10%,transparent)]">
+                <div className="h-full rounded-full bg-(--theme-primary) transition-[width] duration-300" style={{ width: `${Math.round((answered / Math.max(questions.length, 1)) * 100)}%` }} />
+              </div>
             </div>
-            <DialogFooter>
+            <p className="text-lg font-medium leading-relaxed text-balance">{question.q}</p>
+            <div className="grid gap-2.5" data-testid="test-options">
+              {question.options.map((option, optionIndex) => {
+                const isPicked = picked === optionIndex;
+                const isCorrect = optionIndex === question.answer;
+                const revealed = picked !== null;
+                return (
+                  <button
+                    className={cn(
+                      "flex items-center gap-3 rounded-2xl border border-(--ui-stroke-secondary) px-4 py-3 text-left text-[0.9375rem] leading-snug transition-colors",
+                      !revealed && "hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background)",
+                      revealed && isCorrect && "border-emerald-600/60 bg-emerald-600/10",
+                      revealed && isPicked && !isCorrect && "border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_10%,transparent)]",
+                      revealed && !isCorrect && !isPicked && "opacity-55",
+                    )}
+                    disabled={picked !== null}
+                    key={optionIndex}
+                    onClick={() => choose(optionIndex)}
+                    type="button"
+                  >
+                    <span
+                      className={cn(
+                        "grid size-6 shrink-0 place-items-center rounded-md border border-(--ui-stroke-tertiary) text-[0.6875rem] font-semibold text-(--ui-text-tertiary)",
+                        revealed && isCorrect && "border-transparent bg-emerald-600 text-white",
+                        revealed && isPicked && !isCorrect && "border-transparent bg-(--theme-primary) text-white",
+                      )}
+                    >
+                      {revealed && isCorrect
+                        ? <Codicon name="check" size="0.75rem" />
+                        : revealed && isPicked
+                          ? <Codicon name="close" size="0.75rem" />
+                          : String.fromCharCode(65 + optionIndex)}
+                    </span>
+                    <span className="min-w-0 flex-1">{option}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {picked !== null && (
+              <div className="rounded-2xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-4 py-3 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)" data-testid="test-why">
+                <span className="font-semibold text-foreground">
+                  {picked === question.answer ? "Correct. " : `Not quite — the answer is "${question.options[question.answer]}". `}
+                </span>
+                {question.why}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
               <Button onClick={onClose} type="button" variant="ghost">Exit</Button>
               <Button disabled={picked === null} onClick={next} type="button" variant="secondary">
                 {picks.length + 1 === questions.length ? "Finish" : "Next"}
               </Button>
-            </DialogFooter>
+            </div>
           </div>
         ) : attempt ? (
-          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center">
-            <DialogHeader>
-              <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
-              <DialogDescription data-testid="test-score">
+          <div className="mx-auto flex w-full max-w-2xl flex-col justify-center gap-6">
+            <div className="grid justify-items-center gap-1.5 text-center">
+              <DialogTitle className="text-sm font-medium text-(--ui-text-secondary)">{artifact.title}</DialogTitle>
+              <p className="text-5xl font-semibold tabular-nums tracking-tight">
+                {Math.round((attempt.score / attempt.total) * 100)}%
+              </p>
+              <DialogDescription className="tabular-nums" data-testid="test-score">
                 Score: {attempt.score}/{attempt.total} ({Math.round((attempt.score / attempt.total) * 100)}%)
               </DialogDescription>
-            </DialogHeader>
+            </div>
             {attempt.missed.length > 0 ? (
               <div className="grid gap-3">
-                <p className="text-xs font-medium">Missed questions</p>
-                <div className="max-h-48 space-y-2 overflow-y-auto">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-(--ui-text-tertiary)">Review what you missed</p>
+                <div className="max-h-72 space-y-2.5 overflow-y-auto pr-1">
                   {attempt.missed.map((miss) => {
                     const missedQuestion = questions[miss.questionIndex];
                     if (!missedQuestion) return null;
                     return (
-                      <div className="rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2 text-xs" key={miss.questionIndex}>
-                        <p className="font-medium">{missedQuestion.q}</p>
-                        <p className="mt-1 text-(--ui-text-secondary)">{missedQuestion.options[missedQuestion.answer]} — {missedQuestion.why}</p>
+                      <div className="rounded-2xl border border-(--ui-stroke-tertiary) px-4 py-3" key={miss.questionIndex}>
+                        <p className="text-[0.8125rem] font-medium leading-snug">{missedQuestion.q}</p>
+                        <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">
+                          <span className="font-medium text-emerald-600 dark:text-emerald-500">{missedQuestion.options[missedQuestion.answer]}</span>
+                          {" — "}{missedQuestion.why}
+                        </p>
                       </div>
                     );
                   })}
@@ -385,9 +422,12 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 )}
               </div>
             ) : (
-              <p className="text-sm">Perfect run — nothing missed.</p>
+              <p className="flex items-center justify-center gap-2 text-sm text-(--ui-text-secondary)">
+                <Codicon className="text-emerald-600 dark:text-emerald-500" name="check" size="0.875rem" />
+                Perfect run — nothing missed.
+              </p>
             )}
-            <DialogFooter><Button onClick={onClose} type="button" variant="secondary">Done</Button></DialogFooter>
+            <DialogFooter className="justify-center sm:justify-center"><Button onClick={onClose} type="button" variant="secondary">Done</Button></DialogFooter>
           </div>
         ) : null}
       </DialogContent>
