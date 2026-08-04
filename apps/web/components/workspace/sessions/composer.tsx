@@ -780,11 +780,11 @@ export function RecordCompanionPanel() {
 // the choice is multi-select across a folder tree, which a dropdown cannot hold.
 //
 // Folder and Syllabus were REMOVED (owner 2026-08-03: "it should only allow
-// files — syllabus is a type of file"). Syllabus routing still exists: sending
-// a file whose NAME matches looksLikeSyllabus in session-chat opens the
-// calendar importer. Known gap, accepted with that decision: a syllabus whose
-// filename says nothing (Fall-2026-PHCY-2105-01-….pdf) no longer has a chat
-// entry point until detection reads content instead of the name.
+// files — syllabus is a type of file"). Syllabus routing still exists, two
+// ways now: a file whose NAME matches looksLikeSyllabus, or the student's own
+// words asking for a calendar import (asksForCalendarImport in session-chat)
+// — which is how a syllabus named "Fall-2026-PHCY-2105-01-….pdf" reaches the
+// reviewed importer despite a filename that says nothing.
 function AddMenu({ onChooseFiles, onOpenLibrary }: { onChooseFiles: () => void; onOpenLibrary: () => void }) {
   return (
     <DropdownMenu>
