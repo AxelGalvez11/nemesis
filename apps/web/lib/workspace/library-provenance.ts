@@ -142,15 +142,36 @@ function rowToSource(row: ProvenanceRow): NoteSource | null {
 // Fixtures keyed by PREVIEW_NOTES ids (library-cloud-store.ts) so the
 // dev-preview harness and the signed-out demo show the pill design even though
 // production has no provenance rows yet. Field-agnostic, like the notes.
+// source_id values point at PREVIEW_LIBRARY_SOURCES rows (library-sources.ts)
+// so the demo walks the whole loop the owner designed: note → source pill →
+// the original file's page. Writers must do the same once storage lands.
 const PREVIEW_SOURCES: Record<string, ProvenanceRow[]> = {
   "preview-commerce": [
-    { id: "pv-1", source_kind: "upload", source_id: null, source_path: "Con Law – Week 4 slides.pdf", location: { pages: [12, 18] }, excerpt: null },
-    { id: "pv-2", source_kind: "recording", source_id: null, source_path: null, location: { seconds: 1010 }, excerpt: "Lecture 9 — commerce power" },
+    { id: "pv-1", source_kind: "upload", source_id: "preview-src-conlaw-slides", source_path: "Con Law – Week 4 slides.pdf", location: { pages: [12, 18] }, excerpt: null },
+    { id: "pv-2", source_kind: "recording", source_id: "preview-src-conlaw-recording", source_path: null, location: { seconds: 1010 }, excerpt: "Lecture 9 — commerce power" },
   ],
   "preview-beams": [
-    { id: "pv-3", source_kind: "upload", source_id: null, source_path: "Mechanics of Materials Ch6.pdf", location: { page: 214 }, excerpt: null },
+    { id: "pv-3", source_kind: "upload", source_id: "preview-src-mech-ch6", source_path: "Mechanics of Materials Ch6.pdf", location: { page: 214 }, excerpt: null },
   ],
 };
+
+/** The reverse direction: ids of notes built FROM one source file — the
+ *  "Notes from this file" list on a source's own page. Same degrade-to-empty
+ *  contract as loadNoteSources. */
+export async function loadNoteIdsForSource(sourceId: string, options?: { preview?: boolean }): Promise<string[]> {
+  if (options?.preview || sourceId.startsWith("preview-")) {
+    return Object.entries(PREVIEW_SOURCES)
+      .filter(([, rows]) => rows.some((row) => row.source_id === sourceId))
+      .map(([noteId]) => noteId);
+  }
+  const { data, error } = await supabase
+    .from("library_provenance")
+    .select("document_id")
+    .eq("source_id", sourceId)
+    .limit(100);
+  if (error || !data) return [];
+  return [...new Set((data as { document_id: string }[]).map((row) => row.document_id))];
+}
 
 /** Provenance rows for one note, newest first. Errors degrade to "no pills". */
 export async function loadNoteSources(noteId: string, options?: { preview?: boolean }): Promise<NoteSource[]> {

@@ -45,6 +45,7 @@ import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
 import { NoteEditor } from "../library/note-editor";
+import { DocsCrumbs } from "./docs-crumbs";
 
 interface NoteDraft {
   id: string;
@@ -60,13 +61,19 @@ interface NoteArticleProps {
   onContentChange: (content: string) => void;
   onOpenPath: (path: string) => void;
   onOpenWikiTarget: (target: string, fromPath: string) => void;
+  onOpenFolder: (path: string) => void;
+  onOpenHome: () => void;
+  /** Open a source FILE's page. Pills whose source id isn't in
+   *  `openableSourceIds` stay inert text (nothing to open yet). */
+  onOpenSource: (id: string) => void;
+  openableSourceIds: ReadonlySet<string>;
   onDelete: (noteId: string) => Promise<void>;
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
   /** Wraps ONLY the note body — the ToC queries its h1-h4 by position. */
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onDelete, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenHome, onOpenSource, openableSourceIds, onDelete, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -140,7 +147,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
   const backlinks = useMemo(() => backlinksFor(notes, note), [note, notes]);
   const editable = isEditableNote(content);
   const textArrived = draftRef.current?.id === note.id;
-  const crumbs = note.path.split("/").filter(Boolean).slice(0, -1);
+  const folderPath = note.path.split("/").filter(Boolean).slice(0, -1).join("/");
   // The editor resolves and follows [[links]] itself; both callbacks read the
   // freshest notes list through refs inside the editor, so a note created a
   // moment ago counts as available on the next render of its node.
@@ -171,14 +178,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
     <div className="mx-auto flex min-h-full w-full max-w-3xl min-w-0 flex-col px-8 pb-16 pt-6 max-sm:px-4">
       <header className="mb-1">
         <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap">
-            {crumbs.length === 0 ? <span>Library</span> : crumbs.map((crumb, index) => (
-              <span className="flex min-w-0 items-center gap-1" key={`${crumb}:${index}`}>
-                {index > 0 && <span className="text-(--ui-text-quaternary)">/</span>}
-                <span className="truncate">{crumb}</span>
-              </span>
-            ))}
-          </nav>
+          <DocsCrumbs className="flex-1" onOpenFolder={onOpenFolder} onOpenHome={onOpenHome} path={folderPath} />
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>
@@ -199,17 +199,37 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
         />
         {sources.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="note-sources">
-            {sources.map((source) => (
-              <span
-                className="inline-flex max-w-60 items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1 text-[0.6875rem] text-(--ui-text-secondary)"
-                key={source.id}
-                title={`${sourceKindLabel(source.kind)}${source.excerpt ? ` — ${source.excerpt}` : ""}. The original file isn't stored yet, so this pill names the source without opening it.`}
-              >
-                <Codicon className="text-(--ui-text-tertiary)" name={sourceKindIcon(source.kind)} size="0.75rem" />
-                <span className="truncate">{source.label}</span>
-                {source.location && <span className="shrink-0 text-(--ui-text-quaternary)">{source.location}</span>}
-              </span>
-            ))}
+            {sources.map((source) => {
+              const pillBody = (
+                <>
+                  <Codicon className="text-(--ui-text-tertiary)" name={sourceKindIcon(source.kind)} size="0.75rem" />
+                  <span className="truncate">{source.label}</span>
+                  {source.location && <span className="shrink-0 text-(--ui-text-quaternary)">{source.location}</span>}
+                </>
+              );
+              const pillClass = "inline-flex max-w-60 items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1 text-[0.6875rem] text-(--ui-text-secondary)";
+              // A pill opens the source file's page when that page exists;
+              // otherwise it stays honest text naming where the note came from.
+              return source.sourceId && openableSourceIds.has(source.sourceId) ? (
+                <button
+                  className={cn(pillClass, "hover:border-(--ui-stroke-secondary) hover:text-foreground")}
+                  key={source.id}
+                  onClick={() => onOpenSource(source.sourceId as string)}
+                  title={`${sourceKindLabel(source.kind)}${source.excerpt ? ` — ${source.excerpt}` : ""}. Open this source.`}
+                  type="button"
+                >
+                  {pillBody}
+                </button>
+              ) : (
+                <span
+                  className={pillClass}
+                  key={source.id}
+                  title={`${sourceKindLabel(source.kind)}${source.excerpt ? ` — ${source.excerpt}` : ""}. The original file isn't stored yet, so this pill names the source without opening it.`}
+                >
+                  {pillBody}
+                </span>
+              );
+            })}
           </div>
         )}
       </header>

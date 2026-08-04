@@ -109,6 +109,20 @@ export function countLibraryNotes(folder: LibraryTreeFolder): number {
   return folder.notes.length + folder.folders.reduce((sum, child) => sum + countLibraryNotes(child), 0);
 }
 
+/** Locate a folder node by its full slash-joined path. "" (or all-blank
+ *  segments) returns the root itself; an unknown path returns null rather than
+ *  inventing a folder — the docs surface shows an honest not-found for it. */
+export function findLibraryFolder(root: LibraryTreeFolder, path: string): LibraryTreeFolder | null {
+  const segments = path.split("/").map((segment) => segment.trim()).filter(Boolean);
+  let cursor = root;
+  for (const segment of segments) {
+    const next = cursor.folders.find((folder) => folder.name === segment);
+    if (!next) return null;
+    cursor = next;
+  }
+  return cursor;
+}
+
 function latestModified(folder: LibraryTreeFolder): number {
   return Math.max(0, ...folder.notes.map((note) => Date.parse(note.updatedAt) || 0), ...folder.folders.map(latestModified));
 }

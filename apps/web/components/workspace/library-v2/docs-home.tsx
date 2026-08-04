@@ -18,6 +18,8 @@ interface DocsHomeProps {
   tree: LibraryTreeFolder;
   notes: readonly CloudLibraryNote[];
   onOpenPath: (path: string) => void;
+  /** Open a folder's own page (its notes + its Sources area). */
+  onOpenFolder: (path: string) => void;
   onCreateNote: () => void;
   onImport: () => void;
 }
@@ -45,7 +47,7 @@ function editedLabel(updatedAt: string): string | null {
   return new Date(stamp).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-export function DocsHome({ tree, notes, onOpenPath, onCreateNote, onImport }: DocsHomeProps) {
+export function DocsHome({ tree, notes, onOpenPath, onOpenFolder, onCreateNote, onImport }: DocsHomeProps) {
   const recent = [...notes]
     .filter((note) => note.content.trim().length > 0 || note.title.trim().length > 0)
     .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
@@ -113,10 +115,14 @@ export function DocsHome({ tree, notes, onOpenPath, onCreateNote, onImport }: Do
                   return (
                     <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3" key={folder.path}>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="flex min-w-0 items-center gap-1.5 text-[0.8125rem] font-semibold text-foreground">
+                        <button
+                          className="flex min-w-0 items-center gap-1.5 rounded-sm text-[0.8125rem] font-semibold text-foreground hover:underline underline-offset-2"
+                          onClick={() => onOpenFolder(folder.path)}
+                          type="button"
+                        >
                           <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="folder" size="0.8125rem" />
                           <span className="truncate">{folder.name}</span>
-                        </p>
+                        </button>
                         <span className="shrink-0 text-[0.65rem] text-(--ui-text-quaternary)">{count === 1 ? "1 note" : `${count} notes`}</span>
                       </div>
                       {sample.length > 0 && (

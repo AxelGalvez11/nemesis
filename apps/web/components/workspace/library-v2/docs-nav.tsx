@@ -41,8 +41,11 @@ import { LibraryCreateDialog, type LibraryCreateKind } from "../library/library-
 import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "../library/use-library-import";
 
 interface DocsNavProps {
-  /** Path of the open note, or null on the home page. */
+  /** Path of the open note, or null when no note is open. */
   openNotePath: string | null;
+  /** True only on the actual home page — folder and source pages are neither
+   *  Home nor a tree note, so both highlights stay off there. */
+  homeActive?: boolean;
   onOpenNote: (path: string) => void;
   onGoHome: () => void;
   /** Close the drawer after navigating (narrow viewports only). */
@@ -50,7 +53,8 @@ interface DocsNavProps {
   showBack?: boolean;
 }
 
-export function DocsNav({ openNotePath, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
+export function DocsNav({ openNotePath, homeActive, onOpenNote, onGoHome, onNavigate, showBack = false }: DocsNavProps) {
+  const isHomeActive = homeActive ?? openNotePath === null;
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -154,7 +158,7 @@ export function DocsNav({ openNotePath, onOpenNote, onGoHome, onNavigate, showBa
         <button
           className={cn(
             "row-hover flex w-full items-center gap-2 rounded-md px-2 py-1.25 text-left text-xs font-medium",
-            openNotePath === null ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
+            isHomeActive ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
           )}
           onClick={() => { onGoHome(); onNavigate?.(); }}
           type="button"
