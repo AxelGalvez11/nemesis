@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { AttachmentPreviewDialog } from "@/components/workspace/sessions/attachment-preview-dialog";
 import { splitAttachmentSummary } from "@/lib/workspace/chat-attachments";
 import type { SessionAttachment, SessionMessage } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
@@ -31,39 +32,43 @@ function attachmentKind(name: string): { label: string; icon: string } {
   return { icon: "file", label: extension ? extension.toUpperCase() : "File" };
 }
 
-/** Attachments as cards rather than a line of prose (owner 2026-07-27). */
-function AttachmentCards({ names, records }: { names: string[]; records: SessionAttachment[] }) {
+/** Attachments as cards rather than a line of prose (owner 2026-07-27), and
+ *  every card opens the preview popup (owner 2026-08-04) — an image or PDF
+ *  shows itself, everything else says honestly what is and isn't stored. */
+function AttachmentCards({ names, records, onOpen }: { names: string[]; records: SessionAttachment[]; onOpen: (attachment: SessionAttachment) => void }) {
   const byName = new Map(records.map((attachment) => [attachment.name, attachment]));
   const items = names.length ? names : records.map((attachment) => attachment.name);
   return (
     <div className="flex flex-wrap justify-end gap-1.5">
       {items.map((name) => {
-        const record = byName.get(name);
+        const record = byName.get(name) ?? { kind: "file" as const, name };
         const kind = attachmentKind(name);
-        if (record?.kind === "image" && record.url) {
+        if (record.kind === "image" && record.url) {
           return (
-            <figure className="max-w-sm overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background" key={name}>
+            <button className="max-w-sm cursor-zoom-in overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background text-left" key={name} onClick={() => onOpen(record)} type="button">
               {/* A private signed URL is intentionally rendered directly; the
                   storage hostname is deployment-specific and cannot be listed
                   statically in next/image config. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={name} className="max-h-80 w-auto max-w-full object-contain" src={record.url} />
-              <figcaption className="truncate px-3 py-2 text-[0.6875rem] text-(--ui-text-tertiary)">{name}</figcaption>
-            </figure>
+              <span className="block truncate px-3 py-2 text-[0.6875rem] text-(--ui-text-tertiary)">{name}</span>
+            </button>
           );
         }
         return (
-          <div
-            className="flex min-w-0 max-w-64 items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2.5 py-1.5 text-left"
+          <button
+            className="flex min-w-0 max-w-64 items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2.5 py-1.5 text-left transition-colors hover:border-(--ui-stroke-secondary)"
             key={name}
+            onClick={() => onOpen(record)}
             title={name}
+            type="button"
           >
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={kind.icon} size="0.9rem" />
-            <div className="min-w-0">
-              <p className="truncate text-[0.75rem] leading-tight">{name.replace(/\/$/, "")}</p>
-              <p className="text-[0.625rem] leading-tight text-(--ui-text-quaternary)">{kind.label}</p>
-            </div>
-          </div>
+            <span className="min-w-0">
+              <span className="block truncate text-[0.75rem] leading-tight">{name.replace(/\/$/, "")}</span>
+              <span className="block text-[0.625rem] leading-tight text-(--ui-text-quaternary)">{kind.label}</span>
+            </span>
+          </button>
         );
       })}
     </div>
@@ -75,6 +80,7 @@ export function UserMessage({ message, onEdit }: { message: SessionMessage; onEd
   const attachmentRecords = message.attachments ?? [];
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const [preview, setPreview] = useState<SessionAttachment | null>(null);
 
   return (
     <div
@@ -94,8 +100,9 @@ export function UserMessage({ message, onEdit }: { message: SessionMessage; onEd
       ) : (
         <>
           {(attachments.length > 0 || attachmentRecords.length > 0) && (
-            <AttachmentCards names={attachments} records={attachmentRecords} />
+            <AttachmentCards names={attachments} onOpen={setPreview} records={attachmentRecords} />
           )}
+          <AttachmentPreviewDialog attachment={preview} onClose={() => setPreview(null)} />
           {body && (
             <div className={cn(USER_BUBBLE_BASE_CLASS, USER_BUBBLE_READ_CLASS, "text-center", (attachments.length > 0 || attachmentRecords.length > 0) && "mt-1.5")}>
               <div className="min-h-[1.25rem] w-full">{body}</div>
