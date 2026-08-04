@@ -19,6 +19,21 @@ function indentStyle(depth: number): React.CSSProperties {
   return { paddingLeft: `${depth * INDENT_REM_PER_DEPTH}rem` };
 }
 
+/** The tree's own indent, exported so rows rendered THROUGH the tree (the
+ *  docs-nav Sources rows via renderFolderExtras) line up with real rows. */
+export function libraryTreeIndentStyle(depth: number): React.CSSProperties {
+  return indentStyle(depth);
+}
+
+/** An outside request to expand the tree down to one folder — how the docs
+ *  surface's breadcrumbs behave (Obsidian-style: a folder is never a page,
+ *  clicking its name orients the tree instead). The nonce makes repeat clicks
+ *  on the same crumb re-reveal. */
+export interface LibraryTreeReveal {
+  path: string;
+  nonce: number;
+}
+
 function itemKey(item: DragItem): string {
   return item.kind === "note" ? `note:${item.path}` : `folder:${item.path}`;
 }
@@ -45,6 +60,12 @@ interface LibraryTreeViewProps {
   onRenameFolder?: (path: string, title: string) => void;
   onCreateFolder?: (path: string) => void;
   onAttachNotes?: (noteIds: string[]) => void;
+  /** Expand ancestors of (and scroll to) this folder when the value changes. */
+  revealFolder?: LibraryTreeReveal | null;
+  /** Extra rows rendered inside an expanded folder AFTER its notes — the docs
+   *  surface uses this for the folder's Sources (original files). Classic
+   *  doesn't pass it and is untouched. Depth is the CHILD indent level. */
+  renderFolderExtras?: (folder: LibraryTreeFolder, depth: number) => React.ReactNode;
   depth?: number;
 }
 
@@ -334,20 +355,34 @@ function TreeContents(props: TreeContentsProps) {
           onSelect={props.onSelect}
         />
       ))}
+      {props.renderFolderExtras?.(folder, depth)}
     </SidebarRowStack>
   );
 }
 
 function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolder }) {
-  const { folder, depth = 0, dragItem, dropTarget } = props;
+  const { folder, depth = 0, dragItem, dropTarget, revealFolder } = props;
   const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const invalidTarget = dragItem?.kind === "folder" && (dragItem.path === folder.path || folder.path.startsWith(`${dragItem.path}/`));
   const highlighted = !invalidTarget && dropTarget === folder.path;
   const key = `folder:${folder.path}`;
   const multiSelected = props.selectedKeys.has(key);
+
+  // Reveal-from-outside (breadcrumbs): open when we're on the revealed path,
+  // scroll when we ARE its end. Also fires when this node mounts while a
+  // reveal is current — that is what lets a chain of closed ancestors unfold
+  // over successive renders. (Cosmetic quirk, accepted: collapsing and
+  // re-expanding an ancestor of the last revealed folder re-opens it.)
+  useEffect(() => {
+    if (!revealFolder) return;
+    if (revealFolder.path === folder.path || revealFolder.path.startsWith(`${folder.path}/`)) setOpen(true);
+    if (revealFolder.path === folder.path) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [folder.path, revealFolder]);
+
   return (
     <div>
-      <div style={indentStyle(depth)}>
+      <div ref={rowRef} style={indentStyle(depth)}>
         <SidebarRowShell className={cn(
           highlighted && "outline outline-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)]",
           dragItem?.kind === "folder" && dragItem.path === folder.path && "opacity-50",

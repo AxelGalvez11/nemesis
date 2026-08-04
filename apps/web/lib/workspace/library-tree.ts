@@ -143,6 +143,31 @@ function compareManual(a: LibraryTreeNote, b: LibraryTreeNote): number {
   return a.position - b.position || a.title.localeCompare(b.title);
 }
 
+/**
+ * Prune a built tree down to what matches a search query, keeping structure.
+ *
+ * Docs-nav semantics (the v2 left rail filters IN PLACE instead of swapping to
+ * a flat result list): a note stays if its title matches; a folder stays if its
+ * own name matches — keeping EVERYTHING inside it, because matching a folder
+ * means "show me this folder" — or if anything beneath it survived. Matching is
+ * case-insensitive substring. Returns new objects throughout; the input tree is
+ * never mutated. An empty/blank query returns the tree untouched.
+ */
+export function filterLibraryTree(folder: LibraryTreeFolder, query: string): LibraryTreeFolder {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return folder;
+
+  const prune = (node: LibraryTreeFolder): LibraryTreeFolder | null => {
+    if (node.path && node.name.toLocaleLowerCase().includes(needle)) return node;
+    const folders = node.folders.map(prune).filter((child): child is LibraryTreeFolder => child !== null);
+    const notes = node.notes.filter((note) => note.title.toLocaleLowerCase().includes(needle));
+    if (!node.path) return { ...node, folders, notes };
+    return folders.length > 0 || notes.length > 0 ? { ...node, folders, notes } : null;
+  };
+
+  return prune(folder) ?? { ...folder, folders: [], notes: [] };
+}
+
 function sortFolder(folder: LibraryTreeFolder, mode: LibrarySortMode): void {
   const direction = mode === "za" ? -1 : 1;
   folder.folders.sort((a, b) => {

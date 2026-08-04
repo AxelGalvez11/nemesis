@@ -40,7 +40,7 @@ import { isEditableNote } from "@/lib/workspace/note-markdown";
 
 import { NoteEditor } from "./note-editor";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
-import { backlinksFor, extractLibraryLinks, findLibraryNote } from "@/lib/workspace/library-links";
+import { backlinksFor, extractLibraryLinks, findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
@@ -108,7 +108,7 @@ interface LibraryMainProps {
 export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: LibraryMainProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+  const libraryBase = libraryRouteBase(pathname);
   const { notes, selectedPath, select, createNote, saveNote, deleteNote } = useCloudLibrary();
   const note = selectedPath ? (notes.find((item) => item.path === selectedPath) ?? null) : null;
   const [openPaths, setOpenPaths] = useState<string[]>([]);
@@ -207,7 +207,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
 
   function openPath(path: string) {
     select(path);
-    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
+    router.replace(`${libraryBase}?note=${encodeURIComponent(path)}`);
   }
 
   function openPathInCurrentTab(path: string) {
@@ -255,7 +255,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
     if (!path) return;
     setNavigation((current) => ({ ...current, index }));
     select(path);
-    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
+    router.replace(`${libraryBase}?note=${encodeURIComponent(path)}`);
   }
 
   function closeTab(path: string) {
@@ -265,8 +265,8 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
       if (path === selectedPath) {
         const next = remaining[Math.min(index, remaining.length - 1)] ?? null;
         select(next);
-        if (next) router.replace(`${navigationRoot}/library?note=${encodeURIComponent(next)}`);
-        else router.replace(`${navigationRoot}/library`);
+        if (next) router.replace(`${libraryBase}?note=${encodeURIComponent(next)}`);
+        else router.replace(`${libraryBase}`);
       }
       return remaining;
     });
@@ -440,7 +440,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
                 {outgoing.length === 0 ? <PanelEmpty>Type [[Note name]] to connect an idea.</PanelEmpty> : outgoing.map((link) => {
                   const linked = findLibraryNote(notes, link.target);
                   return linked ? (
-                    <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`${navigationRoot}/library?note=${encodeURIComponent(linked.path)}`} key={link.target} onClick={(event) => { event.preventDefault(); void openWikiTarget(link.target); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{link.label}</a>
+                    <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`${libraryBase}?note=${encodeURIComponent(linked.path)}`} key={link.target} onClick={(event) => { event.preventDefault(); void openWikiTarget(link.target); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{link.label}</a>
                   ) : (
                     <button className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs text-(--ui-text-quaternary) underline decoration-current/35 underline-offset-4 hover:bg-(--chrome-action-hover) hover:text-(--ui-text-secondary)" key={link.target} onClick={() => void openWikiTarget(link.target)} title="Create this note in the current folder" type="button">{link.label}</button>
                   );
@@ -450,7 +450,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             {rightPanel === "backlinks" && (
               <LinkSection title="Backlinks">
                 {backlinks.length === 0 ? <PanelEmpty>No other note links here yet.</PanelEmpty> : backlinks.map((backlink) => (
-                  <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`${navigationRoot}/library?note=${encodeURIComponent(backlink.path)}`} key={backlink.id} onClick={(event) => { event.preventDefault(); openPathInCurrentTab(backlink.path); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{backlink.title}</a>
+                  <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`${libraryBase}?note=${encodeURIComponent(backlink.path)}`} key={backlink.id} onClick={(event) => { event.preventDefault(); openPathInCurrentTab(backlink.path); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{backlink.title}</a>
                 ))}
               </LinkSection>
             )}

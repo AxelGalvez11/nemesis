@@ -41,6 +41,28 @@ export function backlinksFor(notes: readonly CloudLibraryNote[], target: CloudLi
   );
 }
 
+export type WikiTextPiece = { kind: "text"; text: string } | { kind: "wiki"; target: string; label: string };
+
+/**
+ * Split a run of plain text into text pieces and wiki-link pieces, in order.
+ * The editor uses this to lift [[Target]] / [[Target|Label]] out of text and
+ * into atomic link nodes; everything between stays untouched text.
+ */
+export function splitWikiLinks(text: string): WikiTextPiece[] {
+  const pieces: WikiTextPiece[] = [];
+  const pattern = new RegExp(WIKILINK_RE.source, "g");
+  let cursor = 0;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const target = match[1]?.trim() ?? "";
+    if (!target) continue;
+    if (match.index > cursor) pieces.push({ kind: "text", text: text.slice(cursor, match.index) });
+    pieces.push({ kind: "wiki", label: match[2]?.trim() || target, target });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) pieces.push({ kind: "text", text: text.slice(cursor) });
+  return pieces;
+}
+
 export function wikiLinksToMarkdown(content: string): string {
   return content.replace(WIKILINK_RE, (_whole, rawTarget: string, rawLabel?: string) => {
     const target = rawTarget.trim();
@@ -66,6 +88,20 @@ export function obsidianTagsToMarkdown(text: string): string {
       `${prefix}[#${tag}](#nemesis-tag=${encodeURIComponent(tag)})`
     ));
   }).join("\n");
+}
+
+/**
+ * The base route Library-surface links should build on, from the pathname the
+ * surface is mounted at. Keeps each mount self-contained: the docs Library at
+ * /library, the classic fallback at /library/classic, and both of their
+ * dev-preview harness mounts, without any of them leaking navigations into the
+ * others. Order matters — longest prefix first.
+ */
+export function libraryRouteBase(pathname: string): string {
+  if (pathname.startsWith("/dev-preview/workspace/library-classic")) return "/dev-preview/workspace/library-classic";
+  if (pathname.startsWith("/dev-preview/workspace/")) return "/dev-preview/workspace/library";
+  if (pathname.startsWith("/library/classic")) return "/library/classic";
+  return "/library";
 }
 
 export function normalizeLibraryFolder(value: string): string {

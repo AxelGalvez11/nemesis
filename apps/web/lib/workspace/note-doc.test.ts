@@ -114,3 +114,18 @@ test("a link keeps its address", () => {
   const link = text.marks.find((mark) => mark.type.name === "link");
   assert.equal(link?.attrs.href, "https://example.edu/x");
 });
+
+// ── Wiki links across the full editor round trip ─────────────────────────────
+// The editor knows nothing about [[...]] (it is plain text in the document);
+// what matters is that a save does not escape it into \[\[...]] and kill the
+// link. See restoreWikiBrackets in note-markdown.ts.
+
+test("[[wiki links]] survive open → save unchanged", () => {
+  const linked = "Read [[Bending stress]] and [[Contract Law|K]] tonight.\n";
+  assert.equal(roundTrip(linked), linked);
+});
+
+test("wiki links in a bullet list survive the round trip", () => {
+  const linked = "- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]\n";
+  assert.equal(roundTrip(linked), linked);
+});

@@ -1,57 +1,11 @@
-// Library page — desktop src/app/library/index.tsx LibraryView root, v1
-// empty-vault anatomy (library-study spec §2.2). Sidebar + main only: no tab
-// strip; creation/editing/linking now ride the readable cloud Library.
+// Library — the docs-style study wiki (owner 2026-08-03). Left: the folder
+// tree. Middle: the open note as a rendered article, or the home page.
+// Right: "On this page". The previous screen lives on at /library/classic.
 
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
-
-import { useTheme } from "@/components/theme-provider";
-import { LibraryMain } from "@/components/workspace/library/library-main";
-import { LibrarySidebar } from "@/components/workspace/library/library-sidebar";
-import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
-import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
-import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
-import { cn } from "@/lib/utils";
+import { LibraryDocsPage } from "@/components/workspace/library-v2/library-docs-page";
 
 export default function LibraryPage() {
-  // Back is the exit from full-screen mode, so it only belongs there. With the
-  // nav rail kept on screen it would be a second, redundant way to the same
-  // place sitting right next to it.
-  const { libraryFullScreen } = useTheme();
-  const narrowViewport = useMediaQuery("(max-width: 768px)");
-  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.library-sidebar");
-  const searchParams = useSearchParams();
-  const { notes, select } = useCloudLibrary();
-  const requestedPath = searchParams.get("note");
-  const appliedRequest = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (requestedPath && requestedPath !== appliedRequest.current && notes.some((note) => note.path === requestedPath)) {
-      appliedRequest.current = requestedPath;
-      select(requestedPath);
-    }
-  }, [notes, requestedPath, select]);
-
-  return (
-    <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
-      {sidebarOpen && (
-        <>
-          {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setSidebarOpen(false)} type="button" />}
-          <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
-            <LibrarySidebar
-              onNavigate={() => narrowViewport && setSidebarOpen(false)}
-              showBack={libraryFullScreen && !narrowViewport}
-            />
-          </div>
-        </>
-      )}
-      <LibraryMain
-        leftSidebarOpen={sidebarOpen}
-        onCollapseLeft={() => setSidebarOpen(false)}
-        onExpandLeft={() => setSidebarOpen(true)}
-      />
-    </div>
-  );
+  return <LibraryDocsPage />;
 }

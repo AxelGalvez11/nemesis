@@ -8,6 +8,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { supabase } from "@/lib/supabase";
 
 import { normalizeLibraryFolder, notePathFor, safeLibraryTitle } from "./library-links";
+import { remapLibrarySourceFolders } from "./library-sources";
 import {
   classifyLiveEvent,
   folderPathsOf,
@@ -42,7 +43,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     updatedAt: "",
     createdAt: "",
     content:
-      "# Bending stress\n\nStress varies linearly from the neutral axis: σ = My / I.\n\n| Section | Second moment I | Typical use |\n| --- | --- | --- |\n| Rectangle | bh³ / 12 | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
+      "# Bending stress\n\nStress varies linearly from the neutral axis:\n\n$$\n\\sigma = \\frac{M y}{I}\n$$\n\nwhere $M$ is the bending moment and $I$ the second moment of area.\n\n| Section | Second moment $I$ | Typical use |\n| --- | --- | --- |\n| Rectangle | $b h^3 / 12$ | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
   },
   {
     id: "preview-baroque",
@@ -588,6 +589,9 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       ]);
       const failure = results.find((result) => result.error)?.error;
       if (failure) throw new Error(failure.message);
+      // Source FILES filed under the deleted folder go with it (soft delete;
+      // never throws — folder ops don't fail on source upkeep).
+      await remapLibrarySourceFolders(userId, (folderPath) => folderPath === path || folderPath.startsWith(`${path}/`) ? null : folderPath);
     }
     const deletedNoteIds = new Set(affectedNotes.map((note) => note.id));
     const notes = state.notes.filter((note) => !deletedNoteIds.has(note.id));
@@ -662,6 +666,8 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       const results = await Promise.all(updates);
       const failure = results.find((result) => result.error)?.error;
       if (failure) throw new Error(failure.message);
+      // Source FILES move with their folder (never throws).
+      await remapLibrarySourceFolders(userId, remap);
     }
     setState({
       ...state,
@@ -693,6 +699,8 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       ]);
       const failure = results.find((result) => result.error)?.error;
       if (failure) throw new Error(failure.message);
+      // Source FILES follow the rename (never throws).
+      await remapLibrarySourceFolders(userId, remap);
     }
     setState({
       ...state,

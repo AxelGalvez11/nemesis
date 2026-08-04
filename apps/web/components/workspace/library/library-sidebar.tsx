@@ -25,9 +25,8 @@ import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { SearchField } from "@/components/desktop-ui/search-field";
 import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { libraryRouteBase } from "@/lib/workspace/library-links";
 import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib/workspace/library-tree";
-import { extractFile, isExtractable, isImage } from "@/lib/workspace/chat-attachments";
-import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
 
@@ -36,21 +35,21 @@ import { seedComposerFiles } from "@/lib/workspace/composer-seed";
 import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
+import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "./use-library-import";
 
 export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: () => void; showBack?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+  const libraryBase = libraryRouteBase(pathname);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
+  const { status, notes, folders, error, selectedPath, select, reload, createNote, saveNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
@@ -65,7 +64,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
 
   const createBlankNote = async () => {
     const note = await createNote({ title: "Untitled note", folder: "", content: "" });
-    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(note.path)}`);
+    router.replace(`${libraryBase}?note=${encodeURIComponent(note.path)}`);
     onNavigate?.();
   };
 
@@ -80,7 +79,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
 
   const openPath = (path: string) => {
     select(path);
-    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
+    router.replace(`${libraryBase}?note=${encodeURIComponent(path)}`);
     onNavigate?.();
   };
 
@@ -95,43 +94,11 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
     onNavigate?.();
   };
 
-  // Import handles two kinds of file. Markdown/text is read in the browser and saved
-  // verbatim, exactly as before. PDF/Word/PowerPoint is sent to the server extractor
-  // (/api/notebooks/extract/file) for its text, filed under an "Imported" folder, and
-  // auto-linked into the knowledge graph via a `## Related` section pointing at any
-  // existing notes it mentions. Per-file try/catch so one unreadable file (too large,
-  // signed out) does not abandon the rest of the batch.
+  // Import pipeline shared with the docs-nav — see use-library-import.ts.
+  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
+
   const importNotes = async (files: File[]) => {
-    if (files.length === 0) return;
-    setImportError(null);
-    setImporting(true);
-    const failures: string[] = [];
-    let lastPath: string | null = null;
-    for (const file of files) {
-      try {
-        if (isExtractable(file)) {
-          const { text, title } = await extractFile(file, uid);
-          const note = await createNote({
-            // A camera filename ("IMG_4821.HEIC") makes a useless note title, so for a picture the
-            // server's title — read out of the picture itself — wins. Documents keep the filename,
-            // which is what a student named them and expects to see.
-            title: isImage(file) ? (title ?? importedTitleFrom(file.name)) : importedTitleFrom(file.name),
-            folder: "Imported",
-            content: composeImportedNote(text, findRelatedTitles(text, notes)),
-          });
-          lastPath = note.path;
-        } else {
-          const title = file.name.replace(/\.(?:md|markdown|txt)$/i, "").trim() || "Untitled note";
-          const note = await createNote({ title, folder: "", content: await file.text() });
-          lastPath = note.path;
-        }
-      } catch (cause) {
-        failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "couldn't import"}`);
-      }
-    }
-    setImporting(false);
-    if (lastPath) openPath(lastPath);
-    if (failures.length) setImportError(failures.join(" · "));
+    await importFiles(files);
     if (importInputRef.current) importInputRef.current.value = "";
   };
 
@@ -165,7 +132,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
           </div>
           <div className="flex gap-0.5">
             <input
-              accept=".md,.markdown,.txt,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.heic,.heif,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/webp,image/heic,image/heif"
+              accept={LIBRARY_IMPORT_ACCEPT}
               className="hidden"
               multiple
               onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
