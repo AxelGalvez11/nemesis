@@ -153,6 +153,31 @@ export const noteSchema = new Schema({
       toDOM: (node) => ["th", { style: node.attrs.align ? `text-align:${node.attrs.align as string}` : null }, 0] as const,
     },
 
+    // A [[wiki link]] is an ATOM: the target lives in attributes, the visible
+    // text is a rendering of it, and the editor can neither bold half of it
+    // nor orphan a bracket. Double-click melts it back to raw [[...]] text
+    // for editing; the input rule re-forms it when ]] closes.
+    wiki_link: {
+      atom: true,
+      attrs: { label: { default: null }, target: {} },
+      group: "inline",
+      inline: true,
+      parseDOM: [
+        {
+          getAttrs: (dom) => ({
+            label: (dom as HTMLElement).getAttribute("data-label") || null,
+            target: (dom as HTMLElement).getAttribute("data-target") ?? "",
+          }),
+          tag: "span[data-wiki-link]",
+        },
+      ],
+      toDOM: (node) => [
+        "span",
+        { "data-label": (node.attrs.label as string | null) ?? "", "data-target": node.attrs.target as string, "data-wiki-link": "" },
+        ((node.attrs.label as string | null) || (node.attrs.target as string)) ?? "",
+      ] as const,
+    },
+
     // Inline maths, atomic for the same reason as math_block.
     math_inline: {
       atom: true,

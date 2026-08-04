@@ -51,7 +51,6 @@ export function LibraryDocsPage() {
   const { status, notes, folders, select, createNote, saveNote, deleteNote } = useCloudLibrary();
 
   const [articleContent, setArticleContent] = useState("");
-  const [editing, setEditing] = useState(false);
   const articleRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastOpenIdRef = useRef<string | null>(null);
@@ -93,13 +92,8 @@ export function LibraryDocsPage() {
     if (renamed) router.replace(`${libraryBase}?note=${encodeURIComponent(renamed.path)}`);
   }, [libraryBase, note, notes, requestedPath, router, status]);
 
-  // Leaving the note (home, or another note) always leaves edit mode behind.
-  useEffect(() => {
-    setEditing(false);
-  }, [requestedPath]);
-
   const tree = useMemo(() => buildLibraryTree(notes, folders, "az"), [folders, notes]);
-  const outline = useMemo(() => (note && !editing ? extractNoteOutline(articleContent) : []), [articleContent, editing, note]);
+  const outline = useMemo(() => (note ? extractNoteOutline(articleContent) : []), [articleContent, note]);
 
   async function openWikiTarget(target: string, fromPath: string) {
     const existing = findLibraryNote(notes, target);
@@ -161,12 +155,10 @@ export function LibraryDocsPage() {
           ) : note ? (
             <NoteArticle
               articleRef={articleRef}
-              editing={editing}
               note={note}
               notes={notes}
               onContentChange={setArticleContent}
               onDelete={removeNote}
-              onEditingChange={setEditing}
               onOpenPath={openPath}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
               saveNote={saveNote}
@@ -181,7 +173,7 @@ export function LibraryDocsPage() {
             />
           )}
         </div>
-        {note && !editing && <DocsToc articleRef={articleRef} outline={outline} scrollRef={scrollRef} />}
+        {note && <DocsToc articleRef={articleRef} outline={outline} scrollRef={scrollRef} />}
       </main>
 
       <input

@@ -3,19 +3,22 @@
 // The middle pane of the docs-style Library: one note, presented like a docs
 // article. Breadcrumbs, an editable title (renaming is not authoring — one
 // plain-text field that can never hold a markdown construct), source pills
-// showing where the note came from, the rendered body with clickable
-// [[wiki links]], and a "Linked from" footer built from backlinks.
+// showing where the note came from, the body, and a "Linked from" footer
+// built from backlinks.
 //
-// READ FIRST, EDIT ON PURPOSE. The docs feel comes from rendering the note
-// through AssistantMarkdown — the same renderer the chat uses — where wiki
-// links, tags and highlights are live. The ProseMirror editor mounts only
-// when the student presses Edit; Done returns to the article. (The classic
-// screen kept every editable note permanently inside the editor, where wiki
-// links are inert text — reading is the default here, so links work by
-// default.) Draft/autosave/live-merge rules are carried over from
-// library-main.tsx unchanged.
+// LOOKS LIKE DOCUMENTATION, EDITS LIKE GOOGLE DOCS (owner 2026-08-03). There
+// is no Edit button and no mode: the body IS the editor, always. Click
+// anywhere and type — if the AI wrote something wrong, fixing a typo is a
+// keystroke, not a request. Equations render as equations and [[wiki links]]
+// stay live links inside the editor (see note-editor.tsx). Only a note the
+// editing model cannot represent (raw HTML, footnotes, front matter) falls
+// back to a read-only rendering, and says so.
+//
+// Draft/autosave/live-merge rules are carried over from library-main.tsx
+// unchanged: 650ms autosave, dirty-draft save on switch, remote edits adopted
+// only while nothing is unsaved here.
 
-import { IconArrowNarrowLeft, IconCheck, IconDots, IconEdit, IconTrash } from "@tabler/icons-react";
+import { IconArrowNarrowLeft, IconDots, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -38,7 +41,6 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { backlinksFor, findLibraryNote } from "@/lib/workspace/library-links";
 import { loadNoteSources, sourceKindIcon, sourceKindLabel, type NoteSource } from "@/lib/workspace/library-provenance";
 import { isEditableNote } from "@/lib/workspace/note-markdown";
-import { stripLeadingTitleHeading } from "@/lib/workspace/note-outline";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
@@ -54,20 +56,17 @@ interface NoteDraft {
 interface NoteArticleProps {
   note: CloudLibraryNote;
   notes: readonly CloudLibraryNote[];
-  /** Edit mode is the PAGE's state: the ToC rail hides while it is on. */
-  editing: boolean;
-  onEditingChange: (editing: boolean) => void;
   /** Notify the page that content changed so the ToC can re-extract. */
   onContentChange: (content: string) => void;
   onOpenPath: (path: string) => void;
   onOpenWikiTarget: (target: string, fromPath: string) => void;
   onDelete: (noteId: string) => Promise<void>;
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
-  /** The note body wrapper — the ToC queries its h1-h4 by position. */
+  /** Wraps ONLY the note body — the ToC queries its h1-h4 by position. */
   articleRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function NoteArticle({ note, notes, editing, onEditingChange, onContentChange, onOpenPath, onOpenWikiTarget, onDelete, saveNote, articleRef }: NoteArticleProps) {
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onDelete, saveNote, articleRef }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -121,15 +120,9 @@ export function NoteArticle({ note, notes, editing, onEditingChange, onContentCh
     return () => window.clearTimeout(timer);
   }, [content, note.id, saveNote, title]);
 
-  // The reader hides a leading h1 that just repeats the title (docs pages say
-  // their name once). Display-only — the stored markdown keeps its heading —
-  // and the ToC extracts from this SAME text, keeping entry↔element indexes
-  // aligned with what is actually on screen.
-  const displayContent = useMemo(() => stripLeadingTitleHeading(content, title), [content, title]);
-
   useEffect(() => {
-    onContentChange(displayContent);
-  }, [displayContent, onContentChange]);
+    onContentChange(content);
+  }, [content, onContentChange]);
 
   // Source pills. Errors degrade to none; a note without provenance simply
   // shows no pills, which is the truthful state. (Preview fixtures are keyed
@@ -148,6 +141,16 @@ export function NoteArticle({ note, notes, editing, onEditingChange, onContentCh
   const editable = isEditableNote(content);
   const textArrived = draftRef.current?.id === note.id;
   const crumbs = note.path.split("/").filter(Boolean).slice(0, -1);
+  // The editor resolves and follows [[links]] itself; both callbacks read the
+  // freshest notes list through refs inside the editor, so a note created a
+  // moment ago counts as available on the next render of its node.
+  const wikiLinks = useMemo(
+    () => ({
+      isAvailable: (target: string) => Boolean(findLibraryNote(notes, target)),
+      onOpen: (target: string) => onOpenWikiTarget(target, note.path),
+    }),
+    [note.path, notes, onOpenWikiTarget],
+  );
 
   function updateDraft(next: { title?: string; content?: string }) {
     const current = draftRef.current ?? { id: note.id, title, content, dirty: false };
@@ -177,21 +180,7 @@ export function NoteArticle({ note, notes, editing, onEditingChange, onContentCh
             ))}
           </nav>
           <div className="flex shrink-0 items-center gap-0.5">
-            {(saving || message) && <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? "Saving…"}</span>}
-            {editing ? (
-              <Button aria-label="Done editing" onClick={() => onEditingChange(false)} size="xs" variant="secondary"><IconCheck /> Done</Button>
-            ) : (
-              <Button
-                aria-label="Edit note"
-                disabled={!editable}
-                onClick={() => onEditingChange(true)}
-                size="xs"
-                title={editable ? "Edit this note" : "This note contains formatting the editor can't safely change yet."}
-                variant="ghost"
-              >
-                <IconEdit /> Edit
-              </Button>
-            )}
+            <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -225,40 +214,34 @@ export function NoteArticle({ note, notes, editing, onEditingChange, onContentCh
         )}
       </header>
 
-      {editing && textArrived && editable ? (
-        <NoteEditor
-          className="note-editor min-h-[24rem] bg-transparent py-2"
-          key={note.id}
-          markdown={content}
-          noteId={note.id}
-          onChange={(next) => updateDraft({ content: next })}
-        />
-      ) : (
-        <>
-          {!editable && textArrived && displayContent.trim().length > 0 && (
+      <div className="min-h-[16rem]" ref={articleRef}>
+        {textArrived && editable ? (
+          <NoteEditor
+            className="note-editor bg-transparent py-2"
+            key={note.id}
+            markdown={content}
+            noteId={note.id}
+            onChange={(next) => updateDraft({ content: next })}
+            wikiLinks={wikiLinks}
+          />
+        ) : textArrived ? (
+          <>
             <p className="mb-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">
               This note contains formatting the editor cannot safely change yet, so it is shown read-only.
             </p>
-          )}
-          <div className="min-h-[16rem]" ref={articleRef}>
             <AssistantMarkdown
-              className="[&_h1]:!mb-3 [&_h1]:!mt-8 [&_h1]:!text-[1.5rem] [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-7 [&_h2]:!border-b [&_h2]:!border-(--ui-stroke-tertiary) [&_h2]:!pb-1.5 [&_h2]:!text-[1.25rem] [&_h2]:!font-semibold [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-[1.0625rem] [&_h4]:!mt-4 [&_h4]:!text-[0.9375rem] [&_p]:!leading-relaxed"
+              className="[&_h1]:!mb-3 [&_h1]:!mt-8 [&_h1]:!text-[2.25rem] [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-7 [&_h2]:!text-[1.5rem] [&_h2]:!font-semibold [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-[1.25rem] [&_h4]:!mt-4 [&_h4]:!text-[1rem] [&_p]:!leading-relaxed"
               externalLinksInNewTab={false}
               isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))}
               obsidianHighlights
               obsidianTags
               obsidianUnderline
               onWikiLink={(target) => onOpenWikiTarget(target, note.path)}
-              text={displayContent}
+              text={content}
             />
-            {displayContent.trim().length === 0 && (
-              <button className="text-left text-sm text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)" disabled={!editable} onClick={() => onEditingChange(true)} type="button">
-                This page is empty. {editable ? "Press Edit — or just start here — and connect ideas with [[double brackets]]." : ""}
-              </button>
-            )}
-          </div>
-        </>
-      )}
+          </>
+        ) : null}
+      </div>
 
       {backlinks.length > 0 && (
         <footer className="mt-10 border-t border-(--ui-stroke-tertiary) pt-4" data-testid="note-backlinks">

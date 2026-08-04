@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractNoteOutline, stripLeadingTitleHeading } from "./note-outline";
+import { extractNoteOutline } from "./note-outline";
 
 test("collects ATX headings 1-4 in document order with depths", () => {
   const outline = extractNoteOutline("# One\n\ntext\n\n## Two\n\n### Three\n\n#### Four\n");
@@ -76,21 +76,4 @@ test("an empty heading still occupies its slot so indexes stay aligned", () => {
   assert.equal(outline.length, 2);
   assert.equal(outline[0]?.label, "Untitled section");
   assert.equal(outline[1]?.label, "Real");
-});
-
-test("stripLeadingTitleHeading removes only an exact-duplicate opening h1", () => {
-  assert.equal(stripLeadingTitleHeading("# Entropy\n\nBody text.", "Entropy"), "Body text.");
-  assert.equal(stripLeadingTitleHeading("\n\n# entropy ##\nBody.", "Entropy"), "Body.");
-  assert.equal(stripLeadingTitleHeading("Entropy\n=======\n\nBody.", "Entropy"), "Body.");
-});
-
-test("stripLeadingTitleHeading leaves everything else alone", () => {
-  const differentText = "# Second law\n\nBody.";
-  assert.equal(stripLeadingTitleHeading(differentText, "Entropy"), differentText);
-  const deeper = "## Entropy\n\nBody.";
-  assert.equal(stripLeadingTitleHeading(deeper, "Entropy"), deeper);
-  const bodyFirst = "Intro line.\n\n# Entropy\n\nBody.";
-  assert.equal(stripLeadingTitleHeading(bodyFirst, "Entropy"), bodyFirst);
-  const blankTitle = "# Entropy\n\nBody.";
-  assert.equal(stripLeadingTitleHeading(blankTitle, "   "), blankTitle);
 });

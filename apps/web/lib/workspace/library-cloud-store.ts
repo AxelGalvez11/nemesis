@@ -42,7 +42,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     updatedAt: "",
     createdAt: "",
     content:
-      "# Bending stress\n\nStress varies linearly from the neutral axis: σ = My / I.\n\n| Section | Second moment I | Typical use |\n| --- | --- | --- |\n| Rectangle | bh³ / 12 | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
+      "# Bending stress\n\nStress varies linearly from the neutral axis:\n\n$$\n\\sigma = \\frac{M y}{I}\n$$\n\nwhere $M$ is the bending moment and $I$ the second moment of area.\n\n| Section | Second moment $I$ | Typical use |\n| --- | --- | --- |\n| Rectangle | $b h^3 / 12$ | Timber joists |\n| I-beam | Web + flange terms | Steel framing |",
   },
   {
     id: "preview-baroque",

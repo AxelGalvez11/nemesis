@@ -18,6 +18,7 @@ import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
+import { splitWikiLinks } from "./library-links";
 import { NOTE_GFM_OPTIONS, NOTE_STRINGIFY_OPTIONS, restoreWikiBrackets } from "./note-markdown";
 import { noteSchema } from "./note-schema";
 
@@ -61,7 +62,16 @@ function inlineFrom(nodes: readonly MdNode[], marks: readonly string[] = []): Pm
   for (const node of nodes) {
     switch (node.type) {
       case "text":
-        if (node.value) out.push(noteSchema.text(node.value, applied));
+        // Lift [[Target]] / [[Target|Label]] out of plain text into atomic
+        // wiki-link nodes, so links render and click like a wiki while the
+        // words around them stay ordinary editable text.
+        for (const piece of node.value ? splitWikiLinks(node.value) : []) {
+          if (piece.kind === "wiki") {
+            out.push(noteSchema.nodes.wiki_link!.create({ label: piece.label === piece.target ? null : piece.label, target: piece.target }));
+          } else if (piece.text) {
+            out.push(noteSchema.text(piece.text, applied));
+          }
+        }
         break;
       case "inlineCode":
         if (node.value) out.push(noteSchema.text(node.value, [...applied, noteSchema.marks.code!.create()]));
@@ -169,6 +179,13 @@ function inlineToMd(node: PmNode): MdNode[] {
   if (node.type === noteSchema.nodes.hard_break) return [{ type: "break" }];
   if (node.type === noteSchema.nodes.math_inline) {
     return [{ type: "inlineMath", value: node.attrs.latex as string }];
+  }
+  if (node.type === noteSchema.nodes.wiki_link) {
+    const target = node.attrs.target as string;
+    const label = node.attrs.label as string | null;
+    // Serialised as text; the stringifier escapes the brackets and
+    // restoreWikiBrackets puts them back — same path raw-typed links take.
+    return [{ type: "text", value: label && label !== target ? `[[${target}|${label}]]` : `[[${target}]]` }];
   }
   if (!node.isText) return [];
 

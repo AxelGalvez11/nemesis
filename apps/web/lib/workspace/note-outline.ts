@@ -77,34 +77,3 @@ export function extractNoteOutline(markdown: string): NoteOutlineEntry[] {
   return entries;
 }
 
-/**
- * Drop a leading `# Heading` that merely repeats the note's title.
- *
- * The docs reader shows the title once, above the body; many notes (and most
- * AI-written ones) open with an h1 saying the same thing, which read as a
- * stutter. DISPLAY-ONLY: the stored markdown keeps its heading — the reader
- * renders this function's output and extracts its outline from the SAME
- * output, so the "Nth entry = Nth heading element" mapping stays intact.
- * Setext (`Title\n===`) and ATX (`# Title`) both count; anything else — a
- * different text, a deeper heading, body before the heading — is left alone.
- */
-export function stripLeadingTitleHeading(markdown: string, title: string): string {
-  const wanted = cleanLabel(title);
-  if (!wanted) return markdown;
-  const lines = markdown.split("\n");
-  let start = 0;
-  while (start < lines.length && lines[start]!.trim() === "") start += 1;
-
-  const first = lines[start]?.trim() ?? "";
-  const atx = /^#\s+(.+?)\s*#*$/.exec(first);
-  let consumed = 0;
-  if (atx && cleanLabel(atx[1] ?? "").toLocaleLowerCase() === wanted.toLocaleLowerCase()) {
-    consumed = 1;
-  } else if (/^=+$/.test(lines[start + 1]?.trim() ?? "") && cleanLabel(first).toLocaleLowerCase() === wanted.toLocaleLowerCase()) {
-    consumed = 2;
-  }
-  if (consumed === 0) return markdown;
-  let next = start + consumed;
-  while (next < lines.length && lines[next]!.trim() === "") next += 1;
-  return lines.slice(next).join("\n");
-}
