@@ -25,6 +25,10 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
   "prose-li:marker:text-muted-foreground/70 " +
   "prose-code:rounded-[0.25rem] prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono " +
   "prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none " +
+  // Inline code was typography-plugin default — in dark mode that computes to
+  // near-black on black (owner 2026-08-04: "dark mode has some text that isnt
+  // legible"). Pin it to the app's own tokens in both themes.
+  "prose-code:text-foreground prose-code:bg-(--ui-bg-quaternary) " +
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*+*]:mt-(--paragraph-gap)";
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;

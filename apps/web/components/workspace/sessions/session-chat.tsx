@@ -16,6 +16,8 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { chatDisplayText, draftAttachmentRecords, partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { uploadLibrarySource } from "@/lib/workspace/library-sources";
+import { sniffsAsSyllabus } from "@/lib/workspace/syllabus-sniff";
 import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
@@ -422,6 +424,29 @@ export function SessionChat() {
       sessionsStore.resolvePending(targetId, messageId, { attachments: prepared.attachments, content: prepared.displayText });
       setLiveActivity((current) => (current?.sessionId === targetId && current.label === "Reading your files…" ? null : current));
       if (preview) return previewReply();
+
+      // The CONTENT gate. The filename gate above misses real syllabi — the
+      // owner's own are named "Fall-2026-PHCY-2105-01-….pdf", and with no
+      // calendar words typed, four courses' schedules (141k characters) went
+      // to a plain chat turn, where they cannot survive history trimming into
+      // the next turn (2026-08-04: three courses never reached the calendar).
+      // Now that extraction has run anyway, the text itself decides: when
+      // every attached document READS as a syllabus and the student typed
+      // nothing (or asked for a calendar import), this is the deterministic
+      // importer's job, not the model's.
+      const attachedDocuments = files.filter(isDocumentFile);
+      // prepared.sources is index-aligned with `files` by construction.
+      const syllabusDocs = files.filter((file, index) => isDocumentFile(file) && sniffsAsSyllabus(prepared.sources[index]?.content ?? ""));
+      if (
+        syllabusDocs.length > 0 &&
+        syllabusDocs.length === attachedDocuments.length &&
+        (!text.trim() || asksForCalendarImport(text))
+      ) {
+        sessionsStore.setWorking(targetId, false);
+        setSyllabusImport({ files: syllabusDocs, targetId });
+        return;
+      }
+
       void runTurn(uid, targetId, history, prepared.wireText);
     },
     [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
@@ -463,7 +488,17 @@ export function SessionChat() {
     const saved: CalendarEvent[] = [];
     for (const event of split.toSave) saved.push(await saveCalendarEvent(event, { preview: false, userId: uid }));
     const summary = conflictSummary(split);
-    if (!saved.length && !summary) return;
+    // The syllabus itself is a course's foundation document — keep the FILE
+    // in the Library, not just its dates (owner 2026-08-04: "if the chat
+    // recognizes the syllabi then it should know to save them to library").
+    // Best-effort like every storage write: a failed upload never blocks the
+    // calendar result the student just confirmed.
+    let storedCount = 0;
+    for (const file of syllabusImport.files) {
+      const stored = await uploadLibrarySource(uid, file, "").catch(() => null);
+      if (stored) storedCount += 1;
+    }
+    if (!saved.length && !summary && !storedCount) return;
     const firstDate = [...saved].sort((a, b) => a.date.localeCompare(b.date))[0]?.date;
     const artifactId = typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -472,9 +507,12 @@ export function SessionChat() {
     const added = saved.length
       ? `Added ${saved.length} verified event${saved.length === 1 ? "" : "s"} from ${sourceName} to your calendar.`
       : `Nothing new to add from ${sourceName}.`;
+    const kept = storedCount
+      ? `Saved ${storedCount === 1 ? "the syllabus" : `${storedCount} syllabi`} to your Library.`
+      : "";
     sessionsStore.appendMessage(syllabusImport.targetId, {
       at: new Date().toISOString(),
-      content: [added, summary].filter(Boolean).join(" "),
+      content: [added, kept, summary].filter(Boolean).join(" "),
       ...(saved.length ? {
         outputs: [{
           id: artifactId,

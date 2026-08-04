@@ -118,7 +118,18 @@ export function Composer({ busy, centered = false, placement = "floating", place
   // moment the cursor moves over the textbox inside the composer.
   const dragDepth = useRef(0);
   const [dragOver, setDragOver] = useState(false);
+  // Owner 2026-08-04: "make the chat only accept files, not folders" — a
+  // dropped directory arrives as a stub File the extractor can never read
+  // (their "fall2026syllabus" folder did exactly this). Rejections are told
+  // to the student here rather than failing later in the model's mouth.
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
   const activeMode = mode ?? composerMode;
+
+  useEffect(() => {
+    if (!dropNotice) return;
+    const timer = window.setTimeout(() => setDropNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [dropNotice]);
   const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
   useEffect(() => {
@@ -447,7 +458,23 @@ export function Composer({ busy, centered = false, placement = "floating", place
       event.preventDefault();
       dragDepth.current = 0;
       setDragOver(false);
-      const dropped = Array.from(event.dataTransfer?.files ?? []);
+      // Files only, never folders (owner 2026-08-04). A dropped directory
+      // shows up in `files` as a stub the extractor can't read;
+      // webkitGetAsEntry is the one API that says "directory" BEFORE that
+      // stub poisons the batch. Read synchronously — the DataTransfer dies
+      // with the handler.
+      const folderNames = Array.from(event.dataTransfer?.items ?? [])
+        .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+        .filter((entry) => entry?.isDirectory)
+        .map((entry) => entry!.name);
+      const dropped = Array.from(event.dataTransfer?.files ?? []).filter((file) => !folderNames.includes(file.name));
+      if (folderNames.length > 0) {
+        setDropNotice(
+          folderNames.length === 1
+            ? `Folders can't be attached — open "${folderNames[0]}" and drop the files inside instead.`
+            : "Folders can't be attached — drop the files inside them instead.",
+        );
+      }
       // Appended, never replaced — same rule the "+" picker follows, so a drop
       // cannot bin notes that were just attached from the Library.
       if (dropped.length > 0) setFiles((current) => [...current, ...dropped]);
@@ -523,6 +550,11 @@ export function Composer({ busy, centered = false, placement = "floating", place
             className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
+            {dropNotice && (
+              <p className="px-1 text-[0.6875rem] text-(--ui-text-secondary)" data-testid="composer-drop-notice" role="status">
+                {dropNotice}
+              </p>
+            )}
             {activeMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
                 {attachmentGroups.map((group) => (

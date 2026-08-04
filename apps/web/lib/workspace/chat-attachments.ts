@@ -354,7 +354,7 @@ export function draftAttachmentRecords(files: readonly File[]): SessionAttachmen
 
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
   const displayText = chatDisplayText(text, files);
-  if (!files.length) return { attachments: [] as SessionAttachment[], displayText, wireText: text.trim() };
+  if (!files.length) return { attachments: [] as SessionAttachment[], displayText, sources: [] as AttachmentSource[], wireText: text.trim() };
 
   const attachments = await Promise.all(files.map((file) => persistChatAttachment(file, uid)));
   // All files extract AT ONCE. This used to be one await per file, which for
@@ -381,6 +381,9 @@ export async function prepareChatAttachments(text: string, files: readonly File[
   return {
     attachments,
     displayText,
+    // Per-file extracted text, in the same order as `files` — the caller's
+    // content gates (is this a syllabus?) read these instead of re-extracting.
+    sources,
     wireText: `${text.trim()}\n\n${fitAttachmentBlocks(sources).join("\n\n")}`.trim(),
   };
 }
