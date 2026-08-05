@@ -74,19 +74,17 @@ test("🔴 each Fall 2026 syllabus goes to its own course", () => {
   assert.equal(byId.get("syllabus-2119"), "PHCY 2119");
 });
 
-test("🔴 hyphens are word breaks — without that the syllabi match NOTHING", () => {
-  // `Fall-2026-PHCY-2105-01-…` scores zero against all six courses: the
-  // tokenizer reads a hyphenated run as one enormous word, so the number 2105
-  // is inside a token instead of being one. This is the same class of failure
-  // as the leading-letter rule the owner had fixed on 2026-08-05, reached
-  // through a different door.
+test("🔴 hyphens are word breaks, in the shared matcher and here", () => {
+  // Until the matcher itself split separators, `Fall-2026-PHCY-2105-01-…`
+  // scored ZERO against all six courses — a hyphenated run read as one enormous
+  // word, with the number 2105 inside a token instead of being one. The
+  // migration used to loosen the text itself to get round that. It no longer
+  // has to; `looseText` stays as a no-harm normalisation and both routes agree.
   const raw = SOURCES[0]!.fileName;
-  assert.equal(matchCourse(raw, COURSES), null, "the shared matcher can read hyphenated filenames now");
-  for (const course of COURSES) assert.equal(courseScore(raw, course), 0, course);
-  // Loosened, the same name matches exactly one course, with a clear margin.
+  assert.equal(matchCourse(raw, COURSES)?.course, "PHCY 2105");
+  assert.equal(courseScore(raw, "PHCY 2105"), 2);
+  assert.equal(courseScore(raw, "PHCY 2114"), 1);
   assert.equal(matchCourse(looseText(raw), COURSES)?.course, "PHCY 2105");
-  assert.equal(courseScore(looseText(raw), "PHCY 2105"), 2);
-  assert.equal(courseScore(looseText(raw), "PHCY 2114"), 1);
 });
 
 // ── Inbox, and keeping a note with the file it came from ────────────────────
