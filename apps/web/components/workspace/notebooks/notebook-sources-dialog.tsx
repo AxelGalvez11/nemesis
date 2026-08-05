@@ -12,6 +12,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { SearchField } from "@/components/desktop-ui/search-field";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { cn } from "@/lib/utils";
 
 import type { UseNotebooksApi } from "./notebooks-store";
@@ -222,7 +223,12 @@ function UploadTab({ busy, onFile }: { busy: boolean; onFile: (file: File) => vo
       >
         <Codicon name="cloud-upload" size="1.4rem" />
         <span className="text-[0.9rem] font-medium">{busy ? "Reading…" : "Drop a file here, or choose one"}</span>
-        <span className="text-[0.72rem] text-(--ui-text-quaternary)">PDF, Word, or PowerPoint · up to 25 MB · we keep the text, not the file</span>
+        {/* 🔴 Said "up to 25 MB" while the real ceiling was ~4.5 MB — the promise a
+            student read right before the upload failed for no stated reason. Named
+            from the constant now, so the sentence cannot drift from the limit. */}
+        <span className="text-[0.72rem] text-(--ui-text-quaternary)">
+          PDF, Word, or PowerPoint · up to {Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB
+        </span>
       </button>
     </div>
   );

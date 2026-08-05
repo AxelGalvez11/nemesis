@@ -32,14 +32,25 @@ Deno.test("an unreadable kind is named by its own extension", () => {
 });
 
 Deno.test("oversize is refused BEFORE the upload, with the real size named", () => {
-  assertMatch(documentRefusal("huge.pdf", 40 * 1024 * 1024) ?? "", /40\.0 MB/);
-  assertMatch(documentRefusal("huge.pdf", 40 * 1024 * 1024) ?? "", /limit is 25 MB/);
+  assertMatch(documentRefusal("huge.pdf", 80 * 1024 * 1024) ?? "", /80\.0 MB/);
+  assertMatch(documentRefusal("huge.pdf", 80 * 1024 * 1024) ?? "", /limit is 50 MB/);
 });
 
-Deno.test("a file barely over the cap does not say '25.0 MB, limit 25 MB'", () => {
-  // Rounding made the refusal contradict itself, which reads as a bug to a student.
+Deno.test("a normal lecture deck is no longer refused on this phone", () => {
+  // 🔴 The gate was 25 MB against a real platform limit of ~4.5 MB, so a 12 MB
+  // deck passed this check, uploaded for a minute, and failed with a message
+  // that named no cause. Files now go to storage by reference, so the ceiling is
+  // the bucket's and a normal deck simply works.
+  for (const mb of [6, 12, 24, 40, 49]) {
+    assertEquals(documentRefusal("Lecture 4.pptx", mb * 1024 * 1024), null);
+  }
+});
+
+Deno.test("a file barely over the cap does not contradict itself", () => {
+  // Rounding made the refusal read "that file is 50.0 MB, the limit is 50 MB",
+  // which reads as a bug to a student rather than as a limit.
   const refusal = documentRefusal("huge.pdf", DOCUMENT_MAX_BYTES + 1) ?? "";
-  assertEquals(refusal, "That file is just over the 25 MB limit.");
+  assertEquals(refusal, "That file is just over the 50 MB limit.");
 });
 
 Deno.test("a readable file at or under the ceiling is not refused", () => {
