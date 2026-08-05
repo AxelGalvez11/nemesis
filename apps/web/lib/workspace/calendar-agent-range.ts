@@ -208,12 +208,34 @@ export function calendarCoverage(
     };
   }
 
-  const from = askedFrom && askedFrom > earliest ? askedFrom : earliest;
-  const to = askedTo && askedTo < latest ? askedTo : latest;
-  const partial = Boolean(askedFrom && askedFrom < earliest) || Boolean(askedTo && askedTo > latest);
+  const askedStart = askedFrom || earliest;
+  const askedEnd = askedTo || latest;
+
+  // 🔴 A question entirely outside the records ("did I double-book in 2019?")
+  // must not be clamped into a window whose start comes after its end. Say
+  // there is nothing there — an inverted range would be reported as the range
+  // audited, which is the exact dishonesty this function exists to remove.
+  if (askedEnd < earliest || askedStart > latest) {
+    // Only ONE bound may have been given, and the other defaulted to a record
+    // boundary on the far side — "anything after 2030" defaults its end to the
+    // last record, which is earlier. Report the asked span in order; there is
+    // nothing in it either way.
+    return {
+      earliest_record: earliest,
+      from: askedStart <= askedEnd ? askedStart : askedEnd,
+      latest_record: latest,
+      note: `Nemesis holds no calendar records in that period at all — everything it has runs ${earliest} to ${latest}. Say that; do not report the period as checked and clear.`,
+      partial: true,
+      to: askedEnd,
+    };
+  }
+
+  const from = askedStart > earliest ? askedStart : earliest;
+  const to = askedEnd < latest ? askedEnd : latest;
   const shortfall: string[] = [];
-  if (askedFrom && askedFrom < earliest) shortfall.push(`nothing before ${earliest}`);
-  if (askedTo && askedTo > latest) shortfall.push(`nothing after ${latest}`);
+  if (askedStart < earliest) shortfall.push(`nothing before ${earliest}`);
+  if (askedEnd > latest) shortfall.push(`nothing after ${latest}`);
+  const partial = shortfall.length > 0;
 
   return {
     earliest_record: earliest,
@@ -221,7 +243,7 @@ export function calendarCoverage(
     latest_record: latest,
     note: partial
       ? `Checked ${from} to ${to}. The student asked about a wider period, but Nemesis holds ${shortfall.join(" and ")} — say so rather than implying those years were checked and were clean.`
-      : `Checked ${from} to ${to}, which is every calendar record this student has.`,
+      : `Checked ${from} to ${to}, which is every calendar record this student has in that range.`,
     partial,
     to,
   };

@@ -37,7 +37,8 @@ import {
 import { parseRecurrence } from "./calendar-model";
 import { isInLibrarySubtree, planFolderRelocation } from "./library-folder-plan";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
-import { remapLibrarySourceFolders } from "./library-sources";
+import { planLibraryMigration, migrationSummary } from "./library-migration";
+import { remapLibrarySourceFolders, setLibrarySourceFolder } from "./library-sources";
 import { expandLibraryFolder, summarizeLibraryTree, type LibraryTreeDoc } from "./library-tree-summary";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
@@ -352,6 +353,38 @@ export const AGENT_TOOLS = [
           end_date: { description: "Optional window end, YYYY-MM-DD", type: "string" },
           start_date: { description: "Optional window start, YYYY-MM-DD", type: "string" },
         },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Work out how the student's OLD Library content would be filed under their courses, and CHANGE NOTHING. Covers "
+        + "the legacy Nemesis/… folders, anything loose at the Library root (their syllabi live there), and items still "
+        + "waiting in Inbox. Returns `moves` (each with where it is, where it would go, and why), `leave_alone` (nothing in "
+        + "it names a course clearly enough — leave these for the student to look at, do NOT guess), and `blocked` (a real "
+        + "match whose destination name is already taken). Show the student the plan and let them decide; carry out the "
+        + "moves with move_library_note and move_library_source. Safe to call again at any time — it reads where things are "
+        + "now, so anything already filed simply stops appearing.",
+      name: "plan_library_migration",
+      parameters: { properties: {}, type: "object" },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move an ORIGINAL uploaded file (a PDF, a slide deck, a syllabus) into a course folder. Use the source id from "
+        + "plan_library_migration. This moves the file, never its notes — move those with move_library_note.",
+      name: "move_library_source",
+      parameters: {
+        properties: {
+          folder: { description: "Destination folder, e.g. 'PHCY 2114'. Empty string moves it to the Library root.", type: "string" },
+          source_id: { description: "The source's id from plan_library_migration", type: "string" },
+        },
+        required: ["source_id"],
         type: "object",
       },
     },
@@ -1122,6 +1155,89 @@ async function deleteLibraryFolderTool(args: Record<string, unknown>) {
   return { deleted: true, folder: source, items: rows.length, recoverable: true };
 }
 
+/**
+ * Phase 2 item 2 — the legacy migration, as a plan nobody has agreed to yet.
+ *
+ * Read-only on purpose. The owner's conditions were "preview every proposed
+ * move", "safe to rerun" and "leave ambiguous content untouched", and a planner
+ * that changes nothing satisfies all three by construction: proposals come from
+ * where things are right now, so anything already filed drops out of the plan
+ * on the next call and nothing needs a migration table to stay honest.
+ */
+async function planLibraryMigrationTool() {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to look at the Library." };
+  const noteRows = await fetchAllRows((from, to) =>
+    supabase
+      .from("readable_library_documents")
+      .select("id,path,title,content,kind")
+      .eq("deleted", false)
+      .order("path")
+      .order("id")
+      .range(from, to));
+  const sourceRows = await fetchAllRows((from, to) =>
+    supabase
+      .from("library_sources")
+      .select("id,file_name,folder_path")
+      .eq("deleted", false)
+      .order("file_name")
+      .order("id")
+      .range(from, to));
+  const courses = await loadKnownCourses();
+  const plan = planLibraryMigration({
+    courses,
+    notes: noteRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        // A folder row has no body at all; the planner must not choke on null.
+        content: typeof row.content === "string" ? row.content : null,
+        id: str(row.id),
+        kind: str(row.kind) || "note",
+        path: str(row.path),
+        title: str(row.title),
+      };
+    }),
+    sources: sourceRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return { fileName: str(row.file_name), folderPath: str(row.folder_path), id: str(row.id) };
+    }),
+  });
+  return {
+    ...plan,
+    instruction:
+      "NOTHING HAS MOVED. Show the student what you would do — the moves, and how many you are deliberately leaving "
+      + "alone — and let them say yes before calling move_library_note or move_library_source. Never file anything from "
+      + "leave_alone on a hunch: those are items where guessing puts the file where they will never think to look.",
+    summary: migrationSummary(plan),
+  };
+}
+
+async function moveLibrarySourceTool(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to move a file." };
+  const id = workspaceId(args.source_id);
+  if (!id) return { error: "Which file? Use plan_library_migration to get source ids." };
+  const folder = safeLibraryFolder(str(args.folder));
+  const { data, error } = await supabase
+    .from("library_sources")
+    .select("file_name,folder_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "No file with that id." };
+  try {
+    await setLibrarySourceFolder(userId, id, folder);
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't move that file." };
+  }
+  return {
+    file: str((data as Record<string, unknown>).file_name),
+    from: str((data as Record<string, unknown>).folder_path),
+    moved: true,
+    to: folder,
+  };
+}
+
 async function availableNotePath(userId: string, title: string, folder: string, currentId: string) {
   const leaf = safeLibraryLeaf(title);
   const dir = safeLibraryFolder(folder);
@@ -1578,7 +1694,9 @@ async function findCalendarIssuesTool(args: Record<string, unknown>) {
     const coverage = calendarCoverage(events, { from: start, to: end });
     return {
       ...findCalendarIssues(events, { from: coverage.from, to: coverage.to }),
-      checked_events: events.length,
+      // Stored rows, not expanded meetings — a repeating class is one row here
+      // and many dates inside the audit. `coverage` says which dates.
+      calendar_rows: events.length,
       coverage,
       note:
         "Repeating classes are expanded into the dates they actually meet before this audit runs, and a finding that "
@@ -2154,6 +2272,8 @@ async function dispatchTool(
     case "add_mindmap": return await addMindmap(args);
     case "list_calendar_events": return await listCalendarEvents(args);
     case "find_calendar_issues": return await findCalendarIssuesTool(args);
+    case "plan_library_migration": return await planLibraryMigrationTool();
+    case "move_library_source": return await moveLibrarySourceTool(args);
     case "get_workspace_overview": return await getWorkspaceOverviewTool();
     case "get_library_tree": return await getLibraryTree(str(args.folder), "folder" in args);
     case "rename_library_folder": return await renameLibraryFolderTool(args);

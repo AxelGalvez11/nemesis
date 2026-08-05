@@ -273,3 +273,17 @@ test("🔴 auditing a real term of expanded events stays inside the tool budget"
   );
   assert.equal(JSON.parse(payload).complete, undefined, "the payload was clipped rather than returned whole");
 });
+
+test("🔴 a question entirely outside the records never reports an inverted window", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2019-01-01", to: "2020-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.ok(coverage.from <= coverage.to, `window runs backwards: ${coverage.from} → ${coverage.to}`);
+  assert.match(coverage.note, /no calendar records in that period at all/);
+});
+
+test("a question entirely after the records says the same thing", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2030-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.ok(coverage.from <= coverage.to);
+  assert.match(coverage.note, /no calendar records in that period at all/);
+});
