@@ -35,6 +35,18 @@ export interface CalendarEvent {
     days: number[];
     /** Inclusive local yyyy-mm-dd end date. */
     until: string;
+    /**
+     * Dates the series does NOT meet: a cancelled lab, a reading week, a
+     * lecture moved to a one-off row somewhere else.
+     *
+     * 🔴 This lives inside a jsonb column, so it survives only where it is
+     * explicitly whitelisted — and there are TWO independent readers of that
+     * column (`sanitizeEvent` here, `calendarEventFromRow` in
+     * calendar-agent-range.ts). Both drop keys they do not name. Adding a field
+     * to one and not the other loses it silently on that path, with no error
+     * anywhere, so they move together and a test reads a row through both.
+     */
+    except?: string[];
   };
   /** UI-only identity for an expanded recurrence occurrence. */
   seriesId?: string;
@@ -78,6 +90,39 @@ function calendarCacheKey(userId: string): string {
 
 const VALID_KINDS: readonly CalendarEventKind[] = ["assignment", "exam", "rotation", "class", "other"];
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The ONE reader of the `recurrence` jsonb column.
+ *
+ * 🔴 There used to be two, hand-kept in step: `sanitizeEvent` below and
+ * `calendarEventFromRow` in calendar-agent-range.ts. Both whitelisted keys and
+ * dropped the rest, so a field added to one and missed in the other vanished on
+ * that path with no error — the calendar page would honour a cancellation the
+ * chat could not see, or the reverse. One function, imported by both.
+ *
+ * Anything malformed yields `null` rather than a half-parsed rule: a rule with
+ * no days or no end is not a schedule, and expanding it would either produce
+ * nothing or run forever.
+ */
+export function parseRecurrence(raw: unknown): CalendarEvent["recurrence"] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const days = Array.isArray(value.days)
+    ? value.days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  if (days.length === 0) return null;
+  if (typeof value.until !== "string" || !DATE_KEY.test(value.until)) return null;
+  const except = Array.isArray(value.except)
+    ? [...new Set(value.except.filter((date): date is string => typeof date === "string" && DATE_KEY.test(date)))].sort()
+    : [];
+  return {
+    days: [...new Set(days)].sort(),
+    until: value.until,
+    ...(except.length > 0 ? { except } : {}),
+  };
+}
+
 // A malformed entry is dropped, not fatal to the whole file.
 function sanitizeEvent(raw: unknown): CalendarEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -94,15 +139,8 @@ function sanitizeEvent(raw: unknown): CalendarEvent | null {
   if (typeof e.course === "string") event.course = e.course;
   if (typeof e.note === "string") event.note = e.note;
   if (e.source === "agent" || e.source === "manual") event.source = e.source;
-  if (e.recurrence && typeof e.recurrence === "object") {
-    const recurrence = e.recurrence as Record<string, unknown>;
-    const days = Array.isArray(recurrence.days)
-      ? recurrence.days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
-      : [];
-    if (days.length > 0 && typeof recurrence.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(recurrence.until)) {
-      event.recurrence = { days: Array.from(new Set(days)), until: recurrence.until };
-    }
-  }
+  const recurrence = parseRecurrence(e.recurrence);
+  if (recurrence) event.recurrence = recurrence;
   return event;
 }
 
@@ -350,9 +388,13 @@ export function expandRecurringEvents(events: CalendarEvent[], from?: Date, to?:
     const first = requestedStart > start ? requestedStart : start;
     const end = requestedEnd < ruleEnd ? requestedEnd : ruleEnd;
     const boundedEnd = end < hardEnd ? end : hardEnd;
+    // A cancelled meeting is not a meeting. Kept as a Set so a term's worth of
+    // holidays costs nothing per day.
+    const skipped = new Set(event.recurrence.except ?? []);
     for (let cursor = new Date(first); cursor <= boundedEnd; cursor = addDays(cursor, 1)) {
       if (!event.recurrence.days.includes(cursor.getDay())) continue;
       const occurrenceDate = dateKey(cursor);
+      if (skipped.has(occurrenceDate)) continue;
       out.push({
         ...event,
         date: occurrenceDate,

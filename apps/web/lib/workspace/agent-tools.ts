@@ -26,6 +26,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
 import {
+  calendarCoverage,
   calendarEventFromRow,
   eventsInWindow,
   isDateKey,
@@ -33,6 +34,7 @@ import {
   resolveCalendarWindow,
   type CalendarEventRow,
 } from "./calendar-agent-range";
+import { parseRecurrence } from "./calendar-model";
 import { isInLibrarySubtree, planFolderRelocation } from "./library-folder-plan";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { remapLibrarySourceFolders } from "./library-sources";
@@ -339,8 +341,11 @@ export const AGENT_TOOLS = [
         "Audit the calendar before reorganizing it. Reports, separately: exact_duplicates (same title, same date), "
         + "probable_duplicates (near-identical titles on one date), conflicting_versions (the same exam or assignment on two "
         + "different dates — the sources disagree about when it is), and overlaps (two different events at the same time — NOT "
-        + "duplicates). Defaults to the whole calendar. Never resolve a conflicting version without the student choosing which "
-        + "date wins.",
+        + "duplicates). Repeating classes are expanded into the dates they actually meet first, so a one-off event landing on "
+        + "top of one meeting is found; a problem that repeats every week is reported once with a `repeats` count. Defaults to "
+        + "every record the student has, and `coverage` says exactly which dates that turned out to be — repeat that rather "
+        + "than implying years you have no records for came back clean. Never resolve a conflicting version without the "
+        + "student choosing which date wins.",
       name: "find_calendar_issues",
       parameters: {
         properties: {
@@ -513,6 +518,13 @@ export const AGENT_TOOLS = [
       name: "update_calendar_event",
       parameters: {
         properties: {
+          cancel_date: {
+            description:
+              "For a REPEATING event only: mark this one meeting as not happening (a cancelled class, a holiday), "
+              + "YYYY-MM-DD. The rest of the series is untouched. Use this instead of deleting — a repeating class is "
+              + "one row, so deleting it removes every meeting for the whole term.",
+            type: "string",
+          },
           course: { description: "Course name, or empty string to clear it", type: "string" },
           date: { description: "New date, YYYY-MM-DD", type: "string" },
           event_id: { description: "The event's id from list_calendar_events", type: "string" },
@@ -1524,6 +1536,13 @@ async function loadCalendarRangeEvents(from: string, to: string) {
  *  window instead of flooding the transcript — and says so out loud. */
 const AGENT_EVENT_ROWS_CAP = 500;
 
+/** SQL bounds for "load the whole calendar". These are the limits of the
+ *  `date` column, NOT a claim about coverage — what the account actually holds
+ *  is derived from the rows themselves by calendarCoverage, and that is what
+ *  the model is told. */
+const EARLIEST_POSSIBLE_DATE = "0001-01-01";
+const LATEST_POSSIBLE_DATE = "9999-12-31";
+
 async function listCalendarEvents(args: Record<string, unknown>) {
   const today = localToday();
   const window = resolveCalendarWindow(
@@ -1551,17 +1570,21 @@ async function listCalendarEvents(args: Record<string, unknown>) {
 async function findCalendarIssuesTool(args: Record<string, unknown>) {
   const start = str(args.start_date).trim();
   const end = str(args.end_date).trim();
-  const from = isDateKey(start) ? start : "0001-01-01";
-  const to = isDateKey(end) ? end : "9999-12-31";
   try {
-    const events = await loadCalendarRangeEvents(from, to);
+    // Load everything the account has, then let the rows say how far back the
+    // answer can honestly reach. The old code opened this window at 0001-01-01
+    // and reported that back as the range it had audited — see calendarCoverage.
+    const events = await loadCalendarRangeEvents(EARLIEST_POSSIBLE_DATE, LATEST_POSSIBLE_DATE);
+    const coverage = calendarCoverage(events, { from: start, to: end });
     return {
-      ...findCalendarIssues(events),
+      ...findCalendarIssues(events, { from: coverage.from, to: coverage.to }),
       checked_events: events.length,
+      coverage,
       note:
-        "Recurring classes are checked as their single stored rule here, not per meeting. conflicting_versions means "
-        + "sources disagree about WHEN one exam or assignment is — ask the student which date wins before changing anything.",
-      window: { from, to },
+        "Repeating classes are expanded into the dates they actually meet before this audit runs, and a finding that "
+        + "recurs every week is reported ONCE with a `repeats` count rather than per meeting. Every id is a real event "
+        + "id, so a recurring finding's id addresses the whole series. conflicting_versions means sources disagree "
+        + "about WHEN one exam or assignment is — ask the student which date wins before changing anything.",
     };
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "Couldn't audit the calendar." };
@@ -1785,13 +1808,49 @@ async function resolveRow(
   return { id, row: data as Record<string, unknown> };
 }
 
+/**
+ * "My Thursday lab is cancelled this week."
+ *
+ * A repeating class is one row, so deleting it to skip one meeting would wipe
+ * the term. This is the only way an exception gets written, and it is an
+ * argument on the existing update rather than a new tool: the series is edited,
+ * not destroyed, and removing the date brings the meeting back. `until` is
+ * untouched — the rule still runs to the end of term.
+ */
+async function cancelOccurrence(row: Record<string, unknown>, id: string, date: string) {
+  const recurrence = parseRecurrence(row.recurrence);
+  if (!recurrence) return { error: "That event does not repeat, so there is no single meeting to cancel — delete it instead." };
+  const except = [...new Set([...(recurrence.except ?? []), date])].sort();
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ recurrence: { ...recurrence, except } })
+    .eq("id", id);
+  if (error) return { error: error.message };
+  return {
+    cancelled: date,
+    instruction:
+      "That one meeting is now marked as not happening; the rest of the series is untouched. Do not read the calendar "
+      + "back — reply with one short line.",
+    title: str(row.title),
+    updated: true,
+  };
+}
+
 async function updateCalendarEventTool(args: Record<string, unknown>) {
   const found = await resolveRow("calendar_events", args.event_id, "Use list_calendar_events to get event ids.");
   if ("error" in found) return found;
+  const cancelDate = str(args.cancel_date).trim();
+  if (cancelDate) {
+    if (!isDateKey(cancelDate)) return { error: "cancel_date must be a real calendar date in YYYY-MM-DD form." };
+    return await cancelOccurrence(found.row as Record<string, unknown>, found.id, cancelDate);
+  }
   // Strip the handle before building the patch: `event_id` is how we found the
   // row, not a field on it, and letting it through would make a call that
-  // changes nothing look like a change.
-  const fields = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "event_id"));
+  // changes nothing look like a change. `cancel_date` goes the same way — it is
+  // handled above and is not a column.
+  const fields = Object.fromEntries(
+    Object.entries(args).filter(([key]) => key !== "event_id" && key !== "cancel_date"),
+  );
   const patch = calendarEventPatch(fields);
   if (isPatchFailure(patch)) return patch;
   const { error } = await supabase.from("calendar_events").update(patch).eq("id", found.id);
