@@ -252,17 +252,38 @@ export function citeLocator(locator: Locator): string {
   }
 }
 
-/** Every block of a parse in reading order, with its unit's locator attached —
- *  what a chunker consumes, so chunking never has to know the file type. */
+/**
+ * Every block of a parse in reading order, with the MOST SPECIFIC locator that
+ * is true of it — what a chunker consumes, so chunking never has to know the
+ * file type.
+ *
+ * 🔴 A TABLE BLOCK TAKES THE TABLE'S OWN LOCATOR, NOT ITS UNIT'S.
+ *
+ * The first version of this spread the unit's locator onto every block. A unit
+ * locator correctly carries no `range` — a sheet is not a range — so every
+ * spreadsheet chunk came out with `cell_range` null and a citation that had to
+ * degrade from `Forecast!B12:F19` to `Forecast`. The measured range existed in
+ * `doc.tables` the whole time and this function threw it away, which made the
+ * XLSX parser's most valuable output unreachable from the one place that
+ * consumes it.
+ *
+ * The rule generalises past spreadsheets: where a block names a more precisely
+ * located object, that object's MEASURED locator wins over the containing unit's.
+ */
 export function* walkBlocks(doc: ParsedDocument): Generator<{ block: DocBlock; locator: Locator }> {
+  const tables = new Map(doc.tables.map((table) => [table.id, table.locator]));
+  const visuals = new Map(doc.visuals.map((visual) => [visual.id, visual.locator]));
+
   for (const unit of doc.units) {
     for (const block of unit.blocks) {
-      // The unit's locator plus this block's own heading trail: a chunk needs
-      // both to say "slide 12, under Mechanism of action".
-      yield {
-        block,
-        locator: block.kind === "heading" ? unit.locator : { ...unit.locator, headingPath: unit.locator.headingPath },
-      };
+      const precise = block.tableId ? tables.get(block.tableId) : block.visualId ? visuals.get(block.visualId) : undefined;
+      // The precise locator wins on the fields it actually measured, but the
+      // unit's heading trail is still the right context unless the object
+      // carries its own — a table knows its range, not the section above it.
+      const locator: Locator = precise
+        ? { ...precise, headingPath: precise.headingPath ?? unit.locator.headingPath }
+        : unit.locator;
+      yield { block, locator };
     }
   }
 }

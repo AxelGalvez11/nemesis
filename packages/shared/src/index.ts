@@ -209,3 +209,7 @@ export * from "./upload-limits.ts";
 // PDF page, PPTX slide, XLSX sheet, DOCX section all answer in one shape so
 // chunking, retrieval and citation never branch on file type.
 export * from "./doc-model.ts";
+// The chunker: a DISPOSABLE retrieval representation of a parse. Versioned
+// separately from the parser precisely so chunk boundaries can be rebuilt
+// without re-parsing anything.
+export * from "./doc-chunk.ts";
