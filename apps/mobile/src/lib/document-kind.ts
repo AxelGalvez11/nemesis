@@ -7,19 +7,21 @@
 // file's own extension named, rather than uploaded and refused with a 415 after the
 // student has waited for a 20 MB transfer.
 
+import { MAX_SOURCE_BYTES } from "@nemesis/shared";
+
 /** Upload ceiling — checking first turns a wasted upload into an instant,
  *  specific message.
  *
- *  🔴 THIS WAS 25 MB AND THE REAL LIMIT WAS ~4.5. The route claimed 25 MB, but
- *  Vercel refused any request body past ~4.5 MB at the edge before our code ran,
- *  as plain text the app could not parse — so a 12 MB lecture deck passed this
- *  gate, uploaded for a minute on a phone connection, and came back as
- *  "Couldn't read that file. Try again."
+ *  🔴 THIS WAS ITS OWN 25 MB CONSTANT AND THE REAL LIMIT WAS ~4.5. The route
+ *  claimed 25 MB, but Vercel refused any request body past ~4.5 MB at the edge
+ *  before our code ran, as plain text the app could not parse — so a 12 MB
+ *  lecture deck passed this gate, uploaded for a minute on a phone connection,
+ *  and came back as "Couldn't read that file. Try again."
  *
- *  The file now goes to storage and only its reference is POSTed, so the ceiling
- *  is finally ours. 50 MB is the bucket's own `file_size_limit`, which keeps this
- *  number, the server's MAX_SOURCE_BYTES and the bucket policy as one value. */
-export const DOCUMENT_MAX_BYTES = 50 * 1024 * 1024;
+ *  Files now go to storage and only a reference is POSTed, so the ceiling is
+ *  ours. It is RE-EXPORTED from @nemesis/shared rather than restated, so the
+ *  phone cannot drift from the web or from the bucket policy again. */
+export const DOCUMENT_MAX_BYTES = MAX_SOURCE_BYTES;
 
 /** The UTIs the iOS picker offers. Broad `item` is deliberately NOT used — the
  *  picker should grey out what the reader cannot read. */

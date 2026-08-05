@@ -33,21 +33,10 @@
  * PURE. No network, no Supabase client.
  */
 
-/**
- * The product's upload ceiling — ours to choose, and now actually enforceable,
- * because it no longer has to fit through a function body.
- *
- * 🔴 THIS NUMBER IS A POLICY, NOT AN ARCHITECTURAL LIMIT. Raising it means
- * raising the bucket's `file_size_limit` and, past a few hundred megabytes,
- * moving the PARSE off a 300-second function — the transport already scales.
- * Nothing in the ingestion path re-reads this constant to decide HOW a file
- * travels, which is what makes the ceiling movable without another redesign.
- *
- * 50 MB today matches the `library-sources` bucket's own limit
- * (supabase/migrations/20260804010000_library_sources_files.sql:67), so the two
- * agree and a file that uploads can always be read.
- */
-export const MAX_SOURCE_BYTES = 50 * 1024 * 1024;
+// The ceiling lives in @nemesis/shared so the web app, the phone and every
+// student-facing label read the SAME number — it was wrong in four places at
+// once before, and each of them said 25 MB against a real limit of 4.5.
+export { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, maxSourceLabel } from "@nemesis/shared";
 
 /** Buckets an uploaded original may live in. Mirrors the CHECK constraint on
  *  `library_sources.bucket`, so a value that passes here cannot fail there. */
