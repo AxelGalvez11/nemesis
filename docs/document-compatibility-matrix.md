@@ -25,11 +25,12 @@ thing a compatibility matrix exists to check.
 
 | File | Producer | Result | Units | Tables | Chunks | Notes |
 |---|---|---|---|---|---|---|
+| `fda-guidance.pdf` | **Acrobat PDFWriter 4.0 / Microsoft Word** | parsed, 458 ms | 37 pages, **37 read** | 0 | 94 | real 37-page government guidance; cites `page 1`, `page 2` |
 | `msft-financial-sample.xlsx` | **Microsoft Excel 15.0300** | parsed, 107 ms | 1 sheet | 1 | 73 | 11,216 cells; dates decoded from real serials |
 | `worldbank-classes.xlsx` | **Microsoft Excel 16.0300** | parsed, 49 ms | 3 sheets | 3 | 80 | 9,466 cells; two separate table regions found on one sheet |
 | `poi-excel-sample.xlsx` | **Microsoft Excel 12.0000** | parsed, <1 ms | 3 sheets | 2 | 4 | formula preserved; empty third sheet reported unread |
-| `poi-word-simple.docx` | **Microsoft Office Word 12.0000** | pending | — | — | — | held until DOCX segmentation lands |
-| `poi-word-tables.docx` | **Microsoft Office Word 12.0000** | pending | — | — | — | held until DOCX segmentation lands |
+| `poi-word-simple.docx` | **Microsoft Office Word 12.0000** | parsed, 8 ms | 2 sections | 0 | 2 | headingless — the page-break fallback made it 2 units, not 1 |
+| `poi-word-tables.docx` | **Microsoft Office Word 12.0000** | parsed, 24 ms | 1 section | 1 | 3 | Russian/English/Uzbek runs, hyperlinks and emphasis kept; 5 visuals found, **0 readable, and it says so** |
 | `poi-ppt-sample.pptx` | **Microsoft Office PowerPoint 16.0000** | parsed, 10 ms | 2 slides | 0 | 2 | slide titles became labels; speaker notes captured |
 
 ### Citations these files produce
@@ -88,7 +89,7 @@ colleague's file in LibreOffice and saves it. Every output says so itself:
 | `libreoffice/msft-financial-sample.xlsx` | **LibreOffice Calc 26.2.5** | parsed, 263 ms | 1 sheet | 1 | 73 |
 | `libreoffice/poi-excel-sample.xlsx` | **LibreOffice Calc 26.2.5** | parsed, 3 ms | 3 sheets | 2 | 4 |
 | `libreoffice/poi-ppt-sample.pptx` | **LibreOffice Impress 26.2.5** | parsed | 2 slides | 0 | 2 |
-| `libreoffice/poi-word-simple.docx` | **LibreOffice Writer 26.2.5** | pending | — | — | — |
+| `libreoffice/poi-word-simple.docx` | **LibreOffice Writer 26.2.5** | parsed, 3 ms | 2 sections | 0 | 2 |
 
 🔴 **The result that matters is that the output is IDENTICAL to the Microsoft
 originals.** Same chunk counts (73, 4, 2), the same measured ranges
@@ -136,7 +137,6 @@ badly. Not worth inventing a nicer name for — that would be inference.
 |---|---|---|
 | **Google Docs / Slides** | **unverified** | only Sheets exports were obtained; no public Docs or Slides document was found to export |
 | **Apple Pages / Numbers / Keynote** | **unverified** | none of the three is installed. Installing them needs an App Store sign-in, which Claude must not perform — this row needs the owner, or it stays a gap |
-| **LibreOffice Writer** | **pending, not blocked** | the file exists and is verified LibreOffice-authored; it is queued behind the DOCX segmentation rewrite currently in flight |
 
 One acquisition route worth recording as closed: the SheetJS `test_files`
 repository — organised by producer, and the obvious single source for most of
