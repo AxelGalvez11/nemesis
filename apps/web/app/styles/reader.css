@@ -141,3 +141,52 @@
   pointer-events: none;
   border-radius: 2px;
 }
+
+/* ── The toolbar shrinks against ITSELF, not the window ─────────────────────
+ * The reader sits between the Library sidebar and its own contents rail, so
+ * its toolbar can be half the width of the viewport. Viewport breakpoints
+ * (max-md:, max-sm:) therefore keep showing controls that no longer fit, and
+ * the flex row takes the space out of the one thing that must never go: the
+ * FILENAME, which collapsed to zero width at a perfectly ordinary window size.
+ *
+ * A container query asks the bar how wide IT is. The filename keeps a floor
+ * and truncates; everything optional gets out of the way first, in order of
+ * how easily it is missed. */
+.nemesis-reader-bar {
+  container-type: inline-size;
+}
+
+.nemesis-reader-title {
+  min-width: 6rem;
+}
+
+/* Measured, not guessed: at a 1280px window with the Library sidebar open the
+ * bar is 716px and its contents need 748px, so the LAST controls — the rail
+ * toggle and the "…" menu, which now holds everything — were clipped off the
+ * right edge. These thresholds drop things in order of how easily they are
+ * missed: the search box narrows first, then the page counter goes (the
+ * contents rail already says which page you are on), and the zoom controls go
+ * last because nothing else replaces them. */
+@container (max-width: 860px) {
+  .nemesis-reader-search {
+    width: 5rem;
+  }
+}
+
+@container (max-width: 780px) {
+  .nemesis-reader-counter {
+    display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .nemesis-reader-zoom {
+    display: none;
+  }
+}
+
+/* In the chat popup the dialog draws its own close button in the top-right
+ * corner, over the reader's own toolbar. Give the row somewhere to end. */
+.nemesis-reader[data-variant="dialog"] .nemesis-reader-bar {
+  padding-right: 2.5rem;
+}

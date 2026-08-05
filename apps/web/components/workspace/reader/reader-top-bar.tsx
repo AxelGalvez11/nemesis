@@ -4,6 +4,12 @@
 // PDF toolbar is never shown — filename, course, mode, search, page counter,
 // zoom, fit and the overflow menu are ours, so they look the same in every
 // browser and can talk to the rest of Nemesis.
+//
+// The LEFT edge of the screen belongs to the Library sidebar (owner
+// 2026-08-05), so the reader keeps no control there: its own contents rail is
+// on the RIGHT, and everything that used to sit in a right-hand panel — the AI
+// actions, the notes made from this file, where it is filed — lives in the "…"
+// menu instead. One rail, one menu, and the Library tree still reachable.
 
 import { IconChevronLeft } from "@tabler/icons-react";
 
@@ -12,12 +18,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
+import { READER_ACTIONS, type ReaderActionId } from "@/lib/reader/reader-actions";
+import { folderTrail } from "@/lib/reader/reader-source";
 import { formatZoom } from "@/lib/reader/reader-zoom";
 import { cn } from "@/lib/utils";
+
+export interface LinkedNote {
+  id: string;
+  title: string;
+  path: string;
+}
 
 export type ReaderMode = "source" | "reading";
 
@@ -47,11 +62,17 @@ export interface ReaderTopBarProps {
   onDownload: () => void;
   onOpenOriginal: () => void;
   onBack?: () => void;
-  sidebarOpen: boolean;
-  /** Omitted where there is no rail to toggle (the chat popup). */
-  onToggleSidebar?: () => void;
-  panelOpen: boolean;
-  onTogglePanel?: () => void;
+  /** The reader's own contents rail, on the right. Omitted for file types that
+   *  have nothing to list (a single image). */
+  railOpen: boolean;
+  onToggleRail?: () => void;
+  /** What an AI action would act on right now, in words. */
+  actionScope: string;
+  onAction: (action: ReaderActionId) => void;
+  actionsDisabled: boolean;
+  linkedNotes: readonly LinkedNote[];
+  onOpenNote?: (path: string) => void;
+  folderPath: string;
 }
 
 export function ReaderTopBar(props: ReaderTopBarProps) {
@@ -81,17 +102,23 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     onDownload,
     onOpenOriginal,
     onBack,
-    sidebarOpen,
-    onToggleSidebar,
-    panelOpen,
-    onTogglePanel,
+    railOpen,
+    onToggleRail,
+    actionScope,
+    onAction,
+    actionsDisabled,
+    linkedNotes,
+    onOpenNote,
+    folderPath,
   } = props;
+
+  const trail = folderTrail(folderPath);
 
   return (
     // One row, never two: a toolbar that reflows as the window narrows moves the
     // control you were reaching for. The title is the only thing allowed to
     // shrink, and the least-used controls hide first.
-    <header className="flex h-11 shrink-0 items-center gap-2 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3">
+    <header className="nemesis-reader-bar flex h-11 shrink-0 items-center gap-2 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3">
       {onBack && (
         <button
           aria-label="Back to Library"
@@ -104,23 +131,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </button>
       )}
 
-      {onToggleSidebar && (
-        <button
-          aria-label={sidebarOpen ? "Hide contents" : "Show contents"}
-          aria-pressed={sidebarOpen}
-          className={cn(
-            "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-            sidebarOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
-          )}
-          onClick={onToggleSidebar}
-          title={sidebarOpen ? "Hide contents" : "Show contents"}
-          type="button"
-        >
-          <Codicon name="layout-sidebar-left" size="0.9rem" />
-        </button>
-      )}
-
-      <div className="mr-auto flex min-w-0 shrink flex-col leading-tight">
+      <div className="nemesis-reader-title mr-auto flex min-w-0 shrink flex-col leading-tight">
         <h1 className="truncate text-[0.8125rem] font-semibold text-foreground" title={fileName}>
           {fileName}
         </h1>
@@ -143,7 +154,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         <Codicon className="text-(--ui-text-quaternary)" name="search" size="0.75rem" />
         <input
           aria-label={`Search this ${unitLabel === "image" ? "image" : "document"}`}
-          className="w-24 bg-transparent text-[0.75rem] text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:w-40 lg:w-32"
+          className="nemesis-reader-search w-24 bg-transparent text-[0.75rem] text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:w-40"
           data-testid="reader-search-input"
           onChange={(event) => onQueryChange(event.target.value)}
           onKeyDown={(event) => {
@@ -183,7 +194,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
       </div>
 
       {unitCount > 1 && (
-        <div className="flex shrink-0 items-center gap-1 text-[0.75rem] text-(--ui-text-tertiary) max-md:hidden">
+        <div className="nemesis-reader-counter flex shrink-0 items-center gap-1 text-[0.75rem] text-(--ui-text-tertiary)">
           <input
             aria-label={`${unitLabel} number`}
             className="w-9 rounded border border-(--ui-stroke-tertiary) bg-(--ui-bg-input) px-1 py-0.5 text-center tabular-nums text-foreground outline-none focus:border-(--ui-stroke-secondary)"
@@ -202,7 +213,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
       )}
 
       {showZoom && (
-        <div className="flex shrink-0 items-center gap-0.5 max-sm:hidden">
+        <div className="nemesis-reader-zoom flex shrink-0 items-center gap-0.5">
           <button
             aria-label="Zoom out"
             className="grid size-7 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
@@ -238,16 +249,16 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </div>
       )}
 
-      {onTogglePanel && (
+      {onToggleRail && (
         <button
-          aria-label={panelOpen ? "Hide the side panel" : "Show the side panel"}
-          aria-pressed={panelOpen}
+          aria-label={railOpen ? "Hide contents" : "Show contents"}
+          aria-pressed={railOpen}
           className={cn(
             "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-            panelOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
+            railOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
           )}
-          onClick={onTogglePanel}
-          title={panelOpen ? "Hide the side panel" : "Show the side panel"}
+          onClick={onToggleRail}
+          title={railOpen ? "Hide contents" : "Show contents"}
           type="button"
         >
           <Codicon name="layout-sidebar-right" size="0.9rem" />
@@ -257,14 +268,41 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            aria-label="More"
+            aria-label="Actions and details"
             className="grid size-7 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
+            title="Actions and details"
             type="button"
           >
             <Codicon name="ellipsis" size="0.9rem" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        {/* Everything that used to be a right-hand panel. A menu rather than a
+            rail because the left edge is the Library's and the right edge is
+            the document's contents — and because these are things you DO once,
+            not things you read alongside the page. */}
+        <DropdownMenuContent align="end" className="max-h-[70vh] w-72 overflow-y-auto">
+          <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">
+            Ask Nemesis about <span className="text-(--ui-text-secondary)">{actionScope}</span>
+          </DropdownMenuLabel>
+          {READER_ACTIONS.map((action) => (
+            <DropdownMenuItem disabled={actionsDisabled} key={action.id} onSelect={() => onAction(action.id)}>
+              <Codicon name={action.icon} size="0.8rem" /> {action.label}
+            </DropdownMenuItem>
+          ))}
+
+          {linkedNotes.length > 0 && onOpenNote && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">Notes from this file</DropdownMenuLabel>
+              {linkedNotes.map((note) => (
+                <DropdownMenuItem key={note.id} onSelect={() => onOpenNote(note.path)}>
+                  <Codicon name="note" size="0.8rem" /> <span className="truncate">{note.title}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
+
+          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={onDownload}>
             <Codicon name="cloud-download" size="0.8rem" /> Download the original
           </DropdownMenuItem>
@@ -272,13 +310,16 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
             <Codicon name="link-external" size="0.8rem" /> Open in a new tab
           </DropdownMenuItem>
           {onRotate && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={onRotate}>
-                <Codicon name="debug-restart" size="0.8rem" /> Rotate
-              </DropdownMenuItem>
-            </>
+            <DropdownMenuItem onSelect={onRotate}>
+              <Codicon name="debug-restart" size="0.8rem" /> Rotate
+            </DropdownMenuItem>
           )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">
+            {trail.length > 0 ? trail.join(" › ") : "Filed at the Library root"}
+            <span className="mt-0.5 block text-(--ui-text-quaternary)">{meta}</span>
+          </DropdownMenuLabel>
         </DropdownMenuContent>
       </DropdownMenu>
     </header>

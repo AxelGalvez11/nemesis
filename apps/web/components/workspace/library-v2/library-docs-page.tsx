@@ -7,12 +7,16 @@
 // THE URL IS THE TRUTH about what is open:
 //   /library                 → the landing NOTE (see lib/workspace/library-home)
 //   /library?note=<path>     → that note, as a docs article
-//   /library?source=<id>     → REDIRECTS to /library/source/<id>. A source FILE
-//                              used to open as a pane of this page; it now has
-//                              its own route, because the reader owns a whole
-//                              surface (its own contents rail and side panel).
-//                              The old shape stays alive because every citation
-//                              already written points at it.
+//   /library/source/<id>     → that source FILE, in the reader — rendered by
+//                              THIS component with the same left sidebar, so a
+//                              document opens without losing the tree it was
+//                              filed in (owner 2026-08-05: "left sidebar is
+//                              reserved for library sidebar"). The reader's own
+//                              contents rail sits on the right, where a note's
+//                              "On this page" does.
+//   /library?source=<id>     → REDIRECTS to /library/source/<id>. The old shape
+//                              stays alive because every citation already
+//                              written points at it.
 // THERE IS NO HOME DASHBOARD (owner 2026-08-04: "this isnt a NOTE, the 'home'
 // is supposed to be a NOTE" — obsidian.md/help lands on a note titled Home).
 // Bare /library shows a note named Home if the student has one, else their
@@ -49,6 +53,8 @@ import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
 import type { LibraryTreeReveal } from "../library/library-tree-view";
 import { DocsNav } from "./docs-nav";
+import { LibrarySourceReader } from "@/components/workspace/reader/library-source-reader";
+
 import { DocsToc } from "./docs-toc";
 import { NoteArticle, type NoteStudyAction } from "./note-article";
 
@@ -78,7 +84,7 @@ function usePersistentFlag(key: string, fallback: boolean): [boolean, (next: boo
   return [value, update];
 }
 
-export function LibraryDocsPage() {
+export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const libraryBase = libraryRouteBase(pathname);
@@ -248,9 +254,11 @@ export function LibraryDocsPage() {
   // sent there rather than 404ing. Replace, not push: Back should go wherever
   // the student actually came from, not to a URL that only redirects.
   useEffect(() => {
-    if (requestedSource === null) return;
+    // Only the NOTES surface redirects. In source mode this component IS the
+    // reader, and ?source= is how the dev-preview harness addresses it.
+    if (sourceId !== null || requestedSource === null) return;
     router.replace(readerHrefFrom(pathname, requestedSource));
-  }, [pathname, requestedSource, router]);
+  }, [pathname, requestedSource, router, sourceId]);
 
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
 
@@ -393,6 +401,20 @@ export function LibraryDocsPage() {
       )}
 
       <main className="flex h-full min-w-0 flex-1">
+        {/* A source FILE takes the whole middle: the reader brings its own top
+            bar and its own contents rail (on the right, where a note's "On this
+            page" sits), so it replaces the article AND the table of contents
+            rather than sitting inside them. The left sidebar above is untouched
+            — that is the point of rendering the reader from here. */}
+        {sourceId !== null ? (
+          <LibrarySourceReader
+            className={cn(autoHide && !sidebarLocked && !narrowViewport && "pl-24")}
+            onBack={goHome}
+            onOpenNote={openPath}
+            sourceId={sourceId}
+          />
+        ) : (
+        <>
         {/* With the sidebar away (auto-hide mode), the floating "Library" word
             owns the top-left corner — the page inset keeps the article from
             sliding under it on narrower windows. */}
@@ -439,6 +461,8 @@ export function LibraryDocsPage() {
           )}
         </div>
         {note && <DocsToc articleRef={articleRef} outline={outline} scrollRef={scrollRef} />}
+        </>
+        )}
       </main>
     </div>
   );

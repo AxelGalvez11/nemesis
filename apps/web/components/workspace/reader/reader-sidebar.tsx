@@ -1,6 +1,9 @@
 "use client";
 
-// Left rail: the document's contents, and its pages as pictures.
+// The document's contents rail — its outline, and its pages as pictures.
+//
+// On the RIGHT (owner 2026-08-05: the left edge is reserved for the Library
+// sidebar, so a document opens without losing the tree it was filed in).
 //
 // The Outline tab shows whichever of two things exists. A PDF's own bookmarks
 // are the document's real table of contents and win outright. Most lecture
@@ -39,7 +42,7 @@ export function ReaderSidebar({
   const hasUnits = unitCount > 1;
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-bg-sidebar)" data-testid="reader-sidebar">
+    <aside className="flex h-full w-60 shrink-0 flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-sidebar)" data-testid="reader-sidebar">
       <div className="flex shrink-0 gap-0.5 border-b border-(--ui-stroke-quaternary) p-1.5">
         {(hasUnits
           ? [

@@ -1,10 +1,14 @@
 "use client";
 
-// The reader, wired to a filed Library source: /library/source/<id>
+// The reader, wired to a filed Library source.
 //
-// This is the piece that knows about the Library — which row the id belongs to,
-// which notes cite it, where "back" goes. The reader itself knows none of that,
-// which is what lets the same component serve the chat popup.
+// Mounted by LibraryDocsPage in its main column, so the Library's own left
+// sidebar stays exactly where it was and a document opens without losing the
+// tree it was filed in (owner 2026-08-05: "left sidebar is reserved for library
+// sidebar"). This piece is the part that knows about the Library — which row
+// the id belongs to, which notes cite it, where "back" goes. The reader itself
+// knows none of that, which is what lets the same component serve the chat
+// popup.
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -18,10 +22,20 @@ import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { parseReaderAnchor } from "@/lib/reader/reader-anchor";
 import { readerSourceFromLibrary } from "@/lib/reader/reader-source";
+import { cn } from "@/lib/utils";
 
-import { DocumentReader, type LinkedNote } from "./document-reader";
+import { DocumentReader } from "./document-reader";
+import type { LinkedNote } from "./reader-top-bar";
 
-export function LibrarySourceReader({ sourceId }: { sourceId: string }) {
+interface LibrarySourceReaderProps {
+  sourceId: string;
+  className?: string;
+  /** Back out of the file — the host decides where that goes. */
+  onBack?: () => void;
+  onOpenNote?: (path: string) => void;
+}
+
+export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }: LibrarySourceReaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { session } = useAuth();
@@ -75,28 +89,32 @@ export function LibrarySourceReader({ sourceId }: { sourceId: string }) {
   );
 
   if (sources === null) {
-    return <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening…</div>;
+    return <div className={cn("grid h-full flex-1 place-items-center text-xs text-(--ui-text-tertiary)", className)}>Opening…</div>;
   }
 
   if (!readerSource) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 px-6">
+      <div className={cn("flex h-full flex-1 flex-col items-center justify-center gap-3 px-6", className)}>
         <EmptyState description="It may have been removed, or its link is out of date." title="That file isn't here" />
-        <Button onClick={() => router.push("/library")} size="sm" variant="secondary">
-          Go to Library
-        </Button>
+        {onBack && (
+          <Button onClick={onBack} size="sm" variant="secondary">
+            Go to Library home
+          </Button>
+        )}
       </div>
     );
   }
 
   return (
-    <DocumentReader
-      anchor={anchor}
-      linkedNotes={linkedNotes}
-      onBack={() => router.push("/library")}
-      onOpenNote={(path) => router.push(`/library?note=${encodeURIComponent(path)}`)}
-      onSendToChat={sendToChat}
-      source={readerSource}
-    />
+    <div className={cn("min-h-0 min-w-0 flex-1", className)}>
+      <DocumentReader
+        anchor={anchor}
+        linkedNotes={linkedNotes}
+        onBack={onBack}
+        onOpenNote={onOpenNote}
+        onSendToChat={sendToChat}
+        source={readerSource}
+      />
+    </div>
   );
 }

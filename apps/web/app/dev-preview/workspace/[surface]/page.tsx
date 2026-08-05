@@ -54,6 +54,13 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
         role: "user",
         content: "Explain the dormant commerce clause, in exam-ready bullet points.",
         at: minutesAgo(42),
+        // An attachment so the transcript's file chip — and the reader it opens
+        // — can be seen in the harness. The path is the public fixture, which
+        // AttachmentPreviewDialog resolves through the same "a leading slash is
+        // already a URL" rule the Library fixtures use.
+        attachments: [
+          { name: "Con Law – Week 4 slides.pdf", kind: "file", mime: "application/pdf", url: "/reader-sample.pdf" },
+        ],
       },
       {
         role: "assistant",

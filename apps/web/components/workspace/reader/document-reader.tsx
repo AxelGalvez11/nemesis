@@ -38,9 +38,8 @@ import { FIT_WIDTH, zoomIn, zoomOut, type ZoomMode } from "@/lib/reader/reader-z
 import { DocxDocumentView } from "./docx-document-view";
 import { ImageDocumentView, type ImageRegion } from "./image-document-view";
 import { PdfDocumentView, type PdfReadyPayload, type ReaderViewHandle } from "./pdf-document-view";
-import { ReaderPanel, type LinkedNote } from "./reader-panel";
 import { ReaderSidebar, type SidebarTab } from "./reader-sidebar";
-import { ReaderTopBar, type ReaderMode } from "./reader-top-bar";
+import { ReaderTopBar, type LinkedNote, type ReaderMode } from "./reader-top-bar";
 import { ReadingView } from "./reading-view";
 import { SelectionActions, type SelectionAnchor } from "./selection-actions";
 import { SlidesDocumentView, type SlideTab } from "./slides-document-view";
@@ -90,8 +89,10 @@ export function DocumentReader({
   const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null);
   const [slideTab, setSlideTab] = useState<SlideTab>("slides");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("outline");
-  const [sidebarOpen, setSidebarOpen] = useState(!isDialog);
-  const [panelOpen, setPanelOpen] = useState(!isDialog);
+  // ONE rail, on the RIGHT. The left edge of the screen belongs to the Library
+  // sidebar (owner 2026-08-05), which the host page keeps rendering around this
+  // component — so a document opens without losing the tree it was filed in.
+  const [railOpen, setRailOpen] = useState(!isDialog);
   const [selection, setSelection] = useState<{ text: string; unit: number | null; anchor: SelectionAnchor } | null>(null);
   const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null } | null>(null);
 
@@ -311,6 +312,15 @@ export function DocumentReader({
   }, []);
 
   const meta = describeSource(source, KIND_LABELS[source.kind] ?? "File");
+  // Said out loud in the menu, because from a menu you cannot see what is
+  // selected behind it.
+  const actionScope = selection
+    ? `the passage you selected${selection.unit === null ? "" : ` on ${unitLabel} ${selection.unit}`}`
+    : region
+      ? "the part of the picture you boxed"
+      : "this whole document";
+  /** Only some documents have anything to list in a contents rail. */
+  const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document";
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
@@ -332,6 +342,7 @@ export function DocumentReader({
     <div
       className="nemesis-reader flex h-full min-h-0 flex-col bg-(--reader-room)"
       data-load-state={loadState}
+      data-variant={variant}
       data-testid="document-reader"
     >
       <ReaderTopBar
@@ -351,16 +362,20 @@ export function DocumentReader({
         onQueryChange={setQuery}
         onRotate={source.kind === "image" ? () => setRotation((current) => (current + 90) % 360) : undefined}
         onStepMatch={stepToMatch}
-        onToggleSidebar={isDialog ? undefined : () => setSidebarOpen((open) => !open)}
-        onTogglePanel={isDialog ? undefined : () => setPanelOpen((open) => !open)}
+        onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}
         onZoomOut={() => setZoom({ kind: "fixed", scale: zoomOut(scale) })}
-        panelOpen={panelOpen}
         query={query}
         scale={scale}
         showZoom={showZoom && loadState === "ready"}
-        sidebarOpen={sidebarOpen}
+        actionScope={actionScope}
+        actionsDisabled={loadState === "missing" || loadState === "failed"}
+        folderPath={source.folderPath}
+        linkedNotes={linkedNotes}
+        onAction={runAction}
+        onOpenNote={onOpenNote}
+        railOpen={railOpen}
         unit={unit}
         unitCount={unitCount}
         unitLabel={unitLabel}
@@ -393,20 +408,6 @@ export function DocumentReader({
       )}
 
       <div className="flex min-h-0 flex-1">
-        {sidebarOpen && !isDialog && (source.kind === "pdf" || source.kind === "slides" || source.kind === "document") && (
-          <ReaderSidebar
-            document={pdfDocument}
-            onGoToUnit={goToUnit}
-            onTabChange={setSidebarTab}
-            outline={outline}
-            outlineIsAuthored={outlineIsAuthored}
-            tab={source.kind === "pdf" ? sidebarTab : "outline"}
-            unit={unit}
-            unitCount={unitCount}
-            unitLabel={unitLabel}
-          />
-        )}
-
         <main className="min-w-0 flex-1" data-reader-document>
           {loadState === "loading" ? (
             <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening {source.fileName}…</div>
@@ -484,17 +485,16 @@ export function DocumentReader({
           )}
         </main>
 
-        {panelOpen && !isDialog && (
-          <ReaderPanel
-            folderPath={source.folderPath}
-            linkedNotes={linkedNotes}
-            meta={meta}
-            onAction={runAction}
-            onOpenNote={(path) => onOpenNote?.(path)}
-            regionPreview={region?.preview ?? null}
-            selection={selection?.text ?? null}
-            selectionUnit={selection?.unit ?? null}
-            unavailable={loadState === "missing" || loadState === "failed"}
+        {railOpen && hasContents && (
+          <ReaderSidebar
+            document={pdfDocument}
+            onGoToUnit={goToUnit}
+            onTabChange={setSidebarTab}
+            outline={outline}
+            outlineIsAuthored={outlineIsAuthored}
+            tab={source.kind === "pdf" ? sidebarTab : "outline"}
+            unit={unit}
+            unitCount={unitCount}
             unitLabel={unitLabel}
           />
         )}
