@@ -523,3 +523,164 @@ test("a table referenced from two units is chunked once, at its first reference"
     assert.equal(chunks.filter((c) => c.text.includes(`compound-${i} |`)).length, 1);
   }
 });
+
+// ── Sparse table columns ─────────────────────────────────────────────────────
+//
+// 🔴 THE FAILURE THESE PREVENT IS A ROW THAT LOOKS PERFECT AND IS WRONG. Parsers
+// emit only the cells that exist, so joining what is present slides every later
+// value one column left and a number ends up under the wrong heading. There is
+// no downstream check that can catch it: the row is well-formed, plausible, and
+// says something false. Every test below is written so the NAIVE join would pass
+// a length check and fail these.
+
+/** A cell at a MEASURED column, which is what every real parser emits. */
+function at(col: number, text: string, extra: Partial<DocCell> = {}): DocCell {
+  return { col, row: 0, text, ...extra };
+}
+
+/** The rendered lines of a one-table document, in order. */
+function tableLines(rows: DocCell[][], opts: { targetTokens?: number } = {}): string[] {
+  const parsed = doc([unit({ index: 1, kind: "page" }, [blk("b", "", { kind: "table", tableId: "t" })])], [
+    table("t", rows),
+  ]);
+  return chunkDocument(parsed, { targetTokens: opts.targetTokens ?? 4_000 })
+    .flatMap((chunk) => chunk.text.split("\n"));
+}
+
+test("a missing middle cell leaves a gap instead of shifting the next value left", () => {
+  const lines = tableLines([
+    [at(0, "Region", { header: true }), at(1, "Q3", { header: true }), at(2, "Q4", { header: true })],
+    [at(0, "North"), at(2, "4.1")], // Q3 is empty in the sheet
+  ]);
+  assert.equal(lines[1], "North |  | 4.1");
+  assert.ok(!lines.includes("North | 4.1"), "the naive join would have put 4.1 under Q3");
+});
+
+test("values stay under the headings they belong to, by position", () => {
+  const lines = tableLines([
+    [at(0, "Region", { header: true }), at(1, "Q3", { header: true }), at(2, "Q4", { header: true })],
+    [at(0, "North"), at(2, "9.9")],
+  ]);
+  const headers = (lines[0] ?? "").split(" | ");
+  const values = (lines[1] ?? "").split(" | ");
+  assert.equal(headers[2], "Q4");
+  assert.equal(values[2], "9.9", "9.9 must sit in the Q4 column");
+  assert.equal(values[1].trim(), "", "the Q3 column must be empty, not borrowed from Q4");
+});
+
+test("leading empty cells are kept, so a row that starts late still lines up", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true }), at(2, "C", { header: true })],
+    [at(1, "beta"), at(2, "gamma")],
+  ]);
+  assert.equal(lines[1], " | beta | gamma");
+});
+
+// 🔴 THE ASYMMETRY IS DELIBERATE, and this test is the one that found it. A gap
+// with a value to its right POSITIONS that value; a gap with nothing to its
+// right positions nothing. Keeping trailing separators also rendered the same
+// row two ways — they survived mid-chunk and were trimmed off the last line —
+// so width depended on where the chunker cut.
+test("trailing empty cells are dropped; nothing sits to their right to misplace", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true }), at(2, "C", { header: true })],
+    [at(0, "alpha"), at(1, "beta")], // column C empty
+  ]);
+  assert.equal(lines[1], "alpha | beta");
+  const values = (lines[1] ?? "").split(" | ");
+  assert.equal(values[0], "alpha");
+  assert.equal(values[1], "beta", "the values that DO exist are still under A and B");
+});
+
+test("several consecutive gaps each get their own slot", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true }), at(2, "C", { header: true }), at(3, "D", { header: true }), at(4, "E", { header: true })],
+    [at(0, "alpha"), at(4, "epsilon")],
+  ]);
+  assert.equal(lines[1], "alpha |  |  |  | epsilon");
+  assert.equal((lines[1] ?? "").split(" | ").length, 5);
+});
+
+test("a horizontal merge holds its whole span, so the cell after it keeps its column", () => {
+  const lines = tableLines([
+    [at(0, "Metric", { header: true }), at(1, "2025", { header: true }), at(2, "2026", { header: true })],
+    [at(0, "Combined years", { colSpan: 2 }), at(2, "12.5")],
+  ]);
+  const values = (lines[1] ?? "").split(" | ");
+  assert.equal(values[0], "Combined years");
+  assert.equal(values[1].trim(), "");
+  assert.equal(values[2], "12.5", "the merged banner must not push 12.5 out of the 2026 column");
+});
+
+test("a vertical merge leaves the continuation rows with a gap, not a shifted value", () => {
+  // The parser drops the cells a vertical merge covers, so row 2 has no column 0
+  // at all. Closing that gap would file "South" under Region.
+  const lines = tableLines([
+    [at(0, "Region", { header: true }), at(1, "City", { header: true })],
+    [at(0, "North", { rowSpan: 2 }), at(1, "Leeds")],
+    [at(1, "York")],
+  ]);
+  assert.equal(lines[1], "North | Leeds");
+  assert.equal(lines[2], " | York");
+  assert.equal((lines[2] ?? "").split(" | ")[1], "York", "York must stay in the City column");
+});
+
+test("a row wider than the header widens the table rather than losing its last cell", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true })],
+    [at(0, "x"), at(1, "y"), at(2, "z")],
+  ]);
+  assert.ok(lines[0]?.startsWith("A | B"));
+  assert.equal(lines[1], "x | y | z");
+});
+
+test("a row narrower than the header keeps its value in the first column", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true }), at(2, "C", { header: true })],
+    [at(0, "only")],
+  ]);
+  assert.equal(lines[0], "A | B | C");
+  assert.equal(lines[1], "only");
+});
+
+test("a narrow row whose value is NOT in the first column still lines up", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true }), at(2, "C", { header: true })],
+    [at(1, "middle only")],
+  ]);
+  assert.equal(lines[1], " | middle only");
+  assert.equal((lines[1] ?? "").split(" | ")[1], "middle only", "it belongs under B, not A");
+});
+
+// 🔴 THE OTHER DIRECTION, AND THE WORSE BUG. A parser that leaves every `col` at
+// 0 would have every cell in a row land in one slot and the table collapse to a
+// run-on line — unreadable, where a misaligned column is merely wrong. So the
+// layout is chosen from evidence, per table, and degenerate columns fall back to
+// the sequential rendering this file used before columns were measured.
+test("columns that are not measured fall back to sequential order", () => {
+  const lines = tableLines([
+    [cell("A", { header: true }), cell("B", { header: true })],
+    [cell("x"), cell("y")],
+  ]);
+  assert.equal(lines[0], "A | B");
+  assert.equal(lines[1], "x | y");
+});
+
+test("one out-of-order column downgrades the whole table, never half of it", () => {
+  // Half-measured is the dangerous state: a header laid out by column against a
+  // body laid out by position misaligns everything while looking deliberate.
+  const lines = tableLines([
+    [at(0, "A", { header: true }), at(1, "B", { header: true })],
+    [at(1, "x"), at(0, "y")], // decreasing — not trustworthy
+  ]);
+  assert.equal(lines[0], "A | B");
+  assert.equal(lines[1], "x | y");
+});
+
+test("a stray far-out column cannot mint hundreds of separators", () => {
+  const lines = tableLines([
+    [at(0, "A", { header: true })],
+    [at(0, "x"), at(9_000, "stray")],
+  ]);
+  assert.ok((lines[1]?.split(" | ").length ?? 0) <= 512);
+});

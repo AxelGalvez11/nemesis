@@ -451,8 +451,120 @@ function renderCell(cell: DocCell): string {
   return cell.formula ? `${text} (${cell.formula})` : text;
 }
 
-function renderRow(row: readonly DocCell[]): string {
-  return row.map(renderCell).join(" | ");
+/**
+ * Widest table this will lay out in columns. A `col` far out in the grid — a stray cell at column
+ * 9,000 of a spreadsheet — must not mint 9,000 separators per row. Past this the layout is clipped
+ * and the cells beyond it are dropped from the RENDERED text only; `DocTable.rows` still holds
+ * every cell, because the grid is the parse and this is just its projection for an embedder.
+ */
+const MAX_TABLE_COLUMNS = 512;
+
+/**
+ * How a table's columns are placed.
+ *
+ * 🔴 ROWS ARE SPARSE, AND JOINING WHAT IS PRESENT SHIFTS VALUES LEFT. All three parsers emit only
+ * the cells that exist — an empty cell is absent, and a cell covered by a merge is deliberately
+ * dropped (see xlsx-parse.ts). `row.map(render).join(" | ")` then silently slides every later value
+ * one column left, so a row missing its second column lines "£4.1m" up under "Region". Nothing
+ * downstream can detect that: the row is well-formed, plausible, and wrong, which is the worst
+ * shape a mistake can take.
+ *
+ * 🔴 BUT MEASURED COLUMNS ARE NOT ALWAYS THERE, AND ASSUMING THEY ARE IS A BIGGER BUG THAN THE ONE
+ * ABOVE. A parser that leaves every `col` at 0 — or a fixture that does — would have every cell in
+ * a row land in the same slot and the whole table collapse to "Drug Dose Route". Misaligned columns
+ * are recoverable by a reader; a table rendered as one run-on line is not. So the layout is chosen
+ * per TABLE from evidence: if every row's columns strictly increase, they were measured and are
+ * used; otherwise the table falls back to sequential positions, which is exactly what this renderer
+ * did before measured columns existed.
+ *
+ * Per table rather than per row on purpose — mixing the two modes inside one table would misalign
+ * the header against its body, which is the failure being prevented.
+ */
+type TableLayout =
+  | { mode: "measured"; minCol: number; width: number }
+  | { mode: "positional"; width: number };
+
+/**
+ * Are these columns worth trusting?
+ *
+ * Strictly increasing within every row is the test. It admits the sparse case that matters — cells
+ * at columns 0, 2, 3 with column 1 empty — and rejects the degenerate ones: all-zero, duplicated,
+ * out of order, negative, or not a number. A table with no cells at all is not "measured"; there is
+ * nothing to have measured.
+ */
+function columnsAreMeasured(rows: readonly (readonly DocCell[])[]): boolean {
+  let sawCell = false;
+  for (const row of rows) {
+    let previous = -1;
+    for (const cell of row) {
+      if (!Number.isFinite(cell.col)) return false;
+      const col = Math.trunc(cell.col);
+      if (col < 0 || col <= previous) return false;
+      previous = col;
+      sawCell = true;
+    }
+  }
+  return sawCell;
+}
+
+function tableLayout(rows: readonly (readonly DocCell[])[]): TableLayout {
+  if (!columnsAreMeasured(rows)) {
+    let widest = 0;
+    for (const row of rows) if (row.length > widest) widest = row.length;
+    return { mode: "positional", width: Math.min(widest, MAX_TABLE_COLUMNS) };
+  }
+
+  let minCol = Number.POSITIVE_INFINITY;
+  let maxCol = -1;
+  for (const row of rows) {
+    for (const cell of row) {
+      const col = Math.trunc(cell.col);
+      const span = Number.isFinite(cell.colSpan) && (cell.colSpan ?? 0) > 0 ? Math.trunc(cell.colSpan as number) : 1;
+      if (col < minCol) minCol = col;
+      if (col + span - 1 > maxCol) maxCol = col + span - 1;
+    }
+  }
+  if (!Number.isFinite(minCol) || maxCol < minCol) return { mode: "positional", width: 0 };
+  return { minCol, mode: "measured", width: Math.min(maxCol - minCol + 1, MAX_TABLE_COLUMNS) };
+}
+
+/**
+ * One row, with every column in its place.
+ *
+ * A merged cell keeps its value in its first slot and leaves the rest of its span empty, which is
+ * what the sheet looks like and what keeps the columns after it aligned. A VERTICAL merge needs
+ * nothing special here: the parser drops the covered cells on the rows below, so those rows simply
+ * have a gap where the span continues — and a gap is now rendered rather than closed up.
+ */
+function renderRow(row: readonly DocCell[], layout: TableLayout): string {
+  if (layout.width === 0) return "";
+  const slots: string[] = new Array<string>(layout.width).fill("");
+  let any = false;
+  row.forEach((cell, position) => {
+    const at = layout.mode === "measured" ? Math.trunc(cell.col) - layout.minCol : position;
+    if (at < 0 || at >= layout.width) return;
+    const text = renderCell(cell);
+    if (text.length === 0) return;
+    // Two cells claiming one slot cannot happen in measured mode (columns strictly increase) and is
+    // impossible in positional mode. Joining rather than overwriting is defence for a future caller.
+    slots[at] = slots[at] ? `${slots[at]} ${text}` : text;
+    any = true;
+  });
+  // An entirely empty row renders as a line of bare separators, which is noise with a shape. The
+  // caller filters blank lines, so returning "" is what removes it.
+  if (!any) return "";
+  // 🔴 TRAILING EMPTIES GO; LEADING AND INTERIOR ONES STAY. The distinction is what each kind of
+  // gap does: a gap with a value to its right POSITIONS that value, and closing it is the
+  // misfiling bug this whole layout exists to prevent. A gap with nothing to its right positions
+  // nothing and is pure trailing punctuation.
+  //
+  // Consistency is the other half of the reason. A chunk's text is trimmed, so trailing separators
+  // survived on interior lines and vanished on the last one — the same row rendering two ways
+  // depending on where the chunker happened to cut. Dropping them always makes width a property of
+  // the row instead of a property of the split.
+  let end = slots.length;
+  while (end > 0 && slots[end - 1] === "") end -= 1;
+  return slots.slice(0, end).join(" | ");
 }
 
 /**
@@ -490,9 +602,12 @@ function renderTableParts(table: DocTable, targetTokens: number): string[] {
   if (rows.length === 0) return [];
 
   const headerCount = headerRowCount(rows);
-  const headerLines = rows.slice(0, headerCount).map(renderRow).filter((line) => !isBlank(line));
+  // Measured ONCE over the whole table, header and body together: a header row laid out against a
+  // different width from its body is exactly the misalignment this is here to prevent.
+  const layout = tableLayout(rows);
+  const headerLines = rows.slice(0, headerCount).map((row) => renderRow(row, layout)).filter((line) => !isBlank(line));
   // An entirely empty row carries nothing and would render as a bare separator.
-  const body = rows.slice(headerCount).map(renderRow).filter((line) => !isBlank(line));
+  const body = rows.slice(headerCount).map((row) => renderRow(row, layout)).filter((line) => !isBlank(line));
 
   const prefixLines: string[] = [];
   // The table's own caption, where the document gave it one — measured text, and

@@ -68,6 +68,17 @@ export const MAX_CELLS = 400_000;
 /** Most tables to keep. Guards a pathological sheet that splits into thousands of tiny islands. */
 export const MAX_TABLES = 500;
 
+/**
+ * Total covered-cell steps the merge sweep may take across one sheet.
+ *
+ * A merge is one short attribute and may name a rectangle of 17 billion cells, so this is a
+ * DEFENCE, not a tuning knob: without it a file nobody would look at twice hangs the parser. The
+ * value is generous against real workbooks — a sheet at the MAX_CELLS ceiling with every cell in
+ * its own merge still fits — and the per-merge cost is already min(area, populated cells), so this
+ * ceiling is only ever reached by a file constructed to reach it.
+ */
+export const MAX_MERGE_WORK = 2_000_000;
+
 /** Most value rows rendered into a table block's text. The full grid always survives on
  *  DocTable.rows; this cap is only about how much of it goes to an embedder. */
 export const MAX_TABLE_TEXT_ROWS = 400;
@@ -134,6 +145,7 @@ export function parseXlsx(bytes: Uint8Array, fileName: string): ParsedDocument {
   let sharedFormulasTranslated = 0;
   let sharedFormulasDropped = 0;
   let mergedRegions = 0;
+  let mergesUnresolved = 0;
 
   for (const sheet of sheets) {
     if (sheet.state !== "visible") hidden.push(sheet.name);
@@ -152,6 +164,7 @@ export function parseXlsx(bytes: Uint8Array, fileName: string): ParsedDocument {
     sharedFormulasTranslated += parsed.sharedTranslated;
     sharedFormulasDropped += parsed.sharedDropped;
     mergedRegions += parsed.mergedRegions;
+    mergesUnresolved += parsed.mergesUnresolved;
 
     // Each sheet's OWN rels, then its declared tables. Reaching xl/tables/ by globbing the folder
     // would file table 3 under whichever sheet happened to be read third.
@@ -200,6 +213,12 @@ export function parseXlsx(bytes: Uint8Array, fileName: string): ParsedDocument {
   }
   if (mergedRegions) {
     notes.push(`${mergedRegions} merged cell block${mergedRegions === 1 ? "" : "s"}: the value is kept once, at its top-left cell.`);
+  }
+  if (mergesUnresolved) {
+    truncated = true;
+    notes.push(
+      `${mergesUnresolved} merged cell block${mergesUnresolved === 1 ? " covers" : "s cover"} more of the sheet than the parser will sweep in one pass; the cells ${mergesUnresolved === 1 ? "it covers" : "they cover"} may appear as blanks.`,
+    );
   }
   if (truncated) notes.push("This workbook is larger than the parser reads in one pass; part of it was left out.");
 
@@ -404,6 +423,10 @@ interface SheetReadResult {
   sharedTranslated: number;
   sharedDropped: number;
   mergedRegions: number;
+  /** Merges whose covered-cell sweep hit MAX_MERGE_WORK. Their span is still recorded on the
+   *  anchor; what is missing is the removal of the cells they cover. Counted so a workbook that
+   *  declares thousands of enormous merges reports a partial read instead of pretending. */
+  mergesUnresolved: number;
   truncated: boolean;
 }
 
@@ -468,7 +491,15 @@ function readSheet(
   // cells are DROPPED rather than emitted blank — every DocCell carries its own row/col, so an
   // absent cell is unambiguous, and keeping them would make a merged banner look like a wide row
   // of empty columns to the region finder.
+  //
+  // 🔴 WALK THE POPULATED CELLS, NEVER THE RECTANGLE. `<mergeCell ref="A1:XFD1048576"/>` is legal
+  // and takes one line to write; iterating every coordinate inside it is 17 BILLION steps, so the
+  // obvious loop turns one attribute of an untrusted file into a hang. The rectangle walk is still
+  // the cheaper branch for the ordinary A1:D1 banner, so both exist and the arithmetic picks: cost
+  // per merge is min(area, populated cells), and the total is capped by MAX_MERGE_WORK besides.
   let mergedRegions = 0;
+  let mergesUnresolved = 0;
+  let mergeBudget = MAX_MERGE_WORK;
   for (const m of xml.matchAll(/<mergeCell\b([^>]*)\/?>/g)) {
     const range = parseRangeRef(attr(m[1] ?? "", "ref") ?? "");
     if (!range) continue;
@@ -478,11 +509,33 @@ function readSheet(
       anchor.rowSpan = range.bottom - range.top + 1;
       anchor.colSpan = range.right - range.left + 1;
     }
-    for (let row = range.top; row <= range.bottom; row += 1) {
-      for (let col = range.left; col <= range.right; col += 1) {
-        if (row === range.top && col === range.left) continue;
-        byKey.delete(`${row}:${col}`);
+    // The span above is recorded whatever happens next — it is read straight off the file's own
+    // `ref` and costs nothing. Only the covered-cell sweep is budgeted.
+    const area = (range.bottom - range.top + 1) * (range.right - range.left + 1);
+    const work = Math.min(area, byKey.size);
+    if (work > mergeBudget) {
+      // Reported, never silent: an unresolved merge leaves covered cells in the grid, which shows
+      // up as a table with unexpected blanks rather than as an error.
+      mergesUnresolved += 1;
+      continue;
+    }
+    mergeBudget -= work;
+    if (area <= byKey.size) {
+      for (let row = range.top; row <= range.bottom; row += 1) {
+        for (let col = range.left; col <= range.right; col += 1) {
+          if (row === range.top && col === range.left) continue;
+          byKey.delete(`${row}:${col}`);
+        }
       }
+      continue;
+    }
+    // The declared merge is bigger than the sheet is full: ask each populated cell whether it falls
+    // inside. Same answer, bounded number of steps.
+    for (const cell of cells) {
+      if (cell.row < range.top || cell.row > range.bottom) continue;
+      if (cell.col < range.left || cell.col > range.right) continue;
+      if (cell.row === range.top && cell.col === range.left) continue;
+      byKey.delete(`${cell.row}:${cell.col}`);
     }
   }
   const kept = cells.filter((cell) => byKey.get(`${cell.row}:${cell.col}`) === cell);
@@ -500,6 +553,7 @@ function readSheet(
     cellsRead,
     formulaCount,
     mergedRegions,
+    mergesUnresolved,
     sharedDropped,
     sharedTranslated,
     tablePartIds,

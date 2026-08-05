@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { citeLocator, type DocTable, type ParsedDocument } from "@nemesis/shared";
+import { chunkDocument, citeLocator, type DocTable, type ParsedDocument } from "@nemesis/shared";
 import { zipSync } from "fflate";
 
 import { MAX_FORMULA_LINES, MAX_TABLE_TEXT_ROWS, parseXlsx, XLSX_PARSER_VERSION, xlsxParser } from "./xlsx-parse";
@@ -451,4 +451,188 @@ test("bytes that are not a workbook are refused with something a person can read
   const notAWorkbook = zipSync({ "word/document.xml": encode("<w:document/>") });
   assert.throws(() => parseXlsx(notAWorkbook, "essay.docx"), /Excel/);
   assert.throws(() => parseXlsx(encode("hello"), "notes.txt"));
+});
+
+// ── Merged ranges ────────────────────────────────────────────────────────────
+//
+// 🔴 A MERGE IS ONE SHORT ATTRIBUTE THAT CAN NAME SEVENTEEN BILLION CELLS.
+// `<mergeCell ref="A1:XFD1048576"/>` is legal, valid, and takes a moment to type;
+// the obvious loop over every coordinate inside it never returns. These tests
+// exist to prove the sweep costs what the sheet CONTAINS, not what it DECLARES.
+
+/** A one-sheet workbook: rows as given, plus whatever tail XML (mergeCells, etc). */
+function mergeBook(rows: string, tail = ""): Uint8Array {
+  return zipSync({
+    "xl/_rels/workbook.xml.rels": encode(
+      `<?xml version="1.0"?><Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`,
+    ),
+    "xl/styles.xml": encode(STYLES_XML),
+    "xl/workbook.xml": encode(
+      `<?xml version="1.0"?><workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Merged" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    ),
+    "xl/worksheets/sheet1.xml": encode(worksheet(rows, tail)),
+  });
+}
+
+const inline = (ref: string, text: string) => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+
+/**
+ * Every piece of text the parse holds, from BOTH places it can live.
+ *
+ * A handful of cells is not a table — the region finder needs a shape to find — so a small fixture
+ * comes back as blocks on the unit and `tables` is empty. Looking only at tables would make these
+ * assertions pass vacuously, which is the failure mode a coverage helper is most prone to.
+ */
+function allCellText(parsed: ParsedDocument): string[] {
+  return [
+    ...parsed.tables.flatMap((t: DocTable) => t.rows.flatMap((row) => row.map((c) => c.text))),
+    ...parsed.units.flatMap((u) => u.blocks.map((b) => b.text)),
+  ];
+}
+
+/** A workbook whose sheet is big enough to be recognised as a table, with a merged cell inside the
+ *  BODY — which is where a merge actually threatens column alignment. */
+function tableWithInternalMerge(): Uint8Array {
+  const columns = ["A", "B", "C", "D"];
+  const headings = ["Region", "Q3", "Q4", "Note"];
+  let rows = `<row r="1">${columns.map((c, i) => inline(`${c}1`, headings[i]!)).join("")}</row>`;
+  for (let r = 2; r <= 7; r += 1) {
+    if (r === 4) {
+      // A4:B4 merged, so column B is absent from this row entirely and 9.9 sits in column C.
+      rows += `<row r="4">${inline("A4", "Combined")}${inline("C4", "9.9")}${inline("D4", "checked")}</row>`;
+      continue;
+    }
+    rows += `<row r="${r}">${columns.map((c, i) => inline(`${c}${r}`, `v${r}${i}`)).join("")}</row>`;
+  }
+  return mergeBook(rows, `<mergeCells count="1"><mergeCell ref="A4:B4"/></mergeCells>`);
+}
+
+test("a merge covering the whole sheet is bounded by what the sheet contains", () => {
+  const rows =
+    `<row r="1">${inline("A1", "Banner")}${inline("C1", "covered")}</row>` +
+    `<row r="5">${inline("B5", "also covered")}</row>`;
+  const started = Date.now();
+  const parsed = parseXlsx(mergeBook(rows, `<mergeCells count="1"><mergeCell ref="A1:XFD1048576"/></mergeCells>`), "Full.xlsx");
+  const elapsed = Date.now() - started;
+
+  // 17 billion coordinates declared, three cells present. Anything proportional to the rectangle
+  // would still be running.
+  assert.ok(elapsed < 5_000, `full-sheet merge took ${elapsed}ms — the sweep is walking the rectangle`);
+  const texts = allCellText(parsed);
+  assert.ok(texts.includes("Banner"), "the anchor's value must survive");
+  assert.ok(!texts.includes("covered"), "a covered cell is dropped, not rendered blank");
+  assert.ok(!texts.includes("also covered"));
+});
+
+test("a merged cell keeps its measured span, and the cell after it keeps its column", () => {
+  const parsed = parseXlsx(tableWithInternalMerge(), "Span.xlsx");
+  const merged = parsed.tables[0]!.rows.find((row) => row.some((c) => c.text === "Combined"))!;
+  const anchor = merged.find((c) => c.text === "Combined")!;
+  assert.equal(anchor.colSpan, 2, "A4:B4 is a two-column span");
+  assert.equal(anchor.col, 0);
+  // 🔴 THE ROW IS SPARSE: column B is simply absent. 9.9 must still declare column 2, because that
+  // is what stops anything downstream reading it as a Q3 figure.
+  assert.equal(merged.find((c) => c.text === "9.9")?.col, 2);
+  assert.equal(merged.length, 3, "three cells across four columns — the gap is real");
+});
+
+// 🔴 THE WHOLE CHAIN, IN ONE ASSERTION: parse -> normalized units -> chunk -> the text a model is
+// actually shown. Every earlier test checks one joint; this one checks that a value measured in
+// column C of the sheet is still under the Q4 heading by the time it reaches an embedder.
+test("a sparse row keeps its values under the right headings all the way to model-facing text", async () => {
+  const doc = await xlsxParser.parse(tableWithInternalMerge(), "Budget.xlsx");
+  const chunks = chunkDocument(doc, { targetTokens: 4_000 });
+  const lines = chunks.flatMap((c) => c.text.split("\n"));
+
+  const header = lines.find((l) => l.startsWith("Region | Q3 | Q4"));
+  assert.ok(header, `no header line. lines: ${JSON.stringify(lines)}`);
+  const q4Column = header!.split(" | ").indexOf("Q4");
+  assert.equal(q4Column, 2);
+
+  const mergedLine = lines.find((l) => l.startsWith("Combined"));
+  assert.ok(mergedLine, "the merged row must survive chunking");
+  const values = mergedLine!.split(" | ");
+  assert.equal(values[q4Column], "9.9", `9.9 must land under Q4, got "${mergedLine}"`);
+  assert.equal(values[1]!.trim(), "", "the Q3 column is empty in the sheet and must stay empty");
+  // The naive join would have produced exactly this, and it reads as Q3 = 9.9.
+  assert.notEqual(mergedLine, "Combined | 9.9 | checked");
+
+  // And the citation still names the measured range the parser found.
+  assert.equal(citeLocator(doc.tables[0]!.locator), "Merged!A1:D7");
+});
+
+test("cells outside a merged range are untouched; cells inside it are dropped", () => {
+  const rows =
+    `<row r="1">${inline("A1", "outside-before")}</row>` +
+    `<row r="2">${inline("B2", "anchor")}${inline("C2", "inside")}</row>` +
+    `<row r="3">${inline("C3", "inside too")}</row>` +
+    `<row r="5">${inline("E5", "outside-after")}</row>`;
+  const parsed = parseXlsx(mergeBook(rows, `<mergeCells count="1"><mergeCell ref="B2:D4"/></mergeCells>`), "Mixed.xlsx");
+  const texts = allCellText(parsed);
+  assert.ok(texts.includes("outside-before"));
+  assert.ok(texts.includes("anchor"));
+  assert.ok(texts.includes("outside-after"));
+  assert.ok(!texts.includes("inside"), "a cell inside the range is covered by the merge");
+  assert.ok(!texts.includes("inside too"));
+});
+
+test("malformed and overlapping merge metadata is survived, not thrown on", () => {
+  const rows = `<row r="1">${inline("A1", "kept")}${inline("B1", "second")}</row>`;
+  const tail =
+    `<mergeCells count="5">` +
+    `<mergeCell ref=""/>` + // no range at all
+    `<mergeCell ref="not-a-range"/>` + // unparseable
+    `<mergeCell/>` + // no ref attribute
+    `<mergeCell ref="A1:B1"/>` + // real
+    `<mergeCell ref="A1:C1"/>` + // overlaps the previous one
+    `</mergeCells>`;
+  const parsed = parseXlsx(mergeBook(rows, tail), "Malformed.xlsx");
+  const texts = allCellText(parsed);
+  assert.ok(texts.includes("kept"), "the anchor survives every malformed neighbour");
+  assert.ok(!texts.includes("second"), "B1 is covered by the valid merge");
+});
+
+test("a reversed range is normalised rather than silently skipped", () => {
+  // "D4:A1" — some generators write the corners in the order the author dragged them.
+  const rows = `<row r="1">${inline("A1", "anchor")}</row><row r="2">${inline("B2", "covered")}</row>`;
+  const parsed = parseXlsx(mergeBook(rows, `<mergeCells count="1"><mergeCell ref="D4:A1"/></mergeCells>`), "Rev.xlsx");
+  const texts = allCellText(parsed);
+  assert.ok(texts.includes("anchor"));
+  assert.ok(!texts.includes("covered"), "the range still covers B2 whichever way round it was written");
+});
+
+test("thousands of enormous merges hit the ceiling, finish fast, and SAY they fell short", () => {
+  // Merges parked far from the data (columns ZZ..AAA), so no cell is ever removed and every one of
+  // them pays the full cell-walk. Each declares 2 x 100,000 = 200,000 coordinates, which is far
+  // more than the 2,000 populated cells — so the sweep takes the cell-walk branch and each merge
+  // costs 2,000. 1,100 x 2,000 = 2.2M steps against the 2M ceiling.
+  //
+  // (The first draft of this fixture used ZZ1:AAA2 — FOUR coordinates — and cost 4 per merge. It
+  // proved only that 4,400 is less than two million.)
+  const rows = Array.from({ length: 2_000 }, (_, i) => `<row r="${i + 1}">${inline(`A${i + 1}`, `v${i}`)}</row>`).join("");
+  const merges = Array.from({ length: 1_100 }, () => `<mergeCell ref="ZZ1:AAA100000"/>`).join("");
+
+  const started = Date.now();
+  const parsed = parseXlsx(mergeBook(rows, `<mergeCells count="1100">${merges}</mergeCells>`), "Ceiling.xlsx");
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 10_000, `pathological merge set took ${elapsed}ms`);
+  const notes = parsed.coverage.notes ?? [];
+  assert.ok(
+    notes.some((n) => /merged cell block/.test(n) && /may appear as blanks/.test(n)),
+    `no unresolved-merge note. notes: ${JSON.stringify(notes)}`,
+  );
+  assert.equal(parsed.coverage.truncated, true, "an unresolved merge is a partial read and must say so");
+  // The data itself is still there: hitting the ceiling stops COLLAPSING merges, it does not stop
+  // reading the sheet.
+  assert.ok(allCellText(parsed).includes("v0"));
+  assert.ok(allCellText(parsed).includes("v1999"));
+});
+
+test("an ordinary workbook never reports an unresolved merge", () => {
+  const rows = `<row r="1">${inline("A1", "Heading")}</row><row r="2">${inline("A2", "body")}</row>`;
+  const parsed = parseXlsx(mergeBook(rows, `<mergeCells count="1"><mergeCell ref="A1:C1"/></mergeCells>`), "Plain.xlsx");
+  const notes = parsed.coverage.notes ?? [];
+  assert.ok(!notes.some((n) => /may appear as blanks/.test(n)));
+  assert.notEqual(parsed.coverage.truncated, true);
 });
