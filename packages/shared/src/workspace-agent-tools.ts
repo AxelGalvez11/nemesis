@@ -34,3 +34,30 @@ export const WORKSPACE_AGENT_TOOL_NAMES = [
 ] as const;
 
 export type WorkspaceAgentToolName = (typeof WORKSPACE_AGENT_TOOL_NAMES)[number];
+
+/**
+ * The workspace-control extension (owner 2026-08-05: "chat is the control
+ * layer; Library, Study, and Calendar are views"). Web ships these first;
+ * the phone's executor catches up in its own release because its tools run
+ * through the cloudLibrary/cloudStudy/cloudCalendar wrappers and need their
+ * own build. Until then the CORE list above stays the cross-platform
+ * contract and this list is what the web chat actually advertises.
+ */
+export const WEB_EXTRA_AGENT_TOOL_NAMES = [
+  "get_workspace_overview",
+  "get_library_tree",
+  "rename_library_folder",
+  "move_library_folder",
+  "delete_library_folder",
+  "get_study_overview",
+  "move_study_deck",
+  "move_study_artifact",
+  "find_calendar_issues",
+] as const;
+
+export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [
+  ...WORKSPACE_AGENT_TOOL_NAMES,
+  ...WEB_EXTRA_AGENT_TOOL_NAMES,
+] as const;
+
+export type WebWorkspaceAgentToolName = (typeof WEB_WORKSPACE_AGENT_TOOL_NAMES)[number];

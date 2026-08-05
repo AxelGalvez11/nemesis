@@ -44,12 +44,17 @@ async function postBrain(
   }
 }
 
+import { localToday } from "./calendar-agent-range";
+
 export async function recallBrain(
   query: string,
 ): Promise<BrainContext | null> {
   const payload = await postBrain("context", {
     query,
-    today: new Date().toISOString().slice(0, 10),
+    // LOCAL date, not toISOString(): the UTC version reads "tomorrow" every
+    // evening in the Americas, which shifted the brain packet's whole
+    // 30-day calendar window a day forward and hid same-day deadlines.
+    today: localToday(),
   });
   return brainContextFrom(payload);
 }

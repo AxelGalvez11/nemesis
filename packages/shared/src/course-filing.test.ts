@@ -3,10 +3,13 @@ import test from "node:test";
 
 import {
   courseScore,
+  deckNameForNewDeck,
   FALLBACK_FOLDERS,
   folderForNewItem,
+  groupForNewArtifact,
   knownCourses,
   matchCourse,
+  UNSORTED_FOLDER,
 } from "./course-filing.ts";
 
 const COURSES = ["Pharmacology", "Advanced Contract Law", "Thermodynamics II"];
@@ -90,4 +93,30 @@ test("scoring counts distinctive words, not filler", () => {
   // "the" and "of" carry no signal; the shared stopword list drops them.
   assert.equal(courseScore("the study of the law", "The And For"), 0);
   assert.ok(courseScore("contract law", "Contract Law") >= 2);
+});
+
+// ── Provenance is never hierarchy (owner 2026-08-05) ─────────────────────────
+
+test("🔴 nothing ever files under a folder named for who made it — the fallback is one honest Inbox", () => {
+  assert.deepEqual(Object.values(FALLBACK_FOLDERS), [UNSORTED_FOLDER, UNSORTED_FOLDER, UNSORTED_FOLDER]);
+  assert.equal(UNSORTED_FOLDER, "Inbox");
+});
+
+test("a new chat deck inherits its matched course as its '::' folder", () => {
+  assert.equal(
+    deckNameForNewDeck("Beta Blockers", "today's pharmacology lecture on beta blockers", COURSES),
+    "Pharmacology::Beta Blockers",
+  );
+  // No clear course → a top-level deck, never a fake group.
+  assert.equal(deckNameForNewDeck("Tesla trivia", "interior features and trunk space", COURSES), "Tesla trivia");
+  // A name the model already wrote a folder into is respected, not doubled.
+  assert.equal(
+    deckNameForNewDeck("cardio::Beta Blockers", "pharmacology beta blockers", COURSES),
+    "cardio::Beta Blockers",
+  );
+});
+
+test("a new test files under its matched course, else the top level — never 'Generated tests'", () => {
+  assert.equal(groupForNewArtifact("pharmacology exam practice questions", COURSES), "Pharmacology");
+  assert.equal(groupForNewArtifact("mixed trivia round", COURSES), "");
 });

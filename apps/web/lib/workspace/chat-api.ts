@@ -17,7 +17,7 @@ import {
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
-import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
+import { AGENT_TOOLS, executeAgentTool, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
 import {
@@ -30,7 +30,7 @@ import {
 import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
-import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
@@ -71,17 +71,26 @@ const CHAT_PROMPT_HEAD =
 
 /** True ONLY on a turn that actually carries AGENT_TOOLS. */
 export const CHAT_TOOLS_PROMPT =
-  "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
-  "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
-  "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
-  "note or calendar says. " +
-  // The prompt used to stop at the creating verbs, and the model answered
-  // accordingly: asked to move an exam or fix a card's wording it said it
-  // could not, while holding a tool that does exactly that. A capability the
-  // model does not believe it has is the same as no capability.
-  "You can also CHANGE and REMOVE things, not only create them: correct an event's date or time, rewrite or rename a note, fix a " +
-  "flashcard's wording, and delete a note, card, event or generated test the student no longer wants. Editing takes the item's id, " +
-  "which the list and read tools return — pass only the fields that should change, and leave the rest out so they stay as they are. " +
+  // Owner 2026-08-05: chat is the CONTROL LAYER; Library, Study, and Calendar
+  // are views of a workspace you maintain. The old opening listed only a few
+  // read/create verbs, and the model behaved exactly that small. A capability
+  // the model does not believe it has is the same as no capability.
+  "You manage this student's Nemesis workspace through your tools. Chat is the control layer: the Library, Study, and Calendar " +
+  "pages are views of state you and the student maintain together, and you can inspect and reorganize all three. " +
+  "READ before answering about their material — never guess and never claim you cannot see it: get_workspace_overview orients you; " +
+  "get_library_tree browses folders and notes with no search term; search_library and read_library_note reach content; " +
+  "get_study_overview and read_study_deck carry real due counts, lapses, and scheduling; list_calendar_events returns the COMPLETE " +
+  "window it reports for any date range, past included, with recurring classes expanded. The snapshot and overview are orientation — " +
+  "for anything about 'everything', a whole semester, or a reorganization, read the full tree or range first. " +
+  "ORGANIZE as well as create: move and rename notes and folders (rename_library_folder, move_library_folder, move_library_note), " +
+  "move decks and re-file tests (move_study_deck, move_study_artifact, rename_study_deck), and correct calendar events " +
+  "(update_calendar_event). Run find_calendar_issues before reorganizing a calendar; when a newer trustworthy source disagrees with " +
+  "an existing event, UPDATE that event rather than adding a copy, and when you are not confident which version is right, ask. " +
+  "FILING: material lives under the student's own courses and topics — never under folders named for who made it. When you cannot " +
+  "tell where something belongs, put it in the Inbox folder and say so; a wrong course is worse than an honest Inbox. Prefer " +
+  "updating an existing note on a topic over creating a near-duplicate second one. " +
+  "Editing takes the item's id, which the list and read tools return — pass only the fields that should change, and leave the rest " +
+  "out so they stay as they are. " +
   // 🔴 The nearest thing to a confirmation step this lane has. There is no
   // dialog inside a chat turn, so the bar for a destructive call is the
   // student's own words: "tidy up my notes" is a request to reorganise, not a
@@ -219,6 +228,9 @@ export function buildWireMessages(
   /** Retrieved background — the second-brain packet. Its OWN system message, on
    *  purpose; see the block comment on the grounding message below. */
   groundingContext = "",
+  /** The compact workspace snapshot (JSON), attached on workspace-intent turns
+   *  so the model starts oriented. Orientation only — the message says so. */
+  workspaceSnapshot = "",
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -258,6 +270,7 @@ export function buildWireMessages(
         routeInstruction(decision.route),
         // Only when the tools are really riding — see SAVE_INSTRUCTION.
         ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
+        ...(decision.workspaceIntent && toolsEnabled ? [WORKSPACE_INSTRUCTION] : []),
         liveClock,
       ].join("\n\n"),
       role: "system",
@@ -278,6 +291,19 @@ export function buildWireMessages(
     // meant something else entirely. Retrieved material is not something the
     // student said. It still sits last, closest to the answer, which is where
     // it earns its keep when the question really is about their notes.
+    // The workspace snapshot rides its own system message for the same reason
+    // the brain packet does. It is labeled orientation-only so it can never
+    // become another silently-capped packet the model mistakes for full state.
+    ...(workspaceSnapshot.trim()
+      ? [{
+        content:
+          "Live snapshot of this student's workspace, generated for this turn. ORIENTATION ONLY: the counts are complete, "
+          + "the lists are samples. Read the full state with the workspace tools before reorganizing anything or claiming "
+          + "completeness.\n\n"
+          + workspaceSnapshot.trim(),
+        role: "system" as const,
+      }]
+      : []),
     ...(groundingContext.trim()
       ? [{
         content:
@@ -758,14 +784,22 @@ export async function sendChatTurn(
   // The keyword lists are a fast path, not the whole decision: when they miss,
   // the model itself is asked whether this question needs live sources. See
   // chat-web-need.ts for why this is a pre-flight and not a tool.
-  const regexSaidYes = classified.searchWeb || shouldSearchWeb(askText);
-  const needsWeb = regexSaidYes || await modelWantsWeb(uid, {
+  //
+  // A WORKSPACE turn opts out of the whole web apparatus unless the student
+  // explicitly asked for the web (classifyChatRequest already set searchWeb
+  // then): "what's my schedule tomorrow" is a database read, and it used to
+  // buy a paid search off the word "tomorrow" AND get promoted onto the
+  // tool-less reasoner below — the two halves of the calendar incident.
+  const regexSaidYes = classified.workspaceIntent
+    ? classified.searchWeb
+    : classified.searchWeb || shouldSearchWeb(askText);
+  const needsWeb = regexSaidYes || (!classified.workspaceIntent && await modelWantsWeb(uid, {
     ask: askText,
     hasAttachments: userText.trim() !== askText.trim(),
     regexSaidYes,
     savesToWorkspace: classified.savesToWorkspace === true,
-  }, signal);
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
+  }, signal));
+  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.workspaceIntent
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.
@@ -777,6 +811,12 @@ export async function sendChatTurn(
   // weak spots in one bounded packet; failures are a normal empty context.
   const brainLookup = shouldRecallBrain(askText)
     ? recallBrain(askText)
+    : Promise.resolve(null);
+  // Workspace turns also start ORIENTED: the compact snapshot rides as its own
+  // system message (buildWireMessages labels it orientation-only). Fetched in
+  // parallel with everything else; a failure just means no snapshot.
+  const overviewLookup: Promise<unknown> = classified.workspaceIntent
+    ? loadWorkspaceOverview().catch(() => null)
     : Promise.resolve(null);
   if (needsWeb) {
     strip.pin("Searching the web");
@@ -791,9 +831,11 @@ export async function sendChatTurn(
   // rows have to be asked for or share vocabulary with it now, rather than
   // riding along on every turn. See brain-context.ts.
   const brainContext = formatBrainContext(await brainLookup, askText);
+  const overview = await overviewLookup;
+  const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 
   const toolsEnabled = toolsAllowed(decision);
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext);
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext, workspaceSnapshot);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   let pendingDelete: PendingDelete | undefined;

@@ -7,7 +7,9 @@
 // the agent can never see or touch another account's data.
 
 import {
+  deckNameForNewDeck,
   folderForNewItem,
+  groupForNewArtifact,
   knownCourses,
   calendarEventPatch,
   deckDeletionVerdict,
@@ -17,17 +19,30 @@ import {
   isPatchFailure,
   noteReplacementBody,
   pendingDeleteInstruction,
-  WORKSPACE_AGENT_TOOL_NAMES,
+  WEB_WORKSPACE_AGENT_TOOL_NAMES,
   workspaceId,
   type PendingDelete,
 } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
+import {
+  calendarEventFromRow,
+  eventsInWindow,
+  isDateKey,
+  localToday,
+  resolveCalendarWindow,
+  type CalendarEventRow,
+} from "./calendar-agent-range";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
+import { remapLibrarySourceFolders } from "./library-sources";
+import { expandLibraryFolder, summarizeLibraryTree, type LibraryTreeDoc } from "./library-tree-summary";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
-import { splitCalendarConflicts } from "./calendar-conflicts";
+import { studyOverview, type OverviewCardRow, type OverviewDeckRow } from "./study-agent-overview";
+import { joinGroupPath, normalizeGroupPath, pathLeaf, renamedGroupPath, uniqueDeckName } from "./study-tree";
+import { findCalendarIssues, splitCalendarConflicts } from "./calendar-conflicts";
 import { balanceAnswerPositions } from "./test-answer-balance";
+import { fetchAllRows } from "./supabase-paging";
 
 const MAX_NOTE_CHARS = 8_000;
 // 🔴 30 made the model deny things that exist. list_study_decks orders by
@@ -36,9 +51,6 @@ const MAX_NOTE_CHARS = 8_000;
 // deck wasn't in the deck list (2026-08-03). 200 names is still only a few
 // hundred tokens.
 const MAX_LIST = 200;
-const GENERATED_NOTES_FOLDER = "Nemesis/Notes";
-const GENERATED_SLIDES_FOLDER = "Nemesis/Slides";
-const GENERATED_TESTS_GROUP = "Generated tests";
 
 export interface AgentToolCall {
   id: string;
@@ -47,7 +59,7 @@ export interface AgentToolCall {
   arguments: string;
 }
 
-export const AGENT_TOOL_NAMES = WORKSPACE_AGENT_TOOL_NAMES;
+export const AGENT_TOOL_NAMES = WEB_WORKSPACE_AGENT_TOOL_NAMES;
 
 /** OpenAI-format tool schemas sent with every sessions turn. */
 export const AGENT_TOOLS = [
@@ -181,7 +193,8 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Read the cards in one Study deck so you can tutor from, compare, summarize, or improve the student's actual material. Call list_study_decks first if the name is uncertain.",
+        "Read the cards in one Study deck — text plus real scheduling state (due_at, lapses, interval, repetitions) so you "
+        + "can tutor from, prioritize, or improve the student's actual material. Call list_study_decks first if the name is uncertain.",
       name: "read_study_deck",
       parameters: {
         properties: {
@@ -221,7 +234,9 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Add flashcards to a deck (created if it doesn't exist). Tell the student how many cards you added.",
+      description:
+        "Add flashcards to a deck (created if it doesn't exist). Give deck_name as a plain name — a NEW deck is filed under "
+        + "the student's own course automatically when the material clearly matches one. Tell the student how many cards you added.",
       name: "add_flashcards",
       parameters: {
         properties: {
@@ -256,7 +271,7 @@ export const AGENT_TOOLS = [
       name: "add_practice_test",
       parameters: {
         properties: {
-          group_name: { description: `Optional folder/group on the Study page. Omit to use '${GENERATED_TESTS_GROUP}'.`, type: "string" },
+          group_name: { description: "Optional Study folder. Omit it — the test is then filed under the student's own course automatically when one clearly matches, and left at the top level when none does.", type: "string" },
           questions: {
             items: {
               properties: {
@@ -300,10 +315,153 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "List the student's upcoming calendar events (assignments, exams, classes).",
+      description:
+        "List the student's calendar events — COMPLETE for the window it reports: every event in range, past or future, "
+        + "all of them, with recurring classes expanded into their real meeting dates (those rows carry recurring: true and "
+        + "share their series' one id). Default window is the next 30 days; pass start_date/end_date for any range — a whole "
+        + "semester, last month, a single day.",
       name: "list_calendar_events",
       parameters: {
-        properties: { days_ahead: { description: "How many days forward to look (default 14)", type: "number" } },
+        properties: {
+          days_ahead: { description: "Days forward from today when no dates are given (default 30, max 366)", type: "number" },
+          end_date: { description: "Window end, YYYY-MM-DD, inclusive", type: "string" },
+          start_date: { description: "Window start, YYYY-MM-DD — may be in the past", type: "string" },
+        },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Audit the calendar before reorganizing it. Reports, separately: exact_duplicates (same title, same date), "
+        + "probable_duplicates (near-identical titles on one date), conflicting_versions (the same exam or assignment on two "
+        + "different dates — the sources disagree about when it is), and overlaps (two different events at the same time — NOT "
+        + "duplicates). Defaults to the whole calendar. Never resolve a conflicting version without the student choosing which "
+        + "date wins.",
+      name: "find_calendar_issues",
+      parameters: {
+        properties: {
+          end_date: { description: "Optional window end, YYYY-MM-DD", type: "string" },
+          start_date: { description: "Optional window start, YYYY-MM-DD", type: "string" },
+        },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "One compact snapshot of this student's whole workspace for orientation: their courses, the next few weeks of "
+        + "deadlines, upcoming exams, the Library's folder shape, decks with cards due, and anything sitting in Inbox. Counts "
+        + "are real, but lists are SAMPLES — before acting on completeness (reorganizing, reconciling, anything about "
+        + "'everything'), read the full state with get_library_tree, list_calendar_events, or get_study_overview.",
+      name: "get_workspace_overview",
+      parameters: { properties: {}, type: "object" },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "See the Library's real structure without needing a search term. Without folder: the whole tree — every folder with "
+        + "its note counts. With folder: that folder's subfolders and every note inside it (title and path). Use this before "
+        + "reorganizing, so moves are grounded in what actually exists.",
+      name: "get_library_tree",
+      parameters: {
+        properties: { folder: { description: "Optional folder path to expand; omit for the whole tree", type: "string" } },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Rename a Library folder in place. Every note and stored file inside follows automatically, and the folder's own "
+        + "page keeps working. Give just the new name — use move_library_folder to change where it lives.",
+      name: "rename_library_folder",
+      parameters: {
+        properties: {
+          new_name: { description: "The folder's new name (a name, not a path)", type: "string" },
+          path: { description: "The folder's current path, e.g. 'Biology/Unit 3'", type: "string" },
+        },
+        required: ["path", "new_name"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move a whole Library folder — notes, subfolders, and stored files — into another folder. Use an empty string for "
+        + "the top level.",
+      name: "move_library_folder",
+      parameters: {
+        properties: {
+          into: { description: "Destination folder path, or empty string for the top level", type: "string" },
+          path: { description: "The folder to move", type: "string" },
+        },
+        required: ["path", "into"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move a Library folder AND everything inside it to the student's trash. Recoverable, but the largest single action "
+        + "here — the student has to confirm on a card first.",
+      name: "delete_library_folder",
+      parameters: {
+        properties: { path: { description: "The folder to remove", type: "string" } },
+        required: ["path"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "The whole Study picture with real counts: every deck with its cards, cards due right now, and struggling cards "
+        + "(missed twice or more), rolled up per folder too. Use it for 'what should I study' and before reorganizing decks.",
+      name: "get_study_overview",
+      parameters: { properties: {}, type: "object" },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move a Study deck into a folder (empty string = top level). The deck, its cards, and their review history are "
+        + "untouched — only its place in the Study tree changes.",
+      name: "move_study_deck",
+      parameters: {
+        properties: {
+          deck_name: { description: "The deck's current full name from list_study_decks", type: "string" },
+          folder: { description: "Destination Study folder, '::'-separated for nesting, or empty string for the top level", type: "string" },
+        },
+        required: ["deck_name", "folder"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: "Move a saved practice test or mind map into a different Study folder (empty string = top level).",
+      name: "move_study_artifact",
+      parameters: {
+        properties: {
+          artifact_id: { description: "The artifact's id from list_study_artifacts", type: "string" },
+          group_name: { description: "Destination Study folder, or empty string for the top level", type: "string" },
+        },
+        required: ["artifact_id", "group_name"],
         type: "object",
       },
     },
@@ -439,7 +597,8 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "Rename a Study deck. Give the deck's current full name and the new name; its folder and cards stay where they are.",
+        "Rename a Study deck. Give just the new NAME — the deck stays in its current folder (use move_study_deck to change "
+        + "folders) and its cards are untouched.",
       name: "rename_study_deck",
       parameters: {
         properties: {
@@ -626,7 +785,7 @@ async function currentUserId(): Promise<string | null> {
  * NEVER THROWS — an empty list just means "file it where it is filed today".
  * Losing a note because a folder lookup timed out would be a far worse trade.
  */
-async function loadKnownCourses(): Promise<string[]> {
+export async function loadKnownCourses(): Promise<string[]> {
   try {
     const [events, folders] = await Promise.all([
       supabase.from("calendar_events").select("course").not("course", "is", null).limit(500),
@@ -761,6 +920,198 @@ async function createLibraryFolder(path: string) {
   return { created: true, folder: cleanPath };
 }
 
+// ── Seeing and reshaping the Library tree ───────────────────────────────────
+
+/** Every live row's path/kind/title, paged past the 1000-row cap. This is the
+ *  authoritative read behind get_library_tree and the workspace overview. */
+async function loadLibraryTreeDocs(): Promise<LibraryTreeDoc[]> {
+  const rows = await fetchAllRows((from, to) =>
+    supabase
+      .from("readable_library_documents")
+      .select("id,path,kind,title")
+      .eq("deleted", false)
+      .order("path")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((raw) => {
+    const row = raw as Record<string, unknown>;
+    return { kind: str(row.kind) || "note", path: str(row.path), title: str(row.title) };
+  });
+}
+
+async function getLibraryTree(folder: string) {
+  try {
+    const docs = await loadLibraryTreeDocs();
+    return folder.trim() ? expandLibraryFolder(docs, folder) : summarizeLibraryTree(docs);
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't read the Library tree." };
+  }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+interface SubtreeRow {
+  id: string;
+  path: string;
+  kind: string;
+  title: string;
+  deleted: boolean;
+}
+
+/** The folder's own row (if any) plus every row beneath it. `includeDeleted`
+ *  exists because the (user_id, path) unique index counts trashed rows — a
+ *  destination check that ignored them would promise a move the database
+ *  then rejects halfway through. */
+async function loadLibrarySubtree(path: string, opts: { includeDeleted: boolean }): Promise<SubtreeRow[]> {
+  let ownQuery = supabase.from("readable_library_documents").select("id,path,kind,title,deleted").eq("path", path);
+  if (!opts.includeDeleted) ownQuery = ownQuery.eq("deleted", false);
+  const own = await ownQuery;
+  if (own.error) throw new Error(own.error.message);
+  const nested = await fetchAllRows((from, to) => {
+    let query = supabase
+      .from("readable_library_documents")
+      .select("id,path,kind,title,deleted")
+      .like("path", `${escapeLikePattern(path)}/%`);
+    if (!opts.includeDeleted) query = query.eq("deleted", false);
+    return query.order("path").order("id").range(from, to);
+  });
+  const byId = new Map<string, SubtreeRow>();
+  for (const raw of [...(own.data ?? []), ...nested]) {
+    const row = raw as Record<string, unknown>;
+    byId.set(str(row.id), {
+      deleted: row.deleted === true,
+      id: str(row.id),
+      kind: str(row.kind) || "note",
+      path: str(row.path),
+      title: str(row.title),
+    });
+  }
+  return [...byId.values()];
+}
+
+/** Is this note the FOLDER'S OWN PAGE (Notion model)? Same rule as
+ *  library-folder-note.ts:isFolderNote — filename or title matches the parent
+ *  folder's name. Kept in sync by the shared test fixture, not by import,
+ *  because this file must stay UI-free. */
+function isFolderPageOf(row: { path: string; title: string; kind: string }, folder: string, folderLeaf: string): boolean {
+  if (row.kind === "folder") return false;
+  const parent = row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : "";
+  if (parent !== folder) return false;
+  const key = (value: string) => value.trim().toLowerCase().replace(/\.md$/, "");
+  const leaf = key(row.path.split("/").pop() ?? "");
+  return leaf === key(folderLeaf) || key(row.title) === key(folderLeaf);
+}
+
+/**
+ * Rename or move one folder subtree, safely:
+ * - the destination must be COMPLETELY free, trash included, before anything
+ *   moves (a mid-move unique-index collision is how trees end up half-moved);
+ * - updates run sequentially so a failure reports exactly how far it got;
+ * - a rename updates the folder page's TITLE too — the fix for the
+ *   two-pages-one-folder corruption the UI's own rename had (a folder page is
+ *   recognized by name match, so a rename that only rewrote paths silently
+ *   orphaned the page and a fresh empty one appeared on next open);
+ * - stored source files follow via remapLibrarySourceFolders, exactly as the
+ *   Library page's own folder operations do.
+ */
+async function relocateLibraryFolder(
+  source: string,
+  destination: string,
+  userId: string,
+  verb: "renamed" | "moved",
+) {
+  if (destination === source) return { note: "It is already there.", [verb]: false };
+  if (`${destination}/`.startsWith(`${source}/`)) return { error: "A folder can't move inside itself." };
+  const taken = await loadLibrarySubtree(destination, { includeDeleted: true });
+  if (taken.length > 0) {
+    const inTrash = taken.every((row) => row.deleted);
+    return {
+      error: `Something already uses '${destination}'${inTrash ? " (in the student's trash)" : ""}. Pick a different name.`,
+    };
+  }
+  const rows = await loadLibrarySubtree(source, { includeDeleted: false });
+  if (rows.length === 0) return { error: `No folder at '${source}'. Use get_library_tree to see what exists.` };
+  const sourceLeaf = source.split("/").pop() ?? source;
+  const destinationLeaf = destination.split("/").pop() ?? destination;
+  let movedCount = 0;
+  for (const row of rows) {
+    const nextPath = row.path === source ? destination : `${destination}${row.path.slice(source.length)}`;
+    const patch: Record<string, unknown> = { path: nextPath, updated_at: new Date().toISOString() };
+    if (row.kind === "folder") {
+      patch.title = nextPath.split("/").pop() ?? nextPath;
+    } else if (verb === "renamed" && isFolderPageOf(row, source, sourceLeaf)) {
+      patch.title = destinationLeaf;
+    }
+    const { error } = await supabase.from("readable_library_documents").update(patch).eq("id", row.id);
+    if (error) {
+      return {
+        error: `Stopped partway: ${movedCount} of ${rows.length} items moved before "${error.message}". `
+          + "Run get_library_tree to see the current state before retrying.",
+      };
+    }
+    movedCount += 1;
+  }
+  await remapLibrarySourceFolders(userId, (folderPath) =>
+    folderPath === source
+      ? destination
+      : folderPath.startsWith(`${source}/`)
+        ? `${destination}${folderPath.slice(source.length)}`
+        : folderPath);
+  return { from: source, items: movedCount, to: destination, [verb]: true };
+}
+
+async function renameLibraryFolderTool(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to rename a folder." };
+  const source = safeLibraryFolder(str(args.path));
+  if (!source) return { error: "Which folder? Use get_library_tree to see them." };
+  const leaf = str(args.new_name).trim().replace(/[\\/:]/g, "-").slice(0, 80);
+  if (!leaf) return { error: "A folder needs a name." };
+  const parent = source.includes("/") ? source.slice(0, source.lastIndexOf("/")) : "";
+  return await relocateLibraryFolder(source, parent ? `${parent}/${leaf}` : leaf, userId, "renamed");
+}
+
+async function moveLibraryFolderTool(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to move a folder." };
+  const source = safeLibraryFolder(str(args.path));
+  if (!source) return { error: "Which folder? Use get_library_tree to see them." };
+  const into = safeLibraryFolder(str(args.into));
+  const leaf = source.split("/").pop() ?? source;
+  return await relocateLibraryFolder(source, into ? `${into}/${leaf}` : leaf, userId, "moved");
+}
+
+async function deleteLibraryFolderTool(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to remove a folder." };
+  const source = safeLibraryFolder(str(args.path));
+  if (!source) return { error: "Which folder? Use get_library_tree to see them." };
+  const rows = await loadLibrarySubtree(source, { includeDeleted: false });
+  if (rows.length === 0) return { error: `No folder at '${source}'.` };
+  // Soft delete, in batches: every row keeps existing under its path, so the
+  // student can recover the whole subtree.
+  const updatedAt = new Date().toISOString();
+  for (let at = 0; at < rows.length; at += 100) {
+    const ids = rows.slice(at, at + 100).map((row) => row.id);
+    const { error } = await supabase
+      .from("readable_library_documents")
+      .update({ deleted: true, updated_at: updatedAt })
+      .in("id", ids);
+    if (error) {
+      return {
+        error: `Stopped partway: ${at} of ${rows.length} items were trashed before "${error.message}". `
+          + "Run get_library_tree to see the current state.",
+      };
+    }
+  }
+  await remapLibrarySourceFolders(userId, (folderPath) =>
+    folderPath === source || folderPath.startsWith(`${source}/`) ? null : folderPath);
+  return { deleted: true, folder: source, items: rows.length, recoverable: true };
+}
+
 async function availableNotePath(userId: string, title: string, folder: string, currentId: string) {
   const leaf = safeLibraryLeaf(title);
   const dir = safeLibraryFolder(folder);
@@ -834,8 +1185,16 @@ async function moveLibraryNote(path: string, folder: string) {
 async function addPracticeTest(args: Record<string, unknown>) {
   const title = str(args.title).trim().slice(0, 160);
   if (!title) return { error: "A test title is required." };
-  const groupName = str(args.group_name).trim().slice(0, 120) || GENERATED_TESTS_GROUP;
   const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
+  // No more "Generated tests": an unnamed group is filed under the student's
+  // own course when the material clearly matches one, and left at the top
+  // level when it doesn't. Provenance is metadata, never a folder.
+  const questionText = rawQuestions
+    .map((row) => (row && typeof row === "object" ? str((row as Record<string, unknown>).q) : ""))
+    .join("\n")
+    .slice(0, 4_000);
+  const groupName = str(args.group_name).trim().slice(0, 120)
+    || groupForNewArtifact(`${title}\n${questionText}`, await loadKnownCourses());
   // Validate through the same parser the generation flow uses so a malformed
   // question (bad answer index, <2 options) is dropped, not saved broken.
   const parsed = parseTestContent({ attempts: [], questions: rawQuestions });
@@ -891,16 +1250,57 @@ async function addMindmap(args: Record<string, unknown>) {
   };
 }
 
+/** Every deck and every card, paged — the shared read behind list_study_decks
+ *  and get_study_overview. The old version counted cards through a .limit(2000)
+ *  query, which silently under-reported every account past 2,000 cards. */
+async function loadStudyRows() {
+  const [deckRows, cardRows] = await Promise.all([
+    fetchAllRows((a, b) => supabase.from("study_decks").select("id,name").order("name").order("id").range(a, b)),
+    fetchAllRows((a, b) => supabase.from("study_cards").select("id,deck_id,due_at,suspended,lapses").order("id").range(a, b)),
+  ]);
+  return {
+    cards: cardRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        deck_id: str(row.deck_id),
+        due_at: typeof row.due_at === "string" ? row.due_at : null,
+        lapses: Number(row.lapses) || 0,
+        suspended: row.suspended === true,
+      } satisfies OverviewCardRow;
+    }),
+    decks: deckRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return { id: str(row.id), name: str(row.name) } satisfies OverviewDeckRow;
+    }),
+  };
+}
+
 async function listStudyDecks() {
-  const { data, error } = await supabase.from("study_decks").select("id,name").order("name").limit(MAX_LIST);
-  if (error) return { error: error.message };
-  const decks = data ?? [];
-  const counts = new Map<string, number>();
-  if (decks.length > 0) {
-    const { data: cards } = await supabase.from("study_cards").select("deck_id").in("deck_id", decks.map((deck) => deck.id)).limit(2000);
-    for (const card of cards ?? []) counts.set(str(card.deck_id), (counts.get(str(card.deck_id)) ?? 0) + 1);
+  try {
+    const { cards, decks } = await loadStudyRows();
+    const overview = studyOverview(decks, cards, new Date());
+    return { complete: true, decks: overview.decks.map(({ cards: count, due, name }) => ({ cards: count, due, name })) };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't list the decks." };
   }
-  return { decks: decks.map((deck) => ({ cards: counts.get(str(deck.id)) ?? 0, name: str(deck.name) })) };
+}
+
+async function getStudyOverviewTool() {
+  try {
+    const { cards, decks } = await loadStudyRows();
+    const overview = studyOverview(decks, cards, new Date());
+    const artifacts = await fetchAllRows((a, b) =>
+      supabase.from("study_artifacts").select("id,kind").order("id").range(a, b));
+    const counts = { mindmap: 0, test: 0 };
+    for (const raw of artifacts) {
+      const kind = str((raw as Record<string, unknown>).kind);
+      if (kind === "test") counts.test += 1;
+      if (kind === "mindmap") counts.mindmap += 1;
+    }
+    return { ...overview, mindmaps: counts.mindmap, tests: counts.test };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't read the Study state." };
+  }
 }
 
 function matchDeckName(wanted: string, names: string[]): string | null {
@@ -926,19 +1326,28 @@ async function readStudyDeck(deckName: string, rawOffset: number, rawLimit: numb
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 20) : 12;
   const { data: cards, error } = await supabase
     .from("study_cards")
-    .select("id,front,back,card_type,tags,suspended")
+    .select("id,front,back,card_type,tags,suspended,due_at,lapses,interval_days,repetitions")
     .eq("deck_id", deck.id)
     .order("created_at")
     .range(offset, offset + limit - 1);
   if (error) return { error: error.message };
+  // The scheduling columns used to be missing from this SELECT, which is the
+  // mechanical reason the agent could never answer "what's due" or "what am I
+  // struggling with" — the data existed and simply never reached it.
+  const nowIso = new Date().toISOString();
   return {
     cards: (cards ?? []).map((card) => ({
       back: clip(str(card.back), 600),
       card_type: str(card.card_type),
+      due: card.suspended !== true && typeof card.due_at === "string" && card.due_at <= nowIso,
+      due_at: typeof card.due_at === "string" ? card.due_at : null,
       front: clip(str(card.front), 300),
       // The handle for edit_flashcard and delete_flashcard. Without it those
       // tools have nothing to point at and the model guesses.
       id: str(card.id),
+      interval_days: Number(card.interval_days) || 0,
+      lapses: Number(card.lapses) || 0,
+      repetitions: Number(card.repetitions) || 0,
       suspended: card.suspended === true,
       tags: Array.isArray(card.tags) ? card.tags.map(str).filter(Boolean).slice(0, 20) : [],
     })),
@@ -1049,11 +1458,19 @@ async function addFlashcards(deckName: string, cards: AgentFlashcard[]) {
   const matchedName = matchDeckName(name, (existingDecks ?? []).map((deck) => str(deck.name)));
   const existing = matchedName ? (existingDecks ?? []).find((deck) => str(deck.name) === matchedName) : null;
   let deckId = existing?.id as string | undefined;
+  let deckLabel = matchedName ?? name;
   let createdDeck = false;
   if (!deckId) {
-    const { data: created, error: createError } = await supabase.from("study_decks").insert({ name }).select("id").single();
+    // A NEW deck inherits the student's own course as its folder when the
+    // material clearly matches one — same matcher, same rules as Library
+    // filing. Cards about nothing recognizable stay a top-level deck rather
+    // than being confidently misfiled (a wrong course is worse than no folder).
+    const cardText = cleanCards.map((card) => `${card.front}\n${card.back}`).join("\n").slice(0, 4_000);
+    const filedName = deckNameForNewDeck(name, `${name}\n${cardText}`, await loadKnownCourses());
+    const { data: created, error: createError } = await supabase.from("study_decks").insert({ name: filedName }).select("id").single();
     if (createError || !created) return { error: createError?.message ?? "Couldn't create the deck." };
     deckId = created.id as string;
+    deckLabel = filedName;
     createdDeck = true;
   }
   // .select() so `added` is what LANDED, not what we tried to send. Without it
@@ -1072,25 +1489,180 @@ async function addFlashcards(deckName: string, cards: AgentFlashcard[]) {
   if (insertError) return { error: insertError.message };
   return {
     added: (inserted ?? []).length,
-    artifact: { id: deckId, kind: "flashcards", title: matchedName ?? name, url: "/study?section=cards" },
+    artifact: { id: deckId, kind: "flashcards", title: deckLabel, url: "/study?section=cards" },
     created_deck: createdDeck,
-    deck: matchedName ?? name,
+    deck: deckLabel,
   };
 }
 
-async function listCalendarEvents(daysAhead: number) {
-  const days = Number.isFinite(daysAhead) && daysAhead > 0 ? Math.min(daysAhead, 120) : 14;
-  const today = new Date().toISOString().slice(0, 10);
-  const end = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .select("id,title,date,time,kind,course,note")
-    .gte("date", today)
-    .lte("date", end)
-    .order("date")
-    .limit(MAX_LIST * 2);
-  if (error) return { error: error.message };
-  return { events: data ?? [], window: { from: today, to: end } };
+/** Every event relevant to [from, to]: rows dated inside the window, paged
+ *  past the 1000-row cap, PLUS every recurring rule anchored before it whose
+ *  weekly meetings may land inside (a rule's `until` lives in jsonb, so that
+ *  last filter happens in expandRecurringEvents, not SQL — recurring rows are
+ *  a handful per account). The model never sees pagination: this is the whole
+ *  answer or an {error}. */
+async function loadCalendarRangeEvents(from: string, to: string) {
+  const columns = "id,title,date,time,end_time,kind,course,note,source,recurrence";
+  const inWindow = await fetchAllRows((a, b) =>
+    supabase.from("calendar_events").select(columns)
+      .gte("date", from).lte("date", to)
+      .order("date").order("id").range(a, b));
+  const earlierRules = await fetchAllRows((a, b) =>
+    supabase.from("calendar_events").select(columns)
+      .not("recurrence", "is", null).lt("date", from)
+      .order("date").order("id").range(a, b));
+  const byId = new Map<string, CalendarEventRow>();
+  for (const raw of [...inWindow, ...earlierRules]) {
+    const row = raw as CalendarEventRow;
+    byId.set(str(row.id), row);
+  }
+  return [...byId.values()].flatMap((row) => {
+    const event = calendarEventFromRow(row);
+    return event ? [event] : [];
+  });
+}
+
+/** Above this many expanded rows the reply asks the model to narrow the
+ *  window instead of flooding the transcript — and says so out loud. */
+const AGENT_EVENT_ROWS_CAP = 500;
+
+async function listCalendarEvents(args: Record<string, unknown>) {
+  const today = localToday();
+  const window = resolveCalendarWindow(
+    { days_ahead: Number(args.days_ahead), end_date: str(args.end_date), start_date: str(args.start_date) },
+    today,
+  );
+  try {
+    const events = eventsInWindow(await loadCalendarRangeEvents(window.from, window.to), window.from, window.to);
+    const clipped = events.length > AGENT_EVENT_ROWS_CAP;
+    return {
+      complete: !clipped,
+      count: events.length,
+      events: clipped ? events.slice(0, AGENT_EVENT_ROWS_CAP) : events,
+      today,
+      window,
+      ...(clipped
+        ? { note: `Showing the first ${AGENT_EVENT_ROWS_CAP} of ${events.length} events — narrow the window to see the rest.` }
+        : {}),
+    };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't read the calendar." };
+  }
+}
+
+async function findCalendarIssuesTool(args: Record<string, unknown>) {
+  const start = str(args.start_date).trim();
+  const end = str(args.end_date).trim();
+  const from = isDateKey(start) ? start : "0001-01-01";
+  const to = isDateKey(end) ? end : "9999-12-31";
+  try {
+    const events = await loadCalendarRangeEvents(from, to);
+    return {
+      ...findCalendarIssues(events),
+      checked_events: events.length,
+      note:
+        "Recurring classes are checked as their single stored rule here, not per meeting. conflicting_versions means "
+        + "sources disagree about WHEN one exam or assignment is — ask the student which date wins before changing anything.",
+      window: { from, to },
+    };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't audit the calendar." };
+  }
+}
+
+/**
+ * The compact snapshot — exported because sendChatTurn also injects it on
+ * workspace turns, so the model starts oriented instead of blind.
+ *
+ * ORIENTATION ONLY, and the payload says so: counts are complete, the lists
+ * are samples, and anything that requires completeness must go back through
+ * get_library_tree / list_calendar_events / get_study_overview. This must
+ * never become another silently-capped packet the model mistakes for full
+ * state (owner 2026-08-05).
+ */
+export async function loadWorkspaceOverview() {
+  const today = localToday();
+  const quarter = resolveCalendarWindow({ days_ahead: 90 }, today);
+  const soonEnd = resolveCalendarWindow({ days_ahead: 21 }, today).to;
+  const [courses, libraryDocs, deckRows, cardRows, artifactRows, quarterEvents, pastCount, futureCount] =
+    await Promise.all([
+      loadKnownCourses(),
+      loadLibraryTreeDocs(),
+      fetchAllRows((a, b) => supabase.from("study_decks").select("id,name").order("name").order("id").range(a, b)),
+      fetchAllRows((a, b) => supabase.from("study_cards").select("id,deck_id,due_at,suspended,lapses").order("id").range(a, b)),
+      fetchAllRows((a, b) => supabase.from("study_artifacts").select("id,kind").order("id").range(a, b)),
+      loadCalendarRangeEvents(quarter.from, quarter.to),
+      supabase.from("calendar_events").select("id", { count: "exact", head: true }).lt("date", today),
+      supabase.from("calendar_events").select("id", { count: "exact", head: true }).gte("date", today),
+    ]);
+
+  const expanded = eventsInWindow(quarterEvents, quarter.from, quarter.to);
+  const soon = expanded.filter((event) => event.date <= soonEnd);
+  const exams = expanded.filter((event) => event.kind === "exam");
+  const library = summarizeLibraryTree(libraryDocs);
+  const topFolders = library.folders.filter((folder) => !folder.path.includes("/"));
+  const inboxNotes = library.folders.find((folder) => folder.path === "Inbox")?.total_notes ?? 0;
+
+  const study = studyOverview(
+    deckRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return { id: str(row.id), name: str(row.name) } satisfies OverviewDeckRow;
+    }),
+    cardRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        deck_id: str(row.deck_id),
+        due_at: typeof row.due_at === "string" ? row.due_at : null,
+        lapses: Number(row.lapses) || 0,
+        suspended: row.suspended === true,
+      } satisfies OverviewCardRow;
+    }),
+    new Date(),
+  );
+  const testCount = artifactRows.filter((raw) => str((raw as Record<string, unknown>).kind) === "test").length;
+
+  const needsAttention: string[] = [];
+  if (inboxNotes > 0) needsAttention.push(`${inboxNotes} item${inboxNotes === 1 ? "" : "s"} waiting in Inbox`);
+  if (study.totals.due > 0) needsAttention.push(`${study.totals.due} card${study.totals.due === 1 ? "" : "s"} due for review`);
+
+  return {
+    calendar: {
+      next_3_weeks: soon.slice(0, 25).map(({ course, date, kind, time, title }) => ({
+        date, kind, title, ...(course ? { course } : {}), ...(time ? { time } : {}),
+      })),
+      next_3_weeks_count: soon.length,
+      past_events: pastCount.count ?? 0,
+      today_and_future_events: futureCount.count ?? 0,
+      upcoming_exams: exams.slice(0, 15).map(({ course, date, title }) => ({ date, title, ...(course ? { course } : {}) })),
+    },
+    courses,
+    library: {
+      inbox_notes: inboxNotes,
+      root_notes: library.root_notes,
+      top_folders: topFolders.map(({ path, total_notes }) => ({ notes: total_notes, path })),
+      total_notes: library.total_notes,
+    },
+    needs_attention: needsAttention,
+    note:
+      "Snapshot for ORIENTATION only. The counts are complete; the lists are samples. Before reorganizing, reconciling, "
+      + "or answering about 'everything', read the full state with get_library_tree, list_calendar_events, or get_study_overview.",
+    study: {
+      decks: study.decks.slice(0, 40),
+      folders: study.folders,
+      tests: testCount,
+      totals: study.totals,
+      ...(study.decks.length > 40 ? { decks_note: `Showing 40 of ${study.decks.length} decks — get_study_overview lists all.` } : {}),
+    },
+    today,
+  };
+}
+
+async function getWorkspaceOverviewTool() {
+  try {
+    return await loadWorkspaceOverview();
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't read the workspace." };
+  }
 }
 
 const EVENT_KINDS = new Set(["assignment", "exam", "rotation", "class", "other"]);
@@ -1326,11 +1898,55 @@ async function findDeck(deckName: string) {
 async function renameStudyDeckTool(args: Record<string, unknown>) {
   const deck = await findDeck(str(args.deck_name));
   if ("error" in deck) return deck;
-  const newName = str(args.new_name).trim().slice(0, 120);
-  if (!newName) return { error: "A deck needs a name." };
-  const { error } = await supabase.from("study_decks").update({ name: newName }).eq("id", deck.id);
+  const leaf = normalizeGroupPath(str(args.new_name)).slice(0, 120);
+  if (!leaf) return { error: "A deck needs a name." };
+  if (leaf.includes("::")) {
+    return { error: "That looks like a folder path. rename_study_deck takes just the new name — use move_study_deck to change which folder it lives in." };
+  }
+  // 🔴 A deck's folder is a "::" prefix INSIDE its name. Writing the bare new
+  // name (which this tool used to do) silently dropped the deck out of its
+  // folder — the tool's own description promised the opposite. The rename
+  // swaps only the last segment.
+  const next = renamedGroupPath(deck.name, leaf);
+  if (next === deck.name) return { note: "It already has that name.", renamed: false };
+  const { data: allDecks, error: listError } = await supabase.from("study_decks").select("name").limit(1000);
+  if (listError) return { error: listError.message };
+  const collision = (allDecks ?? []).some((row) => str(row.name).toLowerCase() === next.toLowerCase());
+  if (collision) return { error: `A deck named '${next}' already exists.` };
+  const { error } = await supabase.from("study_decks").update({ name: next }).eq("id", deck.id);
   if (error) return { error: error.message };
-  return { from: deck.name, renamed: true, to: newName };
+  return { from: deck.name, renamed: true, to: next };
+}
+
+async function moveStudyDeckTool(args: Record<string, unknown>) {
+  const deck = await findDeck(str(args.deck_name));
+  if ("error" in deck) return deck;
+  const folder = normalizeGroupPath(str(args.folder)).slice(0, 200);
+  const desired = joinGroupPath(folder, pathLeaf(deck.name));
+  if (!desired) return { error: "A deck needs a name." };
+  if (desired === deck.name) return { moved: false, note: "It is already there." };
+  const { data: allDecks, error: listError } = await supabase.from("study_decks").select("name").limit(1000);
+  if (listError) return { error: listError.message };
+  const taken = new Set((allDecks ?? []).map((row) => str(row.name).toLowerCase()));
+  taken.delete(deck.name.toLowerCase());
+  const next = uniqueDeckName(desired, taken);
+  const { error } = await supabase.from("study_decks").update({ name: next }).eq("id", deck.id);
+  if (error) return { error: error.message };
+  return {
+    from: deck.name,
+    moved: true,
+    to: next,
+    ...(next !== desired ? { note: `A deck already used that name there, so it became '${next}'.` } : {}),
+  };
+}
+
+async function moveStudyArtifactTool(args: Record<string, unknown>) {
+  const found = await resolveRow("study_artifacts", args.artifact_id, "Use list_study_artifacts to get ids.");
+  if ("error" in found) return found;
+  const groupName = normalizeGroupPath(str(args.group_name)).slice(0, 120);
+  const { error } = await supabase.from("study_artifacts").update({ group_name: groupName }).eq("id", found.id);
+  if (error) return { error: error.message };
+  return { group: groupName || "(top level)", moved: true, title: str(found.row.title) };
 }
 
 async function deleteStudyDeckTool(args: Record<string, unknown>) {
@@ -1412,6 +2028,8 @@ const STUDY_WRITING_TOOLS = new Set([
   "delete_study_artifact",
   "delete_study_deck",
   "edit_flashcard",
+  "move_study_artifact",
+  "move_study_deck",
   "rename_study_deck",
 ]);
 
@@ -1483,7 +2101,16 @@ async function dispatchTool(
     case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : []);
     case "add_practice_test": return await addPracticeTest(args);
     case "add_mindmap": return await addMindmap(args);
-    case "list_calendar_events": return await listCalendarEvents(Number(args.days_ahead));
+    case "list_calendar_events": return await listCalendarEvents(args);
+    case "find_calendar_issues": return await findCalendarIssuesTool(args);
+    case "get_workspace_overview": return await getWorkspaceOverviewTool();
+    case "get_library_tree": return await getLibraryTree(str(args.folder));
+    case "rename_library_folder": return await renameLibraryFolderTool(args);
+    case "move_library_folder": return await moveLibraryFolderTool(args);
+    case "delete_library_folder": return await deleteLibraryFolderTool(args);
+    case "get_study_overview": return await getStudyOverviewTool();
+    case "move_study_deck": return await moveStudyDeckTool(args);
+    case "move_study_artifact": return await moveStudyArtifactTool(args);
     case "add_calendar_event": return await addCalendarEvent(args);
     case "update_calendar_event": return await updateCalendarEventTool(args);
     case "delete_calendar_event": return await deleteCalendarEventTool(args);

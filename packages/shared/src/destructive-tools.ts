@@ -71,12 +71,23 @@ export const DESTRUCTIVE_TOOLS: Readonly<Record<string, DestructiveSpec>> = {
     noun: "the flashcard",
     recoverable: false,
   },
+  delete_library_folder: {
+    // A folder is addressed by PATH; the argument is already the label. The
+    // executor soft-deletes the folder row and everything beneath it, so the
+    // whole subtree is recoverable — but the blast radius is the largest of
+    // any tool here, which is exactly why it sits behind the gate.
+    handle: "path",
+    table: null,
+    labelColumn: "",
+    noun: "the folder (and everything inside it)",
+    recoverable: true,
+  },
   delete_library_note: {
     handle: "note_id",
     table: "readable_library_documents",
     labelColumn: "title",
     noun: "the note",
-    // The only one: `deleted` is a flag, so it goes to trash rather than away.
+    // `deleted` is a flag, so it goes to trash rather than away.
     recoverable: true,
   },
   delete_study_artifact: {

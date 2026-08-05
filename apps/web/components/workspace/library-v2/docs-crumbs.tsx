@@ -17,8 +17,16 @@ interface DocsCrumbsProps {
   className?: string;
 }
 
+/** Crumbs communicate LOCATION, not storage depth (owner 2026-08-05: "aim for
+ *  roughly 2–3 meaningful levels; hide the complexity"). Deeper chains keep
+ *  their last two levels and fold the rest into a quiet "…" — the full chain
+ *  stays reachable through the folder pages themselves. */
+const MAX_VISIBLE_SEGMENTS = 2;
+
 export function DocsCrumbs({ path, onOpenFolder, className }: DocsCrumbsProps) {
   const segments = path.split("/").map((segment) => segment.trim()).filter(Boolean);
+  const hiddenCount = Math.max(0, segments.length - MAX_VISIBLE_SEGMENTS);
+  const visible = segments.slice(hiddenCount);
 
   return (
     <nav
@@ -29,8 +37,14 @@ export function DocsCrumbs({ path, onOpenFolder, className }: DocsCrumbsProps) {
       )}
     >
       <span className="shrink-0">Library</span>
-      {segments.map((segment, index) => {
-        const target = segments.slice(0, index + 1).join("/");
+      {hiddenCount > 0 ? (
+        <span className="flex shrink-0 items-center gap-1" title={segments.slice(0, hiddenCount).join(" / ")}>
+          <span className="text-(--ui-text-quaternary)">/</span>
+          <span>…</span>
+        </span>
+      ) : null}
+      {visible.map((segment, index) => {
+        const target = segments.slice(0, hiddenCount + index + 1).join("/");
         return (
           <span className="flex min-w-0 items-center gap-1" key={target}>
             <span className="text-(--ui-text-quaternary)">/</span>
