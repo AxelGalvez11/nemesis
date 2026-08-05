@@ -7,7 +7,12 @@
 // THE URL IS THE TRUTH about what is open:
 //   /library                 → the landing NOTE (see lib/workspace/library-home)
 //   /library?note=<path>     → that note, as a docs article
-//   /library?source=<id>     → one source FILE (the original upload)
+//   /library?source=<id>     → REDIRECTS to /library/source/<id>. A source FILE
+//                              used to open as a pane of this page; it now has
+//                              its own route, because the reader owns a whole
+//                              surface (its own contents rail and side panel).
+//                              The old shape stays alive because every citation
+//                              already written points at it.
 // THERE IS NO HOME DASHBOARD (owner 2026-08-04: "this isnt a NOTE, the 'home'
 // is supposed to be a NOTE" — obsidian.md/help lands on a note titled Home).
 // Bare /library shows a note named Home if the student has one, else their
@@ -35,7 +40,7 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { findFolderNote, folderNoteTitle, isFolderNote, parentFolderOf } from "@/lib/workspace/library-folder-note";
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
-import { readerHref } from "@/lib/reader/reader-anchor";
+import { readerHrefFrom } from "@/lib/reader/reader-anchor";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
@@ -147,9 +152,9 @@ export function LibraryDocsPage() {
   // side panel), so it cannot be a pane of the notes layout.
   const openSource = useCallback(
     (id: string) => {
-      router.push(readerHref(id));
+      router.push(readerHrefFrom(pathname, id));
     },
-    [router],
+    [pathname, router],
   );
 
   // A folder IS a page (owner 2026-08-04: "like in notion how a folder is
@@ -244,8 +249,8 @@ export function LibraryDocsPage() {
   // the student actually came from, not to a URL that only redirects.
   useEffect(() => {
     if (requestedSource === null) return;
-    router.replace(readerHref(requestedSource));
-  }, [requestedSource, router]);
+    router.replace(readerHrefFrom(pathname, requestedSource));
+  }, [pathname, requestedSource, router]);
 
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
 
@@ -344,7 +349,6 @@ export function LibraryDocsPage() {
               onOpenSource={openSource}
               onSourcesChanged={bumpSources}
               openNotePath={note?.path ?? null}
-              openSourceId={null}
               revealFolder={reveal}
               selectedFolderPath={selectedFolderPath}
               showBack={libraryFullScreen && !narrowViewport}

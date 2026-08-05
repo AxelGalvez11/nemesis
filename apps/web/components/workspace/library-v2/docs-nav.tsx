@@ -57,7 +57,6 @@ interface DocsNavProps {
   /** Source files, grouped per folder inside the tree. */
   sources: readonly LibrarySource[];
   /** Id of the source file open in the center, for its row highlight. */
-  openSourceId: string | null;
   onOpenSource: (id: string) => void;
   /** Fired when imports/folder ops changed stored files — parent re-loads. */
   onSourcesChanged?: () => void;
@@ -84,7 +83,7 @@ interface DocsNavProps {
   onHoldOpenChange?: (held: boolean) => void;
 }
 
-export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, autoHide, onAutoHideChange, onHoldOpenChange }: DocsNavProps) {
+export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, autoHide, onAutoHideChange, onHoldOpenChange }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -291,7 +290,6 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
                     depth={depth}
                     onNavigate={onNavigate}
                     onOpenSource={onOpenSource}
-                    openSourceId={openSourceId}
                     sources={folderSources}
                   />
                 );
@@ -312,10 +310,12 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
  *  Renders like a folder row — chevron, name, count — starting closed so the
  *  tree stays notes-first; it opens itself when the file being viewed lives
  *  inside, so a deep link is never pointing at a hidden row. */
-function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }: {
+/** Source FILES under one folder. Clicking one LEAVES this page: a file opens
+ *  in the reader at /library/source/<id>, which owns a whole surface. So no row
+ *  here is ever the "open" one, and the group cannot auto-expand around it. */
+function SourcesGroup({ sources, depth, onOpenSource, onNavigate }: {
   sources: readonly LibrarySource[];
   depth: number;
-  openSourceId: string | null;
   onOpenSource: (id: string) => void;
   onNavigate?: () => void;
 }) {
@@ -324,7 +324,6 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
   // them did, so the gesture looked broken on exactly the rows a student is
   // most likely to want the original of (owner 2026-08-04).
   const [menu, setMenu] = useState<{ source: LibrarySource; x: number; y: number } | null>(null);
-  const holdsOpenSource = openSourceId !== null && sources.some((source) => source.id === openSourceId);
 
   async function downloadOriginal(source: LibrarySource) {
     setMenu(null);
@@ -333,10 +332,6 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
     // like a dead menu item, and there is nothing here to retry.
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
-
-  useEffect(() => {
-    if (holdsOpenSource) setOpen(true);
-  }, [holdsOpenSource]);
 
   return (
     <div data-testid="tree-sources">
@@ -360,10 +355,7 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
               event.stopPropagation();
               setMenu({ source, x: event.clientX, y: event.clientY });
             }}
-            className={cn(
-              "row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs",
-              source.id === openSourceId ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
-            )}
+            className="row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-(--ui-text-secondary) hover:text-foreground"
             onClick={() => { onOpenSource(source.id); onNavigate?.(); }}
             title={`${source.fileName}${formatSourceSize(source.sizeBytes) ? ` · ${formatSourceSize(source.sizeBytes)}` : ""}`}
             type="button"

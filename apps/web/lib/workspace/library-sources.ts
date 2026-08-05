@@ -116,11 +116,15 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
   },
   {
     id: "preview-src-brief",
-    // In a SUBFOLDER on purpose: library-sources.test.ts proves a parent folder
-    // does not inherit its children's files, and it uses these fixtures as its
-    // data — a file filed directly at "Constitutional law" would make that
-    // assertion pass for the wrong reason, or fail.
-    folderPath: "Constitutional law/Statutory interpretation",
+    // Filed under a folder the PREVIEW NOTES also live in, and not directly
+    // under "Constitutional law". Both halves matter:
+    //   - the tree's folders come from NOTES (and folder rows), never from
+    //     source files, so a file in a folder with no notes has no row to sit
+    //     under and cannot be reached from the Library at all;
+    //   - library-sources.test.ts proves a parent folder does not inherit its
+    //     children's files, using these fixtures as its data, so a file sitting
+    //     directly at "Constitutional law" would break it.
+    folderPath: "Art history",
     fileName: "Reading a document as a document.docx",
     kind: "document",
     sizeBytes: 1_790,

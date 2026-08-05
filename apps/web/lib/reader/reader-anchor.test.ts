@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { NO_ANCHOR, parseReaderAnchor, readerHref, resolveAnchorUnit } from "./reader-anchor";
+import { NO_ANCHOR, parseReaderAnchor, readerHref, readerHrefFrom, resolveAnchorUnit } from "./reader-anchor";
 
 test("readerHref writes a bare source link when there is nothing to anchor", () => {
   assert.equal(readerHref("abc"), "/library/source/abc");
@@ -49,4 +49,19 @@ test("resolveAnchorUnit refuses to invent a page the document does not have", ()
   assert.equal(resolveAnchorUnit({ unit: 41, query: null }, 40), null);
   assert.equal(resolveAnchorUnit({ unit: null, query: null }, 40), null);
   assert.equal(resolveAnchorUnit({ unit: 1, query: null }, 0), null);
+});
+
+test("a link from a real workspace surface points at the gated reader route", () => {
+  assert.equal(readerHrefFrom("/library", "abc"), "/library/source/abc");
+  assert.equal(readerHrefFrom("/library/classic", "abc", { unit: 4, query: null }), "/library/source/abc?page=4");
+});
+
+test("a link from the signed-out harness stays inside the harness", () => {
+  // Otherwise the demo dead-ends at /sign-in on exactly the click this
+  // feature exists for.
+  assert.equal(readerHrefFrom("/dev-preview/workspace/library", "abc"), "/dev-preview/reader?source=abc");
+  assert.equal(
+    readerHrefFrom("/dev-preview/workspace/library", "abc", { unit: 3, query: "ohm" }),
+    "/dev-preview/reader?page=3&q=ohm&source=abc",
+  );
 });

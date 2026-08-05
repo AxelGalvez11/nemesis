@@ -19,13 +19,32 @@ export interface ReaderAnchor {
 
 export const NO_ANCHOR: ReaderAnchor = { unit: null, query: null };
 
-/** A source's own page. Anchors are appended only when they were measured. */
-export function readerHref(sourceId: string, anchor: ReaderAnchor = NO_ANCHOR): string {
+function anchorQuery(anchor: ReaderAnchor): URLSearchParams {
   const params = new URLSearchParams();
   if (anchor.unit !== null && Number.isInteger(anchor.unit) && anchor.unit > 0) params.set("page", String(anchor.unit));
   if (anchor.query) params.set("q", anchor.query);
-  const query = params.toString();
+  return params;
+}
+
+/** A source's own page. Anchors are appended only when they were measured. */
+export function readerHref(sourceId: string, anchor: ReaderAnchor = NO_ANCHOR): string {
+  const query = anchorQuery(anchor).toString();
   return `/library/source/${encodeURIComponent(sourceId)}${query ? `?${query}` : ""}`;
+}
+
+/** The same link, from whichever surface is asking.
+ *
+ *  The real reader lives behind the auth gate, so a link to it from the
+ *  signed-out dev-preview harness bounces to /sign-in and the demo dead-ends on
+ *  exactly the click this feature is about. The harness has its own ungated
+ *  mount at /dev-preview/reader, which takes the source as a QUERY parameter
+ *  because it is one page rather than a dynamic route. Same convention as
+ *  `libraryRouteBase`: the surface decides, the caller just passes its path. */
+export function readerHrefFrom(pathname: string, sourceId: string, anchor: ReaderAnchor = NO_ANCHOR): string {
+  if (!pathname.startsWith("/dev-preview/")) return readerHref(sourceId, anchor);
+  const params = anchorQuery(anchor);
+  params.set("source", sourceId);
+  return `/dev-preview/reader?${params.toString()}`;
 }
 
 function readParam(params: URLSearchParams | Record<string, string | undefined>, key: string): string | null {
