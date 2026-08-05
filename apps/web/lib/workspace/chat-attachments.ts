@@ -2,6 +2,7 @@
 
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
+import { ingestScratchKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
@@ -210,18 +211,88 @@ export interface ExtractedFile {
   title: string | null;
   /** The vision model, present only when the file had to be READ as pixels. */
   readBy?: string;
+  /** What the server decided the file IS, after sniffing its magic bytes — which
+   *  is more reliable than the extension, and is why a lecture PDF whose name had
+   *  lost its ".pdf" is now readable. */
+  kind?: "pdf" | "docx" | "pptx" | "image";
+  /** Bytes actually read. */
+  bytes?: number;
 }
 
-/** Send one file to the extract chokepoint and get its text back. Throws with a
- *  student-readable message — the route writes those, so they surface as-is. */
-export async function extractFile(file: File, uid: string | null): Promise<ExtractedFile> {
+/**
+ * Most a file may weigh and still be POSTed as a form.
+ *
+ * 🔴 THIS IS A PLATFORM LIMIT, NOT A PRODUCT ONE. Vercel refuses a request body
+ * over ~4.5 MB at the edge, before any of our code runs — measured against
+ * production 2026-08-05: 4.4 MB reached the handler, 4.6 MB got a plain-text
+ * FUNCTION_PAYLOAD_TOO_LARGE. Anything above this goes to storage first and is
+ * read by reference, which has no such ceiling. Set below the real edge so our
+ * own JSON error wins the race and the student is told something true.
+ */
+const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+/** Put the bytes where the route can fetch them, under this user's own folder
+ *  and their own RLS session. Returns the key, or null when the upload failed —
+ *  the caller turns that into an honest message rather than a silent retry. */
+async function uploadForIngest(file: File, uid: string): Promise<string | null> {
+  try {
+    const key = ingestScratchKey(uid, file.name);
+    const { error } = await supabase.storage.from("library-sources").upload(key, file, {
+      contentType: file.type || undefined,
+      upsert: false,
+    });
+    return error ? null : key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What went wrong, in words a student can act on.
+ *
+ * The old code did `response.json().catch(() => null)` and fell back to
+ * "Couldn't read X." — which meant the ONE failure that actually happened in
+ * production, the platform's plain-text 413, arrived as a shrug. A non-JSON
+ * body is not "no information": the status code says plenty.
+ */
+function extractErrorFor(status: number, fileName: string): string {
+  if (status === 413) return `${fileName} is too large to upload (${Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB max).`;
+  if (status === 403) return `${fileName} couldn't be read — it isn't filed under this account.`;
+  if (status === 404) return `${fileName} finished uploading but couldn't be found. Try adding it again.`;
+  if (status === 415) return `${fileName} isn't a file we can read. Add a photo, a PDF, Word, or PowerPoint.`;
+  if (status === 401) return "This device needs to re-connect to your account. Try again.";
+  if (status === 503) return "That service is busy right now. Try again in a moment.";
+  if (status >= 500) return `Something broke while reading ${fileName}. Try again.`;
+  return `Couldn't read ${fileName}.`;
+}
+
+/**
+ * Send one file to the extract chokepoint and get its text back.
+ *
+ * Small files still go as a form — one round trip, unchanged behaviour. Large
+ * ones are uploaded to private storage first and named by reference, because
+ * they physically cannot reach the function any other way.
+ *
+ * `storedAt` lets a lane that has ALREADY uploaded the original (chat, Library
+ * import) say so, instead of paying to send the same thirty megabytes twice.
+ * Such a key is a real Library object and is deliberately NOT a scratch key, so
+ * the route reads it and leaves it alone.
+ *
+ * Throws with a student-readable message.
+ */
+export async function extractFile(file: File, uid: string | null, storedAt?: string): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
-  if (!key) throw new Error("Sign in to read this attachment.");
-  // A deck bigger than the route's 25 MB ceiling is almost entirely pictures;
-  // its words fit in under 1 MB. Strip the media in the browser and send THAT,
-  // so the file is read instead of refused (owner's 123.8 MB immunology deck:
-  // slimmed to 0.11 MB, all 37 slides extracted). Slimming failure falls back
-  // to the original — the route then answers with its own honest error.
+  if (!key || !uid) throw new Error("Sign in to read this attachment.");
+
+  // A deck over the STORAGE ceiling is almost entirely pictures; its words fit
+  // in under 1 MB. Strip the media in the browser and send THAT, so the file is
+  // read instead of refused (owner's 123.8 MB immunology deck: slimmed to
+  // 0.11 MB, all 37 slides extracted).
+  //
+  // 🔴 The threshold used to be 24 MB, chosen against a 25 MB route limit that
+  // was never real. That stripped the pictures out of every deck over 24 MB —
+  // and did nothing for the 5-to-24 MB decks that were failing. It is now the
+  // bucket's own ceiling, so a 30 MB lecture keeps its figures.
   let payload = file;
   if (isSlimmableOfficeName(file.name) && file.size > OFFICE_SLIM_THRESHOLD_BYTES) {
     try {
@@ -231,21 +302,38 @@ export async function extractFile(file: File, uid: string | null): Promise<Extra
       // Not a real zip, or hostile contents — the route's own guards decide.
     }
   }
-  const form = new FormData();
-  form.append("file", payload);
-  const response = await fetch("/api/notebooks/extract/file", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: form,
-  });
+
+  if (payload.size > MAX_SOURCE_BYTES) {
+    throw new Error(extractErrorFor(413, file.name));
+  }
+
+  const headers: Record<string, string> = { Authorization: `Bearer ${key}` };
+  let response: Response;
+
+  if (!storedAt && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+    const form = new FormData();
+    form.append("file", payload);
+    response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
+  } else {
+    const path = storedAt ?? (await uploadForIngest(payload, uid));
+    if (!path) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
+    response = await fetch("/api/notebooks/extract/file", {
+      body: JSON.stringify({ bucket: "library-sources", fileName: file.name, mimeType: file.type || null, path }),
+      headers: { ...headers, "Content-Type": "application/json" },
+      method: "POST",
+    });
+  }
+
   const body = (await response.json().catch(() => null)) as {
     text?: string;
     title?: string;
     readBy?: string;
+    kind?: ExtractedFile["kind"];
+    bytes?: number;
     error?: string;
   } | null;
-  if (!response.ok || !body?.text) throw new Error(body?.error ?? `Couldn't read ${file.name}.`);
-  return { readBy: body.readBy, text: body.text, title: body.title ?? null };
+  if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
+  return { bytes: body.bytes, kind: body.kind, readBy: body.readBy, text: body.text, title: body.title ?? null };
 }
 
 /** Marks the trailing line of a sent message that lists what was attached. */

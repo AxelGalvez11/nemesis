@@ -3,8 +3,8 @@
 // Node extract route, then write the resulting text row through the store (RLS-scoped). Each throws a
 // student-readable Error on failure; callers own their own busy/error UI.
 
-import type { NotebookSourceKind } from "@/lib/notebooks/api";
 import { deviceKey } from "@/lib/workspace/chat-api";
+import { extractFile } from "@/lib/workspace/chat-attachments";
 
 type AddExtracted = (
   notebookId: string,
@@ -25,24 +25,20 @@ export async function extractAndAddFile(opts: {
   file: File;
   addExtracted: AddExtracted;
 }): Promise<void> {
-  const key = opts.uid ? await deviceKey(opts.uid) : null;
-  if (!key) throw new Error("Sign in to add a file.");
-  const fd = new FormData();
-  fd.append("file", opts.file);
-  const res = await fetch("/api/notebooks/extract/file", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: fd,
-  });
-  const body = (await res.json().catch(() => null)) as
-    | { kind?: NotebookSourceKind; title?: string; text?: string; bytes?: number; error?: string }
-    | null;
-  if (!res.ok || !body?.text || !body.kind) throw new Error(body?.error ?? "Couldn't read that file.");
+  // 🔴 This lane used to POST the file as a form itself, which meant it hit the
+  // platform's ~4.5 MB body limit and reported the plain-text 413 as "Couldn't
+  // read that file." It now shares extractFile with every other lane, so the
+  // upload path, the size ceiling and the error wording are decided in exactly
+  // one place and cannot drift apart again.
+  const extracted = await extractFile(opts.file, opts.uid);
+  if (!extracted.kind || extracted.kind === "image") {
+    throw new Error("Add a PDF, Word (.docx), or PowerPoint (.pptx).");
+  }
   await opts.addExtracted(opts.notebookId, {
-    kind: body.kind as "pdf" | "docx" | "pptx",
-    name: body.title ?? opts.file.name,
-    content: body.text,
-    bytes: body.bytes ?? opts.file.size,
+    kind: extracted.kind,
+    name: extracted.title ?? opts.file.name,
+    content: extracted.text,
+    bytes: extracted.bytes ?? opts.file.size,
   });
 }
 

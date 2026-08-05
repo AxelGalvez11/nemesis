@@ -18,9 +18,27 @@
 
 import { unzipSync, zipSync } from "fflate";
 
-/** Above this, an office file is slimmed before upload. Matches the extract
- *  route's 25 MB refusal with a little headroom for the multipart envelope. */
-export const OFFICE_SLIM_THRESHOLD_BYTES = 24 * 1024 * 1024;
+import { MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
+
+/**
+ * Above this, an office file is slimmed before upload.
+ *
+ * 🔴 THIS NUMBER WAS WRONG FOR MONTHS AND THE MISTAKE WAS EXPENSIVE. It was
+ * 24 MB, "matching the extract route's 25 MB refusal" — but that 25 MB refusal
+ * never fired, because Vercel rejects a request body over ~4.5 MB at the edge
+ * first (measured 2026-08-05). So the rule ran backwards on both sides: a 10 MB
+ * deck was NOT slimmed (10 < 24) and then died at the platform limit with an
+ * unreadable error, while a 30 MB deck WAS slimmed and lost every picture in it
+ * for no reason at all.
+ *
+ * Uploads no longer travel through the function, so the only ceiling left is the
+ * `library-sources` bucket's own — and this now equals it exactly. Slimming is
+ * once again what it was meant to be: the last resort for a file that genuinely
+ * cannot be stored, not a routine tax on any deck with figures in it. Decks
+ * under 50 MB now keep their pictures, which is the point of everything
+ * downstream.
+ */
+export const OFFICE_SLIM_THRESHOLD_BYTES = MAX_SOURCE_BYTES;
 
 /** Zip entries the text extractor never reads. Media (pictures, video, audio),
  *  embedded fonts, and OLE embeddings (the binary spreadsheet behind a chart —

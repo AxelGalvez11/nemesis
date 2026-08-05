@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { strFromU8, unzipSync, zipSync } from "fflate";
 
+import { MAX_SOURCE_BYTES } from "../notebooks/ingest-ref";
 import { isSlimmableOfficeName, OFFICE_SLIM_THRESHOLD_BYTES, slimOfficeArchive } from "./office-slim";
 
 const SLIDE_XML = `<p:sld><p:txBody><a:p><a:r><a:t>Immunology basics</a:t></a:r></a:p></p:txBody></p:sld>`;
@@ -45,12 +46,27 @@ test("slimming shrinks a media-heavy archive dramatically", () => {
   assert.ok(slimmed.byteLength < original.byteLength / 10);
 });
 
-test("only office archives qualify, and the threshold sits under the route's ceiling", () => {
+test("only office archives qualify, and the threshold is the storage ceiling itself", () => {
   assert.equal(isSlimmableOfficeName("Lecture 7.pptx"), true);
   assert.equal(isSlimmableOfficeName("notes.DOCX"), true);
   assert.equal(isSlimmableOfficeName("syllabus.pdf"), false);
   assert.equal(isSlimmableOfficeName("archive.zip"), false);
-  assert.ok(OFFICE_SLIM_THRESHOLD_BYTES < 25 * 1024 * 1024);
+  // 🔴 This assertion used to read `< 25 MB`, guarding a route ceiling that was
+  // never reachable — Vercel refused the body at ~4.5 MB long before it. The
+  // consequence ran both ways: a 10 MB deck was not slimmed and died anyway,
+  // and a 30 MB deck was slimmed and lost every figure for nothing. Slimming is
+  // now the last resort before a file cannot be STORED, so the threshold must
+  // equal the bucket limit exactly — one byte lower and we discard pictures we
+  // could have kept, one byte higher and the upload fails.
+  assert.equal(OFFICE_SLIM_THRESHOLD_BYTES, MAX_SOURCE_BYTES);
+});
+
+test("a real lecture deck now keeps its pictures instead of being stripped", () => {
+  // 5-to-50 MB is where real decks live. This is the band the old threshold got
+  // wrong in both directions, and the whole visual pipeline depends on it.
+  for (const mb of [6, 10, 24, 30, 49]) {
+    assert.ok(mb * 1024 * 1024 < OFFICE_SLIM_THRESHOLD_BYTES, `${mb} MB must not be slimmed`);
+  }
 });
 
 test("a non-zip file throws instead of returning garbage", () => {

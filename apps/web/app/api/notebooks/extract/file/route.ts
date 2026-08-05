@@ -1,18 +1,35 @@
-// Notebook file source extraction — turns an uploaded PDF / Word / PowerPoint into plain text server
-// side (Node runtime: unpdf + fflate need it), then hands the text back to the client, which writes
-// the notebook_sources row under its own RLS session. The file bytes are never stored — text in,
-// text out (the "extract to text" pipeline). This route does no DB writes.
+// File source extraction — turns an uploaded PDF / Word / PowerPoint / photo into text server side
+// (Node runtime: unpdf + fflate need it) and hands that text back to the client, which writes its own
+// rows under its own RLS session. This route does no DB writes.
 //
-// It is the single chokepoint for THREE lanes — Library import (library-sidebar.tsx), notebook
-// sources (notebook-source-actions.ts), and chat attachments (chat-attachments.ts) — so the
-// scanned-PDF vision fallback below reaches all of them from one place.
+// It is the single chokepoint for every upload lane — Library import, coursework import, notebook
+// sources, chat attachments and the syllabus reader — so the scanned-PDF vision fallback below
+// reaches all of them from one place.
 //
-// Secrets: none required to PARSE. GEMINI_API_KEY is read only if present, to enable that fallback
-// (lib/pdf/vision.ts) — and because it IS present in production, this route can turn an upload into
-// a billed API call on our account. That is why the gate below is a real lookup: see verifyDeviceKey.
+// 🔴 TWO WAYS IN, AND THE SECOND ONE IS THE REAL ONE.
+//
+//   1. `multipart/form-data` with a `file` part — the original shape. Still supported, still used
+//      for small files, and CAPPED BY THE PLATFORM, NOT BY US: Vercel refuses a request body over
+//      ~4.5 MB at the edge with a plain-text FUNCTION_PAYLOAD_TOO_LARGE, before any line of this
+//      file runs. Measured against production on 2026-08-05: 4.4 MB reaches the handler, 4.6 MB
+//      does not. For two years the code, the comments and the UI all said 25 MB.
+//
+//   2. `application/json` naming an object ALREADY in private storage. The browser uploads under
+//      its own RLS session — which the chat and Library lanes were doing anyway — and posts a
+//      reference. Nothing large travels through the function, so the ceiling becomes ours to pick
+//      (MAX_SOURCE_BYTES) instead of the platform's.
+//
+// The reference is attacker-controlled and is read with the SERVICE ROLE, which bypasses RLS. Every
+// safeguard for that lives in lib/notebooks/ingest-ref.ts; do not inline a shortcut here.
+//
+// Secrets: none required to PARSE. GEMINI_API_KEY is read only if present, to enable the vision
+// fallback (lib/pdf/vision.ts) — and because it IS present in production, this route can turn an
+// upload into a billed API call on our account. That is why the gate below is a real lookup.
 import { NextResponse } from "next/server";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
+import { fetchIngestSource, removeIngestScratch } from "@/lib/notebooks/ingest-fetch";
+import { isScratchKey, MAX_SOURCE_BYTES, readIngestRef, type IngestRef } from "@/lib/notebooks/ingest-ref";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
@@ -26,12 +43,23 @@ export const runtime = "nodejs";
  *  enough to state by omission. */
 export const maxDuration = 300;
 
-const MAX_BYTES = 25 * 1024 * 1024; // 25 MB upload ceiling.
+/** What a multipart body may weigh. Deliberately BELOW the platform's own
+ *  ~4.5 MB edge limit, so a file that would have died as an unparseable
+ *  plain-text 413 instead gets our own JSON error naming the real problem and
+ *  the real fix. Anything larger must come in by reference. */
+const MAX_INLINE_BYTES = 4 * 1024 * 1024;
 
 type FileKind = "pdf" | "docx" | "pptx" | "image";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+/** The one place the ceiling is put into words, so the number a student reads
+ *  can never drift from the number the code enforces — which is exactly how
+ *  "25 MB max" survived for months against a real limit of 4.5. */
+function sizeMessage(): string {
+  return `That file is too large (${Math.round(MAX_SOURCE_BYTES / (1024 * 1024))} MB max).`;
+}
 
 function kindFor(name: string, type: string): FileKind | null {
   const lower = name.toLowerCase();
@@ -94,41 +122,95 @@ export async function POST(req: Request): Promise<Response> {
       : NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
   }
 
-  let form: FormData;
-  try {
-    form = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Expected a file upload." }, { status: 400 });
+  // ── Getting the bytes ───────────────────────────────────────────────────────
+  // JSON means "it is already in storage, go and read it". Anything else is the
+  // old multipart form. The content type decides, so a client that sends neither
+  // gets one clear answer rather than a parse error from whichever branch ran.
+  let sourceBytes: Uint8Array;
+  let sourceName: string;
+  let sourceType: string;
+  /** Set only for a throwaway upload, so it can be swept after it is read. */
+  let scratch: IngestRef | null = null;
+  const byRef = (req.headers.get("content-type") ?? "").includes("application/json");
+
+  if (byRef) {
+    const body = (await req.json().catch(() => null)) as unknown;
+    const ref = readIngestRef(body, check.userId);
+    if (!ref.ok) {
+      // "forbidden" covers both "someone else's object" and a path shaped to
+      // climb out of the caller's folder. One answer for both: a probe must not
+      // be able to tell a real object it may not read from a malformed path.
+      if (ref.reason === "forbidden") {
+        return NextResponse.json({ error: "That file doesn't belong to this account." }, { status: 403 });
+      }
+      return NextResponse.json({ error: "Expected an uploaded file to read." }, { status: 400 });
+    }
+    const fetched = await fetchIngestSource(ref.ref);
+    if (!fetched.ok) {
+      if (fetched.reason === "missing") {
+        return NextResponse.json(
+          { error: "That upload isn't there any more. Try adding the file again." },
+          { status: 404 },
+        );
+      }
+      if (fetched.reason === "too-large") {
+        return NextResponse.json({ error: sizeMessage() }, { status: 413 });
+      }
+      return NextResponse.json({ error: "Can't reach storage right now. Try again in a moment." }, { status: 503 });
+    }
+    sourceBytes = fetched.bytes;
+    sourceName = ref.ref.fileName;
+    sourceType = ref.ref.mimeType ?? "";
+    if (isScratchKey(ref.ref.path)) scratch = ref.ref;
+  } else {
+    let form: FormData;
+    try {
+      form = await req.formData();
+    } catch {
+      return NextResponse.json({ error: "Expected a file upload." }, { status: 400 });
+    }
+    const file = form.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "No file provided." }, { status: 400 });
+    }
+    // This branch can only ever see a small file — the platform rejects the rest
+    // before we run — so the message says what to do rather than restating a
+    // limit the caller already blew past.
+    if (file.size > MAX_INLINE_BYTES) {
+      return NextResponse.json(
+        { error: "That file is too large to send directly. Upload it to your Library first." },
+        { status: 413 },
+      );
+    }
+    sourceBytes = new Uint8Array(await file.arrayBuffer());
+    sourceName = file.name;
+    sourceType = file.type;
   }
 
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "No file provided." }, { status: 400 });
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "That file is too large (25 MB max)." }, { status: 413 });
-  }
-
+  const sourceSize = sourceBytes.byteLength;
   // ONE defensive copy, here, at the door. pdf.js detaches whatever ArrayBuffer it
   // is handed, so every later reader of these bytes — the page slicer, a second
   // sniff — would silently see zeros. Copying at each call site instead would work
   // right up until the next reader was added and forgot.
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = sourceBytes;
   const original = new Uint8Array(bytes);
   // Name first (cheap and right almost always), contents second (right when a name
   // has lost its extension). Refusing only after both have failed.
-  const kind = kindFor(file.name, file.type) ?? sniffKind(bytes);
+  const kind = kindFor(sourceName, sourceType) ?? sniffKind(bytes);
   if (!kind) {
+    if (scratch) void removeIngestScratch(scratch);
     return NextResponse.json(
       { error: "Unsupported file. Add a photo, a PDF, Word (.docx), or PowerPoint (.pptx)." },
       { status: 415 },
     );
   }
   if (kind === "image") {
-    if (file.size > VISION_MAX_BYTES) {
+    if (sourceSize > VISION_MAX_BYTES) {
+      if (scratch) void removeIngestScratch(scratch);
       return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
     }
     if (!visionConfigured()) {
+      if (scratch) void removeIngestScratch(scratch);
       return NextResponse.json({ error: "Reading photos isn't switched on for this app yet." }, { status: 503 });
     }
   }
@@ -136,8 +218,9 @@ export async function POST(req: Request): Promise<Response> {
     event: "file_extract_started",
     requestId,
     kind,
-    bytes: file.size,
-    mime: file.type || "unknown",
+    byRef,
+    bytes: sourceSize,
+    mime: sourceType || "unknown",
   }));
 
   try {
@@ -146,7 +229,7 @@ export async function POST(req: Request): Promise<Response> {
     let skippedFigures = 0;
     let coverage: Record<string, number | boolean> | undefined;
     if (kind === "image") {
-      const seen = await readWithVision(original, visionMime(file.name, file.type) ?? "image/jpeg", {
+      const seen = await readWithVision(original, visionMime(sourceName, sourceType) ?? "image/jpeg", {
         prompt: PHOTO_PROMPT,
       });
       result = { text: seen?.text ?? "", title: seen ? guessTitle(seen.text) : null };
@@ -277,7 +360,7 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    const baseName = file.name.replace(/\.[^.]+$/, "").trim();
+    const baseName = sourceName.replace(/\.[^.]+$/, "").trim();
     console.info(JSON.stringify({
       event: "file_extract_completed",
       requestId,
@@ -290,7 +373,7 @@ export async function POST(req: Request): Promise<Response> {
       kind,
       title: result.title ?? (baseName || "Untitled document"),
       text,
-      bytes: file.size,
+      bytes: sourceSize,
       // Present only when the pages had to be read as images, so a caller (and
       // the student) can tell a transcription apart from an exact text layer.
       ...(readBy ? { readBy } : {}),
@@ -314,5 +397,12 @@ export async function POST(req: Request): Promise<Response> {
       { error: err instanceof Error ? err.message : "Couldn't read that file." },
       { status: 422 },
     );
+  } finally {
+    // A throwaway upload is swept however this ended — read, refused or thrown.
+    // `finally` rather than a line per exit, because the exits are many and the
+    // one that gets forgotten is the one that leaks. Never awaited: the student's
+    // response does not wait on our housekeeping, and a failed sweep is not their
+    // problem. A Library original is never a scratch key and is never touched.
+    if (scratch) void removeIngestScratch(scratch);
   }
 }
