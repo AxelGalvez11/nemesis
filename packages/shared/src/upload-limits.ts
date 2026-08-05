@@ -42,14 +42,24 @@
  *
  * 🔴 THERE IS A THIRD CEILING ABOVE THIS ONE AND IT IS NOT IN THE DATABASE.
  * Supabase enforces a PROJECT-WIDE upload limit that caps every bucket
- * regardless of the bucket's own `file_size_limit`. Measured against production
- * on 2026-08-05 by binary search: 49 MiB uploaded, 55 MiB returned
- * `EntityTooLarge`, with the bucket row already set to 200 MiB. It lives in the
- * Supabase dashboard under Project Settings → Storage → "Upload file size
- * limit"; no migration can move it. Until it is raised, this constant is the
- * product's INTENT and the project setting is the enforced truth — exactly the
- * shape of drift the whole module exists to prevent, recorded here rather than
- * discovered again.
+ * regardless of the bucket's own `file_size_limit`, and no migration can move
+ * it — it lives in the dashboard under Project Settings → Storage → "Upload file
+ * size limit". It was 50 MiB while this bucket's row already read 200, so the
+ * bucket agreed and uploads still failed.
+ *
+ * Raised by the owner and RE-PROBED against production 2026-08-05, because a
+ * dashboard save is not evidence that anything propagated:
+ *
+ *     55 MiB → 200 OK      190 MiB → 200 OK
+ *    100 MiB → 200 OK      199 MiB → 200 OK
+ *    150 MiB → 200 OK      205 MiB → 413 EntityTooLarge
+ *
+ * All three now agree at 200 MiB. The real 118.1 MiB lecture uploads in 21 s and
+ * comes back with an IDENTICAL sha256, so the round trip is byte-exact.
+ *
+ * If uploads ever start failing below this number again, check that project
+ * setting FIRST: it is the only one of the three that no code in this repository
+ * can see, and it fails as a 413 that names the object rather than the setting.
  */
 export const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
 
