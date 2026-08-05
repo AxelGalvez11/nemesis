@@ -72,3 +72,63 @@ test("a real lecture deck now keeps its pictures instead of being stripped", () 
 test("a non-zip file throws instead of returning garbage", () => {
   assert.throws(() => slimOfficeArchive(new TextEncoder().encode("just some text")));
 });
+
+/**
+ * 🔴 THE GUARD THAT MATTERS: nothing may call slimOfficeArchive() from a path
+ * that then STORES what comes back.
+ *
+ * This is a static check, and static checks are usually weak — this one is the
+ * strongest tool available, because the bug is not that the function is wrong.
+ * The function is correct at what it does. The bug is that its output was fed
+ * into the ingestion path carrying no record of what had been deleted, so a
+ * lecture missing 57 figures parsed cleanly, returned all 37 slides, and was
+ * indistinguishable downstream from the complete file.
+ *
+ * A behavioural test cannot catch that: every layer BEHAVES correctly on the
+ * stripped file. What has to be prevented is the wiring itself.
+ *
+ * When Tier 4 disclosure exists — assets removed, types, reason, and the
+ * resulting limitation persisted on the source and carried into retrieval and
+ * model context — this test should be replaced by one asserting that the
+ * disclosure is written, not that the call is absent. Deleting it without that
+ * replacement puts the silent version straight back.
+ */
+test("no ingestion path strips an Office file's pictures behind the student's back", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./chat-attachments.ts", import.meta.url), "utf8");
+
+  // Strip comments before searching. The refusal branch DISCUSSES the old call
+  // at length and by name, and a naive substring search would match the prose
+  // and pass forever regardless of what the code does.
+  let code = "";
+  let mode: "code" | "line" | "block" | "string" = "code";
+  let quote = "";
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    const next = source[i + 1] ?? "";
+    if (mode === "code") {
+      if (ch === "/" && next === "/") { mode = "line"; i += 1; continue; }
+      if (ch === "/" && next === "*") { mode = "block"; i += 1; continue; }
+      if (ch === '"' || ch === "'" || ch === "`") { mode = "string"; quote = ch; }
+      code += ch;
+      continue;
+    }
+    if (mode === "line") { if (ch === "\n") { mode = "code"; code += ch; } continue; }
+    if (mode === "block") { if (ch === "*" && next === "/") { mode = "code"; i += 1; } continue; }
+    // string
+    if (ch === "\\") { code += ch + next; i += 1; continue; }
+    code += ch;
+    if (ch === quote) mode = "code";
+  }
+
+  assert.equal(
+    code.includes("slimOfficeArchive("),
+    false,
+    "chat-attachments.ts calls slimOfficeArchive again — an oversized deck would be stored with its figures deleted and nothing would record it",
+  );
+  assert.equal(
+    code.includes("OFFICE_SLIM_THRESHOLD_BYTES"),
+    false,
+    "the slimming threshold is back in the attachment path; the only ceiling there should be what can be STORED",
+  );
+});
