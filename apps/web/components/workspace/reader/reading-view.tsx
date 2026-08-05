@@ -59,9 +59,9 @@ export function ReadingView({ blocks, unitLabel, query, onOpenUnit, onShowSource
         <div className="mb-7 flex items-start gap-2.5 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3.5 py-2.5">
           <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="info" size="0.85rem" />
           <p className="text-xs leading-relaxed text-(--ui-text-secondary)">
-            <span className="font-medium text-foreground">Reading mode is a reconstruction.</span> Nemesis re-set this
-            from the document&rsquo;s own text and measurements — pictures, exact layout and anything drawn rather than
-            typed are not here.{" "}
+            <span className="font-medium text-foreground">Reading mode is a reconstruction.</span>{" "}
+            Nemesis re-set this from the document&rsquo;s own text and measurements — pictures, exact layout and
+            anything drawn rather than typed are not here.{" "}
             <button className="font-medium text-foreground underline underline-offset-2" onClick={onShowSource} type="button">
               Show the original
             </button>

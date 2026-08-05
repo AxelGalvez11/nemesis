@@ -46,6 +46,11 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [onScreen, setOnScreen] = useState(false);
   const [rects, setRects] = useState<{ left: number; top: number; width: number; height: number; current: boolean }[]>([]);
+  /** Bumped when the text layer finishes drawing. Highlights are measured off
+   *  the rendered spans, so they cannot be positioned until this changes —
+   *  without it, a highlight that arrives with the document (a ?q= link) is
+   *  measured against an empty layer once and never retried. */
+  const [textLayerVersion, setTextLayerVersion] = useState(0);
 
   // Natural size first, so the page reserves its space in the scroll column
   // before it has rendered — otherwise every render shifts the scroll position
@@ -134,6 +139,7 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
         textContentSource: page.streamTextContent(),
         viewport: page.getViewport({ scale }),
       }).render();
+      if (!cancelled) setTextLayerVersion((version) => version + 1);
     })();
 
     return () => {
@@ -159,17 +165,29 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
     }
     // Wait a frame so the text layer above has committed its spans.
     const handle = window.requestAnimationFrame(() => {
-      const spans = [...textLayer.querySelectorAll("span")].filter((span) => span.firstChild?.nodeType === Node.TEXT_NODE);
-      if (spans.length === 0) {
+      // 🔴 The offsets in a match are into the page text the DOCUMENT VIEW
+      // built: item strings joined, with a newline after every item that ended
+      // a line. pdf.js renders that same sequence as a <span> per item and a
+      // <br> per line end — so counting <br> as one character is what keeps the
+      // two coordinate systems aligned. Counting only the spans (the obvious
+      // reading) drifts by one character per line break, and a highlight then
+      // lands progressively further left down the page, or nowhere at all.
+      //
+      // A `.markedContent` wrapper is a <span> holding other spans, so the
+      // filter keeps only elements whose own first child is text.
+      const parts = [...textLayer.querySelectorAll("span, br")].filter(
+        (element) => element.tagName === "BR" || element.firstChild?.nodeType === Node.TEXT_NODE,
+      );
+      if (parts.length === 0) {
         setRects([]);
         return;
       }
       const layerBox = textLayer.getBoundingClientRect();
       const found: { left: number; top: number; width: number; height: number; current: boolean }[] = [];
       let offset = 0;
-      const spanRanges = spans.map((span) => {
-        const length = span.textContent?.length ?? 0;
-        const entry = { span, start: offset, end: offset + length };
+      const spanRanges = parts.map((element) => {
+        const length = element.tagName === "BR" ? 1 : (element.textContent?.length ?? 0);
+        const entry = { span: element, start: offset, end: offset + length };
         offset += length;
         return entry;
       });
@@ -179,6 +197,8 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
           const start = Math.max(highlight.start, entry.start);
           const end = Math.min(highlight.end, entry.end);
           if (end <= start) continue;
+          // A <br> occupies a character but has no box to paint.
+          if (entry.span.tagName === "BR") continue;
           const range = document.createRange();
           const node = entry.span.firstChild;
           if (!node) continue;
@@ -203,8 +223,9 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
       setRects(found);
     });
     return () => window.cancelAnimationFrame(handle);
-    // highlightKey stands in for the highlights array; scale re-measures.
-  }, [highlightKey, highlights, scale]);
+    // highlightKey stands in for the highlights array; scale and
+    // textLayerVersion both mean the spans moved and must be re-measured.
+  }, [highlightKey, highlights, scale, textLayerVersion]);
 
   const width = size ? Math.floor(size.width * scale) : 0;
   const height = size ? Math.floor(size.height * scale) : 0;

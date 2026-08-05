@@ -96,6 +96,16 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     storagePath: "/reader-sample.pdf",
   },
   {
+    id: "preview-src-diagram",
+    folderPath: "Structural engineering/Mechanics",
+    fileName: "Load path diagram.png",
+    kind: "image",
+    sizeBytes: 4_183,
+    createdAt: "2026-07-30T11:20:00.000Z",
+    // public/reader-sample-diagram.png — see the note on the PDF fixture above.
+    storagePath: "/reader-sample-diagram.png",
+  },
+  {
     id: "preview-src-conlaw-recording",
     folderPath: "Constitutional law/Commerce power",
     fileName: "Lecture 9 — commerce power.m4a",

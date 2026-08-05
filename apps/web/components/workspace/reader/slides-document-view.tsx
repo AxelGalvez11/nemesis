@@ -182,8 +182,9 @@ function Disclaimer() {
     <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3.5 py-2.5">
       <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="info" size="0.85rem" />
       <p className="text-xs leading-relaxed text-(--ui-text-secondary)">
-        <span className="font-medium text-foreground">These are rebuilt from the deck&rsquo;s contents, not pictures of
-        the slides.</span>{" "}
+        <span className="font-medium text-foreground">
+          These are rebuilt from the deck&rsquo;s contents, not pictures of the slides.
+        </span>{" "}
         Text, pictures and notes are the real ones. Anything the author <em>drew</em> — arrows, boxes, SmartArt — is not
         a picture in the file, so it is not here. Slide images are coming; they need a renderer Nemesis does not host yet.
       </p>

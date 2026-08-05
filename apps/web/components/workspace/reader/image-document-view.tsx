@@ -56,14 +56,16 @@ export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSiz
     };
   }, []);
 
-  const finish = useCallback(() => {
+  const finish = useCallback((release: { x: number; y: number } | null) => {
     setDragging(false);
     if (!drag) return;
+    const x2 = release?.x ?? drag.x2;
+    const y2 = release?.y ?? drag.y2;
     const region: ImageRegion = {
-      x: Math.min(drag.x1, drag.x2),
-      y: Math.min(drag.y1, drag.y2),
-      width: Math.abs(drag.x2 - drag.x1),
-      height: Math.abs(drag.y2 - drag.y1),
+      x: Math.min(drag.x1, x2),
+      y: Math.min(drag.y1, y2),
+      width: Math.abs(x2 - drag.x1),
+      height: Math.abs(y2 - drag.y1),
     };
     // A stray click is not a selection. Below ~1.5% in either direction there
     // is nothing to ask about, and reporting it would clear the panel for no
@@ -110,7 +112,14 @@ export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSiz
       const point = pointFrom(event);
       if (point) setDrag((current) => (current ? { ...current, x2: point.x, y2: point.y } : current));
     };
-    const up = () => finish();
+    // The release position is taken from the pointerup itself, not from the
+    // last move. A quick drag can finish with very few move events (and an
+    // automated one with none at all), and reading the corner off the last
+    // move would then throw the selection away as a stray click.
+    const up = (event: PointerEvent) => {
+      const point = pointFrom(event);
+      finish(point ? { x: point.x, y: point.y } : null);
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return () => {
