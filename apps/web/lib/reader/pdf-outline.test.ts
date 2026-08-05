@@ -73,3 +73,17 @@ test("headings stand in for a document with no bookmarks, carrying their page", 
     ],
   );
 });
+
+test("repeated section names in one PDF get distinct ids", () => {
+  // 🔴 Real: a Journal of Cardiac Failure course packet is TWO articles in one
+  // PDF, each with "Disclosures" and "CRediT authorship contribution statement"
+  // at the same depth and the same position under their own parent. Keying on
+  // (depth, sibling index, title) collided and React dropped outline rows.
+  const entries = flattenOutline([
+    { title: "Article one", dest: "a", items: [{ title: "Disclosures", dest: "a1", items: null }] },
+    { title: "Article two", dest: "b", items: [{ title: "Disclosures", dest: "b1", items: null }] },
+  ]);
+  const ids = entries.map((entry) => entry.id);
+  assert.equal(new Set(ids).size, ids.length, `ids collided: ${JSON.stringify(ids)}`);
+  assert.deepEqual(entries.map((entry) => entry.title), ["Article one", "Disclosures", "Article two", "Disclosures"]);
+});
