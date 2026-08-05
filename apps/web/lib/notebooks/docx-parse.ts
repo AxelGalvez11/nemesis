@@ -52,16 +52,17 @@ import {
   parseXml,
   type XmlElement,
 } from "./ooxml-tree";
-import type {
-  BlockKind,
-  DocBlock,
-  DocCell,
-  DocTable,
-  DocUnit,
-  DocVisual,
-  DocumentParser,
-  Locator,
-  ParsedDocument,
+import {
+  estimateTokens,
+  type BlockKind,
+  type DocBlock,
+  type DocCell,
+  type DocTable,
+  type DocUnit,
+  type DocVisual,
+  type DocumentParser,
+  type Locator,
+  type ParsedDocument,
 } from "@nemesis/shared";
 
 /** Bump when the extraction changes: a new value means a NEW parse row, so old
@@ -162,12 +163,18 @@ export const docxParser: DocumentParser = {
 
 // ── the flow: the document as an ordered list of things ─────────────────────
 
+/** How firmly the document itself drew a boundary here. A `w:sectPr` is the
+ *  author dividing the document; a page break is where the page turned. */
+type BreakStrength = "section" | "page";
+
 type FlowItem =
   | { at: "block"; kind: BlockKind; text: string; depth?: number }
   | { at: "table"; rows: DocCell[][] }
-  | { at: "visual"; visual: PendingVisual };
+  | { at: "visual"; visual: PendingVisual }
+  | { at: "break"; strength: BreakStrength };
 
-/** The body, flattened to blocks/tables/pictures in reading order. */
+/** The body, flattened to blocks/tables/pictures in reading order, with the
+ *  boundaries the document drew between them. */
 function readFlow(body: XmlElement, ctx: WalkContext): FlowItem[] {
   const out: FlowItem[] = [];
   for (const element of blockLevel(body, 0)) {
@@ -181,6 +188,13 @@ function readFlow(body: XmlElement, ctx: WalkContext): FlowItem[] {
     const para = readParagraph(element, ctx);
     const kind = classifyParagraph(element, ctx);
     const text = para.text.trim();
+    const breaks = paragraphBreaks(element);
+    // 🔴 EMITTED HERE OR NOT AT ALL, AND EVEN WHEN THE PARAGRAPH SAYS NOTHING.
+    // Word writes a page break as an otherwise-EMPTY paragraph, which the
+    // `if (text)` below drops — so a break looked for any later than this has
+    // already been thrown away, and every headingless document reads as one
+    // undivided block no matter how carefully the assembly is written.
+    if (breaks.before) out.push({ at: "break", strength: "page" });
     if (text) out.push({ at: "block", text, ...kind });
     for (const visual of para.visuals) {
       out.push({ at: "visual", visual: { ...visual, ...(text ? { nearbyText: text } : {}) } });
@@ -191,8 +205,82 @@ function readFlow(body: XmlElement, ctx: WalkContext): FlowItem[] {
       ctx.counts.footnotesRead += 1;
       out.push({ at: "block", kind: "footnote", text: note });
     }
+    if (breaks.after) out.push({ at: "break", strength: "page" });
+    if (breaks.endsSection) out.push({ at: "break", strength: "section" });
   }
   return out;
+}
+
+/**
+ * The boundaries one paragraph carries, measured against the runs that hold its
+ * text rather than assumed from its position.
+ *
+ * A break that comes BEFORE any text starts this paragraph on a new page; one
+ * that comes after text means the page turned somewhere inside the paragraph,
+ * and since a paragraph is never cut in half here the boundary is recorded
+ * after it — the whole paragraph stays on the earlier side.
+ *
+ * 🔴 A RENDERED BREAK IS A BOUNDARY, NEVER A PAGE NUMBER. `w:lastRenderedPageBreak`
+ * records where Word last repaginated: absent in a file that was never rendered,
+ * stale in one edited since. Counting these would mint confident, wrong page
+ * numbers, which is why every unit they produce stays a `section`.
+ */
+function paragraphBreaks(paragraph: XmlElement): { before: boolean; after: boolean; endsSection: boolean } {
+  const state: BreakScan = {
+    after: false,
+    before: isOn(firstPath(paragraph, "w:pPr", "w:pageBreakBefore")),
+    seenText: false,
+  };
+  scanBreaks(paragraph, state, 0);
+  return {
+    after: state.after,
+    before: state.before,
+    // A `w:sectPr` inside a paragraph's properties ENDS that section, so the
+    // boundary falls after this paragraph. The `w:sectPr` hanging off `w:body`
+    // is the last section's own properties and no boundary at all; it is not a
+    // paragraph, so it is never reached from here. Every type counts, including
+    // `continuous`, which changes the layout without turning the page: it is
+    // still the author saying one part of the document ended and another began.
+    endsSection: firstPath(paragraph, "w:pPr", "w:sectPr") !== undefined,
+  };
+}
+
+interface BreakScan {
+  before: boolean;
+  after: boolean;
+  seenText: boolean;
+}
+
+/** Document-order walk for break markers, refusing exactly what ./docx-runs
+ *  refuses: a page break inside a tracked deletion is not in the document. */
+function scanBreaks(element: XmlElement, state: BreakScan, depth: number): void {
+  if (depth > MAX_NESTING) return;
+  for (const node of element.children) {
+    if (!isElement(node)) continue;
+    const { name } = node;
+    if (name === "w:pPr" || name === "w:rPr" || name === "w:del" || name === "w:moveFrom") continue;
+    if (name === "w:instrText" || name === "w:delInstrText" || name === "w:delText") continue;
+    if (name === "w:br") {
+      // `w:type` is absent for a line break and "column" for a column break;
+      // neither turns a page.
+      if (attr(node, "w:type") === "page") markBreak(state);
+      continue;
+    }
+    if (name === "w:lastRenderedPageBreak") {
+      markBreak(state);
+      continue;
+    }
+    if (name === "w:t") {
+      if (textOf(node).trim()) state.seenText = true;
+      continue;
+    }
+    scanBreaks(node, state, depth + 1);
+  }
+}
+
+function markBreak(state: BreakScan): void {
+  if (state.seenText) state.after = true;
+  else state.before = true;
 }
 
 /** Paragraphs and tables, reached through the wrappers Word puts around them —
@@ -379,6 +467,212 @@ interface Assembled {
   firstHeading?: string;
 }
 
+// ── the fallback: dividing a document that never divided itself ─────────────
+
+/**
+ * Token ceiling for a unit the document did not divide for us.
+ *
+ * Several times `DEFAULT_TARGET_TOKENS` (the CHUNK size, 400) on purpose. A unit
+ * is what a citation NAMES, so a unit one chunk wide would make every citation
+ * point at a paragraph and none of them at a place. Roughly three pages of
+ * prose: small enough that "section 7 of 22" locates something a reader can go
+ * and find, large enough that a unit still holds a whole argument.
+ */
+export const FALLBACK_UNIT_TOKENS = 2000;
+
+/**
+ * How much of the preceding unit a window seam repeats.
+ *
+ * Same reasoning as ../../../../packages/shared/src/doc-chunk.ts's overlap, one
+ * level up: a seam we invented lands mid-argument by construction, and without a
+ * tail the sentence that names a thing and the sentence that explains it end up
+ * in different units, retrievable only one at a time.
+ */
+export const FALLBACK_OVERLAP_TOKENS = 120;
+
+/** Kinds that may be repeated across a window seam — the text kinds this parser
+ *  emits, and an opt-IN list so anything added later is excluded until someone
+ *  decides otherwise. A repeated `figure` would push a phantom `alsoAt` onto its
+ *  visual through `groupVisuals`, and a repeated `table` would put the same grid
+ *  in the index twice. */
+const OVERLAPPABLE: ReadonlySet<BlockKind> = new Set<BlockKind>(["paragraph", "listItem", "footnote"]);
+
+interface FallbackPlan {
+  /** Flow indices at which a new unit opens. */
+  opensAt: Set<number>;
+  /** The subset of `opensAt` the document did NOT authorise — a window seam, and
+   *  the only kind of seam that carries an overlap. */
+  windowSeams: Set<number>;
+}
+
+/**
+ * Where to cut a document that offers no headings.
+ *
+ * 🔴 A TABLE CANNOT BE SPLIT BY ANY OF THIS, STRUCTURALLY RATHER THAN BY CHECK.
+ * A `w:tbl` is one flow item, so a cut placed between items has no way to land
+ * inside a grid. A single table larger than the ceiling therefore becomes its
+ * own oversized-but-whole unit, which `chunkDocument` then packs by rows with
+ * the header repeated — the right place for that work, and the reason nothing
+ * here tries to do it.
+ *
+ * Preference order, strongest first: a `w:sectPr` is the author dividing the
+ * document, a page break is where the page turned, and a window is ours. The
+ * strongest signal the document actually carries divides EVERY unit, because an
+ * authored boundary is a statement about the document; weaker signals only
+ * subdivide what is still over the ceiling.
+ *
+ * The brief's "paragraph groups" and "token window" collapse into one stage
+ * here, and the collapse is honest rather than lazy: an empty paragraph never
+ * reaches the flow at all, so "group paragraphs" cannot mean "cut at a blank
+ * line". It can only mean N consecutive items, which is the window.
+ */
+function planFallback(flow: readonly FlowItem[]): FallbackPlan {
+  /** Flow indices of the items that carry content, in reading order. */
+  const items: number[] = [];
+  /** Token cost of each, parallel to `items`. */
+  const tokens: number[] = [];
+  /** Positions in `items` a section / page boundary falls immediately before. */
+  const sectionAt = new Set<number>();
+  const pageAt = new Set<number>();
+  let pendingSection = false;
+  let pendingPage = false;
+
+  flow.forEach((item, index) => {
+    if (item.at === "break") {
+      if (item.strength === "section") pendingSection = true;
+      else pendingPage = true;
+      return;
+    }
+    // A break before the first item, or a run of them, divides nothing: there is
+    // no content on the earlier side for a unit to hold.
+    if (items.length) {
+      if (pendingSection) sectionAt.add(items.length);
+      if (pendingPage) pageAt.add(items.length);
+    }
+    pendingSection = false;
+    pendingPage = false;
+    items.push(index);
+    tokens.push(estimateTokens(flowText(item)));
+  });
+
+  const prefix = [0];
+  for (const cost of tokens) prefix.push((prefix[prefix.length - 1] ?? 0) + cost);
+  const spanTokens = (from: number, to: number): number => (prefix[to] ?? 0) - (prefix[from] ?? 0);
+
+  const authored = sectionAt.size ? sectionAt : pageAt;
+  let starts = [0, ...[...authored].sort((a, b) => a - b)];
+  // Page breaks are held back when the document also has section breaks: they
+  // are the finer signal, and a section short enough to stand does not need it.
+  if (sectionAt.size && pageAt.size) starts = subdivideAt(starts, items.length, spanTokens, pageAt);
+  const windowed = subdivideByWindow(starts, items.length, spanTokens, tokens);
+
+  const flowIndex = (position: number): number => items[position] ?? 0;
+  return {
+    opensAt: new Set(windowed.starts.slice(1).map(flowIndex)),
+    windowSeams: new Set([...windowed.seams].map(flowIndex)),
+  };
+}
+
+/** Insert every candidate boundary that falls inside a span still over the
+ *  ceiling. A span that already fits is left alone — see `planFallback`. */
+function subdivideAt(
+  starts: readonly number[],
+  end: number,
+  spanTokens: (from: number, to: number) => number,
+  candidates: ReadonlySet<number>,
+): number[] {
+  const sorted = [...candidates].sort((a, b) => a - b);
+  const out: number[] = [];
+  starts.forEach((from, at) => {
+    const to = starts[at + 1] ?? end;
+    out.push(from);
+    if (spanTokens(from, to) <= FALLBACK_UNIT_TOKENS) return;
+    for (const candidate of sorted) if (candidate > from && candidate < to) out.push(candidate);
+  });
+  return out;
+}
+
+/**
+ * The last resort: fill a unit until the next item would overflow it. Every
+ * window holds AT LEAST ONE item, which is what keeps an item bigger than the
+ * whole budget intact instead of orphaning an empty unit.
+ *
+ * 🔴 SO A SINGLE ITEM OVER THE CEILING IS STILL AN UNBOUNDED UNIT, AND THAT IS
+ * NOT ONLY THE LONG TABLE CASE. A document whose whole body is ONE paragraph —
+ * how a plain-text or OCR conversion often arrives, with `w:br` line breaks
+ * instead of paragraph marks — is one flow item, so it gets one unit however
+ * long it is. Bounding it would mean cutting a paragraph into several blocks,
+ * which changes what a block MEANS for every document and duplicates the
+ * hard split ../../../../packages/shared/src/doc-chunk.ts already performs at
+ * the chunk level. Recorded here rather than half-fixed.
+ */
+function subdivideByWindow(
+  starts: readonly number[],
+  end: number,
+  spanTokens: (from: number, to: number) => number,
+  tokens: readonly number[],
+): { starts: number[]; seams: Set<number> } {
+  const out: number[] = [];
+  const seams = new Set<number>();
+  starts.forEach((from, index) => {
+    const to = starts[index + 1] ?? end;
+    out.push(from);
+    if (spanTokens(from, to) <= FALLBACK_UNIT_TOKENS) return;
+    let opened = from;
+    let running = 0;
+    for (let at = from; at < to; at += 1) {
+      const cost = tokens[at] ?? 0;
+      if (at > opened && running + cost > FALLBACK_UNIT_TOKENS) {
+        out.push(at);
+        seams.add(at);
+        opened = at;
+        running = 0;
+      }
+      running += cost;
+    }
+  });
+  return { seams, starts: out };
+}
+
+/** What a flow item will contribute as text, so its cost is measured on the
+ *  same string the block ends up carrying. */
+function flowText(item: FlowItem): string {
+  if (item.at === "block") return item.text;
+  if (item.at === "table") return tableText(item.rows);
+  if (item.at === "visual") return item.visual.caption ?? "";
+  return "";
+}
+
+/** A grid as the plain text a `table` block carries: one line per row, columns
+ *  tab-separated, each cell's own line breaks flattened. */
+function tableText(rows: readonly DocCell[][]): string {
+  return rows.map((row) => row.map((cell) => cell.text.replace(/\n+/g, " ")).join("\t")).join("\n");
+}
+
+/**
+ * Repeat the tail of one unit at the head of the next.
+ *
+ * Walks backwards while the tail still fits the budget, and carries NOTHING when
+ * the single last block already exceeds it — the same rule `overlapStart` uses
+ * one level down, and in prose it means the overlap is usually a block or two.
+ * The copies are fresh objects: ids and ordinals are assigned after this runs,
+ * so a repeated paragraph gets its own block id rather than a duplicate of one.
+ */
+function carryOverlap(previous: Draft | undefined, next: Draft | undefined): void {
+  if (!previous || !next) return;
+  const tail: DocBlock[] = [];
+  let budget = FALLBACK_OVERLAP_TOKENS;
+  for (let at = previous.blocks.length - 1; at >= 0; at -= 1) {
+    const block = previous.blocks[at];
+    if (!block || !OVERLAPPABLE.has(block.kind)) break;
+    const cost = estimateTokens(block.text);
+    if (cost > budget) break;
+    budget -= cost;
+    tail.unshift({ ...block });
+  }
+  if (tail.length) next.blocks = [...tail, ...next.blocks];
+}
+
 /**
  * The flow, cut into sections.
  *
@@ -387,6 +681,13 @@ interface Assembled {
  * headings at depth 2, and splitting only on depth 1 would return the whole file
  * as a single section. Anything before the first heading is its own unit:
  * a title page belongs to the document, not to the chapter that follows it.
+ *
+ * A document with NO headings — a contract of numbered clauses, a form, a filing,
+ * a long plain report, all of which are ordinary rather than exotic — gets the
+ * bounded fallback instead (see `planFallback`), because one unit means one
+ * locator and every citation in a sixty-page file would say the same thing.
+ * The fallback runs ONLY when no heading style is used anywhere, so a document
+ * that does have headings is cut exactly where it always was.
  */
 function assemble(flow: readonly FlowItem[], media: ReadonlyMap<string, MediaEntry>): Assembled {
   let minDepth = 0;
@@ -395,6 +696,9 @@ function assemble(flow: readonly FlowItem[], media: ReadonlyMap<string, MediaEnt
     const depth = item.depth ?? 1;
     if (!minDepth || depth < minDepth) minDepth = depth;
   }
+  const fallback = minDepth ? undefined : planFallback(flow);
+  /** Indices into `drafts` of the units opened at a window seam. */
+  const overlapping: number[] = [];
 
   const drafts: Draft[] = [];
   const tables: DocTable[] = [];
@@ -424,13 +728,23 @@ function assemble(flow: readonly FlowItem[], media: ReadonlyMap<string, MediaEnt
     return draft;
   };
 
-  for (const item of flow) {
+  for (const [index, item] of flow.entries()) {
+    // A break is a boundary, not content: `planFallback` has already read it.
+    if (item.at === "break") continue;
     if (item.at === "block" && item.kind === "heading") {
       const depth = item.depth ?? 1;
       byDepth.length = depth;
       byDepth[depth - 1] = item.text;
       firstHeading ??= item.text;
       if (depth <= minDepth) open(item.text);
+    }
+    // 🔴 THE CUT IS DECIDED BEFORE THE DRAFT IS OPENED. `open` bakes the unit's
+    // index into a Locator that tables and pictures then hold BY REFERENCE, so a
+    // unit that turns out empty cannot be dropped or renumbered afterwards
+    // without falsifying locators already handed out.
+    if (fallback?.opensAt.has(index) && current?.blocks.length) {
+      open();
+      if (fallback.windowSeams.has(index)) overlapping.push(drafts.length - 1);
     }
     const draft = current ?? open();
 
@@ -463,7 +777,7 @@ function assemble(flow: readonly FlowItem[], media: ReadonlyMap<string, MediaEnt
         method: "ooxml",
         ordinal: 0,
         tableId: table.id,
-        text: item.rows.map((row) => row.map((cell) => cell.text.replace(/\n+/g, " ")).join("\t")).join("\n"),
+        text: tableText(item.rows),
       });
       continue;
     }
@@ -503,6 +817,12 @@ function assemble(flow: readonly FlowItem[], media: ReadonlyMap<string, MediaEnt
   for (const orphan of grouped.orphans) {
     orphan.draft.blocks = orphan.draft.blocks.filter((block) => block !== orphan.block);
   }
+
+  // 🔴 OVERLAP AT A WINDOW SEAM AND NOWHERE ELSE. A section break or a page
+  // break is a boundary the AUTHOR drew, and repeating text across one would be
+  // inventing continuity the document denies. A window seam is ours. Run after
+  // the orphan sweep so nothing about to be removed is copied forward.
+  for (const at of overlapping) carryOverlap(drafts[at - 1], drafts[at]);
 
   const units: DocUnit[] = [];
   const unitsUnread: number[] = [];

@@ -3,8 +3,17 @@ import { test } from "node:test";
 
 import { strToU8, zipSync } from "fflate";
 
-import { coreTitle, DOCX_PARSER_VERSION, parseDocx, readDocumentRels, readParagraphXml, readTableXml } from "./docx-parse";
-import type { DocBlock } from "@nemesis/shared";
+import {
+  coreTitle,
+  DOCX_PARSER_VERSION,
+  FALLBACK_OVERLAP_TOKENS,
+  FALLBACK_UNIT_TOKENS,
+  parseDocx,
+  readDocumentRels,
+  readParagraphXml,
+  readTableXml,
+} from "./docx-parse";
+import { estimateTokens, type DocBlock, type DocUnit, type ParsedDocument } from "@nemesis/shared";
 
 /** A PNG whose header states its real size (see ./pptx-parse.test.ts). */
 function png(width: number, height: number, salt = 0): Uint8Array {
@@ -318,6 +327,365 @@ test("a picture whose bytes are missing leaves no dangling figure block", () => 
 
 test("a file with no word/document.xml is refused", () => {
   assert.throws(() => parseDocx(zipSync({ "ppt/slides/slide1.xml": strToU8("<p:sld/>") })), /Word/);
+});
+
+// ── documents that never divide themselves ──────────────────────────────────
+//
+// A contract, a form, a filing, a manual and a long plain report routinely carry
+// no heading style at all. Before the fallback each of them arrived as ONE unit,
+// so every citation into a sixty-page file said the same thing. These tests are
+// about that class of document, and about the promise that documents which DO
+// have headings were not disturbed on the way.
+
+/** A .docx that is nothing but a body — the shape most of these fixtures need. */
+function bodyDocx(body: string, numbering?: string): Uint8Array {
+  return zipSync({
+    "word/document.xml": strToU8(`<w:document><w:body>${body}</w:body></w:document>`),
+    ...(numbering ? { "word/numbering.xml": strToU8(numbering) } : {}),
+  });
+}
+
+const para = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+
+/** Decimal auto-numbering, which is how a contract's clauses are actually
+ *  written — the numbers are Word's, not characters the author typed. */
+const DECIMAL_NUMBERING =
+  "<w:numbering>" +
+  '<w:abstractNum w:abstractNumId="4"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>' +
+  '<w:num w:numId="2"><w:abstractNumId w:val="4"/></w:num>' +
+  "</w:numbering>";
+
+const numbered = (text: string): string =>
+  '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>' +
+  `<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+
+/** How Word actually writes a page break: an OTHERWISE-EMPTY paragraph. A
+ *  fixture that puts text in the breaking paragraph passes against a parser that
+ *  never sees the break at all, which is the failure this shape exists to catch. */
+const PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+
+/** A section break: `w:sectPr` in a paragraph's properties ENDS that section. */
+const SECTION_BREAK = '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p>';
+
+/** ~470 characters of ordinary contract prose, unique per clause number. The
+ *  clause NUMBER is left to Word: these paragraphs carry `w:numPr`, so the
+ *  digits a reader sees were never in the text at all. */
+function clause(n: number): string {
+  const sentence =
+    `Each obligation set out in clause ${n} survives termination of this agreement and remains ` +
+    "enforceable against the parties and their successors in every jurisdiction named in the schedule. ";
+  return sentence.repeat(3).trim();
+}
+
+const allBlocks = (doc: ParsedDocument): DocBlock[] => doc.units.flatMap((unit) => unit.blocks);
+
+/** The block kinds that carry a paragraph's own words, and so the ones a
+ *  conservation check can compare against the fixture. A `table` block carries
+ *  the tab-joined grid and a `figure` block carries a caption; neither is a
+ *  paragraph, and neither belongs in this comparison. */
+const PROSE_KINDS: ReadonlySet<DocBlock["kind"]> = new Set<DocBlock["kind"]>(["paragraph", "listItem", "footnote"]);
+
+/**
+ * NOTHING WAS SILENTLY DROPPED, AND NOTHING WAS INVENTED.
+ *
+ * Checked in both directions, because each catches a different failure and
+ * neither catches the other's. Forwards: every text the fixture wrote reaches
+ * some unit, and first appearances are in document order — that is the drop.
+ * Backwards: every prose block a unit carries is one of those texts, whole —
+ * that is the truncation, the mangling, and the half-paragraph a future cut
+ * might leave behind, none of which the forwards check can see.
+ *
+ * Forwards is "at least once" rather than set equality on purpose: a window
+ * seam deliberately REPEATS its tail. A repetition is visible and intended; a
+ * drop is neither.
+ */
+function assertConserved(doc: ParsedDocument, texts: readonly string[]): void {
+  const seen = allBlocks(doc).map((block) => block.text);
+  let cursor = -1;
+  for (const text of texts) {
+    const at = seen.indexOf(text);
+    assert.ok(at >= 0, `dropped from the parse: ${text.slice(0, 48)}`);
+    assert.ok(at > cursor, `out of reading order: ${text.slice(0, 48)}`);
+    cursor = at;
+  }
+  const expected = new Set(texts);
+  for (const block of allBlocks(doc)) {
+    if (!PROSE_KINDS.has(block.kind)) continue;
+    assert.ok(expected.has(block.text), `not a paragraph the fixture wrote: ${block.text.slice(0, 48)}`);
+  }
+}
+
+/** How many blocks the head of `next` repeats from the tail of `previous` — the
+ *  overlap a window seam carried, measured rather than assumed to be one. */
+function overlapSize(previous: DocUnit | undefined, next: DocUnit): number {
+  if (!previous) return 0;
+  const before = previous.blocks.map((block) => block.text);
+  const after = next.blocks.map((block) => block.text);
+  // Compared as JSON rather than as a joined string: on a space separator
+  // ["a", "b c"] and ["a b", "c"] read as equal, and a seam that carried
+  // nothing would look like one that did.
+  for (let size = Math.min(before.length, after.length); size > 0; size -= 1) {
+    if (JSON.stringify(before.slice(before.length - size)) === JSON.stringify(after.slice(0, size))) return size;
+  }
+  return 0;
+}
+
+/** No unit is unbounded. A unit holding a single block is exempt: an item bigger
+ *  than the whole budget — a long table — is kept WHOLE on purpose. */
+function assertBounded(doc: ParsedDocument): void {
+  for (const unit of doc.units) {
+    const tokens = estimateTokens(unit.blocks.map((block) => block.text).join("\n\n"));
+    assert.ok(
+      tokens <= FALLBACK_UNIT_TOKENS + FALLBACK_OVERLAP_TOKENS || unit.blocks.length === 1,
+      `unit ${unit.locator.index} is unbounded at ${tokens} tokens across ${unit.blocks.length} blocks`,
+    );
+  }
+}
+
+test("a contract of numbered clauses with no heading styles is not one unbounded unit", () => {
+  const clauses = Array.from({ length: 60 }, (_, index) => clause(index + 1));
+  const { doc } = parseDocx(bodyDocx(clauses.map(numbered).join(""), DECIMAL_NUMBERING));
+
+  // Auto-numbered clauses are list items, and a list is not an outline: nothing
+  // here is a heading, so this is exactly the document the fallback is for.
+  assert.deepEqual(new Set(allBlocks(doc).map((block) => block.kind)), new Set(["listItem"]));
+  assert.ok(doc.units.length >= 3, `expected several units, got ${doc.units.length}`);
+  assertBounded(doc);
+  assertConserved(doc, clauses);
+  // Measured, never inferred: the only thing known about a windowed unit is
+  // which one it is. No label, no heading trail, and no invented page number.
+  assert.deepEqual(
+    doc.units.map((unit) => unit.locator.kind),
+    doc.units.map(() => "section"),
+  );
+  assert.deepEqual(
+    doc.units.map((unit) => unit.locator.index),
+    doc.units.map((_, index) => index + 1),
+  );
+  for (const unit of doc.units) {
+    assert.equal(unit.locator.label, undefined);
+    assert.equal(unit.locator.headingPath, undefined);
+    assert.equal(unit.locator.printedLabel, undefined);
+  }
+  assert.equal(doc.coverage.unitsFound, doc.units.length);
+  assert.equal(doc.coverage.unitsRead, doc.units.length, "no unit was minted empty");
+});
+
+test("a long form of label and value lines is divided, and its grid stays whole", () => {
+  const fields = Array.from(
+    { length: 160 },
+    (_, index) =>
+      `Field ${index + 1} — applicant declaration of prior registrations, disposals and encumbrances ` +
+      `recorded against entry ${index + 1} of the register, stated in full and without abbreviation.`,
+  );
+  const grid =
+    "<w:tbl>" +
+    "<w:tr><w:tc><w:p><w:r><w:t>Item</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Declared</w:t></w:r></w:p></w:tc></w:tr>" +
+    "<w:tr><w:tc><w:p><w:r><w:t>Freehold</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Yes</w:t></w:r></w:p></w:tc></w:tr>" +
+    "</w:tbl>";
+  const half = fields.length / 2;
+  const { doc } = parseDocx(
+    bodyDocx(fields.slice(0, half).map(para).join("") + grid + fields.slice(half).map(para).join("")),
+  );
+
+  assert.ok(doc.units.length >= 3, `expected several units, got ${doc.units.length}`);
+  assertBounded(doc);
+  assertConserved(doc, fields);
+  assert.equal(doc.tables.length, 1);
+  const tableBlocks = allBlocks(doc).filter((block) => block.kind === "table");
+  assert.equal(tableBlocks.length, 1, "a grid appears once, in one unit");
+  assert.equal(doc.tables[0]?.rows.length, 2);
+  assert.equal(tableBlocks[0]?.text, "Item\tDeclared\nFreehold\tYes");
+});
+
+test("a filing is cut at its section breaks, and page breaks inside a short section do not add cuts", () => {
+  const { doc } = parseDocx(
+    bodyDocx(
+      para("Cover sheet of the filing") +
+        SECTION_BREAK +
+        para("Part I opens here") +
+        PAGE_BREAK +
+        para("Part I continues after the page turns") +
+        SECTION_BREAK +
+        para("Part II opens here"),
+    ),
+  );
+
+  // Three sections, not four: the section break is the stronger signal, so the
+  // page break inside a section that already fits divides nothing.
+  assert.equal(doc.units.length, 3);
+  assert.deepEqual(
+    doc.units.map((unit) => unit.blocks.map((block) => block.text)),
+    [
+      ["Cover sheet of the filing"],
+      ["Part I opens here", "Part I continues after the page turns"],
+      ["Part II opens here"],
+    ],
+  );
+  assert.deepEqual(
+    doc.units.map((unit) => unit.locator.index),
+    [1, 2, 3],
+  );
+});
+
+test("an explicit page break divides, even written as an empty paragraph", () => {
+  const { doc } = parseDocx(
+    bodyDocx(
+      para("First page, opening line") +
+        para("First page, closing line") +
+        PAGE_BREAK +
+        para("Second page, opening line") +
+        '<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>Third page, opening line</w:t></w:r></w:p>' +
+        para("Third page, closing line"),
+    ),
+  );
+
+  assert.deepEqual(
+    doc.units.map((unit) => unit.blocks.map((block) => block.text)),
+    [
+      ["First page, opening line", "First page, closing line"],
+      ["Second page, opening line"],
+      ["Third page, opening line", "Third page, closing line"],
+    ],
+  );
+  // A boundary is known; a page NUMBER is not. `index` is the unit's ordinal.
+  for (const unit of doc.units) assert.equal(unit.locator.kind, "section");
+});
+
+test("a run of page breaks with nothing between them mints no empty unit", () => {
+  const { doc } = parseDocx(bodyDocx(PAGE_BREAK + para("Only line") + PAGE_BREAK + PAGE_BREAK + para("Last line")));
+  assert.equal(doc.units.length, 2);
+  assert.equal(doc.coverage.unitsRead, 2);
+  assert.equal(doc.coverage.unitsUnread, undefined);
+});
+
+test("a long plain report is windowed, and a seam repeats its tail so nothing falls between units", () => {
+  const paragraphs = Array.from(
+    { length: 100 },
+    (_, index) =>
+      `Observation ${index + 1}. The measured value drifted within the stated tolerance across the ` +
+      "period under review, and the reviewer recorded no departure from the documented procedure.",
+  );
+  const { doc } = parseDocx(bodyDocx(paragraphs.map(para).join("")));
+
+  assert.ok(doc.units.length >= 3, `expected several units, got ${doc.units.length}`);
+  assertBounded(doc);
+  assertConserved(doc, paragraphs);
+
+  // The overlap: the unit after a window seam opens with the text the previous
+  // unit ended with, so a point made across the seam is retrievable whole.
+  const seams = doc.units.slice(1).map((unit, index) => overlapSize(doc.units[index], unit));
+  assert.ok(
+    seams.some((size) => size > 0),
+    "no window seam carried an overlap",
+  );
+  doc.units.slice(1).forEach((unit, index) => {
+    const carried = unit.blocks.slice(0, seams[index] ?? 0).map((block) => block.text);
+    assert.ok(
+      estimateTokens(carried.join("\n\n")) <= FALLBACK_OVERLAP_TOKENS,
+      `the overlap into unit ${unit.locator.index} is not bounded`,
+    );
+  });
+  // A repeated paragraph is still its OWN block: ids stay unique across the doc.
+  const ids = allBlocks(doc).map((block) => block.id);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const unit of doc.units) unit.blocks.forEach((block, at) => assert.equal(block.ordinal, at));
+});
+
+test("a table larger than the whole budget becomes its own unit rather than being split", () => {
+  const rows = Array.from(
+    { length: 160 },
+    (_, index) =>
+      `<w:tr><w:tc><w:p><w:r><w:t>Row ${index + 1} description of the item as entered on the schedule</w:t></w:r></w:p></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>Value ${index + 1} recorded at the date of the survey</w:t></w:r></w:p></w:tc></w:tr>`,
+  ).join("");
+  const { doc } = parseDocx(bodyDocx(para("Before the schedule") + `<w:tbl>${rows}</w:tbl>` + para("After the schedule")));
+
+  assert.equal(doc.tables.length, 1);
+  assert.equal(doc.tables[0]?.rows.length, 160, "every row survived");
+  const tableBlocks = allBlocks(doc).filter((block) => block.kind === "table");
+  assert.equal(tableBlocks.length, 1, "one grid, one block — a table is one flow item and cannot be cut");
+  assert.equal(tableBlocks[0]?.text.split("\n").length, 160, "the block carries the whole grid, not a slice of it");
+  const home = doc.units.find((unit) => unit.blocks.some((block) => block.kind === "table"));
+  // An item bigger than the whole budget is the last thing in its unit: nothing
+  // after it was packed alongside it, and the grid was never cut to make room.
+  assert.equal(home?.blocks.at(-1)?.kind, "table");
+  assertConserved(doc, ["Before the schedule", "After the schedule"]);
+});
+
+test("the token window is a token estimate, not a character count — a CJK document splits where a Latin one does not", () => {
+  // Same character count in both, and the same paragraph count. Only the SCRIPT
+  // differs: dense scripts cost about four times as much per character, so a
+  // window sized by `String.length` would treat these two files as identical.
+  const size = 120;
+  const cjk = Array.from({ length: 25 }, (_, index) =>
+    Array.from({ length: size }, (_, at) => String.fromCodePoint(0x4e00 + ((index * size + at) % 2000))).join(""),
+  );
+  const latin = Array.from({ length: 25 }, (_, index) =>
+    `Paragraph ${index + 1}. `.padEnd(size, "abcdefghij ").slice(0, size),
+  );
+  assert.equal(cjk.join("").length, latin.join("").length, "the fixtures must differ only in script");
+
+  const dense = parseDocx(bodyDocx(cjk.map(para).join(""))).doc;
+  const plain = parseDocx(bodyDocx(latin.map(para).join(""))).doc;
+
+  assert.equal(plain.units.length, 1, "3000 Latin characters is well inside one unit");
+  assert.ok(dense.units.length > 1, "3000 CJK characters is not");
+  assertConserved(dense, cjk);
+  assertBounded(dense);
+});
+
+test("a heading document is cut ONLY at its headings, even when it also has section and page breaks", () => {
+  const headed = (extra: { breaks: boolean }): string =>
+    "<w:p><w:pPr><w:outlineLvl w:val='0'/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>" +
+    para("Alpha body") +
+    (extra.breaks ? PAGE_BREAK : "") +
+    para("Alpha second body") +
+    (extra.breaks ? SECTION_BREAK : "") +
+    "<w:p><w:pPr><w:outlineLvl w:val='0'/></w:pPr><w:r><w:t>Beta</w:t></w:r></w:p>" +
+    para("Beta body");
+
+  const shape = (doc: ParsedDocument): unknown =>
+    doc.units.map((unit) => ({
+      blocks: unit.blocks.map((block) => ({
+        depth: block.depth,
+        id: block.id,
+        kind: block.kind,
+        ordinal: block.ordinal,
+        text: block.text,
+      })),
+      headingPath: unit.locator.headingPath,
+      index: unit.locator.index,
+      kind: unit.locator.kind,
+      label: unit.locator.label,
+    }));
+
+  const withBreaks = parseDocx(bodyDocx(headed({ breaks: true }))).doc;
+  assert.deepEqual(shape(withBreaks), shape(parseDocx(bodyDocx(headed({ breaks: false }))).doc));
+  // …and against literals, so this cannot pass by both sides changing together.
+  assert.deepEqual(shape(withBreaks), [
+    {
+      blocks: [
+        { depth: 1, id: "b0", kind: "heading", ordinal: 0, text: "Alpha" },
+        { depth: undefined, id: "b1", kind: "paragraph", ordinal: 1, text: "Alpha body" },
+        { depth: undefined, id: "b2", kind: "paragraph", ordinal: 2, text: "Alpha second body" },
+      ],
+      headingPath: ["Alpha"],
+      index: 1,
+      kind: "section",
+      label: "Alpha",
+    },
+    {
+      blocks: [
+        { depth: 1, id: "b3", kind: "heading", ordinal: 0, text: "Beta" },
+        { depth: undefined, id: "b4", kind: "paragraph", ordinal: 1, text: "Beta body" },
+      ],
+      headingPath: ["Beta"],
+      index: 2,
+      kind: "section",
+      label: "Beta",
+    },
+  ]);
 });
 
 // ── the walker, without a zip ────────────────────────────────────────────────

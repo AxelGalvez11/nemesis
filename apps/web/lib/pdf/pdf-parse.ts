@@ -38,15 +38,24 @@ import type {
   ParsedDocument,
 } from "@nemesis/shared";
 import { extractPdfText, type ExtractResult } from "@/lib/pdf/extract";
-import { THIN_PAGE_CHARS, thinPages } from "@/lib/pdf/pages";
+import {
+  PAGE_READ_SCORER_VERSION,
+  type PageReadDecision,
+  type PageReadReason,
+  scorePagesRead,
+} from "@/lib/pdf/page-read";
 
 /**
  * The build of this mapping. A new value means a NEW parsed_documents row rather
  * than an overwrite, so "reprocess everything parsed by version X" stays
  * answerable. Bump it when the units, blocks or coverage this file produces
  * change shape or meaning — notably when boxes or headings arrive.
+ *
+ * 1.1.0: which pages count as read stopped being a character count and became the
+ * scored, script-aware decision in lib/pdf/page-read.ts, so coverage numbers from
+ * before and after this version are not comparable page for page.
  */
-export const PDF_PARSER_VERSION = "pdf-1.0.0";
+export const PDF_PARSER_VERSION = "pdf-1.1.0";
 
 /** Facts that live in the PDF itself rather than in its text. Read once, from one
  *  document proxy, because both come off the same catalog. */
@@ -101,9 +110,10 @@ export interface PdfReadRecord {
    *  read in a single pass. It has no page boundaries — see the unit it becomes. */
   wholeTranscript?: string | null;
   facts?: PdfDocumentFacts | null;
-  /** The picture-page floor. Overridable so a test can be explicit; defaults to the
-   *  value measured in lib/pdf/pages.ts. */
-  thinThreshold?: number;
+  /** The score at or above which a page counts as read from its own text layer.
+   *  Overridable so a test can be explicit; defaults to READ_SCORE in
+   *  lib/pdf/page-read.ts, where the signals behind the score also live. */
+  readScore?: number;
 }
 
 /** Blank-line-separated runs of a page's text.
@@ -160,14 +170,17 @@ export const PDF_NO_GEOMETRY_NOTE =
 export function buildPdfParsedDocument(record: PdfReadRecord): ParsedDocument {
   const pageTexts = record.pageTexts;
   const transcripts = record.transcripts ?? new Map<number, string>();
-  const threshold = record.thinThreshold ?? THIN_PAGE_CHARS;
   const labels = record.facts?.pageLabels ?? null;
   const whole = (record.wholeTranscript ?? "").trim();
 
-  // Which pages hold their content as a picture. Recomputed from the same pure
-  // helper the read used, rather than passed in, so the coverage report and the
-  // read decision can never drift apart.
-  const thin = thinPages(pageTexts, threshold);
+  // Which pages hold their content as a picture, and WHY each one was judged that
+  // way. Recomputed from the same pure scorer the read used, rather than passed in,
+  // so the coverage report and the read decision can never drift apart.
+  const decisions = scorePagesRead(
+    pageTexts,
+    record.readScore === undefined ? {} : { readScore: record.readScore },
+  );
+  const thin = decisions.filter((decision) => !decision.read).map((decision) => decision.index);
   const thinSet = new Set(thin);
 
   const units: DocUnit[] = pageTexts.map((text, index) => {
@@ -235,7 +248,7 @@ export function buildPdfParsedDocument(record: PdfReadRecord): ParsedDocument {
     });
   }
 
-  const coverage = buildPdfCoverage(record, thin, thinSet, transcripts, whole);
+  const coverage = buildPdfCoverage(record, decisions, thin, thinSet, transcripts, whole);
   const title = record.facts?.info.title?.trim() || record.guessedTitle?.trim() || undefined;
   const meta: Record<string, string | number | boolean> = {};
   const producer = record.facts?.info.producer?.trim();
@@ -243,6 +256,20 @@ export function buildPdfParsedDocument(record: PdfReadRecord): ParsedDocument {
   if (producer) meta.producer = producer;
   if (creator) meta.creator = creator;
   if (labels) meta.hasPageLabels = true;
+  // The routing decision, per page, in a form something can query later. Only the
+  // pages the text layer did not carry are written: they are the ones a bill or a
+  // complaint is ever about, and on a 2,000-page scan every page would be listed.
+  //
+  // 🔴 THIS IS NOT coverage.unitsUnread AND THE TWO DISAGREE ON PURPOSE. This says
+  // which pages the text layer failed to carry; unitsUnread says which pages nobody
+  // ended up reading at all. On a document read whole from its pixels every page
+  // fails the first test and none fails the second, so this field is full and
+  // unitsUnread is empty — both true, about different questions.
+  const unreadRecord = pageReadRecord(decisions);
+  if (unreadRecord) {
+    meta.pageReadScorer = PAGE_READ_SCORER_VERSION;
+    meta.pageReadUnread = unreadRecord;
+  }
 
   return {
     contentHash: record.contentHash,
@@ -258,6 +285,81 @@ export function buildPdfParsedDocument(record: PdfReadRecord): ParsedDocument {
 }
 
 /**
+ * How many unread pages the per-page record may name.
+ *
+ * The record is stored with the parse, and a scanned book would otherwise put
+ * thousands of entries in a field meant for facts. Past the cap the entries stop
+ * and a note says so — unitsUnread still names EVERY unread page, so nothing is
+ * hidden by the cap, only its reason.
+ */
+export const PAGE_READ_RECORD_CAP = 50;
+
+/**
+ * The pages the text layer did not carry, as JSON: page number to the reason and
+ * the score behind it.
+ *
+ * JSON rather than prose because this is the auditing artifact — "how many pages
+ * did we send to be re-read because their text layer was garbled, across every
+ * document imported in June" is a question about data, and a sentence cannot
+ * answer it. Keyed by PAGE NUMBER, matching every locator in the document, so
+ * nobody has to remember which of the two is 0-based. Returns null when every page
+ * read fine, so an ordinary document carries no meta at all. PURE.
+ */
+function pageReadRecord(decisions: readonly PageReadDecision[]): string | null {
+  const unread = decisions.filter((decision) => !decision.read);
+  if (unread.length === 0) return null;
+  const entries: Record<string, { reason: PageReadReason; score: number }> = {};
+  for (const decision of unread.slice(0, PAGE_READ_RECORD_CAP)) {
+    entries[String(decision.index + 1)] = { reason: decision.reason, score: decision.score };
+  }
+  return JSON.stringify(entries);
+}
+
+/** One prose line per reason that actually occurred, in a fixed order so two parses
+ *  of the same document read identically. Counted over EVERY page, read or not, so
+ *  the line is a description of the document rather than of its failures. PURE. */
+function pageReadNotes(decisions: readonly PageReadDecision[]): string[] {
+  const counts = new Map<PageReadReason, number>();
+  for (const decision of decisions) {
+    counts.set(decision.reason, (counts.get(decision.reason) ?? 0) + 1);
+  }
+  const said: Record<PageReadReason, string> = {
+    "no-text-layer": "had no text layer at all",
+    "thin-text-layer": "carried too little text to have been read from the page itself",
+    "garbled-text-layer":
+      "had text of a plausible length whose characters carry no information, which is what a broken font map produces",
+    "thin-for-this-document":
+      "cleared the absolute floor but returned a small fraction of what this document's own pages return",
+    "short-composed-page":
+      "is short but composed — a title page or a divider — and was left alone rather than re-read as a picture",
+    "text-layer": "carried its own words",
+  };
+  const order: PageReadReason[] = [
+    "text-layer",
+    "short-composed-page",
+    "no-text-layer",
+    "thin-text-layer",
+    "garbled-text-layer",
+    "thin-for-this-document",
+  ];
+  const lines = order
+    .filter((reason) => (counts.get(reason) ?? 0) > 0)
+    .map((reason) => `${counts.get(reason)} page(s): ${said[reason]}.`);
+  if (lines.length === 0) return [];
+  const out = [`Page readability was scored by ${PAGE_READ_SCORER_VERSION}. ${lines.join(" ")}`];
+  // Counted from the decisions themselves rather than by subtracting the reasons
+  // that mean "read": a seventh reason would silently break the subtraction, and
+  // the count above is the number this note has to be true about.
+  const unread = decisions.filter((decision) => !decision.read).length;
+  if (unread > PAGE_READ_RECORD_CAP) {
+    out.push(
+      `Only the first ${PAGE_READ_RECORD_CAP} of the ${unread} pages the text layer did not carry have their reason kept alongside this parse.`,
+    );
+  }
+  return out;
+}
+
+/**
  * What was read and what was not, at parity with the coverage the extract route
  * already reports — the same arithmetic, expressed in the model's own fields.
  *
@@ -265,14 +367,18 @@ export function buildPdfParsedDocument(record: PdfReadRecord): ParsedDocument {
  * unitsFound, unitsRead and unitsUnread, with unitsUnread carrying the page NUMBERS
  * rather than a count, so the gap is nameable instead of merely countable.
  *
- * The rule that makes those numbers agree: a page under the picture-page floor
- * counts as UNREAD even when it carried a line of text. That is measured, not
- * conservative — a page whose whole content is a screenshot with a heading above it
- * extracts its heading and nothing a reader came for. Counting it as read is the
- * exact failure the floor was introduced to end. PURE.
+ * The rule that makes those numbers agree: a page the scorer judged unread counts
+ * as UNREAD even when it carried a line of text. That is measured, not conservative
+ * — a page whose whole content is a screenshot with a heading above it extracts its
+ * heading and nothing a reader came for. Counting it as read is the exact failure
+ * the picture-page rule was introduced to end.
+ *
+ * Every reason the scorer gave is said here too, so the report answers "why" and
+ * not only "how many". PURE.
  */
 function buildPdfCoverage(
   record: PdfReadRecord,
+  decisions: readonly PageReadDecision[],
   thin: readonly number[],
   thinSet: ReadonlySet<number>,
   transcripts: ReadonlyMap<number, string>,
@@ -280,7 +386,7 @@ function buildPdfCoverage(
 ): DocCoverage {
   const pageTexts = record.pageTexts;
   const unitsFound = record.pageCount > 0 ? record.pageCount : pageTexts.length;
-  const notes: string[] = [PDF_NO_VISUALS_NOTE, PDF_NO_GEOMETRY_NOTE];
+  const notes: string[] = [PDF_NO_VISUALS_NOTE, PDF_NO_GEOMETRY_NOTE, ...pageReadNotes(decisions)];
 
   if (record.pageCount > 0 && record.pageCount !== pageTexts.length) {
     // A consumer that assumes units.length === unitsFound would be wrong here, so
@@ -417,7 +523,7 @@ export interface PdfParseOptions {
    *  string went downstream. */
   truncated?: boolean;
   facts?: PdfDocumentFacts | null;
-  thinThreshold?: number;
+  readScore?: number;
 }
 
 /**
@@ -440,7 +546,7 @@ export async function parsePdfDocument(
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.requested ? { requested: options.requested } : {}),
     ...(options.wholeTranscript ? { wholeTranscript: options.wholeTranscript } : {}),
-    ...(options.thinThreshold !== undefined ? { thinThreshold: options.thinThreshold } : {}),
+    ...(options.readScore !== undefined ? { readScore: options.readScore } : {}),
     facts,
   });
 }

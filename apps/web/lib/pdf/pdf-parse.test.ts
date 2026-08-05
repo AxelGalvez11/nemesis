@@ -3,9 +3,10 @@ import { test } from "node:test";
 
 import { citeLocator, walkBlocks } from "@nemesis/shared";
 
-import { THIN_PAGE_CHARS } from "./pages";
+import { PAGE_READ_SCORER_VERSION, READ_TOKEN_FLOOR, scorePagesRead } from "./page-read";
 import {
   buildPdfParsedDocument,
+  PAGE_READ_RECORD_CAP,
   parsePdfDocument,
   PDF_PARSER_VERSION,
   printedLabelFor,
@@ -110,7 +111,7 @@ test("with no transcripts at all, every picture-page is named as unread", () => 
 // heading and nothing a reader came for.
 test("a heading over a full-page screenshot counts as unread, not read", () => {
   const heading = "Breastfeeding Considerations: Enoxaparin LexiDrug";
-  assert.ok(heading.length < THIN_PAGE_CHARS);
+  assert.ok(scorePagesRead([heading])[0]!.signals.tokens < READ_TOKEN_FLOOR);
   const doc = buildPdfParsedDocument(record({ pageTexts: [words(60), heading] }));
   assert.deepEqual(doc.coverage.unitsUnread, [2]);
   assert.equal(doc.coverage.unitsRead, 1);
@@ -137,6 +138,53 @@ test("a partial read never presents as complete", () => {
   const doc = buildPdfParsedDocument(record({ pageTexts: [words(50), "", ""] }));
   assert.notEqual(doc.coverage.unitsRead, doc.coverage.unitsFound);
   assert.ok(doc.coverage.notes?.some((note) => note.includes("not read")));
+});
+
+// ── The routing decision, kept ───────────────────────────────────────────────
+//
+// Whether a page was read is a decision with money and accuracy behind it, and it
+// used to leave no trace: the report said how many pages were unread and nothing
+// about why. These four tests are the promise that "why" survives the parse.
+
+test("the reason each unread page was routed to a picture read is kept with the parse", () => {
+  const garbled = " ".repeat(60);
+  const doc = buildPdfParsedDocument(record({ pageTexts: [words(60), "", garbled] }));
+  assert.equal(doc.meta?.pageReadScorer, PAGE_READ_SCORER_VERSION);
+  const kept = JSON.parse(String(doc.meta?.pageReadUnread)) as Record<
+    string,
+    { reason: string; score: number }
+  >;
+  // Keyed by PAGE NUMBER, matching unitsUnread and every locator in the document.
+  assert.deepEqual(Object.keys(kept), ["2", "3"]);
+  assert.equal(kept["2"]?.reason, "no-text-layer");
+  assert.equal(kept["3"]?.reason, "garbled-text-layer");
+  assert.ok(kept["3"]!.score >= 0 && kept["3"]!.score < 1);
+  assert.deepEqual(doc.coverage.unitsUnread, [2, 3]);
+});
+
+// A page of rubbish is the case a length test cannot see: it has more characters
+// than most real pages and says nothing at all.
+test("a page whose text layer is long and unusable is counted as unread", () => {
+  const doc = buildPdfParsedDocument(
+    record({ pageTexts: [words(60), " ".repeat(80)] }),
+  );
+  assert.deepEqual(doc.coverage.unitsUnread, [2]);
+  assert.equal(doc.coverage.unitsRead, 1);
+  assert.ok(doc.coverage.notes?.some((note) => note.includes("broken font map")));
+});
+
+test("the coverage report counts the pages by reason, in words", () => {
+  const doc = buildPdfParsedDocument(record({ pageTexts: [words(60), "", ""] }));
+  const note = (doc.coverage.notes ?? []).find((line) => line.includes(PAGE_READ_SCORER_VERSION));
+  assert.ok(note, "the scorer names its build on every parse");
+  assert.match(note!, /1 page\(s\): carried its own words/);
+  assert.match(note!, /2 page\(s\): had no text layer at all/);
+});
+
+test("a document every page of which read fine carries no routing record at all", () => {
+  const doc = buildPdfParsedDocument(record({ pageTexts: [words(50), words(60)] }));
+  assert.equal(doc.meta, undefined);
+  assert.ok(doc.coverage.notes?.some((note) => note.includes(PAGE_READ_SCORER_VERSION)));
 });
 
 // ── Transcribed pages ────────────────────────────────────────────────────────
@@ -232,6 +280,28 @@ test("an undivided transcript is recorded at document level, never sliced into p
   assert.equal(doc.coverage.unitsRead, 3);
   assert.deepEqual(doc.coverage.unitsUnread, []);
   assert.ok(doc.coverage.notes?.some((note) => note.includes("no page boundaries")));
+});
+
+// The two records answer different questions and a big scan is where they visibly
+// disagree: every page failed its text layer, and no page went unread, because the
+// pixels were read instead.
+test("a scan read whole says every page failed its text layer and none went unread", () => {
+  const doc = buildPdfParsedDocument(
+    record({
+      pageTexts: Array.from({ length: 60 }, () => ""),
+      wholeTranscript: "Everything the scanner saw, in one pass.",
+    }),
+  );
+  assert.deepEqual(doc.coverage.unitsUnread, []);
+  assert.equal(doc.coverage.unitsRead, 60);
+  const kept = JSON.parse(String(doc.meta?.pageReadUnread)) as Record<string, unknown>;
+  assert.equal(Object.keys(kept).length, PAGE_READ_RECORD_CAP);
+  // The note about the cap must be true as written: it talks about the pages the
+  // text layer did not carry, which is 60, and never about unitsUnread, which is 0.
+  const capped = (doc.coverage.notes ?? []).find((note) => note.includes("have their reason kept"));
+  assert.ok(capped, "the cap is admitted");
+  assert.match(capped!, new RegExp(`first ${PAGE_READ_RECORD_CAP} of the 60 pages`));
+  assert.ok(!capped!.includes("unitsUnread"));
 });
 
 test("no phantom document unit appears when there was no whole-document read", () => {

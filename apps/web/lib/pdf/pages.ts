@@ -13,7 +13,13 @@
 // LexiDrug" — and everything a student is examined on is inside the screenshot
 // underneath it ("...its passage into milk and subsequent risk to a nursing
 // infant should be considered negligible"). Opened and read by eye to confirm it.
-// So the rule is a floor on characters, not a test for zero.
+// So the rule is not a test for zero — but it is not a character count either. How
+// much text a page needs before it counts as read is scored from several measured
+// signals in lib/pdf/page-read.ts, because 120 characters is a great deal of
+// Chinese and almost no English, and a character floor sends real content pages of
+// one language to be re-read as pictures while letting empty ones of another
+// through. Everything below asks that module and then decides what to DO about the
+// answer.
 //
 // WHY THE PAGE, NOT THE PICTURE. In a .pptx a figure is a discrete file, so the
 // picture is the unit. In a PDF the figure is drawn INTO the page — most of these
@@ -25,16 +31,18 @@
 // PURE: page text in, decisions and merged text out.
 
 import { capText } from "@/lib/pdf/extract";
+import { type PageReadDecision, type PageReadOptions, scorePagesRead } from "@/lib/pdf/page-read";
 
-/**
- * Below this many characters, a page has not really been read — whatever it says
- * is in the picture. Set from the real corpus: section dividers ("Lactation 04",
- * 12 chars) and full-page screenshots with a heading ("Breastfeeding
- * Considerations: Enoxaparin LexiDrug", 49 chars) both land here, and reading a
- * divider costs a fraction of a cent and returns its own title. Erring high is
- * how a content page avoids being mistaken for a divider.
- */
-export const THIN_PAGE_CHARS = 120;
+// The decision itself, re-exported so a caller that has this module does not need
+// to know the scorer's file name to read the answer it hands back.
+export {
+  PAGE_READ_SCORER_VERSION,
+  scorePagesRead,
+  type PageReadDecision,
+  type PageReadOptions,
+  type PageReadReason,
+  type PageReadSignals,
+} from "@/lib/pdf/page-read";
 
 /**
  * Most pages of one document sent to be read. A bound on spend and on how long an
@@ -51,41 +59,53 @@ export const PAGE_BATCH_SIZE = 8;
  *  rate-limits per key. */
 export const PAGE_CONCURRENCY = 3;
 
-/** How much readable text a page really has, ignoring layout whitespace. PURE. */
+/** How many characters of readable text a page has, ignoring layout whitespace.
+ *  A measurement, not the rule: whether a page counts as read is scored in
+ *  lib/pdf/page-read.ts, where a character is not the unit. PURE. */
 export function pageTextLength(text: string): number {
   return text.replace(/\s+/g, " ").trim().length;
 }
 
 /**
- * Indices (0-based) of EVERY page whose content is a picture, in page order.
- * Separate from unreadPages() because the coverage report needs the true total:
- * a page dropped to the cap is not "read from its text layer", and counting it as
- * one would turn the cap into exactly the silent loss it exists to bound. PURE.
+ * Indices (0-based) of EVERY page the scorer judged was not read from its own text
+ * layer, in page order. Separate from unreadPages() because the coverage report
+ * needs the true total: a page dropped to the cap is not "read from its text
+ * layer", and counting it as one would turn the cap into exactly the silent loss it
+ * exists to bound. PURE.
  */
-export function thinPages(perPageText: readonly string[], threshold = THIN_PAGE_CHARS): number[] {
-  return perPageText
-    .map((text, index) => ({ index, length: pageTextLength(text) }))
-    .filter((page) => page.length < threshold)
-    .map((page) => page.index);
+export function thinPages(perPageText: readonly string[], options?: PageReadOptions): number[] {
+  return unreadFrom(scorePagesRead(perPageText, options));
+}
+
+/** The same list, from decisions already made — so a caller that needs both the
+ *  list and the reasons scores the document once. PURE. */
+function unreadFrom(decisions: readonly PageReadDecision[]): number[] {
+  return decisions.filter((decision) => !decision.read).map((decision) => decision.index);
 }
 
 /**
  * Which of those pages to actually send, capped at `max` and in page order.
- * Thinnest first when the cap bites: a page with nothing at all is a worse loss
- * than one that at least has its heading. PURE.
+ * Least-read first when the cap bites: a page with nothing at all is a worse loss
+ * than one that at least has its heading, and the score already says which is
+ * which — it is the same ordering as before, over a measurement that now holds in
+ * every script rather than only in English. PURE.
  */
 export function unreadPages(
   perPageText: readonly string[],
   max = MAX_VISION_PAGES,
-  threshold = THIN_PAGE_CHARS,
+  options?: PageReadOptions,
 ): number[] {
-  const thin = thinPages(perPageText, threshold);
-  if (thin.length <= max) return thin;
+  return pickForReading(scorePagesRead(perPageText, options), max);
+}
+
+function pickForReading(decisions: readonly PageReadDecision[], max: number): number[] {
+  const thin = decisions.filter((decision) => !decision.read);
+  if (thin.length <= max) return thin.map((decision) => decision.index);
   return thin
-    .map((index) => ({ index, length: pageTextLength(perPageText[index] ?? "") }))
-    .sort((a, b) => a.length - b.length || a.index - b.index)
+    .slice()
+    .sort((a, b) => a.score - b.score || a.index - b.index)
     .slice(0, max)
-    .map((page) => page.index)
+    .map((decision) => decision.index)
     .sort((a, b) => a - b);
 }
 
@@ -101,22 +121,31 @@ export function unreadPages(
  *             This is the common case in real lecture material and the one that
  *             was missed entirely.
  *
+ * Every plan carries the per-page decisions that produced it, including on the
+ * "text" plan where nothing is sent. That is what makes the routing auditable
+ * afterwards: a caller can record WHY each page went where it went, and "no page
+ * needed reading" is itself a claim worth being able to check.
+ *
  * PURE.
  */
 export type PdfPlan =
-  | { kind: "text" }
-  | { kind: "whole" }
-  | { kind: "pages"; needed: number[] };
+  | { kind: "text"; decisions: readonly PageReadDecision[] }
+  | { kind: "whole"; decisions: readonly PageReadDecision[] }
+  | { kind: "pages"; needed: number[]; decisions: readonly PageReadDecision[] };
 
 export function planPdfRead(
   perPageText: readonly string[],
   max = MAX_VISION_PAGES,
-  threshold = THIN_PAGE_CHARS,
+  options?: PageReadOptions,
 ): PdfPlan {
-  const thin = thinPages(perPageText, threshold);
-  if (thin.length === 0) return { kind: "text" };
-  if (thin.length === perPageText.length) return { kind: "whole" };
-  return { kind: "pages", needed: unreadPages(perPageText, max, threshold) };
+  // Scored ONCE and shared by all three answers below. Scoring is document-level —
+  // one signal compares a page with the rest of its document — so re-deriving it
+  // per question would also be re-deriving the document statistic.
+  const decisions = scorePagesRead(perPageText, options);
+  const thin = unreadFrom(decisions);
+  if (thin.length === 0) return { kind: "text", decisions };
+  if (thin.length === perPageText.length) return { kind: "whole", decisions };
+  return { kind: "pages", needed: pickForReading(decisions, max), decisions };
 }
 
 /** The marker the model is asked to put before each page's transcript. */

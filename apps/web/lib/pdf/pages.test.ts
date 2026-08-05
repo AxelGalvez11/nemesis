@@ -8,10 +8,10 @@ import {
   finishPdfPages,
   planPdfRead,
   splicePages,
-  THIN_PAGE_CHARS,
   thinPages,
   unreadPages,
 } from "./pages";
+import { READ_TOKEN_FLOOR, scorePagesRead } from "./page-read";
 
 const words = (n: number) => "word ".repeat(n).trim();
 
@@ -31,7 +31,7 @@ test("a page of only layout whitespace is unread", () => {
 // answer a student is examined on sits inside the screenshot below it.
 test("a heading over a full-page screenshot is unread, not read", () => {
   const heading = "Breastfeeding Considerations: Enoxaparin LexiDrug";
-  assert.ok(heading.length < THIN_PAGE_CHARS);
+  assert.ok(scorePagesRead([heading])[0]!.signals.tokens < READ_TOKEN_FLOOR);
   assert.deepEqual(unreadPages([heading]), [0]);
 });
 
@@ -153,14 +153,30 @@ test("with nothing read at all the text is exactly what it was", () => {
 // ── Which kind of read the document needs ────────────────────────────────────
 
 test("a document that reads fine needs no vision at all", () => {
-  assert.deepEqual(planPdfRead([words(300), words(300)]), { kind: "text" });
+  assert.equal(planPdfRead([words(300), words(300)]).kind, "text");
+});
+
+// Every plan carries the reason each page was routed the way it was, including the
+// plan that routes nothing: "no page needed reading" is a claim, and a claim nobody
+// can check is how the picture-page hole went unnoticed in the first place.
+test("a plan carries the decision behind every page, even when it asks for nothing", () => {
+  const plan = planPdfRead([words(300), ""]);
+  assert.deepEqual(
+    plan.decisions.map((decision) => decision.reason),
+    ["text-layer", "no-text-layer"],
+  );
+  assert.deepEqual(
+    plan.decisions.map((decision) => decision.index),
+    [0, 1],
+  );
+  assert.equal(planPdfRead([words(300)]).decisions.length, 1);
 });
 
 // The regression the page path could have caused. readPdfWithVision reads a whole
 // scan in ONE request with no page cap; slicing would have read 40 pages of a
 // 100-page scan and labelled the other 60 unreadable — worse than what it replaced.
 test("a document that is ALL pictures is read whole, not sliced", () => {
-  assert.deepEqual(planPdfRead(Array.from({ length: 100 }, () => "")), { kind: "whole" });
+  assert.equal(planPdfRead(Array.from({ length: 100 }, () => "")).kind, "whole");
 });
 
 test("one readable page is enough to make it a page-by-page read", () => {
@@ -170,7 +186,7 @@ test("one readable page is enough to make it a page-by-page read", () => {
 });
 
 test("an empty document asks for nothing", () => {
-  assert.deepEqual(planPdfRead([]), { kind: "text" });
+  assert.deepEqual(planPdfRead([]), { kind: "text", decisions: [] });
 });
 
 // ── The cap holds on the spliced path too ────────────────────────────────────
