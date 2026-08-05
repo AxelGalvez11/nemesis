@@ -31,6 +31,10 @@ mkdirSync(outdir, { recursive: true });
 const entryPoints = {
   background: join(here, "src/background.ts"),
   "content-bridge": join(here, "src/content-bridge.ts"),
+  // Injected into ONE course's page by the sweep, in a background tab.
+  "content-course": join(here, "src/content-course.ts"),
+  // Injected to read one file's bytes with the student's own school session.
+  "content-fetch": join(here, "src/content-fetch.ts"),
   "content-scan": join(here, "src/content-scan.ts"),
   popup: join(here, "src/popup/popup.ts"),
 };

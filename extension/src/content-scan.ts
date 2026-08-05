@@ -21,24 +21,13 @@
 import { readFacts, readSnapshot } from "./lms/dom.ts";
 import { newCrawl, type CrawlLink, type CrawlState } from "./lms/crawl.ts";
 import { folderRule, walkCourse } from "./lms/walk.ts";
-import {
-  ULTRA_COURSE_ROUTE,
-  ULTRA_DOCUMENT_SELECTOR,
-  ULTRA_EXPANDER_SELECTOR,
-  ULTRA_LOAD_MORE_SELECTOR,
-  ULTRA_ROW_CLASS,
-  revealWholeOutline,
-  ultraDocumentTitle,
-  ultraFileTypeFromTitle,
-  isUltraToolLaunch,
-  ultraFolderName,
-  ultraFolderPath,
-} from "./lms/ultra.ts";
+import { ULTRA_COURSE_ROUTE } from "./lms/ultra.ts";
+import { readUltraCourse, waitForChange } from "./lms/ultra-read.ts";
 import { detectLms, factsFromUrl } from "./lms/detect.ts";
 import { isItemLink, parseSnapshot } from "./lms/parse.ts";
 import { type LmsOverride, OVERRIDE_KEY, RUNTIME_MESSAGES } from "./messages.ts";
 import { type ScanProgress, showCard } from "./toast.ts";
-import type { LmsKind, LmsScan, ScrapedCourse, ScrapedDocument } from "./wire.ts";
+import type { LmsKind, LmsScan, ScrapedCourse } from "./wire.ts";
 
 /** Where a student goes to turn a reading into Library folders. */
 const APP_URL = "https://app.enternemesis.com/library?import=coursework";
@@ -84,81 +73,11 @@ const LABELS: Record<LmsKind, string> = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ── 🔴 THE CLOCK STOPS IN A BACKGROUND TAB. THE PAGE DOES NOT. ───────────────
-//
-// See the measurements at the top of lms/ultra.ts. In a tab that is open but
-// not frontmost, Chrome throttles timers to roughly one wake per minute: a
-// `setTimeout(…, 50)` on the owner's live course fired 147 SECONDS later.
-// MutationObserver, meanwhile, fired at 82ms — the page is entirely awake.
-//
-// This broke both halves of the scan, and both looked like the portal's fault:
-//
-//   • The course-list wait below did `await sleep(1000)` inside a 45-second
-//     budget. Hidden, that ONE sleep spent the whole budget, so the loop ran a
-//     single time and reported "No courses found" on a page that was still
-//     rendering. That is the exact false report this scanner exists to prevent.
-//   • The Ultra folder scan paused 400ms after every click. Hidden, a scan
-//     that takes ten seconds took a quarter of an hour.
-//
-// A student pressing Scan and then switching tabs is not an edge case. It is
-// what people do while they wait.
-//
-// So: wait for the page to DO something, not for the clock to move.
-
-/** Long enough for a slow campus network to answer one click. */
-const WAIT_BUDGET_MS = 6_000;
-
-/**
- * Resolve as soon as `predicate` holds — true if it did, false if the budget
- * ran out first.
- *
- * MutationObserver is the engine, because it is not throttled. The timer is
- * only a backstop for the case where the thing never happens: it fires late in
- * a hidden tab, but late is survivable and never is not. Every ordinary wait
- * here is answered by the observer in well under a second, in either kind of
- * tab, which is also FASTER than the fixed pause it replaces.
- */
-function waitUntil(predicate: () => boolean, budgetMs: number = WAIT_BUDGET_MS): Promise<boolean> {
-  if (predicate()) return Promise.resolve(true);
-  return new Promise<boolean>((resolve) => {
-    let settled = false;
-    let backstop = 0;
-    const observer = new MutationObserver(() => {
-      if (predicate()) finish(true);
-    });
-    function finish(ok: boolean): void {
-      if (settled) return;
-      settled = true;
-      observer.disconnect();
-      window.clearTimeout(backstop);
-      resolve(ok);
-    }
-    // `aria-expanded` is watched by name because a folder opening is an
-    // ATTRIBUTE flip on a button, not a new node — without it the one signal
-    // that says "the click actually took" would be invisible here.
-    observer.observe(document.documentElement, {
-      attributeFilter: ["aria-expanded"],
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-    backstop = window.setTimeout(() => finish(predicate()), budgetMs);
-  });
-}
-
-/**
- * Wait for the page to change at all. False means it went quiet.
- *
- * Used where the thing being waited for has no single test — "has this portal
- * finished drawing its course list" — so the honest signal is simply whether
- * it is still doing anything.
- */
-function waitForChange(budgetMs: number): Promise<boolean> {
-  let changed = false;
-  const observer = new MutationObserver(() => { changed = true; });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  return waitUntil(() => changed, budgetMs).finally(() => observer.disconnect());
-}
+// 🔴 THE CLOCK STOPS IN A BACKGROUND TAB. THE PAGE DOES NOT. The waits used
+// here are driven by MutationObserver rather than by a timer, for reasons
+// measured on a live course and written up at the top of lms/ultra-read.ts.
+// That file now owns them, because the sweep reads every course in a tab that
+// is deliberately not frontmost — the throttled path is the normal one there.
 
 /**
  * "The student says this page is Moodle", if they said so.
@@ -225,6 +144,11 @@ async function linksOnPage(url: string): Promise<readonly CrawlLink[] | null> {
     const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
     return Array.from(parsed.querySelectorAll("a[href]")).flatMap((anchorEl) => {
       const href = anchorEl.getAttribute("href") ?? "";
+      // What KIND of row is this? Canvas states it on the row's own class and
+      // hides it nowhere else — every item shares one URL shape. Vendor-emitted
+      // and functional, the same call already made for Ultra's analytics ids.
+      const row = anchorEl.closest(".context_module_item");
+      const attachment = row ? row.classList.contains("attachment") : undefined;
       // Resolved against the page it was found on, not against wherever this
       // script happens to be running.
       let absolute: string;
@@ -233,7 +157,11 @@ async function linksOnPage(url: string): Promise<readonly CrawlLink[] | null> {
       } catch {
         return [];
       }
-      return [{ href: absolute, text: (anchorEl.textContent ?? "").replace(/\s+/g, " ").trim() }];
+      return [{
+        href: absolute,
+        text: (anchorEl.textContent ?? "").replace(/\s+/g, " ").trim(),
+        ...(attachment === undefined ? {} : { attachment }),
+      }];
     });
   } catch {
     return null;
@@ -294,90 +222,6 @@ function documentsDetail(
   return "Each one becomes a folder in your Library once you bring it in.";
 }
 
-/**
- * Read an Ultra course by driving its page, because there is nothing to fetch.
- *
- * Runs the three measured stages in the only order that works:
- *   1. PAGE the outline to the end. It lazy-loads ten at a time, so expanding
- *      first would open ten folders and miss everything after them.
- *   2. EXPAND every folder, repeatedly — opening one reveals more.
- *   3. HARVEST, reading folder paths from indent, because the list is flat.
- */
-async function readUltraCourse(
-  onProgress: (documents: number, note: string) => void,
-): Promise<{ documents: ScrapedDocument[]; truncated: boolean }> {
-  const rowCount = () => document.querySelectorAll(`div.${ULTRA_ROW_CLASS}`).length;
-
-  const revealed = await revealWholeOutline({
-    collapsed: () => Array.from(document.querySelectorAll<HTMLElement>(ULTRA_EXPANDER_SELECTOR)).map((element) => {
-      // Held by ID, not by node. Ultra rebuilds the outline as each folder
-      // opens, so the element captured here can be detached by the time we
-      // retry — and clicking a detached node does nothing, silently. Looking
-      // it up again each time is what makes the retry mean anything.
-      const id = element.id;
-      const live = (): HTMLElement | null =>
-        (id ? document.getElementById(id) : null) ?? (element.isConnected ? element : null);
-      return {
-        isOpen: () => live()?.getAttribute("aria-expanded") === "true",
-        label: element.getAttribute("aria-label") ?? "",
-        open: () => live()?.click(),
-      };
-    }),
-    // Only the LIVE ones. An exhausted control is a real disabled button —
-    // measured, all seven of them on a finished outline — so this is both the
-    // stopping signal and the reason a whole course costs no idle waiting.
-    loadMore: () => Array.from(document.querySelectorAll<HTMLButtonElement>(ULTRA_LOAD_MORE_SELECTOR))
-      .filter((button) => !button.disabled)
-      .map((button) => ({ click: () => button.click() })),
-    onRound: (opened, rows) => onProgress(0, `Opening the course (${opened} folders, ${rows} items)`),
-    rowCount,
-    waitUntil,
-  });
-
-  // One pass over the finished list. Indent is the only nesting signal there
-  // is, so every row is measured before any path is built.
-  const rows = Array.from(document.querySelectorAll<HTMLElement>(`div.${ULTRA_ROW_CLASS}`)).map((row) => {
-    const expander = row.querySelector<HTMLElement>(ULTRA_EXPANDER_SELECTOR)
-      ?? row.querySelector<HTMLElement>('button[data-analytics-id$="toggleFolder.button"], button[data-analytics-id$="toggleLm.button"]');
-    const link = row.querySelector<HTMLAnchorElement>(ULTRA_DOCUMENT_SELECTOR);
-    return {
-      folderName: expander ? ultraFolderName(expander.getAttribute("aria-label") ?? "") : undefined,
-      indentPx: Math.round(row.getBoundingClientRect().left),
-      link,
-    };
-  });
-
-  const documents: ScrapedDocument[] = [];
-  const seen = new Set<string>();
-  rows.forEach((row, index) => {
-    if (!row.link) return;
-    const href = row.link.href;
-    if (!href || seen.has(href)) return;
-    // A row that launches a tool rather than opening a document. Its href is
-    // Ultra's own script bundle with a "#" on the end — importing it gives the
-    // student a library entry that can never open.
-    if (isUltraToolLaunch(href, row.link.getAttribute("aria-label") ?? "")) return;
-    seen.add(href);
-    const raw = (row.link.textContent ?? "").replace(/\s+/g, " ").trim();
-    if (!raw) return;
-    // From the TITLE: an Ultra document URL is an opaque id with no extension.
-    const fileType = ultraFileTypeFromTitle(raw);
-    documents.push({
-      folder: ultraFolderPath(rows, index),
-      kind: fileType ? "file" : "page",
-      title: ultraDocumentTitle(raw),
-      url: href,
-      ...(fileType ? { fileType } : {}),
-    });
-    onProgress(documents.length, "Reading what is inside");
-  });
-
-  // `refused` folds in here on purpose: a folder that would not open after
-  // three tries is course material the student did not get, and saying "that
-  // is everything" over the top of it is the false report this all exists to
-  // prevent.
-  return { documents, truncated: revealed.truncated || revealed.refused > 0 };
-}
 
 async function scanThisPage(): Promise<LmsScan> {
   const stamp = () => new Date().toISOString();
@@ -504,6 +348,27 @@ async function scanThisPage(): Promise<LmsScan> {
     return ultraScan;
   }
 
+  // 🔴 NEWEST TERM FIRST, BECAUSE THE PAGE BUDGET RUNS OUT LONG BEFORE THE
+  // COURSES DO.
+  //
+  // MEASURED on a real signed-in Canvas account (2026-08-04): FIFTY-SIX courses
+  // spanning eight terms, listed oldest first — "Bucs on Deck 2021", "CBU
+  // Placement Exams (Fall 2021)", "Fall 2021 Calculus I", and so on. The crawl
+  // shares one budget across every course (DEFAULT_LIMITS: 240 pages total, 40
+  // per course), so walking them in the portal's own order spends the entire
+  // allowance on courses from four years ago and reaches THIS semester with
+  // nothing left.
+  //
+  // The term filter in the picker does not help here: this runs during the
+  // scan, before the student has chosen anything. Ordering is what protects
+  // them — if the budget runs out, it runs out on the oldest material rather
+  // than the material they are actually studying.
+  //
+  // Courses with no term sort last for the same reason: an undated course is
+  // less likely to be this semester's than one the portal stamped with a year.
+  const yearOf = (course: ScrapedCourse) => Number(/\b(19[89]\d|20\d{2})\b/.exec(course.term ?? "")?.[1] ?? 0);
+  const walkOrder = [...best].sort((a, b) => yearOf(b) - yearOf(a));
+
   const isFolder = folderRule(lms);
   let frontier: CrawlState = newCrawl();
   let documentsFound = 0;
@@ -516,7 +381,7 @@ async function scanThisPage(): Promise<LmsScan> {
   // and navigation happens in JavaScript, so there is nothing to fetch.
   let unopenable = 0;
 
-  for (const course of best) {
+  for (const course of walkOrder) {
     if (!course.url) {
       // Leaving `documents` ABSENT is the honest record: the shared contract
       // reads absent as "never looked inside", which is not the same as an

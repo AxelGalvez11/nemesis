@@ -328,6 +328,35 @@ function tally(deps: UltraRevealDeps): { rows: number; truncated: boolean } {
 export const ULTRA_COURSE_ROUTE = /\/ultra\/courses\/([^/]+)\/outline/;
 
 /**
+ * Where an Ultra course's content lives, built from its id. PURE.
+ *
+ * 🔴 THIS IS WHAT MAKES READING A WHOLE ACCOUNT POSSIBLE. Ultra course cards
+ * carry `href="javascript:void(0);"` — measured — so the course list offers
+ * nothing to open, and a scan of it could only ever return names. Every
+ * document the student wants is one navigation away, and there was no address
+ * to navigate to.
+ *
+ * But the identity IS in the markup (`data-course-id="_38534_1"`), and Ultra's
+ * routing is fixed at `/ultra/courses/<id>/outline`. So the address can be
+ * CONSTRUCTED for a card that has no link on it at all.
+ *
+ * Same reasoning as every other route here: the application's own navigation
+ * depends on this path, so themes and versions leave it alone. The id shape is
+ * CHECKED rather than trusted — it comes from a page a stranger can write, and
+ * it is about to become a URL we open in a tab.
+ */
+export function ultraOutlineUrl(pageUrl: string, courseId: string): string | null {
+  if (!/^_\d+_\d+$/.test(courseId)) return null;
+  try {
+    const base = new URL(pageUrl);
+    if (base.protocol !== "https:" && base.protocol !== "http:") return null;
+    return new URL(`/ultra/courses/${courseId}/outline`, base.origin).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Course NAVIGATION, measured on the live portal: of 15 anchors on a real
  * course page, 13 were these and none was a document. Excluded by ROUTE, so
  * the rule holds whatever the tabs are called in a given language.

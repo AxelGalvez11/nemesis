@@ -144,6 +144,47 @@
         font-weight: 500;
         padding: 8px 12px;
       }
+      /* The course picker. Plain checkboxes on purpose: this is a list a
+         student reads and ticks, and anything more designed would be pretending
+         the choice is more interesting than it is. */
+      .picker { margin-top: 12px; }
+      .picker-head {
+        align-items: baseline;
+        color: var(--muted);
+        display: flex;
+        font-size: 11px;
+        justify-content: space-between;
+        letter-spacing: 0.03em;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .link {
+        background: none;
+        color: var(--muted);
+        font-size: 11px;
+        text-decoration: underline;
+        width: auto;
+      }
+      #course-list { max-height: 210px; overflow-y: auto; }
+      .term {
+        color: var(--faint);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        margin: 8px 0 3px;
+        text-transform: uppercase;
+      }
+      .term:first-child { margin-top: 0; }
+      .course {
+        align-items: flex-start;
+        cursor: pointer;
+        display: flex;
+        gap: 8px;
+        line-height: 1.35;
+        padding: 4px 2px;
+      }
+      .course input { margin: 2px 0 0; }
+      .course span { flex: 1; min-width: 0; }
+      .course small { color: var(--faint); display: block; font-size: 10.5px; }
       footer {
         border-top: 1px solid var(--line);
         color: var(--faint);
@@ -182,11 +223,25 @@
            them to know a word the product invented; detection reads the URL's
            shape and gets it right on the portals we support. -->
 
+      <!-- WHICH COURSES TO READ. A student three years into a degree has every
+           course they have ever taken sitting in this list — measured on a real
+           account, 31 of them. Reading all 31 is minutes of work nobody asked
+           for, so the newest term is ticked and the rest are not. The term
+           headings come from what the portal already wrote; see lms/term.ts. -->
+      <div class="picker" hidden id="picker">
+        <div class="picker-head">
+          <span id="picker-title">Courses to read</span>
+          <button class="link" id="pick-all" type="button">All</button>
+        </div>
+        <div id="course-list"></div>
+      </div>
+
       <div class="actions">
-        <!-- One button. "Bring into Nemesis" and "Clear what is stored" both
-             went (owner 2026-08-01): bringing it in happens in the app, and
-             the card on the page is the way there. -->
+        <!-- Scan reads the page you are on. Read courses opens each ticked
+             course in turn, because a Blackboard Ultra course will not show its
+             contents to anything but a real browser on its own page. -->
         <button class="primary" id="scan" type="button">Scan</button>
+        <button class="secondary" hidden id="sweep" type="button">Read the ticked courses</button>
       </div>
     </main>
 

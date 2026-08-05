@@ -78,6 +78,16 @@ const MARKER_SIGNS: ReadonlyArray<{ kind: LmsKind; fragment: string }> = [
 ];
 
 /**
+ * Is this the vendor selling the product, rather than the product? PURE.
+ *
+ * True only for the bare domain and its `www`. Anything deeper — canvas.,
+ * learn., a customer's own subdomain — is the application.
+ */
+function isVendorMarketingHost(host: string, vendor: string): boolean {
+  return host === vendor || host === `www.${vendor}`;
+}
+
+/**
  * Best guess at which portal this is. PURE.
  *
  * Host beats path beats markup. A host match is close to proof — nobody else
@@ -91,7 +101,22 @@ export function detectLms(facts: PageFacts): LmsKind {
     // Anchored at a DOTTED LABEL boundary, not a substring. A bare endsWith
     // lets "notinstructure.com" pass as Canvas, which is exactly how a
     // lookalike domain gets a content script it should never have had.
-    if (host === sign.fragment || host.endsWith(`.${sign.fragment}`)) return sign.kind;
+    if (host === sign.fragment || host.endsWith(`.${sign.fragment}`)) {
+      // 🔴 EXCEPT THE VENDOR'S OWN MARKETING SITE. Found on the live web, not
+      // in a fixture: www.instructure.com read as Canvas and www.blackboard.com
+      // as Blackboard, so standing on a product brochure made the popup
+      // announce "Canvas detected" and offer to read it. The scan finds nothing
+      // there, so nothing breaks — it is simply a confident label that is not
+      // true, and those are what teach a student to distrust the true ones.
+      //
+      // The split is stable: these companies sell from the apex and `www`, and
+      // serve the application from a subdomain (canvas.*, learn.*) or from the
+      // institution's own domain entirely. Falling through to the path rules is
+      // deliberate rather than returning "unknown" outright — if a marketing
+      // page ever does sit at a product route, the routes still get their say.
+      if (isVendorMarketingHost(host, sign.fragment)) break;
+      return sign.kind;
+    }
   }
 
   const path = facts.path.toLowerCase();

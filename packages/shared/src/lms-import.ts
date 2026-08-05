@@ -130,6 +130,17 @@ export interface ScrapedCourse {
   name: string;
   /** "CHEM 111" where the portal separates it out. */
   code?: string;
+  /**
+   * The teaching period this course belongs to, as the portal wrote it —
+   * "Spring 2026", "Otoño 2026", or a bare "2026". Read by POSITION beside the
+   * year rather than from a list of season names; see extension/src/lms/term.ts.
+   *
+   * Used only to GROUP the picker. Absent is a real answer — a course with no
+   * readable term is offered under its own heading rather than guessed into a
+   * semester, because a course filed under the wrong term vanishes from a
+   * filtered list and the student cannot see why.
+   */
+  term?: string;
   url?: string;
   items: ScrapedItem[];
   /** Files that look like a syllabus. Offered as links for the student to open
@@ -163,6 +174,9 @@ export interface LmsScan {
 
 export const MAX_TITLE_CHARS = 300;
 export const MAX_COURSE_NAME_CHARS = 200;
+/** A period name plus a year is short in every language. Longer than this and
+ *  it is a sentence that happens to contain a year, not a heading. */
+export const MAX_TERM_CHARS = 40;
 /** A real course can hold hundreds of files across a semester; nothing
  *  legitimate holds thousands. */
 export const MAX_DOCUMENTS_PER_COURSE = 800;
@@ -345,6 +359,7 @@ function sanitiseCourse(raw: unknown): ScrapedCourse | null {
   const name = sanitiseText(source.name, MAX_COURSE_NAME_CHARS);
   if (!name) return null;
   const code = sanitiseText(source.code, MAX_COURSE_NAME_CHARS);
+  const term = sanitiseText(source.term, MAX_TERM_CHARS);
   const url = sanitiseUrl(source.url);
   const items = Array.isArray(source.items)
     ? source.items.slice(0, MAX_ITEMS_PER_COURSE).map(sanitiseItem).filter((item): item is ScrapedItem => item !== null)
@@ -370,6 +385,7 @@ function sanitiseCourse(raw: unknown): ScrapedCourse | null {
     name,
     syllabusLinks,
     ...(code ? { code } : {}),
+    ...(term ? { term } : {}),
     ...(url ? { url } : {}),
     ...(documents ? { documents } : {}),
   };
@@ -398,6 +414,94 @@ export function sanitiseScan(raw: unknown): LmsScan {
     courses,
     lms: sanitiseLmsKind(source.lms),
     scannedAt: sanitiseText(source.scannedAt, 40),
+  };
+}
+
+// ── The file itself ──────────────────────────────────────────────────────────
+//
+// A scan describes documents; this is one of them actually arriving. The
+// extension fetches the bytes inside the portal tab — the only place the
+// student's school session exists — and hands them over the same untrusted
+// channel as everything else.
+//
+// 🔴 THE BYTES ARE NOT INSPECTED HERE AND MUST NOT BE. What a PDF contains is
+// the extractor's problem (/api/notebooks/extract/file sniffs the magic number
+// itself and refuses anything it does not recognise). This gate answers a
+// narrower question: is this plausibly one file, of a sane size, named
+// something that cannot escape the folder it is filed into.
+
+/** Matches the extractor's own ceiling, so a file that would be refused server
+ *  side is refused before it is carried across the wire. */
+export const MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILE_NAME_CHARS = 200;
+export const MAX_MIME_CHARS = 120;
+
+/** One document's bytes, on their way from the portal to the Library. */
+export interface FetchedFile {
+  /** The portal URL these bytes came from. The caller checks it against the URL
+   *  it asked for — a reply about a different document is a reply to nobody. */
+  url: string;
+  /** A filename safe to show and to store. Never a path. */
+  name: string;
+  /** Content type as the portal declared it. Advisory only. */
+  mime: string;
+  /** base64, no data: prefix. */
+  base64: string;
+}
+
+/**
+ * A filename that cannot climb out of its folder. PURE.
+ *
+ * Separators become spaces rather than being stripped, so "Week 3/Lecture.pdf"
+ * reads as "Week 3 Lecture.pdf" instead of silently becoming "Lecture.pdf" and
+ * colliding with the lecture from every other week. Leading dots go too: a file
+ * called "..pdf" is not a document a student recognises.
+ */
+export function sanitiseFileName(raw: unknown): string {
+  const cleaned = sanitiseText(raw, MAX_FILE_NAME_CHARS)
+    .replaceAll("/", " ")
+    .replaceAll("\\", " ")
+    // 🔴 EVERY dot-only segment, not just a leading run. Stripping leading dots
+    // once turned "../../etc/passwd" into ".. etc passwd" — caught by a test.
+    // Not exploitable as written (stored names are a uuid, and this is only
+    // ever a label), but a filename that still reads like a traversal attempt
+    // is one nobody should have to reason about twice.
+    .split(" ")
+    .filter((segment) => segment && !/^\.+$/.test(segment))
+    .join(" ")
+    .trim();
+  return cleaned || "Untitled";
+}
+
+/** base64 and nothing else. PURE. Length is checked against the DECODED size,
+ *  because base64 is 4 characters per 3 bytes and the cap is about bytes. */
+function sanitiseBase64(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || !/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) return null;
+  const decodedBytes = Math.floor((trimmed.length * 3) / 4);
+  if (decodedBytes > MAX_IMPORT_FILE_BYTES) return null;
+  return trimmed;
+}
+
+/**
+ * Turn whatever came back into a file this app is willing to hold. PURE.
+ *
+ * TOTAL AND NEVER THROWS, for the same reason sanitiseScan is: the caller is a
+ * message handler on a page the student is looking at.
+ */
+export function sanitiseFetchedFile(raw: unknown): FetchedFile | null {
+  if (!raw || typeof raw !== "object") return null;
+  const source = raw as Record<string, unknown>;
+  const url = sanitiseUrl(source.url);
+  if (!url) return null;
+  const base64 = sanitiseBase64(source.base64);
+  if (!base64) return null;
+  return {
+    base64,
+    mime: sanitiseText(source.mime, MAX_MIME_CHARS),
+    name: sanitiseFileName(source.name),
+    url,
   };
 }
 

@@ -7,8 +7,12 @@ import {
   MAX_DOCUMENTS_PER_COURSE,
   MAX_FOLDER_DEPTH,
   MAX_ITEMS_PER_COURSE,
+  MAX_IMPORT_FILE_BYTES,
+  MAX_TERM_CHARS,
   MAX_TITLE_CHARS,
   sanitiseDate,
+  sanitiseFetchedFile,
+  sanitiseFileName,
   sanitiseScan,
   sanitiseText,
   sanitiseTime,
@@ -363,4 +367,62 @@ test("documents that are not an array are treated as absent, never as a crash", 
     const scan = sanitiseScan(courseWithDocs(junk));
     assert.equal(scan.courses[0]?.documents, undefined);
   }
+});
+
+// ── The file itself ──────────────────────────────────────────────────────────
+
+test("a fetched file survives sanitising with its name made safe", () => {
+  const file = sanitiseFetchedFile({
+    base64: "SGVsbG8=",
+    mime: "application/pdf",
+    name: "Week 3/Lecture.pdf",
+    url: "https://blackboard.uthsc.edu/ultra/courses/_1_1/outline/file/_2_1",
+  });
+  assert.ok(file);
+  // 🔴 THE SEPARATOR BECOMES A SPACE, IT IS NOT STRIPPED. Stripping would turn
+  // this into "Lecture.pdf" and collide with every other week's lecture.
+  assert.equal(file.name, "Week 3 Lecture.pdf");
+  assert.equal(file.base64, "SGVsbG8=");
+});
+
+test("a file name cannot climb out of its folder", () => {
+  assert.equal(sanitiseFileName("../../etc/passwd"), "etc passwd");
+  assert.equal(sanitiseFileName("..\\..\\windows"), "windows");
+  assert.equal(sanitiseFileName("   "), "Untitled");
+  assert.equal(sanitiseFileName(null), "Untitled");
+});
+
+test("anything that is not plausibly one file is refused", () => {
+  const url = "https://school.edu/file.pdf";
+  // Not base64 at all.
+  assert.equal(sanitiseFetchedFile({ base64: "not base64!", name: "a.pdf", url }), null);
+  // No payload.
+  assert.equal(sanitiseFetchedFile({ name: "a.pdf", url }), null);
+  // Not an http(s) URL — a data: reply could carry a whole document that
+  // renders as if it were ours.
+  assert.equal(sanitiseFetchedFile({ base64: "SGk=", name: "a.pdf", url: "data:text/html,x" }), null);
+  assert.equal(sanitiseFetchedFile(null), null);
+  assert.equal(sanitiseFetchedFile("nope"), null);
+});
+
+test("a file bigger than the extractor would take is refused before it travels", () => {
+  // Length is judged on the DECODED size: base64 is 4 characters per 3 bytes.
+  const tooBig = "A".repeat(Math.ceil((MAX_IMPORT_FILE_BYTES + 1024) * 4 / 3));
+  assert.equal(sanitiseFetchedFile({ base64: tooBig, name: "big.pdf", url: "https://school.edu/big.pdf" }), null);
+});
+
+test("the term rides the wire, capped, and absent stays absent", () => {
+  const scan = sanitiseScan({
+    courses: [
+      { items: [], name: "Pharmacotherapy", syllabusLinks: [], term: "Spring 2026" },
+      { items: [], name: "Independent Study", syllabusLinks: [] },
+      { items: [], name: "Long", syllabusLinks: [], term: "x".repeat(500) },
+    ],
+    lms: "blackboard",
+    scannedAt: "2026-08-04T00:00:00.000Z",
+  });
+  assert.equal(scan.courses[0]?.term, "Spring 2026");
+  // Absent is a real answer and must not become an empty string.
+  assert.equal("term" in (scan.courses[1] ?? {}), false);
+  assert.equal(scan.courses[2]?.term?.length, MAX_TERM_CHARS);
 });

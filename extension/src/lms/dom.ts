@@ -182,6 +182,56 @@ function readCourseNodes(doc: Document, base: string): SnapshotCourseNode[] {
 
     nodes.push({ courseId, title, ...(code ? { code } : {}), ...(href ? { href } : {}) });
   }
+
+  nodes.push(...readCourseListRows(doc, base));
+  return nodes;
+}
+
+/**
+ * Courses stated in a LIST TABLE, with the term the portal itself assigned.
+ *
+ * 🔴 MEASURED ON A REAL SIGNED-IN CANVAS (cbu.instructure.com/courses, 2026-08-04),
+ * which is the only reason this exists. That account holds FIFTY-SIX courses
+ * spanning eight terms — Fall 2021 through Spring 2025 — and Canvas renders one
+ * table row per course with a dedicated term cell:
+ *
+ *     <td class="course-list-term-column …">Fall 2021</td>
+ *
+ * So the term does not have to be guessed out of the course title at all. It is
+ * stated, by the application, as data. That matters because reading it from the
+ * title gets some of them wrong in ways that look plausible: a real row here is
+ * "Bucs on Deck: Virtual New Student Orientation 2021", where the word touching
+ * the year is "Orientation", and term.ts would offer the student a heading
+ * reading "Orientation 2021". The stated value is "Default Term".
+ *
+ * WHY A CLASS NAME, when the rest of this extension refuses to key off markup.
+ * Because there is no route to read here — a term is not a page — and this is
+ * the same call already made for Blackboard Ultra's `data-analytics-id`: a hook
+ * the VENDOR emits for its own use, not a theme's styling class. Institutions
+ * restyle Canvas heavily and do not rename its functional column classes. The
+ * match is a substring so a themed build that appends its own classes still
+ * hits, and every part of this is optional — a portal that offers no term cell
+ * simply falls back to term.ts reading the title, exactly as before.
+ */
+function readCourseListRows(doc: Document, base: string): SnapshotCourseNode[] {
+  const nodes: SnapshotCourseNode[] = [];
+  for (const row of Array.from(doc.querySelectorAll("tr")).slice(0, 400)) {
+    const anchor = row.querySelector('a[href*="/courses/"]') as HTMLAnchorElement | null;
+    if (!anchor) continue;
+    const href = absoluteHref(anchor, base);
+    if (!href) continue;
+    // The id lives in the route, which IS the stable part — the same contract
+    // the rest of this file leans on.
+    const courseId = /\/courses\/(\d+)\b/.exec(href)?.[1];
+    if (!courseId) continue;
+    const title = collapse(anchor.textContent);
+    if (!title) continue;
+
+    const termCell = row.querySelector('[class*="course-list-term-column"]');
+    const term = collapse(termCell?.textContent);
+
+    nodes.push({ courseId, href, title, ...(term ? { term } : {}) });
+  }
   return nodes;
 }
 

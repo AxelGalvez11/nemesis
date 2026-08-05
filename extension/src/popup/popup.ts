@@ -24,8 +24,9 @@
 // and the student's own answer beats anything we infer.
 
 import { detectLms, factsFromUrl } from "../lms/detect.ts";
-import { type LmsOverride, OVERRIDE_KEY, RUNTIME_MESSAGES } from "../messages.ts";
-import type { LmsKind, LmsScan } from "../wire.ts";
+import { groupByTerm } from "../lms/term.ts";
+import { type LmsOverride, OVERRIDE_KEY, RUNTIME_MESSAGES, type SweepState } from "../messages.ts";
+import type { LmsKind, LmsScan, ScrapedCourse } from "../wire.ts";
 
 const LABELS: Record<LmsKind, string> = {
   blackboard: "Blackboard",
@@ -185,6 +186,153 @@ async function scan(): Promise<void> {
   }
 }
 
+// ── Which courses to read ────────────────────────────────────────────────────
+//
+// 🔴 THE DEFAULT IS THIS TERM, NOT EVERYTHING. A student partway through a
+// degree has every course they have ever enrolled in sitting in the portal's
+// list — measured on a real account, 31 entries across two pages, a mix of
+// open, closed and future-locked. Reading all of them means opening 31 pages
+// and waiting for each to render, to bury this semester's four courses under
+// twenty-seven finished ones.
+//
+// So the newest term is ticked and the rest are offered. Nothing is HIDDEN —
+// an old course a student wants is one click away, and a filter that silently
+// drops courses is the same failure as a scan that silently finds none.
+
+/** Courses that can actually be opened. A course with no address cannot be
+ *  swept, and offering it as a tickbox that does nothing is a lie. */
+let readable: ScrapedCourse[] = [];
+let picked = new Set<string>();
+
+function renderPicker(): void {
+  const list = element("course-list");
+  list.textContent = "";
+  const groups = groupByTerm(readable);
+
+  for (const group of groups) {
+    const heading = document.createElement("p");
+    heading.className = "term";
+    // The portal's own words where it wrote any; our own only for the absence.
+    heading.textContent = group.term ?? "No term";
+    list.append(heading);
+
+    for (const course of group.courses) {
+      const row = document.createElement("label");
+      row.className = "course";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = picked.has(course.name);
+      box.addEventListener("change", () => {
+        if (box.checked) picked.add(course.name);
+        else picked.delete(course.name);
+        reflectSweepButton();
+      });
+      const text = document.createElement("span");
+      text.textContent = course.name;
+      if (course.code) {
+        const code = document.createElement("small");
+        code.textContent = course.code;
+        text.append(code);
+      }
+      row.append(box, text);
+      list.append(row);
+    }
+  }
+
+  element("picker").hidden = readable.length === 0;
+  reflectSweepButton();
+}
+
+function reflectSweepButton(): void {
+  const button = element<HTMLButtonElement>("sweep");
+  button.hidden = readable.length === 0;
+  button.disabled = picked.size === 0;
+  button.textContent = picked.size === 1 ? "Read 1 course" : `Read ${picked.size} courses`;
+}
+
+/** Tick the newest term, or everything when no course names a term at all —
+ *  in which case there is no grouping to lean on and "all" is the only honest
+ *  default. */
+function preselectNewestTerm(): void {
+  const groups = groupByTerm(readable);
+  const newest = groups.find((group) => group.term !== null) ?? groups[0];
+  picked = new Set((newest?.courses ?? readable).map((course) => course.name));
+}
+
+/**
+ * 🔴 ONLY BLACKBOARD ULTRA COURSES CAN BE SWEPT, and offering the sweep
+ * anywhere else is a button that reports nothing but failures.
+ *
+ * The sweep exists because an Ultra course cannot be FETCHED — its folders are
+ * buttons, so the page has to be driven live in a real tab. Every other portal
+ * is walked by the ordinary link crawl during the scan itself, and already has
+ * its documents by the time this panel opens.
+ *
+ * Without this filter, a Canvas student ticking seven courses and pressing
+ * "Read 7 courses" gets seven background tabs, seven injected readers, and
+ * seven refusals — content-course.ts checks the route first and reports
+ * "not-a-course-page" for /courses/16160. The panel would then say "0 documents
+ * found. 7 could not be opened", which is both useless and untrue: those
+ * courses were read perfectly well already.
+ */
+const ULTRA_OUTLINE = /\/ultra\/courses\/[^/]+\/outline/;
+
+function showPicker(scan: LmsScan): void {
+  readable = scan.courses.filter((course) => typeof course.url === "string" && ULTRA_OUTLINE.test(course.url));
+  preselectNewestTerm();
+  renderPicker();
+}
+
+async function startSweep(): Promise<void> {
+  const courses = readable
+    .filter((course) => picked.has(course.name))
+    .map((course) => ({ name: course.name, url: course.url as string }));
+  if (courses.length === 0) return;
+  element<HTMLButtonElement>("sweep").disabled = true;
+  setStatus(
+    `Reading ${courses.length === 1 ? "1 course" : `${courses.length} courses`}.`,
+    "Each one opens in a background tab. You can close this.",
+  );
+  try {
+    await chrome.runtime.sendMessage({ courses, type: RUNTIME_MESSAGES.SWEEP_COURSES });
+  } catch {
+    setStatus("Could not start reading.", "Try reloading the portal tab.");
+    reflectSweepButton();
+  }
+}
+
+/** The sweep's own progress line. Says which course, because a five-minute wait
+ *  with no name on it is indistinguishable from a hang. */
+function showSweep(state: SweepState): void {
+  if (state.running) {
+    setStatus(
+      `Reading ${state.current || "your courses"} (${state.done + 1} of ${state.total}).`,
+      `${state.documents} documents so far. You can close this.`,
+    );
+    element<HTMLButtonElement>("sweep").disabled = true;
+    return;
+  }
+  if (state.total === 0) return;
+  // FINISHED. Courses that could not be read are NAMED — "found nothing" and
+  // "never got in" are different news and the student can act on only one.
+  const failed = state.failed.length > 0 ? ` ${state.failed.length} could not be opened: ${state.failed.join(", ")}.` : "";
+  setStatus(`Read ${state.total === 1 ? "1 course" : `${state.total} courses`}.`, `${state.documents} documents found.${failed}`);
+  reflectSweepButton();
+  void refreshTiles();
+}
+
+/** Re-read what the worker holds, so the counts match the sweep that just
+ *  finished rather than the scan that started it. */
+async function refreshTiles(): Promise<void> {
+  const stored = await new Promise<LmsScan | null>((resolve) => {
+    chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.GET_STORED }, (value: unknown) => {
+      void chrome.runtime.lastError;
+      resolve((value as LmsScan | null) ?? null);
+    });
+  });
+  if (stored) showStored(stored);
+}
+
 function showStored(scan: LmsScan): void {
   const items = scan.courses.reduce((total, course) => total + course.items.length, 0);
   // `documents` is optional on the wire: absent means the course was never
@@ -196,6 +344,7 @@ function showStored(scan: LmsScan): void {
   setTile("tile-docs", docs);
   setStatus("Ready to bring in.", describeScan(scan));
   setStages("bring");
+  showPicker(scan);
 
 }
 
@@ -231,5 +380,21 @@ async function restore(): Promise<void> {
 // by hand. CLEAR_STORED still exists on the worker — nothing that writes to a
 // student's browser should lose its off switch just because a button moved.
 element("scan").addEventListener("click", () => void scan());
+element("sweep").addEventListener("click", () => void startSweep());
+element("pick-all").addEventListener("click", () => {
+  // "All" means all, including the old terms — a student who wants three years
+  // of material is allowed to have it, they just should not get it by default.
+  const everything = readable.length > 0 && picked.size < readable.length;
+  picked = new Set(everything ? readable.map((course) => course.name) : []);
+  renderPicker();
+});
+
+// The sweep outlives this panel, so its progress arrives whether or not anyone
+// is looking. Both paths matter: the message updates a popup that happens to be
+// open, and restore() reads the stored state for one that was just opened.
+chrome.runtime.onMessage.addListener((message: { type?: string; state?: SweepState }) => {
+  if (message?.type === RUNTIME_MESSAGES.SWEEP_PROGRESS && message.state) showSweep(message.state);
+  return false;
+});
 
 void restore();

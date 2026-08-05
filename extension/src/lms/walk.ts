@@ -106,6 +106,9 @@ export async function walkCourse(
           }
           continue;
         }
+        // The page told us this row is not a file. Believed, because the
+        // alternative is downloading a quiz to find out — see CrawlLink.
+        if (link.attachment === false) continue;
         const absolute = normaliseUrl(link.href, step.target.url);
         if (!absolute || seenDocs.has(absolute)) continue;
         seenDocs.add(absolute);

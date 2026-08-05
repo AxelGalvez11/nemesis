@@ -20,9 +20,24 @@ institution to ask, no token to configure, nothing to leak.
 
 ## What it does and does not do
 
-- **Reads only.** It never clicks, submits, navigates or changes anything on the
-  portal. A scraper with a write bug on a grades page is a catastrophe waiting
-  for its first report.
+- **Reads only, in the sense that matters.** It never submits a form, never
+  follows a link, and never changes anything the portal owns. It *does* click
+  two things, because Blackboard Ultra will not show its contents otherwise:
+  folder disclosures (`aria-expanded` buttons with no address at all) and
+  "load 10 more" controls. Both are a closed, named set — see
+  `ULTRA_EXPANDER_ANALYTICS_IDS` — chosen so a general "click anything
+  collapsed" sweep can never happen. A scraper with a write bug on a grades
+  page is a catastrophe waiting for its first report.
+- **Opens tabs, when you ask it to read several courses.** An Ultra course
+  cannot be fetched — its contents only exist once a real browser has rendered
+  and expanded the page — so reading nine courses means being on nine pages.
+  The extension opens each in a background tab, reads it, and closes it again.
+  Strictly one at a time, so a university server never sees a burst.
+- **Downloads a file only when you have ticked it for import.** The scan itself
+  carries titles and links, nothing heavier. When the import runs, each ticked
+  document is fetched from a tab on the portal's own origin, where the session
+  you are already signed in with applies — see `content-fetch.ts` for why that
+  is the only place it can happen.
 - **Only when asked.** No standing permission over the web, no background
   watching. The student presses "Read this page", Chrome asks them to approve
   that one site by name, and the scanner is injected once.
@@ -36,11 +51,17 @@ institution to ask, no token to configure, nothing to leak.
 The app **pulls**; the extension never pushes.
 
 ```
-portal page  →  content-scan.ts  →  chrome.storage.local
-                                          ↓
+portal page   →  content-scan.ts    ─┐
+each course   →  content-course.ts  ─┴→  chrome.storage.local
+                                              ↓
 app.enternemesis.com  ←  content-bridge.ts  (window.postMessage)
         ↓
-   sanitiseScan()  →  review screen  →  student picks  →  saved
+   sanitiseScan()  →  wizard: term → courses → documents
+        ↓
+   for each ticked document:
+        REQUEST_FILE  →  content-fetch.ts  (fetch with the school session)
+        →  sanitiseFetchedFile()  →  /api/notebooks/extract/file  →  text
+        →  a note in the course's folder  +  the original kept in storage
 ```
 
 The student is already signed in on the Nemesis tab, so the page asks for the
@@ -67,10 +88,15 @@ build.mjs              esbuild bundle → dist/
 src/
   lms/detect.ts        which portal is this page   (pure, tested)
   lms/parse.ts         courses and coursework      (pure, tested)
-  lms/dom.ts           the only file touching a real DOM
+  lms/term.ts          which teaching period a course is in (pure, tested)
+  lms/ultra.ts         Blackboard Ultra's rules    (pure, tested)
+  lms/dom.ts           the DOM adapter for a page snapshot
+  lms/ultra-read.ts    drives one Ultra course in a live tab
   content-scan.ts      injected on demand, reads the page once
-  content-bridge.ts    runs on the Nemesis app, answers three questions
-  background.ts        keeps the last scan, nothing else
+  content-course.ts    injected per course by the sweep, off-screen
+  content-fetch.ts     injected to fetch ONE file with the school session
+  content-bridge.ts    runs on the Nemesis app, answers its questions
+  background.ts        keeps the last scan; drives the sweep and the fetches
   popup/               one button and an honest account of what it found
   messages.ts          the message names, in one place
   wire.ts              type-only re-export of the shared contract
