@@ -73,7 +73,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
     features: [
       "Higher limits for answers, notes, and study decks",
       "Turn lectures into organized study material",
-      "20 hours of lecture recording each month",
+      "30 hours of lecture recording each month",
       "A calendar built from your syllabus",
     ],
   },

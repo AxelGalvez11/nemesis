@@ -109,8 +109,17 @@ export const OTHER_COGS_USD = 1.17;
 /** The house rule: COGS should sit at or under 20% of net revenue. */
 export const HOUSE_MARGIN = 0.8;
 
-/** What actually lands after Stripe takes its cut. */
+/**
+ * What actually lands after Stripe takes its cut.
+ *
+ * A $0 plan is NOT charged: no card is presented, so neither the percentage nor
+ * the flat 30 cents exists. Returning -$0.30 for Free (which this did until
+ * 2026-08-05, when the Free recording cap was being costed) makes a free user
+ * look 30 cents more expensive than they are and drags the phantom fee into
+ * `headroomUsd`. Everything about a paid plan is unchanged.
+ */
 export function netRevenueUsd(priceUsd: number): number {
+  if (priceUsd <= 0) return 0;
   return round(priceUsd - (priceUsd * STRIPE_PERCENT + STRIPE_FLAT_USD), 2);
 }
 
@@ -120,7 +129,7 @@ export function netRevenueUsd(priceUsd: number): number {
 // disk — they go stale silently, and already did once. Re-query before trusting any
 // cap figure this module reports:
 //   select plan_code, entitlement_key, value_json from plan_entitlements;
-export const PLAN_LIMITS_CHECKED = "2026-07-28";
+export const PLAN_LIMITS_CHECKED = "2026-08-05";
 
 /**
  * The ladder was RESHAPED on 2026-07-28 (owner: "it should increase linearly, plus
@@ -148,8 +157,20 @@ export const PLAN_LIMITS_CHECKED = "2026-07-28";
  * that wall but left only $3.27 a month, the thinnest plan in the ladder while
  * being the one pushed hardest. Safe to cut today because `subscriptions` carries
  * no paying customer: 25 owner enterprise rows and one canceled free.
+ *
+ * TWO MORE MOVES ON 2026-08-05, owner's call, both on the recording meter only:
+ *   free  7,200s (2 hours)   -> 1,800s (30 minutes)
+ *   plus 72,000s (20 hours)  -> 108,000s (30 hours)
+ * Free's 2 hours was the one cap in the ladder that cost real money with no
+ * revenue behind it, and it was set when the audio lane was a guess. 30 minutes
+ * is a demonstration allowance — enough to record one class and see the whole
+ * pipeline run — and it is what makes the Student jump a real jump rather than a
+ * top-up. Student going 20 -> 30 hours is the compensating move: it stays inside
+ * its own cost wall (see the Plus tests) and reads as 1.5x the hours for the same
+ * $9.99. The ladder is now 0.5 / 30 / 70 / 200 hours. `planCapInversions()` still
+ * returns empty; the test that asserts that is what protects this.
  */
-export const LADDER_RESHAPED = "2026-07-28";
+export const LADDER_RESHAPED = "2026-08-05";
 
 export type PlanCode = "free" | "plus" | "pro" | "max";
 
@@ -185,7 +206,8 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     premiumAnswerLane: false,
     priceUsd: 0,
     searchMonthly: 60,
-    transcriptionMinutes: 120,
+    // 1,800s = 30 minutes (owner 2026-08-05). One class, not a month of them.
+    transcriptionMinutes: 30,
   },
   max: {
     askDaily: 1_250,
@@ -205,7 +227,9 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     premiumAnswerLane: false,
     priceUsd: 9.99,
     searchMonthly: 75,
-    transcriptionMinutes: 1_200,
+    // 108,000s = 30 hours exactly (owner 2026-08-05), marketed as 30. Same rule
+    // as Pro: the stored number and the advertised number are one number.
+    transcriptionMinutes: 1_800,
   },
   pro: {
     askDaily: 250,

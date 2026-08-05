@@ -43,9 +43,13 @@ export function paywallPlanName(packageIdentifier: string): string {
 }
 
 /** The one-line pitch under each plan name. Same numbers as the store
- *  descriptions, which come from apps/web/lib/workload-cost.ts. */
+ *  descriptions, which come from apps/web/lib/workload-cost.ts — and the same
+ *  numbers as every web surface, which is what the recording-allowance drift
+ *  guard in workload-cost.test.ts now checks (this file is on its list).
+ *  🔴 The App Store product descriptions are edited in App Store Connect, not
+ *  here: changing a plan's hours means editing them there too. */
 export function paywallPlanPitch(packageIdentifier: string): string {
   return packageIdentifier === "pro_monthly"
     ? "70 recording hours a month and the highest AI limits"
-    : "20 recording hours a month and higher AI limits";
+    : "30 recording hours a month and higher AI limits";
 }

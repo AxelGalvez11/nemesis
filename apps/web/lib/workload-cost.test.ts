@@ -140,20 +140,94 @@ test("Plus is half of Pro and Max is 5x Pro on the meters that scale", () => {
   }
 });
 
-// Recording is the exception, and deliberately so. Owner 2026-07-28 set the three
-// numbers directly — 20 / 80 / 200 hours — because a literal 5x would be 400 hours
-// (about 100 hours of lecture a week) and would cost 58 points of margin.
-test("recording follows the owner's three numbers, not the 5x rule", () => {
-  assert.equal(PLANS.plus.transcriptionMinutes, 20 * 60);
+// Recording is the exception, and deliberately so. The owner sets these four
+// numbers directly, because a literal 5x on Max would be 400 hours (about 100
+// hours of lecture a week) and would cost 58 points of margin.
+test("recording follows the owner's four numbers, not the 5x rule", () => {
+  // Owner 2026-08-05: Free 2h -> 30 minutes, Student 20h -> 30h. Free's is the
+  // one allowance in the ladder with no revenue behind it at all, and 30 minutes
+  // is a demonstration — one class, start to finish — not a month of lectures.
+  assert.equal(PLANS.free.transcriptionMinutes, 30);
+  assert.equal(PLANS.plus.transcriptionMinutes, 30 * 60);
   assert.equal(PLANS.max.transcriptionMinutes, 200 * 60);
   // Pro cut to 70 hours on 2026-07-29 (owner). 83 hours sat inside the 103.7-hour
   // break-even wall but left only $3.27 a month on the plan pushed hardest.
   assert.equal(PLANS.pro.transcriptionMinutes, 70 * 60);
-  // The advertised number and the stored number are now the SAME number. The old
-  // row was 83 hours sold as 80, and that three-hour gap is exactly the kind of
-  // slack that lets marketing copy and the meter drift apart unnoticed.
+  // The advertised number and the stored number are now the SAME number on every
+  // plan. The old Pro row was 83 hours sold as 80, and that three-hour gap is
+  // exactly the kind of slack that lets copy and the meter drift apart unnoticed.
   assert.equal(PLANS.pro.transcriptionMinutes, 4_200);
+  assert.equal(PLANS.plus.transcriptionMinutes, 1_800);
   assert.ok(PLANS.max.transcriptionMinutes < PLANS.pro.transcriptionMinutes * 5, "and 5x recording was rejected");
+  // Free is a taste of the product, not a fraction of a plan: the gap to Student
+  // has to be big enough that upgrading is obviously the way to keep going.
+  assert.ok(PLANS.plus.transcriptionMinutes >= PLANS.free.transcriptionMinutes * 30, "free stays a demonstration");
+});
+
+// Every surface that advertises a recording allowance, and the cap it must agree
+// with. The caps live in a database; the copy lives in four files across two apps;
+// nothing has ever compared them. They HAVE drifted — this page once offered Plus
+// "30 minutes" against a real allowance of 20 hours — and the drift is invisible
+// because both sides look fine on their own. Scanning the source is crude, but it
+// is the only check that fails when someone edits one side and not the other.
+const RECORDING_COPY_FILES = [
+  "apps/web/app/pricing/page.tsx",
+  "apps/web/components/workspace/shell/billing-settings.tsx",
+  "apps/web/components/workspace/onboarding/step-upgrade.tsx",
+  "landing/app/pricing/page.tsx",
+  // The phone paywall counts. It says "20 recording hours a month" rather than
+  // "20 hours of lecture recording", which is why a search for the web wording
+  // missed it on 2026-08-05 and left the phone advertising the old allowance —
+  // hence the deliberately loose regex below rather than a fixed phrase.
+  "apps/mobile/src/lib/purchases-logic.ts",
+] as const;
+
+test("advertised recording allowances match the plan caps, everywhere they are advertised", () => {
+  const paidHours = new Set([PLANS.plus, PLANS.pro, PLANS.max].map((plan) => plan.transcriptionMinutes / 60));
+  let claims = 0;
+  for (const path of RECORDING_COPY_FILES) {
+    const source = repoFile(path);
+    // Up to two words may sit between the number and the unit, so "20 hours",
+    // "20 recording hours" and "20 hours of recording" all get caught.
+    for (const [claim, hours] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}hours\b/g)) {
+      claims += 1;
+      assert.ok(paidHours.has(Number(hours!.replace(/,/g, ""))), `${path} advertises "${claim}", which is no plan's cap`);
+    }
+    for (const [claim, minutes] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}minutes\b/g)) {
+      claims += 1;
+      assert.equal(
+        Number(minutes!.replace(/,/g, "")),
+        PLANS.free.transcriptionMinutes,
+        `${path} advertises "${claim}" — the only sub-hour allowance is Free's`,
+      );
+    }
+  }
+  // A surface that gets renamed or deleted would otherwise pass this test by
+  // saying nothing at all.
+  assert.ok(claims >= 10, `only ${claims} recording claims found across ${RECORDING_COPY_FILES.length} files`);
+});
+
+// A $0 plan never presents a card, so Stripe's 2.9% + 30c does not exist on it.
+// Modelling one anyway made every free user look 30 cents dearer than they are —
+// which matters now that Free's cost is a number the owner acts on.
+test("a free plan is charged nothing, so Stripe takes nothing", () => {
+  assert.equal(netRevenueUsd(0), 0);
+  assert.equal(netRevenueUsd(PLANS.free.priceUsd), 0);
+  assert.equal(netRevenueUsd(9.99), 9.4);
+});
+
+// What one free user costs when they use every minute they are given. Almost all
+// of it is the flat platform line, which is why cutting the recording cap moves
+// pennies: the reason to cut it is the upgrade path, not the bill.
+test("a free student who burns the whole allowance costs about a dollar and change", () => {
+  const burnedFree = modelStudentMonth({
+    ...HEAVY_STUDENT, audioHours: PLANS.free.transcriptionMinutes / 60, chatTurnsPerDay: 20, decks: 35, plan: "free",
+  });
+  assert.equal(burnedFree.withinTranscriptionCap, true);
+  assert.equal(burnedFree.netRevenueUsd, 0);
+  assert.ok(burnedFree.headroomUsd > -1.5, `free costs ${burnedFree.headroomUsd}`);
+  // The audio lane is now a rounding error next to the flat platform cost.
+  assert.ok(burnedFree.audioUsd < OTHER_COGS_USD / 10, `free audio is ${burnedFree.audioUsd}`);
 });
 
 // The search inversion was cleared by bringing FREE down, not by raising the plans
@@ -461,18 +535,27 @@ test("half of Pro's workload on half of Pro's price is a WORSE margin, not the s
 // best reason to upgrade, and giving Plus half of Pro's headline number spends the
 // upgrade reason to buy nothing. Worth revisiting deliberately rather than assuming
 // the old answer — the number that used to force it does not force it any more.
-test("Plus at 20 hours is comfortable, and 40 is now a product call rather than a margin one", () => {
-  const at20 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
-  const at40 = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 40, chatTurnsPerDay: 20, decks: 35, plan: "plus" });
-  const at40OnOldLane = modelStudentMonth({
-    ...HEAVY_STUDENT, audioHours: 40, chatTurnsPerDay: 20, decks: 35, plan: "plus", recorder: "web-batch",
-  });
-  assert.ok(at20.grossMarginPct > 45, `20h on Plus is ${at20.grossMarginPct}%`);
-  assert.ok(at40.grossMarginPct > 35, `40h on Plus is now ${at40.grossMarginPct}%`);
-  assert.ok(at40OnOldLane.grossMarginPct < 15, `and was ${at40OnOldLane.grossMarginPct}% before the switch`);
-  // The CAP, not the margin, is what 40 hours runs into today.
-  assert.equal(at20.withinTranscriptionCap, true);
-  assert.equal(at40.withinTranscriptionCap, false, "40 hours is past what Plus allows");
+test("Student at its new 30 hours still clears half margin, and the wall is well past it", () => {
+  const plusAt = (audioHours: number, recorder = HEAVY_STUDENT.recorder) =>
+    modelStudentMonth({ ...HEAVY_STUDENT, audioHours, chatTurnsPerDay: 20, decks: 35, plan: "plus", recorder });
+  const at20 = plusAt(20);
+  const at30 = plusAt(30);
+  const at40 = plusAt(40);
+  assert.ok(at20.grossMarginPct > 60, `20h on Student was ${at20.grossMarginPct}%`);
+  // The whole cost of the owner's 2026-08-05 raise: ten more hours for ~11 points.
+  assert.ok(at30.grossMarginPct > 50, `30h on Student is ${at30.grossMarginPct}%`);
+  assert.ok(at20.grossMarginPct - at30.grossMarginPct < 12, "and the raise costs about a tenth of the margin");
+  assert.ok(at40.grossMarginPct > 35, `40h on Student would still be ${at40.grossMarginPct}%`);
+  assert.ok(plusAt(40, "web-batch").grossMarginPct < 15, "and was under 15% on the lane xAI replaced");
+  // The CAP, not the margin, is what stops a Student at 30 hours — the plan turns
+  // a profit well past its own allowance, which is the safe side to be wrong on.
+  assert.equal(at30.withinTranscriptionCap, true);
+  assert.equal(at40.withinTranscriptionCap, false, "40 hours is past what Student allows");
+  const breakEven = affordableAudioHours(
+    { ...HEAVY_STUDENT, audioHours: 30, chatTurnsPerDay: 20, decks: 35, plan: "plus" },
+    0,
+  );
+  assert.ok(breakEven > 60, `break-even is ${breakEven}h, more than double the allowance`);
 });
 
 // 5x on the recording meter is where "5x everything" costs the most. On the cheaper

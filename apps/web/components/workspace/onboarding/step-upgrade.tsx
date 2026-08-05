@@ -42,7 +42,7 @@ interface Offer {
 
 const OFFERS: readonly Offer[] = [
   {
-    hours: "20 hours",
+    hours: "30 hours",
     lines: ["Higher limits for answers, notes and decks", "Turn lectures into study material"],
     name: "Student",
     tier: "plus",
@@ -107,10 +107,10 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
       </div>
 
       <div className="rounded-xl border border-border p-3">
-        <p className="text-xs font-medium text-foreground">Your free plan includes 2 hours of lecture recording a month</p>
+        <p className="text-xs font-medium text-foreground">Your free plan includes 30 minutes of lecture recording a month</p>
         <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
-          Enough to try it properly. Recording is the one thing that costs real money to run, so it is what the paid
-          plans mostly buy you.
+          Enough to run one class through it end to end. Recording is the one thing that costs real money to run, so it
+          is what the paid plans mostly buy you.
         </p>
       </div>
 

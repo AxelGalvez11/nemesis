@@ -25,11 +25,12 @@ interface Tier {
 // paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro" |
 // "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the $ shown here must match those prices.
 //
-// RECORDING HOURS MUST MATCH plan_entitlements.transcription_seconds_month_limit
-// (2026-07-28: plus 72,000s, pro 300,000s, max 720,000s). These had drifted badly —
-// the page offered Plus 30 minutes against a real allowance of 20 HOURS, and Max
-// 4,000 minutes against 200 hours — which undersells the plans by more than 3x and
-// is the kind of error nothing fails on. Recheck both together.
+// RECORDING ALLOWANCES MUST MATCH plan_entitlements.transcription_seconds_month_limit,
+// which workload-cost.ts mirrors as PLANS[...].transcriptionMinutes. They drifted badly
+// once — this page undersold the plans by more than 3x and nothing failed on it — so
+// there is now a test ("advertised recording allowances match the plan caps") that reads
+// this file and every other surface making the same claim. Change the cap and the copy
+// together, or that test fails.
 //
 // The old copy also said "live copilot". There is no live lane any more: a recording
 // is transcribed and written up once, after it stops.
@@ -46,7 +47,7 @@ const TIERS: Tier[] = [
     features: [
       "Cited answers and research support for any field",
       "Turn your lectures into notes + exam-ready flashcards",
-      "20 hours of lecture recording each month",
+      "30 hours of lecture recording each month",
       "A calendar built from your syllabus",
       "Higher daily limits for answers, notes & decks",
     ],

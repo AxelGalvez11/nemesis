@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 // an sr-friendly label via aria-label on the cell.
 const COMPARE_ROWS = [
   { label: "Notes, flashcards, and practice tests from your files", values: ["yes", "yes", "yes"] },
-  { label: "Lecture recording each month", values: ["2 hours", "20 hours", "70 hours"] },
+  { label: "Lecture recording each month", values: ["30 minutes", "30 hours", "70 hours"] },
   { label: "Calendar built from your syllabus", values: ["yes", "yes", "yes"] },
   { label: "Web-grounded answers with real citations", values: ["no", "no", "yes"] },
   { label: "Daily limits", values: ["Starter", "Standard", "Higher"] },
@@ -91,7 +91,7 @@ export default function PricingPage() {
               <p className="plan-desc">Enough to run a class through it and see.</p>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
-                <li><IconCheck size={13} />2 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />30 minutes of lecture recording a month</li>
                 <li><IconCheck size={13} />A calendar built from your syllabus</li>
                 <li><IconCheck size={13} />The phone app, included</li>
               </ul>
@@ -107,7 +107,7 @@ export default function PricingPage() {
               <ul className="plan-features">
                 <li><IconCheck size={13} />Higher limits on answers and study decks</li>
                 <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
-                <li><IconCheck size={13} />20 hours of lecture recording a month</li>
+                <li><IconCheck size={13} />30 hours of lecture recording a month</li>
                 <li><IconCheck size={13} />A calendar built from your syllabus</li>
               </ul>
               <div className="plan-cta">
