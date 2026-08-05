@@ -120,6 +120,10 @@ export function LetterBoxedGame({
     [letters, puzzle, submit],
   );
 
+  // Keys this game acts on are consumed: a <button> the player clicked
+  // earlier (a letter on the square, the header's New puzzle) still holds
+  // focus, and a native button fires on Enter's DEFAULT action — so
+  // submitting a word would also re-trigger whatever was last tapped.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -128,6 +132,8 @@ export function LetterBoxedGame({
       if (event.key === "Enter") press("enter");
       else if (event.key === "Backspace") press("back");
       else if (/^[a-zA-Z]$/.test(event.key)) press(event.key.toLowerCase());
+      else return;
+      event.preventDefault();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -163,8 +169,20 @@ export function LetterBoxedGame({
           {!solved && <span className="ml-0.5 inline-block h-6 w-px animate-pulse" style={{ background: CORAL }} />}
         </div>
 
+        {/* The square is a THEMED panel, not a white slab. Sudoku and the
+            crosswords earn their paper-white grids by putting content on
+            them; this one is empty by design, so on the app's default black
+            it was just a glaring void. Tokens keep it right on both themes. */}
         <svg viewBox="0 0 300 300" className="w-full max-w-[19rem]">
-          <rect x={30} y={30} width={240} height={240} fill="white" stroke="#0e0f11" strokeWidth={2.5} />
+          <rect
+            x={30}
+            y={30}
+            width={240}
+            height={240}
+            stroke="var(--ui-text-primary)"
+            strokeWidth={2}
+            style={{ fill: "color-mix(in srgb, var(--ui-base) 6%, transparent)" }}
+          />
           {playedSegments.map((segment, index) => (
             <line key={`p${index}`} x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} stroke={CORAL} strokeOpacity={0.25} strokeWidth={2} />
           ))}
@@ -177,7 +195,14 @@ export function LetterBoxedGame({
             const labelOffset = side === 0 ? { x: 0, y: -16 } : side === 1 ? { x: 16, y: 0 } : side === 2 ? { x: 0, y: 20 } : { x: -16, y: 0 };
             return (
               <g key={letter} onClick={() => press(letter)} className="cursor-pointer select-none">
-                <circle cx={position.x} cy={position.y} r={7} fill={used.has(letter) ? CORAL : "white"} stroke="#0e0f11" strokeWidth={2} />
+                <circle
+                  cx={position.x}
+                  cy={position.y}
+                  r={7}
+                  stroke="var(--ui-text-primary)"
+                  strokeWidth={2}
+                  style={{ fill: used.has(letter) ? CORAL : "color-mix(in srgb, var(--ui-base) 18%, transparent)" }}
+                />
                 <text
                   x={position.x + labelOffset.x}
                   y={position.y + labelOffset.y}

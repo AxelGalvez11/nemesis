@@ -135,8 +135,11 @@ function cardStatus(game: BreakGameId, puzzles: ReturnType<typeof useTodaysPuzzl
   const saved = readBreakDayState<{ tiles: Tile[]; best: number }>("tiles", dateKey);
   if (!saved) return null;
   if (boardCleared(saved.tiles)) return `Cleared · best chain ${saved.best}`;
-  const left = saved.tiles.filter((tile) => !tileEmpty(tile)).length;
-  return left < saved.tiles.length ? `${left} tiles left` : null;
+  // "Started" means a LAYER has gone, not a whole tile: most matches strip
+  // one layer off two tiles and empty neither, so a tile-count test left the
+  // card looking untouched through a long opening run.
+  const started = saved.tiles.some((tile) => tile.some((value) => value === -1));
+  return started ? `${saved.tiles.filter((tile) => !tileEmpty(tile)).length} tiles left` : null;
 }
 
 /** Tiny original glyphs, dark ink on the bright card blocks. */
@@ -268,20 +271,27 @@ export function BreakWorkspace() {
   if (game) {
     const card = GAME_CARDS.find((entry) => entry.id === game)!;
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-y-auto px-4 pb-10 pt-[calc(var(--titlebar-height)+0.75rem)]">
-        <header className="mx-auto flex w-full max-w-3xl items-center gap-2 pb-4">
-          <Button variant="ghost" size="sm" className="gap-1 px-2 text-sm" onClick={() => open(null)} data-testid="break-back">
-            <Codicon name="chevron-left" size={14} />
-            Chill
-          </Button>
-          <h1 className="flex-1 text-center font-serif text-lg font-bold">{card.name}</h1>
-          {/* Used to mirror the back button's width for a pixel-centered
-              title; a second icon button (New puzzle) plus the wider
-              "Puzzle N · Back to daily" label make exact mirroring more
-              trouble than it's worth, so this now just tracks its own
-              content — the title sits a few px off true-center, which
-              isn't worth the complexity to avoid. */}
-          <span className="flex items-center justify-end gap-1 text-right text-xs text-muted-foreground">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden pt-(--titlebar-height)">
+        {/* Same header shape as every other workspace page (see StudyChrome):
+            title upper-left in workspace-page-title, tools right, and the
+            .workspace-page-header class so a collapsed global rail inserts
+            its own leading inset instead of covering the title. */}
+        <header className="workspace-page-header flex min-h-12 shrink-0 items-center gap-3 px-6 py-2.5 max-sm:px-4">
+          <h1 className="workspace-page-title flex min-w-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => open(null)}
+              data-testid="break-back"
+              className="shrink-0 text-(--ui-text-tertiary) transition-colors hover:text-foreground"
+            >
+              Chill
+            </button>
+            <span aria-hidden className="shrink-0 font-normal text-(--ui-text-quaternary)">
+              /
+            </span>
+            <span className="truncate">{card.name}</span>
+          </h1>
+          <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
             {pick > 0 ? (
               <button
                 type="button"
@@ -292,14 +302,14 @@ export function BreakWorkspace() {
                 Puzzle {pick + 1} · Back to daily
               </button>
             ) : (
-              <span className="whitespace-nowrap" data-testid="break-date-label">
+              <span className="whitespace-nowrap max-sm:hidden" data-testid="break-date-label">
                 {dateKeyLabel(puzzles.dateKey).split(",")[0]}
               </span>
             )}
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0"
+              className="size-7 shrink-0"
               aria-label="New puzzle"
               data-testid="break-new-puzzle"
               onClick={advance}
@@ -309,7 +319,7 @@ export function BreakWorkspace() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0"
+              className="size-7 shrink-0"
               aria-label="How to play"
               data-testid="break-help-open"
               onClick={() => setHelpOpen(true)}
@@ -319,122 +329,137 @@ export function BreakWorkspace() {
           </span>
         </header>
         <GameHelp game={game} open={helpOpen} onOpenChange={setHelpOpen} />
-        {/* Keying each game on `pick` remounts it fresh on every puzzle
-            switch — the clean way to reset a game's local UI state (typed
-            letters, animation nonces, cursor position, …) without a
-            bespoke reset effect per component. See useBreakDayState for
-            why puzzleKey/dateKey are threaded separately. */}
-        {game === "wordle" && (
-          <WordleGame
-            key={pick}
-            answer={activePuzzles.wordleAnswer}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "bee" && (
-          <BeeGame
-            key={pick}
-            puzzle={activePuzzles.bee}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "connections" && (
-          <ConnectionsGame
-            key={pick}
-            puzzle={activePuzzles.connections}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "mini" && (
-          <CrosswordGame
-            key={pick}
-            puzzle={activePuzzles.mini}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            storageKey="mini"
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "crossword" && (
-          <CrosswordGame
-            key={pick}
-            puzzle={activePuzzles.midi}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            storageKey="crossword"
-            wide
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "sudoku" && (
-          <SudokuGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
-        )}
-        {game === "letterboxed" && (
-          <LetterBoxedGame
-            key={pick}
-            puzzle={activePuzzles.letterbox}
-            dateKey={puzzles.dateKey}
-            puzzleKey={activePuzzles.puzzleKey}
-            onPlayAnother={advance}
-          />
-        )}
-        {game === "tiles" && (
-          <TilesGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-3">
+          {/* Keying each game on `pick` remounts it fresh on every puzzle
+              switch — the clean way to reset a game's local UI state (typed
+              letters, animation nonces, cursor position, …) without a
+              bespoke reset effect per component. See useBreakDayState for
+              why puzzleKey/dateKey are threaded separately. */}
+          {game === "wordle" && (
+            <WordleGame
+              key={pick}
+              answer={activePuzzles.wordleAnswer}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "bee" && (
+            <BeeGame
+              key={pick}
+              puzzle={activePuzzles.bee}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "connections" && (
+            <ConnectionsGame
+              key={pick}
+              puzzle={activePuzzles.connections}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "mini" && (
+            <CrosswordGame
+              key={pick}
+              puzzle={activePuzzles.mini}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              storageKey="mini"
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "crossword" && (
+            <CrosswordGame
+              key={pick}
+              puzzle={activePuzzles.midi}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              storageKey="crossword"
+              wide
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "sudoku" && (
+            <SudokuGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
+          )}
+          {game === "letterboxed" && (
+            <LetterBoxedGame
+              key={pick}
+              puzzle={activePuzzles.letterbox}
+              dateKey={puzzles.dateKey}
+              puzzleKey={activePuzzles.puzzleKey}
+              onPlayAnother={advance}
+            />
+          )}
+          {game === "tiles" && (
+            <TilesGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto px-4 pb-10 pt-[calc(var(--titlebar-height)+1.5rem)]">
-      <div className="mx-auto w-full max-w-5xl">
-        <header className="pb-6 text-center">
-          <h1 className="font-serif text-3xl font-bold tracking-tight">Chill</h1>
-          <p className="pt-1 text-sm text-muted-foreground">
-            {dateKeyLabel(puzzles.dateKey)} — fresh puzzles every day. Your brain earned this.
-          </p>
-        </header>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="break-hub">
-          {GAME_CARDS.map((card) => {
-            const status = mounted ? cardStatus(card.id, puzzles) : null;
-            return (
-              <button
-                key={card.id}
-                type="button"
-                onClick={() => open(card.id)}
-                data-testid={`break-card-${card.id}`}
-                className="group flex flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) text-left shadow-[0_3px_12px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5"
-              >
-                <div className="flex items-center justify-center py-7" style={{ background: BREAK_ACCENTS[card.id] }}>
-                  <GameGlyph game={card.id} />
-                </div>
-                <div className="flex flex-1 flex-col gap-0.5 bg-(--ui-sidebar-surface-background) p-3.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <h2 className="font-serif text-base font-bold">{card.name}</h2>
-                    {status && (
-                      <span className="rounded-full bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground">
-                        {status}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">{card.tagline}</p>
-                  <span className="pt-1.5 text-sm font-medium text-(--theme-primary) group-hover:underline">
-                    {status ? "Continue" : "Play"}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden pt-(--titlebar-height)">
+      {/* Owner 2026-08-05: "needs to match the vibe of other pages, with
+          title in upper left corner" — the centred serif hero is gone; this
+          is the same header every other workspace page uses. */}
+      <header className="workspace-page-header flex min-h-12 shrink-0 items-center px-6 py-2.5 max-sm:px-4">
+        {/* Inner column matches the card grid's, so the title's left edge and
+            the first card's line up at every width. */}
+        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
+          <h1 className="workspace-page-title">Chill</h1>
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground max-sm:hidden">{dateKeyLabel(puzzles.dateKey)}</span>
         </div>
-        <p className="pt-6 text-center text-xs text-muted-foreground">
-          Puzzles change at midnight. Progress stays on this device.
-        </p>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-2 max-sm:px-4">
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="break-hub">
+            {GAME_CARDS.map((card) => {
+              const status = mounted ? cardStatus(card.id, puzzles) : null;
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => open(card.id)}
+                  data-testid={`break-card-${card.id}`}
+                  className="group flex flex-col overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) text-left shadow-[0_3px_12px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5"
+                >
+                  <div className="flex items-center justify-center py-7" style={{ background: BREAK_ACCENTS[card.id] }}>
+                    <GameGlyph game={card.id} />
+                  </div>
+                  <div className="flex flex-1 flex-col gap-0.5 bg-(--ui-sidebar-surface-background) p-3.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      {/* Sans, not serif: the bright glyph blocks carry the
+                          playfulness; the type stays the app's. */}
+                      <h2 className="text-[0.9375rem] font-semibold tracking-[-0.01em]">{card.name}</h2>
+                      {status && (
+                        <span className="rounded-full bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {status}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{card.tagline}</p>
+                    <span className="pt-1.5 text-sm font-medium text-(--theme-primary) group-hover:underline">
+                      {status ? "Continue" : "Play"}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Owner 2026-08-05: "it still says 'puzzles change at midnight' but
+              its supposed to be more than 1 game" — every game's ↻ deals a
+              fresh puzzle on demand, so midnight is only about the DAILY. */}
+          <p className="pt-6 text-center text-xs text-muted-foreground">
+            The daily set changes at midnight — and every game can deal you another puzzle whenever you want. Progress stays
+            on this device.
+          </p>
+        </div>
       </div>
     </div>
   );

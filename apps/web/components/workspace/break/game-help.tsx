@@ -158,7 +158,7 @@ export function GameHelp({
     <Dialog onOpenChange={close} open={open}>
       <DialogContent className="max-w-md" data-testid="break-help">
         <DialogHeader>
-          <DialogTitle className="font-serif">{content.title}</DialogTitle>
+          <DialogTitle>{content.title}</DialogTitle>
           <DialogDescription>{content.intro}</DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-1.5 pl-5 text-sm">

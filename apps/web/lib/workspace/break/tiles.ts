@@ -68,6 +68,21 @@ export function matchTiles(tiles: readonly Tile[], first: number, second: number
 
 export const boardCleared = (tiles: readonly Tile[]): boolean => tiles.every(tileEmpty);
 
+/** Every tile that would clear something against `from` — the legal moves.
+ *  The board dims everything else while a tile is picked, so a player can
+ *  SEE the move instead of discovering it by trial and shake. `from` itself
+ *  is never included. */
+export function matchableWith(tiles: readonly Tile[], from: number): number[] {
+  const source = tiles[from];
+  if (!source || tileEmpty(source)) return [];
+  const matches: number[] = [];
+  tiles.forEach((tile, index) => {
+    if (index === from || tileEmpty(tile)) return;
+    if (sharedLayers(source, tile).length > 0) matches.push(index);
+  });
+  return matches;
+}
+
 /** True while at least one clearing move exists (the generator guarantees
  *  this never goes false before the board is empty; the tests check it). */
 export function hasAnyMatch(tiles: readonly Tile[]): boolean {

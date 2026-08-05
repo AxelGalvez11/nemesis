@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { hashSeed } from "./daily";
-import { boardCleared, generateTilesBoard, hasAnyMatch, matchTiles, sharedLayers, tileEmpty } from "./tiles";
+import {
+  boardCleared,
+  generateTilesBoard,
+  hasAnyMatch,
+  matchTiles,
+  matchableWith,
+  sharedLayers,
+  tileEmpty,
+} from "./tiles";
 
 test("boards are deterministic per seed with even value counts per layer", () => {
   const first = generateTilesBoard(hashSeed("tiles:2026-08-04"));
@@ -32,6 +40,30 @@ test("matching removes exactly the shared layers, immutably", () => {
   assert.deepEqual(tiles[0], [0, 1, 2]); // input untouched
   assert.deepEqual(matchTiles(tiles, 0, 2).cleared, [1]);
   assert.deepEqual(matchTiles(tiles, 1, 2).cleared, []);
+});
+
+test("the legal-move set is exactly the tiles a pick would clear against", () => {
+  const tiles = [
+    [0, 1, 2],
+    [0, 3, 4], // shares the colour
+    [1, 1, 4], // shares the ring
+    [2, 2, 2], // shares the glyph
+    [3, 4, 0], // shares nothing
+    [-1, -1, -1], // already gone
+  ];
+  assert.deepEqual(matchableWith(tiles, 0), [1, 2, 3]);
+  // A cleared layer is not a match: -1 must never pair with -1.
+  assert.deepEqual(matchableWith([[-1, 1, -1], [-1, 2, -1], [-1, 1, -1]], 0), [2]);
+  assert.deepEqual(matchableWith(tiles, 5), []);
+  assert.deepEqual(matchableWith(tiles, 99), []);
+
+  // Every entry agrees with matchTiles, and nothing outside it does.
+  const board = generateTilesBoard(hashSeed("tiles:legal-moves")).tiles;
+  const legal = new Set(matchableWith(board, 3));
+  board.forEach((_, index) => {
+    if (index === 3) return;
+    assert.equal(legal.has(index), matchTiles(board, 3, index).cleared.length > 0, `tile ${index}`);
+  });
 });
 
 test("a full game can always be played to a cleared board", () => {
