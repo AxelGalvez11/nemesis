@@ -173,7 +173,7 @@ export function WordleGame({
         : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-4" data-testid="wordle-board">
+    <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-3" data-testid="wordle-board">
       <div className="h-5 text-sm font-medium text-muted-foreground" aria-live="polite" data-testid="wordle-notice">
         {notice ?? (revealed ? endMessage : "")}
       </div>
@@ -227,7 +227,7 @@ export function WordleGame({
         })}
       </div>
 
-      <div className="flex w-full flex-col items-center gap-1.5 pt-2">
+      <div className="flex w-full flex-col items-center gap-1.5">
         {KEY_ROWS.map((keys, rowIndex) => (
           <div key={rowIndex} className="flex w-full justify-center gap-1.5">
             {keys.map((key) => {

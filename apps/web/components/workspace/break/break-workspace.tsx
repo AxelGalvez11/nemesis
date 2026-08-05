@@ -329,7 +329,10 @@ export function BreakWorkspace() {
           </span>
         </header>
         <GameHelp game={game} open={helpOpen} onOpenChange={setHelpOpen} />
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-3">
+        {/* pb-6, not pb-10: Word Guess is the tallest board here and the
+            header now takes its own row, so every spare pixel is what keeps
+            the on-screen keyboard above the fold on a laptop. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-1">
           {/* Keying each game on `pick` remounts it fresh on every puzzle
               switch — the clean way to reset a game's local UI state (typed
               letters, animation nonces, cursor position, …) without a
