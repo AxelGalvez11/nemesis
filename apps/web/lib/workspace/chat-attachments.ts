@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { loadKnownCourses } from "@/lib/workspace/agent-tools";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
-import { isSlimmableOfficeName, OFFICE_SLIM_THRESHOLD_BYTES, slimOfficeArchive } from "@/lib/workspace/office-slim";
+import { isSlimmableOfficeName } from "@/lib/workspace/office-slim";
 import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 
 // Sized for a real lecture deck, which is the main thing students attach.
@@ -360,27 +360,34 @@ export async function extractFile(
   const key = uid ? await deviceKey(uid) : null;
   if (!key || !uid) throw new Error("Sign in to read this attachment.");
 
-  // A deck over the STORAGE ceiling is almost entirely pictures; its words fit
-  // in under 1 MB. Strip the media in the browser and send THAT, so the file is
-  // read instead of refused (owner's 123.8 MB immunology deck: slimmed to
-  // 0.11 MB, all 37 slides extracted).
+  // 🔴 AN OVERSIZED DECK IS REFUSED. IT IS NOT SILENTLY EMPTIED OF ITS PICTURES.
   //
-  // 🔴 The threshold used to be 24 MB, chosen against a 25 MB route limit that
-  // was never real. That stripped the pictures out of every deck over 24 MB —
-  // and did nothing for the 5-to-24 MB decks that were failing. It is now the
-  // bucket's own ceiling, so a 30 MB lecture keeps its figures.
-  let payload = file;
-  if (isSlimmableOfficeName(file.name) && file.size > OFFICE_SLIM_THRESHOLD_BYTES) {
-    try {
-      const slimmed = slimOfficeArchive(new Uint8Array(await file.arrayBuffer()));
-      if (slimmed.byteLength < file.size) payload = new File([slimmed as BlobPart], file.name, { type: file.type });
-    } catch {
-      // Not a real zip, or hostile contents — the route's own guards decide.
-    }
-  }
-
+  // This used to call slimOfficeArchive(): a deck over the storage ceiling had
+  // every image deleted in the browser and the remains — 0.11 MB of the owner's
+  // 123.8 MB immunology lecture — uploaded, stored and parsed. The extractor
+  // succeeded, all 37 slides came back, and nothing anywhere recorded that 57
+  // figures had been thrown away. The model then answered about that lecture as
+  // if it had seen the whole thing, and neither the student nor we could tell.
+  //
+  // That is worse than rejecting the file, so it now rejects the file. A source
+  // must never enter Nemesis incomplete while presenting as complete.
+  //
+  // This is a SAFETY PATCH, not the answer. The answer is lossless
+  // normalization: the same lecture repacks to 24.0 MiB with all 57 figures
+  // intact, because its media is uncompressed twice over — raw pixels inside zip
+  // entries that were never deflated. Once that lands, nothing reaches this
+  // refusal that did not deserve to. If a destructive fallback ever returns it
+  // has to carry its damage in the source's own metadata — assets removed, why,
+  // and what the reader can no longer be asked — so retrieval can say the
+  // figures were unavailable instead of reasoning from their absence. See
+  // docs/document-normalization.md, tiers 1 and 4.
+  const payload = file;
   if (payload.size > MAX_SOURCE_BYTES) {
-    throw new Error(extractErrorFor(413, file.name));
+    throw new Error(
+      isSlimmableOfficeName(file.name)
+        ? `${file.name} is too large to read (${Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB max). Nemesis won't strip its pictures out to fit — you'd get an answer built on a lecture it only half read.`
+        : extractErrorFor(413, file.name),
+    );
   }
 
   const headers: Record<string, string> = { Authorization: `Bearer ${key}` };

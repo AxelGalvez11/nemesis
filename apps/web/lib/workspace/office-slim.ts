@@ -1,6 +1,31 @@
 // Slim an oversized Office file down to its words, in the browser, before it
 // is uploaded for extraction.
 //
+// 🔴 NOTHING CALLS slimOfficeArchive() ANY MORE, AND NOTHING MAY UNTIL IT CAN
+// DECLARE ITS OWN DAMAGE.
+//
+// The claim in the last paragraph below — "a partial read is never presented as
+// complete" — was false. The coverage report is built by the extractor from the
+// bytes it was handed, and by then the pictures were already gone: it counted
+// the zero images that remained, not the 57 that were deleted. So the owner's
+// immunology lecture arrived as 0.11 MB, parsed cleanly, returned all 37 slides,
+// and every layer downstream believed it had read the whole thing. A source that
+// is incomplete while presenting as complete is worse than one that was refused,
+// because nobody can tell.
+//
+// The functions stay because Tier 4 will need them, and they are correct at what
+// they do. What is missing is the disclosure around them: assets removed, asset
+// types, reason, and the resulting limitation, persisted on the source and
+// carried into retrieval and model context so Nemesis can say the figures were
+// unavailable rather than reasoning from their absence.
+//
+// The real fix is upstream and makes this path nearly unreachable: the same
+// lecture repacks LOSSLESSLY to 24.0 MiB with all 57 figures intact, because its
+// media is uncompressed twice over — raw RGBA inside zip entries stored at
+// method 0. See docs/document-normalization.md.
+//
+// ORIGINAL RATIONALE, kept because the problem it solved is real:
+//
 // The extract route refuses anything over 25 MB — a sane ceiling for TEXT,
 // except that a real lecture deck is mostly pictures: the owner's immunology
 // deck weighs 123.8 MB of which the slide XML is well under 1 MB. Refusing it
@@ -15,6 +40,8 @@
 // What is lost is only the figure-description pass, which requires the
 // pictures; the coverage report the extractor already produces states how
 // many images were found so a partial read is never presented as complete.
+//   ^ THIS LAST CLAUSE IS THE BUG. The coverage report counts what survived the
+//     strip, so it reported zero images found and called that complete coverage.
 
 import { unzipSync, zipSync } from "fflate";
 
