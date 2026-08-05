@@ -70,14 +70,33 @@ const safeSegment = courseFolderSegment;
  * A number is the most distinctive part of a course name — it is the part
  * students actually use — so it is counted like any other distinctive token.
  */
+/**
+ * Separators are word breaks, and the tokenizers do not know that.
+ *
+ * 🔴 THE SECOND HALF OF THE INVISIBLE-COURSE-NUMBER BUG. #413 fixed the
+ * leading-letter rule that hid `2114`. This is the same defect through another
+ * door: a hyphenated name is read as ONE enormous word, so
+ * `Fall-2026-PHCY-2105-01-Interprofessional-Education-….pdf` — the shape every
+ * LMS export and browser download uses — scored ZERO against all six of a
+ * student's PHCY courses. Both the number and the department code were inside a
+ * token instead of being tokens.
+ *
+ * Split here, in course filing only, rather than in `contentWords` itself:
+ * that function also feeds search ranking and digests, and widening it would
+ * change behaviour nobody asked about.
+ */
+function separated(text: string): string {
+  return text.replace(/[-_.]+/g, " ");
+}
+
 function courseCodes(text: string): Set<string> {
-  const found = text.toLowerCase().match(/[a-z]*\d[a-z0-9-]*/g) ?? [];
+  const found = separated(text).toLowerCase().match(/[a-z]*\d[a-z0-9]*/g) ?? [];
   return new Set(found);
 }
 
 /** Every distinctive token of a course name: its words AND its number. */
 export function courseTokens(course: string): Set<string> {
-  const tokens = contentWords(course, NAME_MIN_WORD);
+  const tokens = contentWords(separated(course), NAME_MIN_WORD);
   for (const code of courseCodes(course)) tokens.add(code);
   return tokens;
 }
@@ -92,7 +111,7 @@ export function courseTokens(course: string): Set<string> {
  * compared instead of taking whichever was checked first.
  */
 export function courseScore(text: string, course: string): number {
-  const asked = contentWords(text, NAME_MIN_WORD);
+  const asked = contentWords(separated(text), NAME_MIN_WORD);
   for (const code of courseCodes(text)) asked.add(code);
   if (asked.size === 0) return 0;
   let hits = 0;
