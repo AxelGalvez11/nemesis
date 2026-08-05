@@ -1,5 +1,7 @@
 import { isStudyCreationPreferenceReply } from "@nemesis/shared";
 
+import { detectsWorkspaceIntent } from "./workspace-intent";
+
 /**
  * Zero-cost request routing for Nemesis chat.
  *
@@ -22,6 +24,14 @@ export interface ChatRouteDecision {
    *  tool calls only ride the non-thinking model, and this flag is what stops the
    *  effort dial from quietly switching the tools off (chat-effort.ts). */
   savesToWorkspace?: boolean;
+  /** Set when the student is asking ABOUT their own workspace — their calendar,
+   *  Library, or Study state — or asking for it to be reorganized. As
+   *  load-bearing as savesToWorkspace, for the same reason: these turns are
+   *  answered THROUGH tools, so they must ride the tools-capable model and the
+   *  effort dial must not strip them. This flag also stops sendChatTurn's web
+   *  re-promotion and its paid web search: "what's my schedule tomorrow" is a
+   *  database read, not a news question (see workspace-intent.ts). */
+  workspaceIntent?: boolean;
 }
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
 const CURRENT_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|who (?:is|won|leads|runs|owns))\b/i;
@@ -178,8 +188,23 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
       ? { route: "current", model: "deepseek-chat", savesToWorkspace: true, searchWeb: true }
       : { route: "learning", model: "deepseek-chat", savesToWorkspace: true, searchWeb: false };
   }
+  // An explicit deep-research request keeps the research pipeline — a student
+  // asking for a literature review wants sources and synthesis, not their own
+  // folders, even when the sentence brushes a workspace word.
   if (RESEARCH_PATTERN.test(compact)) {
     return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
+  }
+  // A question about the student's OWN workspace outranks the remaining
+  // reasoner routes, exactly like a save does — the answer comes from tools,
+  // and tools only ride deepseek-chat. This check must sit ABOVE the
+  // current-events branch: "organize my schedule", "what's due today",
+  // "update my calendar" all contain CURRENT_PATTERN words, and before this
+  // guard existed those exact phrasings were the ones guaranteed to lose
+  // their tools and be told "you cannot see the calendar" (the 2026-08-05
+  // calendar incident).
+  if (detectsWorkspaceIntent(compact)) {
+    const wantsWeb = EXPLICIT_WEB_PATTERN.test(compact);
+    return { model: "deepseek-chat", route: wantsWeb ? "current" : "conversation", searchWeb: wantsWeb, workspaceIntent: true };
   }
   if (CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact)) {
     return { route: "current", model: "deepseek-reasoner", searchWeb: true };
@@ -205,6 +230,15 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
  * Only sent when the tools are actually attached: a turn that promises to save
  * and cannot is worse than one that never offered (see CHAT_NO_TOOLS_PROMPT).
  */
+/** The extra line a WORKSPACE turn carries when its tools are attached. The
+ *  snapshot message (buildWireMessages) holds the data; this holds the rule. */
+export const WORKSPACE_INSTRUCTION =
+  "This turn is about the student's own workspace. Ground every claim in what the tools return THIS turn — start from the " +
+  "attached snapshot for orientation, then read deeper before stating contents, counts, or dates. The snapshot's lists are " +
+  "samples: for anything about 'everything', a full semester, or a reorganization, read the complete state first " +
+  "(get_library_tree, list_calendar_events with the real range, get_study_overview). When you change things, say plainly what " +
+  "changed and what you left alone; when something is ambiguous or risky, ask before acting.";
+
 export const SAVE_INSTRUCTION =
   "This turn asks you to CREATE something in the student's workspace. The app has already collected any required deck format or test settings in the conversation; follow those exact choices. Do it with the tools — add_practice_test for a test or quiz, add_flashcards for cards, create_library_note for notes — and do it in this turn, not after asking permission. For flashcards, set each card_type to basic, cloze, or reversed as requested. " +
   "Never write the flashcards or the test questions out in your reply as a substitute for saving them: the student is looking for it on their Study page, and a copy in the chat is not there. " +

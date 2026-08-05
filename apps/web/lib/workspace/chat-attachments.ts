@@ -1,10 +1,11 @@
 "use client";
 
-import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
+import { courseFolderSegment, matchCourse, UNSORTED_FOLDER, UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
 import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
+import { loadKnownCourses } from "@/lib/workspace/agent-tools";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
 import { isSlimmableOfficeName, OFFICE_SLIM_THRESHOLD_BYTES, slimOfficeArchive } from "@/lib/workspace/office-slim";
 import type { SessionAttachment } from "@/lib/workspace/sessions-store";
@@ -159,11 +160,14 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
       // has. Without one, a photo over the inline limit would be uploaded a
       // second time by the extractor just to obtain an id. The row records which
       // bucket holds it, which is why library_sources gained a `bucket` column.
+      // Inbox, like a document: a photographed page is course material too, and
+      // refileChatSource moves it once vision has read it. Anything left over
+      // sits visibly in Inbox instead of loose at the Library root.
       const sourceId = await findOrCreateLibrarySourceRow(
         uid,
         file,
         file.type || "image/jpeg",
-        "",
+        UNSORTED_FOLDER,
         storagePath,
         "library-images",
       );
@@ -194,7 +198,12 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
     // them with [n](?source=<id>) pills, and syllabi/lectures belong in the
     // Library, not just in a chat bucket). Deduped by name+size, so
     // re-attaching the same file reuses its row.
-    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath, "library-sources");
+    //
+    // Filed into INBOX, not the root: at this point only the file NAME is
+    // known, so course matching would misfire. prepareChatAttachments upgrades
+    // the folder to the matched course once the text has been extracted
+    // (refileChatSource below); an unmatched document stays honestly in Inbox.
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, UNSORTED_FOLDER, storagePath, "library-sources");
     return {
       ...base,
       mime,
@@ -504,6 +513,23 @@ export function chatDisplayText(text: string, files: readonly File[]): string {
   return `${text.trim()}${attachmentSummary(files)}`.trim();
 }
 
+/** Move a just-extracted chat source from Inbox to its matched course folder.
+ *  Best-effort: filing is a bonus on top of an attachment that already saved,
+ *  so every failure path is silence, never a broken send. */
+async function refileChatSource(sourceId: string, text: string): Promise<void> {
+  try {
+    const matched = matchCourse(text.slice(0, 20_000), await loadKnownCourses());
+    if (!matched) return;
+    await supabase
+      .from("library_sources")
+      .update({ folder_path: courseFolderSegment(matched.course) })
+      .eq("id", sourceId)
+      .eq("folder_path", UNSORTED_FOLDER); // never fight a folder the student (or librarian) already chose
+  } catch {
+    // Best-effort by design.
+  }
+}
+
 /** Chip metadata alone — names and kinds, no storage round-trip. This is what
  *  the optimistic message carries while prepareChatAttachments is still
  *  running; the durable records (images gain signed URLs) replace it after. */
@@ -550,6 +576,16 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     const sourceId = attachments[index]?.sourceId;
     return sourceId ? { ...source, sourceId } : source;
   });
+
+  // Filing upgrade, fire-and-forget: persist only knew the file NAME, so the
+  // stored source sat in Inbox. Now the text exists — a clear course match
+  // moves it under that course; no match leaves it honestly in Inbox rather
+  // than confidently misfiled (owner 2026-08-05). Never blocks the send.
+  for (const block of sourcedBlocks) {
+    if ("sourceId" in block && block.sourceId && block.content.length >= 200) {
+      void refileChatSource(block.sourceId, `${block.label}\n${block.content}`);
+    }
+  }
 
   return {
     attachments,

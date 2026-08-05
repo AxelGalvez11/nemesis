@@ -51,7 +51,10 @@ export function applyChatEffort(decision: ChatRouteDecision, effort: ChatEffort)
     // what they typed a second ago. The specific, fresher instruction wins.
     // Deliberately silent: there is nothing for the student to fix, and the answer
     // they asked for still arrives.
-    if (decision.savesToWorkspace) return { ...decision, reasoningEffort: undefined };
+    // Same rule for a workspace READ: "what's due this week" on the High dial
+    // used to lose every tool and answer blind. Both flags mean the answer
+    // comes THROUGH tools, so both outrank the stored preference.
+    if (decision.savesToWorkspace || decision.workspaceIntent) return { ...decision, reasoningEffort: undefined };
     return { ...decision, reasoningEffort: "high" };
   }
   return { ...decision, reasoningEffort: undefined };

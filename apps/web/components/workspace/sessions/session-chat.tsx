@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { studyCreationPreferencePrompt } from "@nemesis/shared";
+import { folderForNewItem, studyCreationPreferencePrompt } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
@@ -20,7 +20,7 @@ import { sniffsAsSyllabus } from "@/lib/workspace/syllabus-sniff";
 import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
-import { executeAgentTool } from "@/lib/workspace/agent-tools";
+import { executeAgentTool, loadKnownCourses } from "@/lib/workspace/agent-tools";
 import type { PendingDelete } from "@nemesis/shared";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { groupTurns } from "@/lib/workspace/session-turns";
@@ -42,9 +42,9 @@ import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace, type RecordControls } from "./record-workspace";
 import { SyllabusDialog } from "../calendar/syllabus-dialog";
 
-/** Where a recording's notes are filed. Its own folder so a semester of
- *  lectures stays browsable next to the student's typed notes. */
-const RECORDINGS_FOLDER = "Nemesis/Recordings";
+// Recordings are filed by COURSE like everything else (folderForNewItem,
+// owner 2026-08-05) — the old hardcoded "Nemesis/Recordings" pile organized a
+// semester of lectures by who made the note instead of what class it was.
 
 /** The placeholder name a session gets when the recorder creates it. Only a
  *  session still carrying this gets renamed to the recording's own title. */
@@ -652,7 +652,11 @@ export function SessionChat() {
       let libraryPath: string | null = null;
       if (uid && !preview && notes.trim()) {
         try {
-          libraryPath = (await writeLibraryNote({ content: notes, folder: RECORDINGS_FOLDER, title: artifact.title, userId: uid })).path;
+          // Course-matched like every other lane: "<Course>/Lectures" when the
+          // lecture clearly belongs to one of the student's courses, Inbox
+          // when it doesn't — never a provenance pile.
+          const folder = folderForNewItem("recording", `${artifact.title}\n${notes}`, await loadKnownCourses());
+          libraryPath = (await writeLibraryNote({ content: notes, folder, title: artifact.title, userId: uid })).path;
         } catch {
           // Saving to the Library is a bonus destination, not the recording
           // itself — a failure here must not discard the artifact above.

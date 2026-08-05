@@ -9,14 +9,15 @@ import {
   isDestructiveTool,
   pendingDeleteInstruction,
 } from "./destructive-tools.ts";
-import { WORKSPACE_AGENT_TOOL_NAMES } from "./workspace-agent-tools.ts";
+import { WEB_WORKSPACE_AGENT_TOOL_NAMES } from "./workspace-agent-tools.ts";
 
 // 🔴 THE STRUCTURAL GUARD. The gate reads DESTRUCTIVE_TOOLS; a delete tool that
 // is not in that map is a delete with NO confirmation at all. This is the test
 // that makes forgetting impossible — add a delete_* tool to the catalogue
-// without describing it here and the suite goes red.
+// without describing it here and the suite goes red. Checked against the WEB
+// list because web is where new tools land first; the core list is a subset.
 test("every delete tool in the catalogue is behind the gate", () => {
-  const deleting = WORKSPACE_AGENT_TOOL_NAMES.filter((name) => /delete|remove|destroy|wipe/i.test(name));
+  const deleting = WEB_WORKSPACE_AGENT_TOOL_NAMES.filter((name) => /delete|remove|destroy|wipe/i.test(name));
   assert.deepEqual(
     deleting.slice().sort(),
     Object.keys(DESTRUCTIVE_TOOLS).sort(),
@@ -33,13 +34,15 @@ test("nothing that only reads or edits is gated", () => {
   }
 });
 
-test("only the Library's delete is described as recoverable", () => {
+test("only the Library's soft deletes are described as recoverable", () => {
   // Everything else is a hard row delete. Saying "you can get it back" about a
-  // flashcard would be a lie told at the exact moment it matters most.
+  // flashcard would be a lie told at the exact moment it matters most. Notes
+  // and folders both trash via the `deleted` flag, so both honestly recover.
   const recoverable = Object.entries(DESTRUCTIVE_TOOLS)
     .filter(([, spec]) => spec.recoverable)
-    .map(([name]) => name);
-  assert.deepEqual(recoverable, ["delete_library_note"]);
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(recoverable, ["delete_library_folder", "delete_library_note"]);
 });
 
 test("every spec names an argument the card can be built from", () => {

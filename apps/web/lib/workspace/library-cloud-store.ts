@@ -706,11 +706,24 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     const remap = (path: string) => path === sourcePath ? destination : path.startsWith(`${sourcePath}/`) ? `${destination}${path.slice(sourcePath.length)}` : path;
     const movedNotes = state.notes.filter((note) => note.path.startsWith(`${sourcePath}/`));
     const movedFolders = state.folders.filter((folder) => folder === sourcePath || folder.startsWith(`${sourcePath}/`));
+    // 🔴 THE FOLDER-PAGE FIX (owner 2026-08-05 audit). A folder's own page is
+    // recognized by NAME: a note directly inside whose filename or title
+    // matches the folder (library-folder-note.ts). Renaming the folder used to
+    // rewrite only paths, so the page's title stopped matching, the note fell
+    // out of recognition, and the next open minted a SECOND empty page —
+    // two pages, one folder. The page's title must follow the rename.
+    const sourceLeaf = sourcePath.split("/").pop() ?? sourcePath;
+    const pageKey = (value: string) => value.trim().toLowerCase().replace(/\.md$/, "");
+    const isSourceFolderPage = (note: { path: string; title: string }) => {
+      if (note.path.split("/").slice(0, -1).join("/") !== sourcePath) return false;
+      const leaf = pageKey(note.path.split("/").pop() ?? "");
+      return leaf === pageKey(sourceLeaf) || pageKey(note.title) === pageKey(sourceLeaf);
+    };
     if (!preview) {
       if (!userId) throw new Error("Sign in to rename this folder.");
       const updatedAt = new Date().toISOString();
       const results = await Promise.all([
-        ...movedNotes.map((note) => supabase.from("readable_library_documents").update({ path: remap(note.path), updated_at: updatedAt }).eq("id", note.id).eq("user_id", userId)),
+        ...movedNotes.map((note) => supabase.from("readable_library_documents").update({ path: remap(note.path), ...(isSourceFolderPage(note) ? { title: name } : {}), updated_at: updatedAt }).eq("id", note.id).eq("user_id", userId)),
         ...movedFolders.map((folder) => supabase.from("readable_library_documents").update({ path: remap(folder), title: remap(folder).split("/").pop(), updated_at: updatedAt }).eq("path", folder).eq("kind", "folder").eq("user_id", userId)),
       ]);
       const failure = results.find((result) => result.error)?.error;
@@ -720,7 +733,9 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     }
     setState({
       ...state,
-      notes: state.notes.map((note) => note.path.startsWith(`${sourcePath}/`) ? { ...note, path: remap(note.path) } : note),
+      notes: state.notes.map((note) => note.path.startsWith(`${sourcePath}/`)
+        ? { ...note, path: remap(note.path), ...(isSourceFolderPage(note) ? { title: name } : {}) }
+        : note),
       folders: state.folders.map(remap),
       selectedPath: state.selectedPath?.startsWith(`${sourcePath}/`) ? remap(state.selectedPath) : state.selectedPath,
     });
