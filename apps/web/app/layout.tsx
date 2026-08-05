@@ -25,7 +25,9 @@ export const metadata: Metadata = {
 // pre-hydration authority, so React can't re-stamp a hardcoded value over the resolved theme during
 // hydration (that previously reverted a light choice back to dark on reload). A stored "grey" (from
 // before that theme was removed) normalizes to "dark". On exception only, fall back to the dark anchor.
-const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
+// Dark tone rides along: a stored "charcoal" must land before paint too, or charcoal users flash the
+// pure-black default every load. Anything else resolves to "black".
+const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);var dt=localStorage.getItem('nemesis.web.dark-tone');document.documentElement.setAttribute('data-dark-tone',dt==='charcoal'?'charcoal':'black');}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-dark-tone','black');}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

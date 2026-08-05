@@ -477,52 +477,52 @@
     --dock-glow-scale: 0.55;
   }
 
-  /* DARK — the nemesis skin verbatim (the graphite tint is near a no-op on #0e0e0e). */
+  /* DARK, default tone = BLACK — the original nemesis skin, restored as the
+     default 2026-08-05 (owner: "bring back the 100% black background"). The
+     charcoal ladder shipped earlier the same night stays available as the
+     [data-dark-tone='charcoal'] override block below — the two blocks must
+     list the SAME variables or a tone switch leaves stale values behind. */
   :root[data-theme='dark'] {
-    /* ChatGPT-parity charcoal ladder (owner 2026-08-05): the page is a
-       near-black CHARCOAL, not pure black, and every surface above it steps
-       one gray lighter — #171717 sidebar · #212121 page · ~#2a editor ·
-       ~#2f popover · ~#32 bubble. Text is soft off-white, never #fff. */
-    --theme-foreground: #ededed;
+    --theme-foreground: #ffffff;
     /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
        background is almost invisible, and this still carries white button text
        at ~4.3:1. Same reasoning as the light block above. */
     --theme-primary: #6e6e6e;
-    --theme-secondary: #2a2a2a;
-    --theme-accent-soft: #2e2e2e;
+    --theme-secondary: #161616;
+    --theme-accent-soft: #1c1c1c;
     --theme-midground: #6e6e6e;
     --theme-warm: #6e6e6e;
-    --theme-background-seed: #212121;
-    --theme-sidebar-seed: #171717;
-    --theme-card-seed: #303030;
-    --theme-elevated-seed: #383838;
-    --theme-bubble-seed: #404040;
+    --theme-background-seed: #000000;
+    --theme-sidebar-seed: #000000;
+    --theme-card-seed: #141414;
+    --theme-elevated-seed: #181818;
+    --theme-bubble-seed: #1b1b1b;
     --theme-mix-chrome: 74%;
     --theme-mix-card: 38%;
     --theme-mix-elevated: 46%;
     --theme-mix-bubble: 46%;
-    --theme-neutral-chrome: #212121;
-    --theme-neutral-sidebar: #171717;
-    --theme-neutral-card: #262628;
+    --theme-neutral-chrome: #000000;
+    --theme-neutral-sidebar: #000000;
+    --theme-neutral-card: #161618;
 
     /* Dark-only accent palette overrides. */
     --ui-red: #e75e78;
     --ui-green: #55a583;
     --ui-cyan: #6f9ba6;
 
-    --dt-muted: #2f2f2f;
+    --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;
-    --dt-secondary-foreground: #cdcdcd;
+    --dt-secondary-foreground: #c8c8c8;
     --dt-accent-foreground: var(--theme-primary);
-    --dt-border: #3a3a3a;
-    --dt-input: #3a3a3a;
+    --dt-border: #2a2a2a;
+    --dt-input: #2a2a2a;
     --dt-ring: #8f8f98;
     --dt-midground-foreground: #1a1a1a;
     --dt-composer-ring: #8f8f98;
     --dt-destructive: #ff3b46;
     --dt-destructive-foreground: #fef2f2;
-    --dt-sidebar-border: #262626;
-    --dt-user-bubble-border: #454545;
+    --dt-sidebar-border: #202020;
+    --dt-user-bubble-border: #3d2b28;
 
     --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --composer-ring-strength: 1.3;
@@ -548,6 +548,34 @@
        tinted every box edge pink back when the accent was crimson, and would
        do the same for anyone who picks Pink from the palette. */
     --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 14%, transparent);
+  }
+
+  /* DARK, CHARCOAL tone — the ChatGPT-parity ladder shipped 2026-08-05, now an
+     opt-in (Settings → Appearance → Dark tone). Page is near-black charcoal
+     rather than pure black, every surface above it steps one gray lighter —
+     #171717 sidebar · #212121 page · ~#2a editor · ~#2f popover · ~#32 bubble —
+     and text is soft off-white rather than #fff. Only variables that differ
+     from the black block above belong here; the two lists must stay in step
+     with globals.css's pair of dark blocks. */
+  :root[data-theme='dark'][data-dark-tone='charcoal'] {
+    --theme-foreground: #ededed;
+    --theme-secondary: #2a2a2a;
+    --theme-accent-soft: #2e2e2e;
+    --theme-background-seed: #212121;
+    --theme-sidebar-seed: #171717;
+    --theme-card-seed: #303030;
+    --theme-elevated-seed: #383838;
+    --theme-bubble-seed: #404040;
+    --theme-neutral-chrome: #212121;
+    --theme-neutral-sidebar: #171717;
+    --theme-neutral-card: #262628;
+
+    --dt-muted: #2f2f2f;
+    --dt-secondary-foreground: #cdcdcd;
+    --dt-border: #3a3a3a;
+    --dt-input: #3a3a3a;
+    --dt-sidebar-border: #262626;
+    --dt-user-bubble-border: #454545;
   }
 }
 

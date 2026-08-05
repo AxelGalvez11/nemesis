@@ -29,6 +29,14 @@ const SCALE_STORAGE_KEY = "nemesis.web.scale.v2";
 // sentinel backwards is the way this change silently does nothing: the mount
 // effect runs after the useState default and would overwrite it.
 const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
+// Dark mode ships in two tones (owner 2026-08-05: "keep charcoal as an option
+// in settings, bring back the 100% black background"): "black" is the default
+// pure-black skin, "charcoal" the ChatGPT-parity gray ladder. CSS keys off
+// <html data-dark-tone>; the attribute is set unconditionally but only the
+// dark-theme selectors read it, so it is inert in light mode.
+export type DarkTone = "black" | "charcoal";
+const DARK_TONE_STORAGE_KEY = "nemesis.web.dark-tone";
+const isDarkTone = (v: unknown): v is DarkTone => v === "black" || v === "charcoal";
 
 // Owner 2026-07-28: "i need the default scaling size to match chatgpt".
 // MEASURED on chatgpt.com and on our own build, not guessed: ChatGPT runs its
@@ -85,11 +93,14 @@ interface ThemeContextValue {
   theme: Theme;
   accent: AccentPreference;
   scale: number;
+  /** How dark surfaces render when the theme is dark: pure black or charcoal. */
+  darkTone: DarkTone;
   /** Library takes over the left side, hiding the workspace nav rail. */
   libraryFullScreen: boolean;
   setTheme: (t: ThemePreference) => void;
   setAccent: (accent: AccentPreference) => void;
   setScale: (scale: number) => void;
+  setDarkTone: (tone: DarkTone) => void;
   setLibraryFullScreen: (fullScreen: boolean) => void;
   toggle: () => void;
 }
@@ -99,10 +110,12 @@ const ThemeContext = createContext<ThemeContextValue>({
   theme: "light",
   accent: "default",
   scale: DEFAULT_SCALE,
+  darkTone: "black",
   libraryFullScreen: false,
   setTheme: () => {},
   setAccent: () => {},
   setScale: () => {},
+  setDarkTone: () => {},
   setLibraryFullScreen: () => {},
   toggle: () => {},
 });
@@ -128,6 +141,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const [accent, setAccentState] = useState<AccentPreference>("default");
   const [scale, setScaleState] = useState(DEFAULT_SCALE);
+  const [darkTone, setDarkToneState] = useState<DarkTone>("black");
   const [libraryFullScreen, setLibraryFullScreenState] = useState(false);
 
   useEffect(() => {
@@ -152,6 +166,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setScaleState(nextScale);
     applyAccent(nextAccent);
     document.documentElement.style.fontSize = `${scaleToRootPercent(nextScale)}%`;
+    // Same authoritative-write pattern as the theme above: the inline no-flash
+    // script already stamped data-dark-tone, but recompute from storage and
+    // write through so hydration can't leave a stale attribute behind.
+    const storedTone = localStorage.getItem(DARK_TONE_STORAGE_KEY);
+    const nextTone: DarkTone = isDarkTone(storedTone) ? storedTone : "black";
+    setDarkToneState(nextTone);
+    document.documentElement.dataset.darkTone = nextTone;
     // Only an explicit "true" opts IN to full screen; anything else (unset,
     // malformed) keeps the nav rail beside Library. Inverted 2026-07-30 with
     // the default — see the storage-key comment.
@@ -195,6 +216,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(SCALE_STORAGE_KEY, String(clamped)); } catch { /* best effort */ }
   };
 
+  const setDarkTone = (tone: DarkTone) => {
+    setDarkToneState(tone);
+    document.documentElement.dataset.darkTone = tone;
+    try { localStorage.setItem(DARK_TONE_STORAGE_KEY, tone); } catch { /* best effort */ }
+  };
+
   const setLibraryFullScreen = (next: boolean) => {
     setLibraryFullScreenState(next);
     try { localStorage.setItem(LIBRARY_FULL_SCREEN_STORAGE_KEY, String(next)); } catch { /* best effort */ }
@@ -203,7 +230,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, accent, scale, libraryFullScreen, setTheme, setAccent, setScale, setLibraryFullScreen, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {
