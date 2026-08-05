@@ -482,6 +482,18 @@ export interface ChatCompletionOptions {
   onDelta?: CompletionDeltaHandler;
   /** OpenAI-format tool schemas; the valve forwards them verbatim. */
   tools?: readonly unknown[];
+  /**
+   * This call is INTERNAL — the student never asked for it and must never be
+   * interrupted by it.
+   *
+   * 🔴 THE UPGRADE DIALOG IS A SIDE EFFECT OF THIS FUNCTION. A budget error
+   * pops the shell-mounted upsell, which is right for the turn the student
+   * pressed send on and badly wrong for a hidden classification call: a
+   * student out of credits would get the modal thrown at them BEFORE their own
+   * question had started, and then again when the real call failed. Background
+   * callers set this and swallow their own failure.
+   */
+  background?: boolean;
 }
 
 /** One completion turn from an arbitrary wire-message array — the shared transport for
@@ -530,7 +542,7 @@ export async function postChatCompletion(
       const errorText = chatErrorMessage(res.status, body);
       // Out of credits is an upsell moment, not just an error row: pop the
       // shell-mounted upgrade dialog on every budget-exhausted turn.
-      if (errorKind === "budget") showUpgradePrompt(errorText, budgetResetOf(body));
+      if (errorKind === "budget" && !options.background) showUpgradePrompt(errorText, budgetResetOf(body));
       return { errorKind, errorText, sources: [], text: null };
     }
     let text: string | null = null;
@@ -646,19 +658,35 @@ export function collapseOutputs(outputs: readonly SessionOutput[], threshold = O
  * character of a streamed answer and the completed reply both want to end it,
  * and they race by design.
  */
-function startWaitingStrip(onActivity?: (label: string | null) => void): (final: string | null) => void {
-  if (!onActivity) return () => {};
+interface WaitingStrip {
+  /** Hold a specific verb ("Searching the web") until resume(). */
+  pin: (label: string) => void;
+  /** Back to the elapsed-time phrases, on the ORIGINAL clock. */
+  resume: () => void;
+  /** End it. Safe to call twice — the first streamed character and the
+   *  completed reply both want to, and they race by design. */
+  stop: (final: string | null) => void;
+}
+
+function startWaitingStrip(onActivity?: (label: string | null) => void): WaitingStrip {
+  if (!onActivity) return { pin: () => {}, resume: () => {}, stop: () => {} };
   const startedAt = Date.now();
+  let pinned: string | null = null;
   let stopped = false;
-  onActivity(waitingPhrase(0));
-  const timer = setInterval(() => {
-    if (!stopped) onActivity(waitingPhrase(Date.now() - startedAt));
-  }, PROGRESS_TICK_MS);
-  return (final: string | null) => {
-    if (stopped) return;
-    stopped = true;
-    clearInterval(timer);
-    onActivity(final);
+  const paint = () => {
+    if (!stopped) onActivity(pinned ?? waitingPhrase(Date.now() - startedAt));
+  };
+  paint();
+  const timer = setInterval(paint, PROGRESS_TICK_MS);
+  return {
+    pin: (label: string) => { pinned = label; paint(); },
+    resume: () => { pinned = null; paint(); },
+    stop: (final: string | null) => {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      onActivity(final);
+    },
   };
 }
 
@@ -683,7 +711,7 @@ async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: Abor
     const reply = await postChatCompletion(
       uid,
       [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
-      { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
+      { background: true, decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
     );
     return readWebNeedReply(reply.text);
   } catch {
@@ -720,6 +748,13 @@ export async function sendChatTurn(
   const classified = !askText && userText.trim()
     ? ATTACHMENT_ONLY_DECISION
     : classifyChatRequest(askText, priorAssistant);
+  // 🔴 THE STRIP STARTS HERE, NOT AT THE MODEL CALL. Everything between this
+  // line and the answer is time the student spends waiting — the web-need
+  // pre-flight, the search itself, the brain lookup — and a strip that only
+  // woke up for the final call would leave a silent gap in front of it and
+  // then restart its clock at zero, which is the exact staleness this is
+  // meant to fix. One strip, one clock, for the whole turn.
+  let strip = startWaitingStrip(onActivity);
   // The keyword lists are a fast path, not the whole decision: when they miss,
   // the model itself is asked whether this question needs live sources. See
   // chat-web-need.ts for why this is a pre-flight and not a tool.
@@ -744,9 +779,9 @@ export async function sendChatTurn(
     ? recallBrain(askText)
     : Promise.resolve(null);
   if (needsWeb) {
-    onActivity?.("Searching the web");
+    strip.pin("Searching the web");
     const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
-    onActivity?.(null);
+    strip.resume();
     sources = result.sources;
     groundedText = result.context
       ? `${userText}\n\n${result.context}`
@@ -769,26 +804,31 @@ export async function sendChatTurn(
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
-    // The strip keeps moving for the whole silent stretch — see chat-progress.ts.
-    // It stops the moment the first character of the answer arrives, because
-    // from then on the answer itself is the progress.
-    const stopStrip = startWaitingStrip(onActivity);
+    // A second or later round waits again after a tool ran, so it gets a fresh
+    // clock — that wait genuinely did start over.
+    if (round > 0) strip = startWaitingStrip(onActivity);
     let seenDelta = false;
-    reply = await postChatCompletion(uid, messages, {
-      decision,
-      onDelta: onDelta
-        ? (delta, accumulated) => {
-          if (!seenDelta) {
-            seenDelta = true;
-            stopStrip(WRITING_PHRASE);
+    try {
+      reply = await postChatCompletion(uid, messages, {
+        decision,
+        onDelta: onDelta
+          ? (delta, accumulated) => {
+            // The moment text appears, the answer itself is the progress.
+            if (!seenDelta) {
+              seenDelta = true;
+              strip.stop(WRITING_PHRASE);
+            }
+            onDelta(delta, accumulated);
           }
-          onDelta(delta, accumulated);
-        }
-        : undefined,
-      signal,
-      ...(offerTools ? { tools: AGENT_TOOLS } : {}),
-    });
-    stopStrip(null);
+          : undefined,
+        signal,
+        ...(offerTools ? { tools: AGENT_TOOLS } : {}),
+      });
+    } finally {
+      // finally, not a plain call: an abort or a throw here would otherwise
+      // leave the interval running and the strip shimmering forever.
+      strip.stop(null);
+    }
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
     onActivity?.(activityLabel(calls));

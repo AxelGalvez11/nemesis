@@ -223,13 +223,17 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
                   })),
                   path: "",
                 }}
+                // 🔴 NO MOVE HANDLERS ON SEARCH RESULTS, deliberately. Matches
+                // are a flat list with no folders in it, so every drop inside
+                // them resolves to the synthetic root — dragging a note one
+                // row up to reorder it would silently move it OUT of its
+                // folder to the Library root. Without these props a drag is a
+                // no-op, which is what a filtered view should be.
                 onAttachNotes={attachNotesToChat}
                 onCreateNote={() => setCreateKind("note")}
                 onCreateFolder={(path) => void createFolder(path)}
                 onDeleteFolder={(path) => void deleteFolder(path)}
                 onDeleteNote={(id) => void deleteNote(id)}
-                onMoveFolder={(source, target) => void moveFolder(source, target)}
-                onMoveNote={(id, target) => void moveNote(id, target)}
                 onRenameFolder={(path, title) => void renameFolder(path, title)}
                 onRenameNote={(id, title) => void renameNote(id, title)}
                 onSelect={openPath}
