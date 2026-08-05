@@ -28,8 +28,18 @@ interface ConnectionsState {
   guesses: string[][];
 }
 
-export function ConnectionsGame({ puzzle, dateKey }: { puzzle: ConnectionsPuzzle; dateKey: string }) {
-  const [saved, update] = useBreakDayState<ConnectionsState>("connections", dateKey, { guesses: [] });
+export function ConnectionsGame({
+  puzzle,
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  puzzle: ConnectionsPuzzle;
+  dateKey: string;
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const [saved, update] = useBreakDayState<ConnectionsState>("connections", dateKey, { guesses: [] }, puzzleKey);
   const [selected, setSelected] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [shuffleSeed, setShuffleSeed] = useState(0);
@@ -187,6 +197,12 @@ export function ConnectionsGame({ puzzle, dateKey }: { puzzle: ConnectionsPuzzle
             </Button>
           </div>
         </>
+      )}
+
+      {status !== "playing" && (
+        <Button variant="outline" size="sm" className="rounded-full px-4" onClick={onPlayAnother} data-testid="connections-play-another">
+          Play another
+        </Button>
       )}
     </div>
   );

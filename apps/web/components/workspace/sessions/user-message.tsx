@@ -14,9 +14,9 @@ import type { SessionAttachment, SessionMessage } from "@/lib/workspace/sessions
 import { cn } from "@/lib/utils";
 
 const USER_BUBBLE_BASE_CLASS =
-  "composer-human-message relative flex w-fit min-w-0 max-w-[85%] self-end flex-col gap-1.5 overflow-y-auto rounded-[1.75rem] border bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-left";
+  "composer-human-message relative flex w-fit min-w-0 max-w-[70%] self-end flex-col gap-1.5 overflow-y-auto rounded-[1.25rem] border bg-[color-mix(in_srgb,var(--ui-base)_9%,transparent)] px-4 py-2.5 text-left";
 const USER_BUBBLE_READ_CLASS =
-  "cursor-default text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)";
+  "cursor-default text-[length:var(--conversation-text-font-size)] leading-(--conversation-line-height) text-foreground/95 transition-colors border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)";
 
 /** What kind of thing this is, from its name alone — the File object is long
  *  gone by the time a transcript is re-rendered from storage. */

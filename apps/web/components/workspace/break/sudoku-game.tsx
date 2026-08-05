@@ -25,9 +25,20 @@ function formatClock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function SudokuGame({ dateKey }: { dateKey: string }) {
-  const { puzzle, solution } = useMemo(() => generateSudoku(hashSeed(`sudoku:${dateKey}`), 38), [dateKey]);
-  const [saved, update] = useBreakDayState<SudokuState>("sudoku", dateKey, { entries: {}, notes: {}, seconds: 0 });
+export function SudokuGame({
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  dateKey: string;
+  /** Board seed AND storage identity — the plain dateKey for the daily
+   *  (n=0), extraKey(dateKey, n) for an extra. Sudoku has no separate
+   *  content bank to pick from, so this one string drives both. */
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const { puzzle, solution } = useMemo(() => generateSudoku(hashSeed(`sudoku:${puzzleKey}`), 38), [puzzleKey]);
+  const [saved, update] = useBreakDayState<SudokuState>("sudoku", dateKey, { entries: {}, notes: {}, seconds: 0 }, puzzleKey);
   const [cursor, setCursor] = useState(() => puzzle.findIndex((value) => value === 0));
   const [notesMode, setNotesMode] = useState(false);
   const [checked, setChecked] = useState<number[]>([]);
@@ -99,7 +110,12 @@ export function SudokuGame({ dateKey }: { dateKey: string }) {
       <div className="flex items-center justify-center gap-3 pb-3 text-sm text-muted-foreground">
         <span data-testid="sudoku-clock">{formatClock(saved.seconds)}</span>
         {solved ? (
-          <span className="break-banner-in font-medium text-emerald-600">Solved — sharp work.</span>
+          <>
+            <span className="break-banner-in font-medium text-emerald-600">Solved — sharp work.</span>
+            <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={onPlayAnother} data-testid="sudoku-play-another">
+              Play another
+            </Button>
+          </>
         ) : (
           <>
             <Button

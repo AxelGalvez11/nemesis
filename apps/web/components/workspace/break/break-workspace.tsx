@@ -7,7 +7,7 @@
 // network. The hub is the splash: bright color-block cards, one click in.
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { BeeGame } from "@/components/workspace/break/bee-game";
 import { ConnectionsGame } from "@/components/workspace/break/connections-game";
@@ -16,7 +16,7 @@ import { GameHelp, helpSeen } from "@/components/workspace/break/game-help";
 import { LetterBoxedGame } from "@/components/workspace/break/letterboxed-game";
 import { SudokuGame } from "@/components/workspace/break/sudoku-game";
 import { TilesGame } from "@/components/workspace/break/tiles-game";
-import { readBreakDayState, useBreakDateKey } from "@/components/workspace/break/use-break-day";
+import { readBreakDayState, useBreakDateKey, useBreakPick } from "@/components/workspace/break/use-break-day";
 import { WordleGame } from "@/components/workspace/break/wordle-game";
 import { Button } from "@/components/ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -27,7 +27,7 @@ import { connectionsStatus } from "@/lib/workspace/break/connections";
 import { MIDI_PUZZLES } from "@/lib/workspace/break/crossword-midis";
 import { MINI_PUZZLES } from "@/lib/workspace/break/crossword-puzzles";
 import { buildCrossword, isSolved, type CrosswordEntries } from "@/lib/workspace/break/crossword";
-import { breakDayNumber, dailyIndex, dateKeyLabel } from "@/lib/workspace/break/daily";
+import { dailyIndex, dateKeyLabel, extraKey, extraWalkIndex } from "@/lib/workspace/break/daily";
 import { LETTERBOX_PUZZLES } from "@/lib/workspace/break/letterboxed-puzzles";
 import { letterBoxSolved } from "@/lib/workspace/break/letterboxed";
 import { boardCleared, tileEmpty, type Tile } from "@/lib/workspace/break/tiles";
@@ -60,21 +60,31 @@ const GAME_CARDS: { id: BreakGameId; name: string; tagline: string }[] = [
   { id: "tiles", name: "Tiles", tagline: "Match layers, keep the chain alive." },
 ];
 
-/** Today's puzzles, one lookup shared by hub + games. */
+/** Every bank-picked puzzle for one calendar day, at puzzle number `n` (0 =
+ *  the daily). Pure and content-agnostic of React so both the hub (always
+ *  n=0) and an open game (whatever puzzle number it's on) can share one
+ *  formula per game — n=0 reproduces the pre-extras selection exactly,
+ *  since extraKey(dateKey, 0) is the plain dateKey. */
+function puzzlesForDay(dateKey: string, n: number) {
+  const puzzleKey = extraKey(dateKey, n);
+  return {
+    dateKey,
+    puzzleKey,
+    n,
+    wordleAnswer: WORDLE_ANSWERS[extraWalkIndex(dateKey, n, WORDLE_ANSWERS.length)]!,
+    bee: BEE_PUZZLES[dailyIndex(puzzleKey, "bee", BEE_PUZZLES.length)]!,
+    connections: CONNECTIONS_PUZZLES[dailyIndex(puzzleKey, "connections", CONNECTIONS_PUZZLES.length)]!,
+    mini: MINI_PUZZLES[dailyIndex(puzzleKey, "mini", MINI_PUZZLES.length)]!,
+    midi: MIDI_PUZZLES[dailyIndex(puzzleKey, "crossword", MIDI_PUZZLES.length)]!,
+    letterbox: LETTERBOX_PUZZLES[dailyIndex(puzzleKey, "letterboxed", LETTERBOX_PUZZLES.length)]!,
+  };
+}
+
+/** Today's daily puzzles (n=0), one lookup shared by the hub + whichever
+ *  game is open before it advances past the daily. */
 export function useTodaysPuzzles() {
   const dateKey = useBreakDateKey();
-  return useMemo(() => {
-    const answerIndex = (breakDayNumber(dateKey) - 1) % WORDLE_ANSWERS.length;
-    return {
-      dateKey,
-      wordleAnswer: WORDLE_ANSWERS[answerIndex]!,
-      bee: BEE_PUZZLES[dailyIndex(dateKey, "bee", BEE_PUZZLES.length)]!,
-      connections: CONNECTIONS_PUZZLES[dailyIndex(dateKey, "connections", CONNECTIONS_PUZZLES.length)]!,
-      mini: MINI_PUZZLES[dailyIndex(dateKey, "mini", MINI_PUZZLES.length)]!,
-      midi: MIDI_PUZZLES[dailyIndex(dateKey, "crossword", MIDI_PUZZLES.length)]!,
-      letterbox: LETTERBOX_PUZZLES[dailyIndex(dateKey, "letterboxed", LETTERBOX_PUZZLES.length)]!,
-    };
-  }, [dateKey]);
+  return useMemo(() => puzzlesForDay(dateKey, 0), [dateKey]);
 }
 
 function crosswordStatus(game: "mini" | "crossword", puzzle: Parameters<typeof buildCrossword>[0], dateKey: string): string | null {
@@ -236,8 +246,17 @@ export function BreakWorkspace() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Which puzzle number the open game is on today (0 = the daily), loaded
+  // from storage in an effect (see useBreakPick) so a refresh comes back to
+  // the same puzzle. Reads/writes nothing while `game` is null (the hub).
+  const [pick, setPick] = useBreakPick(game, puzzles.dateKey);
+  const activePuzzles = useMemo(() => puzzlesForDay(puzzles.dateKey, pick), [puzzles.dateKey, pick]);
+  const advance = useCallback(() => setPick(pick + 1), [pick, setPick]);
+  const backToDaily = useCallback(() => setPick(0), [setPick]);
+
   // First visit to a game shows its rules once; the dialog's checkbox can
-  // silence it for good, and the ? button reopens it on demand.
+  // silence it for good, and the ? button reopens it on demand. Tied to
+  // `game` only, not `pick` — switching puzzle number shouldn't re-nag.
   useEffect(() => {
     if (game && !helpSeen(game)) setHelpOpen(true);
   }, [game]);
@@ -256,9 +275,37 @@ export function BreakWorkspace() {
             Chill
           </Button>
           <h1 className="flex-1 text-center font-serif text-lg font-bold">{card.name}</h1>
-          {/* Mirror the back button's width so the title stays truly centered. */}
-          <span className="flex w-[68px] items-center justify-end gap-1 text-right text-xs text-muted-foreground">
-            {dateKeyLabel(puzzles.dateKey).split(",")[0]}
+          {/* Used to mirror the back button's width for a pixel-centered
+              title; a second icon button (New puzzle) plus the wider
+              "Puzzle N · Back to daily" label make exact mirroring more
+              trouble than it's worth, so this now just tracks its own
+              content — the title sits a few px off true-center, which
+              isn't worth the complexity to avoid. */}
+          <span className="flex items-center justify-end gap-1 text-right text-xs text-muted-foreground">
+            {pick > 0 ? (
+              <button
+                type="button"
+                onClick={backToDaily}
+                data-testid="break-back-to-daily"
+                className="whitespace-nowrap underline-offset-2 hover:underline"
+              >
+                Puzzle {pick + 1} · Back to daily
+              </button>
+            ) : (
+              <span className="whitespace-nowrap" data-testid="break-date-label">
+                {dateKeyLabel(puzzles.dateKey).split(",")[0]}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6 shrink-0"
+              aria-label="New puzzle"
+              data-testid="break-new-puzzle"
+              onClick={advance}
+            >
+              <Codicon name="refresh" size={13} />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -272,14 +319,74 @@ export function BreakWorkspace() {
           </span>
         </header>
         <GameHelp game={game} open={helpOpen} onOpenChange={setHelpOpen} />
-        {game === "wordle" && <WordleGame answer={puzzles.wordleAnswer} dateKey={puzzles.dateKey} />}
-        {game === "bee" && <BeeGame puzzle={puzzles.bee} dateKey={puzzles.dateKey} />}
-        {game === "connections" && <ConnectionsGame puzzle={puzzles.connections} dateKey={puzzles.dateKey} />}
-        {game === "mini" && <CrosswordGame puzzle={puzzles.mini} dateKey={puzzles.dateKey} storageKey="mini" />}
-        {game === "crossword" && <CrosswordGame puzzle={puzzles.midi} dateKey={puzzles.dateKey} storageKey="crossword" wide />}
-        {game === "sudoku" && <SudokuGame dateKey={puzzles.dateKey} />}
-        {game === "letterboxed" && <LetterBoxedGame puzzle={puzzles.letterbox} dateKey={puzzles.dateKey} />}
-        {game === "tiles" && <TilesGame dateKey={puzzles.dateKey} />}
+        {/* Keying each game on `pick` remounts it fresh on every puzzle
+            switch — the clean way to reset a game's local UI state (typed
+            letters, animation nonces, cursor position, …) without a
+            bespoke reset effect per component. See useBreakDayState for
+            why puzzleKey/dateKey are threaded separately. */}
+        {game === "wordle" && (
+          <WordleGame
+            key={pick}
+            answer={activePuzzles.wordleAnswer}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "bee" && (
+          <BeeGame
+            key={pick}
+            puzzle={activePuzzles.bee}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "connections" && (
+          <ConnectionsGame
+            key={pick}
+            puzzle={activePuzzles.connections}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "mini" && (
+          <CrosswordGame
+            key={pick}
+            puzzle={activePuzzles.mini}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            storageKey="mini"
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "crossword" && (
+          <CrosswordGame
+            key={pick}
+            puzzle={activePuzzles.midi}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            storageKey="crossword"
+            wide
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "sudoku" && (
+          <SudokuGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
+        )}
+        {game === "letterboxed" && (
+          <LetterBoxedGame
+            key={pick}
+            puzzle={activePuzzles.letterbox}
+            dateKey={puzzles.dateKey}
+            puzzleKey={activePuzzles.puzzleKey}
+            onPlayAnother={advance}
+          />
+        )}
+        {game === "tiles" && (
+          <TilesGame key={pick} dateKey={puzzles.dateKey} puzzleKey={activePuzzles.puzzleKey} onPlayAnother={advance} />
+        )}
       </div>
     );
   }

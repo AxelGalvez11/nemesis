@@ -609,7 +609,7 @@
 [data-slot='aui_assistant-message-content'] {
   padding-left: var(--message-text-indent);
   font-size: var(--conversation-text-font-size);
-  line-height: 1.5;
+  line-height: var(--conversation-line-height);
 }
 
 [data-slot='aui_assistant-message-root'] {
@@ -695,7 +695,8 @@
 
 [data-slot='aui_user-message-root'],
 [data-slot='aui_edit-composer-root'] {
-  --human-msg-line-height: 1.3;
+  /* ChatGPT's bubble runs 16px on a 24px line — 1.3 read cramped. */
+  --human-msg-line-height: 1.5;
   font-size: var(--conversation-text-font-size);
 }
 
@@ -737,8 +738,8 @@
   max-width: 34rem;
   margin-inline: auto;
   color: var(--ui-text-tertiary);
-  font-size: 0.875rem;
-  line-height: 1.45;
+  font-size: var(--conversation-text-font-size);
+  line-height: var(--conversation-line-height);
 }
 
 /* ── Composer chrome ──────────────────────────────────────────────────────── */
@@ -795,7 +796,10 @@
 
 [data-slot='composer-rich-input'] {
   color: var(--ui-text-primary);
-  font-size: 0.8125rem;
+  /* Same size as the conversation itself (ChatGPT types at 16px) — an input
+     smaller than the messages it produces reads as a toy. */
+  font-size: var(--conversation-text-font-size);
+  line-height: var(--conversation-line-height);
 }
 
 [data-slot='composer-rich-input']:empty::before {
@@ -808,14 +812,25 @@
 }
 
 [data-slot='composer-root'] {
-  /* Raised card weight (was 72% / 48%) so the composer keeps its old ~#12/#11
-     shade once the page canvas goes pure black — a bg-relative mix would drag
-     it down to the black page and collapse the "composer stays lighter" intent. */
+  /* Raised card weight (was 72% / 48%) so the composer keeps its own shade
+     rather than dissolving into the page — a bg-relative mix would drag it
+     down to the canvas and collapse the "composer stays lighter" intent. */
   --composer-fill: color-mix(in srgb, var(--dt-card) 90%, transparent);
 }
 
 [data-slot='composer-root'][data-thread-scrolled-up] {
   --composer-fill: color-mix(in srgb, var(--dt-card) 85%, transparent);
+}
+
+/* Dark rides one full step above the charcoal page (ChatGPT: #303030-family
+   composer on #212121) — the card mix alone sat too close to the canvas and
+   the owner read it as "too dark grayish". */
+:root[data-theme='dark'] [data-slot='composer-root'] {
+  --composer-fill: color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent);
+}
+
+:root[data-theme='dark'] [data-slot='composer-root'][data-thread-scrolled-up] {
+  --composer-fill: color-mix(in srgb, var(--ui-bg-elevated) 90%, transparent);
 }
 
 /* ── ChatGPT-style activity narration (student build) ─────────────────────── */

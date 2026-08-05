@@ -34,17 +34,21 @@ function formatClock(seconds: number): string {
 export function CrosswordGame({
   puzzle,
   dateKey,
+  puzzleKey,
   storageKey = "mini",
   wide = false,
+  onPlayAnother,
 }: {
   puzzle: MiniPuzzle;
   dateKey: string;
+  puzzleKey: string;
   /** Day-state namespace — the Mini and the bigger Crossword save separately. */
   storageKey?: "mini" | "crossword";
   wide?: boolean;
+  onPlayAnother: () => void;
 }) {
   const model = useMemo(() => buildCrossword(puzzle), [puzzle]);
-  const [saved, update] = useBreakDayState<MiniState>(storageKey, dateKey, { entries: {}, seconds: 0 });
+  const [saved, update] = useBreakDayState<MiniState>(storageKey, dateKey, { entries: {}, seconds: 0 }, puzzleKey);
   const firstOpen = model.cells.flat().find((cell) => !cell.block)!;
   const [cursor, setCursor] = useState<{ row: number; col: number }>({ row: firstOpen.row, col: firstOpen.col });
   const [direction, setDirection] = useState<Direction>("across");
@@ -204,7 +208,12 @@ export function CrosswordGame({
       <div className="flex items-center justify-center gap-3 pb-3 text-sm text-muted-foreground">
         <span data-testid="mini-clock">{formatClock(saved.seconds)}</span>
         {solved ? (
-          <span className="font-medium text-emerald-600">Solved — nice and quick.</span>
+          <>
+            <span className="font-medium text-emerald-600">Solved — nice and quick.</span>
+            <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={onPlayAnother} data-testid="mini-play-another">
+              Play another
+            </Button>
+          </>
         ) : (
           <>
             <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={check}>

@@ -401,16 +401,21 @@
        all of it is rem. These four are then re-based against the new 20px root
        so the ANSWER text lands on 16px exactly, ChatGPT's own size, rather than
        riding up to 20px with everything else. 0.8rem x 20px = 16px. */
-    --conversation-text-font-size: 0.8rem;
-    --conversation-tool-font-size: 0.6rem;
-    --conversation-caption-font-size: 0.66rem;
-    --conversation-line-height: 1.05rem;
+    /* ChatGPT parity, measured in the owner's own session 2026-08-05 (root
+       here is 18px since the 90% rebase): conversation text 16px on a 26px
+       line (0.89rem × 18 ≈ 16px, line-height 1.625 ≈ 26px), a 16px gap
+       between paragraphs, and real air between turns. The owner's brief:
+       "larger and more comfortable … conversation is the visual focus". */
+    --conversation-text-font-size: 0.89rem;
+    --conversation-tool-font-size: 0.7rem;
+    --conversation-caption-font-size: 0.72rem;
+    --conversation-line-height: 1.625;
     --conversation-caption-line-height: 1rem;
-    --conversation-turn-gap: 0.375rem;
+    --conversation-turn-gap: 1.5rem;
     --turn-block-gap: 0.75rem;
     --tool-row-gap: 0.375rem;
     --tool-group-scroll-max-h: 6.75rem;
-    --paragraph-gap: 0.7rem;
+    --paragraph-gap: 0.89rem;
     --sticky-human-top: 0.23rem;
     --file-tree-row-height: 1.375rem;
 
@@ -418,21 +423,22 @@
        measure it had at 110% — 54rem would now be 1080px and leave the text
        stranded across a very long line. */
     --composer-width: 45rem;
-    /* Pill cap narrower than the thread column (owner 2026-07-20: composer
-       "bigger but less lengthy" — chunkier contents, shorter run). */
-    --composer-pill-max-width: 42rem;
-    /* Control sizes stepped down 2026-08-04 (owner: "the chat composer and
-       other buttons/components feel too big") — ~23px secondary / ~25px
-       primary at the 18px root (the same day's 90% rebase), against
-       ChatGPT's ~28px controls. */
-    --composer-control-size: 1.3rem;
-    --composer-control-primary-size: 1.4rem;
+    /* Same width as the thread column (owner 2026-08-05, ChatGPT parity: their
+       composer and conversation share one 768px measure — ours land there
+       too at the 18px root once the thread's 1.5rem side padding is spent). */
+    --composer-pill-max-width: 45rem;
+    /* Control sizes re-raised 2026-08-05 (owner, ChatGPT parity: the composer
+       "should feel like a major interaction surface", send "large enough to
+       comfortably click") — ~32px secondary / 36px primary at the 18px root,
+       matching ChatGPT's measured circles. */
+    --composer-control-size: 1.8rem;
+    --composer-control-primary-size: 2rem;
     --composer-control-gap: 0.25rem;
     --composer-row-gap: 0.25rem;
     --composer-ring-strength: 1;
-    --composer-surface-pad-x: 0.5rem;
-    --composer-surface-pad-y: 0.375rem;
-    --composer-input-min-height: 1.75rem;
+    --composer-surface-pad-x: 0.75rem;
+    --composer-surface-pad-y: 0.5rem;
+    --composer-input-min-height: 2rem;
     --composer-input-max-height: 9.375rem;
     --composer-input-inline-min-width: 8rem;
     --composer-fallback-height: 3.5rem;
@@ -473,46 +479,50 @@
 
   /* DARK — the nemesis skin verbatim (the graphite tint is near a no-op on #0e0e0e). */
   :root[data-theme='dark'] {
-    --theme-foreground: #ffffff;
+    /* ChatGPT-parity charcoal ladder (owner 2026-08-05): the page is a
+       near-black CHARCOAL, not pure black, and every surface above it steps
+       one gray lighter — #171717 sidebar · #212121 page · ~#2a editor ·
+       ~#2f popover · ~#32 bubble. Text is soft off-white, never #fff. */
+    --theme-foreground: #ededed;
     /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
        background is almost invisible, and this still carries white button text
        at ~4.3:1. Same reasoning as the light block above. */
     --theme-primary: #6e6e6e;
-    --theme-secondary: #161616;
-    --theme-accent-soft: #1c1c1c;
+    --theme-secondary: #2a2a2a;
+    --theme-accent-soft: #2e2e2e;
     --theme-midground: #6e6e6e;
     --theme-warm: #6e6e6e;
-    --theme-background-seed: #000000;
-    --theme-sidebar-seed: #000000;
-    --theme-card-seed: #141414;
-    --theme-elevated-seed: #181818;
-    --theme-bubble-seed: #1b1b1b;
+    --theme-background-seed: #212121;
+    --theme-sidebar-seed: #171717;
+    --theme-card-seed: #303030;
+    --theme-elevated-seed: #383838;
+    --theme-bubble-seed: #404040;
     --theme-mix-chrome: 74%;
     --theme-mix-card: 38%;
     --theme-mix-elevated: 46%;
     --theme-mix-bubble: 46%;
-    --theme-neutral-chrome: #000000;
-    --theme-neutral-sidebar: #000000;
-    --theme-neutral-card: #161618;
+    --theme-neutral-chrome: #212121;
+    --theme-neutral-sidebar: #171717;
+    --theme-neutral-card: #262628;
 
     /* Dark-only accent palette overrides. */
     --ui-red: #e75e78;
     --ui-green: #55a583;
     --ui-cyan: #6f9ba6;
 
-    --dt-muted: #1e1e1e;
+    --dt-muted: #2f2f2f;
     --dt-primary-foreground: #1a1a1a;
-    --dt-secondary-foreground: #c8c8c8;
+    --dt-secondary-foreground: #cdcdcd;
     --dt-accent-foreground: var(--theme-primary);
-    --dt-border: #2a2a2a;
-    --dt-input: #2a2a2a;
+    --dt-border: #3a3a3a;
+    --dt-input: #3a3a3a;
     --dt-ring: #8f8f98;
     --dt-midground-foreground: #1a1a1a;
     --dt-composer-ring: #8f8f98;
     --dt-destructive: #ff3b46;
     --dt-destructive-foreground: #fef2f2;
-    --dt-sidebar-border: #202020;
-    --dt-user-bubble-border: #3d2b28;
+    --dt-sidebar-border: #262626;
+    --dt-user-bubble-border: #454545;
 
     --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --composer-ring-strength: 1.3;

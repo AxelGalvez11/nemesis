@@ -110,7 +110,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       data-workspace=""
       style={{
         ...SHELL_VARS,
-        ["--pane-chat-sidebar-width" as string]: sidebarVisible ? (narrowViewport ? "min(84vw, 18rem)" : "237px") : "0px",
+        ["--pane-chat-sidebar-width" as string]: sidebarVisible ? (narrowViewport ? "min(84vw, 18rem)" : "256px") : "0px",
         height: "100dvh",
         width: "100%",
       }}

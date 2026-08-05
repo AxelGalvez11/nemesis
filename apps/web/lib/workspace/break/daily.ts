@@ -64,6 +64,30 @@ export function dailyIndex(dateKey: string, gameId: string, bankSize: number): n
   return hashSeed(`${gameId}:${dateKey}`) % bankSize;
 }
 
+/** Puzzle-instance key ("more than one puzzle per day", owner 2026-08-04).
+ *  n=0 IS the daily — it keeps the plain dateKey so every existing
+ *  selection formula and storage key stays byte-identical. n>0 gets a
+ *  suffix, which is all a caller needs to hash or store an "extra" puzzle
+ *  through the exact same formulas as the daily. */
+export function extraKey(dateKey: string, n: number): string {
+  return n > 0 ? `${dateKey}#${n}` : dateKey;
+}
+
+/** Step used to jump around a fixed-length, day-walked list (Wordle's
+ *  answer list today) for puzzle n>0. 137 is prime, so as long as a bank's
+ *  length isn't a multiple of 137 — checked in break-content.test.ts — the
+ *  walk visits every index exactly once before it ever repeats, meaning
+ *  extras 1..length-1 are guaranteed to differ from the day's own answer. */
+const EXTRA_WALK_STEP = 137;
+
+/** Generalizes "day number walks the list" (see breakDayNumber) to extra
+ *  puzzles: n=0 reproduces today's plain walk exactly; n>0 jumps further
+ *  around the same list so extras spread out instead of clustering. */
+export function extraWalkIndex(dateKey: string, n: number, length: number): number {
+  if (length <= 0) return 0;
+  return (breakDayNumber(dateKey) - 1 + EXTRA_WALK_STEP * n) % length;
+}
+
 /** Fisher–Yates on a copy — callers keep their original order. */
 export function seededShuffle<T>(items: readonly T[], seed: number): T[] {
   const random = mulberry32(seed);

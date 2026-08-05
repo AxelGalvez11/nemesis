@@ -38,8 +38,18 @@ interface BeeState {
   found: string[];
 }
 
-export function BeeGame({ puzzle, dateKey }: { puzzle: BeePuzzle; dateKey: string }) {
-  const [saved, update] = useBreakDayState<BeeState>("bee", dateKey, { found: [] });
+export function BeeGame({
+  puzzle,
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  puzzle: BeePuzzle;
+  dateKey: string;
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const [saved, update] = useBreakDayState<BeeState>("bee", dateKey, { found: [] }, puzzleKey);
   const [typed, setTyped] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [shuffleSeed, setShuffleSeed] = useState(0);
@@ -263,6 +273,12 @@ export function BeeGame({ puzzle, dateKey }: { puzzle: BeePuzzle; dateKey: strin
             ))}
           </ul>
         </div>
+        {/* Honeycomb has no win/lose banner — you can always find more
+            words — so unlike the other seven games this is always
+            available rather than gated on a "finished" state. */}
+        <Button variant="outline" size="sm" className="self-start rounded-full px-4" onClick={onPlayAnother} data-testid="bee-play-another">
+          Play another
+        </Button>
         <p className="text-xs text-muted-foreground">
           Words use only today's letters, need the center letter, and are 4+ letters. Find every letter at once for a pangram bonus.
         </p>
