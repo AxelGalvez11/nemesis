@@ -325,7 +325,15 @@ export function DocumentReader({
   }, [source.fileName, url]);
 
   return (
-    <div className="nemesis-reader flex h-full min-h-0 flex-col bg-(--reader-room)" data-load-state={loadState} data-testid="document-reader">
+    // data-load-state is a testing affordance, not decoration: "is the document
+    // open yet" is otherwise only visible as prose in the middle of the page,
+    // and the difference between "still loading" and "loaded but blank" is the
+    // difference between two completely different bugs.
+    <div
+      className="nemesis-reader flex h-full min-h-0 flex-col bg-(--reader-room)"
+      data-load-state={loadState}
+      data-testid="document-reader"
+    >
       <ReaderTopBar
         course={courseOf(source.folderPath)}
         currentMatch={matchIndex}
