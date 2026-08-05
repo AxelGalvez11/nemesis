@@ -19,6 +19,14 @@ import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
+import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
+import {
+  readWebNeedReply,
+  shouldAskModelAboutWeb,
+  WEB_NEED_PROMPT,
+  WEB_NEED_TIMEOUT_MS,
+  type WebNeedContext,
+} from "@/lib/workspace/chat-web-need";
 import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
@@ -115,22 +123,30 @@ export const CHAT_NO_TOOLS_PROMPT =
   "scheduled, and never describe what their existing notes, decks, or events contain. Put the material itself in your reply instead, and tell them to " +
   "ask for it to be saved if they want it kept. ";
 
+// 🔴 NO SCORING RITUAL HERE, and that is deliberate (owner 2026-08-04: "can we
+// just have deepseek answer normally since its already a frontier model —
+// theres a prompt making it output a confidence number").
+//
+// What used to live here: decompose every question into claims, label each one
+// verified/inference/assumption/unknown, then close with a numeric confidence
+// from 0.0 to 1.0 and, under 0.8, recite a fixed sentence. Three things were
+// wrong with it. A model's self-reported score is not a measurement — it is
+// generated text that looks like one, and evidence-grade.ts already says so in
+// as many words. The scripted sentence turned every ordinary uncertainty into
+// the same rehearsed line. And the labelling made short answers read like
+// audit reports, which is the exact stiffness the voice rules downstream
+// exist to undo.
+//
+// What survives is the part that is a GUARDRAIL rather than theatre: check the
+// work, and never fabricate a source. Saying "I don't know" is now asked for in
+// the model's own words, because a frontier model does that well unprompted and
+// badly on a script.
 const CHAT_PROMPT_TAIL =
   "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
   "answered what was actually asked. If a step does not hold up, fix it before replying rather than hedging afterwards. " +
-  // Owner-specified verification procedure (2026-07-27): decompose, label,
-  // audit, score, disclose. It lives in the BASE prompt rather than in
-  // chat-skills.ts because the owner asked for it on every factual request —
-  // a matcher broad enough to do that starved the task skills outright, since
-  // only MAX_ACTIVE_SKILLS packets ride any turn. Compressed to the behaviour
-  // rather than the five headings, and explicitly proportionate, so a one-line
-  // question still gets a one-line answer.
-  "On any factual or multi-part question, break it into its separate claims and take them one at a time; mark each substantive claim as a verified " +
-  "fact, an inference (say what from), an assumption you supplied yourself, or unknown; then re-read your answer for contradictions and for steps that " +
-  "merely sound right. Never invent a statistic, quotation, citation, date, or link to close a gap — a missing source is a finding to report, not a hole " +
-  "to fill. End a factual answer with an overall confidence from 0.0 to 1.0. If that confidence is below 0.8, or the question needed context you do not " +
-  "have, write exactly 'I cannot confirm this with high certainty', then say what stays unknown and what would settle it. " +
-  "Keep this proportionate: a simple question needs a labelled answer and a score, not a five-part report.";
+  "Never invent a statistic, quotation, citation, date, or link to close a gap — a missing source is a finding to report, not a hole to fill. " +
+  "Where you are genuinely unsure, or the question needed context you do not have, say so plainly in your own words and say what would settle it. " +
+  "Answer at the length the question deserves: a short question gets a short answer.";
 
 /**
  * The base prompt for one turn. The workspace paragraph is chosen from the SAME
@@ -623,6 +639,61 @@ export function collapseOutputs(outputs: readonly SessionOutput[], threshold = O
  *  Library/Study/Calendar tools; results are fed back until it answers in text.
  *  Tools are withheld on reasoner-model routes (DeepSeek thinking mode requires
  *  echoing reasoning_content on tool turns, which the stream doesn't retain). */
+/**
+ * Keep the thinking strip moving while the model says nothing.
+ *
+ * Returns its own stop function, which is safe to call twice — the first
+ * character of a streamed answer and the completed reply both want to end it,
+ * and they race by design.
+ */
+function startWaitingStrip(onActivity?: (label: string | null) => void): (final: string | null) => void {
+  if (!onActivity) return () => {};
+  const startedAt = Date.now();
+  let stopped = false;
+  onActivity(waitingPhrase(0));
+  const timer = setInterval(() => {
+    if (!stopped) onActivity(waitingPhrase(Date.now() - startedAt));
+  }, PROGRESS_TICK_MS);
+  return (final: string | null) => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    onActivity(final);
+  };
+}
+
+/**
+ * Ask the model whether this turn needs the live web.
+ *
+ * Bounded twice over: it is only called when the cheap checks could not decide
+ * (shouldAskModelAboutWeb), and it gives up after WEB_NEED_TIMEOUT_MS. Every
+ * failure path — timeout, network, auth, a reply that is not the one word it
+ * was asked for — resolves to false, so the worst case is the behaviour we had
+ * before this existed rather than a stalled turn.
+ */
+async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: AbortSignal): Promise<boolean> {
+  if (!shouldAskModelAboutWeb(context)) return false;
+  const timer = new AbortController();
+  // Linked to the caller's signal so pressing Stop kills the pre-flight too,
+  // rather than leaving a request running against a turn nobody wants.
+  const onAbort = () => timer.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const deadline = setTimeout(() => timer.abort(), WEB_NEED_TIMEOUT_MS);
+  try {
+    const reply = await postChatCompletion(
+      uid,
+      [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
+      { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
+    );
+    return readWebNeedReply(reply.text);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function sendChatTurn(
   uid: string,
   history: SessionMessage[],
@@ -649,7 +720,16 @@ export async function sendChatTurn(
   const classified = !askText && userText.trim()
     ? ATTACHMENT_ONLY_DECISION
     : classifyChatRequest(askText, priorAssistant);
-  const needsWeb = classified.searchWeb || shouldSearchWeb(askText);
+  // The keyword lists are a fast path, not the whole decision: when they miss,
+  // the model itself is asked whether this question needs live sources. See
+  // chat-web-need.ts for why this is a pre-flight and not a tool.
+  const regexSaidYes = classified.searchWeb || shouldSearchWeb(askText);
+  const needsWeb = regexSaidYes || await modelWantsWeb(uid, {
+    ask: askText,
+    hasAttachments: userText.trim() !== askText.trim(),
+    regexSaidYes,
+    savesToWorkspace: classified.savesToWorkspace === true,
+  }, signal);
   const routed: ChatRouteDecision = needsWeb && classified.route === "conversation"
     ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
     : classified;
@@ -689,12 +769,26 @@ export async function sendChatTurn(
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out without tools so it must answer in text.
     const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
+    // The strip keeps moving for the whole silent stretch — see chat-progress.ts.
+    // It stops the moment the first character of the answer arrives, because
+    // from then on the answer itself is the progress.
+    const stopStrip = startWaitingStrip(onActivity);
+    let seenDelta = false;
     reply = await postChatCompletion(uid, messages, {
       decision,
-      onDelta,
+      onDelta: onDelta
+        ? (delta, accumulated) => {
+          if (!seenDelta) {
+            seenDelta = true;
+            stopStrip(WRITING_PHRASE);
+          }
+          onDelta(delta, accumulated);
+        }
+        : undefined,
       signal,
       ...(offerTools ? { tools: AGENT_TOOLS } : {}),
     });
+    stopStrip(null);
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
     onActivity?.(activityLabel(calls));

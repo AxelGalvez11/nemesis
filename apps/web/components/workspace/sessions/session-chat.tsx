@@ -436,10 +436,23 @@ export function SessionChat() {
       const attachedDocuments = files.filter(isDocumentFile);
       // prepared.sources is index-aligned with `files` by construction.
       const syllabusDocs = files.filter((file, index) => isDocumentFile(file) && sniffsAsSyllabus(prepared.sources[index]?.content ?? ""));
+      // 🔴 ONE SPARE FILE USED TO CANCEL THE WHOLE IMPORT. The rule was "every
+      // attached document must read as a syllabus", so a student who dragged in
+      // three syllabi AND a reading list — or who asked "put these on my
+      // calendar" with a lecture deck in the pile — fell through to a plain
+      // chat turn, where a hundred thousand characters of schedule get one
+      // pass at the model and are gone by the next turn. Asking outright for a
+      // calendar import is intent enough on its own now; the syllabi go to the
+      // importer and the rest of the pile is simply not part of that job.
+      //
+      // The all-or-nothing rule still governs the SILENT case (files dropped in
+      // with nothing typed), because there the only evidence of what the
+      // student wanted is the pile itself.
+      const askedToImport = asksForCalendarImport(text);
+      const everyDocumentIsSyllabus = syllabusDocs.length === attachedDocuments.length;
       if (
         syllabusDocs.length > 0 &&
-        syllabusDocs.length === attachedDocuments.length &&
-        (!text.trim() || asksForCalendarImport(text))
+        (askedToImport || (!text.trim() && everyDocumentIsSyllabus))
       ) {
         sessionsStore.setWorking(targetId, false);
         setSyllabusImport({ files: syllabusDocs, targetId });
