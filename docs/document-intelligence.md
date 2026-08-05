@@ -405,7 +405,108 @@ slide is indistinguishable from a deck that never had one.
 beat what the PPTX part-walking already extracts, measured on that corpus, before it replaces
 anything.
 
-## 8. What stays
+## 8. Source indexing
+
+Migration: `supabase/migrations/20260805040000_source_indexing.sql`. Validated against the live
+database inside a rolled-back transaction: it applies cleanly and **zero existing note chunks violate
+the new constraint.**
+
+### Three layers, three identities
+
+```
+  original file      physical identity  = content_hash (sha256 of the bytes)
+       │
+       ▼
+  structured parse   parse identity     = parsed_documents.id  (content_hash, parser_version)
+       │                                  ← the CANONICAL representation
+       ▼
+  retrieval chunks   disposable         = library_chunks       (chunker_version, embedding_version)
+
+  library placement  attachment identity = library_sources.id  (folder, course, title — runs alongside)
+```
+
+**The chunk table is not the document.** `parsed_documents.structure` holds the full parse — units
+(pages/slides/sheets), headings, paragraphs, lists, tables, figures, captions, cell ranges. Chunks
+exist to be thrown away and rebuilt when chunking or embedding improves. Nothing may come to treat a
+chunk as the canonical text of anything.
+
+**The same file in two folders** is two `library_sources` rows, one parse, one set of chunks. Each
+placement keeps its own folder, course and title; the bytes and the expensive parse are paid for
+once. Deduplication is **within a user** on purpose — a global hash table would let one account learn
+that another had uploaded a particular file.
+
+### Three versions, three columns
+
+| Column | Bump it when | Then re-run |
+|---|---|---|
+| `parser_version` | PDF geometry, DOCX walker, slide rendering improves | parse → chunk → embed |
+| `chunker_version` | chunk boundaries or sizing change | chunk → embed |
+| `embedding_version` | a better embedding model | embed only |
+
+Collapsing these into one "index version" would make targeted reprocessing impossible. A new
+`parser_version` deliberately produces a **new** `parsed_documents` row rather than overwriting, which
+is what makes *"reprocess everything parsed by version X"* answerable without touching the original.
+
+### Provenance is columns, not markers
+
+`[[page 7]]` and `## Slide 12` are fine during extraction; they are not a citation system. Each chunk
+carries `origin_type`, `source_id`/`document_id`, `parsed_document_id`, `unit_kind`, `unit_index`,
+`unit_label`, `cell_range`, `heading_path[]`, `chunk_index` and the three versions — **queryable, not
+inferred from prose.**
+
+`unit_kind` makes a page, a slide and a spreadsheet sheet the same shape of answer. `'document'` is
+the honest value for a file with no meaningful subdivision, which is better than inventing page 1.
+`heading_path` is what lets a result reconstruct **document → unit → section → chunk** rather than
+being a floating block of text, and it is what adjacent-context expansion will walk.
+
+**A locator is only ever written when it was measured.** If the parser knows the chunk came from PDF
+page 7, that is persisted. A model is never asked where something came from and never has its guess
+stored as though it were measured — which is exactly what `library_provenance.location` does today.
+
+### Retrieval policy
+
+A `library_chunks_one_origin` CHECK guarantees every row is exactly one of source or note, so ranking
+has something trustworthy to rank on.
+
+- **Originals are canonical evidence by default** — not because a query was classified as "factual",
+  but because a derived text may never silently stand in for what it was derived from.
+- Notes remain valuable for synthesis, organisation, query expansion, concept links, and the
+  student's own context, and appear in results freely.
+- **Where a claim can be grounded in the original, cite the original.** Where it exists only in a
+  note, cite the note. Where Nemesis *inferred* rather than copied it, say so — never present a
+  synthesis as something the source stated.
+
+### Indexing is deterministic infrastructure
+
+`store → parse → chunk → embed`. **No model writes anything on this path** — no librarian prose, no
+notes, no cards, no tests, no edits to existing notes. A document becomes searchable without a single
+generated artifact, which is the precondition for making generation opt-in at all.
+
+### Spreadsheets are documents, not CSV
+
+`.xlsx` is refused outright today — `kindFor`/`sniffKind` know only pdf/docx/pptx/image. Real support
+means workbook → sheets → tables → cells: sheet names, coordinates and ranges, header rows, merged
+cells, displayed values, and formulas where they carry meaning. The target is answering *"why did
+revenue fall in Q3?"* while citing a sheet and range — which the schema already accommodates through
+`unit_kind='sheet'`, `unit_label` and `cell_range`.
+
+### Visual elements are generic
+
+The core parser exposes visual elements — charts, diagrams, scanned pages, screenshots, forms,
+equations, visually-encoded tables — **without judging their importance.** Extracting text is not the
+same as understanding a document. Whether a diagram matters educationally, legally or financially is
+a question for the domain layer above; the parser's job is to make sure it still exists to be asked
+about.
+
+### Benchmark
+
+Not lecture files. Difficult documents across **academic/scientific, legal, finance/business,
+technical manuals, healthcare, government forms, resumes, scanned documents, presentations and
+spreadsheets** — measured on structural fidelity, table fidelity, visual-content recovery, citation
+and location accuracy, retrieval recall, and question-answering accuracy. Successful ingestion is not
+the bar; parity with top general-purpose systems on an arbitrary document is.
+
+## 9. What stays
 
 Nothing here is a rewrite. These were built against the owner's real 121-deck corpus and measured:
 the PowerPoint part-walking through each slide's own `.rels`; EMF and TIFF recovery; content-hash
