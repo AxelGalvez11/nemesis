@@ -70,8 +70,11 @@ import { estimateTokens } from "@nemesis/shared";
  * The build of this decision. A new value means pages may be routed differently
  * than they were, so a stored coverage report can be read against the rules that
  * actually produced it. Bump it whenever a constant or a signal below changes.
+ *
+ * page-read-2: the shape signals stopped counting a letter that stands alone, so a
+ * page whose only letters are marks in a grid is no longer called a broken font map.
  */
-export const PAGE_READ_SCORER_VERSION = "page-read-1";
+export const PAGE_READ_SCORER_VERSION = "page-read-2";
 
 /**
  * The score at or above which a page counts as read from its own text layer.
@@ -156,14 +159,39 @@ export const DAMAGED_RATIO_FULL = 0.1;
 export const SHAPE_MIN_LETTERS = 60;
 
 /**
+ * Letters a run has to hold before its letters join the shape sample.
+ *
+ * 🔴 A LETTER STANDING ALONE BETWEEN SPACES IS A MARK, NOT A WORD, and without
+ * this the shape signals condemn an ordinary page. A fitment matrix, a
+ * clause-applicability grid and an interaction chart are all a row of labels and
+ * a field of "X": every letter on the page is the same letter, dominance reads
+ * 1.0, and the page is called a broken font map. The identical grid drawn with
+ * "✓" sails through, because a check mark is not a letter — so the verdict turned
+ * on which glyph the producer happened to pick for a tick, which is typography,
+ * not a measurement of whether the page was read. Marks stand alone; writing does
+ * not, in any script.
+ *
+ * WHAT THIS GIVES UP, stated because it is the one thing the change loosens: a
+ * broken font map that emitted its single glyph in isolation — "ﬁ ﬁ ﬁ ﬁ" — now
+ * has an empty sample and is judged on volume alone. It is the unlikely flavour:
+ * unpdf joins text items with no separator at all, so every space on the page is
+ * a space the PDF itself drew, and a character map broken badly enough to collapse
+ * the alphabet has collapsed the space glyph with it — which produces one long run,
+ * the flavour that is still caught.
+ */
+export const WORD_MIN_LETTERS = 2;
+
+/**
  * Bits of entropy per letter: healthy above, degenerate below.
  *
- * 🔴 MEASURED OVER LETTERS ONLY, NEVER OVER DIGITS OR PUNCTUATION, and that is the
- * whole reason this signal is safe. A sparse numeric table ("0 0 0 1 0 0 …"), a
- * table of contents built from dot leaders and a page of dimension callouts all
- * have tiny alphabets and are all perfectly well read — they are also nearly all
- * digits and punctuation, so they never reach this test. Letters are what a broken
- * font map corrupts.
+ * 🔴 MEASURED OVER THE LETTERS OF WORDS ONLY — never over digits or punctuation,
+ * and never over a letter standing alone — and that is the whole reason this signal
+ * is safe. A sparse numeric table ("0 0 0 1 0 0 …"), a table of contents built from
+ * dot leaders and a page of dimension callouts all have tiny alphabets and are all
+ * perfectly well read; they are also nearly all digits and punctuation, so they
+ * never reach this test. A grid of "X" marks is the same page with a letter for its
+ * mark, and WORD_MIN_LETTERS is what keeps it out. Letters inside words are what a
+ * broken font map corrupts.
  *
  * The healthy bar is deliberately far below any real prose. Natural language in
  * every script measured sits above 2.5 bits (the least informative sequence in
@@ -247,7 +275,9 @@ export interface PageReadSignals {
   tokens: number;
   /** Non-empty lines the text layer reported. */
   lines: number;
-  /** Letters (Unicode category L). The sample the shape signals run on. */
+  /** Letters (Unicode category L) that sit in a run of WORD_MIN_LETTERS or more of
+   *  them — the sample the shape signals run on. Marks standing alone are excluded,
+   *  so this is smaller than the page's letter count and deliberately so. */
   letters: number;
   /** Bits of entropy per letter, or 0 when there were too few letters to ask. */
   letterEntropy: number;
@@ -316,17 +346,27 @@ function measurePage(text: string): Omit<PageReadSignals, "documentRatio"> {
   let chars = 0;
   let nonSpace = 0;
   let damaged = 0;
-  let letters = 0;
-  const letterCounts = new Map<string, number>();
   for (const ch of flat) {
     chars++;
     if (ch === " ") continue;
     nonSpace++;
     if (isDamagedCodePoint(ch.codePointAt(0) ?? 0)) damaged++;
-    if (LETTER.test(ch)) {
-      letters++;
-      letterCounts.set(ch, (letterCounts.get(ch) ?? 0) + 1);
+  }
+
+  // The shape sample, gathered one whitespace-delimited run at a time so that a
+  // lone letter can be left out of it — see WORD_MIN_LETTERS for why a mark must
+  // not be counted as writing. `flat` has already collapsed every run of layout
+  // whitespace to one space, so splitting on it is splitting on what the page drew.
+  let letters = 0;
+  const letterCounts = new Map<string, number>();
+  for (const run of flat ? flat.split(" ") : []) {
+    const own: string[] = [];
+    for (const ch of run) {
+      if (LETTER.test(ch)) own.push(ch);
     }
+    if (own.length < WORD_MIN_LETTERS) continue;
+    letters += own.length;
+    for (const ch of own) letterCounts.set(ch, (letterCounts.get(ch) ?? 0) + 1);
   }
 
   let entropy = 0;

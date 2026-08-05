@@ -203,6 +203,18 @@ test("a page of one repeated glyph is not read", () => {
 // promise: an encoding shifted by a constant produces gibberish with the entropy
 // and the letter distribution of ordinary prose, and no text-only signal separates
 // it from a page in a language nobody here reads. It takes the pixels.
+// What WORD_MIN_LETTERS gives up, pinned so the trade is visible rather than
+// described. A font map broken badly enough to collapse the alphabet has collapsed
+// the space glyph with it and arrives as one long run, which is still caught above —
+// this is the same rubbish with the spaces intact, and it reads.
+test("single-glyph rubbish with the spaces intact is NOT detected, and that is the trade", () => {
+  const page = "ﬁ ".repeat(200).trim();
+  const decision = one(page);
+  assert.ok(decision.signals.tokens > READ_TOKEN_FLOOR);
+  assert.equal(decision.signals.letters, 0, "every glyph stands alone, so there is no sample");
+  assert.equal(decision.read, true);
+});
+
 test("shifted-encoding gibberish is NOT detected, and that is the known limit", () => {
   const page = "Tqf rvjdl cspxo gpy kvnqt pwfs uif mbaz eph. ".repeat(12);
   assert.equal(one(page).read, true);
@@ -242,6 +254,32 @@ test("a page of dimension callouts is read", () => {
 
 test("a form of repeated N/A cells is read", () => {
   const page = Array.from({ length: 20 }, () => "N/A | N/A | N/A | N/A | N/A").join("\n");
+  assert.equal(one(page).read, true);
+});
+
+// The false positive that made WORD_MIN_LETTERS necessary, and the property that
+// has to hold rather than the outcome: a grid of marks reads the same whether its
+// mark is a letter or a symbol. Before, the "X" grid scored 0.112 and was called a
+// broken font map while its "✓" twin scored 0.887, so the verdict turned on which
+// glyph the producer picked for a tick — typography, not a measurement. A fitment
+// matrix, a clause-applicability grid and an interaction chart are all this page.
+test("a grid of marks is read whichever glyph the mark is", () => {
+  const grid = ["      A1  A2  A3  A4  A5  A6  A7  A8"]
+    .concat(Array.from({ length: 18 }, (_, row) => `R${row + 1}    X   X       X   X       X   X`))
+    .join("\n");
+  const asLetter = one(grid);
+  const asSymbol = one(grid.replaceAll("X", "✓"));
+  assert.equal(asLetter.read, true);
+  assert.equal(asLetter.reason, "text-layer");
+  assert.equal(asSymbol.read, true);
+  // Every letter on the letter version stands alone, so the shape signals have no
+  // sample at all and cannot fire — the same place the symbol version starts from.
+  assert.equal(asLetter.signals.letters, 0);
+  assert.equal(asLetter.signals.letterDominance, 0);
+});
+
+test("a column of bare tick marks is read", () => {
+  const page = Array.from({ length: 24 }, (_, row) => `${row + 1}.  X`).join("\n");
   assert.equal(one(page).read, true);
 });
 
