@@ -142,3 +142,43 @@ One acquisition route worth recording as closed: the SheetJS `test_files`
 repository — organised by producer, and the obvious single source for most of
 these — is **blocked by GitHub itself** (HTTP 403, terms-of-service block), not
 merely missing.
+
+---
+
+# Final status matrix
+
+🔴 **Everything below is marked from something directly exercised in this
+session, or marked `unverified`. Nothing is inferred from "the code looks right".**
+
+| | PDF | DOCX | PPTX | XLSX | TXT | Markdown |
+|---|---|---|---|---|---|---|
+| **Web production** | accepted by the route, **unverified** in prod | accepted, **unverified** in prod | accepted, **unverified** in prod | 🔴 **rejected — not a `FileKind`** | 🔴 **rejected** | 🔴 **rejected** |
+| **iOS production** | in the picker, **unverified** | in the picker, **unverified** | in the picker, **unverified** | 🔴 **not in the picker** | 🔴 not offered | 🔴 not offered |
+| **Producers tested** | Acrobat PDFWriter 4.0 (1 real file) | MS Word 12 (×2), LibreOffice Writer 26.2 (×1) | MS PowerPoint 16 (×1), LibreOffice Impress 26.2 (×1) | Excel 12/15/16 (×3), LibreOffice Calc (×2), **Google Sheets (×10)** | none | none |
+| **Parsing** | ✅ 37 pages found, 37 read, 94 chunks | ✅ | ✅ | ✅ 15 real files, 0 failures | 🔴 **no parser exists** | 🔴 **no parser exists** |
+| **Segmentation** | ✅ page units | ✅ sections; page/section-break fallback proven on a real headingless file | ✅ slide units | ✅ sheets + multiple regions per sheet | — | — |
+| **Retrieval** | unverified | unverified | unverified | ✅ **the only format proven storage → `match_source_chunks`** | — | — |
+| **Citations** | ✅ `page 1` at parse + chunk | ⚠️ **`this document`** — see limitation | ✅ `slide 1` | ✅ `Forecast!B12:F19` through **all** stages | — | — |
+| **Preview rendering** | **unverified** | **unverified** | **unverified** | **unverified** | — | — |
+| **Limitations** | 🔴 **no `DocumentParser` face** — cannot enter the pipeline. OCR/vision path never exercised on a real scan | 🔴 fallback units carry `index` but `citeLocator` ignores it for sections, so every citation in a 60-page contract still reads `this document` | figures are not extracted | 🔴 **unreachable by any user** | — | — |
+| **Embedding** | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF |
+
+## The finding that governs all of it
+
+🔴 **Nothing in production calls `ingestSource`.** No route, no edge function,
+nothing. The four-layer pipeline is built, typechecked and tested, and the only
+code that constructs its `parsers` map is a test fixture.
+
+So no format can pass the first gate — *real upload/import path* — until the
+pipeline is wired into a route. Three things block that independently:
+
+1. **PDF has no `DocumentParser` face.** DOCX, PPTX and XLSX each expose one;
+   PDF does not, so the most common academic format cannot be put in the map.
+2. **XLSX is not an accepted upload kind.** `type FileKind = "pdf" | "docx" |
+   "pptx" | "image"`, with no `xl/workbook.xml` probe and no XLSX type in the iOS
+   picker. The most thoroughly validated parser here is unreachable.
+3. **TXT and Markdown have no parser at all**, though `docKindFor` already maps
+   them to `text`.
+
+The honest reading: **DOCX and PPTX are the only formats both uploadable and
+pipeline-ready**, and even they are unverified end to end in production.
