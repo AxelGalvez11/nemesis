@@ -10,16 +10,23 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-// THE CEILING IS $19.99 (owner, 2026-07-31). The $99 Max plan was removed on the
-// same day: the nearest competitor's most expensive plan is $19 a month, so a $99
-// row on this page read as a different category of product rather than as a
-// generous option. Nothing migrated with it — Max had no subscribers. Its Stripe
-// price and its plan_entitlements row are untouched and still resolve, so an old
-// /pricing?plan=max link keeps working; removing those is a live billing change
-// and needs the owner's go-ahead.
+// THE CEILING IS $19.99 (owner, 2026-07-31), and as of 2026-08-05 Agent Pro is
+// the whole ceiling: Max was RETIRED, not merely hidden. The $99 row came off
+// this page first because the nearest competitor's most expensive plan is $19 a
+// month, and against that it read as a different category of product rather than
+// as a generous option. Nothing migrated — Max had no subscribers.
 //
-// Free now takes the third card. It was always the recommended starting point in
-// the copy and had no card of its own to click.
+// After the retirement no surface sells it and an old /pricing?plan=max link
+// lands on the app's pricing page to choose rather than starting a $99 checkout.
+// plan_entitlements.max still RESOLVES so a pre-retirement subscription would
+// keep its entitlements; archiving the Stripe price is a live billing change and
+// needs the owner's go-ahead.
+//
+// Free takes the third card. It was always the recommended starting point in the
+// copy and had no card of its own to click.
+//
+// The three recording figures here are checked against the real caps by
+// apps/web/lib/workload-cost.test.ts — this file is on its list.
 
 // Comparison rows repeat ONLY claims already made on this page's cards:
 // nothing new gets promised in a table cell. A "no" renders as a middot with
