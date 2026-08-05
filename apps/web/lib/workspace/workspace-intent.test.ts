@@ -250,3 +250,21 @@ test("🔴 writing something is not filing something — those keep the thinking
     assert.equal(detectsWorkspaceIntent(prompt), false, `stolen from the thinking model: ${prompt}`);
   }
 });
+
+test("🔴 a singular 'class' is a workspace noun — `classes?` never matched it", () => {
+  // Second production miss of the same run: "My Tuesday Class on 2026-09-15 is
+  // cancelled." went to deepseek-reasoner with zero tools and Nemesis answered
+  // "I can't edit your calendar". The possessive rule was correct; the noun list
+  // was not. `classes?` means "classe" plus an optional "s".
+  for (const prompt of [
+    "My Tuesday Class on 2026-09-15 is cancelled. Just that one meeting, keep the rest of the term.",
+    "My class on Tuesday is cancelled",
+    "Cancel my Tuesday Class on 2026-09-15.",
+    "when is my next class",
+  ]) {
+    assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
+    assert.equal(toolsAllowed(classifyChatRequest(prompt)), true, `tools stripped: ${prompt}`);
+  }
+  // The plural still works.
+  assert.equal(detectsWorkspaceIntent("show me my classes this semester"), true);
+});

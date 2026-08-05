@@ -23,12 +23,17 @@
 // belongs to no product surface and must not fire.
 
 /** Things that live in the student's workspace, in the words students use.
+ *
+ *  🔴 Mind the plural. `classes?` means "classe" plus an optional "s" — it never
+ *  matches the singular "class", so "my class on Tuesday is cancelled" carried
+ *  no workspace intent at all until 2026-08-05. Found in production. Anything
+ *  whose plural adds "es" needs `word(?:es)?`, not `wordes?`.
  *  Product surfaces and academic containers only — never subject matter.
  *  "sources" is deliberately absent: "peer-reviewed sources" belongs to the
  *  research route, and a miss here is harmless (the conversation fallback
  *  rides the tools-capable model anyway). */
 const WORKSPACE_NOUN =
-  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|classes?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan|workload|queue)|workload|workspace|courses?|semester|term)";
+  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|class(?:es)?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan|workload|queue)|workload|workspace|courses?|semester|term)";
 
 /** "my <workspace thing>" within one clause. `our` covers group-project talk. */
 const MY_WORKSPACE_RE = new RegExp(`\\b(?:my|our)\\b[^.?!\\n]{0,40}\\b${WORKSPACE_NOUN}\\b`, "i");
