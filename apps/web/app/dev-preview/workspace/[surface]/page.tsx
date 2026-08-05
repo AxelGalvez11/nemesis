@@ -13,6 +13,7 @@ import { WorkspacePreviewProvider } from "@/components/workspace/preview-context
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import { sessionsStore, type WorkspaceSession } from "@/lib/workspace/sessions-store";
 
+import ChillPage from "../../../(workspace)/chill/page";
 import CalendarPage from "../../../(workspace)/calendar/page";
 import GraphPage from "../../../(workspace)/graph/page";
 import LibraryPage from "../../../(workspace)/library/page";
@@ -30,6 +31,7 @@ const SURFACES = {
   notebooks: NotebooksPage,
   study: StudyPage,
   calendar: CalendarPage,
+  chill: ChillPage,
   graph: GraphPage,
   plugins: PluginsPage,
   settings: SettingsPage,

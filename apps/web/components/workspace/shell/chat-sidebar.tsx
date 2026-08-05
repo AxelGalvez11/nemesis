@@ -67,6 +67,9 @@ const SIDEBAR_NAV: NavItem[] = [
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
+  // Owner 2026-08-04: "brain break" page (named Chill) — daily games,
+  // deliberately last so the work surfaces stay first in the eye line.
+  { id: "chill", label: "Chill", codicon: "coffee", route: "/chill" },
 ];
 
 interface ChatSidebarProps {
