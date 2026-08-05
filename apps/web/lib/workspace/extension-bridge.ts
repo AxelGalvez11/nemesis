@@ -135,6 +135,24 @@ export async function clearScan(): Promise<void> {
 const FILE_TIMEOUT_MS = 90_000;
 
 /**
+ * What happened when we asked for a file.
+ *
+ * 🔴 "NO REPLY" AND "REFUSED" MUST NOT LOOK THE SAME, and they did. Both used
+ * to come back as null, which hid a genuinely bad live scenario: an OLDER
+ * extension is still installed, has never heard of REQUEST_FILE, and answers
+ * nothing at all. Every document then waits out the full timeout before failing
+ * — a hundred-document import spends hours grinding to produce a hundred
+ * identical errors.
+ *
+ * A refusal is per-document and the import carries on. Silence is fatal and the
+ * import stops after the first one, with an answer the student can act on.
+ */
+export type FileResult =
+  | { ok: true; file: FetchedFile }
+  | { ok: false; reason: "no-reply" }
+  | { ok: false; reason: "refused" };
+
+/**
  * Fetch one document's bytes through the extension.
  *
  * 🔴 THE URL MUST COME FROM A SANITISED SCAN, never from anywhere else. This is
@@ -147,11 +165,16 @@ const FILE_TIMEOUT_MS = 90_000;
  * Returns null for every failure, including a refusal: an import that cannot
  * get one file carries on and reports which ones it missed.
  */
-export async function requestFile(url: string): Promise<FetchedFile | null> {
+export async function requestFile(url: string): Promise<FileResult> {
   const raw = await ask(APP_MESSAGES.REQUEST_FILE, EXTENSION_MESSAGES.FILE, { url }, FILE_TIMEOUT_MS);
+  // Nothing came back at all: no bridge listening for this message, which means
+  // no extension or one that predates file import.
+  if (raw === null || raw === undefined) return { ok: false, reason: "no-reply" };
   const file = sanitiseFetchedFile(raw);
-  // Same URL, or it is not an answer to this question.
-  return file && file.url === url ? file : null;
+  // Same URL, or it is not an answer to this question. A reply that arrived but
+  // carried an error (or the wrong document) is the extension working and the
+  // portal saying no.
+  return file && file.url === url ? { file, ok: true } : { ok: false, reason: "refused" };
 }
 
 /** Where a student goes to get it. Not yet a Chrome Web Store listing — see

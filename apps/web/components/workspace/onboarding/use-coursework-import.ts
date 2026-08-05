@@ -36,6 +36,16 @@ import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { uploadLibrarySource } from "@/lib/workspace/library-sources";
 import type { PlannedDocument } from "@/lib/workspace/coursework-import";
 
+/**
+ * What to say when the extension does not answer at all.
+ *
+ * The likeliest cause by far is a student running the copy they installed
+ * before file import existed, so the sentence names the fix rather than the
+ * symptom.
+ */
+export const EXTENSION_TOO_OLD =
+  "Your Nemesis extension is out of date, so files can't be downloaded. Update it in chrome://extensions and try again.";
+
 /** Extensions the server extractor can turn into text. Anything else is still
  *  KEPT as a source file — it just has no note in front of it, because we have
  *  nothing honest to put in one. */
@@ -122,15 +132,23 @@ export function useCourseworkImport({ uid, createNote, createFolder }: UseCourse
   /** One document, end to end. Returns what happened so the caller can count. */
   const importOne = useCallback(async (
     document: PlannedDocument,
-  ): Promise<{ imported: boolean; stored: boolean; failure?: string }> => {
+  ): Promise<{ imported: boolean; stored: boolean; failure?: string; fatal?: boolean }> => {
     if (!document.url) return { failure: `${document.title}: no link to open`, imported: false, stored: false };
 
-    const fetched = await requestFile(document.url);
-    if (!fetched) {
-      // The commonest real causes, in one sentence a student can act on: the
-      // extension is gone, the portal refused, or their session expired.
+    const result = await requestFile(document.url);
+    if (!result.ok) {
+      // Silence means nothing is listening — no extension, or one installed
+      // before file import existed. Fatal, and reported as such by the caller,
+      // because the next ninety-nine documents would fail identically after
+      // waiting out the timeout each time.
+      if (result.reason === "no-reply") {
+        return { fatal: true, failure: EXTENSION_TOO_OLD, imported: false, stored: false };
+      }
+      // A real answer of "no": this document, this time. The portal refused it,
+      // the session expired for it, or it was too big. The import carries on.
       return { failure: `${document.title}: couldn't be downloaded`, imported: false, stored: false };
     }
+    const fetched = result.file;
 
     const name = fileNameFor(document, fetched);
     let file: File;
@@ -229,6 +247,10 @@ export function useCourseworkImport({ uid, createNote, createFolder }: UseCourse
       if (result.failure) state.failures.push(result.failure);
       state.done += 1;
       setProgress({ ...state });
+      // Nothing is listening. Stopping here is the whole point: grinding
+      // through the rest produces the same error a hundred times over, an hour
+      // apart, and buries the one sentence that would have fixed it.
+      if (result.fatal) break;
     }
 
     state.current = "";
