@@ -292,6 +292,13 @@ chrome.runtime.onMessage.addListener((message: { type?: string; scan?: unknown; 
     void chrome.storage.local.remove(STORAGE_KEY).then(() => sendResponse({ ok: true }));
     return true;
   }
+  if (message?.type === RUNTIME_MESSAGES.COURSE_PROGRESS) {
+    // Nothing to do with it — the POINT is that it arrived. An incoming message
+    // resets this worker's idle timer, which is what stops Chrome shutting it
+    // down while a course takes a minute to read. See COURSE_PROGRESS.
+    sendResponse({ ok: true });
+    return true;
+  }
   if (message?.type === RUNTIME_MESSAGES.GET_SWEEP) {
     void chrome.storage.local.get(SWEEP_KEY).then((bag) => sendResponse(bag[SWEEP_KEY] ?? null));
     return true;

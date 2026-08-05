@@ -48,11 +48,30 @@ function report(payload: { url: string; documents: ScrapedDocument[]; truncated:
   }
 }
 
+/**
+ * Tell the worker we are still here.
+ *
+ * Load-bearing: see COURSE_PROGRESS in messages.ts. Without a beat during the
+ * long waits, Chrome is free to shut the service worker down mid-course.
+ */
+function beat(note: string): void {
+  try {
+    chrome.runtime.sendMessage({ note, type: RUNTIME_MESSAGES.COURSE_PROGRESS }, () => {
+      void chrome.runtime.lastError;
+    });
+  } catch {
+    // Extension reloaded. The worker's own budget ends the course.
+  }
+}
+
 /** Wait until the outline is actually on the page, or the budget runs out. */
 async function waitForContent(): Promise<boolean> {
   const deadline = Date.now() + READY_BUDGET_MS;
   while (Date.now() < deadline) {
     if (ultraContentReady(document)) return true;
+    // Ultra took about thirty seconds to render on the installation this was
+    // measured against, which is long enough on its own to lose the worker.
+    beat("Waiting for the course to load");
     // Waits on the page DOING something rather than on a clock — see the header.
     // False means the page went quiet, which on a still-empty outline means it
     // is not going to fill: stop rather than sit out the whole budget.
@@ -80,10 +99,11 @@ async function readThisCourse(): Promise<void> {
   }
 
   try {
-    const result = await readUltraCourse(() => {
-      // Progress goes nowhere from a background tab — there is no card to draw
-      // on and the popup is fed by the worker, which counts whole courses. The
-      // callback exists because the reader takes one; ignoring it is correct.
+    const result = await readUltraCourse((_documents, note) => {
+      // NOT ignorable, though it looks it. There is no card to draw on in a
+      // background tab, but every one of these messages is what keeps the
+      // service worker alive long enough to receive the finished reading.
+      beat(note);
     });
     report({ documents: result.documents, truncated: result.truncated, url });
   } catch {

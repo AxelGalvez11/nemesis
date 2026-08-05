@@ -259,8 +259,26 @@ function preselectNewestTerm(): void {
   picked = new Set((newest?.courses ?? readable).map((course) => course.name));
 }
 
+/**
+ * 🔴 ONLY BLACKBOARD ULTRA COURSES CAN BE SWEPT, and offering the sweep
+ * anywhere else is a button that reports nothing but failures.
+ *
+ * The sweep exists because an Ultra course cannot be FETCHED — its folders are
+ * buttons, so the page has to be driven live in a real tab. Every other portal
+ * is walked by the ordinary link crawl during the scan itself, and already has
+ * its documents by the time this panel opens.
+ *
+ * Without this filter, a Canvas student ticking seven courses and pressing
+ * "Read 7 courses" gets seven background tabs, seven injected readers, and
+ * seven refusals — content-course.ts checks the route first and reports
+ * "not-a-course-page" for /courses/16160. The panel would then say "0 documents
+ * found. 7 could not be opened", which is both useless and untrue: those
+ * courses were read perfectly well already.
+ */
+const ULTRA_OUTLINE = /\/ultra\/courses\/[^/]+\/outline/;
+
 function showPicker(scan: LmsScan): void {
-  readable = scan.courses.filter((course) => typeof course.url === "string" && course.url.length > 0);
+  readable = scan.courses.filter((course) => typeof course.url === "string" && ULTRA_OUTLINE.test(course.url));
   preselectNewestTerm();
   renderPicker();
 }

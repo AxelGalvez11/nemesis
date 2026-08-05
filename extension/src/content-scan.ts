@@ -144,6 +144,11 @@ async function linksOnPage(url: string): Promise<readonly CrawlLink[] | null> {
     const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
     return Array.from(parsed.querySelectorAll("a[href]")).flatMap((anchorEl) => {
       const href = anchorEl.getAttribute("href") ?? "";
+      // What KIND of row is this? Canvas states it on the row's own class and
+      // hides it nowhere else — every item shares one URL shape. Vendor-emitted
+      // and functional, the same call already made for Ultra's analytics ids.
+      const row = anchorEl.closest(".context_module_item");
+      const attachment = row ? row.classList.contains("attachment") : undefined;
       // Resolved against the page it was found on, not against wherever this
       // script happens to be running.
       let absolute: string;
@@ -152,7 +157,11 @@ async function linksOnPage(url: string): Promise<readonly CrawlLink[] | null> {
       } catch {
         return [];
       }
-      return [{ href: absolute, text: (anchorEl.textContent ?? "").replace(/\s+/g, " ").trim() }];
+      return [{
+        href: absolute,
+        text: (anchorEl.textContent ?? "").replace(/\s+/g, " ").trim(),
+        ...(attachment === undefined ? {} : { attachment }),
+      }];
     });
   } catch {
     return null;
@@ -339,6 +348,27 @@ async function scanThisPage(): Promise<LmsScan> {
     return ultraScan;
   }
 
+  // 🔴 NEWEST TERM FIRST, BECAUSE THE PAGE BUDGET RUNS OUT LONG BEFORE THE
+  // COURSES DO.
+  //
+  // MEASURED on a real signed-in Canvas account (2026-08-04): FIFTY-SIX courses
+  // spanning eight terms, listed oldest first — "Bucs on Deck 2021", "CBU
+  // Placement Exams (Fall 2021)", "Fall 2021 Calculus I", and so on. The crawl
+  // shares one budget across every course (DEFAULT_LIMITS: 240 pages total, 40
+  // per course), so walking them in the portal's own order spends the entire
+  // allowance on courses from four years ago and reaches THIS semester with
+  // nothing left.
+  //
+  // The term filter in the picker does not help here: this runs during the
+  // scan, before the student has chosen anything. Ordering is what protects
+  // them — if the budget runs out, it runs out on the oldest material rather
+  // than the material they are actually studying.
+  //
+  // Courses with no term sort last for the same reason: an undated course is
+  // less likely to be this semester's than one the portal stamped with a year.
+  const yearOf = (course: ScrapedCourse) => Number(/\b(19[89]\d|20\d{2})\b/.exec(course.term ?? "")?.[1] ?? 0);
+  const walkOrder = [...best].sort((a, b) => yearOf(b) - yearOf(a));
+
   const isFolder = folderRule(lms);
   let frontier: CrawlState = newCrawl();
   let documentsFound = 0;
@@ -351,7 +381,7 @@ async function scanThisPage(): Promise<LmsScan> {
   // and navigation happens in JavaScript, so there is nothing to fetch.
   let unopenable = 0;
 
-  for (const course of best) {
+  for (const course of walkOrder) {
     if (!course.url) {
       // Leaving `documents` ABSENT is the honest record: the shared contract
       // reads absent as "never looked inside", which is not the same as an

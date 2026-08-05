@@ -69,6 +69,25 @@ export interface CrawlState {
 export interface CrawlLink {
   href: string;
   text: string;
+  /**
+   * Whether the ROW this link sits in claims to be a real file.
+   *
+   * 🔴 MEASURED ON A REAL SIGNED-IN CANVAS (2026-08-04). A Canvas course lists
+   * its contents as rows like
+   *
+   *     <li class="context_module_item ... attachment ...">
+   *       <a href="/courses/14977/modules/items/964858">Lecture 3</a>
+   *
+   * and EVERY row — a PDF, an assignment, a quiz, a wiki page, an external tool
+   * — links to the identical `/modules/items/:id` shape. One real course had 73
+   * such rows and ZERO direct file links. So the URL cannot tell a slide deck
+   * from a quiz, and without this the import downloads all 73, discovers most
+   * of them are web pages, and hands the student sixty red failure lines.
+   *
+   * The row's own class says which is which. `undefined` means the page said
+   * nothing — every portal but Canvas — and is treated as "keep it".
+   */
+  attachment?: boolean;
 }
 
 // ── URLs ─────────────────────────────────────────────────────────────────────

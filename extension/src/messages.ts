@@ -83,6 +83,21 @@ export const RUNTIME_MESSAGES = {
   SWEEP_COURSES: "nemesis:sweep-courses",
   /** One course finished, from the script injected into its tab. */
   COURSE_READ: "nemesis:course-read",
+  /**
+   * Still working, from the tab being read.
+   *
+   * 🔴 THIS IS A KEEPALIVE AS MUCH AS A PROGRESS LINE. Chrome shuts a Manifest
+   * V3 service worker down after about 30 seconds of idleness, and a bare
+   * setTimeout is not activity — so the worker waiting up to 90 seconds for one
+   * course to be read is a worker Chrome is entitled to kill. When it dies
+   * mid-sweep the `finally` that closes the tab never runs, leaving the student
+   * with orphaned course tabs and a sweep stuck at "running" forever.
+   *
+   * An incoming message IS activity. The reader already had a progress callback
+   * that did nothing; sending it here resets the idle timer for free, and gives
+   * the popup folder-level progress instead of a silent minute per course.
+   */
+  COURSE_PROGRESS: "nemesis:course-progress",
   /** How the sweep is getting on, for the popup's progress line. */
   SWEEP_PROGRESS: "nemesis:sweep-progress",
   /** The popup asks the worker where the sweep has got to (it may have opened

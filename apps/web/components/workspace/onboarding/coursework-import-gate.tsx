@@ -214,7 +214,19 @@ export function CourseworkImportGate() {
     }
 
     const result = await runImport(plan.folders, plan.documents);
-    await clearScan();
+    // 🔴 ONLY THROW THE READING AWAY WHEN IT IS FINISHED WITH.
+    //
+    // clearScan used to run unconditionally. Press Stop forty documents into a
+    // hundred and the remaining sixty were gone — along with the minutes of
+    // background-tab sweeping that found them — with no way back but scanning
+    // the whole portal again. The same bug made a second import impossible:
+    // bring in this term, come back for last term, and there was nothing left
+    // to bring.
+    //
+    // Kept whenever anything is outstanding. The cost of keeping it is a
+    // reading sitting in extension storage a while longer; the cost of dropping
+    // it is work the student has to redo.
+    if (result.done >= result.total) await clearScan();
     library.reload();
 
     const parts = [`${result.imported} of ${result.total} documents are in your Library`];
