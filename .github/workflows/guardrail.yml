@@ -77,5 +77,4 @@ jobs:
         env:
           SB_URL: https://qyjmivntajbigjswhahb.supabase.co
           SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
-          ANON_KEY: ${{ secrets.ANON_KEY }}
-        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts --cleanup
+        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/ci-cleanup.ts

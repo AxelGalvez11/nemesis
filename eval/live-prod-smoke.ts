@@ -14,6 +14,9 @@
 //   SB_URL=https://<ref>.supabase.co deno run --allow-net --allow-env \
 //     --env-file=supabase/functions/.env eval/live-prod-smoke.ts
 import { detectViolations } from "../supabase/functions/ask/safety.ts";
+import { newCiRun, recordCiAccount, teardownCiRun } from "../scripts/lib/ci-account-cleanup.ts";
+
+const RUN = newCiRun("smoke");
 
 const SB_URL = Deno.env.get("SB_URL");
 const SERVICE_KEY = Deno.env.get("SERVICE_KEY");
@@ -80,17 +83,14 @@ function fullText(r: AskResponse): string {
 }
 
 async function teardown() {
-  if (!userId) return;
-  await fetch(`${SB_URL}/rest/v1/generated_answers?user_id=eq.${userId}`, {
-    method: "DELETE", headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, Prefer: "return=minimal" },
-  }).catch(() => {});
-  await fetch(`${SB_URL}/auth/v1/admin/users/${userId}`, {
-    method: "DELETE", headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` },
-  }).catch(() => {});
+  // Through the provenance gate, and only for an account this run can prove is
+  // its own. The manifest also survives the process, so a killed run is cleaned
+  // up by the workflow's always-runs step instead of leaking an account.
+  await teardownCiRun({ SB_URL: SB_URL!, SERVICE_KEY: SERVICE_KEY! }, RUN, userId);
 }
 
 async function main() {
-  const email = `smoke+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
+  const email = RUN.email;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST", headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
@@ -98,6 +98,7 @@ async function main() {
   }).then((r) => r.json());
   userId = created?.id ?? created?.user?.id;
   if (!userId) throw new Error("user create failed");
+  await recordCiAccount(RUN, userId);
 
   const grant = await fetch(`${SB_URL}/rest/v1/subscriptions`, {
     method: "POST",

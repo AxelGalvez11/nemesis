@@ -31,4 +31,22 @@ jobs:
           SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
           ANON_KEY: ${{ secrets.ANON_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-        run: deno run --allow-net --allow-env --allow-read eval/ci-gate.ts
+        run: deno run --allow-net --allow-env --allow-read --allow-write eval/ci-gate.ts
+
+      # 🔴 THE SECOND ACCOUNT LEAK. This job runs on EVERY pull request and mints
+      # an `eval+…@nemesis.test` account, and `cancel-in-progress` above means a
+      # second push cancels the first run mid-flight — killing the process before
+      # its teardown, exactly as it did for the guardrail suite (42 accounts).
+      #
+      # `always()` is the one condition GitHub still schedules after a
+      # cancellation. The harness writes its account id to a file the instant the
+      # account exists and deletes that file once it has cleaned up after itself,
+      # so on a healthy run this finds nothing. The delete goes through the shared
+      # provenance gate and this step never fails the job.
+      - name: Remove the run's test account, even if the run was cancelled
+        if: always()
+        timeout-minutes: 2
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/ci-cleanup.ts

@@ -123,3 +123,16 @@ jobs:
       # output. Calling the package script directly skips that entirely.
       - name: Node unit tests (web app)
         run: pnpm --filter @nemesis/web test
+
+      # 🔴 TYPES WERE NOT A PR GATE UNTIL 2026-08-05, AND IT COST US.
+      # PR #426 landed a real `error TS2322` on main. Nothing here caught it —
+      # this job runs tests, not `tsc` — and the only gate that would have,
+      # Vercel's build, had hit its daily rate limit and reported a red that
+      # said "retry in 24 hours" rather than "your types are broken".
+      #
+      # So a type error reached main on a fully green PR. Deploy health is not a
+      # substitute for a type gate: it shares a quota, it is external, and it is
+      # not run per-package. This is cheap (tsc --noEmit, no build output) and it
+      # covers the shared package and the phone app as well as web.
+      - name: Types (every package)
+        run: pnpm turbo run typecheck

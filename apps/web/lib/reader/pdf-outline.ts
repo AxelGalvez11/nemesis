@@ -10,7 +10,10 @@
 export interface RawOutlineNode {
   title: string;
   dest: string | unknown[] | null;
-  items?: RawOutlineNode[];
+  /** 🔴 `null`, not just absent: pdf.js emits `items: null` on a LEAF bookmark.
+   *  The walker has always handled it; the type said otherwise, which made a
+   *  faithful test fixture fail to compile. Narrow this and real PDFs break. */
+  items?: RawOutlineNode[] | null;
   bold?: boolean;
   italic?: boolean;
 }
