@@ -1,4 +1,4 @@
-import { appUrl, stripeMaxPriceId, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { appUrl, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 import {
@@ -8,6 +8,7 @@ import {
   stripePriceMatchesPlan,
   subscriptionCheckoutTerms,
   subscriptionRemainsOpen,
+  type CheckoutPlan,
 } from "@/lib/billing-contract";
 
 export async function POST(req: Request) {
@@ -16,12 +17,18 @@ export async function POST(req: Request) {
     if (!user) return json({ error: "authentication required" }, 401);
 
     // Which plan to buy. Defaults to plus (no body) for backward compatibility.
-    let plan: "plus" | "pro" | "max" = "plus";
+    //
+    // Max was retired 2026-08-05 (owner: "agent pro is the ceiling"). An old
+    // link asking for plan "max" now falls through to plus rather than erroring
+    // — this route's contract has always been "anything unrecognised means
+    // plus", and a 500 on a stale bookmark helps nobody. Nothing sells $99 any
+    // more; see CheckoutPlan in lib/billing-contract.ts.
+    let plan: CheckoutPlan = "plus";
     try {
       const body = await req.json();
-      if (body?.plan === "pro" || body?.plan === "max") plan = body.plan;
+      if (body?.plan === "pro") plan = "pro";
     } catch { /* no body → plus */ }
-    const priceByPlan = { plus: stripePlusPriceId, pro: stripeProPriceId, max: stripeMaxPriceId } as const;
+    const priceByPlan = { plus: stripePlusPriceId, pro: stripeProPriceId } as const;
     const priceId = priceByPlan[plan];
     if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
 

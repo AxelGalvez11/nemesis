@@ -13,7 +13,7 @@ import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
-import { planLabel } from "@/lib/billing-contract";
+import { planLabel, type CheckoutPlan } from "@/lib/billing-contract";
 import { phCapture } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +37,6 @@ interface CatalogPrice {
 interface BillingCatalog {
   plus: CatalogPrice;
   pro: CatalogPrice;
-  max?: CatalogPrice;
 }
 
 function formatPrice(price: CatalogPrice | undefined): { amount: string; interval: string } {
@@ -52,7 +51,7 @@ function formatPrice(price: CatalogPrice | undefined): { amount: string; interva
 }
 
 interface PlanCardSpec {
-  tier: "plus" | "pro" | "max";
+  tier: CheckoutPlan;
   name: string;
   tagline: string;
   cta: string;
@@ -60,10 +59,13 @@ interface PlanCardSpec {
   recommended?: boolean;
 }
 
-// Recording hours must match plan_entitlements.transcription_seconds_month_limit and
-// the same lines on app/pricing/page.tsx — three copies of one number, and they had
-// already drifted apart by more than 3x. "Live copilot" was also stale: there is no
-// live lane, a recording is written up once after it stops.
+// Two cards since 2026-08-05: Max was retired and Agent Pro is the ceiling
+// (owner). `tier` narrows to CheckoutPlan, so a card for a plan nobody can buy
+// will not compile.
+//
+// Recording hours must match plan_entitlements.transcription_seconds_month_limit
+// and the same lines on app/pricing/page.tsx — the drift guard in
+// lib/workload-cost.test.ts reads this file and fails when they disagree.
 const PLAN_CARDS: PlanCardSpec[] = [
   {
     tier: "plus",
@@ -87,17 +89,6 @@ const PLAN_CARDS: PlanCardSpec[] = [
       "Web-grounded answers with source citations",
       "Higher desktop-agent automation limits",
       "70 hours of lecture recording each month",
-    ],
-  },
-  {
-    tier: "max",
-    name: "Max",
-    tagline: "Everything in Agent Pro, five times over:",
-    cta: "Upgrade to Max",
-    features: [
-      "Highest usage limits across the agent",
-      "200 hours of lecture recording each month",
-      "First access to new capabilities",
     ],
   },
 ];
@@ -159,9 +150,7 @@ export function BillingSettings() {
   const prices: Record<PlanCardSpec["tier"], { amount: string; interval: string }> = {
     plus: formatPrice(catalog?.plus),
     pro: formatPrice(catalog?.pro),
-    max: formatPrice(catalog?.max),
   };
-  const visibleCards = PLAN_CARDS.filter((card) => card.tier !== "max" || Boolean(catalog?.max));
 
   return (
     <div className="grid gap-4">
@@ -184,8 +173,10 @@ export function BillingSettings() {
         </Button>
       </section>
 
-      <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
-        {visibleCards.map((card) => {
+      {/* Two columns, not three. A 3-column grid holding 2 cards reads as a
+          failed load — the landing page hit exactly this when Max came off it. */}
+      <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
+        {PLAN_CARDS.map((card) => {
           const tierRank = rankOf(card.tier);
           const isCurrent = snapshot != null && currentRank === tierRank;
           const included = snapshot != null && currentRank > tierRank;

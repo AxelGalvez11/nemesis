@@ -15,6 +15,11 @@ export interface PaidAiPlanGuardrail {
   maxTokenPricePerMillionUsd: number;
   monthlyLiveAudioSeconds: number;
 }
+/** Runtime guardrails per paid plan. `max` is RETIRED as of 2026-08-05 and kept
+ *  here on purpose: this table is looked up by whatever plan a live account
+ *  reports, and a legacy `max` record with no row would fall through to no
+ *  guardrail at all — the opposite of what retiring a plan should do. Nothing
+ *  sells it; see CheckoutPlan in lib/billing-contract.ts. */
 export const PAID_AI_GUARDRAILS: Record<"plus" | "pro" | "max", PaidAiPlanGuardrail> = {
   plus: { priceUsd: 9.99, monthlyMeteredTokens: 1_900_000, monthlySearchUnits: 50, maxTokenPricePerMillionUsd: 0.28, monthlyLiveAudioSeconds: 1_800 },
   pro: { priceUsd: 19.99, monthlyMeteredTokens: 2_100_000, monthlySearchUnits: 75, maxTokenPricePerMillionUsd: 0.87, monthlyLiveAudioSeconds: 5_400 },

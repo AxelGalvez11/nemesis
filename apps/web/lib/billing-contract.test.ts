@@ -15,6 +15,9 @@ import {
 
 assert.equal(planLabel("plus"), "Nemesis Student");
 assert.equal(planLabel("pro"), "Nemesis Agent Pro");
+// Max is retired (2026-08-05) but must still READ correctly — a stored plan
+// that labels itself "Free" would be a worse bug than the one being fixed.
+assert.equal(planLabel("max"), "Nemesis Max");
 assert.equal(subscriptionGrantsAccess("active"), true);
 assert.equal(subscriptionGrantsAccess("trialing"), true);
 assert.equal(subscriptionGrantsAccess("past_due"), true);
@@ -24,20 +27,23 @@ assert.equal(subscriptionRemainsOpen("past_due"), true);
 assert.equal(stripeKeyMode("sk_test_example"), "test");
 assert.equal(stripeKeyMode("rk_live_example"), "live");
 assert.equal(stripeKeyMode("not-a-key"), "unknown");
-assert.equal(stripePriceMatchesPlan("max", {
+// Agent Pro is the ceiling as of 2026-08-05, so it is the dearest plan this
+// guard can be asked about. The guard's whole job is to refuse a price whose
+// amount does not match the plan being sold.
+assert.equal(stripePriceMatchesPlan("pro", {
+  active: true,
+  currency: "usd",
+  recurring: { interval: "month" },
+  type: "recurring",
+  unit_amount: 1_999,
+}), true);
+assert.equal(stripePriceMatchesPlan("pro", {
   active: true,
   currency: "usd",
   recurring: { interval: "month" },
   type: "recurring",
   unit_amount: 9_900,
-}), true);
-assert.equal(stripePriceMatchesPlan("max", {
-  active: true,
-  currency: "usd",
-  recurring: { interval: "month" },
-  type: "recurring",
-  unit_amount: 4_999,
-}), false);
+}), false, "the retired Max amount must not pass as Agent Pro");
 
 const now = Date.parse("2026-07-12T12:00:00Z");
 assert.equal(reusableCheckoutUrl([

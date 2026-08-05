@@ -1,11 +1,23 @@
-export type CheckoutPlan = "plus" | "pro" | "max";
+/**
+ * What can be BOUGHT. Max ($99) was retired on 2026-08-05 (owner: "max is
+ * retired, agent pro is the ceiling"), so it is gone from this union and every
+ * sale path that reads it — checkout, the catalog and the billing cards all
+ * narrow through this type, which is why removing it here is the retirement.
+ *
+ * Retiring a plan is NOT the same as forgetting it. `planForPriceId` in
+ * lib/stripe.ts still maps the Max price (and STRIPE_MAX_LEGACY_PRICE_IDS) to
+ * the `max` plan, `planLabel` below still names it, and plan_entitlements still
+ * carries its rows — so a subscription created before today keeps working
+ * instead of silently falling back to free. There are none, but "no sale path"
+ * and "no memory of it" are different guarantees and only the first was asked for.
+ */
+export type CheckoutPlan = "plus" | "pro";
 export type StripeMode = "test" | "live";
 
 export const NEMESIS_TRIAL_PERIOD_DAYS = 7;
 export const MONTHLY_PLAN_PRICE_CENTS: Record<CheckoutPlan, number> = {
   plus: 999,
   pro: 1_999,
-  max: 9_900,
 };
 
 interface StripePriceLike {
@@ -62,6 +74,9 @@ export function planLabel(plan: string | null | undefined): string {
       return "Nemesis Student";
     case "pro":
       return "Nemesis Agent Pro";
+    // Retired 2026-08-05 and deliberately still named: a label is how an old
+    // record READS, not something anyone can buy. Dropping it would print
+    // "Free" next to a subscription that is not free.
     case "max":
       return "Nemesis Max";
     case "professional":
