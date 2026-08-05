@@ -41,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import { DocsCrumbs } from "./docs-crumbs";
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { folderIndexFor } from "@/lib/workspace/library-folder-index";
@@ -247,9 +248,19 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
         visible={!toolbarHidden && editable && (editorFocused || toolbarPinned)}
       />
       <header className="mb-1">
-        {/* No breadcrumbs (owner 2026-08-04) — just the quiet save state and
-            the note's own menu, riding the top right like a docs page. */}
-        <div className="flex items-center justify-end gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
+        {/* Breadcrumbs are back (owner 2026-08-05) on the left; the quiet
+            save state and the note's own menu keep the top right. The Home
+            note skips the trail — it IS the root. */}
+        <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
+          {isHomeNote(note) ? (
+            <span aria-hidden className="min-w-0 flex-1" />
+          ) : (
+            <DocsCrumbs
+              className="min-w-0 flex-1"
+              onOpenFolder={onOpenFolder}
+              path={note.path.split("/").slice(0, -1).join("/")}
+            />
+          )}
           <div className="flex shrink-0 items-center gap-0.5">
             <span aria-live="polite" className={message ? "max-w-64 truncate text-(--ui-text-tertiary)" : "sr-only"}>{message ?? (saving ? "Saving…" : "")}</span>
             {/* The formatting-bar switch (owner 2026-08-04: "the formatting

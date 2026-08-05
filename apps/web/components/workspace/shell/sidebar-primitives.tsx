@@ -116,7 +116,7 @@ export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
     // reference). UPPERCASE at 0.16em tracking is louder than the chat titles
     // underneath it, which inverts the hierarchy: the label is scaffolding,
     // the titles are the content.
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.6875rem] font-medium text-(--ui-text-quaternary)">
+    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
       <span className="min-w-0 truncate leading-none">{children}</span>
     </span>
   );
@@ -130,16 +130,19 @@ export const countLabel = (loaded: number, total: number): string =>
 
 /** The muted count chip next to a section/workspace label. */
 export function SidebarCount({ children }: { children: React.ReactNode }) {
-  return <span className="text-[0.6875rem] font-medium text-(--ui-text-quaternary)">{children}</span>;
+  return <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{children}</span>;
 }
 
 // Row geometry (session row is canonical — everything composes these).
-const rowMinH = "min-h-[1.625rem]";
+const rowMinH = "min-h-[2rem]";
 const rowPadX = "pl-2 pr-1";
 const rowGap = "gap-1.5";
 const rowLead = "grid size-3.5 shrink-0 place-items-center";
 const rowInset = cn(rowPadX, rowGap, "flex h-full min-w-0 items-center self-stretch py-0.5");
-const rowLabel = "min-w-0 truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)";
+/* Session titles read at full text color (owner 2026-08-05: "the text on
+   sidebar is gray") — hierarchy comes from the quiet section labels, not
+   from dimming every row. */
+const rowLabel = "min-w-0 truncate text-[0.8125rem] leading-none text-foreground";
 
 /** Codicon size in sidebar row leads. */
 export const SIDEBAR_LEAD_ICON_SIZE = "0.875rem" as const;

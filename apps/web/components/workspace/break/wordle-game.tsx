@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
+import { Button } from "@/components/ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
   MAX_GUESSES,
@@ -39,8 +40,20 @@ interface WordleState {
   guesses: string[];
 }
 
-export function WordleGame({ answer, dateKey }: { answer: string; dateKey: string }) {
-  const [saved, update] = useBreakDayState<WordleState>("wordle", dateKey, { guesses: [] });
+export function WordleGame({
+  answer,
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  answer: string;
+  dateKey: string;
+  /** Storage/seed identity for the puzzle in play — the plain dateKey for
+   *  the daily (n=0), extraKey(dateKey, n) for an extra. */
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const [saved, update] = useBreakDayState<WordleState>("wordle", dateKey, { guesses: [] }, puzzleKey);
   const [current, setCurrent] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [shakeNonce, setShakeNonce] = useState(0);
@@ -142,6 +155,16 @@ export function WordleGame({ answer, dateKey }: { answer: string; dateKey: strin
       <div className="h-5 text-sm font-medium text-muted-foreground" aria-live="polite" data-testid="wordle-notice">
         {notice ?? (revealed ? endMessage : "")}
       </div>
+      {/* Gated on `status`, not `revealed` — `revealed` only tracks THIS
+          session's flip animation, so it's still false right after a solved
+          game is restored from storage (keyboardCount starts at 0 and the
+          flip effect that would bump it never runs on a restore). Tying the
+          button to status alone keeps it showing up on a reopened win/loss. */}
+      {status !== "playing" && (
+        <Button variant="outline" size="sm" className="rounded-full px-4" onClick={onPlayAnother} data-testid="wordle-play-another">
+          Play another
+        </Button>
+      )}
 
       <div className="grid grid-rows-6 gap-1.5">
         {rows.map((row, rowIndex) => {

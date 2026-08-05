@@ -18,8 +18,8 @@ import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
   "aui-md prose w-full max-w-none overflow-hidden text-[length:var(--conversation-text-font-size)] " +
-  "leading-(--dt-line-height) text-foreground " +
-  "prose-p:leading-(--dt-line-height) prose-li:leading-(--dt-line-height) " +
+  "leading-(--conversation-line-height) text-foreground " +
+  "prose-p:leading-(--conversation-line-height) prose-li:leading-(--conversation-line-height) " +
   "prose-headings:text-foreground prose-strong:text-foreground " +
   "prose-a:break-words prose-p:[overflow-wrap:anywhere] " +
   "prose-li:marker:text-muted-foreground/70 " +
@@ -189,23 +189,23 @@ function markdownComponents(
         </code>
       );
     },
-    h1: ({ children }) => <h1 className="my-1 text-[1rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h1>,
-    h2: ({ children }) => <h2 className="my-1 text-[0.9375rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h2>,
-    h3: ({ children }) => <h3 className="my-1 text-[0.875rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h3>,
-    h4: ({ children }) => <h4 className="my-1 text-[0.8125rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h4>,
+    h1: ({ children }) => <h1 className="my-1 text-[1.33rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h1>,
+    h2: ({ children }) => <h2 className="my-1 text-[1.11rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h2>,
+    h3: ({ children }) => <h3 className="my-1 text-[0.97rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h3>,
+    h4: ({ children }) => <h4 className="my-1 text-[0.89rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h4>,
     hr: () => <hr className="my-5 border-0 border-t border-(--ui-stroke-secondary)" />,
     img: ({ alt, src }) =>
       typeof src === "string" ? (
         // eslint-disable-next-line @next/next/no-img-element -- remote/blob markdown images, not a static asset.
         <img alt={alt ?? ""} className="max-w-full rounded-[0.375rem]" src={src} />
       ) : null,
-    li: ({ children }) => <li className="leading-(--dt-line-height)">{children}</li>,
+    li: ({ children }) => <li className="leading-(--conversation-line-height)">{children}</li>,
     ol: ({ children }) => (
       <ol className="my-1 gap-0" dir="auto">
         {children}
       </ol>
     ),
-    p: ({ children }) => <p className="wrap-anywhere leading-(--dt-line-height)">{children}</p>,
+    p: ({ children }) => <p className="wrap-anywhere leading-(--conversation-line-height)">{children}</p>,
     pre: ({ children }) => (
       // text-foreground: typography's default pre-code color is a light gray
       // meant for dark code backgrounds — on this light bg-muted/35 box it
@@ -218,14 +218,14 @@ function markdownComponents(
       <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
         {/* !m-0: typography's table margin survives a bare m-0 here and drew
             an empty band between the wrapper border and the header row. */}
-        <table className="!m-0 w-full min-w-[18rem] border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0">
+        <table className="!m-0 w-full min-w-[18rem] border-collapse text-[length:var(--conversation-text-font-size)] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0">
           {children}
         </table>
       </div>
     ),
-    td: ({ children }) => <td className="px-2.5 py-1.5 align-top text-[0.8125rem] leading-snug">{children}</td>,
+    td: ({ children }) => <td className="px-2.5 py-1.5 align-top leading-normal">{children}</td>,
     th: ({ children }) => (
-      <th className="whitespace-nowrap px-2.5 py-1.5 text-left align-middle text-[0.75rem] font-medium text-muted-foreground">
+      <th className="whitespace-nowrap px-2.5 py-1.5 text-left align-middle text-[0.8125rem] font-semibold text-foreground">
         {children}
       </th>
     ),

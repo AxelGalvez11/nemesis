@@ -503,7 +503,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
   return (
     <div
       className={cn(
-        "group/composer z-30 max-w-full overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
+        "group/composer z-30 max-w-full overflow-visible rounded-[1.55rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
         placement === "floating"
           ? "absolute left-1/2 w-[min(var(--composer-pill-max-width,42rem),calc(100%-2rem))] -translate-x-1/2"
           : "relative w-full",

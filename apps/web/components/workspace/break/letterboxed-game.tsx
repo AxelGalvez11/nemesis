@@ -46,8 +46,18 @@ function letterPosition(puzzle: LetterBoxPuzzle, letter: string): { x: number; y
   return { x: 30, y: offsets[slot]! };
 }
 
-export function LetterBoxedGame({ puzzle, dateKey }: { puzzle: LetterBoxPuzzle; dateKey: string }) {
-  const [saved, update] = useBreakDayState<LetterBoxState>("letterboxed", dateKey, { words: [] });
+export function LetterBoxedGame({
+  puzzle,
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  puzzle: LetterBoxPuzzle;
+  dateKey: string;
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const [saved, update] = useBreakDayState<LetterBoxState>("letterboxed", dateKey, { words: [] }, puzzleKey);
   const [typed, setTyped] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [shakeNonce, setShakeNonce] = useState(0);
@@ -215,10 +225,15 @@ export function LetterBoxedGame({ puzzle, dateKey }: { puzzle: LetterBoxPuzzle; 
           ))}
         </ul>
         {solved ? (
-          <p className="break-banner-in text-sm text-muted-foreground">
-            Our two-word answer: <span className="font-semibold uppercase">{puzzle.solution[0]}</span> →{" "}
-            <span className="font-semibold uppercase">{puzzle.solution[1]}</span>
-          </p>
+          <div className="flex flex-col items-start gap-2">
+            <p className="break-banner-in text-sm text-muted-foreground">
+              Our two-word answer: <span className="font-semibold uppercase">{puzzle.solution[0]}</span> →{" "}
+              <span className="font-semibold uppercase">{puzzle.solution[1]}</span>
+            </p>
+            <Button variant="outline" size="sm" className="rounded-full px-4" onClick={onPlayAnother} data-testid="letterboxed-play-another">
+              Play another
+            </Button>
+          </div>
         ) : (
           <button
             type="button"

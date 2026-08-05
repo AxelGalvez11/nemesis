@@ -8,6 +8,7 @@
 import { useState } from "react";
 
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
+import { Button } from "@/components/ui/button";
 import { hashSeed } from "@/lib/workspace/break/daily";
 import { boardCleared, generateTilesBoard, matchTiles, tileEmpty, type Tile } from "@/lib/workspace/break/tiles";
 import { cn } from "@/lib/utils";
@@ -48,12 +49,28 @@ function TileArt({ tile }: { tile: Tile }) {
   );
 }
 
-export function TilesGame({ dateKey }: { dateKey: string }) {
-  const [saved, update] = useBreakDayState<TilesState>("tiles", dateKey, {
-    tiles: generateTilesBoard(hashSeed(`tiles:${dateKey}`)).tiles,
-    combo: 0,
-    best: 0,
-  });
+export function TilesGame({
+  dateKey,
+  puzzleKey,
+  onPlayAnother,
+}: {
+  dateKey: string;
+  /** Board seed AND storage identity — the plain dateKey for the daily
+   *  (n=0), extraKey(dateKey, n) for an extra. Tiles has no separate
+   *  content bank to pick from, so this one string drives both. */
+  puzzleKey: string;
+  onPlayAnother: () => void;
+}) {
+  const [saved, update] = useBreakDayState<TilesState>(
+    "tiles",
+    dateKey,
+    {
+      tiles: generateTilesBoard(hashSeed(`tiles:${puzzleKey}`)).tiles,
+      combo: 0,
+      best: 0,
+    },
+    puzzleKey,
+  );
   const [selected, setSelected] = useState<number | null>(null);
   const [flash, setFlash] = useState<{ nonce: number; indexes: number[]; kind: "match" | "miss" }>({ nonce: 0, indexes: [], kind: "match" });
 
@@ -98,9 +115,17 @@ export function TilesGame({ dateKey }: { dateKey: string }) {
         <span>{remainingCount} tiles left</span>
       </div>
       {cleared ? (
-        <p className="break-banner-in pt-2 text-center text-sm font-medium text-emerald-600">
-          Board cleared — longest chain {saved.best}. Come back tomorrow for a fresh one.
-        </p>
+        // "Come back tomorrow" (the pre-extras copy) would now contradict
+        // the button right below it, so this line drops that clause —
+        // flagged as a deliberate copy change, not swept to the other games.
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <p className="break-banner-in text-center text-sm font-medium text-emerald-600">
+            Board cleared — longest chain {saved.best}.
+          </p>
+          <Button variant="outline" size="sm" className="rounded-full px-4" onClick={onPlayAnother} data-testid="tiles-play-another">
+            Play another
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-6 gap-2">
           {saved.tiles.map((tile, index) => {
