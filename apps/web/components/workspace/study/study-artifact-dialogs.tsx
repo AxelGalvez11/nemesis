@@ -419,24 +419,31 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 addedTo ? (
                   <p className="text-xs text-(--ui-text-secondary)" data-testid="missed-added">Added to "{addedTo}" — they'll come up in review.</p>
                 ) : (
-                  <div className="rounded-2xl border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-4 py-3">
-                    <p className="text-[0.8125rem] font-medium">
-                      Turn your {reviewAttempt.missed.length} missed question{reviewAttempt.missed.length === 1 ? "" : "s"} into flashcards
-                    </p>
-                    <p className="mt-0.5 text-xs text-(--ui-text-tertiary)">They'll keep coming up in review until they stick.</p>
-                    <div className="mt-2.5 flex items-center gap-2">
+                  // One control, not a panel (owner 2026-08-04: "redo the 'turn
+                  // your 8 missing cards' to a more minimal button"). The
+                  // bordered card carried a heading, a subtitle, a full-width
+                  // deck select and a button to say one thing, directly above a
+                  // question list it was competing with. The button now says the
+                  // whole sentence itself, and the deck picker appears only when
+                  // there is a choice to make — with one deck it was a dropdown
+                  // that could not be changed to anything.
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Button data-testid="missed-add" disabled={busy || study.decks.length === 0} onClick={() => void addMissed()} size="sm" type="button" variant="secondary">
+                      {busy
+                        ? "Adding…"
+                        : `Add ${reviewAttempt.missed.length} missed to flashcards`}
+                    </Button>
+                    {study.decks.length > 1 && (
                       <select
-                        className="h-9 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-sm"
+                        aria-label="Deck to add them to"
+                        className="h-7 max-w-44 truncate rounded-md border-0 bg-transparent px-1 text-xs text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
                         data-testid="missed-deck"
                         onChange={(event) => setTargetDeckId(event.target.value)}
                         value={targetDeckId || study.decks[0]?.id || ""}
                       >
                         {study.decks.map((deck) => <option key={deck.id} value={deck.id}>{deck.name}</option>)}
                       </select>
-                      <Button disabled={busy || study.decks.length === 0} onClick={() => void addMissed()} size="sm" type="button" variant="secondary">
-                        {busy ? "Adding…" : "Add to deck"}
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 )
               )}

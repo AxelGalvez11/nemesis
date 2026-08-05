@@ -28,11 +28,11 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { libraryRouteBase } from "@/lib/workspace/library-links";
 import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib/workspace/library-tree";
 import { cn } from "@/lib/utils";
-import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
+import { GROUP_BODY, SCROLL_Y } from "@/components/workspace/shell/sidebar-primitives";
 
 import { seedComposerFiles } from "@/lib/workspace/composer-seed";
 
-import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
+import { LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
 import { LIBRARY_IMPORT_ACCEPT, useLibraryImport } from "./use-library-import";
@@ -197,22 +197,56 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
           filtered.length === 0 ? (
             <LibraryNoMatchState query={trimmedQuery} />
           ) : (
-            <SidebarRowStack className={cn("flex min-h-0 flex-1 flex-col gap-px px-2 pb-1.75", SCROLL_Y)}>
-              {filtered.map((note) => (
-                <LibraryNoteRow
-                  isSelected={note.path === selectedPath}
-                  key={note.path}
-                  note={{ kind: "note", id: note.id, path: note.path, title: note.title, updatedAt: note.updatedAt, createdAt: note.createdAt, addedOrder: 0, position: note.position ?? null }}
-                  onSelect={openPath}
-                />
-              ))}
-            </SidebarRowStack>
+            // 🔴 SEARCH RESULTS GO THROUGH THE TREE, not through bare rows.
+            // They used to render LibraryNoteRow directly with only onSelect,
+            // so right-clicking a note found by searching did nothing while
+            // right-clicking the same note in the tree opened the full menu —
+            // the student had to clear the search to rename the thing they had
+            // just gone looking for. A folder with no sub-folders renders as a
+            // flat list, so handing the matches over as one keeps every action
+            // and leaves exactly one menu implementation in the codebase.
+            <div className={cn("min-h-0 flex-1 px-2 pb-1.75", SCROLL_Y)}>
+              <LibraryTreeView
+                folder={{
+                  folders: [],
+                  kind: "folder",
+                  name: "",
+                  notes: filtered.map((note) => ({
+                    addedOrder: 0,
+                    createdAt: note.createdAt,
+                    id: note.id,
+                    kind: "note" as const,
+                    path: note.path,
+                    position: note.position ?? null,
+                    title: note.title,
+                    updatedAt: note.updatedAt,
+                  })),
+                  path: "",
+                }}
+                // 🔴 NO MOVE HANDLERS ON SEARCH RESULTS, deliberately. Matches
+                // are a flat list with no folders in it, so every drop inside
+                // them resolves to the synthetic root — dragging a note one
+                // row up to reorder it would silently move it OUT of its
+                // folder to the Library root. Without these props a drag is a
+                // no-op, which is what a filtered view should be.
+                onAttachNotes={attachNotesToChat}
+                onCreateNote={() => setCreateKind("note")}
+                onCreateFolder={(path) => void createFolder(path)}
+                onDeleteFolder={(path) => void deleteFolder(path)}
+                onDeleteNote={(id) => void deleteNote(id)}
+                onRenameFolder={(path, title) => void renameFolder(path, title)}
+                onRenameNote={(id, title) => void renameNote(id, title)}
+                onSelect={openPath}
+                selectedPath={selectedPath}
+              />
+            </div>
           )
         ) : (
           <div className={cn("min-h-0 flex-1 px-2 pb-1.75", GROUP_BODY)}>
             <LibraryTreeView
               folder={tree}
               onAttachNotes={attachNotesToChat}
+                onCreateNote={() => setCreateKind("note")}
               onCreateFolder={(path) => void createFolder(path)}
               onDeleteFolder={(path) => void deleteFolder(path)}
               onDeleteNote={(id) => void deleteNote(id)}

@@ -99,6 +99,19 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
   const [query, setQuery] = useState("");
   const deckId = scope.startsWith("deck:") ? scope.slice(5) || null : null;
 
+  // 🔴 initialDeckId IS A useState SEED, WHICH ONLY RUNS ONCE. The dialog stays
+  // mounted between openings, so without this the second open still shows the
+  // deck chosen on the first — right-clicking a deck and picking "Browse cards"
+  // would open the browser on someone else's deck and look like the menu had
+  // acted on the wrong row. Re-scoping on the opening edge (never while it is
+  // already open) keeps the student's own in-dialog scope changes intact.
+  useEffect(() => {
+    if (open) setScope(`deck:${initialDeckId ?? decks[0]?.id ?? ""}`);
+    // decks is deliberately not a dependency: a deck list that changes under an
+    // open dialog must not yank the student's chosen scope back to the default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialDeckId]);
+
   const cardsForScope = useMemo(() => {
     if (scope === "all") return cards;
     if (scope === "flagged") return cards.filter((card) => card.flag > 0);

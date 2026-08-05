@@ -18,7 +18,7 @@
 // the row never sees it, so it looks like the row was never clicked at all.
 // This applies to BOTH menus.
 
-import { IconDots, IconFolderMinus, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconCards, IconDots, IconFolderMinus, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Tip } from "@/components/desktop-ui/tooltip";
@@ -54,9 +54,15 @@ export interface RowRemoval {
 const DELETE_ROW: RowRemoval = { label: "Delete", icon: <IconTrash />, destructive: true };
 export const REMOVE_FOLDER: RowRemoval = { label: "Remove folder", icon: <IconFolderMinus />, destructive: false };
 
-function RowActionItems({ Item, onRename, onDelete, removal, onDeleteForever }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void; removal: RowRemoval; onDeleteForever?: () => void }) {
+function RowActionItems({ Item, onRename, onDelete, removal, onDeleteForever, onBrowse }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void; removal: RowRemoval; onDeleteForever?: () => void; onBrowse?: () => void }) {
   return (
     <>
+      {/* Browse leads (owner 2026-08-04: "allow right click for the browse
+          cards in the study page"). It is the only non-destructive entry here
+          and by far the most common thing to want from a deck, so it sits
+          above the pair that changes or removes it. Absent on folder rows —
+          a folder has no cards of its own to browse. */}
+      {onBrowse && <Item onSelect={onBrowse}><IconCards /> Browse cards</Item>}
       <Item onSelect={onRename}><IconPencil /> Rename</Item>
       <Item onSelect={onDelete} variant={removal.destructive ? "destructive" : "default"}>{removal.icon} {removal.label}</Item>
       {/* Folders carry BOTH verbs (owner 2026-08-03: "card deck folders still
@@ -86,9 +92,11 @@ interface StudyRowMenuProps {
   removal?: RowRemoval;
   /** Folder rows only: the destructive delete-with-contents. */
   onDeleteForever?: () => void;
+  /** Deck rows only: open the card browser on this deck. */
+  onBrowse?: () => void;
 }
 
-export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW, onDeleteForever }: StudyRowMenuProps) {
+export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_ROW, onDeleteForever, onBrowse }: StudyRowMenuProps) {
   return (
     <DropdownMenu>
       {/* 🔴 THE TIP GOES OUTSIDE THE DROPDOWN TRIGGER, not around the button.
@@ -116,19 +124,19 @@ export function StudyRowMenu({ kindLabel, onRename, onDelete, removal = DELETE_R
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="end" className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
+        <RowActionItems Item={DropdownMenuItem} onBrowse={onBrowse} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 /** Wraps a row so right-clicking it offers the same Rename/Delete. */
-export function StudyRowContextMenu({ children, onRename, onDelete, removal = DELETE_ROW, onDeleteForever }: { children: React.ReactNode; onRename: () => void; onDelete: () => void; removal?: RowRemoval; onDeleteForever?: () => void }) {
+export function StudyRowContextMenu({ children, onRename, onDelete, removal = DELETE_ROW, onDeleteForever, onBrowse }: { children: React.ReactNode; onRename: () => void; onDelete: () => void; removal?: RowRemoval; onDeleteForever?: () => void; onBrowse?: () => void }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-36" {...menuSurfaceProps}>
-        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
+        <RowActionItems Item={ContextMenuItem} onBrowse={onBrowse} onDelete={onDelete} onDeleteForever={onDeleteForever} onRename={onRename} removal={removal} />
       </ContextMenuContent>
     </ContextMenu>
   );

@@ -64,6 +64,12 @@ const INDENT_REM = 1.1;
 
 // Two data columns only — the Items count column is gone (owner 2026-08-04:
 // "remove the 'items' column in tests").
+// Row text is 0.8125rem, NOT the 0.6875rem it used to be (owner 2026-08-04:
+// "the study page font size feels smaller than standard"). Measured on the
+// running app at the 18px root: every other list row in the product — the nav
+// items, the chat list, note titles — renders at 14.625px, and these tables
+// rendered at 12.375px, about 15% smaller. Nothing else on the page moved; the
+// captions and hints around them are meant to be quiet.
 const ROW_GRID = "grid-cols-[minmax(0,1fr)_6rem_2.25rem]";
 
 /** Score column colour by band — quiet neutral until a test has been taken. */
@@ -535,7 +541,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           )}
           data-artifact-drop-group=""
         >
-          <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] font-semibold", ROW_GRID)}>
+          <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.8125rem] font-semibold", ROW_GRID)}>
             {/* Owner 2026-08-04: "rename folder in tests to 'tests'". */}
             <span className="pl-[19px]">{isTests ? "Tests" : "Folder"}</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
           </div>
@@ -649,7 +655,7 @@ function GroupRow({ label, collapsed, depth, grid, dragging, renaming, onStartRe
     <div
       aria-expanded={!collapsed}
       aria-label={label}
-      className={cn("grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]", grid, dragging && "opacity-50")}
+      className={cn("grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.8125rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]", grid, dragging && "opacity-50")}
       onClick={() => {
         if (renaming || suppressClick()) return;
         onToggle();
@@ -711,7 +717,7 @@ function ItemRow({ item, meta, metaTone, depth, grid, dragging, dropTarget, high
       <div
         aria-label={item.title}
         className={cn(
-          "grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+          "grid w-full cursor-grab items-center px-5 py-2 text-left text-[0.8125rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
           grid,
           dragging && "opacity-50",
           dropTarget && "bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",

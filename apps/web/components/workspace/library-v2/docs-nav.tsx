@@ -44,7 +44,7 @@ import { seedComposerFiles } from "@/lib/workspace/composer-seed";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY } from "@/components/workspace/shell/sidebar-primitives";
 
-import { formatSourceSize, librarySourceKindIcon, sourcesInFolder, type LibrarySource } from "@/lib/workspace/library-sources";
+import { formatSourceSize, librarySourceKindIcon, librarySourceUrl, sourcesInFolder, type LibrarySource } from "@/lib/workspace/library-sources";
 
 import { LibraryTreeView, libraryTreeIndentStyle, type LibraryTreeReveal } from "../library/library-tree-view";
 import { LibraryTreeBlankState } from "../library/library-tree-blank-state";
@@ -269,6 +269,7 @@ export function DocsNav({ openNotePath, sources, openSourceId, onOpenSource, onS
             <LibraryTreeView
               folder={visibleTree}
               onAttachNotes={attachNotesToChat}
+              onCreateNote={() => setCreateKind("note")}
               onCreateFolder={(path) => guarded("create that folder", createFolder(path))}
               onDeleteFolder={(path) => guarded("delete that folder", deleteFolder(path).then(() => onSourcesChanged?.()))}
               onDeleteNote={(id) => guarded("delete that note", deleteNote(id))}
@@ -319,7 +320,19 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
   onNavigate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Source FILES had no right-click at all while every note and folder around
+  // them did, so the gesture looked broken on exactly the rows a student is
+  // most likely to want the original of (owner 2026-08-04).
+  const [menu, setMenu] = useState<{ source: LibrarySource; x: number; y: number } | null>(null);
   const holdsOpenSource = openSourceId !== null && sources.some((source) => source.id === openSourceId);
+
+  async function downloadOriginal(source: LibrarySource) {
+    setMenu(null);
+    const url = await librarySourceUrl(source);
+    // A missing URL means the file is gone from storage; silence would look
+    // like a dead menu item, and there is nothing here to retry.
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   useEffect(() => {
     if (holdsOpenSource) setOpen(true);
@@ -342,6 +355,11 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
       {open && sources.map((source) => (
         <div key={source.id} style={libraryTreeIndentStyle(depth + 1)}>
           <button
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setMenu({ source, x: event.clientX, y: event.clientY });
+            }}
             className={cn(
               "row-hover flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs",
               source.id === openSourceId ? "bg-(--ui-row-active-background) text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
@@ -355,6 +373,33 @@ function SourcesGroup({ sources, depth, openSourceId, onOpenSource, onNavigate }
           </button>
         </div>
       ))}
+      {menu && (
+        <>
+          <button aria-label="Close file menu" className="fixed inset-0 z-50 cursor-default" onClick={() => setMenu(null)} type="button" />
+          <div
+            className="fixed z-[51] min-w-44 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 text-xs shadow-xl"
+            role="menu"
+            style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 110) }}
+          >
+            <button
+              className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-(--ui-control-hover-background)"
+              onClick={() => { const chosen = menu.source; setMenu(null); onOpenSource(chosen.id); onNavigate?.(); }}
+              role="menuitem"
+              type="button"
+            >
+              Open
+            </button>
+            <button
+              className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-(--ui-control-hover-background)"
+              onClick={() => void downloadOriginal(menu.source)}
+              role="menuitem"
+              type="button"
+            >
+              Open the original file
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

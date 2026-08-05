@@ -463,7 +463,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           )}
           data-study-drop-group=""
         >
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.6875rem] font-semibold">
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5 text-[0.8125rem] font-semibold">
             <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span><span />
           </div>
           <div className="py-1.5">
@@ -477,6 +477,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
                 dropTarget={dropTarget}
                 key={node.id}
                 node={node}
+                onBrowseDeck={(deckId) => { selectDeck(deckId); setBrowseOpen(true); }}
                 onCancelRename={() => setRenamingId(null)}
                 onCommitRename={(target, next) => void commitRename(target, next)}
                 onDelete={(target) => void (target.deck ? removeDeck(target.deck.id) : removeGroup(target.groupPath))}
@@ -557,10 +558,21 @@ interface DeckRowProps {
   onDelete: (node: DeckTreeNode) => void;
   /** Folder rows only: delete the folder AND the decks inside it. */
   onDeleteFolder: (node: DeckTreeNode) => void;
+  /** Deck rows only: open the card browser already scoped to this deck. */
+  onBrowseDeck: (deckId: string) => void;
 }
 
+// Row text is 0.8125rem, NOT the 0.6875rem it used to be (owner 2026-08-04:
+// "the study page font size feels smaller than standard"). Measured on the
+// running app at the 18px root: every other list row in the product — the nav
+// items, the chat list, note titles — renders at 14.625px, and these tables
+// rendered at 12.375px, about 15% smaller. Nothing else on the page moved; the
+// captions and hints around them are meant to be quiet.
 function DeckRow(props: DeckRowProps) {
-  const { node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, renamingId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick, onStartRename, onCommitRename, onCancelRename, onDelete, onDeleteFolder } = props;
+  const { node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, renamingId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick, onStartRename, onCommitRename, onCancelRename, onDelete, onDeleteFolder, onBrowseDeck } = props;
+  // A folder has no cards of its own, so it gets no Browse entry — passing
+  // undefined is what hides the row from both menus.
+  const browseThisDeck = node.deck ? () => onBrowseDeck(node.deck!.id) : undefined;
   const counts = countsForNode(node, cards);
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
@@ -581,11 +593,11 @@ function DeckRow(props: DeckRowProps) {
           button inside a button is invalid HTML that browsers silently unnest.
           Clicking opens immediately — there is no double-click gesture to
           disambiguate against, so no grace delay is needed. */}
-      <StudyRowContextMenu onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined}>
+      <StudyRowContextMenu onBrowse={browseThisDeck} onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined}>
         <div
           aria-label={node.label}
           className={cn(
-            "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-[0.6875rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+            "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-[0.8125rem] transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
             highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
             ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
           )}
@@ -618,7 +630,7 @@ function DeckRow(props: DeckRowProps) {
           <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
           <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
-          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined} />
+          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onBrowse={browseThisDeck} onDelete={() => onDelete(node)} onDeleteForever={group ? () => onDeleteFolder(node) : undefined} onRename={() => onStartRename(node.id)} removal={group ? REMOVE_FOLDER : undefined} />
         </div>
       </StudyRowContextMenu>
       {!isCollapsed && node.children.map((child) => <DeckRow {...props} depth={depth + 1} key={child.id} node={child} />)}

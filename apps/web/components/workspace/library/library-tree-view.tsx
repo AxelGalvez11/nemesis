@@ -13,7 +13,7 @@ import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const INDENT_REM_PER_DEPTH = 0.875;
 type DragItem = { kind: "note"; id: string; path: string; title: string } | { kind: "folder"; path: string; title: string };
-type ContextPoint = { x: number; y: number; item: DragItem; bulk: boolean };
+type ContextPoint = { x: number; y: number; item: DragItem; bulk: boolean; root?: boolean };
 
 function indentStyle(depth: number): React.CSSProperties {
   return { paddingLeft: `${depth * INDENT_REM_PER_DEPTH}rem` };
@@ -59,6 +59,9 @@ interface LibraryTreeViewProps {
   onRenameNote?: (id: string, title: string) => void;
   onRenameFolder?: (path: string, title: string) => void;
   onCreateFolder?: (path: string) => void;
+  /** Right-clicking the empty space below the tree offers this. Optional: a
+   *  caller that cannot create notes simply gets a menu without the entry. */
+  onCreateNote?: () => void;
   onAttachNotes?: (noteIds: string[]) => void;
   /** Folders are pages (owner 2026-08-04, Notion model): when set, clicking a
    *  folder row OPENS the folder's own note (and expands it); only the
@@ -290,6 +293,17 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
         dragItem && dropTarget === "" && "bg-[color-mix(in_srgb,var(--theme-primary)_7%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
       )}
       data-library-drop-folder=""
+      // 🔴 THE EMPTY SPACE IS PART OF THE SIDEBAR TOO (owner 2026-08-04:
+      // "users should be able to right click in library side bar for
+      // options"). Every ROW already had a menu, so the gesture looked broken
+      // only where the student aimed at nothing — under the last note, which
+      // is exactly where you right-click when you want to make a new one
+      // rather than act on an existing one. Rows call stopPropagation, so
+      // this only ever fires on genuine blank space.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setContext({ bulk: false, item: { kind: "folder", path: "", title: "Library" }, root: true, x: event.clientX, y: event.clientY });
+      }}
       ref={rootRef}
     >
       <TreeContents
@@ -307,7 +321,12 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
         <>
           <button aria-label="Close note menu" className="fixed inset-0 z-50 cursor-default" onClick={() => setContext(null)} type="button" />
           <div className="fixed z-[51] min-w-44 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 text-xs shadow-xl" role="menu" style={{ left: Math.min(context.x, window.innerWidth - 190), top: Math.min(context.y, window.innerHeight - 180) }}>
-            {context.bulk ? (
+            {context.root ? (
+              <>
+                {props.onCreateNote && <ContextAction onClick={() => { setContext(null); props.onCreateNote?.(); }}>New note</ContextAction>}
+                <ContextAction onClick={() => runMenuAction("folder")}>New folder</ContextAction>
+              </>
+            ) : context.bulk ? (
               <>
                 {bulkNoteCount > 0 && <ContextAction onClick={() => runBulkAction("attach")}>Attach {bulkNoteCount} note{bulkNoteCount === 1 ? "" : "s"} to AI chat</ContextAction>}
                 <ContextAction onClick={() => runBulkAction("move")}>Move {selectedKeys.size} items to…</ContextAction>
