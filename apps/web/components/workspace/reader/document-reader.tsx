@@ -414,10 +414,11 @@ export function DocumentReader({
               onError={onViewError}
               onReady={onSlidesReady}
               onUnitChange={setUnit}
+              onScaleChange={setScale}
               query={trimmedQuery}
               registerElement={registerSlide}
-              scale={Math.min(scale, 1.6)}
               tab={slideTab}
+              zoom={zoom}
             />
           ) : source.kind === "document" && bytes ? (
             <DocxDocumentView bytes={bytes} onError={onViewError} onReady={onDocxReady} query={trimmedQuery} />

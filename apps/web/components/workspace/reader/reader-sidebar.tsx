@@ -34,15 +34,19 @@ export function ReaderSidebar({
   tab, onTabChange, outline, outlineIsAuthored, document: pdf, unitCount, unit, unitLabel, onGoToUnit,
 }: ReaderSidebarProps) {
   const pagesTabLabel = unitLabel === "slide" ? "Slides" : "Pages";
+  // A Word file is one flowing document: it has no pages to show as pictures,
+  // and every outline entry would carry a meaningless "1".
+  const hasUnits = unitCount > 1;
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-bg-sidebar)" data-testid="reader-sidebar">
       <div className="flex shrink-0 gap-0.5 border-b border-(--ui-stroke-quaternary) p-1.5">
-        {(
-          [
-            { id: "outline" as const, label: "Outline" },
-            { id: "pages" as const, label: pagesTabLabel },
-          ]
+        {(hasUnits
+          ? [
+              { id: "outline" as const, label: "Outline" },
+              { id: "pages" as const, label: pagesTabLabel },
+            ]
+          : [{ id: "outline" as const, label: "Outline" }]
         ).map((option) => (
           <button
             aria-pressed={tab === option.id}
@@ -60,7 +64,7 @@ export function ReaderSidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
-        {tab === "outline" ? (
+        {tab === "outline" || !hasUnits ? (
           outline.length === 0 ? (
             <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
               This document has no headings Nemesis could find.
@@ -89,7 +93,7 @@ export function ReaderSidebar({
                       type="button"
                     >
                       <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-                      {entry.unit !== undefined && (
+                      {hasUnits && entry.unit !== undefined && (
                         <span className="shrink-0 tabular-nums text-[0.625rem] text-(--ui-text-quaternary)">{entry.unit}</span>
                       )}
                     </button>

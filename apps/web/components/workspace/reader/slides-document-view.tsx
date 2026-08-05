@@ -17,6 +17,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
 import { notesPathFor, parseSlide, slideOrder, slideText, type ParsedSlide } from "@/lib/reader/pptx-slides";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
+import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { cn } from "@/lib/utils";
 
 export type SlideTab = "slides" | "outline" | "notes";
@@ -30,18 +31,56 @@ interface SlidesDocumentViewProps {
   bytes: ArrayBuffer;
   tab: SlideTab;
   query: string | null;
-  scale: number;
+  zoom: ZoomMode;
+  onScaleChange: (scale: number) => void;
   onReady: (payload: SlidesReadyPayload) => void;
   onUnitChange: (unit: number) => void;
   onError: (message: string) => void;
   registerElement: (unit: number, element: HTMLElement | null) => void;
 }
 
+/** A 16:9 slide is drawn at this width and scaled from there — the same role
+ *  a PDF page's natural size plays in the PDF lane. */
+const SLIDE_WIDTH = 880;
+
 export function SlidesDocumentView({
-  bytes, tab, query, scale, onReady, onUnitChange, onError, registerElement,
+  bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement,
 }: SlidesDocumentViewProps) {
   const [slides, setSlides] = useState<ParsedSlide[] | null>(null);
   const [images, setImages] = useState<Map<string, string>>(new Map());
+  const [container, setContainer] = useState({ width: 0, height: 0 });
+  // 🔴 A CALLBACK ref, not useRef: the scroll column does not exist on the
+  // first render (the deck is still being unzipped), so a ref read in a
+  // mount-time effect is null and the observer never attaches — leaving every
+  // slide at its full 880px with a horizontal scrollbar under the deck.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = scrollElement;
+    if (!element) return;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box) setContainer({ width: Math.max(0, box.width), height: Math.max(0, box.height) });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [scrollElement]);
+
+  const scale = useMemo(
+    () =>
+      Math.min(
+        resolveScale(zoom, {
+          pageWidth: SLIDE_WIDTH,
+          pageHeight: (SLIDE_WIDTH / 16) * 9,
+          containerWidth: container.width,
+          containerHeight: container.height,
+        }),
+        2,
+      ),
+    [container.height, container.width, zoom],
+  );
+
+  useEffect(() => onScaleChange(scale), [onScaleChange, scale]);
 
   useEffect(() => {
     let urls: string[] = [];
@@ -156,7 +195,7 @@ export function SlidesDocumentView({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll">
+    <div className="h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll" ref={setScrollElement}>
       <div className="mx-auto flex w-fit flex-col items-center gap-5">
         <div className="w-full max-w-3xl">
           <Disclaimer />
@@ -227,7 +266,7 @@ function SlideCanvas({
       <div
         className="nemesis-reader-canvas flex flex-col gap-3 p-7"
         data-testid={`reader-slide-${slide.index}`}
-        style={{ width: Math.round(880 * scale), aspectRatio: "16 / 9", color: "#111318" }}
+        style={{ width: Math.round(SLIDE_WIDTH * scale), aspectRatio: "16 / 9", color: "#111318" }}
       >
         {slide.title && (
           <h3 className="text-[1.35em] font-semibold leading-tight" style={{ fontSize: `${1.35 * scale}rem` }}>
