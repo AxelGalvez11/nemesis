@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE } from "@nemesis/shared";
 
-import { DOCUMENT_EXTENSIONS, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -193,4 +193,17 @@ test("refiling reports what happened instead of failing silently", async () => {
   const outcome = await refileChatSource("source-1", "short");
   assert.equal(outcome.status, "too_little_text");
   assert.equal(outcome.sourceId, "source-1");
+});
+
+test("🔴 every importable document type has the mime its bucket needs", () => {
+  // The extension list alone is not enough. `.md` was added to
+  // DOCUMENT_EXTENSIONS and still produced no library_sources row, because the
+  // upload went out under a mime the bucket refused — and a rejected upload
+  // degrades to metadata-only in silence. Keeping the two lists locked together
+  // is the half of that failure a test can hold.
+  for (const extension of DOCUMENT_EXTENSIONS) {
+    assert.ok(DOCUMENT_MIME[extension], `${extension} would upload under a guessed mime`);
+  }
+  assert.equal(DOCUMENT_MIME[".md"], "text/markdown");
+  assert.equal(DOCUMENT_MIME[".txt"], "text/plain");
 });

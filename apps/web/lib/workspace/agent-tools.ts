@@ -15,10 +15,10 @@ import {
   deckDeletionVerdict,
   describeTarget,
   destructiveSpec,
-  isDestructiveTool,
+  heldForConfirmation,
   isPatchFailure,
   noteReplacementBody,
-  pendingDeleteInstruction,
+  pendingDeleteResult,
   WEB_WORKSPACE_AGENT_TOOL_NAMES,
   workspaceId,
   type PendingDelete,
@@ -33,6 +33,7 @@ import {
   resolveCalendarWindow,
   type CalendarEventRow,
 } from "./calendar-agent-range";
+import { isInLibrarySubtree, planFolderRelocation } from "./library-folder-plan";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 import { remapLibrarySourceFolders } from "./library-sources";
 import { expandLibraryFolder, summarizeLibraryTree, type LibraryTreeDoc } from "./library-tree-summary";
@@ -991,28 +992,21 @@ async function loadLibrarySubtree(path: string, opts: { includeDeleted: boolean 
   const byId = new Map<string, SubtreeRow>();
   for (const raw of [...(own.data ?? []), ...nested]) {
     const row = raw as Record<string, unknown>;
+    const rowPath = str(row.path);
+    // Belt and braces over the SQL. `LIKE 'test/%'` and `= 'test'` already
+    // exclude a top-level note called `test.md`, but the rule that says so
+    // lives in a pattern string; running every row past the same predicate the
+    // tests pin means an escaping slip can never widen a rename's blast radius.
+    if (!isInLibrarySubtree(rowPath, path)) continue;
     byId.set(str(row.id), {
       deleted: row.deleted === true,
       id: str(row.id),
       kind: str(row.kind) || "note",
-      path: str(row.path),
+      path: rowPath,
       title: str(row.title),
     });
   }
   return [...byId.values()];
-}
-
-/** Is this note the FOLDER'S OWN PAGE (Notion model)? Same rule as
- *  library-folder-note.ts:isFolderNote — filename or title matches the parent
- *  folder's name. Kept in sync by the shared test fixture, not by import,
- *  because this file must stay UI-free. */
-function isFolderPageOf(row: { path: string; title: string; kind: string }, folder: string, folderLeaf: string): boolean {
-  if (row.kind === "folder") return false;
-  const parent = row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : "";
-  if (parent !== folder) return false;
-  const key = (value: string) => value.trim().toLowerCase().replace(/\.md$/, "");
-  const leaf = key(row.path.split("/").pop() ?? "");
-  return leaf === key(folderLeaf) || key(row.title) === key(folderLeaf);
 }
 
 /**
@@ -1044,21 +1038,15 @@ async function relocateLibraryFolder(
   }
   const rows = await loadLibrarySubtree(source, { includeDeleted: false });
   if (rows.length === 0) return { error: `No folder at '${source}'. Use get_library_tree to see what exists.` };
-  const sourceLeaf = source.split("/").pop() ?? source;
-  const destinationLeaf = destination.split("/").pop() ?? destination;
+  const plan = planFolderRelocation(rows, source, destination, verb);
   let movedCount = 0;
-  for (const row of rows) {
-    const nextPath = row.path === source ? destination : `${destination}${row.path.slice(source.length)}`;
-    const patch: Record<string, unknown> = { path: nextPath, updated_at: new Date().toISOString() };
-    if (row.kind === "folder") {
-      patch.title = nextPath.split("/").pop() ?? nextPath;
-    } else if (verb === "renamed" && isFolderPageOf(row, source, sourceLeaf)) {
-      patch.title = destinationLeaf;
-    }
-    const { error } = await supabase.from("readable_library_documents").update(patch).eq("id", row.id);
+  for (const step of plan) {
+    const patch: Record<string, unknown> = { path: step.path, updated_at: new Date().toISOString() };
+    if (step.title !== undefined) patch.title = step.title;
+    const { error } = await supabase.from("readable_library_documents").update(patch).eq("id", step.id);
     if (error) {
       return {
-        error: `Stopped partway: ${movedCount} of ${rows.length} items moved before "${error.message}". `
+        error: `Stopped partway: ${movedCount} of ${plan.length} items moved before "${error.message}". `
           + "Run get_library_tree to see the current state before retrying.",
       };
     }
@@ -2063,15 +2051,9 @@ export async function executeAgentTool(
     // of forgetting is a delete with no confirmation at all. Adding a name to
     // DESTRUCTIVE_TOOLS is what puts it behind this line, and a shared test
     // asserts the map and the tool catalogue never drift apart.
-    if (!options.confirmed && isDestructiveTool(call.name)) {
+    if (heldForConfirmation(call.name, options.confirmed === true)) {
       const pending = await pendingDeleteFor(call.name, args);
-      if (pending) {
-        return {
-          confirm_required: true,
-          instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
-          pending_delete: pending,
-        };
-      }
+      if (pending) return pendingDeleteResult(pending);
     }
     const result = await dispatchTool(call, args, options);
     // A write the student cannot see is a write that did not happen, as far as

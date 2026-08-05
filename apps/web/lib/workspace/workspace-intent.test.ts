@@ -46,12 +46,21 @@ test("🔴 workspace questions never lose their tools — not to news words, not
   }
 });
 
-// ── The ten production acceptance prompts, verbatim ─────────────────────────
+// ── The production acceptance prompts, verbatim ─────────────────────────────
 // Owner 2026-08-05, after the pass failed: "Pin all ten production acceptance
-// prompts verbatim as routing tests. Do not only test paraphrases." These are
-// copied character for character from the run, including the upload turn.
+// prompts verbatim as routing tests. Do not only test paraphrases." Copied
+// character for character from the owner's own numbered list.
+//
+// 🔴 NINE, not ten, and the gap is deliberate rather than an omission. The
+// owner's test 9 was an UPLOAD ("one clearly classifiable upload → course; one
+// ambiguous upload → Inbox"), which never passes through routing at all — there
+// is no message to classify. Substituting a plausible sentence for it would be
+// exactly the paraphrase the instruction forbids, so it is named here and
+// checked where it actually lives: chat-attachments.test.ts and
+// course-filing.test.ts for the filing decision, plus the production pass for
+// the upload itself.
 
-const ACCEPTANCE_PROMPTS = [
+export const ACCEPTANCE_PROMPTS = [
   "Help me organize my schedule.",
   "What do I have today?",
   "Show me everything this semester.",
@@ -59,12 +68,12 @@ const ACCEPTANCE_PROMPTS = [
   "Show me how my Library is organized.",
   "Clean up my Library.",
   "Show me what I need to study.",
-  "Move the Beta Blockers (Lecture 7) deck into Pharmacology.",
-  "Save this lecture to my Library.",
+  "Move this deck into Pharmacology.",
+  // (9) upload — no prompt; see the note above.
   "Organize everything for Pharmacology, make sure my calendar is accurate, and tell me what I should study next.",
 ];
 
-test("🔴 all ten acceptance prompts reach the tools-capable model with tools attached", () => {
+test("🔴 every acceptance prompt reaches the tools-capable model with tools attached", () => {
   for (const prompt of ACCEPTANCE_PROMPTS) {
     const decision = classifyChatRequest(prompt);
     assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
@@ -77,6 +86,15 @@ test("🔴 all ten acceptance prompts reach the tools-capable model with tools a
     assert.equal(toolsAllowed(applyChatEffort(decision, "high")), true, `High dial stripped tools: ${prompt}`);
     assert.equal(decision.searchWeb, false, `bought a web search it did not need: ${prompt}`);
   }
+});
+
+test("saving a document to the Library is a workspace turn too", () => {
+  // Not one of the owner's numbered prompts — the save route is what carries
+  // acceptance test 9's upload once a file is attached, so it is checked
+  // separately rather than smuggled into the verbatim list above.
+  const decision = classifyChatRequest("Save this lecture to my Library.");
+  assert.equal(decision.savesToWorkspace === true || decision.workspaceIntent === true, true);
+  assert.equal(toolsAllowed(decision), true);
 });
 
 // ── Asking what to study ────────────────────────────────────────────────────

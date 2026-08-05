@@ -21,10 +21,10 @@ import {
   deckDeletionVerdict,
   describeTarget,
   destructiveSpec,
-  isDestructiveTool,
+  heldForConfirmation,
   isPatchFailure,
   noteReplacementBody,
-  pendingDeleteInstruction,
+  pendingDeleteResult,
   workspaceId,
   type PendingDelete,
 } from "@nemesis/shared";
@@ -842,15 +842,9 @@ export async function executeAgentTool(
     // at all. Every destructive tool passes through this line; adding a name to
     // DESTRUCTIVE_TOOLS is what puts it behind the gate, and a shared test
     // asserts the map and the tool catalogue never drift apart.
-    if (!options.confirmed && isDestructiveTool(call.name)) {
+    if (heldForConfirmation(call.name, options.confirmed === true)) {
       const pending = await pendingDeleteFor(uid, call.name, args);
-      if (pending) {
-        return {
-          confirm_required: true,
-          instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
-          pending_delete: pending,
-        };
-      }
+      if (pending) return pendingDeleteResult(pending);
     }
     const result = await HANDLERS[call.name]({ args, uid });
     // Attached HERE rather than in each of the six creating handlers, so a tool

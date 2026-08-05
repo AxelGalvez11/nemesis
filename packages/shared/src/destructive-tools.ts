@@ -111,6 +111,29 @@ export function isDestructiveTool(name: string): boolean {
   return Object.hasOwn(DESTRUCTIVE_TOOLS, name);
 }
 
+/**
+ * The gate's decision, as one function both executors call.
+ *
+ * `true` means: return the confirmation request and DO NOT reach the handler.
+ * The handler is where every delete's database write lives, so "held" and "no
+ * mutation" are the same fact — which is what makes this testable without a
+ * database. Approving re-enters the executor with `confirmed`, and the answer
+ * flips to `false` so the same call runs for real.
+ */
+export function heldForConfirmation(name: string, confirmed: boolean): boolean {
+  return !confirmed && isDestructiveTool(name);
+}
+
+/** What a held call returns to the model. Shared so the web and the phone
+ *  cannot describe the same paused delete two different ways. */
+export function pendingDeleteResult(pending: PendingDelete) {
+  return {
+    confirm_required: true as const,
+    instruction: pendingDeleteInstruction(pending.target, pending.recoverable),
+    pending_delete: pending,
+  };
+}
+
 export function destructiveSpec(name: string): DestructiveSpec | null {
   return isDestructiveTool(name) ? DESTRUCTIVE_TOOLS[name] as DestructiveSpec : null;
 }

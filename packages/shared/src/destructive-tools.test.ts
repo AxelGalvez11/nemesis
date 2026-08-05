@@ -6,8 +6,10 @@ import {
   DESTRUCTIVE_TOOLS,
   describeTarget,
   destructiveSpec,
+  heldForConfirmation,
   isDestructiveTool,
   pendingDeleteInstruction,
+  pendingDeleteResult,
 } from "./destructive-tools.ts";
 import { WEB_WORKSPACE_AGENT_TOOL_NAMES } from "./workspace-agent-tools.ts";
 
@@ -92,4 +94,47 @@ test("a recoverable delete says so instead of warning", () => {
 test("a spec lookup is null for anything not gated", () => {
   assert.equal(destructiveSpec("search_library"), null);
   assert.ok(destructiveSpec("delete_flashcard"));
+});
+
+// ── Check 12 of the accepted twelve, made permanent ─────────────────────────
+// Acceptance test 6 ("Clean up my Library") never reached a delete before the
+// 2026-08-05 fixes, so the card had NEVER rendered in production. The
+// re-acceptance ran `delete_library_folder {path:"Scratch"}` for real: the call
+// returned confirm_required, a card appeared, the owner declined, and all four
+// rows were still `deleted:false` afterwards. These pin the decision and the
+// payload; the card's appearance stays a production check.
+
+test("🔴 an unconfirmed folder delete is HELD — the handler is never reached", () => {
+  // The handler is where the database write lives, so "held" and "nothing was
+  // mutated" are the same fact. That is what makes this checkable in CI.
+  assert.equal(heldForConfirmation("delete_library_folder", false), true);
+});
+
+test("the same call runs once the student has approved it", () => {
+  assert.equal(heldForConfirmation("delete_library_folder", true), false);
+});
+
+test("every gated tool is held, and nothing else is", () => {
+  for (const name of Object.keys(DESTRUCTIVE_TOOLS)) {
+    assert.equal(heldForConfirmation(name, false), true, `${name} slipped past the gate`);
+  }
+  for (const name of WEB_WORKSPACE_AGENT_TOOL_NAMES.filter((tool) => !isDestructiveTool(tool))) {
+    assert.equal(heldForConfirmation(name, false), false, `${name} should not cost a tap`);
+  }
+});
+
+test("a held delete tells the model plainly that nothing has gone", () => {
+  const held = pendingDeleteResult({
+    args: { path: "Scratch" },
+    recoverable: true,
+    target: describeTarget(DESTRUCTIVE_TOOLS.delete_library_folder!.noun, "Scratch"),
+    tool: "delete_library_folder",
+  });
+  assert.equal(held.confirm_required, true);
+  assert.match(held.instruction, /NOTHING HAS BEEN DELETED/);
+  assert.match(held.instruction, /trash/);
+  // The student's approval re-invokes this verbatim, so the arguments have to
+  // survive the pause intact.
+  assert.deepEqual(held.pending_delete.args, { path: "Scratch" });
+  assert.equal(held.pending_delete.tool, "delete_library_folder");
 });

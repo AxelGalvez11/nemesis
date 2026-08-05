@@ -126,8 +126,17 @@ function attachmentRecord(file: File): SessionAttachment {
 const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 /** The mime the bucket allowlist expects per document kind. The browser's own
- *  file.type is usually right but arrives empty from some drag sources. */
-const DOCUMENT_MIME: Record<string, string> = {
+ *  file.type is usually right but arrives empty from some drag sources.
+ *
+ *  🔴 EVERY entry in DOCUMENT_EXTENSIONS needs one, and the `library-sources`
+ *  bucket needs to accept it. An extension listed as importable but missing
+ *  from here uploads under whatever the browser guessed, the bucket rejects it
+ *  on its allowlist, and the failure is SILENT: the file still reads inline in
+ *  chat, so it looks like it worked, but no source row is ever written. That is
+ *  precisely how `.md` behaved before 2026-08-05. chat-attachments.test.ts pins
+ *  the two lists against each other; the bucket half can only be checked in
+ *  production. */
+export const DOCUMENT_MIME: Record<string, string> = {
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".md": "text/markdown",
   ".pdf": "application/pdf",
