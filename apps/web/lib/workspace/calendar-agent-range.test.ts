@@ -115,3 +115,42 @@ test("plain events filter to the window and sort by date then time", () => {
   const window = eventsInWindow(events, "2026-10-01", "2026-10-31");
   assert.deepEqual(window.map((event) => event.id), ["a", "b"]);
 });
+
+// ── Event notes travel as previews ──────────────────────────────────────────
+// Owner 2026-08-05, acceptance test 3: 92 events each carrying a full
+// "From your syllabus: …" paragraph blew past the 20,000-char tool-result
+// budget, and the payload was clipped mid-object while still saying
+// "complete": true.
+
+test("a long syllabus note is shortened to a preview", () => {
+  const long = `From your syllabus: ${"lorem ipsum ".repeat(80)}`;
+  const events: CalendarEvent[] = [
+    { course: "PHCY 2114", date: "2026-08-11", id: "e1", kind: "class", note: long, title: "Lecture 1" } as CalendarEvent,
+  ];
+  const event = eventsInWindow(events, "2026-08-01", "2026-08-31")[0];
+  assert.ok(event?.note);
+  assert.ok(event.note.length <= 91, `note still ${event.note.length} chars`);
+  assert.match(event.note, /^From your syllabus:/);
+  assert.match(event.note, /…$/, "a shortened note says so");
+});
+
+test("a short note is left exactly as written", () => {
+  const events: CalendarEvent[] = [
+    { date: "2026-08-11", id: "e1", kind: "exam", note: "Bring a calculator.", title: "Exam 1" } as CalendarEvent,
+  ];
+  assert.equal(eventsInWindow(events, "2026-08-01", "2026-08-31")[0]?.note, "Bring a calculator.");
+});
+
+test("a full semester of noted events fits inside one tool result", () => {
+  // 92 is what the owner's real Aug–Dec range returned on 2026-08-05.
+  const events: CalendarEvent[] = Array.from({ length: 92 }, (_, index) => ({
+    course: "PHCY 2114",
+    date: "2026-08-11",
+    id: `e${index}`,
+    kind: "class",
+    note: `From your syllabus: ${"detail ".repeat(120)}`,
+    title: `Lecture ${index}`,
+  }) as CalendarEvent);
+  const payload = JSON.stringify(eventsInWindow(events, "2026-08-01", "2026-08-31"));
+  assert.ok(payload.length < 20_000, `payload was ${payload.length} chars`);
+});

@@ -33,6 +33,8 @@ import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
+import { safeStreamPrefix, sanitizeAssistantText } from "@/lib/workspace/chat-tool-markup";
+import { serializeToolResult } from "@/lib/workspace/chat-tool-result";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
@@ -608,6 +610,46 @@ export async function postChatCompletion(
 
 /** Most tool rounds a single turn may run before we force a plain answer. */
 const AGENT_MAX_TOOL_ROUNDS = 4;
+/** Workspace turns get a bigger budget, still bounded.
+ *
+ *  Owner 2026-08-05, acceptance test 10 ("Organize everything for Pharmacology,
+ *  make sure my calendar is accurate, and tell me what I should study next"):
+ *  the agent spent all four rounds LEGITIMATELY reading — library tree, four
+ *  folder expansions, study overview, a 366-day calendar range, the issue scan,
+ *  then four note reads — and hit the wall before it could change anything. A
+ *  read → reason → mutate workflow across three surfaces cannot fit in four.
+ *  Eight leaves room to act and still ends the turn on a bounded number of
+ *  calls; it is not a licence to loop. */
+const AGENT_MAX_WORKSPACE_TOOL_ROUNDS = 8;
+
+/** Sent on the final, tool-free round. Without it the model keeps trying to call
+ *  a tool that is no longer attached and emits its invocation syntax as prose —
+ *  see chat-tool-markup.ts for the leak this pairs with. */
+export const NO_TOOLS_LEFT_INSTRUCTION: WireMsg = {
+  content:
+    "You have used every tool round available for this turn. No tools are attached to this request and none can be called. Do NOT emit tool calls, DSML, XML, JSON tool syntax, invocation markup, or any imitation of them — everything you write now is shown to the student word for word. Answer from the information you have already retrieved. If part of what they asked could not be completed, say plainly which part and why, and offer to finish it in a follow-up.",
+  role: "system",
+};
+
+/** Rounds this turn may spend on tools before the answer is forced. */
+export function maxToolRounds(decision: ChatRouteDecision): number {
+  return decision.workspaceIntent || decision.savesToWorkspace ? AGENT_MAX_WORKSPACE_TOOL_ROUNDS : AGENT_MAX_TOOL_ROUNDS;
+}
+
+/** What one round sends: whether tools ride, and the exact message list.
+ *  Exported so the tools-exhausted round can be asserted without a network. */
+export function planToolRound(
+  messages: readonly WireMsg[],
+  decision: ChatRouteDecision,
+  round: number,
+  toolsEnabled: boolean,
+): { offerTools: boolean; messages: WireMsg[] } {
+  const offerTools = toolsEnabled && round < maxToolRounds(decision);
+  // Only a turn that HAD tools and just lost them needs telling. A turn that
+  // never had any already runs the no-tools system prompt.
+  const exhausted = toolsEnabled && !offerTools;
+  return { messages: exhausted ? [...messages, NO_TOOLS_LEFT_INSTRUCTION] : [...messages], offerTools };
+}
 
 function outputFromToolResult(result: unknown): SessionOutput | null {
   if (!result || typeof result !== "object") return null;
@@ -843,24 +885,33 @@ export async function sendChatTurn(
   // flashcards") — never the reasoner's own running text, which echoes raw
   // search snippets and reads as noise (owner 2026-08-04: no verbose
   // thinking previews). Between verbs it falls back to the quiet shimmer.
-  for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
-    // The last permitted round goes out without tools so it must answer in text.
-    const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
+  const roundBudget = maxToolRounds(decision);
+  for (let round = 0; round <= roundBudget; round += 1) {
+    // The last permitted round goes out without tools so it must answer in text
+    // — and is TOLD so, or it emits invocation syntax as prose instead.
+    const { messages: outgoing, offerTools } = planToolRound(messages, decision, round, toolsEnabled);
     // A second or later round waits again after a tool ran, so it gets a fresh
     // clock — that wait genuinely did start over.
     if (round > 0) strip = startWaitingStrip(onActivity);
     let seenDelta = false;
+    // What the student has actually been shown. Leaked markup is withheld as it
+    // streams (safeStreamPrefix), so the visible text can lag the raw one.
+    let painted = "";
     try {
-      reply = await postChatCompletion(uid, messages, {
+      reply = await postChatCompletion(uid, outgoing, {
         decision,
         onDelta: onDelta
-          ? (delta, accumulated) => {
+          ? (_delta, accumulated) => {
+            const safe = safeStreamPrefix(accumulated);
+            if (safe.length <= painted.length) return;
             // The moment text appears, the answer itself is the progress.
             if (!seenDelta) {
               seenDelta = true;
               strip.stop(WRITING_PHRASE);
             }
-            onDelta(delta, accumulated);
+            const addition = safe.slice(painted.length);
+            painted = safe;
+            onDelta(addition, safe);
           }
           : undefined,
         signal,
@@ -893,7 +944,9 @@ export async function sendChatTurn(
         tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
       },
       ...results.map(({ call, result }) => ({
-        content: JSON.stringify(result).slice(0, 20_000),
+        // Never a blind slice: an over-budget result comes back as valid JSON
+        // that says complete:false and where to resume. See chat-tool-result.ts.
+        content: serializeToolResult(result),
         role: "tool" as const,
         tool_call_id: call.id,
       })),
@@ -901,8 +954,12 @@ export async function sendChatTurn(
   }
   const shown = collapseOutputs(outputs);
   onActivity?.(null);
+  // Last line of defence: whatever survived the loop is checked for leaked
+  // invocation syntax before it can be shown or saved (chat-tool-markup.ts).
+  const cleaned = sanitizeAssistantText(reply.text);
   return {
     ...reply,
+    text: cleaned.text,
     sources,
     ...(shown.length ? { outputs: shown } : {}),
     ...(pendingDelete ? { pendingDelete } : {}),

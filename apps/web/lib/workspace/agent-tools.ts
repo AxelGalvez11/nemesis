@@ -366,12 +366,18 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
-        "See the Library's real structure without needing a search term. Without folder: the whole tree — every folder with "
-        + "its note counts. With folder: that folder's subfolders and every note inside it (title and path). Use this before "
+        "See the Library's real structure without needing a search term. Omit folder: the whole tree — every folder with its "
+        + "note counts, plus every note sitting loose at the root, by name. With folder: that folder's subfolders and every "
+        + "note inside it (title and path). Pass folder as an empty string to expand the ROOT on its own. Use this before "
         + "reorganizing, so moves are grounded in what actually exists.",
       name: "get_library_tree",
       parameters: {
-        properties: { folder: { description: "Optional folder path to expand; omit for the whole tree", type: "string" } },
+        properties: {
+          folder: {
+            description: "Folder path to expand, e.g. 'Pharmacy/Unit 2'. Empty string expands the Library root. Omit for the whole tree.",
+            type: "string",
+          },
+        },
         type: "object",
       },
     },
@@ -940,10 +946,14 @@ async function loadLibraryTreeDocs(): Promise<LibraryTreeDoc[]> {
   });
 }
 
-async function getLibraryTree(folder: string) {
+/** `expandRoot` separates "no folder argument" (give me the whole tree) from an
+ *  explicit `folder: ""` (expand the ROOT). They used to collapse together, so
+ *  root notes were countable but never listable — see LibraryTreeSummary. */
+async function getLibraryTree(folder: string, expandRoot: boolean) {
   try {
     const docs = await loadLibraryTreeDocs();
-    return folder.trim() ? expandLibraryFolder(docs, folder) : summarizeLibraryTree(docs);
+    if (folder.trim()) return expandLibraryFolder(docs, folder);
+    return expandRoot ? expandLibraryFolder(docs, "") : summarizeLibraryTree(docs);
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "Couldn't read the Library tree." };
   }
@@ -2104,7 +2114,7 @@ async function dispatchTool(
     case "list_calendar_events": return await listCalendarEvents(args);
     case "find_calendar_issues": return await findCalendarIssuesTool(args);
     case "get_workspace_overview": return await getWorkspaceOverviewTool();
-    case "get_library_tree": return await getLibraryTree(str(args.folder));
+    case "get_library_tree": return await getLibraryTree(str(args.folder), "folder" in args);
     case "rename_library_folder": return await renameLibraryFolderTool(args);
     case "move_library_folder": return await moveLibraryFolderTool(args);
     case "delete_library_folder": return await deleteLibraryFolderTool(args);

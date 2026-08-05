@@ -62,22 +62,34 @@ export interface LibraryTreeSummary {
   total_folders: number;
   /** Notes sitting at the Library root, outside any folder. */
   root_notes: number;
+  /** Those root notes, named.
+   *
+   *  Owner 2026-08-05, acceptance test 6: the summary reported `root_notes: 3`
+   *  and gave no way to see them — expanding "" fell through to this same
+   *  summary and search_library rejects an empty query. The agent said so out
+   *  loud ("the tree says root_notes: 3, but I haven't seen them"), guessed
+   *  search terms, and burned its whole tool budget. A count you cannot resolve
+   *  is worse than no count. */
+  root_note_list: { title: string; path: string }[];
   /** Every folder, sorted by path: nothing is sampled or dropped. */
   folders: { path: string; notes: number; total_notes: number }[];
   complete: true;
 }
 
-/** The whole tree at folder granularity. Complete: every folder is listed with
- *  real counts; note TITLES come from expandLibraryFolder per branch. */
+/** The whole tree at folder granularity, plus the root notes by name.
+ *  Complete: every folder is listed with real counts; note TITLES inside
+ *  folders come from expandLibraryFolder per branch. */
 export function summarizeLibraryTree(docs: readonly LibraryTreeDoc[]): LibraryTreeSummary {
   const stats = collectFolderStats(docs);
   const notes = docs.filter((doc) => doc.kind !== "folder");
+  const root = notes.filter((doc) => !doc.path.includes("/")).sort((a, b) => a.path.localeCompare(b.path));
   return {
     complete: true,
     folders: [...stats.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([path, stat]) => ({ notes: stat.notes, path, total_notes: stat.totalNotes })),
-    root_notes: notes.filter((doc) => !doc.path.includes("/")).length,
+    root_note_list: root.slice(0, FOLDER_EXPAND_NOTE_CAP).map((doc) => ({ path: doc.path, title: doc.title })),
+    root_notes: root.length,
     total_folders: stats.size,
     total_notes: notes.length,
   };
