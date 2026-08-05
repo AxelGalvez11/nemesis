@@ -205,3 +205,7 @@ export * from "./lms-import.ts";
 // places at once, and because a limit that appears twice eventually disagrees
 // with itself.
 export * from "./upload-limits.ts";
+// The normalized document every parser produces — universal, not academic.
+// PDF page, PPTX slide, XLSX sheet, DOCX section all answer in one shape so
+// chunking, retrieval and citation never branch on file type.
+export * from "./doc-model.ts";
