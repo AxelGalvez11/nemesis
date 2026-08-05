@@ -7,7 +7,7 @@ import { BillingSettings } from "@/components/workspace/shell/billing-settings";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
-import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type ThemePreference } from "@/components/theme-provider";
+import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +71,13 @@ const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "System" },
 ];
 
+// The swatch is the tone's actual page background, same honesty rule as the
+// accent dots below.
+const DARK_TONE_OPTIONS: { id: DarkTone; label: string; color: string }[] = [
+  { id: "black", label: "Black", color: "#000000" },
+  { id: "charcoal", label: "Charcoal", color: "#212121" },
+];
+
 // Order and names come from the owner's screenshot (2026-07-28). The swatches
 // are the same values the accent actually applies, so the dot never lies about
 // what you are picking — except "Default", whose real accent is a light/dark
@@ -102,7 +109,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
   const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
-  const { preference, accent, scale, libraryFullScreen, setTheme, setAccent, setScale, setLibraryFullScreen } = useTheme();
+  const { preference, accent, scale, darkTone, libraryFullScreen, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -213,6 +220,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
         {section === "appearance" && (
           <SettingsPage title="Appearance" description="Saved on this device and applied immediately.">
             <SettingsCard title="Theme"><div className="grid grid-cols-3 gap-2 max-sm:grid-cols-1">{THEME_OPTIONS.map((item) => <button aria-pressed={preference === item.id} className={cn("rounded-xl border border-(--ui-stroke-secondary) bg-background p-2 text-left text-xs font-medium hover:bg-(--ui-control-hover-background)", preference === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setTheme(item.id)} type="button"><span className="theme-swatch mb-2" data-theme-preview={item.id} aria-hidden="true"><span className="tp-rail" /><span className="tp-page"><span className="tp-line" /><span className="tp-line short" /><span className="tp-dot" /></span></span>{item.label}</button>)}</div></SettingsCard>
+            <SettingsCard title="Dark tone"><div className="flex flex-wrap gap-2">{DARK_TONE_OPTIONS.map((item) => <button aria-pressed={darkTone === item.id} className={cn("flex items-center gap-2 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-medium hover:bg-(--ui-control-hover-background)", darkTone === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setDarkTone(item.id)} type="button"><span aria-hidden className="size-4 rounded-full border border-(--ui-stroke-secondary)" style={{ backgroundColor: item.color }} />{item.label}</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">How surfaces look while the theme is dark: Black is pure black, Charcoal is a softer dark gray.</p></SettingsCard>
             <SettingsCard title="Accent color"><div className="flex flex-wrap gap-2">{ACCENT_OPTIONS.map((item) => <button aria-label={item.label} aria-pressed={accent === item.id} className={cn("grid size-10 place-items-center rounded-full border border-(--ui-stroke-secondary)", accent === item.id && "ring-2 ring-offset-2 ring-offset-background")} key={item.id} onClick={() => setAccent(item.id)} style={{ color: item.color }} title={item.label} type="button"><span className="size-6 rounded-full" style={{ backgroundColor: item.color }} /></button>)}</div></SettingsCard>
             <SettingsCard title="Scaling"><div className="flex flex-wrap gap-2">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-16 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>
           </SettingsPage>

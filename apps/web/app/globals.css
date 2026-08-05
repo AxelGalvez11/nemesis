@@ -145,14 +145,16 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* DARK — ChatGPT-parity charcoal ladder (owner 2026-08-05): page #212121 ·
-     card #2a2a2a · popover #2f2f2f · raised #353535 · sidebar/rail #171717.
-     Near-black charcoal, never pure black; text soft off-white, never #fff.
-     Keep in step with the same ladder in desktop-ui.css's dark block. */
-  --bg: #212121; --bg-2: #262626; --surface: #2a2a2a; --surface-2: #2f2f2f; --raised: #353535;
-  --line: #303030; --line-2: #3a3a3a;
-  --text: #ededed; --text-2: #b4b4b4; --text-3: #8f8f8f;
-  --rail-bg: #171717;
+  /* DARK, default tone = BLACK — the original desktop "nemesis" skin
+     (design-tokens/tokens.json), restored as the default 2026-08-05 (owner:
+     "bring back the 100% black background"): page #000 · card #141414 ·
+     popover #181818 · muted #1e1e1e · secondary #262626 · rail #000. The
+     charcoal ladder lives on in the [data-dark-tone='charcoal'] block below;
+     keep both in step with desktop-ui.css's matching pair. */
+  --bg: #000000; --bg-2: #141414; --surface: #181818; --surface-2: #1e1e1e; --raised: #262626;
+  --line: #202020; --line-2: #2a2a2a;
+  --text: #ffffff; --text-2: #9a9a9a; --text-3: #808080;
+  --rail-bg: #000000;
   /* Accent-tinted hover/active fills (desktop accentMixes rowHover 4 / rowActive 8). */
   --fill-hover: color-mix(in srgb, var(--theme-primary) 6%, transparent); --fill-active: color-mix(in srgb, var(--theme-primary) 9%, transparent);
   --composer-border: #2a2a2a; --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -165,9 +167,9 @@
   /* Danger = the desktop-account lighter crimson tint, kept distinct from brand. */
   --warn: #f5b23b; --danger: #ff6678; --info: #7fb2ff;
   --success: #7ee081; --line-success: rgba(126, 224, 129, 0.30);
-  /* User bubble = one step above the raised surface, neutral gray (the old
-     warm-brown desktop values read as stains on the charcoal ladder). */
-  --user-bubble: #323232; --user-bubble-border: #454545;
+  /* Desktop userBubble/userBubbleBorder, verbatim (charcoal tone swaps in
+     neutral grays below). */
+  --user-bubble: #1f1717; --user-bubble-border: #3d2b28;
 
   --glow: 0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
@@ -175,15 +177,37 @@
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
   --line-acid: color-mix(in srgb, var(--theme-primary) 28%, transparent);
 
+  --background: 0 0% 0%; --foreground: 0 0% 100%;
+  --card: 0 0% 8%; --card-foreground: 0 0% 92%;
+  --popover: 0 0% 9%; --popover-foreground: 0 0% 92%;
+  --primary: 353 100% 58%; --primary-foreground: 10 100% 98%;
+  --secondary: 0 0% 15%; --secondary-foreground: 0 0% 78%;
+  --muted-shadcn: 0 0% 12%; --muted-foreground: 0 0% 50%;
+  --accent-shadcn: 355 35% 12%; --accent-foreground: 355 100% 91%;
+  --destructive: 353 100% 70%; --destructive-foreground: 0 0% 5%;
+  --border: 0 0% 16%; --input: 0 0% 16%; --ring: 352 100% 67%;
+}
+
+/* DARK, CHARCOAL tone — the ChatGPT-parity ladder shipped 2026-08-05, kept as
+   an opt-in (Settings → Appearance → Dark tone): page #212121 · card #2a2a2a ·
+   popover #2f2f2f · raised #353535 · sidebar/rail #171717; text soft off-white.
+   Only variables that differ from the black block above belong here; keep in
+   step with desktop-ui.css's matching pair. */
+:root[data-theme="dark"][data-dark-tone="charcoal"] {
+  --bg: #212121; --bg-2: #262626; --surface: #2a2a2a; --surface-2: #2f2f2f; --raised: #353535;
+  --line: #303030; --line-2: #3a3a3a;
+  --text: #ededed; --text-2: #b4b4b4; --text-3: #8f8f8f;
+  --rail-bg: #171717;
+  /* User bubble = one step above the raised surface, neutral gray (the black
+     tone's warm-brown desktop values read as stains on the charcoal ladder). */
+  --user-bubble: #323232; --user-bubble-border: #454545;
+
   --background: 0 0% 13%; --foreground: 0 0% 93%;
   --card: 0 0% 16%; --card-foreground: 0 0% 93%;
   --popover: 0 0% 18%; --popover-foreground: 0 0% 93%;
-  --primary: 353 100% 58%; --primary-foreground: 10 100% 98%;
   --secondary: 0 0% 19%; --secondary-foreground: 0 0% 80%;
   --muted-shadcn: 0 0% 18%; --muted-foreground: 0 0% 63%;
-  --accent-shadcn: 355 35% 12%; --accent-foreground: 355 100% 91%;
-  --destructive: 353 100% 70%; --destructive-foreground: 0 0% 5%;
-  --border: 0 0% 23%; --input: 0 0% 23%; --ring: 352 100% 67%;
+  --border: 0 0% 23%; --input: 0 0% 23%;
 }
 
 * { box-sizing: border-box; }
