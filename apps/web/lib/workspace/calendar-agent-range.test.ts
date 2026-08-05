@@ -3,11 +3,15 @@ import test from "node:test";
 
 import type { CalendarEvent } from "./calendar-model";
 import {
+  calendarCoverage,
   calendarEventFromRow,
   eventsInWindow,
   localToday,
   resolveCalendarWindow,
 } from "./calendar-agent-range";
+import { findCalendarIssues } from "./calendar-conflicts";
+import { parseRecurrence } from "./calendar-model";
+import { serializeToolResult, TOOL_RESULT_CHAR_BUDGET } from "./chat-tool-result";
 
 // ── The window contract ──────────────────────────────────────────────────────
 
@@ -153,4 +157,133 @@ test("a full semester of noted events fits inside one tool result", () => {
   }) as CalendarEvent);
   const payload = JSON.stringify(eventsInWindow(events, "2026-08-01", "2026-08-31"));
   assert.ok(payload.length < 20_000, `payload was ${payload.length} chars`);
+});
+
+// ── Cancellations survive BOTH readers of the recurrence column ──────────────
+//
+// 🔴 There were two independent whitelists over the same jsonb: sanitizeEvent
+// (the calendar page) and calendarEventFromRow (the agent). Both dropped keys
+// they did not name, so a field added to one and missed in the other vanished
+// on that path with no error anywhere — the page would honour a cancelled class
+// that the chat could not see. They now share parseRecurrence, and this reads a
+// row through both to keep it that way.
+
+test("🔴 a cancelled meeting survives the agent's reader", () => {
+  const parsed = calendarEventFromRow({
+    date: "2026-08-24",
+    id: "lecture",
+    recurrence: { days: [1, 3, 5], except: ["2026-09-07"], until: "2026-09-25" },
+    title: "Pharmacology Lecture",
+  });
+  assert.deepEqual(parsed?.recurrence?.except, ["2026-09-07"]);
+});
+
+test("both readers agree on the same stored rule", () => {
+  const stored = { days: [1, 3], except: ["2026-09-07", "2026-09-07"], until: "2026-09-25" };
+  const viaAgent = calendarEventFromRow({ date: "2026-08-24", id: "a", recurrence: stored, title: "Lecture" });
+  assert.deepEqual(viaAgent?.recurrence, parseRecurrence(stored));
+});
+
+test("a junk cancellation date is dropped, not stored", () => {
+  const parsed = parseRecurrence({ days: [1], except: ["nope", 7, "2026-09-07"], until: "2026-09-25" });
+  assert.deepEqual(parsed?.except, ["2026-09-07"]);
+});
+
+test("a rule with no cancellations carries no empty list", () => {
+  assert.equal("except" in (parseRecurrence({ days: [1], until: "2026-09-25" }) ?? {}), false);
+});
+
+test("a rule with no days or no end is not a schedule", () => {
+  assert.equal(parseRecurrence({ days: [], until: "2026-09-25" }), null);
+  assert.equal(parseRecurrence({ days: [1] }), null);
+  assert.equal(parseRecurrence(null), null);
+});
+
+// ── How far back Nemesis can honestly speak (Phase 2 item 3) ────────────────
+//
+// The audit used to open its window at 0001-01-01 and report that window back,
+// which told the model that the whole of history had been checked and was
+// clean. Nothing exists there to check.
+
+const RECORDS: CalendarEvent[] = [
+  { date: "2026-01-05", id: "first", kind: "class", title: "Spring term begins" },
+  { date: "2026-08-24", id: "lecture", kind: "class", recurrence: { days: [1], until: "2026-11-24" }, title: "Lecture" },
+];
+
+test("🔴 with no window asked for, coverage is the student's real records", () => {
+  const coverage = calendarCoverage(RECORDS, {});
+  assert.equal(coverage.from, "2026-01-05");
+  assert.equal(coverage.earliest_record, "2026-01-05");
+  // The latest date counts where a repeating rule runs to, not just row dates.
+  assert.equal(coverage.to, "2026-11-24");
+  assert.equal(coverage.partial, false);
+});
+
+test("🔴 asking about a period with no records says so instead of reporting it clean", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2020-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.equal(coverage.from, "2026-01-05", "the audit walked what exists, not what was asked for");
+  assert.match(coverage.note, /nothing before 2026-01-05/);
+});
+
+test("a window inside the records is honoured exactly, and is not partial", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2026-08-01", to: "2026-09-01" });
+  assert.deepEqual([coverage.from, coverage.to], ["2026-08-01", "2026-09-01"]);
+  assert.equal(coverage.partial, false);
+});
+
+test("asking past the end is partial in the other direction", () => {
+  const coverage = calendarCoverage(RECORDS, { to: "2030-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.match(coverage.note, /nothing after 2026-11-24/);
+});
+
+test("an empty calendar states that, rather than inventing a range", () => {
+  const coverage = calendarCoverage([], { from: "2020-01-01" });
+  assert.equal(coverage.earliest_record, null);
+  assert.equal(coverage.partial, false, "there is no boundary to fall short of");
+  assert.match(coverage.note, /no calendar events at all/);
+});
+
+// ── The audit still fits in one tool result ────────────────────────────────
+
+test("🔴 auditing a real term of expanded events stays inside the tool budget", () => {
+  // The production account: 175 events over ten months with two repeating
+  // rules, every syllabus row carrying a long note. Expansion multiplies what
+  // is compared; collapsing findings per pair of rows is what keeps the ANSWER
+  // small. If this ever overflows, the result is clipped and the model is told
+  // the audit was incomplete.
+  const events: CalendarEvent[] = [
+    { date: "2026-08-24", id: "lecture", kind: "class", recurrence: { days: [1, 3, 5], until: "2026-12-11" }, time: "09:00", title: "Pharmacology Lecture" },
+    { date: "2026-08-25", id: "lab", kind: "class", recurrence: { days: [1, 3, 5], until: "2026-12-11" }, time: "09:00", title: "Pharmacology Lab" },
+    ...Array.from({ length: 173 }, (_, index): CalendarEvent => ({
+      course: "PHCY 2114",
+      date: `2026-${String(1 + (index % 11)).padStart(2, "0")}-${String(1 + (index % 28)).padStart(2, "0")}`,
+      id: `event-${index}`,
+      kind: index % 3 === 0 ? "exam" : "assignment",
+      note: `From your syllabus: ${"reading and objectives ".repeat(12)}`,
+      time: "09:00",
+      title: `Assessment ${index}`,
+    })),
+  ];
+  const payload = serializeToolResult(findCalendarIssues(events));
+  assert.ok(
+    payload.length <= TOOL_RESULT_CHAR_BUDGET,
+    `audit serialized to ${payload.length} chars — expansion is flooding the answer`,
+  );
+  assert.equal(JSON.parse(payload).complete, undefined, "the payload was clipped rather than returned whole");
+});
+
+test("🔴 a question entirely outside the records never reports an inverted window", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2019-01-01", to: "2020-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.ok(coverage.from <= coverage.to, `window runs backwards: ${coverage.from} → ${coverage.to}`);
+  assert.match(coverage.note, /no calendar records in that period at all/);
+});
+
+test("a question entirely after the records says the same thing", () => {
+  const coverage = calendarCoverage(RECORDS, { from: "2030-01-01" });
+  assert.equal(coverage.partial, true);
+  assert.ok(coverage.from <= coverage.to);
+  assert.match(coverage.note, /no calendar records in that period at all/);
 });

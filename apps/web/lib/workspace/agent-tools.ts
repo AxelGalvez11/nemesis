@@ -26,6 +26,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
 import {
+  calendarCoverage,
   calendarEventFromRow,
   eventsInWindow,
   isDateKey,
@@ -33,9 +34,11 @@ import {
   resolveCalendarWindow,
   type CalendarEventRow,
 } from "./calendar-agent-range";
+import { parseRecurrence } from "./calendar-model";
 import { isInLibrarySubtree, planFolderRelocation } from "./library-folder-plan";
 import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
-import { remapLibrarySourceFolders } from "./library-sources";
+import { planLibraryMigration, migrationSummary } from "./library-migration";
+import { remapLibrarySourceFolders, setLibrarySourceFolder } from "./library-sources";
 import { expandLibraryFolder, summarizeLibraryTree, type LibraryTreeDoc } from "./library-tree-summary";
 import { writeLibraryNote } from "./library-write";
 import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
@@ -339,14 +342,49 @@ export const AGENT_TOOLS = [
         "Audit the calendar before reorganizing it. Reports, separately: exact_duplicates (same title, same date), "
         + "probable_duplicates (near-identical titles on one date), conflicting_versions (the same exam or assignment on two "
         + "different dates — the sources disagree about when it is), and overlaps (two different events at the same time — NOT "
-        + "duplicates). Defaults to the whole calendar. Never resolve a conflicting version without the student choosing which "
-        + "date wins.",
+        + "duplicates). Repeating classes are expanded into the dates they actually meet first, so a one-off event landing on "
+        + "top of one meeting is found; a problem that repeats every week is reported once with a `repeats` count. Defaults to "
+        + "every record the student has, and `coverage` says exactly which dates that turned out to be — repeat that rather "
+        + "than implying years you have no records for came back clean. Never resolve a conflicting version without the "
+        + "student choosing which date wins.",
       name: "find_calendar_issues",
       parameters: {
         properties: {
           end_date: { description: "Optional window end, YYYY-MM-DD", type: "string" },
           start_date: { description: "Optional window start, YYYY-MM-DD", type: "string" },
         },
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Work out how the student's OLD Library content would be filed under their courses, and CHANGE NOTHING. Covers "
+        + "the legacy Nemesis/… folders, anything loose at the Library root (their syllabi live there), and items still "
+        + "waiting in Inbox. Returns `moves` (each with where it is, where it would go, and why), `leave_alone` (nothing in "
+        + "it names a course clearly enough — leave these for the student to look at, do NOT guess), and `blocked` (a real "
+        + "match whose destination name is already taken). Show the student the plan and let them decide; carry out the "
+        + "moves with move_library_note and move_library_source. Safe to call again at any time — it reads where things are "
+        + "now, so anything already filed simply stops appearing.",
+      name: "plan_library_migration",
+      parameters: { properties: {}, type: "object" },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Move an ORIGINAL uploaded file (a PDF, a slide deck, a syllabus) into a course folder. Use the source id from "
+        + "plan_library_migration. This moves the file, never its notes — move those with move_library_note.",
+      name: "move_library_source",
+      parameters: {
+        properties: {
+          folder: { description: "Destination folder, e.g. 'PHCY 2114'. Empty string moves it to the Library root.", type: "string" },
+          source_id: { description: "The source's id from plan_library_migration", type: "string" },
+        },
+        required: ["source_id"],
         type: "object",
       },
     },
@@ -513,6 +551,13 @@ export const AGENT_TOOLS = [
       name: "update_calendar_event",
       parameters: {
         properties: {
+          cancel_date: {
+            description:
+              "For a REPEATING event only: mark this one meeting as not happening (a cancelled class, a holiday), "
+              + "YYYY-MM-DD. The rest of the series is untouched. Use this instead of deleting — a repeating class is "
+              + "one row, so deleting it removes every meeting for the whole term.",
+            type: "string",
+          },
           course: { description: "Course name, or empty string to clear it", type: "string" },
           date: { description: "New date, YYYY-MM-DD", type: "string" },
           event_id: { description: "The event's id from list_calendar_events", type: "string" },
@@ -1110,6 +1155,89 @@ async function deleteLibraryFolderTool(args: Record<string, unknown>) {
   return { deleted: true, folder: source, items: rows.length, recoverable: true };
 }
 
+/**
+ * Phase 2 item 2 — the legacy migration, as a plan nobody has agreed to yet.
+ *
+ * Read-only on purpose. The owner's conditions were "preview every proposed
+ * move", "safe to rerun" and "leave ambiguous content untouched", and a planner
+ * that changes nothing satisfies all three by construction: proposals come from
+ * where things are right now, so anything already filed drops out of the plan
+ * on the next call and nothing needs a migration table to stay honest.
+ */
+async function planLibraryMigrationTool() {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to look at the Library." };
+  const noteRows = await fetchAllRows((from, to) =>
+    supabase
+      .from("readable_library_documents")
+      .select("id,path,title,content,kind")
+      .eq("deleted", false)
+      .order("path")
+      .order("id")
+      .range(from, to));
+  const sourceRows = await fetchAllRows((from, to) =>
+    supabase
+      .from("library_sources")
+      .select("id,file_name,folder_path")
+      .eq("deleted", false)
+      .order("file_name")
+      .order("id")
+      .range(from, to));
+  const courses = await loadKnownCourses();
+  const plan = planLibraryMigration({
+    courses,
+    notes: noteRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        // A folder row has no body at all; the planner must not choke on null.
+        content: typeof row.content === "string" ? row.content : null,
+        id: str(row.id),
+        kind: str(row.kind) || "note",
+        path: str(row.path),
+        title: str(row.title),
+      };
+    }),
+    sources: sourceRows.map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return { fileName: str(row.file_name), folderPath: str(row.folder_path), id: str(row.id) };
+    }),
+  });
+  return {
+    ...plan,
+    instruction:
+      "NOTHING HAS MOVED. Show the student what you would do — the moves, and how many you are deliberately leaving "
+      + "alone — and let them say yes before calling move_library_note or move_library_source. Never file anything from "
+      + "leave_alone on a hunch: those are items where guessing puts the file where they will never think to look.",
+    summary: migrationSummary(plan),
+  };
+}
+
+async function moveLibrarySourceTool(args: Record<string, unknown>) {
+  const userId = await currentUserId();
+  if (!userId) return { error: "Sign in to move a file." };
+  const id = workspaceId(args.source_id);
+  if (!id) return { error: "Which file? Use plan_library_migration to get source ids." };
+  const folder = safeLibraryFolder(str(args.folder));
+  const { data, error } = await supabase
+    .from("library_sources")
+    .select("file_name,folder_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "No file with that id." };
+  try {
+    await setLibrarySourceFolder(userId, id, folder);
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Couldn't move that file." };
+  }
+  return {
+    file: str((data as Record<string, unknown>).file_name),
+    from: str((data as Record<string, unknown>).folder_path),
+    moved: true,
+    to: folder,
+  };
+}
+
 async function availableNotePath(userId: string, title: string, folder: string, currentId: string) {
   const leaf = safeLibraryLeaf(title);
   const dir = safeLibraryFolder(folder);
@@ -1524,6 +1652,13 @@ async function loadCalendarRangeEvents(from: string, to: string) {
  *  window instead of flooding the transcript — and says so out loud. */
 const AGENT_EVENT_ROWS_CAP = 500;
 
+/** SQL bounds for "load the whole calendar". These are the limits of the
+ *  `date` column, NOT a claim about coverage — what the account actually holds
+ *  is derived from the rows themselves by calendarCoverage, and that is what
+ *  the model is told. */
+const EARLIEST_POSSIBLE_DATE = "0001-01-01";
+const LATEST_POSSIBLE_DATE = "9999-12-31";
+
 async function listCalendarEvents(args: Record<string, unknown>) {
   const today = localToday();
   const window = resolveCalendarWindow(
@@ -1551,17 +1686,23 @@ async function listCalendarEvents(args: Record<string, unknown>) {
 async function findCalendarIssuesTool(args: Record<string, unknown>) {
   const start = str(args.start_date).trim();
   const end = str(args.end_date).trim();
-  const from = isDateKey(start) ? start : "0001-01-01";
-  const to = isDateKey(end) ? end : "9999-12-31";
   try {
-    const events = await loadCalendarRangeEvents(from, to);
+    // Load everything the account has, then let the rows say how far back the
+    // answer can honestly reach. The old code opened this window at 0001-01-01
+    // and reported that back as the range it had audited — see calendarCoverage.
+    const events = await loadCalendarRangeEvents(EARLIEST_POSSIBLE_DATE, LATEST_POSSIBLE_DATE);
+    const coverage = calendarCoverage(events, { from: start, to: end });
     return {
-      ...findCalendarIssues(events),
-      checked_events: events.length,
+      ...findCalendarIssues(events, { from: coverage.from, to: coverage.to }),
+      // Stored rows, not expanded meetings — a repeating class is one row here
+      // and many dates inside the audit. `coverage` says which dates.
+      calendar_rows: events.length,
+      coverage,
       note:
-        "Recurring classes are checked as their single stored rule here, not per meeting. conflicting_versions means "
-        + "sources disagree about WHEN one exam or assignment is — ask the student which date wins before changing anything.",
-      window: { from, to },
+        "Repeating classes are expanded into the dates they actually meet before this audit runs, and a finding that "
+        + "recurs every week is reported ONCE with a `repeats` count rather than per meeting. Every id is a real event "
+        + "id, so a recurring finding's id addresses the whole series. conflicting_versions means sources disagree "
+        + "about WHEN one exam or assignment is — ask the student which date wins before changing anything.",
     };
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : "Couldn't audit the calendar." };
@@ -1785,13 +1926,49 @@ async function resolveRow(
   return { id, row: data as Record<string, unknown> };
 }
 
+/**
+ * "My Thursday lab is cancelled this week."
+ *
+ * A repeating class is one row, so deleting it to skip one meeting would wipe
+ * the term. This is the only way an exception gets written, and it is an
+ * argument on the existing update rather than a new tool: the series is edited,
+ * not destroyed, and removing the date brings the meeting back. `until` is
+ * untouched — the rule still runs to the end of term.
+ */
+async function cancelOccurrence(row: Record<string, unknown>, id: string, date: string) {
+  const recurrence = parseRecurrence(row.recurrence);
+  if (!recurrence) return { error: "That event does not repeat, so there is no single meeting to cancel — delete it instead." };
+  const except = [...new Set([...(recurrence.except ?? []), date])].sort();
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ recurrence: { ...recurrence, except } })
+    .eq("id", id);
+  if (error) return { error: error.message };
+  return {
+    cancelled: date,
+    instruction:
+      "That one meeting is now marked as not happening; the rest of the series is untouched. Do not read the calendar "
+      + "back — reply with one short line.",
+    title: str(row.title),
+    updated: true,
+  };
+}
+
 async function updateCalendarEventTool(args: Record<string, unknown>) {
   const found = await resolveRow("calendar_events", args.event_id, "Use list_calendar_events to get event ids.");
   if ("error" in found) return found;
+  const cancelDate = str(args.cancel_date).trim();
+  if (cancelDate) {
+    if (!isDateKey(cancelDate)) return { error: "cancel_date must be a real calendar date in YYYY-MM-DD form." };
+    return await cancelOccurrence(found.row as Record<string, unknown>, found.id, cancelDate);
+  }
   // Strip the handle before building the patch: `event_id` is how we found the
   // row, not a field on it, and letting it through would make a call that
-  // changes nothing look like a change.
-  const fields = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "event_id"));
+  // changes nothing look like a change. `cancel_date` goes the same way — it is
+  // handled above and is not a column.
+  const fields = Object.fromEntries(
+    Object.entries(args).filter(([key]) => key !== "event_id" && key !== "cancel_date"),
+  );
   const patch = calendarEventPatch(fields);
   if (isPatchFailure(patch)) return patch;
   const { error } = await supabase.from("calendar_events").update(patch).eq("id", found.id);
@@ -2095,6 +2272,8 @@ async function dispatchTool(
     case "add_mindmap": return await addMindmap(args);
     case "list_calendar_events": return await listCalendarEvents(args);
     case "find_calendar_issues": return await findCalendarIssuesTool(args);
+    case "plan_library_migration": return await planLibraryMigrationTool();
+    case "move_library_source": return await moveLibrarySourceTool(args);
     case "get_workspace_overview": return await getWorkspaceOverviewTool();
     case "get_library_tree": return await getLibraryTree(str(args.folder), "folder" in args);
     case "rename_library_folder": return await renameLibraryFolderTool(args);

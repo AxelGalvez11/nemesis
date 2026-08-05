@@ -53,6 +53,12 @@ export const WEB_EXTRA_AGENT_TOOL_NAMES = [
   "move_study_deck",
   "move_study_artifact",
   "find_calendar_issues",
+  // Phase 2 item 2. The planner READS and proposes; move_library_source is the
+  // one write it needed that did not already exist — a note could be moved by
+  // the chat, but the original file it came from could not, and four syllabi
+  // sitting at the Library root are source rows, not notes.
+  "plan_library_migration",
+  "move_library_source",
 ] as const;
 
 export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [

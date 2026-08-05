@@ -18,6 +18,7 @@ import {
   dateKey,
   expandRecurringEvents,
   parseDateKey,
+  parseRecurrence,
   type CalendarEvent,
   type CalendarEventKind,
 } from "./calendar-model";
@@ -57,15 +58,9 @@ export function calendarEventFromRow(row: CalendarEventRow): CalendarEvent | nul
   if (typeof row.course === "string" && row.course) event.course = row.course;
   if (typeof row.note === "string" && row.note) event.note = row.note;
   if (row.source === "agent" || row.source === "manual") event.source = row.source;
-  if (row.recurrence && typeof row.recurrence === "object") {
-    const recurrence = row.recurrence as { days?: unknown; until?: unknown };
-    const days = Array.isArray(recurrence.days)
-      ? recurrence.days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
-      : [];
-    if (days.length > 0 && typeof recurrence.until === "string" && DATE_KEY_RE.test(recurrence.until)) {
-      event.recurrence = { days: [...new Set(days)], until: recurrence.until };
-    }
-  }
+  // Shared with the calendar page's own reader on purpose — see parseRecurrence.
+  const recurrence = parseRecurrence(row.recurrence);
+  if (recurrence) event.recurrence = recurrence;
   return event;
 }
 
@@ -147,4 +142,109 @@ export function eventsInWindow(events: readonly CalendarEvent[], from: string, t
 /** Local today — the ONLY way the agent's calendar code derives "now". */
 export function localToday(): string {
   return dateKey(new Date());
+}
+
+// ── How far back Nemesis can honestly speak ─────────────────────────────────
+//
+// Owner 2026-08-05, Phase 2 item 3: "Do not fake support for the impossible
+// pre-year-1 query. Define the actual data boundary and return an explicit
+// partial-coverage response when Nemesis lacks records for that period."
+//
+// The audit tool used to open its window at `0001-01-01` and close it at
+// `9999-12-31`, then report that window back in its result. Both dates are
+// fiction. Nothing was scanned from year 1, because nothing exists there — but
+// a model reading `{"window":{"from":"0001-01-01"}}` has been told, in the most
+// literal channel it has, that the whole of history came back clean. Asked
+// "have I ever double-booked?", the honest answer is "here is what I have, and
+// it starts in January" — not silence dressed as completeness.
+
+/** What the account can actually answer for, and what was asked. */
+export interface CalendarCoverage {
+  /** Earliest date Nemesis holds for this student; null when nothing exists. */
+  earliest_record: string | null;
+  /** Latest, counting where repeating rules run to. */
+  latest_record: string | null;
+  /** The window the audit actually walked. */
+  from: string;
+  to: string;
+  /** True when the caller asked for a period Nemesis has no records for. */
+  partial: boolean;
+  /** Plain English for the model to repeat, rather than infer. */
+  note: string;
+}
+
+/**
+ * Resolve an audit window against the records that exist.
+ *
+ * A request reaching before `earliest_record` is not an error and not an empty
+ * result — it is a request Nemesis can answer for part of, and it says which
+ * part. With no records at all there is no boundary to state, so it says that
+ * instead of inventing a range.
+ */
+export function calendarCoverage(
+  events: readonly CalendarEvent[],
+  requested: { from?: string; to?: string },
+): CalendarCoverage {
+  let earliest: string | null = null;
+  let latest: string | null = null;
+  for (const event of events) {
+    if (earliest === null || event.date < earliest) earliest = event.date;
+    if (latest === null || event.date > latest) latest = event.date;
+    if (event.recurrence && (latest === null || event.recurrence.until > latest)) latest = event.recurrence.until;
+  }
+
+  const askedFrom = requested.from && isDateKey(requested.from) ? requested.from : "";
+  const askedTo = requested.to && isDateKey(requested.to) ? requested.to : "";
+
+  if (earliest === null || latest === null) {
+    const today = localToday();
+    return {
+      earliest_record: null,
+      from: askedFrom || today,
+      latest_record: null,
+      note: "This student has no calendar events at all yet, so there is nothing to audit — say that plainly rather than reporting a clean calendar.",
+      partial: false,
+      to: askedTo || today,
+    };
+  }
+
+  const askedStart = askedFrom || earliest;
+  const askedEnd = askedTo || latest;
+
+  // 🔴 A question entirely outside the records ("did I double-book in 2019?")
+  // must not be clamped into a window whose start comes after its end. Say
+  // there is nothing there — an inverted range would be reported as the range
+  // audited, which is the exact dishonesty this function exists to remove.
+  if (askedEnd < earliest || askedStart > latest) {
+    // Only ONE bound may have been given, and the other defaulted to a record
+    // boundary on the far side — "anything after 2030" defaults its end to the
+    // last record, which is earlier. Report the asked span in order; there is
+    // nothing in it either way.
+    return {
+      earliest_record: earliest,
+      from: askedStart <= askedEnd ? askedStart : askedEnd,
+      latest_record: latest,
+      note: `Nemesis holds no calendar records in that period at all — everything it has runs ${earliest} to ${latest}. Say that; do not report the period as checked and clear.`,
+      partial: true,
+      to: askedEnd,
+    };
+  }
+
+  const from = askedStart > earliest ? askedStart : earliest;
+  const to = askedEnd < latest ? askedEnd : latest;
+  const shortfall: string[] = [];
+  if (askedStart < earliest) shortfall.push(`nothing before ${earliest}`);
+  if (askedEnd > latest) shortfall.push(`nothing after ${latest}`);
+  const partial = shortfall.length > 0;
+
+  return {
+    earliest_record: earliest,
+    from,
+    latest_record: latest,
+    note: partial
+      ? `Checked ${from} to ${to}. The student asked about a wider period, but Nemesis holds ${shortfall.join(" and ")} — say so rather than implying those years were checked and were clean.`
+      : `Checked ${from} to ${to}, which is every calendar record this student has in that range.`,
+    partial,
+    to,
+  };
 }

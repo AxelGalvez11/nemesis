@@ -11,7 +11,7 @@
 //     it is still saved, and FLAGGED, because whether to drop one is the
 //     student's call, not the importer's.
 
-import type { CalendarEvent } from "./calendar-model";
+import { expandRecurringEvents, parseDateKey, type CalendarEvent } from "./calendar-model";
 
 export interface CalendarClash {
   incoming: CalendarEvent;
@@ -111,17 +111,45 @@ export interface CalendarIssueEventRef {
   kind: string;
   time?: string;
   course?: string;
+  /** This row is a repeating rule; `date` is one meeting of it. */
+  recurring?: true;
 }
 
+/**
+ * 🔴 `id` is ALWAYS a real `calendar_events` row id.
+ *
+ * `expandRecurringEvents` rewrites an occurrence's id to `<rowId>@<date>`, which
+ * exists nowhere in the database. A finding carrying one would hand the model a
+ * handle that every update and delete then fails on — so the series id wins and
+ * the occurrence's date travels in `date`, exactly as `eventsInWindow` does it.
+ */
 function issueRef(event: CalendarEvent): CalendarIssueEventRef {
   return {
     date: event.date,
-    id: event.id,
+    id: event.seriesId ?? event.id,
     kind: event.kind,
     title: event.title,
     ...(event.course ? { course: event.course } : {}),
     ...(event.time ? { time: event.time } : {}),
+    ...(event.seriesId ? { recurring: true as const } : {}),
   };
+}
+
+/**
+ * When the same finding recurs, because a repeating class meets the same clash
+ * every week.
+ *
+ * 🔴 This is why findings are collapsed rather than listed per meeting. A MWF
+ * 9 AM lecture clashing with a MWF 9 AM lab is ONE problem the student has to
+ * solve once — but expanded across a term it is ~45 identical rows, which
+ * floods the answer and pushes the tool result past its serialization budget.
+ * One finding, a count, and enough dates to recognise it.
+ */
+export interface RepeatSummary {
+  /** How many dates the same rows collide on. */
+  occurrences: number;
+  /** The first few, in order. */
+  dates: string[];
 }
 
 export interface ExactDuplicateGroup {
@@ -129,6 +157,7 @@ export interface ExactDuplicateGroup {
   title: string;
   /** 2+ rows with this exact title on this exact date — an import run twice. */
   events: CalendarIssueEventRef[];
+  repeats?: RepeatSummary;
 }
 
 export interface ProbableDuplicatePair {
@@ -136,6 +165,7 @@ export interface ProbableDuplicatePair {
   reason: string;
   first: CalendarIssueEventRef;
   second: CalendarIssueEventRef;
+  repeats?: RepeatSummary;
 }
 
 export interface ConflictingVersionsGroup {
@@ -151,6 +181,7 @@ export interface OverlapPair {
   date: string;
   first: CalendarIssueEventRef;
   second: CalendarIssueEventRef;
+  repeats?: RepeatSummary;
 }
 
 export interface CalendarIssues {
@@ -195,62 +226,154 @@ function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86_400_000);
 }
 
+/** How many colliding dates a collapsed finding names before it just counts. */
+const REPEAT_SAMPLE_DATES = 3;
+
+/** The real database row behind an event — a recurring occurrence answers with
+ *  its series, which is what makes two meetings of one class the same thing. */
+const rowIdOf = (event: CalendarEvent) => event.seriesId ?? event.id;
+
+/**
+ * Fold findings that name the same rows on different dates into one, keeping
+ * the earliest and recording how often it repeats. See RepeatSummary.
+ */
+function collapseRepeats<T extends { date: string; repeats?: RepeatSummary }>(
+  findings: readonly T[],
+  identityOf: (finding: T) => string,
+): T[] {
+  const groups = new Map<string, T[]>();
+  for (const finding of findings) {
+    const key = identityOf(finding);
+    groups.set(key, [...(groups.get(key) ?? []), finding]);
+  }
+  return [...groups.values()].map((group) => {
+    const ordered = [...group].sort((a, b) => a.date.localeCompare(b.date));
+    const first = ordered[0]!;
+    if (ordered.length === 1) return first;
+    return {
+      ...first,
+      repeats: {
+        dates: ordered.slice(0, REPEAT_SAMPLE_DATES).map((finding) => finding.date),
+        occurrences: ordered.length,
+      },
+    };
+  });
+}
+
+/** Both row ids of a pair, order-independent, so A-vs-B and B-vs-A are one. */
+const pairKey = (a: CalendarIssueEventRef, b: CalendarIssueEventRef) => [a.id, b.id].sort().join("|");
+
+/** The widest window these rows can speak about: every stated date, plus the
+ *  end of every repeating rule. Used when the caller names no window, so the
+ *  answer covers the same ground the rows themselves do. */
+function windowOf(events: readonly CalendarEvent[]): { from: string; to: string } | null {
+  if (events.length === 0) return null;
+  let from = events[0]!.date;
+  let to = events[0]!.date;
+  for (const event of events) {
+    if (event.date < from) from = event.date;
+    if (event.date > to) to = event.date;
+    if (event.recurrence && event.recurrence.until > to) to = event.recurrence.until;
+  }
+  return { from, to };
+}
+
 /**
  * Classified findings over whatever rows the caller loaded. Pure. Feed it the
  * COMPLETE range being reconciled — findings over a partial load are partial.
+ *
+ * 🔴 REPEATING RULES ARE EXPANDED INTO THE DATES THEY ACTUALLY MEET first
+ * (owner 2026-08-05, Phase 2 item 1). Until this, a rule was audited as its
+ * single stored row, so a one-off event landing on top of one meeting of a
+ * weekly class was invisible: the row said Monday 25 August, the lecture row
+ * said Monday 25 August *and then every Monday after it*, and only the first
+ * was ever compared. Everything a student would call a clash with class was
+ * missed.
+ *
+ * The findings are then collapsed back per pair of ROWS, because the student
+ * has one problem to fix, not one per week.
  */
-export function findCalendarIssues(events: readonly CalendarEvent[]): CalendarIssues {
+export function findCalendarIssues(
+  events: readonly CalendarEvent[],
+  window?: { from: string; to: string },
+): CalendarIssues {
+  const range = window ?? windowOf(events);
+  const occurrences = range
+    ? expandRecurringEvents([...events], parseDateKey(range.from), parseDateKey(range.to))
+        .filter((event) => event.date >= range.from && event.date <= range.to)
+    : [];
+
   // Exact duplicates: same normalized title on the same date.
   const byDateTitle = new Map<string, CalendarEvent[]>();
-  for (const event of events) {
+  for (const event of occurrences) {
     const key = `${event.date} ${normalizeTitle(event.title)}`;
     byDateTitle.set(key, [...(byDateTitle.get(key) ?? []), event]);
   }
-  const exact_duplicates: ExactDuplicateGroup[] = [...byDateTitle.values()]
-    .filter((group) => group.length > 1)
-    .map((group) => ({ date: group[0]!.date, events: group.map(issueRef), title: group[0]!.title }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+  const exact_duplicates = collapseRepeats(
+    [...byDateTitle.values()]
+      .filter((group) => group.length > 1)
+      .map((group): ExactDuplicateGroup => ({
+        date: group[0]!.date,
+        events: group.map(issueRef),
+        title: group[0]!.title,
+      })),
+    (group) => group.events.map((ref) => ref.id).sort().join("|"),
+  ).sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 
   // Probable duplicates and honest overlaps: pairwise within each date.
   const byDate = new Map<string, CalendarEvent[]>();
-  for (const event of events) byDate.set(event.date, [...(byDate.get(event.date) ?? []), event]);
-  const probable_duplicates: ProbableDuplicatePair[] = [];
-  const overlaps: OverlapPair[] = [];
+  for (const event of occurrences) byDate.set(event.date, [...(byDate.get(event.date) ?? []), event]);
+  const probableRaw: ProbableDuplicatePair[] = [];
+  const overlapsRaw: OverlapPair[] = [];
   for (const sameDay of byDate.values()) {
     for (let i = 0; i < sameDay.length; i += 1) {
       for (let j = i + 1; j < sameDay.length; j += 1) {
         const a = sameDay[i]!;
         const b = sameDay[j]!;
+        // Two meetings of ONE repeating rule are not two events.
+        if (rowIdOf(a) === rowIdOf(b)) continue;
         // Same-title pairs are already in exact_duplicates.
         if (normalizeTitle(a.title) === normalizeTitle(b.title)) continue;
         const reason = similarTitleReason(a.title, b.title);
         if (reason) {
-          probable_duplicates.push({ date: a.date, first: issueRef(a), reason, second: issueRef(b) });
+          probableRaw.push({ date: a.date, first: issueRef(a), reason, second: issueRef(b) });
           continue; // A likely-same event is not ALSO an "unrelated overlap".
         }
-        if (eventsOverlap(a, b)) overlaps.push({ date: a.date, first: issueRef(a), second: issueRef(b) });
+        if (eventsOverlap(a, b)) overlapsRaw.push({ date: a.date, first: issueRef(a), second: issueRef(b) });
       }
     }
   }
-  probable_duplicates.sort((a, b) => a.date.localeCompare(b.date));
-  overlaps.sort((a, b) => a.date.localeCompare(b.date));
+  const probable_duplicates = collapseRepeats(probableRaw, (pair) => pairKey(pair.first, pair.second))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const overlaps = collapseRepeats(overlapsRaw, (pair) => pairKey(pair.first, pair.second))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   // Conflicting versions: one named exam/assignment on more than one date.
   // Course is part of the identity when both rows carry one — "Exam 2" in two
   // different courses is two real exams, not a disagreement.
   const byIdentity = new Map<string, CalendarEvent[]>();
-  for (const event of events) {
+  for (const event of occurrences) {
     if (!VERSIONED_KINDS.has(event.kind)) continue;
     const key = `${normalizeTitle(event.title)} ${event.kind} ${(event.course ?? "").trim().toLowerCase()}`;
     byIdentity.set(key, [...(byIdentity.get(key) ?? []), event]);
   }
   const conflicting_versions: ConflictingVersionsGroup[] = [...byIdentity.values()]
     .flatMap((group) => {
+      // 🔴 DISTINCT ROWS, not distinct dates. Sources disagreeing means two
+      // rows claiming different dates for one exam. A single repeating rule
+      // also lands on many dates and is not a disagreement with anything —
+      // reporting it as one would send the student hunting for a second exam
+      // that does not exist.
+      const rows = [...new Set(group.map(rowIdOf))];
       const dates = [...new Set(group.map((event) => event.date))].sort();
-      if (dates.length < 2) return [];
+      if (rows.length < 2 || dates.length < 2) return [];
       if (daysBetween(dates[0]!, dates[dates.length - 1]!) > VERSION_SPAN_DAYS) return [];
+      const seen = new Set<string>();
       return [{
-        events: group.map(issueRef).sort((a, b) => a.date.localeCompare(b.date)),
+        events: group
+          .filter((event) => !seen.has(rowIdOf(event)) && seen.add(rowIdOf(event)))
+          .map(issueRef)
+          .sort((a, b) => a.date.localeCompare(b.date)),
         kind: group[0]!.kind,
         title: group[0]!.title,
       }];
