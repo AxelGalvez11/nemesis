@@ -120,3 +120,43 @@ test("a new test files under its matched course, else the top level — never 'G
   assert.equal(groupForNewArtifact("pharmacology exam practice questions", COURSES), "Pharmacology");
   assert.equal(groupForNewArtifact("mixed trivia round", COURSES), "");
 });
+
+// ── The course NUMBER is part of the name ───────────────────────────────────
+// Owner 2026-08-05, production re-acceptance: an upload whose filename and body
+// both said "PHCY 2114" sat in Inbox forever. Cause: contentWords tokenises on
+// /[a-z][a-z0-9'-]*/, which needs a token to START with a letter, so every
+// "PHCY nnnn" course collapsed to the single word {"phcy"}. All six of this
+// student's courses scored identically on any text mentioning one of them,
+// every comparison tied, and a tie is a refusal.
+
+const PHCY_COURSES = ["PHCY 1215", "PHCY 1218", "PHCY 2105", "PHCY 2109", "PHCY 2114", "PHCY 2119"];
+
+test("a course number picks one course out of a department that shares its prefix", () => {
+  const matched = matchCourse(
+    "PHCY 2114 Lecture 4 Antibiotic Resistance.md\nCourse: PHCY 2114. Beta-lactamases hydrolyse the beta-lactam ring.",
+    PHCY_COURSES,
+  );
+  assert.equal(matched?.course, "PHCY 2114");
+});
+
+test("each sibling course is reachable by its own number", () => {
+  for (const course of PHCY_COURSES) {
+    assert.equal(matchCourse(`Notes for ${course}, week 3`, PHCY_COURSES)?.course, course);
+  }
+});
+
+test("the shared prefix alone is still a refusal", () => {
+  // "PHCY" with no number cannot choose between six courses, and guessing is
+  // worse than Inbox — the student would never think to look in the wrong one.
+  assert.equal(matchCourse("some PHCY reading I did tonight", PHCY_COURSES), null);
+});
+
+test("a number that belongs to no course does not invent a match", () => {
+  assert.equal(matchCourse("PHCY 9999 mystery handout", PHCY_COURSES), null);
+});
+
+test("named courses without numbers still match on their words", () => {
+  const named = ["Advanced Contract Law", "Thermodynamics", "Art History"];
+  assert.equal(matchCourse("my contract law reading for advanced seminar", named)?.course, "Advanced Contract Law");
+  assert.equal(matchCourse("thermodynamics problem set", named)?.course, "Thermodynamics");
+});

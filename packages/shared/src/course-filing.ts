@@ -56,20 +56,48 @@ export function courseFolderSegment(value: string): string {
 const safeSegment = courseFolderSegment;
 
 /**
+ * Course CODES — "2114", "CS50", "MATH-221", "101".
+ *
+ * 🔴 THE COURSE NUMBER WAS INVISIBLE. contentWords tokenises with a pattern
+ * that requires every token to START with a letter, so
+ * "PHCY 2114" reduced to the single word {"phcy"} — and so did PHCY 2105, 2109,
+ * 2119, 1215 and 1218. Every course in a department scored exactly the same on
+ * any text mentioning it, every comparison was a tie, and a tie is a refusal.
+ * That is why nothing ever left Inbox: not a missing call, not a failed write,
+ * but a matcher that could not tell one PHCY course from another (owner
+ * 2026-08-05, production re-acceptance of the Inbox → course rule).
+ *
+ * A number is the most distinctive part of a course name — it is the part
+ * students actually use — so it is counted like any other distinctive token.
+ */
+function courseCodes(text: string): Set<string> {
+  const found = text.toLowerCase().match(/[a-z]*\d[a-z0-9-]*/g) ?? [];
+  return new Set(found);
+}
+
+/** Every distinctive token of a course name: its words AND its number. */
+export function courseTokens(course: string): Set<string> {
+  const tokens = contentWords(course, NAME_MIN_WORD);
+  for (const code of courseCodes(course)) tokens.add(code);
+  return tokens;
+}
+
+/**
  * How strongly a piece of text is about one course.
  *
  * A course name is often several words ("Introduction to Contract Law"), and
  * matching one of them is weak evidence while matching three is strong. So this
- * counts the course's OWN distinctive words that appear in the text, rather
+ * counts the course's OWN distinctive tokens that appear in the text, rather
  * than answering yes/no — that count is what lets two plausible courses be
  * compared instead of taking whichever was checked first.
  */
 export function courseScore(text: string, course: string): number {
   const asked = contentWords(text, NAME_MIN_WORD);
+  for (const code of courseCodes(text)) asked.add(code);
   if (asked.size === 0) return 0;
   let hits = 0;
-  for (const word of contentWords(course, NAME_MIN_WORD)) {
-    if (asked.has(word)) hits += 1;
+  for (const token of courseTokens(course)) {
+    if (asked.has(token)) hits += 1;
   }
   return hits;
 }
@@ -99,7 +127,7 @@ export function matchCourse(text: string, courses: readonly string[]): CourseMat
     .map((course) => course.trim())
     .filter((course) => course.length > 0)
     .map((course) => {
-      const words = contentWords(course, NAME_MIN_WORD).size;
+      const words = courseTokens(course).size;
       const score = courseScore(text, course);
       // Multi-word names need at least two hits; a one-word name needs its word.
       const enough = words <= 1 ? score >= 1 : score >= 2;
