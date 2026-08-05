@@ -25,6 +25,15 @@ export interface ResolvedSlidePictures {
   /** The formats those are in, upper-cased and de-duplicated, for the label —
    *  e.g. ["TIFF", "EMF"]. Empty when nothing is missing. */
   missingFormats: string[];
+  /** How many pictures are still being decoded. Counted apart from `missing`
+   *  so a slide never accuses itself of losing a picture that is on its way. */
+  pending: number;
+}
+
+export interface ResolveOptions {
+  /** True when this picture's format can be decoded, so its absence right now
+   *  means "not yet" rather than "never". */
+  decodable?: (target: string) => boolean;
 }
 
 /** Upper-case extension of an archive path, or "" when it has none. */
@@ -38,10 +47,12 @@ export function resolveSlidePictures(
   pictures: readonly SlidePictureRef[],
   images: ReadonlyMap<string, string>,
   max: number,
+  options: ResolveOptions = {},
 ): ResolvedSlidePictures {
   const drawable: string[] = [];
   const missingFormats: string[] = [];
   let missing = 0;
+  let pending = 0;
 
   for (const picture of pictures) {
     // A picture whose relationship never resolved is not a picture we can tell
@@ -50,6 +61,13 @@ export function resolveSlidePictures(
     const url = images.get(picture.target);
     if (url) {
       drawable.push(url);
+      continue;
+    }
+    // A format the reader can decode has not failed — it has not finished. The
+    // two must not share a label: "cannot be shown" about a picture that
+    // appears a moment later is worse than saying nothing.
+    if (options.decodable?.(picture.target)) {
+      pending += 1;
       continue;
     }
     missing += 1;
@@ -63,5 +81,6 @@ export function resolveSlidePictures(
     overflow: Math.max(0, drawable.length - limit),
     missing,
     missingFormats,
+    pending,
   };
 }

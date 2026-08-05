@@ -67,3 +67,37 @@ test("a picture with no extension is counted without inventing a format", () => 
   assert.equal(result.missing, 1);
   assert.deepEqual(result.missingFormats, []);
 });
+
+test("a picture still decoding is PENDING, not missing", () => {
+  // 🔴 The two must never share a label. TIFF is decoded asynchronously now, so
+  // between a slide appearing and its figure arriving there is a moment where
+  // the picture has no URL yet — saying "cannot be shown" there and then
+  // replacing it with the picture a moment later is worse than saying nothing.
+  const result = resolveSlidePictures(
+    [{ target: "ppt/media/image31.tiff" }, { target: "ppt/media/drawing.emf" }],
+    new Map(),
+    MAX,
+    { decodable: (target) => target.endsWith(".tiff") },
+  );
+  assert.equal(result.pending, 1);
+  assert.equal(result.missing, 1);
+  assert.deepEqual(result.missingFormats, ["EMF"], "the pending TIFF must not be named as missing");
+});
+
+test("once decoded, a pending picture becomes a shown one", () => {
+  const target = "ppt/media/image31.tiff";
+  const decodable = (name: string) => name.endsWith(".tiff");
+  const before = resolveSlidePictures([{ target }], new Map(), MAX, { decodable });
+  assert.deepEqual([before.shown.length, before.pending, before.missing], [0, 1, 0]);
+  const after = resolveSlidePictures([{ target }], new Map([[target, url("a")]]), MAX, { decodable });
+  assert.deepEqual([after.shown.length, after.pending, after.missing], [1, 0, 0]);
+});
+
+test("with no decodable formats, nothing is ever pending", () => {
+  // The default has to stay the old behaviour: callers that cannot decode
+  // anything must still get the honest "cannot be shown" count.
+  const result = resolveSlidePictures([{ target: "ppt/media/a.tiff" }], new Map(), MAX);
+  assert.equal(result.pending, 0);
+  assert.equal(result.missing, 1);
+  assert.deepEqual(result.missingFormats, ["TIFF"]);
+});

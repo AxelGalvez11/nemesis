@@ -53,9 +53,32 @@ const IMAGE_MIME: Record<string, string> = {
   svg: "image/svg+xml",
 };
 
+/** One entry's bytes, pulled from the original archive without inflating the
+ *  rest of it.
+ *
+ *  Pictures that must be DECODED rather than handed straight to the browser
+ *  need their bytes long after the archive was opened. Re-inflating a single
+ *  entry costs about 11 ms even inside a 124 MB deck — far cheaper than holding
+ *  a whole unzipped archive (274 MB, measured) alive for the whole session on
+ *  the chance that one picture is scrolled to. */
+export function unzipOne(bytes: ArrayBuffer, name: string): Uint8Array | null {
+  try {
+    const files = unzipSync(new Uint8Array(bytes), { filter: (file) => file.name === name });
+    return files[name] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** A picture inside the archive, as an object URL the page can show. Returns
  *  null for formats no browser draws (EMF, WMF, TIFF) rather than handing back
  *  a URL that renders as a broken image — the caller says so instead.
+ *
+ *  🔴 TIFF stays null HERE even though the reader can now decode it. This
+ *  function's contract is "a URL that is certain to draw"; a decode can fail,
+ *  and `resolveSlidePictures` depends on null meaning "say so". TIFF is handled
+ *  on its own asynchronous path (lib/reader/tiff-image.ts) and falls back to
+ *  the same honest placeholder when it cannot be decoded.
  *
  *  🔴 SVG is deliberately excluded even though browsers draw it: an SVG from an
  *  uploaded document is untrusted markup that can carry script, and an object
