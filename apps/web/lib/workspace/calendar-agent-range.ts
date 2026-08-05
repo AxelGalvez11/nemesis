@@ -106,6 +106,22 @@ export interface AgentCalendarEvent {
   recurring?: true;
 }
 
+/** How much of an event's note travels with it.
+ *
+ *  Owner 2026-08-05, acceptance test 3: every syllabus-imported event carries a
+ *  note that opens "From your syllabus: …" and runs for hundreds of characters
+ *  of surrounding page text. Ninety-two of them serialized past 20,000
+ *  characters on their own, which is what forced the tool result to be clipped.
+ *  A note is context, not content — enough to recognise the event is enough. */
+export const EVENT_NOTE_PREVIEW_CHARS = 90;
+
+/** First line-ish of a note, ellipsised, so the payload stays a list of events
+ *  rather than a transcript of the syllabus it came from. */
+export function notedPreview(note: string): string {
+  const flat = note.replace(/\s+/g, " ").trim();
+  return flat.length <= EVENT_NOTE_PREVIEW_CHARS ? flat : `${flat.slice(0, EVENT_NOTE_PREVIEW_CHARS).trimEnd()}…`;
+}
+
 /** Occurrences visible in [from, to], expanded and sorted. Recurring anchors
  *  whose own row date sits BEFORE the window still contribute their in-window
  *  occurrences — which is why the loader must fetch recurring rows from before
@@ -123,7 +139,7 @@ export function eventsInWindow(events: readonly CalendarEvent[], from: string, t
       ...(event.time ? { time: event.time } : {}),
       ...(event.endTime ? { end_time: event.endTime } : {}),
       ...(event.course ? { course: event.course } : {}),
-      ...(event.note ? { note: event.note } : {}),
+      ...(event.note ? { note: notedPreview(event.note) } : {}),
       ...(event.seriesId ? { recurring: true as const } : {}),
     }));
 }

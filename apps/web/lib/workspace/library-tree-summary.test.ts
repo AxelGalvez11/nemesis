@@ -59,3 +59,32 @@ test("🔴 clipping is never silent: the real count and a way forward ride the p
   assert.equal(listing.notes.length, FOLDER_EXPAND_NOTE_CAP);
   assert.match(listing.clipped_note ?? "", /205 notes/);
 });
+
+// ── Root notes must be reachable, not just countable ────────────────────────
+// Owner 2026-08-05, acceptance test 6: the summary said `root_notes: 3` and
+// offered no way to see them, so the agent guessed search terms until it ran
+// out of tool rounds and leaked markup instead of cleaning anything.
+
+test("the tree names the notes sitting loose at the root", () => {
+  const docs: LibraryTreeDoc[] = [
+    { kind: "note", path: "Loose one.md", title: "Loose one" },
+    { kind: "note", path: "Loose two.md", title: "Loose two" },
+    { kind: "note", path: "Pharmacy/Immunology.md", title: "Immunology" },
+  ];
+  const summary = summarizeLibraryTree(docs);
+  assert.equal(summary.root_notes, 2);
+  assert.deepEqual(summary.root_note_list.map((note) => note.title), ["Loose one", "Loose two"]);
+  assert.equal(summary.root_note_list.length, summary.root_notes, "a count you cannot resolve is worse than no count");
+});
+
+test("expanding the root explicitly lists the same notes and no folder's notes", () => {
+  const docs: LibraryTreeDoc[] = [
+    { kind: "note", path: "Loose one.md", title: "Loose one" },
+    { kind: "note", path: "Pharmacy/Immunology.md", title: "Immunology" },
+  ];
+  const listing = expandLibraryFolder(docs, "");
+  assert.equal(listing.folder, "");
+  assert.deepEqual(listing.notes.map((note) => note.title), ["Loose one"]);
+  assert.deepEqual(listing.subfolders.map((folder) => folder.path), ["Pharmacy"]);
+  assert.equal(listing.complete, true);
+});

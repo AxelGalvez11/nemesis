@@ -28,7 +28,7 @@
  *  research route, and a miss here is harmless (the conversation fallback
  *  rides the tools-capable model anyway). */
 const WORKSPACE_NOUN =
-  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|classes?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan)|workspace|courses?|semester|term)";
+  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|classes?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan|workload|queue)|workload|workspace|courses?|semester|term)";
 
 /** "my <workspace thing>" within one clause. `our` covers group-project talk. */
 const MY_WORKSPACE_RE = new RegExp(`\\b(?:my|our)\\b[^.?!\\n]{0,40}\\b${WORKSPACE_NOUN}\\b`, "i");
@@ -58,6 +58,38 @@ const BROWSE_RE = new RegExp(
   "i",
 );
 
+/** "What should I study?" — asking the workspace to PICK, which needs the due
+ *  counts and the exam dates, not a tutor.
+ *
+ *  Owner 2026-08-05, acceptance test 7: "Show me what I need to study." carried
+ *  no possessive, no organize verb and no "due", and bare `study` is a subject
+ *  verb rather than a product noun — so nothing here fired, LEARNING_PATTERN
+ *  then matched the word "study", and the turn went to the reasoner with ZERO
+ *  tools. Nemesis answered with immunology lecture text instead of what was due.
+ *
+ *  The shape is the whole point, and it is why this is not simply the word
+ *  "study" added to WORKSPACE_NOUN. It must match "what should I study" and miss
+ *  "teach me X", "explain X", "help me study for exam 2" and "what's the best
+ *  way to study organic chemistry" — those are tutoring, they belong on the
+ *  thinking model, and stealing them would make Nemesis worse at its main job.
+ *  The negative cases are pinned in workspace-intent.test.ts. */
+const STUDY_PLAN_RE =
+  /\bwhat\b[^.?!\n]{0,40}\bI\b[^.?!\n]{0,25}\b(?:study|studying|review|revise|revising|work on|focus on|catch up on|behind on|prioriti[sz]e)\b|\bshow me what I\b[^.?!\n]{0,25}\b(?:study|review)\b/i;
+
+/** "Get me ready for Exam 2" / "help me prepare for the OSCE" — planning against
+ *  a real dated thing in their workspace, so it needs the calendar and the deck
+ *  state before it can say anything useful.
+ *
+ *  Included deliberately: the owner's original brief named "get me ready for
+ *  Exam 2" as a target workflow, and it matched nothing. If it turns out to feel
+ *  more like tutoring than planning in daily use, delete this rule alone — the
+ *  nine phrasings the owner listed are all carried by STUDY_PLAN_RE and
+ *  DUE_ASK_RE above, and none of them depend on this one. */
+const PREPARE_RE = new RegExp(
+  `\\b(?:get me ready|getting me ready|prep(?:are)? me|help me prep(?:are)?|ready me)\\b[^.?!\\n]{0,30}\\bfor\\b[^.?!\\n]{0,30}\\b${WORKSPACE_NOUN}\\b`,
+  "i",
+);
+
 /**
  * True when answering well requires reading (or changing) this student's own
  * workspace. Pure and total — safe to call on every keystroke of routing.
@@ -65,5 +97,12 @@ const BROWSE_RE = new RegExp(
 export function detectsWorkspaceIntent(text: string): boolean {
   const compact = text.trim();
   if (!compact) return false;
-  return MY_WORKSPACE_RE.test(compact) || ORGANIZE_RE.test(compact) || DUE_ASK_RE.test(compact) || BROWSE_RE.test(compact);
+  return (
+    MY_WORKSPACE_RE.test(compact) ||
+    ORGANIZE_RE.test(compact) ||
+    DUE_ASK_RE.test(compact) ||
+    BROWSE_RE.test(compact) ||
+    STUDY_PLAN_RE.test(compact) ||
+    PREPARE_RE.test(compact)
+  );
 }

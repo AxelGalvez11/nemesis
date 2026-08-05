@@ -26,7 +26,12 @@ import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 // fits the window; the server valve's own caps remain the final authority.
 export const MAX_ATTACHMENT_CHARS = 60_000;
 export const MAX_TOTAL_CHARS = 150_000;
-export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
+/** Formats whose original is stored and filed as a Library source.
+ *  `.md`/`.txt` joined 2026-08-05: they were read inline and then thrown away,
+ *  so a student who pasted in a set of typed lecture notes got an answer and no
+ *  Library row — the file never existed as far as the workspace was concerned.
+ *  They take the same Inbox → course-refile path as the rest. */
+export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".md", ".txt"];
 /** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
  *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
  *  is still a HEIC. */
@@ -117,9 +122,11 @@ const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
 /** The mime the bucket allowlist expects per document kind. The browser's own
  *  file.type is usually right but arrives empty from some drag sources. */
 const DOCUMENT_MIME: Record<string, string> = {
-  ".pdf": "application/pdf",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".md": "text/markdown",
+  ".pdf": "application/pdf",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain",
 };
 
 /** Which storage bucket a persisted attachment lives in — images have their
@@ -513,20 +520,54 @@ export function chatDisplayText(text: string, files: readonly File[]): string {
   return `${text.trim()}${attachmentSummary(files)}`.trim();
 }
 
-/** Move a just-extracted chat source from Inbox to its matched course folder.
- *  Best-effort: filing is a bonus on top of an attachment that already saved,
- *  so every failure path is silence, never a broken send. */
-async function refileChatSource(sourceId: string, text: string): Promise<void> {
+/** Least extracted text worth running a course match against. Below this a
+ *  "match" is usually the filename echoing one word of a course title. */
+const MIN_REFILE_TEXT = 200;
+
+/** What actually happened to one source's filing. Returned, not whispered:
+ *  "organized" may only be claimed when `moved` came back with a folder. */
+export type RefileOutcome =
+  | { folder: string; sourceId: string; status: "moved" }
+  | { reason: string; sourceId: string; status: "failed" }
+  | { sourceId: string; status: "already_filed" | "no_match" | "too_little_text" };
+
+/**
+ * Move a just-extracted chat source from Inbox to its matched course folder.
+ *
+ * Owner 2026-08-05, acceptance test 9: an upload whose filename AND body both
+ * said "PHCY 2114" — a course Nemesis already knew from the calendar — sat in
+ * Inbox, and the whole session issued ZERO updates to library_sources. This used
+ * to be `void refileChatSource(...)`: abandoned promise, every branch silent, no
+ * way to tell "no course matched" apart from "it never ran". Now it is awaited
+ * and every branch names itself, so the difference is visible in one place.
+ *
+ * Still never throws — a filing miss must not break a send — but a failure is
+ * now a `failed` outcome with a reason rather than an empty catch.
+ */
+export async function refileChatSource(sourceId: string, text: string): Promise<RefileOutcome> {
+  if (text.trim().length < MIN_REFILE_TEXT) return { sourceId, status: "too_little_text" };
   try {
     const matched = matchCourse(text.slice(0, 20_000), await loadKnownCourses());
-    if (!matched) return;
-    await supabase
+    if (!matched) return { sourceId, status: "no_match" };
+    const folder = courseFolderSegment(matched.course);
+    const { data, error } = await supabase
       .from("library_sources")
-      .update({ folder_path: courseFolderSegment(matched.course) })
+      .update({ folder_path: folder })
       .eq("id", sourceId)
-      .eq("folder_path", UNSORTED_FOLDER); // never fight a folder the student (or librarian) already chose
-  } catch {
-    // Best-effort by design.
+      .eq("folder_path", UNSORTED_FOLDER) // never fight a folder the student (or librarian) already chose
+      .select("id");
+    if (error) {
+      console.warn("Library refile skipped:", error.message);
+      return { reason: error.message, sourceId, status: "failed" };
+    }
+    // No row came back: the guard above matched nothing, so it had already been
+    // filed somewhere deliberate. Not a failure, and not something to overwrite.
+    if (!data?.length) return { sourceId, status: "already_filed" };
+    return { folder, sourceId, status: "moved" };
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : "unknown";
+    console.warn("Library refile skipped:", reason);
+    return { reason, sourceId, status: "failed" };
   }
 }
 
@@ -577,19 +618,30 @@ export async function prepareChatAttachments(text: string, files: readonly File[
     return sourceId ? { ...source, sourceId } : source;
   });
 
-  // Filing upgrade, fire-and-forget: persist only knew the file NAME, so the
-  // stored source sat in Inbox. Now the text exists — a clear course match
-  // moves it under that course; no match leaves it honestly in Inbox rather
-  // than confidently misfiled (owner 2026-08-05). Never blocks the send.
-  for (const block of sourcedBlocks) {
-    if ("sourceId" in block && block.sourceId && block.content.length >= 200) {
-      void refileChatSource(block.sourceId, `${block.label}\n${block.content}`);
-    }
-  }
+  // Filing upgrade: persist only knew the file NAME, so the stored source sat in
+  // Inbox. Now the text exists — a clear course match moves it under that
+  // course; no match leaves it honestly in Inbox rather than confidently
+  // misfiled (owner 2026-08-05).
+  //
+  // AWAITED, not fire-and-forget. As `void refileChatSource(...)` this produced
+  // no database write at all in the production acceptance pass and left no trace
+  // explaining why. The cost is one short update running alongside extraction
+  // that has already finished; the gain is that the folder is settled before the
+  // turn is composed, so what the model is told about the file is true.
+  const refiled = await Promise.all(
+    sourcedBlocks.map((block) =>
+      "sourceId" in block && block.sourceId
+        ? refileChatSource(block.sourceId, `${block.label}\n${block.content}`)
+        : null,
+    ),
+  );
 
   return {
     attachments,
     displayText,
+    // Per-file filing outcomes, same order as `files`. Nothing may be described
+    // as organized unless the matching entry says "moved".
+    refiled: refiled.filter((outcome): outcome is RefileOutcome => outcome !== null),
     // Per-file extracted text, in the same order as `files` — the caller's
     // content gates (is this a syllabus?) read these instead of re-extracting.
     sources: sourcedBlocks,

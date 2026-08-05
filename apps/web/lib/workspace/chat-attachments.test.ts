@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE } from "@nemesis/shared";
 
-import { fitAttachmentBlocks, groupChatAttachments, partitionImportables, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { DOCUMENT_EXTENSIONS, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -171,4 +171,26 @@ test("attachment blocks carry the Library source id when the file is filed", () 
   assert.match(withId!, /\[n\]\(\?source=src-123\)/);
   const [plain] = fitAttachmentBlocks([{ content: "Slide text.", label: "lecture.pptx", type: "application/pptx" }]);
   assert.doesNotMatch(plain!, /Stored in the student's Library/);
+});
+
+// ── Typed notes are files too ───────────────────────────────────────────────
+// Owner 2026-08-05: a .md upload was read inline and then forgotten — no
+// library_sources row, so the Library never knew the file existed.
+
+test("markdown and plain text are stored and filed like any other document", () => {
+  for (const extension of [".md", ".txt"]) {
+    assert.ok(DOCUMENT_EXTENSIONS.includes(extension), `${extension} is still dropped on the floor`);
+  }
+  for (const extension of [".pdf", ".docx", ".pptx"]) {
+    assert.ok(DOCUMENT_EXTENSIONS.includes(extension), `${extension} regressed`);
+  }
+});
+
+test("refiling reports what happened instead of failing silently", async () => {
+  // Too little text never reaches the database — and says so, rather than
+  // looking identical to "no course matched" (which is what made the
+  // production miss impossible to diagnose from the outside).
+  const outcome = await refileChatSource("source-1", "short");
+  assert.equal(outcome.status, "too_little_text");
+  assert.equal(outcome.sourceId, "source-1");
 });

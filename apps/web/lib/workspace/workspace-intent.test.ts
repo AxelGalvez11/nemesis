@@ -46,6 +46,90 @@ test("🔴 workspace questions never lose their tools — not to news words, not
   }
 });
 
+// ── The ten production acceptance prompts, verbatim ─────────────────────────
+// Owner 2026-08-05, after the pass failed: "Pin all ten production acceptance
+// prompts verbatim as routing tests. Do not only test paraphrases." These are
+// copied character for character from the run, including the upload turn.
+
+const ACCEPTANCE_PROMPTS = [
+  "Help me organize my schedule.",
+  "What do I have today?",
+  "Show me everything this semester.",
+  "Check my calendar for duplicates or conflicting exam dates.",
+  "Show me how my Library is organized.",
+  "Clean up my Library.",
+  "Show me what I need to study.",
+  "Move the Beta Blockers (Lecture 7) deck into Pharmacology.",
+  "Save this lecture to my Library.",
+  "Organize everything for Pharmacology, make sure my calendar is accurate, and tell me what I should study next.",
+];
+
+test("🔴 all ten acceptance prompts reach the tools-capable model with tools attached", () => {
+  for (const prompt of ACCEPTANCE_PROMPTS) {
+    const decision = classifyChatRequest(prompt);
+    assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
+    assert.equal(
+      decision.workspaceIntent === true || decision.savesToWorkspace === true,
+      true,
+      `neither workspace flag set: ${prompt}`,
+    );
+    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
+    assert.equal(toolsAllowed(applyChatEffort(decision, "high")), true, `High dial stripped tools: ${prompt}`);
+    assert.equal(decision.searchWeb, false, `bought a web search it did not need: ${prompt}`);
+  }
+});
+
+// ── Asking what to study ────────────────────────────────────────────────────
+// Acceptance test 7 failed here: "Show me what I need to study." matched no
+// workspace rule, LEARNING_PATTERN then caught the word "study", and the turn
+// went to deepseek-reasoner with ZERO tools attached.
+
+test("🔴 asking what to study is a workspace question, not a tutoring one", () => {
+  for (const prompt of [
+    "what should I study",
+    "what do I need to study",
+    "show me what I need to study",
+    "what should I review",
+    "what do I need to review",
+    "what should I work on",
+    "what am I behind on",
+    "what is due for studying",
+    "show my study workload",
+    "What should I study next?",
+    "what should I focus on first",
+  ]) {
+    assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
+    const decision = classifyChatRequest(prompt);
+    assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
+    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
+  }
+});
+
+test("🔴 tutoring keeps the thinking model — the study rule matches a SHAPE, not the word", () => {
+  // If this ever goes red, Nemesis has started answering "teach me X" without
+  // its reasoner, which is a straight downgrade of the thing it is mainly for.
+  for (const prompt of [
+    "teach me about biology",
+    "explain beta blockers",
+    "help me study for exam 2",
+    "study guide for pharmacokinetics",
+    "what is the best way to study organic chemistry",
+    "what do I need to know about beta blockers",
+    "I need to study harder",
+    "review the causes of the French Revolution",
+  ]) {
+    assert.equal(detectsWorkspaceIntent(prompt), false, `false positive: ${prompt}`);
+  }
+});
+
+test("getting ready for a dated thing reads the workspace first", () => {
+  // Named in the owner's original brief as a target workflow. Delete PREPARE_RE
+  // alone if it ever feels more like tutoring than planning.
+  for (const prompt of ["get me ready for Exam 2", "help me prepare for the OSCE exam"]) {
+    assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
+  }
+});
+
 test("an explicit research ask keeps the research pipeline, workspace words or not", () => {
   const decision = classifyChatRequest("Write a literature review with peer-reviewed sources about urban heat islands");
   assert.equal(decision.route, "research");
