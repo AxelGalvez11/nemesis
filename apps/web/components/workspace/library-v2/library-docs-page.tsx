@@ -55,34 +55,10 @@ import type { LibraryTreeReveal } from "../library/library-tree-view";
 import { DocsNav } from "./docs-nav";
 import { LibrarySourceReader } from "@/components/workspace/reader/library-source-reader";
 
+import { usePersistentFlag } from "@/lib/workspace/use-persistent-flag";
+
 import { DocsToc } from "./docs-toc";
 import { NoteArticle, type NoteStudyAction } from "./note-article";
-
-/** A per-browser boolean that survives reloads. SSR renders the fallback;
- *  the stored value arrives on mount, like every localStorage-backed pref. */
-function usePersistentFlag(key: string, fallback: boolean): [boolean, (next: boolean) => void] {
-  const [value, setValue] = useState(fallback);
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(key);
-      if (stored !== null) setValue(stored === "1");
-    } catch {
-      // Storage can be unavailable (private mode) — the default stands.
-    }
-  }, [key]);
-  const update = useCallback(
-    (next: boolean) => {
-      setValue(next);
-      try {
-        window.localStorage.setItem(key, next ? "1" : "0");
-      } catch {
-        // Not persisted, but still applied for this visit.
-      }
-    },
-    [key],
-  );
-  return [value, update];
-}
 
 export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null } = {}) {
   const router = useRouter();
@@ -327,21 +303,31 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
 
   const missingRequested = Boolean(requestedPath) && !note && status === "loaded";
 
+  // Is the sidebar panel on screen right now? Locked always, or peeked on a
+  // wide window. It PUSHES the page when it is, so the left inset that keeps the
+  // article clear of the floating "Library" word must only apply when it is NOT.
+  const sidebarShown = sidebarLocked || ((peek || navHeld) && !narrowViewport);
+
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-bg-chrome)">
-      {(sidebarLocked || ((peek || navHeld) && !narrowViewport)) && (
+      {sidebarShown && (
         <>
           {sidebarLocked && narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
           {/* The panel is ALWAYS the same rounded box (owner 2026-08-04:
               "the side bar should always be like this, dont make it not
-              round"). Locked, it sits in the row with a small gutter and
-              pushes the page; unlocked-but-hovered it floats OVER the page
-              (Notion-style peek), kept alive while the pointer stays on it. */}
+              round").
+              🔴 It also always PUSHES the page rather than covering it — locked
+              or peeked (owner 2026-08-05: "make the library sidebar (when in
+              autohide mode) push to the contents so that it does not sit above
+              the page"). The peek used to be `absolute … z-40`, which put it on
+              top of whatever you were reading. Only the narrow-viewport drawer
+              still overlays, because at that width there is no room to push
+              into. */}
           <div
             className={cn(
-              sidebarLocked && !narrowViewport && "flex shrink-0 p-2 pl-2.5 pt-[calc(var(--titlebar-height)+0.5rem)]",
-              sidebarLocked && narrowViewport && "absolute inset-y-0 left-0 z-40 p-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
-              !sidebarLocked && "library-peek-panel absolute bottom-2 left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-40",
+              !narrowViewport && "flex shrink-0 p-2 pl-2.5 pt-[calc(var(--titlebar-height)+0.5rem)]",
+              narrowViewport && "absolute inset-y-0 left-0 z-40 p-2 pt-[calc(var(--titlebar-height)+0.5rem)]",
+              !sidebarLocked && "library-peek-panel",
             )}
             data-testid={sidebarLocked ? "library-sidebar-locked" : "library-sidebar-peek"}
             onMouseEnter={!sidebarLocked ? () => handleLibraryHover(true) : undefined}
@@ -408,7 +394,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
             — that is the point of rendering the reader from here. */}
         {sourceId !== null ? (
           <LibrarySourceReader
-            className={cn(autoHide && !sidebarLocked && !narrowViewport && "pl-24")}
+            className={cn(autoHide && !sidebarShown && !narrowViewport && "pl-24")}
             onBack={goHome}
             onOpenNote={openPath}
             sourceId={sourceId}
@@ -421,7 +407,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
         <div
           className={cn(
             "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain",
-            autoHide && !sidebarLocked && !narrowViewport && "pl-24",
+            autoHide && !sidebarShown && !narrowViewport && "pl-24",
           )}
           ref={scrollRef}
         >
