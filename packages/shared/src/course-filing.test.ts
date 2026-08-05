@@ -160,3 +160,41 @@ test("named courses without numbers still match on their words", () => {
   assert.equal(matchCourse("my contract law reading for advanced seminar", named)?.course, "Advanced Contract Law");
   assert.equal(matchCourse("thermodynamics problem set", named)?.course, "Thermodynamics");
 });
+
+// ── The tokenizer regression, named the way the owner named it ───────────────
+// Owner 2026-08-05: "PHCY 2114 must uniquely match PHCY 2114 · PHCY 1215 must
+// not tie with PHCY 2114 · Bare PHCY or 'some PHCY reading' must remain
+// ambiguous and stay in Inbox." The tests above cover the same ground by
+// property; these three state each requirement on its own so a future change
+// that breaks one is reported in the owner's own words.
+
+test("🔴 PHCY 2114 uniquely matches PHCY 2114", () => {
+  assert.equal(matchCourse("PHCY 2114", PHCY_COURSES)?.course, "PHCY 2114");
+});
+
+test("🔴 PHCY 1215 does not tie with PHCY 2114", () => {
+  assert.equal(matchCourse("PHCY 1215", PHCY_COURSES)?.course, "PHCY 1215");
+  // The scores are what actually tied. Before the fix `contentWords` required
+  // every token to begin with a letter, so both course names reduced to the
+  // single token {"phcy"} and scored 1 against ANY text mentioning either —
+  // and a tie is a refusal, so nothing numbered could ever leave Inbox.
+  assert.ok(
+    courseScore("PHCY 1215", "PHCY 1215") > courseScore("PHCY 1215", "PHCY 2114"),
+    "the course number is invisible to the matcher again",
+  );
+});
+
+test("🔴 bare PHCY stays ambiguous and stays in Inbox", () => {
+  assert.equal(matchCourse("PHCY", PHCY_COURSES), null);
+  assert.equal(matchCourse("some PHCY reading", PHCY_COURSES), null);
+  assert.equal(folderForNewItem("note", "some PHCY reading", PHCY_COURSES), FALLBACK_FOLDERS.note);
+});
+
+test("the real production filename files under its course", () => {
+  // Verbatim from the accepted re-acceptance run: this upload landed in
+  // `PHCY 2114` at 18:05:59 where its predecessor had landed in Inbox.
+  assert.equal(
+    folderForNewItem("note", "Antimicrobial Stewardship (PHCY 2114 L5).md", PHCY_COURSES),
+    "PHCY 2114/Notes",
+  );
+});
