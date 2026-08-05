@@ -54,4 +54,28 @@ jobs:
           SB_URL: https://qyjmivntajbigjswhahb.supabase.co
           SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
           ANON_KEY: ${{ secrets.ANON_KEY }}
-        run: deno run --allow-net --allow-env scripts/guardrail-suite.ts
+        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts
+
+      # 🔴 THE ACCOUNT LEAK (task #59). 42 CI accounts had piled up in the auth
+      # table, and every one came from a run that never finished — each has a
+      # PARTIAL generated_answers count where a whole run makes 51. The newest
+      # was created eleven seconds before `cancel-in-progress` killed its run.
+      # Teardown was never broken; it lived inside the dying process.
+      #
+      # `always()` still schedules a step after a cancellation, which is the only
+      # window there is. The suite writes its account id to guardrail-run.json
+      # the moment the account exists and deletes the file once it has cleaned up
+      # after itself, so on a healthy run this step finds nothing and says so.
+      #
+      # It cannot delete anything it lacks provenance for (the shared
+      # acceptance-cleanup gate), and it never fails the job — a red cleanup step
+      # on a green suite would be its own false alarm. Two minutes is plenty for
+      # two HTTP calls, and caps the documented `always()` hang risk.
+      - name: Remove the run's test account, even if the run was cancelled
+        if: always()
+        timeout-minutes: 2
+        env:
+          SB_URL: https://qyjmivntajbigjswhahb.supabase.co
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts --cleanup

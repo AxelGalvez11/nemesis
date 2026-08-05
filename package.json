@@ -12,11 +12,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "web:smoke": "pnpm --filter @pharmaorb/web smoke",
-    "guardrail": "deno run --allow-net --allow-env scripts/guardrail-suite.ts",
+    "guardrail": "deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "guardrail:cleanup": "deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts --cleanup"
   },
   "devDependencies": {
     "turbo": "^2.5.0",
