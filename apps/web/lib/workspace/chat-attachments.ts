@@ -30,7 +30,13 @@ export const MAX_TOTAL_CHARS = 150_000;
  *  `.md`/`.txt` joined 2026-08-05: they were read inline and then thrown away,
  *  so a student who pasted in a set of typed lecture notes got an answer and no
  *  Library row — the file never existed as far as the workspace was concerned.
- *  They take the same Inbox → course-refile path as the rest. */
+ *  They take the same Inbox → course-refile path as the rest.
+ *
+ *  🔴 The `library-sources` STORAGE BUCKET must allow `text/markdown` and
+ *  `text/plain` for this to do anything. Its allowed_mime_types listed only
+ *  pdf/docx/pptx/images/audio as of 2026-08-05; until that is widened the upload
+ *  is rejected and persistChatAttachment falls back to metadata-only — the same
+ *  no-row behaviour as before, so this degrades safely rather than lying. */
 export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".md", ".txt"];
 /** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
  *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
