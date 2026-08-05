@@ -17,6 +17,12 @@
  */
 
 import { detectViolations } from "../supabase/functions/ask/safety.ts";
+import {
+  assertCleanupSafe,
+  cleanupReport,
+  planAcceptanceCleanup,
+  type RunManifest,
+} from "../packages/shared/src/acceptance-cleanup.ts";
 
 const SB_URL = Deno.env.get("SB_URL");
 const SERVICE_KEY = Deno.env.get("SERVICE_KEY");
@@ -29,6 +35,11 @@ if (!SB_URL || !SERVICE_KEY || !ANON_KEY) {
 let breaches = 0;
 let JWT: string | undefined;
 let userId: string | undefined;
+let userEmail: string | undefined;
+
+/** Stamped before anything is created, so "after the run started" means something. */
+const RUN_ID = crypto.randomUUID().slice(0, 8);
+const RUN_STARTED_AT = new Date().toISOString();
 
 interface AskResponse {
   plain_english_summary: string;
@@ -285,8 +296,58 @@ const CASES: Case[] = [
   },
 ];
 
+/**
+ * Ask the database — not this script's memory — when the CI user was created.
+ *
+ * The whole point of the provenance gate is that the run's own recollection is
+ * not evidence, so the timestamp that authorizes the delete is read back off the
+ * row at teardown time rather than kept from the create call.
+ */
+async function userCreatedAt(id: string): Promise<string | null> {
+  try {
+    const row = await fetch(`${SB_URL}/auth/v1/admin/users/${id}`, {
+      headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` },
+    }).then((r) => (r.ok ? r.json() : null));
+    const created = row?.created_at ?? row?.user?.created_at;
+    return typeof created === "string" ? created : null;
+  } catch {
+    return null;
+  }
+}
+
 async function teardown() {
   if (!userId) return;
+
+  // 🔴 THE PROVENANCE GATE (packages/shared/src/acceptance-cleanup.ts). This
+  // teardown deletes a live auth user and every row that cascades from it, on a
+  // real Supabase project. It runs only if the database agrees the account was
+  // created after this run started — a `userId` that somehow points at a real
+  // person is refused rather than deleted, and the run says so instead.
+  const manifest: RunManifest = {
+    runId: RUN_ID,
+    startedAt: RUN_STARTED_AT,
+    created: [{ id: userId, kind: "auth_user", label: userEmail ?? userId }],
+    touched: [],
+  };
+  const plan = planAcceptanceCleanup(manifest, [{
+    id: userId,
+    kind: "auth_user",
+    label: userEmail ?? userId,
+    createdAt: await userCreatedAt(userId),
+  }]);
+  try {
+    assertCleanupSafe(plan);
+  } catch (e) {
+    console.error(`teardown REFUSED: ${(e as Error).message}`);
+    breaches++;
+    return;
+  }
+  if (plan.remove.length === 0) {
+    console.warn(`teardown: no provenance for userId=${userId}, nothing deleted — orphaned on purpose.`);
+    console.warn(cleanupReport(plan));
+    return;
+  }
+
   try {
     const delRows = await fetch(`${SB_URL}/rest/v1/generated_answers?user_id=eq.${userId}`, {
       method: "DELETE",
@@ -308,7 +369,8 @@ async function teardown() {
 }
 
 async function main() {
-  const email = `guardrail+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
+  const email = `guardrail+${RUN_ID}@nemesis.test`;
+  userEmail = email;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

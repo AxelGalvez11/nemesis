@@ -56,6 +56,12 @@ channel and the student watched it paint in. Fixed three ways: the model is told
 budget is larger for workspace turns, and a sanitizer withholds anything after an
 unclosed marker while streaming.
 
+**Cleaning up afterwards is its own hazard.** Check 11 renames a folder and renames
+it back. It picked a folder the owner had made the day before, and the rename left
+every row inside it carrying a fresh `updated_at` — which I then read as "the pass
+made this" and said so. See [ACCEPTANCE-CLEANUP.md](./ACCEPTANCE-CLEANUP.md); the
+rule is now code, and nothing gets deleted on a timestamp alone.
+
 **The course number was invisible.** The tokenizer required every token to start with
 a letter, so `PHCY 2114` reduced to `{phcy}` — and so did the other five PHCY courses.
 Every comparison tied, and a tie is a refusal, so nothing numbered could ever leave
