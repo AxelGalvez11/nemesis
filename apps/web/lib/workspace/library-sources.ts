@@ -116,7 +116,11 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
   },
   {
     id: "preview-src-brief",
-    folderPath: "Constitutional law",
+    // In a SUBFOLDER on purpose: library-sources.test.ts proves a parent folder
+    // does not inherit its children's files, and it uses these fixtures as its
+    // data — a file filed directly at "Constitutional law" would make that
+    // assertion pass for the wrong reason, or fail.
+    folderPath: "Constitutional law/Statutory interpretation",
     fileName: "Reading a document as a document.docx",
     kind: "document",
     sizeBytes: 1_790,

@@ -44,7 +44,7 @@ export default function ReaderPreviewPage() {
             linkedNotes={[
               { id: "preview-note-1", title: "Commerce power — the three tests", path: "Constitutional law/Commerce power.md" },
             ]}
-            onSendToChat={(prompt) => window.alert(`Would send to chat:\n\n${prompt}`)}
+            onSendToChat={(prompt, files) => window.alert(`Would send to chat, with ${files.length} attachment(s):\n\n${prompt}`)}
             source={source}
           />
         )}

@@ -56,8 +56,9 @@ export interface DocumentReaderProps {
   linkedNotes?: readonly LinkedNote[];
   onOpenNote?: (path: string) => void;
   onBack?: () => void;
-  /** Fires with the message an AI action produced; the host sends it. */
-  onSendToChat: (prompt: string) => void;
+  /** Fires with the message an AI action produced and the document itself, as
+   *  an attachment. The host sends both. */
+  onSendToChat: (prompt: string, files: File[]) => void;
   /** "dialog" trims the chrome for the chat popup: no back button, no rails. */
   variant?: "page" | "dialog";
 }
@@ -219,18 +220,43 @@ export function DocumentReader({
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, [source.kind, unit, unitCount]);
 
+  // 🔴 THE DOCUMENT RIDES ALONG WITH EVERY ACTION. Naming the file in the
+  // prompt is not enough to ground an answer: stored originals are never
+  // chunked or embedded (only NOTES are indexed — see
+  // docs/document-intelligence.md §8), so the brain cannot look this file up by
+  // name. Without the text attached, "Make flashcards from Week 4 handout.pdf"
+  // produces something invented that reads as though it worked.
+  //
+  // The reader already holds the text it extracted, so this costs nothing extra
+  // and carries the measured unit markers with it. The chat's own attachment
+  // budget decides how much of a long document survives.
+  const documentAttachment = useCallback((): File[] => {
+    const parts =
+      unitTexts.length > 0
+        ? unitTexts.map((page) => `## ${unitLabel} ${page.unit}\n\n${page.text}`)
+        : docxText
+          ? [docxText]
+          : [];
+    if (parts.length === 0) return [];
+    const safeName = source.fileName.replace(/[\\/:]/g, "-");
+    return [new File([parts.join("\n\n")], `${safeName}.txt`, { type: "text/plain" })];
+  }, [docxText, source.fileName, unitLabel, unitTexts]);
+
   const runAction = useCallback(
     (action: ReaderActionId) => {
       const prompt = readerActionPrompt(action, {
         fileName: source.fileName,
         unitLabel,
-        unit: selection?.unit ?? (region ? null : unitCount > 1 ? unit : null),
+        // Only a SELECTION has a measured location. A whole-document action
+        // must not carry "(page 1)" just because that is what is on screen —
+        // it reads as "flashcards from page 1" and is simply untrue.
+        unit: selection?.unit ?? null,
         selection: selection?.text ?? null,
         region: region?.region ?? null,
       });
-      onSendToChat(prompt);
+      onSendToChat(prompt, documentAttachment());
     },
-    [onSendToChat, region, selection, source.fileName, unit, unitCount, unitLabel],
+    [documentAttachment, onSendToChat, region, selection, source.fileName, unitLabel],
   );
 
   const onPdfReady = useCallback((payload: PdfReadyPayload) => {
@@ -317,8 +343,8 @@ export function DocumentReader({
         onQueryChange={setQuery}
         onRotate={source.kind === "image" ? () => setRotation((current) => (current + 90) % 360) : undefined}
         onStepMatch={stepToMatch}
-        onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        onTogglePanel={() => setPanelOpen((open) => !open)}
+        onToggleSidebar={isDialog ? undefined : () => setSidebarOpen((open) => !open)}
+        onTogglePanel={isDialog ? undefined : () => setPanelOpen((open) => !open)}
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}
         onZoomOut={() => setZoom({ kind: "fixed", scale: zoomOut(scale) })}

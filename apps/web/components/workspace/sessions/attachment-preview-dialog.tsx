@@ -55,8 +55,8 @@ export function AttachmentPreviewDialog({ attachment, onClose }: { attachment: S
   }, [attachment]);
 
   const sendToChat = useCallback(
-    (prompt: string) => {
-      seedChatIntent({ files: [], prompt });
+    (prompt: string, files: File[]) => {
+      seedChatIntent({ files, prompt });
       onClose();
       router.push("/sessions");
     },

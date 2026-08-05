@@ -67,8 +67,8 @@ export function LibrarySourceReader({ sourceId }: { sourceId: string }) {
   );
 
   const sendToChat = useCallback(
-    (prompt: string) => {
-      seedChatIntent({ files: [], prompt });
+    (prompt: string, files: File[]) => {
+      seedChatIntent({ files, prompt });
       router.push("/sessions");
     },
     [router],

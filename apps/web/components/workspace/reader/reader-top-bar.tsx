@@ -48,9 +48,10 @@ export interface ReaderTopBarProps {
   onOpenOriginal: () => void;
   onBack?: () => void;
   sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  /** Omitted where there is no rail to toggle (the chat popup). */
+  onToggleSidebar?: () => void;
   panelOpen: boolean;
-  onTogglePanel: () => void;
+  onTogglePanel?: () => void;
 }
 
 export function ReaderTopBar(props: ReaderTopBarProps) {
@@ -103,19 +104,21 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </button>
       )}
 
-      <button
-        aria-label={sidebarOpen ? "Hide contents" : "Show contents"}
-        aria-pressed={sidebarOpen}
-        className={cn(
-          "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-          sidebarOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
-        )}
-        onClick={onToggleSidebar}
-        title={sidebarOpen ? "Hide contents" : "Show contents"}
-        type="button"
-      >
-        <Codicon name="layout-sidebar-left" size="0.9rem" />
-      </button>
+      {onToggleSidebar && (
+        <button
+          aria-label={sidebarOpen ? "Hide contents" : "Show contents"}
+          aria-pressed={sidebarOpen}
+          className={cn(
+            "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
+            sidebarOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
+          )}
+          onClick={onToggleSidebar}
+          title={sidebarOpen ? "Hide contents" : "Show contents"}
+          type="button"
+        >
+          <Codicon name="layout-sidebar-left" size="0.9rem" />
+        </button>
+      )}
 
       <div className="mr-auto flex min-w-0 shrink flex-col leading-tight">
         <h1 className="truncate text-[0.8125rem] font-semibold text-foreground" title={fileName}>
@@ -235,19 +238,21 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </div>
       )}
 
-      <button
-        aria-label={panelOpen ? "Hide the side panel" : "Show the side panel"}
-        aria-pressed={panelOpen}
-        className={cn(
-          "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-          panelOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
-        )}
-        onClick={onTogglePanel}
-        title={panelOpen ? "Hide the side panel" : "Show the side panel"}
-        type="button"
-      >
-        <Codicon name="layout-sidebar-right" size="0.9rem" />
-      </button>
+      {onTogglePanel && (
+        <button
+          aria-label={panelOpen ? "Hide the side panel" : "Show the side panel"}
+          aria-pressed={panelOpen}
+          className={cn(
+            "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
+            panelOpen ? "text-foreground" : "text-(--ui-text-tertiary)",
+          )}
+          onClick={onTogglePanel}
+          title={panelOpen ? "Hide the side panel" : "Show the side panel"}
+          type="button"
+        >
+          <Codicon name="layout-sidebar-right" size="0.9rem" />
+        </button>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
