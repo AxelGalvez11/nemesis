@@ -50,5 +50,5 @@ Deno.test("names and pitches match the store listing", () => {
   assertEquals(paywallPlanName("plus_monthly"), "Nemesis Plus");
   assertEquals(paywallPlanName("pro_monthly"), "Nemesis Pro");
   assertEquals(paywallPlanPitch("pro_monthly"), "70 recording hours a month and the highest AI limits");
-  assertEquals(paywallPlanPitch("plus_monthly"), "20 recording hours a month and higher AI limits");
+  assertEquals(paywallPlanPitch("plus_monthly"), "30 recording hours a month and higher AI limits");
 });

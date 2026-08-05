@@ -175,6 +175,11 @@ const RECORDING_COPY_FILES = [
   "apps/web/components/workspace/shell/billing-settings.tsx",
   "apps/web/components/workspace/onboarding/step-upgrade.tsx",
   "landing/app/pricing/page.tsx",
+  // The phone paywall counts. It says "20 recording hours a month" rather than
+  // "20 hours of lecture recording", which is why a search for the web wording
+  // missed it on 2026-08-05 and left the phone advertising the old allowance —
+  // hence the deliberately loose regex below rather than a fixed phrase.
+  "apps/mobile/src/lib/purchases-logic.ts",
 ] as const;
 
 test("advertised recording allowances match the plan caps, everywhere they are advertised", () => {
@@ -182,11 +187,13 @@ test("advertised recording allowances match the plan caps, everywhere they are a
   let claims = 0;
   for (const path of RECORDING_COPY_FILES) {
     const source = repoFile(path);
-    for (const [claim, hours] of source.matchAll(/(\d[\d,]*) hours/g)) {
+    // Up to two words may sit between the number and the unit, so "20 hours",
+    // "20 recording hours" and "20 hours of recording" all get caught.
+    for (const [claim, hours] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}hours\b/g)) {
       claims += 1;
       assert.ok(paidHours.has(Number(hours!.replace(/,/g, ""))), `${path} advertises "${claim}", which is no plan's cap`);
     }
-    for (const [claim, minutes] of source.matchAll(/(\d[\d,]*) minutes/g)) {
+    for (const [claim, minutes] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}minutes\b/g)) {
       claims += 1;
       assert.equal(
         Number(minutes!.replace(/,/g, "")),
