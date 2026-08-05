@@ -23,12 +23,17 @@
 // belongs to no product surface and must not fire.
 
 /** Things that live in the student's workspace, in the words students use.
+ *
+ *  🔴 Mind the plural. `classes?` means "classe" plus an optional "s" — it never
+ *  matches the singular "class", so "my class on Tuesday is cancelled" carried
+ *  no workspace intent at all until 2026-08-05. Found in production. Anything
+ *  whose plural adds "es" needs `word(?:es)?`, not `wordes?`.
  *  Product surfaces and academic containers only — never subject matter.
  *  "sources" is deliberately absent: "peer-reviewed sources" belongs to the
  *  research route, and a miss here is harmless (the conversation fallback
  *  rides the tools-capable model anyway). */
 const WORKSPACE_NOUN =
-  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|classes?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan|workload|queue)|workload|workspace|courses?|semester|term)";
+  "(?:calendars?|schedules?|planner|agenda|timetable|deadlines?|due dates?|exams?|quiz(?:zes)?|tests?|class(?:es)?|lectures?|assignments?|labs?|rotations?|library|notes?|folders?|files?|uploads?|recordings?|decks?|flash\\s?cards?|cards?|mind\\s?maps?|slides?|study (?:page|list|sets?|material|plan|workload|queue)|workload|workspace|courses?|semester|term)";
 
 /** "my <workspace thing>" within one clause. `our` covers group-project talk. */
 const MY_WORKSPACE_RE = new RegExp(`\\b(?:my|our)\\b[^.?!\\n]{0,40}\\b${WORKSPACE_NOUN}\\b`, "i");
@@ -90,6 +95,41 @@ const PREPARE_RE = new RegExp(
   "i",
 );
 
+/** Things a student asks Nemesis to CREATE. Wider than WORKSPACE_NOUN because
+ *  the creation verb in front of it is doing most of the work: "what is the
+ *  event horizon" is a physics question, but "add an event" never is. These
+ *  extras are only ever consulted with a creation verb attached. */
+const CREATABLE_NOUN = `(?:${WORKSPACE_NOUN}|events?|reminders?|appointments?|meetings?|sessions?|entr(?:y|ies))`;
+
+/**
+ * "Add an exam on 15 September", "create a note about today's lecture",
+ * "schedule a lab for Friday" — asking Nemesis to PUT SOMETHING IN the
+ * workspace.
+ *
+ * 🔴 FOUND IN PRODUCTION 2026-08-05, during the Phase 2 acceptance pass. Every
+ * rule above matches a request to READ, ORGANISE or CHOOSE. Nothing matched a
+ * request to CREATE unless the student happened to say "my" — so "Add an exam
+ * called … on 2026-09-15 from 13:30 to 14:30." went to deepseek-reasoner with
+ * ZERO tools, and Nemesis replied:
+ *
+ *   "I can't add events to your calendar from this environment — I have no
+ *    access to it right now, and nothing has been scheduled."
+ *
+ * That is the calendar incident this whole module exists to prevent, word for
+ * word, reached through the one verb nobody tested. "Create a note about
+ * today's lecture" and "Schedule a lab on Friday at 2pm" failed the same way.
+ *
+ * The noun anchor is what keeps this honest: the verb must be aimed at
+ * something the workspace actually holds. "Make a table comparing ACE
+ * inhibitors and ARBs" and "create a mnemonic for the cranial nerves" are
+ * writing, not filing, and they stay on the thinking model. Those negatives are
+ * pinned in workspace-intent.test.ts.
+ */
+const CREATE_RE = new RegExp(
+  `\\b(?:add|create|schedule|book|set up|start|make|save|log|put|jot down|write down)\\b[^.?!\\n]{0,60}\\b${CREATABLE_NOUN}\\b`,
+  "i",
+);
+
 /**
  * True when answering well requires reading (or changing) this student's own
  * workspace. Pure and total — safe to call on every keystroke of routing.
@@ -100,6 +140,7 @@ export function detectsWorkspaceIntent(text: string): boolean {
   return (
     MY_WORKSPACE_RE.test(compact) ||
     ORGANIZE_RE.test(compact) ||
+    CREATE_RE.test(compact) ||
     DUE_ASK_RE.test(compact) ||
     BROWSE_RE.test(compact) ||
     STUDY_PLAN_RE.test(compact) ||

@@ -193,3 +193,78 @@ test("learning and news questions keep their original routes", () => {
   assert.equal(classifyChatRequest("who won the game today").route, "current");
   assert.equal(classifyChatRequest("what's the latest news").model, "deepseek-reasoner");
 });
+
+// ── Asking Nemesis to CREATE something ──────────────────────────────────────
+//
+// 🔴 FOUND IN PRODUCTION during the Phase 2 acceptance pass, 2026-08-05. Every
+// other rule in this module matches a request to READ, ORGANISE or CHOOSE.
+// Nothing matched a request to CREATE unless the student said "my", so this —
+//
+//   "Add an exam called Phase 2 Probe Exam on 2026-09-15 from 13:30 to 14:30."
+//
+// — reached deepseek-reasoner with ZERO tools attached, and Nemesis answered:
+//
+//   "I can't add events to your calendar from this environment — I have no
+//    access to it right now, and nothing has been scheduled."
+//
+// The calendar incident, word for word, through the one verb nobody tested.
+
+test("🔴 asking to add an event carries the tools that can add it", () => {
+  // The exact production message, verbatim.
+  const decision = classifyChatRequest("Add an exam called Phase 2 Probe Exam on 2026-09-15 from 13:30 to 14:30.");
+  assert.equal(decision.workspaceIntent, true);
+  assert.equal(decision.model, "deepseek-chat");
+  assert.equal(toolsAllowed(decision), true);
+});
+
+test("creating anything in the workspace is a workspace turn", () => {
+  for (const prompt of [
+    "Add an exam on September 15 at 1:30pm.",
+    "Create a note about today's lecture.",
+    "Schedule a lab on Friday at 2pm.",
+    "Book a study session for Thursday.",
+    "Make me some flashcards on beta blockers.",
+    "Put a reminder on Friday for the pharmacology quiz.",
+    "Save a note with these dates.",
+    "Set up a practice test for Chapter 4.",
+    "Write down a note about the lecture I just had.",
+  ]) {
+    const decision = classifyChatRequest(prompt);
+    assert.equal(decision.workspaceIntent === true || decision.savesToWorkspace === true, true, `missed: ${prompt}`);
+    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
+  }
+});
+
+test("🔴 writing something is not filing something — those keep the thinking model", () => {
+  // The noun anchor is what makes the creation rule safe. A verb aimed at
+  // something the workspace does not hold is ordinary work, and stealing it
+  // would make Nemesis worse at its main job.
+  for (const prompt of [
+    "Make a table comparing ACE inhibitors and ARBs.",
+    "Create a mnemonic for the cranial nerves.",
+    "Write me an essay about the French Revolution.",
+    "Add more detail to that explanation.",
+    "Explain the Krebs cycle to me.",
+    "What is the event horizon of a black hole?",
+  ]) {
+    assert.equal(detectsWorkspaceIntent(prompt), false, `stolen from the thinking model: ${prompt}`);
+  }
+});
+
+test("🔴 a singular 'class' is a workspace noun — `classes?` never matched it", () => {
+  // Second production miss of the same run: "My Tuesday Class on 2026-09-15 is
+  // cancelled." went to deepseek-reasoner with zero tools and Nemesis answered
+  // "I can't edit your calendar". The possessive rule was correct; the noun list
+  // was not. `classes?` means "classe" plus an optional "s".
+  for (const prompt of [
+    "My Tuesday Class on 2026-09-15 is cancelled. Just that one meeting, keep the rest of the term.",
+    "My class on Tuesday is cancelled",
+    "Cancel my Tuesday Class on 2026-09-15.",
+    "when is my next class",
+  ]) {
+    assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
+    assert.equal(toolsAllowed(classifyChatRequest(prompt)), true, `tools stripped: ${prompt}`);
+  }
+  // The plural still works.
+  assert.equal(detectsWorkspaceIntent("show me my classes this semester"), true);
+});
