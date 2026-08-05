@@ -8,12 +8,18 @@
 //   pdf    → the browser's own PDF viewer in a frame — pages, zoom, search.
 //   docx/pptx → no browser renders these; the stored original is offered as a
 //            download, with the honest note that its TEXT is what the model read.
-//   nothing stored (older messages, files over the 50 MB ceiling) → say so
+//   nothing stored (older messages, files over the storage ceiling) → say so
 //            plainly rather than showing a broken frame.
+//
+// The ceiling in that last sentence is NAMED from maxSourceLabel(), never typed
+// into the prose. It was written here as "50 MB" and went stale the day the
+// ceiling moved to 200 — the same way "25 MB max" outlived a real 4.5 MB limit
+// for months in four files at once.
 //
 // URLs are re-signed on every open: the year-long URL saved on the message is
 // only a fallback, and a fresh hour-long one never expires mid-view.
 
+import { maxSourceLabel } from "@nemesis/shared";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -96,7 +102,7 @@ export function AttachmentPreviewDialog({ attachment, onClose }: { attachment: S
             <Codicon className="text-(--ui-text-tertiary)" name="file" size="1.5rem" />
             <p className="text-sm">The original file wasn&rsquo;t stored.</p>
             <p className="max-w-sm text-xs text-(--ui-text-tertiary)">
-              Its text was read into the conversation when it was attached. Files sent from today onward keep their original for preview (up to 50 MB).
+              Its text was read into the conversation when it was attached. Files sent from today onward keep their original for preview (up to {maxSourceLabel()}).
             </p>
           </div>
         )}
