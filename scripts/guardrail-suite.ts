@@ -17,12 +17,7 @@
  */
 
 import { detectViolations } from "../supabase/functions/ask/safety.ts";
-import {
-  assertCleanupSafe,
-  cleanupReport,
-  planAcceptanceCleanup,
-  type RunManifest,
-} from "../packages/shared/src/acceptance-cleanup.ts";
+import { newCiRun, recordCiAccount, teardownCiRun } from "./lib/ci-account-cleanup.ts";
 
 const SB_URL = Deno.env.get("SB_URL");
 const SERVICE_KEY = Deno.env.get("SERVICE_KEY");
@@ -38,8 +33,7 @@ let userId: string | undefined;
 let userEmail: string | undefined;
 
 /** Stamped before anything is created, so "after the run started" means something. */
-const RUN_ID = crypto.randomUUID().slice(0, 8);
-const RUN_STARTED_AT = new Date().toISOString();
+const RUN = newCiRun("guardrail");
 
 interface AskResponse {
   plain_english_summary: string;
@@ -296,168 +290,17 @@ const CASES: Case[] = [
   },
 ];
 
-/**
- * Ask the database — not this script's memory — when the CI user was created.
- *
- * The whole point of the provenance gate is that the run's own recollection is
- * not evidence, so the timestamp that authorizes the delete is read back off the
- * row at teardown time rather than kept from the create call.
- */
-async function userCreatedAt(id: string): Promise<string | null> {
-  try {
-    const row = await fetch(`${SB_URL}/auth/v1/admin/users/${id}`, {
-      headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` },
-    }).then((r) => (r.ok ? r.json() : null));
-    const created = row?.created_at ?? row?.user?.created_at;
-    return typeof created === "string" ? created : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 🔴 WHY THE MANIFEST IS A FILE AND NOT A VARIABLE.
- *
- * Every one of the 42 CI accounts left behind in the auth table came from a run
- * that never finished. Each has a partial `generated_answers` count — 6, 20, 23,
- * 38, 42, 47 — where a whole run makes 51 (17 cases × 3 registers). The newest
- * was created eleven seconds before `cancel-in-progress` killed its run on
- * 2026-08-05. Teardown was never broken; it just lived inside the dying process,
- * and a cancelled job does not get to finish its `finally`.
- *
- * So the id is written to disk the moment the account exists. A separate
- * workflow step with `if: always()` — which GitHub still schedules after a
- * cancellation — reads the file back and removes what the run could not.
- */
-const MANIFEST_PATH = Deno.env.get("GUARDRAIL_MANIFEST") ?? "guardrail-run.json";
-
-async function writeManifest(manifest: RunManifest): Promise<void> {
-  try {
-    await Deno.writeTextFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
-  } catch (e) {
-    // Not fatal: the in-process teardown still runs on a normal finish. It only
-    // costs us the safety net, so say so loudly rather than failing the suite.
-    console.warn(`could not write ${MANIFEST_PATH}: ${(e as Error).message} — no cleanup net if this run is killed`);
-  }
-}
-
-async function readManifest(): Promise<RunManifest | null> {
-  try {
-    return JSON.parse(await Deno.readTextFile(MANIFEST_PATH)) as RunManifest;
-  } catch {
-    return null;
-  }
-}
-
-async function dropManifest(): Promise<void> {
-  try {
-    await Deno.remove(MANIFEST_PATH);
-  } catch { /* already gone, which is the point */ }
-}
-
-function runManifest(): RunManifest | null {
-  if (!userId) return null;
-  return {
-    runId: RUN_ID,
-    startedAt: RUN_STARTED_AT,
-    created: [{ id: userId, kind: "auth_user", label: userEmail ?? userId }],
-    touched: [],
-  };
-}
-
-/**
- * Delete the account a run created, and everything that cascades from it.
- *
- * 🔴 THE PROVENANCE GATE (packages/shared/src/acceptance-cleanup.ts). This
- * removes a live auth user on a real Supabase project, so it runs only if the
- * DATABASE agrees the account was created after the run started — an id that
- * somehow points at a real person is refused rather than deleted. Called from
- * two places (the run's own teardown and the always-runs cleanup step), which is
- * exactly why the check lives here rather than at either call site.
- *
- * Returns true when the account is gone or was never there.
- */
-async function removeRunUser(manifest: RunManifest): Promise<boolean> {
-  const target = manifest.created.find((item) => item.kind === "auth_user");
-  if (!target) return true;
-
-  const plan = planAcceptanceCleanup(manifest, [{
-    id: target.id,
-    kind: target.kind,
-    label: target.label,
-    createdAt: await userCreatedAt(target.id),
-  }]);
-  try {
-    assertCleanupSafe(plan);
-  } catch (e) {
-    console.error(`cleanup REFUSED: ${(e as Error).message}`);
-    return false;
-  }
-  if (plan.remove.length === 0) {
-    // Also the "already deleted" path: a missing row has no created_at, so the
-    // gate keeps it, and there is nothing left to keep. Both are fine outcomes.
-    console.warn(`cleanup: no provenance for ${target.label}, nothing deleted.`);
-    console.warn(cleanupReport(plan));
-    return false;
-  }
-
-  let ok = true;
-  try {
-    const delRows = await fetch(`${SB_URL}/rest/v1/generated_answers?user_id=eq.${target.id}`, {
-      method: "DELETE",
-      headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, Prefer: "return=minimal" },
-    });
-    if (!delRows.ok) {
-      ok = false;
-      console.warn(`cleanup: generated_answers delete failed (${delRows.status})`);
-    }
-  } catch (e) {
-    ok = false;
-    console.warn(`cleanup: generated_answers delete error: ${(e as Error).message}`);
-  }
-  try {
-    const delUser = await fetch(`${SB_URL}/auth/v1/admin/users/${target.id}`, {
-      method: "DELETE",
-      headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (!delUser.ok) {
-      ok = false;
-      console.warn(`cleanup: auth user delete failed (${delUser.status}) — orphaned ${target.label}`);
-    } else {
-      console.log(`cleanup: removed ${target.label}`);
-    }
-  } catch (e) {
-    ok = false;
-    console.warn(`cleanup: auth user delete error: ${(e as Error).message} — orphaned ${target.label}`);
-  }
-  return ok;
-}
-
 async function teardown() {
-  const manifest = runManifest();
-  if (!manifest) return;
-  if (await removeRunUser(manifest)) await dropManifest();
-}
-
-/**
- * `--cleanup`: the safety net, run as its own `if: always()` workflow step.
- *
- * No manifest means the run tore itself down properly, which is the normal case
- * and not a failure. Never exits nonzero — a red cleanup step on an otherwise
- * green suite would be its own false alarm; the leftover account is the signal.
- */
-async function cleanupOnly(): Promise<void> {
-  const manifest = await readManifest();
-  if (!manifest) {
-    console.log("cleanup: nothing left over.");
-    return;
-  }
-  console.log(`cleanup: run ${manifest.runId} did not finish tearing itself down.`);
-  if (await removeRunUser(manifest)) await dropManifest();
+  // 🔴 THE PROVENANCE GATE + THE SAFETY NET, both in one shared place
+  // (scripts/lib/ci-account-cleanup.ts). This deletes a live auth user on a real
+  // Supabase project, so it happens only if the DATABASE agrees the account was
+  // created after this run started. The manifest that makes a cancelled run
+  // recoverable is written by `recordCiAccount` below, and removed here.
+  await teardownCiRun({ SB_URL: SB_URL!, SERVICE_KEY: SERVICE_KEY! }, RUN, userId);
 }
 
 async function main() {
-  const email = `guardrail+${RUN_ID}@nemesis.test`;
+  const email = RUN.email;
   userEmail = email;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
@@ -470,8 +313,7 @@ async function main() {
   // 🔴 FIRST THING AFTER THE ACCOUNT EXISTS, before a single /ask call. Every
   // leaked account came from a run killed mid-suite; from here on, the id
   // survives the process that made it.
-  const manifest = runManifest();
-  if (manifest) await writeManifest(manifest);
+  if (userId) await recordCiAccount(RUN, userId);
 
   // Quota headroom for the ephemeral CI user. The suite makes more /ask calls
   // (16+) than the free plan's daily cap (10, migration 0122), so without a
@@ -555,11 +397,6 @@ async function main() {
     }
   }
   console.log(`\n${breaches === 0 ? "✅ GUARDRAILS HOLD" : `❌ ${breaches} BREACH(ES)`}`);
-}
-
-if (Deno.args.includes("--cleanup")) {
-  await cleanupOnly();
-  Deno.exit(0);
 }
 
 main().catch((e) => {

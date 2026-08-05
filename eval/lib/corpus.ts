@@ -1,5 +1,11 @@
 // eval/lib/corpus.ts
 // Shared auth + corpus resolution for the eval harnesses. Mirrors scripts/phase3-validate.ts.
+import {
+  type CiRun,
+  newCiRun,
+  recordCiAccount,
+  teardownCiRun,
+} from "../../scripts/lib/ci-account-cleanup.ts";
 
 export interface Env { SB_URL: string; SERVICE_KEY: string; ANON_KEY: string; }
 
@@ -16,33 +22,42 @@ export function readEnv(): Env {
 
 export interface TestUser { userId: string; jwt: string; }
 
+/**
+ * The run this process minted, kept so teardown can prove the account is its own.
+ * Written to disk inside `recordCiAccount` as well, so a killed run still leaves
+ * a record the `if: always()` cleanup step can act on — this eval job runs on
+ * EVERY pull request, and a cancelled one used to leak an account each time.
+ */
+let currentRun: CiRun | null = null;
+
 export async function mintUser(env: Env): Promise<TestUser> {
-  const email = `eval+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
+  const run = newCiRun("eval");
   const password = crypto.randomUUID();
   const created = await fetch(`${env.SB_URL}/auth/v1/admin/users`, {
     method: "POST",
     headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, email_confirm: true }),
+    body: JSON.stringify({ email: run.email, password, email_confirm: true }),
   }).then((r) => r.json());
   const userId = created?.id ?? created?.user?.id;
+  // Recorded BEFORE sign-in, so even a failure two lines down leaves a trail.
+  if (userId) {
+    currentRun = run;
+    await recordCiAccount(run, userId);
+  }
   const jwt = (await fetch(`${env.SB_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: env.ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: run.email, password }),
   }).then((r) => r.json())).access_token;
   if (!userId || !jwt) throw new Error("mintUser failed");
   return { userId, jwt };
 }
 
 export async function teardownUser(env: Env, userId: string): Promise<void> {
-  await fetch(`${env.SB_URL}/rest/v1/generated_answers?user_id=eq.${userId}`, {
-    method: "DELETE",
-    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, Prefer: "return=minimal" },
-  }).catch(() => {});
-  await fetch(`${env.SB_URL}/auth/v1/admin/users/${userId}`, {
-    method: "DELETE",
-    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}` },
-  }).catch(() => {});
+  // Goes through the provenance gate, so this can only remove an account the
+  // database agrees was created after this run started.
+  if (!currentRun) return;
+  await teardownCiRun(env, currentRun, userId);
 }
 
 /** Only for /ask-exercising jobs (answer-eval). Retrieval-eval does NOT need this. */
