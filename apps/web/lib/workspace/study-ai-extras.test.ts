@@ -6,6 +6,11 @@ import {
   buildAutoTagMessages,
   explainCardContext,
   explainQuestionContext,
+  explainTranscript,
+  parseRevisedCard,
+  parseRevisedQuestion,
+  reviseCardMessages,
+  reviseQuestionMessages,
   explainSeedMessages,
   isLeechCard,
   LEECH_LAPSES,
@@ -116,4 +121,43 @@ test("preview auto-tags are deterministic and non-empty", () => {
   assert.deepEqual(first.get("a"), ["metoprolol"]);
   assert.deepEqual(first.get("b"), ["furosemide"]);
   assert.deepEqual(previewAutoTags(cards), first);
+});
+
+test("revise messages carry the item, the conversation, and the strict-JSON contract", () => {
+  const question = reviseQuestionMessages({ answer: 2, options: ["A", "B", "C"], q: "Which?", transcript: "Student: make it harder" });
+  assert.equal(question[0]!.role, "system");
+  assert.match(question[0]!.content, /fenced ```json/);
+  assert.match(question[1]!.content, /"q":"Which\?"/);
+  assert.match(question[1]!.content, /make it harder/);
+  assert.match(question[1]!.content, /complete replacement/);
+  const card = reviseCardMessages({ back: "b", front: "f", transcript: "" });
+  assert.match(card[1]!.content, /improve accuracy and clarity/);
+  assert.match(card[1]!.content, /cloze markers/);
+});
+
+test("explainTranscript labels the two voices", () => {
+  const text = explainTranscript([
+    { role: "assistant", text: "Because X." },
+    { role: "user", text: "Make it harder." },
+  ]);
+  assert.equal(text, "Coach: Because X.\n\nStudent: Make it harder.");
+});
+
+test("parseRevisedQuestion accepts a complete item and rejects anything less", () => {
+  const good = parseRevisedQuestion('```json\n{"q":"New?","options":["one","two","three"],"answer":1,"why":"Because."}\n```');
+  assert.deepEqual(good, { answer: 1, options: ["one", "two", "three"], q: "New?", why: "Because." });
+  const prose = parseRevisedQuestion('Here you go: {"q":"New?","options":["one","two"],"answer":0,"why":""}');
+  assert.equal(prose?.q, "New?");
+  assert.equal(parseRevisedQuestion('{"q":"","options":["one","two"],"answer":0,"why":""}'), null);
+  assert.equal(parseRevisedQuestion('{"q":"x","options":["only"],"answer":0,"why":""}'), null);
+  assert.equal(parseRevisedQuestion('{"q":"x","options":["a","b"],"answer":2,"why":""}'), null);
+  assert.equal(parseRevisedQuestion('{"q":"x","options":["a","b"],"answer":"0","why":""}'), null);
+  assert.equal(parseRevisedQuestion("not json"), null);
+});
+
+test("parseRevisedCard needs a front and keeps an empty back", () => {
+  assert.deepEqual(parseRevisedCard('```json\n{"front":"F","back":"B"}\n```'), { back: "B", front: "F" });
+  assert.deepEqual(parseRevisedCard('{"front":"F","back":""}'), { back: "", front: "F" });
+  assert.equal(parseRevisedCard('{"front":"","back":"B"}'), null);
+  assert.equal(parseRevisedCard("nope"), null);
 });

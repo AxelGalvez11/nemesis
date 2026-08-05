@@ -10,8 +10,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
-import { ExplainChat, type ExplainTurn } from "@/components/workspace/study/explain-chat";
-import { explainQuestionContext } from "@/lib/workspace/study-ai-extras";
+import { ExplainChat, type ExplainRevise, type ExplainTurn } from "@/components/workspace/study/explain-chat";
+import { postChatCompletion } from "@/lib/workspace/chat-api";
+import { explainQuestionContext, explainTranscript, parseRevisedQuestion, reviseQuestionMessages } from "@/lib/workspace/study-ai-extras";
 import {
   Dialog,
   DialogContent,
@@ -216,7 +217,11 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
 export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact; onClose: () => void }) {
   const study = useCloudStudy();
   const previewMode = useWorkspacePreview();
-  const content = useMemo(() => parseTestContent(artifact.content), [artifact.content]);
+  // A revision from the Explain panel replaces a question mid-sitting; the
+  // artifact prop is the parent's snapshot, so the override keeps this dialog
+  // truthful until the store round-trips.
+  const [contentOverride, setContentOverride] = useState<TestContent | null>(null);
+  const content = useMemo(() => contentOverride ?? parseTestContent(artifact.content), [artifact.content, contentOverride]);
   const [picks, setPicks] = useState<number[]>([]);
   const [index, setIndex] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
@@ -318,6 +323,44 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
     : reviewAttempt
       ? (reviewAttempt.missed.find((miss) => miss.questionIndex === explainFor)?.picked ?? explainQuestion?.answer ?? null)
       : picked;
+  // Owner 2026-08-04: "the nemesis 'explain' should be able to remake, alter,
+  // flashcards and test questions." The rewrite uses the side chat as its
+  // brief: the student says what's wrong, presses Rewrite, and the revised
+  // question replaces this one — in the store and on screen.
+  const reviseTarget = explainFor;
+  const reviseQuestionAction: ExplainRevise | undefined =
+    reviseTarget !== null && explainQuestion && !previewMode && study.userId
+      ? {
+          apply: async (turns) => {
+            if (!content) return "This test has no content to revise.";
+            const reply = await postChatCompletion(
+              study.userId!,
+              reviseQuestionMessages({
+                answer: explainQuestion.answer,
+                options: explainQuestion.options,
+                q: explainQuestion.q,
+                transcript: explainTranscript(turns),
+                why: explainQuestion.why,
+              }),
+              { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+            );
+            const revised = reply.text ? parseRevisedQuestion(reply.text) : null;
+            if (!revised) return reply.errorText ?? "The engine couldn't produce a clean rewrite — tell it what to change and try again.";
+            const nextContent: TestContent = {
+              attempts: content.attempts,
+              questions: questions.map((entry, entryIndex) => (entryIndex === reviseTarget ? revised : entry)),
+            };
+            setContentOverride(nextContent);
+            try {
+              await study.updateArtifact(artifact.id, { content: nextContent });
+            } catch {
+              return "Rewrote it here, but saving failed — the change may not survive a reload.";
+            }
+            return null;
+          },
+          noun: "question",
+        }
+      : undefined;
   const explainPanel = explainFor !== null && explainQuestion ? (
     <ExplainChat
       cache={explainCache.current}
@@ -331,6 +374,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
       contextKey={`${artifact.id}:q${explainFor}`}
       onClose={() => setExplainFor(null)}
       previewMode={Boolean(previewMode)}
+      revise={reviseQuestionAction}
       userId={study.userId}
     />
   ) : null;
@@ -340,16 +384,28 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
           2026-08-01: "the tests should be fullscreen like the flashcards." */}
       <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-y-auto rounded-none border-0 px-7 py-6" showCloseButton>
         {reviewAttempt ? (
-          <div className="mx-auto grid w-full max-w-6xl content-start grid-cols-1 gap-6 pt-[6vh] lg:grid-cols-[minmax(0,42rem)_minmax(0,19rem)]">
-            <div className="flex min-w-0 flex-col gap-6">
+          // Centered by default; the two-column grid exists only while the
+          // Explain rail is open (owner 2026-08-04, screenshot: "the tests
+          // are not centered" — an always-reserved empty rail read lopsided).
+          <div className={cn("mx-auto grid w-full content-start grid-cols-1 gap-6 pt-[6vh]", explainPanel ? "max-w-6xl lg:grid-cols-[minmax(0,42rem)_minmax(0,19rem)]" : "max-w-2xl")}>
+            <div className="flex min-w-0 flex-col gap-5">
               <div className="grid gap-1">
                 <DialogTitle className="text-sm font-medium text-(--ui-text-secondary)">{artifact.title}</DialogTitle>
-                <p className="text-3xl font-semibold tabular-nums tracking-tight">
-                  {Math.round((reviewAttempt.score / reviewAttempt.total) * 100)}%
-                </p>
-                <DialogDescription className="tabular-nums" data-testid="test-score">
-                  Score: {reviewAttempt.score}/{reviewAttempt.total} ({Math.round((reviewAttempt.score / reviewAttempt.total) * 100)}%)
-                </DialogDescription>
+                <div className="flex items-baseline gap-3">
+                  <p
+                    className={cn(
+                      "text-4xl font-semibold tabular-nums tracking-tight",
+                      Math.round((reviewAttempt.score / reviewAttempt.total) * 100) >= 80 && "text-emerald-600 dark:text-emerald-500",
+                      Math.round((reviewAttempt.score / reviewAttempt.total) * 100) < 80 && Math.round((reviewAttempt.score / reviewAttempt.total) * 100) >= 60 && "text-amber-600 dark:text-amber-500",
+                      Math.round((reviewAttempt.score / reviewAttempt.total) * 100) < 60 && "text-(--theme-primary)",
+                    )}
+                  >
+                    {Math.round((reviewAttempt.score / reviewAttempt.total) * 100)}%
+                  </p>
+                  <DialogDescription className="tabular-nums" data-testid="test-score">
+                    {reviewAttempt.score}/{reviewAttempt.total} correct
+                  </DialogDescription>
+                </div>
                 <p className="text-xs text-(--ui-text-tertiary)" data-testid="test-already-taken">
                   Each test is answered once — this is your recorded attempt.
                 </p>
@@ -363,18 +419,24 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 addedTo ? (
                   <p className="text-xs text-(--ui-text-secondary)" data-testid="missed-added">Added to "{addedTo}" — they'll come up in review.</p>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="h-9 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-sm"
-                      data-testid="missed-deck"
-                      onChange={(event) => setTargetDeckId(event.target.value)}
-                      value={targetDeckId || study.decks[0]?.id || ""}
-                    >
-                      {study.decks.map((deck) => <option key={deck.id} value={deck.id}>{deck.name}</option>)}
-                    </select>
-                    <Button disabled={busy || study.decks.length === 0} onClick={() => void addMissed()} size="sm" type="button" variant="secondary">
-                      {busy ? "Adding…" : `Add ${reviewAttempt.missed.length} as flashcards`}
-                    </Button>
+                  <div className="rounded-2xl border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-4 py-3">
+                    <p className="text-[0.8125rem] font-medium">
+                      Turn your {reviewAttempt.missed.length} missed question{reviewAttempt.missed.length === 1 ? "" : "s"} into flashcards
+                    </p>
+                    <p className="mt-0.5 text-xs text-(--ui-text-tertiary)">They'll keep coming up in review until they stick.</p>
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <select
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-sm"
+                        data-testid="missed-deck"
+                        onChange={(event) => setTargetDeckId(event.target.value)}
+                        value={targetDeckId || study.decks[0]?.id || ""}
+                      >
+                        {study.decks.map((deck) => <option key={deck.id} value={deck.id}>{deck.name}</option>)}
+                      </select>
+                      <Button disabled={busy || study.decks.length === 0} onClick={() => void addMissed()} size="sm" type="button" variant="secondary">
+                        {busy ? "Adding…" : "Add to deck"}
+                      </Button>
+                    </div>
                   </div>
                 )
               )}
@@ -442,7 +504,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                         })}
                       </div>
                       {reviewQuestion.why && (
-                        <p className="mt-2 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">{reviewQuestion.why}</p>
+                        <p className="mt-2.5 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-3 py-2 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">{reviewQuestion.why}</p>
                       )}
                     </li>
                   );
@@ -455,7 +517,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
             {explainPanel}
           </div>
         ) : question ? (
-          <div className="mx-auto grid w-full max-w-6xl content-start grid-cols-1 gap-6 pt-[8vh] lg:grid-cols-[minmax(0,42rem)_minmax(0,19rem)]">
+          <div className={cn("mx-auto grid w-full content-start grid-cols-1 gap-6 pt-[8vh]", explainPanel ? "max-w-6xl lg:grid-cols-[minmax(0,42rem)_minmax(0,19rem)]" : "max-w-2xl")}>
             <div className="flex min-w-0 flex-col gap-6">
               <div className="grid gap-2.5">
                 <div className="flex items-baseline justify-between gap-3">

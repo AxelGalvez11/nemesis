@@ -83,6 +83,83 @@ export function explainQuestionContext(input: {
   return `Test question: ${input.q}\n${lines.join("\n")}${pickedNote}`;
 }
 
+// Owner 2026-08-04: "the nemesis 'explain' should be able to remake, alter,
+// flashcards and test questions." The side chat is where the student says
+// WHAT is wrong ("this distractor is a giveaway", "make it harder") — these
+// build the structured rewrite call, and the parsers refuse anything that is
+// not a complete well-formed replacement: a half-parsed item must never
+// overwrite a stored one.
+
+export function explainTranscript(turns: ReadonlyArray<{ role: "assistant" | "user"; text: string }>): string {
+  return turns.map((turn) => `${turn.role === "user" ? "Student" : "Coach"}: ${turn.text}`).join("\n\n");
+}
+
+const REVISE_SYSTEM =
+  "You revise one study item for Nemesis. Any subject — law, engineering, medicine, history, anything. " +
+  "Read the side-chat conversation to understand what the student wants changed: fix an error, reword, raise or lower difficulty, replace weak distractors. If the conversation asks for nothing specific, improve the item's accuracy and clarity. " +
+  "Stay on the item's own topic and never invent facts. Never use emojis. " +
+  "Reply with ONE fenced ```json block and nothing else.";
+
+export function reviseQuestionMessages(input: { q: string; options: string[]; answer: number; why?: string; transcript: string }): WireMsg[] {
+  return [
+    { content: REVISE_SYSTEM, role: "system" },
+    {
+      content:
+        `The current test question, as JSON:\n${JSON.stringify({ answer: input.answer, options: input.options, q: input.q, why: input.why ?? "" })}\n\n` +
+        `The side-chat conversation about it:\n${input.transcript.trim() || "(none — improve accuracy and clarity)"}\n\n` +
+        'Return the revised question as ```json {"q": string, "options": string[] (2 to 6 entries), "answer": number (index of the correct option), "why": string} ``` — a complete replacement, not a diff.',
+      role: "user",
+    },
+  ];
+}
+
+export function reviseCardMessages(input: { front: string; back: string; transcript: string }): WireMsg[] {
+  return [
+    { content: REVISE_SYSTEM, role: "system" },
+    {
+      content:
+        `The current flashcard, as JSON:\n${JSON.stringify({ back: input.back, front: input.front })}\n\n` +
+        `The side-chat conversation about it:\n${input.transcript.trim() || "(none — improve accuracy and clarity)"}\n\n` +
+        'Return the revised card as ```json {"front": string, "back": string} ``` — a complete replacement, not a diff. Keep any {{c1::…}} cloze markers the card style needs.',
+      role: "user",
+    },
+  ];
+}
+
+export interface RevisedQuestion {
+  q: string;
+  options: string[];
+  answer: number;
+  why: string;
+}
+
+export function parseRevisedQuestion(raw: string): RevisedQuestion | null {
+  const parsed = jsonSlice(raw);
+  if (!parsed) return null;
+  const q = typeof parsed.q === "string" ? parsed.q.trim() : "";
+  const options = Array.isArray(parsed.options)
+    ? parsed.options.filter((option): option is string => typeof option === "string").map((option) => option.trim()).filter(Boolean)
+    : [];
+  const answer = typeof parsed.answer === "number" && Number.isInteger(parsed.answer) ? parsed.answer : -1;
+  const why = typeof parsed.why === "string" ? parsed.why.trim() : "";
+  if (!q || options.length < 2 || options.length > 6 || answer < 0 || answer >= options.length) return null;
+  return { answer, options, q, why };
+}
+
+export interface RevisedCard {
+  front: string;
+  back: string;
+}
+
+export function parseRevisedCard(raw: string): RevisedCard | null {
+  const parsed = jsonSlice(raw);
+  if (!parsed) return null;
+  const front = typeof parsed.front === "string" ? parsed.front.trim() : "";
+  const back = typeof parsed.back === "string" ? parsed.back.trim() : "";
+  if (!front) return null;
+  return { back, front };
+}
+
 const MAX_AUTOTAG_CARDS = 60;
 const MAX_TAGS_PER_CARD = 3;
 

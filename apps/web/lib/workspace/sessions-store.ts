@@ -81,6 +81,9 @@ export interface SessionAttachment {
   mime?: string;
   url?: string;
   storagePath?: string;
+  /** The library_sources row this document is filed under — what a note's
+   *  [n](?source=<id>) citation pills point at. */
+  sourceId?: string;
 }
 
 export interface SessionMessage {

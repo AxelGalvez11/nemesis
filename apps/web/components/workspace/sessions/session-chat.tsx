@@ -16,7 +16,6 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { listSources } from "@/lib/notebooks/api";
 import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { chatDisplayText, draftAttachmentRecords, partitionImportables, prepareChatAttachments } from "@/lib/workspace/chat-attachments";
-import { uploadLibrarySource } from "@/lib/workspace/library-sources";
 import { sniffsAsSyllabus } from "@/lib/workspace/syllabus-sniff";
 import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
@@ -488,16 +487,11 @@ export function SessionChat() {
     const saved: CalendarEvent[] = [];
     for (const event of split.toSave) saved.push(await saveCalendarEvent(event, { preview: false, userId: uid }));
     const summary = conflictSummary(split);
-    // The syllabus itself is a course's foundation document — keep the FILE
-    // in the Library, not just its dates (owner 2026-08-04: "if the chat
-    // recognizes the syllabi then it should know to save them to library").
-    // Best-effort like every storage write: a failed upload never blocks the
-    // calendar result the student just confirmed.
-    let storedCount = 0;
-    for (const file of syllabusImport.files) {
-      const stored = await uploadLibrarySource(uid, file, "").catch(() => null);
-      if (stored) storedCount += 1;
-    }
+    // The syllabus files themselves were already FILED as Library sources the
+    // moment they were attached (persistChatAttachment promotes every stored
+    // document, deduped) — uploading again here would only duplicate them.
+    // The reply still says so, because the student can't see the filing.
+    const storedCount = syllabusImport.files.length;
     if (!saved.length && !summary && !storedCount) return;
     const firstDate = [...saved].sort((a, b) => a.date.localeCompare(b.date))[0]?.date;
     const artifactId = typeof crypto !== "undefined" && "randomUUID" in crypto

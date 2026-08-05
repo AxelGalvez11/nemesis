@@ -10,7 +10,8 @@ import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
-import { explainCardContext } from "@/lib/workspace/study-ai-extras";
+import { explainCardContext, explainTranscript, parseRevisedCard, reviseCardMessages } from "@/lib/workspace/study-ai-extras";
+import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
@@ -387,6 +388,31 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                   contextKey={current.id}
                   onClose={() => setExplainOpen(false)}
                   previewMode={Boolean(previewMode)}
+                  // Owner 2026-08-04: the Explain chat can REWRITE the card it
+                  // is explaining — the conversation is the brief, the store
+                  // write is the same one the Edit dialog uses.
+                  revise={
+                    !previewMode && userId
+                      ? {
+                          apply: async (turns) => {
+                            const reply = await postChatCompletion(
+                              userId,
+                              reviseCardMessages({ back: current.back, front: current.front, transcript: explainTranscript(turns) }),
+                              { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+                            );
+                            const revised = reply.text ? parseRevisedCard(reply.text) : null;
+                            if (!revised) return reply.errorText ?? "The engine couldn't produce a clean rewrite — tell it what to change and try again.";
+                            try {
+                              await updateCard({ back: revised.back, cardType: current.cardType, flag: current.flag, front: revised.front, id: current.id, tags: current.tags });
+                            } catch {
+                              return "Couldn't save the rewritten card — try again.";
+                            }
+                            return null;
+                          },
+                          noun: "card",
+                        }
+                      : undefined
+                  }
                   userId={userId}
                 />
               )}

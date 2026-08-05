@@ -206,6 +206,48 @@ export async function uploadLibrarySource(uid: string, file: File, folderPath: s
   }
 }
 
+/** A chat upload already put the bytes in the bucket — this files THAT object
+ *  as a visible Library source row, deduping by name+size so re-attaching the
+ *  same file cannot pile rows up. Returns the row id for ?source= citations,
+ *  or null (best-effort, like every storage write). */
+export async function findOrCreateLibrarySourceRow(
+  uid: string,
+  file: { name: string; size: number },
+  mime: string | null,
+  folderPath: string,
+  storagePath: string,
+): Promise<string | null> {
+  try {
+    const fileName = file.name.slice(0, 512);
+    const existing = await supabase
+      .from("library_sources")
+      .select("id")
+      .eq("user_id", uid)
+      .eq("file_name", fileName)
+      .eq("size_bytes", file.size)
+      .eq("deleted", false)
+      .limit(1);
+    const found = existing.data?.[0]?.id;
+    if (typeof found === "string") return found;
+    const { data, error } = await supabase
+      .from("library_sources")
+      .insert({
+        file_name: fileName,
+        folder_path: normalizeSourceFolder(folderPath),
+        mime_type: mime || null,
+        size_bytes: file.size,
+        storage_path: storagePath,
+        user_id: uid,
+      })
+      .select("id")
+      .single();
+    if (error || !data) return null;
+    return (data as { id: string }).id;
+  } catch {
+    return null;
+  }
+}
+
 /** Folder maintenance: when the note tree renames/moves/deletes a folder, its
  *  source files must follow or they'd silently vanish from the tree (their
  *  folder_path would point at a folder that no longer exists). `remap` returns
