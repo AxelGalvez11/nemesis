@@ -156,11 +156,11 @@ session, or marked `unverified`. Nothing is inferred from "the code looks right"
 | **iOS production** | in the picker, **unverified** | in the picker, **unverified** | in the picker, **unverified** | 🔴 **not in the picker** | 🔴 not offered | 🔴 not offered |
 | **Producers tested** | Acrobat PDFWriter 4.0 (1 real file) | MS Word 12 (×2), LibreOffice Writer 26.2 (×1) | MS PowerPoint 16 (×1), LibreOffice Impress 26.2 (×1) | Excel 12/15/16 (×3), LibreOffice Calc (×2), **Google Sheets (×10)** | none | none |
 | **Parsing** | ✅ 37 pages found, 37 read, 94 chunks | ✅ | ✅ | ✅ 15 real files, 0 failures | 🔴 **no parser exists** | 🔴 **no parser exists** |
-| **Segmentation** | ✅ page units | ✅ sections; page/section-break fallback proven on a real headingless file | ✅ slide units | ✅ sheets + multiple regions per sheet | — | — |
+| **Segmentation** | ✅ page units | ⚠️ **partial** — works only when the file has ZERO heading styles | ✅ slide units | ✅ sheets + multiple regions per sheet | — | — |
 | **Retrieval** | unverified | unverified | unverified | ✅ **the only format proven storage → `match_source_chunks`** | — | — |
 | **Citations** | ✅ `page 1` at parse + chunk | ⚠️ **`this document`** — see limitation | ✅ `slide 1` | ✅ `Forecast!B12:F19` through **all** stages | — | — |
 | **Preview rendering** | **unverified** | **unverified** | **unverified** | **unverified** | — | — |
-| **Limitations** | 🔴 **no `DocumentParser` face** — cannot enter the pipeline. OCR/vision path never exercised on a real scan | 🔴 fallback units carry `index` but `citeLocator` ignores it for sections, so every citation in a 60-page contract still reads `this document` | figures are not extracted | 🔴 **unreachable by any user** | — | — |
+| **Limitations** | 🔴 **no `DocumentParser` face** — cannot enter the pipeline. OCR/vision path never exercised on a real scan | 🔴 **ONE styled title switches the fallback off entirely** (60 clauses → 3 units; the same + one Heading 1 → 1 unit of 4,305 tokens). 🔴 A body that is one paragraph of `w:br` lines is unbounded. 🔴 `citeLocator` ignores a section's `index`, so citations still read `this document` | figures are not extracted | 🔴 **unreachable by any user** | — | — |
 | **Embedding** | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF | 🔴 OFF |
 
 ## The finding that governs all of it
@@ -182,3 +182,32 @@ pipeline is wired into a route. Three things block that independently:
 
 The honest reading: **DOCX and PPTX are the only formats both uploadable and
 pipeline-ready**, and even they are unverified end to end in production.
+
+## Correction — DOCX segmentation is partial, not done
+
+Measured directly, after the change landed:
+
+```
+60 numbered clauses, no heading anywhere        ->  3 units, largest 2,009 tokens   OK
+the same 60 clauses + ONE "AGREEMENT" title     ->  1 unit,  4,305 tokens           NOT FIXED
+headingless, whole body one w:br paragraph      ->  1 unit,  4,303 tokens           NOT FIXED
+```
+
+🔴 **The fallback is gated on the document using no heading style ANYWHERE.** A
+contract with a title, a filing with a cover-page heading, a manual with one
+"Contents" heading — the ordinary shapes — all still collapse to a single unit,
+which is the bug the work was meant to kill. The earlier claim that this was
+proven on a real Word file was true only because that file happens to contain no
+heading styles at all.
+
+🔴 **A headingless document whose body is a single paragraph is still unbounded**
+— how plain-text and OCR conversions routinely arrive, using `w:br` line breaks
+instead of paragraph marks. This is a literal miss against "no headingless
+document may become one unbounded unit". Retrieval still works (the chunker
+splits the text); what is lost is locator granularity.
+
+Neither is a threshold tweak. Closing the first means running the fallback
+*inside* any unit still over the ceiling, which collides with the separate hard
+requirement that heading-based documents stay behaviourally unchanged. Closing
+the second means cutting one paragraph into several blocks, which changes what a
+block means for every format.
