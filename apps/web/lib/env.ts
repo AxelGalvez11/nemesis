@@ -95,8 +95,12 @@ export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
-// Optional top tier: leave unset to sell Plus + Pro only. When set, Max joins the
-// catalog, the billing cards, and checkout accepts plan === "max".
+// RETIRED 2026-08-05 (owner: "max is retired, agent pro is the ceiling").
+// Read ONLY by planForPriceId, so a subscription already sitting on this price
+// keeps resolving to the max plan instead of silently dropping to free. Nothing
+// sells it any more: the catalog, the billing cards and checkout no longer look
+// at it, so leaving STRIPE_MAX_PRICE_ID set in the environment does nothing.
+// Archiving the price inside Stripe is a separate, live billing action.
 export const stripeMaxPriceId = process.env.STRIPE_MAX_PRICE_ID ?? "";
 // Comma-separated retired Max Price IDs remain entitlement-valid for
 // grandfathered subscribers, but Checkout never sells them again.

@@ -133,23 +133,30 @@ test("the plan ladder never runs backwards", () => {
   );
 });
 
-test("Plus is half of Pro and Max is 5x Pro on the meters that scale", () => {
+// Max was retired 2026-08-05, so the "Max is 5x Pro" half of this rule went with
+// it. "Plus is half of Pro" survives on its own merits: it is what makes Student
+// legible as half a plan for half a price, and it never depended on there being
+// a tier above Pro.
+test("Plus is half of Pro on the meters that scale, and Pro is the ceiling", () => {
   for (const meter of ["monthlyTokens", "dailyTokens", "searchMonthly", "askDaily"] as const) {
-    assert.equal(PLANS.max[meter], PLANS.pro[meter] * 5, `max ${meter}`);
     assert.equal(PLANS.plus[meter], PLANS.pro[meter] / 2, `plus ${meter}`);
+  }
+  // Nothing sits above Agent Pro. A future top tier has to be added here on
+  // purpose rather than inherited from a leftover row.
+  assert.deepEqual(Object.keys(PLANS).sort(), ["free", "plus", "pro"]);
+  for (const plan of Object.values(PLANS)) {
+    assert.ok(plan.priceUsd <= PLANS.pro.priceUsd, `${plan.code} costs more than the ceiling`);
   }
 });
 
-// Recording is the exception, and deliberately so. The owner sets these four
-// numbers directly, because a literal 5x on Max would be 400 hours (about 100
-// hours of lecture a week) and would cost 58 points of margin.
-test("recording follows the owner's four numbers, not the 5x rule", () => {
+// Recording is the exception to the half-of-Pro rule, and deliberately so: the
+// owner sets these three numbers directly.
+test("recording follows the owner's three numbers, not the half-of-Pro rule", () => {
   // Owner 2026-08-05: Free 2h -> 30 minutes, Student 20h -> 30h. Free's is the
   // one allowance in the ladder with no revenue behind it at all, and 30 minutes
   // is a demonstration — one class, start to finish — not a month of lectures.
   assert.equal(PLANS.free.transcriptionMinutes, 30);
   assert.equal(PLANS.plus.transcriptionMinutes, 30 * 60);
-  assert.equal(PLANS.max.transcriptionMinutes, 200 * 60);
   // Pro cut to 70 hours on 2026-07-29 (owner). 83 hours sat inside the 103.7-hour
   // break-even wall but left only $3.27 a month on the plan pushed hardest.
   assert.equal(PLANS.pro.transcriptionMinutes, 70 * 60);
@@ -158,7 +165,12 @@ test("recording follows the owner's four numbers, not the 5x rule", () => {
   // exactly the kind of slack that lets copy and the meter drift apart unnoticed.
   assert.equal(PLANS.pro.transcriptionMinutes, 4_200);
   assert.equal(PLANS.plus.transcriptionMinutes, 1_800);
-  assert.ok(PLANS.max.transcriptionMinutes < PLANS.pro.transcriptionMinutes * 5, "and 5x recording was rejected");
+  // Recording is hand-set, so it lands NEAR half of Pro without being tied to
+  // it: 30 hours against 70 is 0.43x, not 0.5x. Pinned as a band so the next
+  // hand-set number is still recognisably a Student-sized allowance, and so
+  // nobody "corrects" it back onto the halving rule.
+  const share = PLANS.plus.transcriptionMinutes / PLANS.pro.transcriptionMinutes;
+  assert.ok(share > 0.35 && share < 0.55, `Student holds ${round(share, 3)} of Pro's hours`);
   // Free is a taste of the product, not a fraction of a plan: the gap to Student
   // has to be big enough that upgrading is obviously the way to keep going.
   assert.ok(PLANS.plus.transcriptionMinutes >= PLANS.free.transcriptionMinutes * 30, "free stays a demonstration");
@@ -183,7 +195,7 @@ const RECORDING_COPY_FILES = [
 ] as const;
 
 test("advertised recording allowances match the plan caps, everywhere they are advertised", () => {
-  const paidHours = new Set([PLANS.plus, PLANS.pro, PLANS.max].map((plan) => plan.transcriptionMinutes / 60));
+  const paidHours = new Set([PLANS.plus, PLANS.pro].map((plan) => plan.transcriptionMinutes / 60));
   let claims = 0;
   for (const path of RECORDING_COPY_FILES) {
     const source = repoFile(path);
@@ -240,9 +252,11 @@ test("free never out-searches a paid plan, and the paid caps stayed affordable",
   assert.ok(proSearchWorstCaseUsd < modelStudentMonth(HEAVY_STUDENT).headroomUsd, `${proSearchWorstCaseUsd} of search`);
 });
 
-// A Max subscriber used to be stopped by their own plan while doing exactly what Pro
-// subscribers are promised. That was the user-visible face of the inverted ladder.
-test("every plan can record what it advertises, and Max can carry a Pro workload", () => {
+// A subscriber on the DEAREST plan was once stopped by their own allowance while
+// doing exactly what a cheaper plan is promised. That was the user-visible face
+// of the inverted ladder, and it is why every plan is checked against its own
+// advertised figure rather than against the one above it.
+test("every plan can record what it advertises", () => {
   // Pro advertises 70 hours as of 2026-07-29, so 70 is what must fit. HEAVY_STUDENT
   // is still 80 — the owner's persona did not change when the plan did — which is
   // why this asserts the advertised figure rather than reusing the persona.
@@ -250,9 +264,8 @@ test("every plan can record what it advertises, and Max can carry a Pro workload
   // And the persona itself now overflows Pro. Stated here as well as at the
   // allowance test so a future edit cannot quietly restore an 80-hour promise.
   assert.equal(modelStudentMonth(HEAVY_STUDENT).withinTranscriptionCap, false);
-  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" }).withinTranscriptionCap, true);
-  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 20, plan: "plus" }).withinTranscriptionCap, true);
-  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 200, plan: "max" }).withinTranscriptionCap, true);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 30, plan: "plus" }).withinTranscriptionCap, true);
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 0.5, plan: "free" }).withinTranscriptionCap, true);
 });
 
 // ── The two ledgers ──────────────────────────────────────────────────────────
@@ -434,14 +447,23 @@ test("Kimi K3 loses money on Pro once it thinks, and it is the OUTPUT rate", () 
   assert.equal(KIMI_REASONS_ALWAYS, true);
 });
 
-// Which makes the premium model a MAX feature rather than a product-wide upgrade —
-// the plan with $80 of headroom can carry what the $19.99 plan cannot.
-test("Max can afford the model Pro cannot, which is what makes it a Max feature", () => {
-  const onMax = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3, plan: "max" });
-  const onPro = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3 });
-  assert.equal(onPro.profitable, false);
-  assert.ok(onMax.grossMarginPct > 65, `Max carries it at ${onMax.grossMarginPct}%`);
-  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2", plan: "max" }).meetsHouseMargin, true);
+// This USED to be the argument for a top tier: the $99 plan had the headroom to
+// carry a reasoning model that $19.99 could not. Max was retired on 2026-08-05,
+// so the conclusion changed rather than disappeared — with Agent Pro as the
+// ceiling there is no plan in the ladder that can fund an always-reasoning
+// model at the owner's heavy workload. Keeping the measurement is the point: it
+// is the number that says "not at this price", and it must fail loudly if
+// someone routes the premium lane product-wide.
+test("no plan in the ladder can fund an always-reasoning model at the heavy workload", () => {
+  for (const plan of ["free", "plus", "pro"] as const) {
+    const heavy = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "kimi-k3", chatReasoningMultiple: 3, plan });
+    assert.equal(heavy.profitable, false, `${plan} at ${heavy.grossMarginPct}%`);
+  }
+  // GLM on Pro is the affordable premium lane, and only just — it is why High
+  // effort is metered rather than unlimited.
+  const glmOnPro = modelStudentMonth({ ...HEAVY_STUDENT, chatModel: "glm-5.2" });
+  assert.equal(glmOnPro.profitable, true);
+  assert.equal(glmOnPro.meetsHouseMargin, false, `GLM on Pro is ${glmOnPro.grossMarginPct}%, not a free upgrade`);
 });
 
 // The silence gate is the largest UNMEASURED lever in the product. No recording has
@@ -558,28 +580,27 @@ test("Student at its new 30 hours still clears half margin, and the wall is well
   assert.ok(breakEven > 60, `break-even is ${breakEven}h, more than double the allowance`);
 });
 
-// 5x on the recording meter is where "5x everything" costs the most. On the cheaper
-// lane it no longer makes Max thin — 89.9% -> 55.7% — but it still hands away a
-// third of the best margin in the ladder in exchange for hours nobody can spend:
-// 400 hours a month is ~100 hours of lecture a week.
-test("5x recording gives away a third of Max's margin, for hours nobody records", () => {
-  const fiveX = 5 * 80;
-  const atEighty = modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" });
-  const maxed = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: fiveX, plan: "max" });
-  assert.ok(atEighty.grossMarginPct > 80, `80h on Max is ${atEighty.grossMarginPct}%`);
-  assert.ok(maxed.grossMarginPct < atEighty.grossMarginPct * 0.7, `400h on Max is ${maxed.grossMarginPct}%`);
-  assert.equal(maxed.profitable, true, "still above water — the objection is margin, not loss");
-  // Revenue per promised hour falls to $0.24. On AssemblyAI that was 1.4x what the
-  // hour cost — pennies of cover. On the xAI lane it is 2.4x, which is the whole
-  // reason 400 hours stops being reckless and becomes merely expensive. Stated as a
-  // ratio against the live rate so it stays honest the next time the provider moves.
-  const revenuePerHour = netRevenueUsd(PLANS.max.priceUsd) / fiveX;
+// What a promised hour is actually covered by, on the plan that now sets the
+// ceiling. This replaces the old "5x recording gives away a third of Max's
+// margin" test: the plan that argument was about is retired, but the underlying
+// discipline is not — an advertised hour has to be worth visibly more than the
+// hour costs, or the headline number is the thing that sinks the plan.
+test("Agent Pro's promised hours are covered several times over by its price", () => {
+  const revenuePerHour = netRevenueUsd(PLANS.pro.priceUsd) / (PLANS.pro.transcriptionMinutes / 60);
   const cover = revenuePerHour / SURVEYED_USD_PER_HOUR.xai_grok_stt;
-  assert.ok(cover > 2 && cover < 3, `${round(revenuePerHour, 3)}/hr is ${round(cover, 2)}x the live rate`);
+  assert.ok(cover > 2, `${round(revenuePerHour, 3)}/hr is only ${round(cover, 2)}x the live rate`);
+  // And it was barely above water on the lane xAI replaced — which is the whole
+  // reason 70 hours at $19.99 is fundable at all.
   assert.ok(
-    revenuePerHour / BATCH_USD_PER_HOUR.assemblyai_batch_universal2 < 1.5,
-    "and it was under 1.5x on the lane this replaced",
+    revenuePerHour / BATCH_USD_PER_HOUR.assemblyai_batch_universal2 < 2,
+    "the old lane left almost no cover per promised hour",
   );
+  // Agent Pro is the more generous offer per dollar, and that is the correct
+  // direction: the dearer plan should buy more hours per dollar, not fewer, or
+  // upgrading is a worse deal per unit of the thing you upgrade for.
+  const plusPerHour = netRevenueUsd(PLANS.plus.priceUsd) / (PLANS.plus.transcriptionMinutes / 60);
+  assert.ok(plusPerHour > SURVEYED_USD_PER_HOUR.xai_grok_stt * 2, `Student covers ${round(plusPerHour, 3)}/hr`);
+  assert.ok(revenuePerHour < plusPerHour, "Pro must promise more hours per dollar than Student");
 });
 
 // The number that decides how much recording each plan can actually promise.
@@ -591,18 +612,13 @@ test("what each plan can fund at the house margin, and where break-even sits", (
   assert.ok(hoursAt("pro", 80) < 30, `Pro funds ${hoursAt("pro", 80)}h`);
   // Still short of every plan's headline promise, on the cheapest wired provider.
   assert.ok(hoursAt("pro", 80) < HEAVY_STUDENT.audioHours / 3);
-  // Max is the only plan whose price already funds the 80-hour promise outright.
-  assert.ok(hoursAt("max", 80) > 100, `Max funds ${hoursAt("max", 80)}h`);
-  // Break-even is a different, much later wall — no plan is losing money at 80h.
-  assert.ok(hoursAt("pro", 0) > 100);
-});
-
-test("Max at a realistic heavy workload is extremely profitable — the room is real", () => {
-  // Same student, same 80 hours, paying $99 instead of $19.99.
-  const onMax = modelStudentMonth({ ...HEAVY_STUDENT, plan: "max" });
-  assert.ok(onMax.headroomUsd > 78, `headroom was ${onMax.headroomUsd}`);
-  assert.equal(onMax.meetsHouseMargin, true);
-  // Which is the point: Max's problem is not its cost, it is that it offers nothing.
+  // No plan in the ladder funds its own headline at the 80% house rule. That is
+  // a known, deliberate gap: the rule was written before the product had an
+  // audio lane, and Max — the one plan whose price DID clear it — was retired on
+  // 2026-08-05. Break-even is the wall that actually matters, and it sits far
+  // out: no plan loses money at the owner's 80-hour persona.
+  assert.ok(hoursAt("pro", 0) > 100, `Pro breaks even at ${hoursAt("pro", 0)}h`);
+  assert.ok(hoursAt("plus", 0) > 60, `Student breaks even at ${hoursAt("plus", 0)}h`);
 });
 
 test("the token cap is several times larger than the workload that has to fit in it", () => {
@@ -665,7 +681,9 @@ test("even a LIGHT student misses the house margin on Plus, and the AI is not wh
 });
 
 test("every plan in the ladder can be modelled", () => {
-  for (const plan of ["free", "plus", "pro", "max"] as PlanCode[]) {
+  // Driven off PLANS rather than a hand-written list, so retiring or adding a
+  // tier can never leave this loop testing a plan that no longer exists.
+  for (const plan of Object.keys(PLANS) as PlanCode[]) {
     const report = modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 4, plan });
     assert.equal(report.plan, plan);
     assert.ok(Number.isFinite(report.totalUsd));

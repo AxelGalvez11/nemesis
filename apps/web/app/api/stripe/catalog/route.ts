@@ -1,6 +1,6 @@
-import { stripeMaxPriceId, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { json, verifyBearer } from "@/lib/server";
-import { stripePriceMatchesPlan } from "@/lib/billing-contract";
+import { stripePriceMatchesPlan, type CheckoutPlan } from "@/lib/billing-contract";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 
 interface CatalogPrice {
@@ -22,20 +22,21 @@ export async function GET(req: Request) {
     // longer computes or advertises trial eligibility. The mode assertion stays
     // so a misconfigured key fails here the same way the checkout route would.
     assertStripeBillingWritesAllowed();
-    const [plusPrice, proPrice, maxPrice] = await Promise.all([
+    // Two plans, always. Max ($99) was retired 2026-08-05 and this catalog no
+    // longer reads STRIPE_MAX_PRICE_ID, so leaving that variable set in the
+    // environment does nothing — the sale path is closed in code, not config.
+    const [plusPrice, proPrice] = await Promise.all([
       stripeClient.prices.retrieve(stripePlusPriceId),
       stripeClient.prices.retrieve(stripeProPriceId),
-      stripeMaxPriceId ? stripeClient.prices.retrieve(stripeMaxPriceId) : Promise.resolve(null),
     ]);
 
     const configuredPrices: Array<{
-      plan: "plus" | "pro" | "max";
+      plan: CheckoutPlan;
       price: typeof plusPrice;
     }> = [
       { plan: "plus", price: plusPrice },
       { plan: "pro", price: proPrice },
     ];
-    if (maxPrice) configuredPrices.push({ plan: "max", price: maxPrice });
     for (const { plan, price } of configuredPrices) {
       if (!stripePriceMatchesPlan(plan, price)) {
         console.error("stripe_catalog_price_mismatch", {
@@ -59,7 +60,6 @@ export async function GET(req: Request) {
       plans: {
         plus: serialize(plusPrice),
         pro: serialize(proPrice),
-        ...(maxPrice ? { max: serialize(maxPrice) } : {}),
       },
     });
   } catch (error) {

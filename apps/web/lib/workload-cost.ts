@@ -167,12 +167,29 @@ export const PLAN_LIMITS_CHECKED = "2026-08-05";
  * pipeline run — and it is what makes the Student jump a real jump rather than a
  * top-up. Student going 20 -> 30 hours is the compensating move: it stays inside
  * its own cost wall (see the Plus tests) and reads as 1.5x the hours for the same
- * $9.99. The ladder is now 0.5 / 30 / 70 / 200 hours. `planCapInversions()` still
- * returns empty; the test that asserts that is what protects this.
+ * $9.99. `planCapInversions()` still returns empty; the test that asserts that
+ * is what protects this.
+ *
+ * THEN MAX WAS RETIRED, same day (owner: "max is retired, agent pro is the
+ * ceiling"). It is gone from PlanCode and PLANS, so **the ladder is now
+ * 0.5 / 30 / 70 hours across three plans** and every figure this module reports
+ * is about those three. Its plan_entitlements rows are untouched — deleting
+ * them would change `consume_usage` behaviour for any legacy record, and Max
+ * had no subscribers to migrate. Revert recipe if it ever comes back:
+ *   max  price $99 · 12,000 recording minutes · 125M/20M tokens · 750 searches
+ *        · 1,250 asks/day · premium answer lane true
  */
 export const LADDER_RESHAPED = "2026-08-05";
 
-export type PlanCode = "free" | "plus" | "pro" | "max";
+/**
+ * The plans that exist. Max ($99 / 200 hours) was RETIRED 2026-08-05 (owner:
+ * "max is retired, agent pro is the ceiling") and is gone from this union, so
+ * every ladder rule, inversion check and margin table below is now about three
+ * plans. Its `plan_entitlements` rows and its label are deliberately left alive
+ * elsewhere — see CheckoutPlan in lib/billing-contract.ts for why "unsellable"
+ * and "forgotten" are different things.
+ */
+export type PlanCode = "free" | "plus" | "pro";
 
 export interface Plan {
   code: PlanCode;
@@ -193,10 +210,10 @@ export interface Plan {
   premiumAnswerLane: boolean;
 }
 
-/** Live values, read back out of plan_entitlements after the 2026-07-28 reshape.
- *  Plus is half of Pro and Max is 5x Pro on every meter EXCEPT recording, where the
- *  owner set the three numbers directly: 20 / 80 / 200 hours. `planCapInversions()`
- *  now returns empty, and a test asserts that so the next stray row fails CI. */
+/** Live values, read back out of plan_entitlements. Plus is half of Pro on every
+ *  meter EXCEPT recording, where the owner sets the numbers directly:
+ *  0.5 / 30 / 70 hours. `planCapInversions()` returns empty, and a test asserts
+ *  that so the next stray row fails CI. */
 export const PLANS: Readonly<Record<PlanCode, Plan>> = {
   free: {
     askDaily: 10,
@@ -208,16 +225,6 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     searchMonthly: 60,
     // 1,800s = 30 minutes (owner 2026-08-05). One class, not a month of them.
     transcriptionMinutes: 30,
-  },
-  max: {
-    askDaily: 1_250,
-    code: "max",
-    dailyTokens: 20_000_000,
-    monthlyTokens: 125_000_000,
-    premiumAnswerLane: true,
-    priceUsd: 99,
-    searchMonthly: 750,
-    transcriptionMinutes: 12_000,
   },
   plus: {
     askDaily: 125,
@@ -253,8 +260,9 @@ const LADDERED: ReadonlyArray<readonly [keyof Plan, string]> = [
   ["askDaily", "daily asks"],
 ];
 
-/** Cheapest first — the order a student climbs. */
-const LADDER: readonly PlanCode[] = ["free", "plus", "pro", "max"];
+/** Cheapest first — the order a student climbs. Three rungs since Max was
+ *  retired on 2026-08-05; Agent Pro is the top. */
+const LADDER: readonly PlanCode[] = ["free", "plus", "pro"];
 
 export interface CapInversion {
   meter: string;
@@ -267,10 +275,12 @@ export interface CapInversion {
 /**
  * Every place where paying MORE buys LESS.
  *
- * Caps live in the database, are edited one row at a time, and nothing has ever
- * compared them across plans — so a raise applied to Pro and not to Max silently
- * inverts the ladder and no screen says so. This is the check that should have
- * existed before Pro was raised to 5,000 recording minutes against Max's 3,600.
+ * Caps live in the database and are edited one row at a time, so a raise applied
+ * to one plan and not the one above it silently inverts the ladder and no screen
+ * says so. That is not hypothetical: Pro was once raised to 5,000 recording
+ * minutes against the top plan's 3,600, and a subscriber on the DEARER plan
+ * could not record what the cheaper one advertised. The plan that caused it has
+ * since been retired; the check is what makes sure the next one is caught.
  */
 export function planCapInversions(plans: Readonly<Record<PlanCode, Plan>> = PLANS): CapInversion[] {
   const found: CapInversion[] = [];

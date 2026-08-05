@@ -12,11 +12,12 @@ export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 
 /** Paid plan ids, as the app and Stripe know them. "plus" is sold as "Student".
  *
- *  "max" was removed 2026-07-31 when the owner set a $20/mo ceiling. It is gone from
+ *  "max" came off this site on 2026-07-31 when the owner set a $20/mo ceiling, and
+ *  was RETIRED outright on 2026-08-05 ("agent pro is the ceiling"). It is gone from
  *  the type rather than merely unused on the page, so a future plan card cannot
- *  reintroduce a $99 tier just by typing a string. The app still ACCEPTS ?plan=max,
- *  so any link already in the wild keeps working — this governs only what this site
- *  is allowed to sell. */
+ *  reintroduce a $99 tier just by typing a string. As of the retirement the app no
+ *  longer sells it either: a stale `?plan=max` link now resolves to Student rather
+ *  than to a $99 checkout. */
 export type PaidPlan = "plus" | "pro";
 
 /**
