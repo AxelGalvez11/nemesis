@@ -6,9 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { type CheckoutPlan } from "@/lib/billing-contract";
 import { phCapture } from "@/lib/posthog";
 
-type PaidPlan = "plus" | "pro" | "max";
+/** Whatever checkout can actually sell — no second list to fall out of step
+ *  with it. This page used to keep its own union including "max", which
+ *  survived Max's retirement and meant a stale ?plan=max link still auto-started
+ *  a checkout, landing the visitor in Stripe looking at Student. */
+type PaidPlan = CheckoutPlan;
 
 interface Tier {
   id: PaidPlan;
@@ -22,8 +27,8 @@ interface Tier {
 }
 
 // Nemesis tiers — freemium: the free plan works every day with no card, and these
-// paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro" |
-// "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the $ shown here must match those prices.
+// paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro"
+// → STRIPE_{PLUS,PRO}_PRICE_ID); the $ shown here must match those prices.
 //
 // RECORDING ALLOWANCES MUST MATCH plan_entitlements.transcription_seconds_month_limit,
 // which workload-cost.ts mirrors as PLANS[...].transcriptionMinutes. They drifted badly
@@ -73,15 +78,18 @@ const TIERS: Tier[] = [
   },
 ];
 
-// MAX WAS REMOVED 2026-07-31. The owner set a $20/mo ceiling after looking at the
+// MAX'S CARD CAME OFF 2026-07-31, and Max was RETIRED OUTRIGHT 2026-08-05 (owner:
+// "max is retired, agent pro is the ceiling"). The $20/mo ceiling came from the
 // nearest competitor, whose most expensive plan is $19 a month — against that, a $99
 // row reads as a different category of product rather than as a generous option.
 //
-// Only the CARD is gone. `plan_entitlements.max`, the Stripe price and the checkout
-// route's "max" branch are all untouched, so an existing subscriber keeps their
-// entitlements and an old ?plan=max link still resolves. Nothing migrated because
-// Max had no subscribers. Retiring the Stripe product is a live billing change and
-// is the owner's call, not a side effect of a pricing-page edit.
+// Since the retirement nothing sells it: CheckoutPlan is plus | pro, the checkout
+// route has no max branch, and a stale ?plan=max link now just leaves the visitor
+// here to choose. What deliberately survives is RESOLUTION — plan_entitlements.max,
+// planForPriceId and planLabel — so a subscription that predates the retirement
+// keeps its entitlements instead of silently becoming free. Nothing needed
+// migrating: Max had no subscribers. Archiving the Stripe price is a live billing
+// change and remains the owner's call, not a side effect of a pricing-page edit.
 
 // The marketing site's typeface, loaded ONLY for this route.
 //
@@ -166,8 +174,11 @@ function PricingInner() {
         return null;
       }
     })();
+    // A plan this page cannot sell is not a plan: an unrecognised ?plan= (a
+    // stale max link, a typo) simply leaves the visitor on the pricing page to
+    // choose, rather than auto-starting a checkout for something else.
     const asPlan = (value: null | string): PaidPlan | null =>
-      value === "plus" || value === "pro" || value === "max" ? value : null;
+      value === "plus" || value === "pro" ? value : null;
     const plan = asPlan(intentPlan) ?? asPlan(stashed);
     if (plan) {
       void startCheckout(plan);
