@@ -33,7 +33,7 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { extractFile, isExtractable, isImage } from "@/lib/workspace/chat-attachments";
 import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
-import { uploadLibrarySource, type LibrarySource } from "@/lib/workspace/library-sources";
+import { setLibrarySourceFolder, uploadLibrarySource, type LibrarySource } from "@/lib/workspace/library-sources";
 import {
   applyLibrarianPlan,
   buildLibrarianMessages,
@@ -87,7 +87,11 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
    *  path, or null when anything at all went wrong (caller falls back). The
    *  stored original (if the upload succeeded) is threaded into every page's
    *  provenance stamp so pills open the file. */
-  const organizeDocument = async (file: File, text: string): Promise<{ path: string; stored: LibrarySource | null } | null> => {
+  const organizeDocument = async (
+    file: File,
+    text: string,
+    filed: LibrarySource | null,
+  ): Promise<{ path: string; stored: LibrarySource | null } | null> => {
     if (!uid || text.trim().length < LIBRARIAN_MIN_CHARS) return null;
     try {
       const reply = await postChatCompletion(
@@ -101,7 +105,10 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
       );
       const plan = parseLibrarianPlan(reply.text ?? "", notes.map((note) => note.path));
       if (!plan) return null;
-      const stored = await uploadLibrarySource(uid, file, plan.folder);
+      // The bytes are already in the bucket — the librarian only decides WHERE
+      // the row is filed, which is a metadata update, not a second upload.
+      const stored = filed ? { ...filed, folderPath: plan.folder } : null;
+      if (filed) await setLibrarySourceFolder(uid, filed.id, plan.folder);
       const firstPath = await applyLibrarianPlan(plan, {
         createNote,
         findNote: (path) => {
@@ -127,8 +134,17 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
     for (const file of files) {
       try {
         if (isExtractable(file)) {
-          const { text, title } = await extractFile(file, uid);
-          const organized = isImage(file) ? null : await organizeDocument(file, text);
+          // 🔴 UPLOAD FIRST, THEN EXTRACT. The original used to be stored AFTER
+          // extraction, which meant a large file was sent twice: once to the
+          // extractor and again to the bucket. Filing it first yields the row id
+          // the extractor takes as its reference, so the bytes leave the device
+          // exactly once and every later operation names the same object.
+          const filed = uid ? await uploadLibrarySource(uid, file, "Imported") : null;
+          const { text, title } = await extractFile(file, uid, {
+            folderPath: "Imported",
+            sourceId: filed?.id,
+          });
+          const organized = isImage(file) ? null : await organizeDocument(file, text, filed);
           if (organized) {
             lastPath = organized.path;
             storedAny = storedAny || organized.stored !== null;
@@ -143,9 +159,9 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
             });
             lastPath = note.path;
             if (uid) {
-              const stored = await uploadLibrarySource(uid, file, "Imported");
-              storedAny = storedAny || stored !== null;
-              await recordProvenance(note.id, file.name, stored?.id ?? null);
+              // Already filed above — do NOT upload a second copy.
+              storedAny = storedAny || filed !== null;
+              await recordProvenance(note.id, file.name, filed?.id ?? null);
             }
           }
         } else {

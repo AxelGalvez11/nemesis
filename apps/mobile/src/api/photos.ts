@@ -31,6 +31,7 @@ import {
   photoObjectPath,
   photoUploadError,
 } from "@/lib/photo-note";
+import { fileLibrarySource } from "./librarySources";
 import { supabase } from "./supabase";
 
 /** A photograph that has been stored and read. */
@@ -97,12 +98,42 @@ export async function storeAndReadPhoto(uid: string, uri: string): Promise<ReadP
     throw new PhotoError("Saved the photo, but couldn't open it. Try again.");
   }
 
-  const read = await readPhotoText(uid, uri);
+  // 🔴 THE PICTURE IS NOT SENT TWICE ANY MORE. It used to be uploaded to the
+  // bucket here and then uploaded AGAIN, in full, as a multipart body to the
+  // extract route — the same megabytes over a phone connection, twice. Now the
+  // bytes that are already in the bucket are simply NAMED: the row filed below
+  // is the reference the route resolves. A phone photo of a lecture slide is
+  // routinely over the ~4.5 MB the old multipart path could reach at all.
+  const sourceId = await fileLibrarySource(uid, {
+    bucket: PHOTO_BUCKET,
+    fileName: photoFileName(storagePath),
+    mime: "image/jpeg",
+    sizeBytes: info.size,
+    storagePath,
+  });
+
+  const read = await readPhotoText(uid, uri, sourceId);
   return { imageUrl: signed.data.signedUrl, storagePath, text: read.text, title: photoNoteTitle(read.title) };
 }
 
-/** POST the picture to the shared extract endpoint and get its text back. */
-async function readPhotoText(uid: string, uri: string): Promise<{ text: string; title: string | null }> {
+/** A displayable name for a photo, whose object key is a bare uuid. */
+function photoFileName(storagePath: string): string {
+  return storagePath.split("/").pop() ?? "photo.jpg";
+}
+
+/**
+ * Read the picture the extract endpoint already has.
+ *
+ * `sourceId` present: the route fetches the object from storage itself — no
+ * upload, no size ceiling. Absent (the row could not be filed): fall back to
+ * posting the bytes, which still works for a small photo and gives the student
+ * a real answer instead of a failure.
+ */
+async function readPhotoText(
+  uid: string,
+  uri: string,
+  sourceId: string | null,
+): Promise<{ text: string; title: string | null }> {
   const key = await deviceKey(uid);
   // The route gates on a `nmk_` device key, NOT on the Supabase session token —
   // the same bearer the chat wire uses. Sending the access token here would 401
@@ -111,16 +142,23 @@ async function readPhotoText(uid: string, uri: string): Promise<{ text: string; 
 
   let response: { status: number; body: string };
   try {
-    response = await FileSystem.uploadAsync(`${APP_API_BASE}/api/notebooks/extract/file`, uri, {
-      fieldName: "file",
-      headers: { Authorization: `Bearer ${key}` },
-      httpMethod: "POST",
-      mimeType: "image/jpeg",
-      // The route reads a multipart form, exactly as the web app's file picker
-      // posts one — same endpoint, same request shape, one server behaviour.
-      parameters: {},
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    });
+    if (sourceId) {
+      const sent = await fetch(`${APP_API_BASE}/api/notebooks/extract/file`, {
+        body: JSON.stringify({ sourceId }),
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        method: "POST",
+      });
+      response = { body: await sent.text(), status: sent.status };
+    } else {
+      response = await FileSystem.uploadAsync(`${APP_API_BASE}/api/notebooks/extract/file`, uri, {
+        fieldName: "file",
+        headers: { Authorization: `Bearer ${key}` },
+        httpMethod: "POST",
+        mimeType: "image/jpeg",
+        parameters: {},
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      });
+    }
   } catch {
     throw new PhotoError("Couldn't reach the reader. Check your connection and try again.");
   }
@@ -135,7 +173,9 @@ async function readPhotoText(uid: string, uri: string): Promise<{ text: string; 
   if (response.status !== 200 || !parsed?.text) {
     // The route writes student-readable errors ("Couldn't read anything in that
     // picture…", "Reading photos isn't switched on…"), so they surface as-is.
-    throw new PhotoError(parsed?.error ?? "Couldn't read that photo. Try again.");
+    // A non-JSON body means the platform answered, not us — say something true
+    // rather than repeating a generic apology.
+    throw new PhotoError(parsed?.error ?? photoUploadError(response.status));
   }
   return { text: parsed.text, title: parsed.title ?? null };
 }

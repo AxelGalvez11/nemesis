@@ -216,9 +216,15 @@ export async function findOrCreateLibrarySourceRow(
   mime: string | null,
   folderPath: string,
   storagePath: string,
+  bucket: "library-sources" | "library-images" = "library-sources",
 ): Promise<string | null> {
   try {
     const fileName = file.name.slice(0, 512);
+    // 🔴 The dedupe is what makes "upload once" true across lanes: re-attaching
+    // the same file in chat, or importing it twice, returns the SAME row id, so
+    // every downstream operation keeps pointing at one canonical object.
+    // Deliberately keyed on name+size rather than storage_path — the path is a
+    // fresh uuid every time, so keying on it would dedupe nothing.
     const existing = await supabase
       .from("library_sources")
       .select("id")
@@ -229,22 +235,47 @@ export async function findOrCreateLibrarySourceRow(
       .limit(1);
     const found = existing.data?.[0]?.id;
     if (typeof found === "string") return found;
-    const { data, error } = await supabase
-      .from("library_sources")
-      .insert({
-        file_name: fileName,
-        folder_path: normalizeSourceFolder(folderPath),
-        mime_type: mime || null,
-        size_bytes: file.size,
-        storage_path: storagePath,
-        user_id: uid,
-      })
-      .select("id")
-      .single();
-    if (error || !data) return null;
-    return (data as { id: string }).id;
+    const row = {
+      file_name: fileName,
+      folder_path: normalizeSourceFolder(folderPath),
+      mime_type: mime || null,
+      size_bytes: file.size,
+      storage_path: storagePath,
+      user_id: uid,
+    };
+    // 🔴 DEPLOY ORDER MUST NOT MATTER. If this code reaches production before the
+    // migration that adds `bucket`, an insert naming that column fails outright
+    // and every upload stops. Retrying without it keeps documents working
+    // exactly as before — only a picture, which is the one case that NEEDS the
+    // column to say `library-images`, is refused until the migration lands.
+    const { data, error } = await supabase.from("library_sources").insert({ ...row, bucket }).select("id").single();
+    if (!error && data) return (data as { id: string }).id;
+    if (bucket !== "library-sources") return null;
+    const retry = await supabase.from("library_sources").insert(row).select("id").single();
+    if (retry.error || !retry.data) return null;
+    return (retry.data as { id: string }).id;
   } catch {
     return null;
+  }
+}
+
+/** Re-file an already-uploaded original under a different folder.
+ *
+ *  Exists so an import can store the bytes ONCE, up front, before it knows where
+ *  they belong — the librarian decides the folder only after reading the text,
+ *  and re-uploading the file to move it would send a lecture deck twice. Moving
+ *  a row is a metadata update; the object never moves. Best-effort: a source
+ *  filed in the wrong folder is a nuisance, a failed import is not. */
+export async function setLibrarySourceFolder(uid: string, id: string, folderPath: string): Promise<void> {
+  try {
+    await supabase
+      .from("library_sources")
+      .update({ folder_path: normalizeSourceFolder(folderPath) })
+      .eq("id", id)
+      .eq("user_id", uid);
+  } catch {
+    // The original is still filed and still readable, just not where the
+    // librarian would have put it.
   }
 }
 

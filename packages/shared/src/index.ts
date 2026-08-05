@@ -201,3 +201,7 @@ export * from "./destructive-tools.ts";
 // is the app's own defence — it runs on the receiving side precisely so a
 // spoofed or compromised sender changes nothing.
 export * from "./lms-import.ts";
+// One upload ceiling for web and phone. Shared because it was wrong in four
+// places at once, and because a limit that appears twice eventually disagrees
+// with itself.
+export * from "./upload-limits.ts";

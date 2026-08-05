@@ -2,6 +2,7 @@
 
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
+import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
@@ -154,8 +155,24 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
       });
       if (uploaded.error) return base;
       const signed = await supabase.storage.from("library-images").createSignedUrl(storagePath, 31_536_000);
-      if (signed.error || !signed.data?.signedUrl) return { ...base, storagePath };
-      return { ...base, storagePath, url: signed.data.signedUrl };
+      // A picture gets a row too, so it has the SAME kind of handle a document
+      // has. Without one, a photo over the inline limit would be uploaded a
+      // second time by the extractor just to obtain an id. The row records which
+      // bucket holds it, which is why library_sources gained a `bucket` column.
+      const sourceId = await findOrCreateLibrarySourceRow(
+        uid,
+        file,
+        file.type || "image/jpeg",
+        "",
+        storagePath,
+        "library-images",
+      );
+      return {
+        ...base,
+        storagePath,
+        ...(sourceId ? { sourceId } : {}),
+        ...(signed.data?.signedUrl ? { url: signed.data.signedUrl } : {}),
+      };
     } catch {
       return base;
     }
@@ -177,7 +194,7 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
     // them with [n](?source=<id>) pills, and syllabi/lectures belong in the
     // Library, not just in a chat bucket). Deduped by name+size, so
     // re-attaching the same file reuses its row.
-    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath);
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath, "library-sources");
     return {
       ...base,
       mime,
@@ -210,18 +227,117 @@ export interface ExtractedFile {
   title: string | null;
   /** The vision model, present only when the file had to be READ as pixels. */
   readBy?: string;
+  /** What the server decided the file IS, after sniffing its magic bytes — which
+   *  is more reliable than the extension, and is why a lecture PDF whose name had
+   *  lost its ".pdf" is now readable. */
+  kind?: "pdf" | "docx" | "pptx" | "image";
+  /** Bytes actually read. */
+  bytes?: number;
 }
 
-/** Send one file to the extract chokepoint and get its text back. Throws with a
- *  student-readable message — the route writes those, so they surface as-is. */
-export async function extractFile(file: File, uid: string | null): Promise<ExtractedFile> {
+/**
+ * Most a file may weigh and still be POSTed as a form.
+ *
+ * 🔴 THIS IS A PLATFORM LIMIT, NOT A PRODUCT ONE. Vercel refuses a request body
+ * over ~4.5 MB at the edge, before any of our code runs — measured against
+ * production 2026-08-05: 4.4 MB reached the handler, 4.6 MB got a plain-text
+ * FUNCTION_PAYLOAD_TOO_LARGE. Anything above this goes to storage first and is
+ * read by reference, which has no such ceiling. Set below the real edge so our
+ * own JSON error wins the race and the student is told something true.
+ */
+const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Put the bytes in storage and file the row that names them, both under this
+ * user's own RLS session. Returns the row id — the ONLY handle the server will
+ * accept — or null when either half failed.
+ *
+ * This is the canonical upload. Every lane funnels here so a file is uploaded
+ * exactly once and every later operation refers to the same object.
+ */
+async function uploadForIngest(file: File, uid: string, folderPath: string): Promise<string | null> {
+  const image = isImage(file);
+  const bucket = image ? "library-images" : "library-sources";
+  const mime = fileMime(file);
+  try {
+    const key = ingestObjectKey(uid, file.name);
+    const { error } = await supabase.storage.from(bucket).upload(key, file, {
+      contentType: mime || undefined,
+      upsert: false,
+    });
+    if (error) return null;
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, folderPath, key, bucket);
+    // The object is useless without a row: the server resolves the path FROM the
+    // row, so an orphaned object can never be read. Remove it rather than leave
+    // bytes nothing can reach.
+    if (!sourceId) {
+      await supabase.storage.from(bucket).remove([key]).catch(() => undefined);
+      return null;
+    }
+    return sourceId;
+  } catch {
+    return null;
+  }
+}
+
+/** The mime the bucket allowlist expects. A browser's own `file.type` is usually
+ *  right but arrives empty from some drag sources, and an upload with no content
+ *  type is refused by the allowlist. */
+function fileMime(file: File): string {
+  if (file.type) return file.type;
+  const extension = DOCUMENT_EXTENSIONS.find((ext) => file.name.toLowerCase().endsWith(ext));
+  return (extension && DOCUMENT_MIME[extension]) || "";
+}
+
+/**
+ * What went wrong, in words a student can act on.
+ *
+ * The old code did `response.json().catch(() => null)` and fell back to
+ * "Couldn't read X." — which meant the ONE failure that actually happened in
+ * production, the platform's plain-text 413, arrived as a shrug. A non-JSON
+ * body is not "no information": the status code says plenty.
+ */
+function extractErrorFor(status: number, fileName: string): string {
+  if (status === 413) return `${fileName} is too large to upload (${Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB max).`;
+  if (status === 403) return `${fileName} couldn't be read — it isn't filed under this account.`;
+  if (status === 404) return `${fileName} finished uploading but couldn't be found. Try adding it again.`;
+  if (status === 415) return `${fileName} isn't a file we can read. Add a photo, a PDF, Word, or PowerPoint.`;
+  if (status === 401) return "This device needs to re-connect to your account. Try again.";
+  if (status === 503) return "That service is busy right now. Try again in a moment.";
+  if (status >= 500) return `Something broke while reading ${fileName}. Try again.`;
+  return `Couldn't read ${fileName}.`;
+}
+
+/**
+ * Send one file to the extract chokepoint and get its text back.
+ *
+ * Small files still go as a form — one round trip, unchanged behaviour. Large
+ * ones are uploaded to private storage first and named by reference, because
+ * they physically cannot reach the function any other way.
+ *
+ * `sourceId` lets a lane that has ALREADY uploaded the original say so, instead
+ * of paying to send the same thirty megabytes twice. That is the normal case:
+ * chat and Library import both file the row before extracting.
+ *
+ * Throws with a student-readable message.
+ */
+export async function extractFile(
+  file: File,
+  uid: string | null,
+  opts: { sourceId?: string | null; folderPath?: string } = {},
+): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
-  if (!key) throw new Error("Sign in to read this attachment.");
-  // A deck bigger than the route's 25 MB ceiling is almost entirely pictures;
-  // its words fit in under 1 MB. Strip the media in the browser and send THAT,
-  // so the file is read instead of refused (owner's 123.8 MB immunology deck:
-  // slimmed to 0.11 MB, all 37 slides extracted). Slimming failure falls back
-  // to the original — the route then answers with its own honest error.
+  if (!key || !uid) throw new Error("Sign in to read this attachment.");
+
+  // A deck over the STORAGE ceiling is almost entirely pictures; its words fit
+  // in under 1 MB. Strip the media in the browser and send THAT, so the file is
+  // read instead of refused (owner's 123.8 MB immunology deck: slimmed to
+  // 0.11 MB, all 37 slides extracted).
+  //
+  // 🔴 The threshold used to be 24 MB, chosen against a 25 MB route limit that
+  // was never real. That stripped the pictures out of every deck over 24 MB —
+  // and did nothing for the 5-to-24 MB decks that were failing. It is now the
+  // bucket's own ceiling, so a 30 MB lecture keeps its figures.
   let payload = file;
   if (isSlimmableOfficeName(file.name) && file.size > OFFICE_SLIM_THRESHOLD_BYTES) {
     try {
@@ -231,21 +347,42 @@ export async function extractFile(file: File, uid: string | null): Promise<Extra
       // Not a real zip, or hostile contents — the route's own guards decide.
     }
   }
-  const form = new FormData();
-  form.append("file", payload);
-  const response = await fetch("/api/notebooks/extract/file", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: form,
-  });
+
+  if (payload.size > MAX_SOURCE_BYTES) {
+    throw new Error(extractErrorFor(413, file.name));
+  }
+
+  const headers: Record<string, string> = { Authorization: `Bearer ${key}` };
+  let response: Response;
+
+  // Already filed by the caller, or small enough to post directly. A small file
+  // with no row still takes the multipart path — one round trip, and nothing is
+  // stored for a document the student never asked us to keep.
+  const sourceId = opts.sourceId ?? null;
+  if (!sourceId && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+    const form = new FormData();
+    form.append("file", payload);
+    response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
+  } else {
+    const id = sourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
+    if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
+    response = await fetch("/api/notebooks/extract/file", {
+      body: JSON.stringify({ sourceId: id }),
+      headers: { ...headers, "Content-Type": "application/json" },
+      method: "POST",
+    });
+  }
+
   const body = (await response.json().catch(() => null)) as {
     text?: string;
     title?: string;
     readBy?: string;
+    kind?: ExtractedFile["kind"];
+    bytes?: number;
     error?: string;
   } | null;
-  if (!response.ok || !body?.text) throw new Error(body?.error ?? `Couldn't read ${file.name}.`);
-  return { readBy: body.readBy, text: body.text, title: body.title ?? null };
+  if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
+  return { bytes: body.bytes, kind: body.kind, readBy: body.readBy, text: body.text, title: body.title ?? null };
 }
 
 /** Marks the trailing line of a sent message that lists what was attached. */
@@ -384,7 +521,7 @@ export async function prepareChatAttachments(text: string, files: readonly File[
   // of nothing happening on screen (owner 2026-08-03: "the chat lags behind
   // when user uploads files"). Promise.all keeps the order of `files`, which
   // fitAttachmentBlocks depends on for its budget arithmetic.
-  const sources: AttachmentSource[] = await Promise.all(files.map(async (file) => {
+  const sources: AttachmentSource[] = await Promise.all(files.map(async (file, index) => {
     let content = "";
     try {
       if (isReadableText(file)) content = await file.text();
@@ -392,7 +529,13 @@ export async function prepareChatAttachments(text: string, files: readonly File[
       // multimodal model and hands back a transcript (or, for a picture with no text in it, a
       // description). This is what used to be the "image pixels are not yet sent to the model"
       // apology — the pixels still never reach the chat model, but what is IN them does.
-      else if (isExtractable(file)) content = (await extractFile(file, uid)).text;
+      //
+      // The row id from the persist pass above is handed straight to the extractor, so a
+      // thirty-megabyte deck is uploaded ONCE and everything afterwards refers to that one
+      // object. Without this the extractor would upload its own copy of the same bytes.
+      else if (isExtractable(file)) {
+        content = (await extractFile(file, uid, { sourceId: attachments[index]?.sourceId })).text;
+      }
       else content = "File attached; no text extractor is available for this format.";
     } catch (cause) {
       content = cause instanceof Error ? cause.message : "This attachment could not be read.";
