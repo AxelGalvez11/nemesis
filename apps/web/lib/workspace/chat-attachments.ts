@@ -122,8 +122,15 @@ function attachmentRecord(file: File): SessionAttachment {
 }
 
 /** Bucket ceiling for a stored chat document — the library-sources bucket
- *  refuses anything larger, so don't burn an upload round-trip finding out. */
-const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
+ *  refuses anything larger, so don't burn an upload round-trip finding out.
+ *
+ *  🔴 IT IS THE SHARED CONSTANT, NOT A COPY OF IT. This was `50 * 1024 * 1024`
+ *  written out here, a fifth private restatement of a number that already has
+ *  one home — and it survived the move to 200 MiB silently, because a hard-coded
+ *  limit never fails a test, it just quietly refuses files it should have kept.
+ *  A 118 MiB lecture would have uploaded to the bucket and then been dropped
+ *  from chat storage by this line alone. Import the ceiling; never retype it. */
+const MAX_STORED_DOCUMENT_BYTES = MAX_SOURCE_BYTES;
 
 /** The mime the bucket allowlist expects per document kind. The browser's own
  *  file.type is usually right but arrives empty from some drag sources.
@@ -145,7 +152,7 @@ export const DOCUMENT_MIME: Record<string, string> = {
 };
 
 /** Which storage bucket a persisted attachment lives in — images have their
- *  own bucket; documents share the Library's sources bucket (same 50 MB cap,
+ *  own bucket; documents share the Library's sources bucket (same cap,
  *  same owner-only policies). The preview dialog re-signs through this. */
 export function attachmentBucket(attachment: Pick<SessionAttachment, "mime">): string {
   return attachment.mime?.startsWith("image/") ? "library-images" : "library-sources";
@@ -162,7 +169,7 @@ function attachmentId(): string {
  * device or in a preview popup; that requires one private durable object plus
  * its metadata in chat_messages.meta.attachments. Images always stored; PDF /
  * Word / PowerPoint originals stored since 2026-08-04 (owner: "does the webapp
- * save documents and are they readable?") up to the bucket's 50 MB ceiling —
+ * save documents and are they readable?") up to the bucket's ceiling —
  * an oversized original is skipped, its text still reaches the model. */
 async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
   const base = attachmentRecord(file);
