@@ -21,17 +21,60 @@ export interface SearchMatch {
   end: number;
 }
 
-/** Case- and accent-folded, one output character per input character. */
+/** Typography a student cannot type. A real syllabus says `patient’s` with a
+ *  curly apostrophe and `10–12` with an en dash; nobody searching for those
+ *  reaches for the curly key. Every entry is one character in and one character
+ *  out, so this costs the offset invariant nothing.
+ *
+ *  Deliberately absent: `…`, which would have to become three dots and move
+ *  every character after it. Unicode spaces need no entry either — they already
+ *  satisfy `\s`, so the whitespace run in `foldWithMap` collapses them. */
+const TYPOGRAPHIC_FOLD: Record<string, string> = {
+  "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'", "´": "'", "ʼ": "'",
+  "“": '"', "”": '"', "„": '"', "‟": '"', "″": '"',
+  "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-", "−": "-",
+};
+
+/** Case-, accent- and typography-folded, and **exactly as long as its input**.
+ *
+ *  🔴 The length rule is measured in UTF-16 code units, not characters, because
+ *  that is what a string offset actually indexes. A character outside the basic
+ *  plane — the mathematical italic `𝑥` an engineering PDF is full of, a rare CJK
+ *  glyph, an emoji — occupies TWO units, and folding it to one silently shifted
+ *  every highlight after it by one character, drifting further with each one.
+ *  Turkish `İ` fails the same rule in the other direction: its lowercase is two
+ *  units long. So the fold is clamped to the input's own width rather than
+ *  trusted to preserve it. */
 export function foldForSearch(text: string): string {
   let folded = "";
   for (const character of text) {
-    const stripped = character.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+    const width = character.length;
+    const mapped = TYPOGRAPHIC_FOLD[character] ?? character;
+    const stripped = mapped.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
     // A character that decomposes to nothing (a lone combining mark) keeps its
     // slot as a space, so offsets stay aligned with the original string.
-    folded += (stripped || " ").slice(0, 1).toLocaleLowerCase();
+    const candidate = stripped || " ";
+    folded += candidate.length === width ? candidate : candidate.slice(0, width).padEnd(width, " ");
   }
   return folded;
 }
+
+/** Glyphs that stand in for several typed letters. Real academic PDFs are set
+ *  with them and no keyboard produces them, so `ﬁrst` has to answer to "first".
+ *  These DO change length, which is why they are expanded in `foldWithMap`,
+ *  where an offset map already exists to absorb it. */
+const LIGATURE_FOLD: Record<string, string> = {
+  "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st",
+  "æ": "ae", "œ": "oe", "ß": "ss",
+};
+
+/** Characters that are in the text but not on the page: a soft hyphen left by
+ *  the typesetter, a zero-width joiner, a byte-order mark. Dropped entirely, so
+ *  a word broken across a line still answers to the word. */
+// Listed by code point rather than as literal characters: they are invisible in
+// an editor, so a literal set here would be impossible to review or safely edit.
+// Soft hyphen, zero-width space/non-joiner/joiner, word joiner, BOM.
+const INVISIBLE = new Set([0x00ad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff]);
 
 /** Whitespace differences must not stop a match: PDFs break lines wherever the
  *  layout did, so "commerce  clause" and "commerce\nclause" have to be equal to
@@ -44,16 +87,37 @@ function foldWithMap(text: string): { folded: string; offsets: number[] } {
   let inWhitespace = false;
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index] ?? "";
+    if (INVISIBLE.has(character.codePointAt(0) ?? -1)) continue;
     if (/\s/.test(character)) {
       if (inWhitespace) continue;
+      // A compound broken across a line — a real syllabus reads "the three-\n
+      // extension limit" — is still one word to whoever types it. A whitespace
+      // run that CONTAINS a line break and follows a hyphen disappears entirely
+      // instead of becoming a space, so "three-extension" matches. The run has
+      // to be examined whole: "-\r\n   " is the same break with indentation
+      // after it. The hyphen itself stays — it is what the student types.
+      if (folded.endsWith("-")) {
+        let end = index;
+        while (end < source.length && /\s/.test(source[end] ?? "")) end += 1;
+        if (source.slice(index, end).includes("\n")) {
+          index = end - 1;
+          continue;
+        }
+      }
       inWhitespace = true;
       folded += " ";
       offsets.push(index);
       continue;
     }
     inWhitespace = false;
-    folded += character;
-    offsets.push(index);
+    // A ligature stands for several letters and so occupies several slots in
+    // the folded string — every one of them pointing back at the single
+    // character it came from, which is what keeps the highlight over the glyph.
+    const expanded = LIGATURE_FOLD[character] ?? character;
+    for (const unit of expanded) {
+      folded += unit;
+      offsets.push(index);
+    }
   }
   return { folded, offsets };
 }

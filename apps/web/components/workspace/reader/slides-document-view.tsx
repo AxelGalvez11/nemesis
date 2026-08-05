@@ -18,6 +18,7 @@ import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
 import { notesPathFor, parseSlide, slideOrder, slideText, type ParsedSlide } from "@/lib/reader/pptx-slides";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
+import { resolveSlidePictures } from "@/lib/reader/slide-pictures";
 import { cn } from "@/lib/utils";
 
 export type SlideTab = "slides" | "outline" | "notes";
@@ -42,6 +43,9 @@ interface SlidesDocumentViewProps {
 /** A 16:9 slide is drawn at this width and scaled from there — the same role
  *  a PDF page's natural size plays in the PDF lane. */
 const SLIDE_WIDTH = 880;
+/** How many pictures fit down the slide's picture column before each becomes
+ *  too small to read. Anything past this is counted out loud, never dropped. */
+const MAX_SLIDE_PICTURES = 3;
 
 export function SlidesDocumentView({
   bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement,
@@ -243,7 +247,8 @@ function SlideCanvas({
   registerElement: (unit: number, element: HTMLElement | null) => void;
 }) {
   const [element, setElement] = useState<HTMLElement | null>(null);
-  const pictures = slide.pictures.map((picture) => (picture.target ? images.get(picture.target) : null)).filter((url): url is string => Boolean(url));
+  const { shown, overflow, missing, missingFormats } = resolveSlidePictures(slide.pictures, images, MAX_SLIDE_PICTURES);
+  const hasPictureColumn = shown.length > 0 || overflow > 0 || missing > 0;
 
   useEffect(() => {
     registerElement(slide.index, element);
@@ -288,12 +293,28 @@ function SlideCanvas({
               </li>
             ))}
           </ul>
-          {pictures.length > 0 && (
+          {hasPictureColumn && (
             <div className={cn("flex shrink-0 flex-col gap-2", slide.paragraphs.length > 0 ? "w-2/5" : "w-full")}>
-              {pictures.slice(0, 3).map((url, index) => (
+              {shown.map((url, index) => (
                 // eslint-disable-next-line @next/next/no-img-element -- an in-memory object URL for bytes already in the browser
                 <img alt="" className="min-h-0 w-full flex-1 rounded object-contain" key={index} src={url} />
               ))}
+              {missing > 0 && (
+                <p
+                  className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed px-2 text-center leading-snug"
+                  data-testid={`reader-slide-${slide.index}-missing-pictures`}
+                  style={{ borderColor: "#c9ced6", color: "#6b7280", fontSize: `${0.7 * scale}rem` }}
+                >
+                  {missing === 1 ? "1 picture" : `${missing} pictures`} in this slide
+                  {missingFormats.length > 0 ? ` (${missingFormats.join(", ")})` : ""} cannot be shown yet — open the
+                  original to see {missing === 1 ? "it" : "them"}.
+                </p>
+              )}
+              {overflow > 0 && (
+                <p className="text-center" style={{ color: "#6b7280", fontSize: `${0.7 * scale}rem` }}>
+                  +{overflow} more {overflow === 1 ? "picture" : "pictures"} on this slide
+                </p>
+              )}
             </div>
           )}
         </div>

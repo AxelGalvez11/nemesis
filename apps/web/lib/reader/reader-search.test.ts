@@ -6,7 +6,14 @@ import { at } from "./test-helpers";
 
 test("folding never changes the length of the text", () => {
   for (const sample of ["café", "ÄÖÜ", "naïve", "Ω", "日本語", "مرحبا", "é"]) {
-    assert.equal(foldForSearch(sample).length, [...sample].length, `length changed for ${sample}`);
+    // 🔴 Measured in UTF-16 code units — `.length`, NOT `[...sample].length`.
+    // Offsets index code units, so that is the invariant that actually matters.
+    // Counting code points let this test pass while the fold silently shortened
+    // every astral character, shifting later highlights by one and drifting
+    // further with each one. Every sample on the line above is basic-plane,
+    // where the two counts agree, so nothing here could ever have caught it —
+    // the astral cases live in the dedicated test further down.
+    assert.equal(foldForSearch(sample).length, sample.length, `length changed for ${sample}`);
   }
 });
 
@@ -105,4 +112,73 @@ test("out-of-range highlights are clipped, not crashed on", () => {
   assert.equal(runs.map((run) => run.text).join(""), "short");
   assert.equal(runs.length, 1);
   assert.equal(at(runs, 0).highlighted, true);
+});
+
+// --- Typography a student cannot type ------------------------------------
+// Every case below was measured on the owner's real Fall 2026 course files
+// (2026-08-05 acceptance pass): 6 of 7 real PDFs set apostrophes curly, so
+// searching "patient's" — the single most ordinary thing to search for —
+// matched nothing at all before this.
+
+test("a straight apostrophe finds the curly one the typesetter used", () => {
+  const matches = findInUnit("the patient’s chart", "patient's", 1);
+  assert.equal(matches.length, 1);
+  assert.equal("the patient’s chart".slice(at(matches, 0).start, at(matches, 0).end), "patient’s");
+});
+
+test("a hyphen finds an en dash, and straight quotes find curly ones", () => {
+  assert.equal(findInUnit("pages 10–12 today", "10-12", 1).length, 1);
+  assert.equal(findInUnit("he said “yes” loudly", '"yes"', 1).length, 1);
+});
+
+test("a ligature answers to the letters it stands for, and highlights the glyph", () => {
+  const text = "the ﬁrst dose";
+  const matches = findInUnit(text, "first", 1);
+  assert.equal(matches.length, 1);
+  // The whole ligature is covered — a highlight cannot end inside one glyph.
+  assert.equal(text.slice(at(matches, 0).start, at(matches, 0).end), "ﬁrst");
+  assert.equal(findInUnit("Encyclopædia", "encyclopaedia", 1).length, 1);
+  assert.equal(findInUnit("Straße 5", "strasse", 1).length, 1);
+});
+
+test("characters that are in the text but not on the page are ignored", () => {
+  // A soft hyphen left by the typesetter must not stop the word matching.
+  assert.equal(findInUnit("co­operate now", "cooperate", 1).length, 1);
+  assert.equal(findInUnit("zero​width", "zerowidth", 1).length, 1);
+});
+
+test("folding never changes the length of the text it folds", () => {
+  // 🔴 The regression this pins: a character outside the basic plane occupies
+  // TWO code units. Folding it to one shifted every later highlight by one and
+  // drifted further with each one — invisible until an engineering PDF full of
+  // mathematical italics lands in the reader.
+  for (const sample of ["patient’s", "10–12", "ﬁrst", "\u{1D465} energy", "İstanbul", "\u{1F600}x", "café"]) {
+    assert.equal(foldForSearch(sample).length, sample.length, `length changed for ${JSON.stringify(sample)}`);
+  }
+});
+
+test("a match after an astral character lands on the real characters", () => {
+  const text = "\u{1D465}\u{1D466}\u{1D467} then mass";
+  const matches = findInUnit(text, "mass", 1);
+  assert.equal(at(matches, 0).start, text.indexOf("mass"));
+  assert.equal(text.slice(at(matches, 0).start, at(matches, 0).end), "mass");
+});
+
+test("a compound broken across a line still matches when typed as one word", () => {
+  // Real: the Fall 2026 micro syllabus reads "the three-\nextension limit", and
+  // "three-extension" found nothing. Four of the seven real course PDFs in the
+  // 2026-08-05 pass had a compound split this way.
+  const text = "the three-\nextension limit";
+  const matches = findInUnit(text, "three-extension", 1);
+  assert.equal(matches.length, 1);
+  assert.equal(text.slice(at(matches, 0).start, at(matches, 0).end), "three-\nextension");
+  // The break is examined as a whole run, so indentation after it is fine.
+  assert.equal(findInUnit("a self-\r\n   assessment form", "self-assessment", 1).length, 1);
+  assert.equal(findInUnit("end-\nof-\nline chain", "end-of-line", 1).length, 1);
+});
+
+test("only a line break closes a hyphen — a spaced dash is left alone", () => {
+  // Without this, "break- here" would silently become "break-here".
+  assert.equal(findInUnit("no break- here", "break- here", 1).length, 1);
+  assert.equal(findInUnit("commerce\nclause", "commerce clause", 1).length, 1);
 });

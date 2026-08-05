@@ -32,13 +32,24 @@ const MAX_DEPTH = 6;
  *  are section groupings and clicking them should still expand nothing but
  *  read correctly) and dropped when they are leaves that go nowhere. */
 export function flattenOutline(nodes: readonly RawOutlineNode[] | null | undefined, depth = 0): OutlineEntry[] {
+  // 🔴 The id must be unique across the WHOLE list, not just among one parent's
+  // children. A course packet is very often several articles concatenated into
+  // one PDF, and every article carries a "Disclosures" and a "References" at the
+  // same depth and the same sibling position — so keying on
+  // (depth, sibling index, title) collided, and React quietly dropped or
+  // duplicated outline rows. Measured on a real two-article Journal of Cardiac
+  // Failure packet. Position in the flattened list cannot collide.
+  return walkOutline(nodes, depth).map((entry, position) => ({ ...entry, id: `o${position}-${entry.title.slice(0, 40)}` }));
+}
+
+function walkOutline(nodes: readonly RawOutlineNode[] | null | undefined, depth: number): OutlineEntry[] {
   if (!nodes || depth > MAX_DEPTH) return [];
   const entries: OutlineEntry[] = [];
-  nodes.forEach((node, index) => {
+  nodes.forEach((node) => {
     const title = typeof node.title === "string" ? node.title.replace(/\s+/g, " ").trim() : "";
-    const children = flattenOutline(node.items, depth + 1);
+    const children = walkOutline(node.items, depth + 1);
     if (title && (node.dest !== null || children.length > 0)) {
-      entries.push({ id: `${depth}-${index}-${title.slice(0, 40)}`, title, depth, dest: node.dest ?? null });
+      entries.push({ id: "", title, depth, dest: node.dest ?? null });
     }
     entries.push(...children);
   });

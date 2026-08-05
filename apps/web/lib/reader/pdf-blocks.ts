@@ -20,6 +20,8 @@
 // structure computed server-side; until it does, this gives Reading mode a real,
 // measured basis instead of a model's guess. Source mode never uses any of it.
 
+import { readingOrderGroups } from "./pdf-columns";
+
 /** The subset of pdf.js's TextItem this module needs. Declared locally so the
  *  logic is testable without loading pdf.js. */
 export interface PdfTextItem {
@@ -56,6 +58,9 @@ interface Line {
   height: number;
   dir: "ltr" | "rtl";
   bold: boolean;
+  /** First line of a new column. A column break is a hard paragraph break, and
+   *  the vertical gap across it is meaningless (it runs UP the page). */
+  columnStart?: boolean;
 }
 
 /** Vertical scale of the text matrix — the item's rendered font size. */
@@ -80,6 +85,22 @@ function directionOf(items: readonly PdfTextItem[]): "ltr" | "rtl" {
 /** Group a page's items into visual lines and put each line's items back in
  *  reading order. Items arrive in content-stream order, which is neither. */
 export function linesFromItems(items: readonly PdfTextItem[]): Line[] {
+  // A page set in columns is split into its columns FIRST — otherwise two
+  // columns sharing a baseline become one line and the sentences interleave.
+  // A single-column page comes back as one group and behaves exactly as before.
+  const groups = readingOrderGroups(items);
+  return groups.flatMap((group, index) => {
+    const lines = linesFromColumn(group);
+    // The jump from the foot of one column to the head of the next is not a
+    // paragraph gap; without this the last paragraph of a column would run into
+    // the first paragraph of the next.
+    const first = lines[0];
+    if (index > 0 && first) first.columnStart = true;
+    return lines;
+  });
+}
+
+function linesFromColumn(items: readonly PdfTextItem[]): Line[] {
   const printable = items.filter((item) => item.str.trim().length > 0);
   if (printable.length === 0) return [];
 
@@ -207,7 +228,16 @@ export function blocksFromPages(
 
     const flush = (): void => {
       if (open === null) return;
-      const text = open.parts.join(" ").replace(/\s+/g, " ").trim();
+      // Lines join with a space — EXCEPT after a hyphen, which is where the
+      // typesetter broke a word. "contraindica-" + "tions" has to read
+      // "contraindica-tions", never "contraindica- tions". The hyphen itself is
+      // kept rather than guessed away: dropping it would turn the real compound
+      // "three-extension" into "threeextension". Same rule the search fold uses,
+      // so what you read and what you can find agree.
+      const text = open.parts
+        .reduce((joined, part) => (joined === "" ? part : joined.endsWith("-") ? joined + part : `${joined} ${part}`), "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (text) blocks.push({ kind: open.kind, text, unit, dir: open.dir });
       open = null;
     };
@@ -226,7 +256,9 @@ export function blocksFromPages(
       const listBody = stripListMarker(line.text);
       const previous = index > 0 ? lines[index - 1] : null;
       const gap = previous ? line.top - previous.top : 0;
-      const paragraphBreak = typicalGap > 0 && gap > typicalGap * 1.55;
+      // A column break always breaks the paragraph: the gap across it is
+      // measured up the page, so it can never exceed the threshold on its own.
+      const paragraphBreak = line.columnStart === true || (typicalGap > 0 && gap > typicalGap * 1.55);
       // In right-to-left text the line "starts" at its right edge, so negate
       // and the same comparison works for both directions.
       const start = line.dir === "rtl" ? -line.right : line.left;
