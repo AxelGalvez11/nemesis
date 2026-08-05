@@ -1,5 +1,39 @@
 # Document intelligence — audit, research, and plan
 
+> **Scope, set by the owner 2026-08-05, and it governs everything below.**
+>
+> **The parser is UNIVERSAL. School is a layer on top of it, not a property of it.**
+>
+> A file must first be understood as a *document* — a contract, an invoice, a financial report, a
+> technical manual, a government PDF, a resume, a research paper, a scanned form, a lecture — before
+> anything decides what a student might do with it. Nothing in the extraction, chunking, indexing or
+> citation layers may assume education.
+>
+> ```
+>   UNIVERSAL DOCUMENT INTELLIGENCE
+>     parse structure/layout/content · preserve provenance · index the original · retrieve and reason
+>                                    │
+>                                    ▼
+>   DOMAIN / WORKFLOW LAYER  (what is this document FOR?)
+>     syllabus  -> offer calendar extraction
+>     lecture   -> Teach me / Notes / Flashcards / Test
+>     paper     -> methods, results, evidence
+>     contract  -> clauses and obligations
+>     report    -> metrics and tables
+>     manual    -> procedural answers
+> ```
+>
+> **The quality bar:** upload an arbitrary document to Nemesis, ChatGPT and Claude, and Nemesis should
+> extract and reason over essentially the same important information, with accurate citations.
+>
+> **Consequences for this document, which was written school-first and is wrong in places:**
+> - The visual schema's `educationalRelevance` is a domain judgement leaking into the core. The core
+>   field is *importance to understanding this document*; "is this worth a flashcard" belongs upstairs.
+> - The benchmark corpus in §6 Stage 4 is all academic. It must span fields **and formats** —
+>   contracts, invoices, filings, manuals, resumes, forms — not twelve lecture files.
+> - **Spreadsheets are not supported at all today.** `kindFor`/`sniffKind` know only pdf/docx/pptx/
+>   image, so an .xlsx is refused outright. A universal parser has to answer for that.
+
 Written 2026-08-05. Sixteen agents: six auditing the live pipeline lane by lane, six researching
 what current document systems actually document, one architect, three adversarial reviewers.
 Every claim below carries a `file:line` or a URL. Where something is inference, it says so.
