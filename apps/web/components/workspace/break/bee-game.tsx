@@ -118,6 +118,10 @@ export function BeeGame({
     [submit],
   );
 
+  // Keys this game acts on are consumed: a <button> the player clicked
+  // earlier (a hex cell, Shuffle, the header's New puzzle) still holds focus,
+  // and a native button fires on Enter's DEFAULT action — so submitting a
+  // word would also re-trigger whatever was last tapped.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -126,6 +130,8 @@ export function BeeGame({
       if (event.key === "Enter") press("enter");
       else if (event.key === "Backspace") press("back");
       else if (/^[a-zA-Z]$/.test(event.key)) press(event.key.toLowerCase());
+      else return;
+      event.preventDefault();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

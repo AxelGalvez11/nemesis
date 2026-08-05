@@ -57,10 +57,19 @@ export function WordleGame({
   const [current, setCurrent] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [shakeNonce, setShakeNonce] = useState(0);
-  // Which row is mid-flip (submitted this session), and how many guesses the
-  // keyboard is allowed to know about (it lags the flip on purpose).
+  // Which row is mid-flip (submitted this session), and whether that flip is
+  // still running — the keyboard and the end message lag it on purpose.
+  //
+  // `revealing` is a BOOLEAN, not "how many guesses the keyboard may know
+  // about". A counter was the original design and it silently broke every
+  // session after the first: saved guesses arrive from localStorage in an
+  // effect (never during render), so a counter seeded from `saved` mounts at
+  // 0 and nothing ever bumped it for a restored game — the keyboard stayed
+  // colourless and the win/loss line never printed for the rest of that
+  // puzzle. "Hide one row, and only while a flip I started is running" needs
+  // no catch-up: a restored game has no flip, so it shows everything.
   const [revealRow, setRevealRow] = useState<number | null>(null);
-  const [keyboardCount, setKeyboardCount] = useState(() => saved.guesses.length);
+  const [revealing, setRevealing] = useState(false);
   const revealTimer = useRef<number | null>(null);
   const allowed = useMemo(() => wordleAllowedSet(), []);
 
@@ -72,11 +81,15 @@ export function WordleGame({
   savedRef.current = saved;
 
   const status = wordleStatus(saved.guesses, answer);
-  const revealed = keyboardCount >= saved.guesses.length;
-  const keyStates = useMemo(
-    () => keyboardStates(saved.guesses.slice(0, keyboardCount), answer),
-    [saved.guesses, keyboardCount, answer],
+  const revealed = !revealing;
+  // The keyboard learns the newest guess only after its tiles have finished
+  // turning; every other guess (including everything restored from storage)
+  // is fair game immediately.
+  const judgedGuesses = useMemo(
+    () => (revealing ? saved.guesses.slice(0, -1) : saved.guesses),
+    [revealing, saved.guesses],
   );
+  const keyStates = useMemo(() => keyboardStates(judgedGuesses, answer), [judgedGuesses, answer]);
 
   useEffect(() => () => {
     if (revealTimer.current) window.clearTimeout(revealTimer.current);
@@ -99,11 +112,12 @@ export function WordleGame({
     }
     const rowIndex = guesses.length;
     setRevealRow(rowIndex);
+    setRevealing(true);
     update((previous) => ({ guesses: [...previous.guesses, word.toLowerCase()] }));
     setCurrent("");
     currentRef.current = "";
     if (revealTimer.current) window.clearTimeout(revealTimer.current);
-    revealTimer.current = window.setTimeout(() => setKeyboardCount(rowIndex + 1), REVEAL_TOTAL);
+    revealTimer.current = window.setTimeout(() => setRevealing(false), REVEAL_TOTAL);
   }, [allowed, answer, update]);
 
   const type = useCallback(
@@ -124,6 +138,12 @@ export function WordleGame({
     [answer, submit],
   );
 
+  // While a game is open the board OWNS the keyboard: any key it acts on is
+  // consumed with preventDefault. Without that, a button the player clicked
+  // earlier (the header's New puzzle / How to play, or an on-screen letter)
+  // still holds focus, and a native <button> activates on Enter's DEFAULT
+  // action — so pressing Enter to submit a guess also re-fired that button,
+  // silently throwing the player onto a new puzzle mid-word.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -132,6 +152,8 @@ export function WordleGame({
       if (event.key === "Enter") type("enter");
       else if (event.key === "Backspace") type("back");
       else if (/^[a-zA-Z]$/.test(event.key)) type(event.key.toLowerCase());
+      else return;
+      event.preventDefault();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -147,19 +169,16 @@ export function WordleGame({
     status === "won"
       ? `Solved in ${saved.guesses.length}/${MAX_GUESSES} — nice break.`
       : status === "lost"
-        ? `It was ${answer.toUpperCase()}. Tomorrow's another word.`
+        ? `It was ${answer.toUpperCase()}. Another word is waiting.`
         : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-4" data-testid="wordle-board">
+    <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-3" data-testid="wordle-board">
       <div className="h-5 text-sm font-medium text-muted-foreground" aria-live="polite" data-testid="wordle-notice">
         {notice ?? (revealed ? endMessage : "")}
       </div>
-      {/* Gated on `status`, not `revealed` — `revealed` only tracks THIS
-          session's flip animation, so it's still false right after a solved
-          game is restored from storage (keyboardCount starts at 0 and the
-          flip effect that would bump it never runs on a restore). Tying the
-          button to status alone keeps it showing up on a reopened win/loss. */}
+      {/* Gated on `status`, not `revealed`: a reopened win/loss has no flip
+          to wait for, so this must not depend on one having happened. */}
       {status !== "playing" && (
         <Button variant="outline" size="sm" className="rounded-full px-4" onClick={onPlayAnother} data-testid="wordle-play-another">
           Play another
@@ -208,7 +227,7 @@ export function WordleGame({
         })}
       </div>
 
-      <div className="flex w-full flex-col items-center gap-1.5 pt-2">
+      <div className="flex w-full flex-col items-center gap-1.5">
         {KEY_ROWS.map((keys, rowIndex) => (
           <div key={rowIndex} className="flex w-full justify-center gap-1.5">
             {keys.map((key) => {
@@ -219,6 +238,9 @@ export function WordleGame({
                   key={key}
                   type="button"
                   data-testid={`wordle-key-${key}`}
+                  // Never let a tapped key keep focus: a focused key would
+                  // re-fire on the next Space/Enter meant for the board.
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => type(key)}
                   className={cn(
                     "flex h-12 items-center justify-center rounded-md text-sm font-semibold uppercase transition-colors duration-300 active:scale-95",
