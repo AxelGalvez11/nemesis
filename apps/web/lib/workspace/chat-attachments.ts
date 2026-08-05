@@ -2,7 +2,7 @@
 
 import { courseFolderSegment, matchCourse, UNSORTED_FOLDER, UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
-import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
+import { ingestObjectKey, MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { loadKnownCourses } from "@/lib/workspace/agent-tools";
@@ -272,18 +272,6 @@ export interface ExtractedFile {
   /** Bytes actually read. */
   bytes?: number;
 }
-
-/**
- * Most a file may weigh and still be POSTed as a form.
- *
- * 🔴 THIS IS A PLATFORM LIMIT, NOT A PRODUCT ONE. Vercel refuses a request body
- * over ~4.5 MB at the edge, before any of our code runs — measured against
- * production 2026-08-05: 4.4 MB reached the handler, 4.6 MB got a plain-text
- * FUNCTION_PAYLOAD_TOO_LARGE. Anything above this goes to storage first and is
- * read by reference, which has no such ceiling. Set below the real edge so our
- * own JSON error wins the race and the student is told something true.
- */
-const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /**
  * Put the bytes in storage and file the row that names them, both under this

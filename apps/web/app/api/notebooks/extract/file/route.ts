@@ -29,7 +29,7 @@ import { NextResponse } from "next/server";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
-import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
+import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
@@ -43,11 +43,6 @@ export const runtime = "nodejs";
  *  enough to state by omission. */
 export const maxDuration = 300;
 
-/** What a multipart body may weigh. Deliberately BELOW the platform's own
- *  ~4.5 MB edge limit, so a file that would have died as an unparseable
- *  plain-text 413 instead gets our own JSON error naming the real problem and
- *  the real fix. Anything larger must come in by reference. */
-const MAX_INLINE_BYTES = 4 * 1024 * 1024;
 
 type FileKind = "pdf" | "docx" | "pptx" | "image";
 
@@ -169,7 +164,7 @@ export async function POST(req: Request): Promise<Response> {
     // This branch can only ever see a small file — the platform rejects the rest
     // before we run — so the message says what to do rather than restating a
     // limit the caller already blew past.
-    if (file.size > MAX_INLINE_BYTES) {
+    if (file.size > MAX_INLINE_UPLOAD_BYTES) {
       return NextResponse.json(
         { error: "That file is too large to send directly. Upload it to your Library first." },
         { status: 413 },
