@@ -28,8 +28,8 @@
 import { NextResponse } from "next/server";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
-import { fetchIngestSource, removeIngestScratch } from "@/lib/notebooks/ingest-fetch";
-import { isScratchKey, MAX_SOURCE_BYTES, readIngestRef, type IngestRef } from "@/lib/notebooks/ingest-ref";
+import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
+import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
@@ -129,25 +129,19 @@ export async function POST(req: Request): Promise<Response> {
   let sourceBytes: Uint8Array;
   let sourceName: string;
   let sourceType: string;
-  /** Set only for a throwaway upload, so it can be swept after it is read. */
-  let scratch: IngestRef | null = null;
   const byRef = (req.headers.get("content-type") ?? "").includes("application/json");
 
   if (byRef) {
     const body = (await req.json().catch(() => null)) as unknown;
-    const ref = readIngestRef(body, check.userId);
+    const ref = readIngestRef(body);
     if (!ref.ok) {
-      // "forbidden" covers both "someone else's object" and a path shaped to
-      // climb out of the caller's folder. One answer for both: a probe must not
-      // be able to tell a real object it may not read from a malformed path.
-      if (ref.reason === "forbidden") {
-        return NextResponse.json({ error: "That file doesn't belong to this account." }, { status: 403 });
-      }
       return NextResponse.json({ error: "Expected an uploaded file to read." }, { status: 400 });
     }
-    const fetched = await fetchIngestSource(ref.ref);
+    const fetched = await fetchIngestSource(ref.ref, check.userId);
     if (!fetched.ok) {
       if (fetched.reason === "missing") {
+        // ONE answer for "no such row" and "not your row" — they are the same
+        // query result, so this cannot be used to discover which ids exist.
         return NextResponse.json(
           { error: "That upload isn't there any more. Try adding the file again." },
           { status: 404 },
@@ -158,10 +152,9 @@ export async function POST(req: Request): Promise<Response> {
       }
       return NextResponse.json({ error: "Can't reach storage right now. Try again in a moment." }, { status: 503 });
     }
-    sourceBytes = fetched.bytes;
-    sourceName = ref.ref.fileName;
-    sourceType = ref.ref.mimeType ?? "";
-    if (isScratchKey(ref.ref.path)) scratch = ref.ref;
+    sourceBytes = fetched.source.bytes;
+    sourceName = fetched.source.fileName;
+    sourceType = fetched.source.mimeType ?? "";
   } else {
     let form: FormData;
     try {
@@ -198,7 +191,6 @@ export async function POST(req: Request): Promise<Response> {
   // has lost its extension). Refusing only after both have failed.
   const kind = kindFor(sourceName, sourceType) ?? sniffKind(bytes);
   if (!kind) {
-    if (scratch) void removeIngestScratch(scratch);
     return NextResponse.json(
       { error: "Unsupported file. Add a photo, a PDF, Word (.docx), or PowerPoint (.pptx)." },
       { status: 415 },
@@ -206,11 +198,9 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (kind === "image") {
     if (sourceSize > VISION_MAX_BYTES) {
-      if (scratch) void removeIngestScratch(scratch);
       return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
     }
     if (!visionConfigured()) {
-      if (scratch) void removeIngestScratch(scratch);
       return NextResponse.json({ error: "Reading photos isn't switched on for this app yet." }, { status: 503 });
     }
   }
@@ -397,12 +387,5 @@ export async function POST(req: Request): Promise<Response> {
       { error: err instanceof Error ? err.message : "Couldn't read that file." },
       { status: 422 },
     );
-  } finally {
-    // A throwaway upload is swept however this ended — read, refused or thrown.
-    // `finally` rather than a line per exit, because the exits are many and the
-    // one that gets forgotten is the one that leaks. Never awaited: the student's
-    // response does not wait on our housekeeping, and a failed sweep is not their
-    // problem. A Library original is never a scratch key and is never touched.
-    if (scratch) void removeIngestScratch(scratch);
   }
 }

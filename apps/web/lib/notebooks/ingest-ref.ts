@@ -1,66 +1,64 @@
 /**
- * Naming a file that is ALREADY in storage, instead of posting its bytes.
+ * Naming a file that is ALREADY in storage, by the id of the row that owns it.
  *
  * 🔴 WHY THIS EXISTS: Vercel refuses a request body over ~4.5 MB at the edge,
  * before any of our code runs. Measured against production 2026-08-05:
  *
  *     4.4 MB -> our handler (401)      4.6 MB -> 413 FUNCTION_PAYLOAD_TOO_LARGE
  *
- * The route advertises 25 MB and the UI promises 25 MB, so every real lecture
- * deck and chapter PDF between those two numbers died at the platform edge with
- * a plain-text error our client could not even parse — the student saw
- * "Couldn't read lecture.pdf." and nothing else. A bigger `MAX_BYTES` could
- * never have fixed it: the ceiling is not ours.
+ * The route advertised 25 MB and the UI promised 25 MB, so every real lecture
+ * deck and chapter PDF between those numbers died at the platform edge with a
+ * plain-text error the client could not even parse — the student saw
+ * "Couldn't read lecture.pdf." and nothing more. A bigger `MAX_BYTES` could
+ * never have fixed it: the ceiling was not ours to raise.
  *
- * So the bytes stop travelling through the function. The browser uploads to the
- * private `library-sources` bucket under its OWN RLS session — which chat and
- * Library import already did — and then sends this route a REFERENCE. The route
- * fetches the object server-side, where no body limit applies.
+ * So the bytes stop travelling through the function:
  *
- * 🔴 THE REFERENCE IS ATTACKER-CONTROLLED. It arrives in a request body, so it
- * is a request to read an arbitrary object out of a private bucket using the
- * SERVICE ROLE, which bypasses RLS entirely. Everything in this module exists to
- * make that request safe:
+ *     browser/device  ->  private bucket  ->  server reads the object
  *
- *   - the bucket must be one we ingest from, never an arbitrary name;
- *   - the path's FIRST SEGMENT must equal the userId the device key resolved to,
- *     which is exactly the rule the bucket's own RLS policy enforces for
- *     browsers (`(storage.foldername(name))[1] = auth.uid()::text`) and which
- *     the service role would otherwise skip;
- *   - traversal, absolute paths and backslashes are refused outright rather than
- *     normalised, because a normaliser that is wrong once is wrong forever.
+ * 🔴 THE REFERENCE IS A ROW ID, NOT A PATH — and that is the whole design.
  *
- * PURE. No network, no Supabase client — so the ownership rule can be tested
- * exhaustively without standing anything up.
+ * An earlier draft let the client send `{ bucket, path }` and validated that the
+ * path's first segment matched the caller. That is sound, but it still lets a
+ * caller name ANY object in their own folder and have the service role read it.
+ * The stronger rule, and the one the owner asked for: the client names a ROW,
+ * and the server derives the bucket and path FROM that row after matching it on
+ * (id, user_id). The path is then something WE wrote, for an object we created,
+ * for this user — never a string that arrived in a request.
+ *
+ * That leaves this module with one job: decide whether the body contains a
+ * plausible row id. Authorisation is a database predicate (see ./ingest-fetch),
+ * which is where it belongs, because only the database knows who owns what.
+ *
+ * PURE. No network, no Supabase client.
  */
 
-/** Buckets an upload may be ingested from. Both are private, both are keyed
- *  `${uid}/…`, and both already hold exactly these files today:
- *  documents land in `library-sources`, photos in `library-images`. */
-export const INGEST_BUCKETS = ["library-sources", "library-images"] as const;
-export type IngestBucket = (typeof INGEST_BUCKETS)[number];
-
 /**
- * The product's upload ceiling — ours to choose, and now actually enforceable
+ * The product's upload ceiling — ours to choose, and now actually enforceable,
  * because it no longer has to fit through a function body.
  *
- * 50 MB matches the `library-sources` bucket's own `file_size_limit`
+ * 🔴 THIS NUMBER IS A POLICY, NOT AN ARCHITECTURAL LIMIT. Raising it means
+ * raising the bucket's `file_size_limit` and, past a few hundred megabytes,
+ * moving the PARSE off a 300-second function — the transport already scales.
+ * Nothing in the ingestion path re-reads this constant to decide HOW a file
+ * travels, which is what makes the ceiling movable without another redesign.
+ *
+ * 50 MB today matches the `library-sources` bucket's own limit
  * (supabase/migrations/20260804010000_library_sources_files.sql:67), so the two
- * limits agree and a file that uploads can always be read. Deliberately stated
- * ONCE and exported, because the old 25 MB lived in four places and none of them
- * was the real limit.
+ * agree and a file that uploads can always be read.
  */
 export const MAX_SOURCE_BYTES = 50 * 1024 * 1024;
 
-/** A file already in storage, ready to be fetched server-side. */
+/** Buckets an uploaded original may live in. Mirrors the CHECK constraint on
+ *  `library_sources.bucket`, so a value that passes here cannot fail there. */
+export const INGEST_BUCKETS = ["library-sources", "library-images"] as const;
+export type IngestBucket = (typeof INGEST_BUCKETS)[number];
+
+/** A `library_sources` row id, shape-checked. Nothing more is claimed: whether
+ *  the row exists, and whether it belongs to the caller, are questions only the
+ *  database can answer. */
 export interface IngestRef {
-  bucket: IngestBucket;
-  /** Object key inside the bucket. Always begins `${userId}/`. */
-  path: string;
-  /** The name to show the student — the object key is a uuid. */
-  fileName: string;
-  /** What the browser said it was. Advisory only: the route still sniffs. */
-  mimeType: string | null;
+  sourceId: string;
 }
 
 export type IngestRefCheck =
@@ -68,80 +66,38 @@ export type IngestRefCheck =
   /** Not a reference at all — the caller should fall back to reading a
    *  multipart body, which is still supported for small files. */
   | { ok: false; reason: "absent" }
-  /** A reference, but not one this user may read. 403, never 404: saying
-   *  "no such object" would answer a question we were not asked. */
-  | { ok: false; reason: "forbidden" }
-  /** Malformed. 400. */
+  /** Present but not a usable id. 400. */
   | { ok: false; reason: "malformed" };
 
-function isIngestBucket(value: unknown): value is IngestBucket {
+/** Canonical v4-ish UUID, lowercased. Deliberately strict: a row id that does
+ *  not look like one is a bug or a probe, and either way is not worth a
+ *  database round trip. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function isSourceId(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value.toLowerCase());
+}
+
+export function isIngestBucket(value: unknown): value is IngestBucket {
   return typeof value === "string" && (INGEST_BUCKETS as readonly string[]).includes(value);
 }
 
-/**
- * A storage key that is safe to hand to the service role on this user's behalf.
- *
- * Refused, in order: anything not a plain non-empty string; anything with a
- * backslash, a NUL, a leading slash, a `.` or `..` segment, or an empty segment
- * (`a//b`), since those are the shapes a path normaliser disagrees about; and
- * finally anything whose first segment is not this user's id.
- *
- * The first-segment rule is the whole security property. It is a string
- * comparison against the id the DEVICE KEY resolved to — never against anything
- * else in the request.
- */
-function pathBelongsTo(path: unknown, userId: string): boolean {
-  if (typeof path !== "string" || path.length === 0 || path.length > 1024) return false;
-  if (/[\\\0]/.test(path)) return false;
-  if (path.startsWith("/")) return false;
-  const segments = path.split("/");
-  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) return false;
-  return segments[0] === userId && segments.length > 1;
-}
-
-/**
- * Read an ingest reference out of a parsed request body.
- *
- * `userId` MUST be the id `verifyDeviceKey` resolved — passing anything the
- * caller supplied would defeat the entire module.
- */
-export function readIngestRef(body: unknown, userId: string): IngestRefCheck {
+/** Read an ingest reference out of a parsed request body. */
+export function readIngestRef(body: unknown): IngestRefCheck {
   if (typeof body !== "object" || body === null) return { ok: false, reason: "absent" };
   const row = body as Record<string, unknown>;
-  // Nothing that looks like a reference at all — the caller posted something
-  // else (a multipart form, an empty body) and should take its own path.
-  if (row.bucket === undefined && row.path === undefined) return { ok: false, reason: "absent" };
-
-  if (!isIngestBucket(row.bucket)) return { ok: false, reason: "malformed" };
-  if (typeof row.path !== "string") return { ok: false, reason: "malformed" };
-  // Shape first, ownership second, so a malformed path never reports as a
-  // permission problem and vice versa.
-  if (!pathBelongsTo(row.path, userId)) return { ok: false, reason: "forbidden" };
-
-  const fileName = typeof row.fileName === "string" ? row.fileName.trim().slice(0, 512) : "";
-  if (!fileName) return { ok: false, reason: "malformed" };
-
-  const mimeType = typeof row.mimeType === "string" && row.mimeType.trim() ? row.mimeType.trim().slice(0, 255) : null;
-
-  return { ok: true, ref: { bucket: row.bucket, fileName, mimeType, path: row.path } };
+  if (row.sourceId === undefined) return { ok: false, reason: "absent" };
+  if (!isSourceId(row.sourceId)) return { ok: false, reason: "malformed" };
+  // Lowercased so a row id that differs only in case cannot miss its row and
+  // read as "you don't own this".
+  return { ok: true, ref: { sourceId: (row.sourceId as string).toLowerCase() } };
 }
 
-/**
- * Where a lane should put a file it does NOT otherwise keep.
- *
- * Syllabus reads and notebook sources want the text and nothing else, so their
- * uploads land under `${uid}/ingest/` and are removed once read. Keeping the
- * prefix distinct is what lets a sweep tell a throwaway from a Library original
- * without consulting a table.
- */
-export function ingestScratchKey(userId: string, fileName: string): string {
+/** Where a newly uploaded original goes. The first segment is the owner's id,
+ *  which is what the bucket's own RLS policy checks on the browser's insert —
+ *  so the object is protected before any row exists to point at it. */
+export function ingestObjectKey(userId: string, fileName: string): string {
   const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() ?? "" : "";
   const suffix = extension && /^[a-z0-9]{1,12}$/.test(extension) ? `.${extension}` : "";
-  return `${userId}/ingest/${crypto.randomUUID()}${suffix}`;
-}
-
-/** True for a key this module created as a throwaway, so a caller knows it is
- *  safe to delete after reading. */
-export function isScratchKey(path: string): boolean {
-  return /^[^/]+\/ingest\//.test(path);
+  return `${userId}/${crypto.randomUUID()}${suffix}`;
 }

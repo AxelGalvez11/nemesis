@@ -2,7 +2,7 @@
 
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
 
-import { ingestScratchKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
+import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
@@ -155,8 +155,24 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
       });
       if (uploaded.error) return base;
       const signed = await supabase.storage.from("library-images").createSignedUrl(storagePath, 31_536_000);
-      if (signed.error || !signed.data?.signedUrl) return { ...base, storagePath };
-      return { ...base, storagePath, url: signed.data.signedUrl };
+      // A picture gets a row too, so it has the SAME kind of handle a document
+      // has. Without one, a photo over the inline limit would be uploaded a
+      // second time by the extractor just to obtain an id. The row records which
+      // bucket holds it, which is why library_sources gained a `bucket` column.
+      const sourceId = await findOrCreateLibrarySourceRow(
+        uid,
+        file,
+        file.type || "image/jpeg",
+        "",
+        storagePath,
+        "library-images",
+      );
+      return {
+        ...base,
+        storagePath,
+        ...(sourceId ? { sourceId } : {}),
+        ...(signed.data?.signedUrl ? { url: signed.data.signedUrl } : {}),
+      };
     } catch {
       return base;
     }
@@ -178,7 +194,7 @@ async function persistChatAttachment(file: File, uid: string | null): Promise<Se
     // them with [n](?source=<id>) pills, and syllabi/lectures belong in the
     // Library, not just in a chat bucket). Deduped by name+size, so
     // re-attaching the same file reuses its row.
-    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath);
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, "", storagePath, "library-sources");
     return {
       ...base,
       mime,
@@ -231,20 +247,46 @@ export interface ExtractedFile {
  */
 const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
-/** Put the bytes where the route can fetch them, under this user's own folder
- *  and their own RLS session. Returns the key, or null when the upload failed —
- *  the caller turns that into an honest message rather than a silent retry. */
-async function uploadForIngest(file: File, uid: string): Promise<string | null> {
+/**
+ * Put the bytes in storage and file the row that names them, both under this
+ * user's own RLS session. Returns the row id — the ONLY handle the server will
+ * accept — or null when either half failed.
+ *
+ * This is the canonical upload. Every lane funnels here so a file is uploaded
+ * exactly once and every later operation refers to the same object.
+ */
+async function uploadForIngest(file: File, uid: string, folderPath: string): Promise<string | null> {
+  const image = isImage(file);
+  const bucket = image ? "library-images" : "library-sources";
+  const mime = fileMime(file);
   try {
-    const key = ingestScratchKey(uid, file.name);
-    const { error } = await supabase.storage.from("library-sources").upload(key, file, {
-      contentType: file.type || undefined,
+    const key = ingestObjectKey(uid, file.name);
+    const { error } = await supabase.storage.from(bucket).upload(key, file, {
+      contentType: mime || undefined,
       upsert: false,
     });
-    return error ? null : key;
+    if (error) return null;
+    const sourceId = await findOrCreateLibrarySourceRow(uid, file, mime, folderPath, key, bucket);
+    // The object is useless without a row: the server resolves the path FROM the
+    // row, so an orphaned object can never be read. Remove it rather than leave
+    // bytes nothing can reach.
+    if (!sourceId) {
+      await supabase.storage.from(bucket).remove([key]).catch(() => undefined);
+      return null;
+    }
+    return sourceId;
   } catch {
     return null;
   }
+}
+
+/** The mime the bucket allowlist expects. A browser's own `file.type` is usually
+ *  right but arrives empty from some drag sources, and an upload with no content
+ *  type is refused by the allowlist. */
+function fileMime(file: File): string {
+  if (file.type) return file.type;
+  const extension = DOCUMENT_EXTENSIONS.find((ext) => file.name.toLowerCase().endsWith(ext));
+  return (extension && DOCUMENT_MIME[extension]) || "";
 }
 
 /**
@@ -273,14 +315,17 @@ function extractErrorFor(status: number, fileName: string): string {
  * ones are uploaded to private storage first and named by reference, because
  * they physically cannot reach the function any other way.
  *
- * `storedAt` lets a lane that has ALREADY uploaded the original (chat, Library
- * import) say so, instead of paying to send the same thirty megabytes twice.
- * Such a key is a real Library object and is deliberately NOT a scratch key, so
- * the route reads it and leaves it alone.
+ * `sourceId` lets a lane that has ALREADY uploaded the original say so, instead
+ * of paying to send the same thirty megabytes twice. That is the normal case:
+ * chat and Library import both file the row before extracting.
  *
  * Throws with a student-readable message.
  */
-export async function extractFile(file: File, uid: string | null, storedAt?: string): Promise<ExtractedFile> {
+export async function extractFile(
+  file: File,
+  uid: string | null,
+  opts: { sourceId?: string | null; folderPath?: string } = {},
+): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key || !uid) throw new Error("Sign in to read this attachment.");
 
@@ -310,15 +355,19 @@ export async function extractFile(file: File, uid: string | null, storedAt?: str
   const headers: Record<string, string> = { Authorization: `Bearer ${key}` };
   let response: Response;
 
-  if (!storedAt && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+  // Already filed by the caller, or small enough to post directly. A small file
+  // with no row still takes the multipart path — one round trip, and nothing is
+  // stored for a document the student never asked us to keep.
+  const sourceId = opts.sourceId ?? null;
+  if (!sourceId && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
     const form = new FormData();
     form.append("file", payload);
     response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
   } else {
-    const path = storedAt ?? (await uploadForIngest(payload, uid));
-    if (!path) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
+    const id = sourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
+    if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
     response = await fetch("/api/notebooks/extract/file", {
-      body: JSON.stringify({ bucket: "library-sources", fileName: file.name, mimeType: file.type || null, path }),
+      body: JSON.stringify({ sourceId: id }),
       headers: { ...headers, "Content-Type": "application/json" },
       method: "POST",
     });
@@ -472,7 +521,7 @@ export async function prepareChatAttachments(text: string, files: readonly File[
   // of nothing happening on screen (owner 2026-08-03: "the chat lags behind
   // when user uploads files"). Promise.all keeps the order of `files`, which
   // fitAttachmentBlocks depends on for its budget arithmetic.
-  const sources: AttachmentSource[] = await Promise.all(files.map(async (file) => {
+  const sources: AttachmentSource[] = await Promise.all(files.map(async (file, index) => {
     let content = "";
     try {
       if (isReadableText(file)) content = await file.text();
@@ -480,7 +529,13 @@ export async function prepareChatAttachments(text: string, files: readonly File[
       // multimodal model and hands back a transcript (or, for a picture with no text in it, a
       // description). This is what used to be the "image pixels are not yet sent to the model"
       // apology — the pixels still never reach the chat model, but what is IN them does.
-      else if (isExtractable(file)) content = (await extractFile(file, uid)).text;
+      //
+      // The row id from the persist pass above is handed straight to the extractor, so a
+      // thirty-megabyte deck is uploaded ONCE and everything afterwards refers to that one
+      // object. Without this the extractor would upload its own copy of the same bytes.
+      else if (isExtractable(file)) {
+        content = (await extractFile(file, uid, { sourceId: attachments[index]?.sourceId })).text;
+      }
       else content = "File attached; no text extractor is available for this format.";
     } catch (cause) {
       content = cause instanceof Error ? cause.message : "This attachment could not be read.";
