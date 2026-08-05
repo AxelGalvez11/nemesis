@@ -279,7 +279,99 @@ Slide rendering / SmartArt-as-drawn / vector figures — needs LibreOffice in a 
 
 ---
 
-## 7. What stays
+## 7. The upload ceiling, and why 50 MB is the wrong thing to argue about
+
+Owner's question: should 50 MB be the long-term user-facing limit, given that real decks and
+especially recordings exceed it — and will raising it force another redesign?
+
+**The transport is already future-proof. The processing is not.** Those are different problems and
+only one of them has a ceiling worth arguing about.
+
+| Layer | Today | What raising the limit costs |
+|---|---|---|
+| Browser → storage | one `.upload()` call | For files past a few hundred MB, switch to **resumable (TUS)** uploads. Client change, same architecture — and it also buys resume-after-drop, which matters more on a phone than the limit does. |
+| Bucket ceiling | 50 MB policy | One line of SQL. |
+| `MAX_SOURCE_BYTES` | 50 MB constant | One constant. **Nothing in the ingestion path reads it to decide *how* a file travels** — that is what makes it movable. |
+| **Server reads + parses it** | **inline, in a 300 s function** | **This is the wall.** A 500 MB PDF will exhaust either the time or the memory of a serverless function, and no constant fixes that. |
+
+So the honest answer is: **the number can move today; the *request* cannot.** As long as ingestion is
+something that happens *during an HTTP request*, the ceiling is set by whatever fits in 300 seconds —
+and that is a moving target we do not control.
+
+**The fix is the one already approved: make ingestion a job, not a request.** That single change
+retires the ceiling permanently, and it is the same change the external rendering worker needs, and
+the same change that separates parse-and-index from generate. Three of the owner's requirements
+collapse into one piece of work.
+
+```
+device ──upload──> private bucket ──> library_sources row (status: pending)
+                                             │
+                                             ▼
+                                    ┌────────────────────┐
+                                    │  ingestion job     │   not an HTTP request
+                                    │  (queue + worker)  │   no 300 s ceiling
+                                    └────────────────────┘
+                                             │
+                        ┌────────────────────┼────────────────────┐
+                        ▼                    ▼                    ▼
+                 structured doc         stored visuals        coverage report
+                        │
+                        ▼
+                  status: ready   ──>  available to Nemesis
+                                       (NOTHING is generated yet)
+```
+
+**Recommendation:** hold 50 MB while ingestion is synchronous, present it as what it is, and raise it
+when the job lands rather than by editing a constant and hoping. Recordings should not go through the
+document extractor at all — they already have a transcription path.
+
+### The rendering worker interface
+
+Deliberately minimal, per the owner's instruction not to overbuild. The point is that the
+implementation behind it — LibreOffice today, something better later — can be replaced without any
+caller changing.
+
+```ts
+/** Faithful page/slide rasters for content that embedded-image extraction cannot
+ *  represent: SmartArt, grouped shapes, charts, vector diagrams, composited layouts. */
+export interface RenderRequest {
+  sourceId: string;                    // resolved server-side; never a path
+  kind: "pdf" | "pptx" | "docx";
+  pages?: number[];                    // omit for all; the caller usually knows which are worth it
+  dpi?: number;                        // default chosen by the worker, reported back
+}
+
+export interface RenderedPage {
+  index: number;                       // 1-based page/slide number
+  storagePath: string;                 // the worker writes the raster; callers get a reference
+  width: number;                       // natural pixels — image occlusion needs the true size
+  height: number;
+}
+
+export interface RenderResult {
+  pages: RenderedPage[];
+  /** What the renderer could NOT do, so a partial render is never presented as complete. */
+  missing: Array<{ index: number; reason: string }>;
+  renderer: string;                    // e.g. "libreoffice-7.6" — provenance for benchmarking
+  dpi: number;
+}
+
+export interface DocumentRenderer {
+  render(request: RenderRequest): Promise<RenderResult>;
+}
+```
+
+Three properties worth keeping: it takes a **sourceId**, not bytes, so the worker fetches from
+storage like everything else; it returns **storage paths**, not images, so nothing large crosses a
+response boundary; and it reports **`missing`** explicitly, because a renderer that silently drops a
+slide is indistinguishable from a deck that never had one.
+
+**Benchmark before adopting.** LibreOffice is acceptable *if it proves faithful* on the owner's real
+121-deck corpus — SmartArt, grouped shapes and charts specifically. Same rule for Docling: it must
+beat what the PPTX part-walking already extracts, measured on that corpus, before it replaces
+anything.
+
+## 8. What stays
 
 Nothing here is a rewrite. These were built against the owner's real 121-deck corpus and measured:
 the PowerPoint part-walking through each slide's own `.rels`; EMF and TIFF recovery; content-hash
