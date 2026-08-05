@@ -1,0 +1,143 @@
+/* The document reader.
+ *
+ * Deliberately plain: the room around the document is quiet, the document
+ * itself is a white canvas with a hairline edge, and there is no fake paper —
+ * no drop shadow pretending to be a sheet, no torn edges, no page curl. The
+ * page IS the content, so everything else stays out of its way.
+ *
+ * 🔴 These rules are NOT inside a Tailwind @layer, matching the rest of
+ * styles/*.css. Unlayered CSS beats layered Tailwind utilities in the cascade,
+ * so anything here will win over a utility class on the same element — which
+ * is why the selectors are all scoped under .nemesis-reader and never touch
+ * bare element names.
+ */
+
+.nemesis-reader {
+  --reader-canvas: #ffffff;
+  --reader-canvas-edge: color-mix(in srgb, var(--ui-base) 12%, transparent);
+  --reader-room: var(--ui-bg-editor);
+  --reader-highlight: color-mix(in srgb, var(--ui-accent) 34%, transparent);
+  --reader-highlight-current: color-mix(in srgb, var(--ui-accent) 62%, transparent);
+}
+
+/* A PDF page and a slide keep their white canvas in dark mode. The document is
+ * a photograph of something that is white; recolouring it would be a lie about
+ * the source, and every PDF reader that inverts pages gets diagrams wrong. */
+.nemesis-reader-canvas {
+  background: var(--reader-canvas);
+  border: 1px solid var(--reader-canvas-edge);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* ── PDF.js text layer ──────────────────────────────────────────────────────
+ * Invisible text positioned exactly over the rasterised page, so a selection
+ * follows the real glyphs. Derived from pdfjs-dist/web/pdf_viewer.css and kept
+ * minimal — only what a reader needs (selection + highlight), none of the
+ * editor, annotation or XFA machinery. */
+.nemesis-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+  color-scheme: only light;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.nemesis-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.nemesis-text-layer > :not(.markedContent),
+.nemesis-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.nemesis-text-layer .markedContent {
+  display: contents;
+}
+
+.nemesis-text-layer ::selection {
+  background: color-mix(in srgb, var(--ui-accent) 38%, transparent);
+}
+
+/* A cited or searched-for passage, painted UNDER the invisible text so the
+ * glyphs on the canvas stay perfectly legible through it. */
+.nemesis-reader-highlight {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--reader-highlight);
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: multiply;
+}
+
+.nemesis-reader-highlight[data-current="true"] {
+  background: var(--reader-highlight-current);
+}
+
+/* Reading mode: a derived, normalised rendering. Constrained measure for text
+ * documents (the owner's rule); PDFs and slides get the wide canvas instead. */
+.nemesis-reading-view {
+  max-width: 68ch;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.nemesis-reading-view mark {
+  background: var(--reader-highlight);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.05em;
+}
+
+.nemesis-reading-view mark[data-current="true"] {
+  background: var(--reader-highlight-current);
+}
+
+/* Thumbnails: the active page is marked by an accent ring, never by a colour
+ * change on the page itself. */
+.nemesis-reader-thumb {
+  border: 1px solid var(--reader-canvas-edge);
+  border-radius: 0.375rem;
+  background: var(--reader-canvas);
+  overflow: hidden;
+  transition: border-color 120ms ease;
+}
+
+.nemesis-reader-thumb[data-active="true"] {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 1px var(--ui-accent);
+}
+
+/* An image or scan being panned. */
+.nemesis-reader-image {
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center center;
+}
+
+.nemesis-reader-region {
+  position: absolute;
+  border: 1.5px dashed var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 12%, transparent);
+  pointer-events: none;
+  border-radius: 2px;
+}

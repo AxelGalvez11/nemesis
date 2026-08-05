@@ -35,7 +35,7 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { findFolderNote, folderNoteTitle, isFolderNote, parentFolderOf } from "@/lib/workspace/library-folder-note";
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
-import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
+import { readerHref } from "@/lib/reader/reader-anchor";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,6 @@ import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
 import type { LibraryTreeReveal } from "../library/library-tree-view";
 import { DocsNav } from "./docs-nav";
-import { DocsSource } from "./docs-source";
 import { DocsToc } from "./docs-toc";
 import { NoteArticle, type NoteStudyAction } from "./note-article";
 
@@ -106,7 +105,6 @@ export function LibraryDocsPage() {
   const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [sourcesVersion, setSourcesVersion] = useState(0);
-  const [sourceNoteIds, setSourceNoteIds] = useState<string[]>([]);
   const [reveal, setReveal] = useState<LibraryTreeReveal | null>(null);
   const articleRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -144,12 +142,14 @@ export function LibraryDocsPage() {
     [libraryBase, router, select],
   );
 
+  // A source FILE opens in the Nemesis reader at its own route, not inside this
+  // page. The reader owns the whole surface (its own contents rail, its own
+  // side panel), so it cannot be a pane of the notes layout.
   const openSource = useCallback(
     (id: string) => {
-      router.push(`${libraryBase}?source=${encodeURIComponent(id)}`);
-      scrollRef.current?.scrollTo({ top: 0 });
+      router.push(readerHref(id));
     },
-    [libraryBase, router],
+    [router],
   );
 
   // A folder IS a page (owner 2026-08-04: "like in notion how a folder is
@@ -238,6 +238,15 @@ export function LibraryDocsPage() {
     [note, pathname, router],
   );
 
+  // ?source=<id> was where a file used to open, INSIDE this page. It is now a
+  // route of its own, so old links (and every citation already written) are
+  // sent there rather than 404ing. Replace, not push: Back should go wherever
+  // the student actually came from, not to a URL that only redirects.
+  useEffect(() => {
+    if (requestedSource === null) return;
+    router.replace(readerHref(requestedSource));
+  }, [requestedSource, router]);
+
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
 
   // Source files: loaded per account (fixtures when signed out / previewing)
@@ -279,26 +288,6 @@ export function LibraryDocsPage() {
   // When the open note IS a folder's page, the folder row in the tree is the
   // thing that should read as selected — the note itself has no row there.
   const selectedFolderPath = note && isFolderNote(note) ? parentFolderOf(note.path) : null;
-
-  const openedSource =
-    requestedSource !== null && !note ? (librarySources.find((source) => source.id === requestedSource) ?? null) : null;
-
-  // "Notes from this file" on a source page — provenance walked in reverse.
-  useEffect(() => {
-    if (!openedSource) {
-      setSourceNoteIds([]);
-      return;
-    }
-    let cancelled = false;
-    void loadNoteIdsForSource(openedSource.id, { preview: !uid }).then((ids) => {
-      if (!cancelled) setSourceNoteIds(ids);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [openedSource, uid]);
-
-  const sourceNotes = useMemo(() => notes.filter((item) => sourceNoteIds.includes(item.id)), [notes, sourceNoteIds]);
 
   async function openWikiTarget(target: string, fromPath: string) {
     const existing = findLibraryNote(notes, target);
@@ -355,7 +344,7 @@ export function LibraryDocsPage() {
               onOpenSource={openSource}
               onSourcesChanged={bumpSources}
               openNotePath={note?.path ?? null}
-              openSourceId={openedSource?.id ?? null}
+              openSourceId={null}
               revealFolder={reveal}
               selectedFolderPath={selectedFolderPath}
               showBack={libraryFullScreen && !narrowViewport}
@@ -433,17 +422,8 @@ export function LibraryDocsPage() {
           ) : missingRequested ? (
             <MissingPanel description="It may have been renamed or deleted on another device." onGoHome={goHome} title="That note isn't here" />
           ) : requestedSource !== null ? (
-            !sourcesLoaded ? (
-              <ArticleSkeleton />
-            ) : openedSource ? (
-              <DocsSource
-                notesFromSource={sourceNotes}
-                onOpenPath={openPath}
-                source={openedSource}
-              />
-            ) : (
-              <MissingPanel description="It may have been removed, or its link is out of date." onGoHome={goHome} title="That file isn't here" />
-            )
+            // The redirect above is already in flight — this is one frame.
+            <ArticleSkeleton />
           ) : (
             // Zero notes: the seed effect above is creating Home right now for
             // signed-in accounts, so this is a blink — or, if that write
