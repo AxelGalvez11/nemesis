@@ -198,3 +198,45 @@ test("the real production filename files under its course", () => {
     "PHCY 2114/Notes",
   );
 });
+
+// ── Separators are word breaks ──────────────────────────────────────────────
+// The second half of the invisible-course-number bug. #413 fixed the rule that
+// hid `2114`; this is the same defect through another door, and it is the shape
+// every LMS export and browser download actually has.
+
+const SYLLABI = [
+  ["Fall-2026-PHCY-2105-01-Interprofessional-Education-and-Clinical-Simulation-III.pdf", "PHCY 2105"],
+  ["Fall-2026-PHCY-2109-01-Pharmacogenomics-for-the-Pharmacist.pdf", "PHCY 2109"],
+  ["Fall-2026-PHCY-2114-01-Principles-of-Medical-Microbiology-and-Immunology.pdf", "PHCY 2114"],
+  ["Fall-2026-PHCY-2119-01-Integrated-Pharmacotherapy-4.pdf", "PHCY 2119"],
+] as const;
+
+test("🔴 a hyphenated filename files under its course", () => {
+  // These four are the student's real syllabi, and every one of them scored
+  // ZERO against all six courses beforehand — a hyphenated run read as one
+  // enormous word, so neither `phcy` nor `2105` was ever a token.
+  for (const [fileName, course] of SYLLABI) {
+    assert.equal(matchCourse(fileName, PHCY_COURSES)?.course, course, fileName);
+  }
+});
+
+test("underscores and dots break words too", () => {
+  assert.equal(matchCourse("PHCY_2109_lecture_1.pptx", PHCY_COURSES)?.course, "PHCY 2109");
+  assert.equal(matchCourse("phcy.2119.week3.notes.pdf", PHCY_COURSES)?.course, "PHCY 2119");
+});
+
+test("🔴 splitting separators does not weaken a single refusal", () => {
+  // The whole risk of widening a matcher is a new false match. Every refusal
+  // the owner named on 2026-08-05 is re-checked here after the change.
+  assert.equal(matchCourse("PHCY", PHCY_COURSES), null);
+  assert.equal(matchCourse("some PHCY reading", PHCY_COURSES), null);
+  assert.equal(matchCourse("PHCY 9999 mystery handout", PHCY_COURSES), null);
+  assert.equal(matchCourse("phcy-notes-from-today.pdf", PHCY_COURSES), null, "a hyphenated bare prefix is still ambiguous");
+  assert.equal(matchCourse("lecture-photo.png", PHCY_COURSES), null);
+  assert.equal(matchCourse("Untitled-document.pdf", PHCY_COURSES), null);
+});
+
+test("a hyphenated course name matches its own hyphenated file", () => {
+  const named = ["Advanced Contract Law", "Thermodynamics II"];
+  assert.equal(matchCourse("advanced-contract-law-week-2.docx", named)?.course, "Advanced Contract Law");
+});
