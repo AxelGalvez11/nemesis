@@ -80,3 +80,24 @@ test("facts come back lowercased and normalised", () => {
   assert.equal(facts?.host, "canvas.university.edu");
   assert.equal(facts?.path, "/courses/12345?foo=bar");
 });
+
+test("🔴 THE VENDOR'S OWN MARKETING SITE IS NOT A PORTAL", () => {
+  // Found by pointing the real detector at the real web, not by a fixture:
+  // both of these came back as portals, so a student reading a product page
+  // was told "Canvas detected" and offered a scan of a brochure.
+  assert.equal(detect("https://www.instructure.com/canvas"), "unknown");
+  assert.equal(detect("https://instructure.com/"), "unknown");
+  assert.equal(detect("https://www.blackboard.com/"), "unknown");
+  // The application itself is untouched: a subdomain is still the product.
+  assert.equal(detect("https://canvas.instructure.com/courses/838884/modules"), "canvas");
+  assert.equal(detect("https://school.blackboard.com/ultra/course"), "blackboard");
+});
+
+test("a Canvas-shaped URL with nothing on it yields no courses, not a guess", () => {
+  // canvas.instructure.com discontinued Free-for-Teacher, so every public
+  // course URL now serves a notice page while KEEPING its /courses/:id route.
+  // Captured live: zero links, zero markers. Detection must still say Canvas
+  // (the route is real) and the parse must come back empty rather than naming a
+  // course after whatever text is on the page.
+  assert.equal(detect("https://canvas.instructure.com/courses/838884/modules"), "canvas");
+});

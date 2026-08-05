@@ -30,6 +30,9 @@
 
 import type { LmsKind, ScrapedCourse, ScrapedItem, ScrapedKind, ScrapedLink } from "../wire.ts";
 
+import { courseTerm } from "./term.ts";
+import { ultraOutlineUrl } from "./ultra.ts";
+
 export interface SnapshotLink {
   /** Visible text of the link, already whitespace-collapsed by the adapter. */
   text: string;
@@ -78,6 +81,15 @@ export interface SnapshotCourseNode {
   code?: string;
   /** A real navigable URL, when the card has one. Often absent. */
   href?: string;
+  /**
+   * The term the PORTAL assigned this course, where it states one.
+   *
+   * Measured on a real signed-in Canvas: the course list is a table with a
+   * term cell per row. That is a stated fact, and it beats anything read out
+   * of the title — see readCourseListRows in dom.ts for the row that proves
+   * why ("… Orientation 2021" parses to the term "Orientation 2021").
+   */
+  term?: string;
 }
 
 export interface PageSnapshot {
@@ -263,6 +275,8 @@ export function parseSnapshot(snapshot: PageSnapshot, lms: LmsKind): ScrapedCour
   const names = new Map<string, string[]>();
   const homes = new Map<string, string>();
   const codes = new Map<string, string>();
+  /** Terms the page STATED, which outrank anything read from a title. */
+  const statedTerms = new Map<string, string>();
   const syllabi = new Map<string, Map<string, ScrapedLink>>();
 
   const ensure = (courseId: string) => {
@@ -279,7 +293,17 @@ export function parseSnapshot(snapshot: PageSnapshot, lms: LmsKind): ScrapedCour
     ensure(node.courseId);
     names.get(node.courseId)?.push(node.title);
     if (node.code) codes.set(node.courseId, node.code);
+    if (node.term) statedTerms.set(node.courseId, node.term);
     if (node.href) homes.set(node.courseId, node.href);
+    else if (lms === "blackboard") {
+      // A card with no link is Blackboard Ultra, where navigation happens in
+      // JavaScript. Its content page can still be ADDRESSED — see
+      // ultraOutlineUrl — and without this every Ultra course arrives with no
+      // URL, which is why reading more than the one course already on screen
+      // was impossible.
+      const outline = ultraOutlineUrl(snapshot.url, node.courseId);
+      if (outline) homes.set(node.courseId, outline);
+    }
   }
 
   for (const link of snapshot.links) {
@@ -338,11 +362,17 @@ export function parseSnapshot(snapshot: PageSnapshot, lms: LmsKind): ScrapedCour
     if (!name) continue;
     const home = homes.get(courseId);
     const code = codes.get(courseId);
+    // STATED beats parsed. Where the portal published a term of its own — a
+    // Canvas course-list row does — that is a fact, and reading the title
+    // instead would be replacing data with a guess. term.ts is the fallback
+    // for the portals that publish nothing, which includes Blackboard Ultra.
+    const term = statedTerms.get(courseId) ?? courseTerm({ code, name });
     courses.push({
       items: items.get(courseId) ?? [],
       name,
       syllabusLinks: [...(syllabi.get(courseId)?.values() ?? [])],
       ...(code ? { code } : {}),
+      ...(term ? { term } : {}),
       ...(home ? { url: home } : {}),
     });
   }

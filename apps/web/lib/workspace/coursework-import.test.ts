@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  coursesByTerm,
   coursesFromScan,
   describePlan,
   documentFolderPath,
   documentKey,
   documentsFromScan,
   eventsFromScan,
+  newestTermCourseNames,
   planImport,
   syllabusLinksFromScan,
 } from "@/lib/workspace/coursework-import";
@@ -192,4 +194,63 @@ test("the description counts folders and documents, not just courses", () => {
   const text = describePlan(plan);
   assert.match(text, /3 folders in your Library/);
   assert.match(text, /4 documents/);
+});
+
+// ── Terms ────────────────────────────────────────────────────────────────────
+
+/** A student partway through a degree: two live courses, one finished, one the
+ *  portal never named a term for. */
+const MANY_TERMS: LmsScan = {
+  courses: [
+    { items: [], name: "Anatomy", syllabusLinks: [], term: "Spring 2025" },
+    { items: [], name: "Independent Study", syllabusLinks: [] },
+    { items: [], name: "Pharmacotherapy", syllabusLinks: [], term: "Spring 2026" },
+    { items: [], name: "Ethics", syllabusLinks: [], term: "Spring 2026" },
+  ],
+  lms: "blackboard",
+  scannedAt: "2026-08-04T00:00:00.000Z",
+};
+
+test("courses group by term, newest first, unknowns last", () => {
+  assert.deepEqual(
+    coursesByTerm(MANY_TERMS).map((group) => [group.term, group.courses.map((course) => course.name)]),
+    [
+      ["Spring 2026", ["Pharmacotherapy", "Ethics"]],
+      ["Spring 2025", ["Anatomy"]],
+      [null, ["Independent Study"]],
+    ],
+  );
+});
+
+test("🔴 SORTED BY YEAR, NOT ALPHABETICALLY", () => {
+  // "Fall 2026" sorts BEFORE "Spring 2025" as text, which would put last year
+  // at the top of the picker and hand the student the wrong default.
+  const scan: LmsScan = {
+    ...MANY_TERMS,
+    courses: [
+      { items: [], name: "Old", syllabusLinks: [], term: "Spring 2025" },
+      { items: [], name: "New", syllabusLinks: [], term: "Fall 2026" },
+    ],
+  };
+  assert.deepEqual(coursesByTerm(scan).map((group) => group.term), ["Fall 2026", "Spring 2025"]);
+});
+
+test("the picker arrives with the newest term ticked, not everything", () => {
+  // The whole point: 31 courses of a degree must not all be ticked to get at
+  // this semester's handful.
+  assert.deepEqual(newestTermCourseNames(MANY_TERMS), ["Pharmacotherapy", "Ethics"]);
+});
+
+test("when nothing names a term, everything is ticked", () => {
+  // No grouping to lean on, so "all" is the only honest default — better than
+  // silently picking none and looking broken.
+  const scan: LmsScan = {
+    ...MANY_TERMS,
+    courses: [
+      { items: [], name: "Welding", syllabusLinks: [] },
+      { items: [], name: "Contract Law", syllabusLinks: [] },
+    ],
+  };
+  assert.deepEqual(newestTermCourseNames(scan), ["Welding", "Contract Law"]);
+  assert.deepEqual(coursesByTerm(null), []);
 });

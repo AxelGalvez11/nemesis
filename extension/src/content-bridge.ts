@@ -67,5 +67,31 @@ window.addEventListener("message", (event: MessageEvent) => {
       void chrome.runtime.lastError;
       reply(EXTENSION_MESSAGES.CLEARED, requestId, null);
     });
+    return;
+  }
+
+  if (type === APP_MESSAGES.REQUEST_FILE) {
+    const url = (data as { url?: unknown }).url;
+    // 🔴 THE URL IS NOT VALIDATED HERE, ON PURPOSE, AND THAT IS SAFE.
+    //
+    // The obvious worry: any script on the Nemesis page could ask for any URL,
+    // making this a way to read pages the page itself cannot reach. Two things
+    // stop that being a hole worth having a check here for. The worker only
+    // ever injects into an origin the STUDENT has already granted by name in
+    // Chrome's own dialog — an ungranted host fails with "no-permission". And
+    // the reply comes back to this page and nowhere else, so a caller learns
+    // only what a tab it already controls could learn.
+    //
+    // What DOES matter is the app side: the import asks only for URLs that came
+    // out of its own sanitised scan, and checks the reply names the URL it
+    // asked for. That check belongs where the intent is known, not here.
+    if (typeof url !== "string") {
+      reply(EXTENSION_MESSAGES.FILE, requestId, { error: "bad-url" });
+      return;
+    }
+    chrome.runtime.sendMessage({ type: RUNTIME_MESSAGES.FETCH_FILE, url }, (result: unknown) => {
+      if (chrome.runtime.lastError) reply(EXTENSION_MESSAGES.FILE, requestId, { error: "extension-unavailable", url });
+      else reply(EXTENSION_MESSAGES.FILE, requestId, result ?? { error: "no-reply", url });
+    });
   }
 });

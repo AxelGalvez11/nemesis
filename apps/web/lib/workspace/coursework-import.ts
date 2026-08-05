@@ -149,6 +149,55 @@ export function documentKey(course: string, title: string): string {
   return `${course}\u0000${title}`;
 }
 
+/**
+ * Courses grouped by the term the portal named, newest first. PURE.
+ *
+ * 🔴 THE PICKER NEEDS THIS OR IT IS UNUSABLE. A student partway through a
+ * degree has every course they have ever enrolled in in that list — measured on
+ * a real account, 31 entries. Without grouping, this semester's four courses
+ * are somewhere in the middle of twenty-seven finished ones.
+ *
+ * The term itself is read in the extension (extension/src/lms/term.ts) from
+ * what the portal already wrote, by position beside the year rather than from a
+ * list of season names, so it works on a portal in any language. Here it is
+ * only ever grouped and sorted — nothing re-derives it, so there is one
+ * implementation and no chance of the two disagreeing.
+ *
+ * Courses with no term come last under `null`. That is a real answer, not a
+ * failure: the caller names it, because a heading is a UI string.
+ */
+export function coursesByTerm(scan: LmsScan | null): Array<{ term: string | null; courses: ScrapedCourse[] }> {
+  if (!scan) return [];
+  const buckets = new Map<string | null, ScrapedCourse[]>();
+  for (const course of scan.courses) {
+    const term = course.term ?? null;
+    const bucket = buckets.get(term);
+    if (bucket) bucket.push(course);
+    else buckets.set(term, [course]);
+  }
+  // Sorted on the YEAR inside the label, so "Fall 2026" lands above "Spring
+  // 2025" instead of under it alphabetically. Same-year labels keep text order:
+  // ranking seasons would mean decoding season names, which is exactly what the
+  // extension refuses to do for good reason.
+  const yearOf = (label: string) => Number(/\b(19[89]\d|20\d{2})\b/.exec(label)?.[1] ?? 0);
+  return [...buckets.entries()]
+    .map(([term, courses]) => ({ courses, term }))
+    .sort((a, b) => {
+      if (a.term === null) return 1;
+      if (b.term === null) return -1;
+      return yearOf(b.term) - yearOf(a.term) || a.term.localeCompare(b.term);
+    });
+}
+
+/** The newest term's course names — what a picker should arrive already
+ *  ticked. Falls back to every course when no course names a term, where there
+ *  is no grouping to lean on and "all" is the only honest default. PURE. */
+export function newestTermCourseNames(scan: LmsScan | null): string[] {
+  const groups = coursesByTerm(scan);
+  const newest = groups.find((group) => group.term !== null) ?? groups[0];
+  return (newest?.courses ?? []).map((course) => course.name);
+}
+
 export interface ImportPlan {
   courses: string[];
   events: CalendarEvent[];

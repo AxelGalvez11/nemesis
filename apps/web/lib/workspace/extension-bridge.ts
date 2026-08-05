@@ -17,7 +17,7 @@
 // See packages/shared/src/lms-import.ts for what it enforces and why it
 // deliberately does not filter wording.
 
-import { type LmsScan, sanitiseScan } from "@nemesis/shared";
+import { type FetchedFile, type LmsScan, sanitiseFetchedFile, sanitiseScan } from "@nemesis/shared";
 
 /** Kept in step with extension/src/messages.ts. Both sides are in this repo, so
  *  a mismatch is a bug, not a compatibility problem. */
@@ -27,11 +27,13 @@ const FROM_EXTENSION = "nemesis-extension";
 const APP_MESSAGES = {
   CLEAR_SCAN: "nemesis:clear-scan",
   PING: "nemesis:ping",
+  REQUEST_FILE: "nemesis:request-file",
   REQUEST_SCAN: "nemesis:request-scan",
 } as const;
 
 const EXTENSION_MESSAGES = {
   CLEARED: "nemesis:cleared",
+  FILE: "nemesis:file",
   PONG: "nemesis:pong",
   SCAN: "nemesis:scan",
 } as const;
@@ -65,7 +67,7 @@ function newRequestId(): string {
  * ordinary state of the world, not an error, and making every caller wrap this
  * in a try/catch would guarantee someone forgets.
  */
-function ask(type: string, expect: string): Promise<unknown> {
+function ask(type: string, expect: string, extra?: Record<string, unknown>, timeoutMs = REPLY_TIMEOUT_MS): Promise<unknown> {
   if (typeof window === "undefined") return Promise.resolve(null);
 
   return new Promise((resolve) => {
@@ -90,9 +92,9 @@ function ask(type: string, expect: string): Promise<unknown> {
       finish(data.payload ?? null);
     }
 
-    const timer = setTimeout(() => finish(null), REPLY_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(null), timeoutMs);
     window.addEventListener("message", onMessage);
-    window.postMessage({ requestId, source: FROM_APP, type }, window.location.origin);
+    window.postMessage({ ...extra, requestId, source: FROM_APP, type }, window.location.origin);
   });
 }
 
@@ -119,6 +121,37 @@ export async function requestScan(): Promise<LmsScan | null> {
  *  so a student's coursework does not sit in extension storage forever. */
 export async function clearScan(): Promise<void> {
   await ask(APP_MESSAGES.CLEAR_SCAN, EXTENSION_MESSAGES.CLEARED);
+}
+
+/**
+ * How long to wait for ONE document's bytes.
+ *
+ * Two orders of magnitude longer than every other call here, and for a
+ * completely different reason: the others are a local round trip, while this
+ * one waits on the extension opening a tab on the school's portal and pulling a
+ * lecture deck over campus wifi. The extension caps itself well inside this, so
+ * reaching this budget means the extension itself has stopped answering.
+ */
+const FILE_TIMEOUT_MS = 90_000;
+
+/**
+ * Fetch one document's bytes through the extension.
+ *
+ * 🔴 THE URL MUST COME FROM A SANITISED SCAN, never from anywhere else. This is
+ * the app asking a browser extension to read a page with the student's school
+ * session attached, so "which URL" is the whole security question. Callers pass
+ * a `url` taken from a ScrapedDocument that has already been through
+ * sanitiseScan, and the reply is checked to name that same URL — a reply about
+ * a different document is a reply to nobody and is thrown away.
+ *
+ * Returns null for every failure, including a refusal: an import that cannot
+ * get one file carries on and reports which ones it missed.
+ */
+export async function requestFile(url: string): Promise<FetchedFile | null> {
+  const raw = await ask(APP_MESSAGES.REQUEST_FILE, EXTENSION_MESSAGES.FILE, { url }, FILE_TIMEOUT_MS);
+  const file = sanitiseFetchedFile(raw);
+  // Same URL, or it is not an answer to this question.
+  return file && file.url === url ? file : null;
 }
 
 /** Where a student goes to get it. Not yet a Chrome Web Store listing — see
