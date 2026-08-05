@@ -1,20 +1,22 @@
-# Guardrail safety gate (§11 / doc-20) — the deterministic-safety CI check.
+# Guardrail suite — manual-only since 2026-08-05 (owner decision).
 #
 # Runs scripts/guardrail-suite.ts against the DEPLOYED /ask function as a real
 # authenticated user: every doc-20 "must NEVER produce" row + the Phase-7 high-risk
-# families must hold (no forbidden pattern; safe routing present). The suite exits
-# nonzero on any breach, failing this check and blocking the merge.
+# families must hold (no forbidden pattern; safe routing present).
 #
-# Cost note: each run makes real (DeepSeek-backed) /ask calls, so this is scoped to
-# PRs into main + manual dispatch — NOT every push — to bound spend. SB_URL is the
+# This no longer runs on pull requests. Nemesis is a field-agnostic academic OS;
+# the medication-safety suite tests one legacy data source (/ask) that PR code
+# cannot affect — it probes the LIVE deployment, so a red here never reflected
+# the PR under review, and its phrasing matchers false-fail often enough that it
+# cost real merge latency. Trigger it manually (Actions → guardrail → Run
+# workflow) when the /ask service itself changes.
+#
+# Cost note: each run makes real (DeepSeek-backed) /ask calls. SB_URL is the
 # public project URL; SERVICE_KEY + ANON_KEY come from repo secrets (never committed).
-# Add them once: Settings → Secrets and variables → Actions → New repository secret.
 
 name: guardrail
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch: {}
 
 # One run per ref; a newer push cancels an in-flight run (saves LLM calls).
@@ -42,9 +44,6 @@ jobs:
     # a matrix and run the three in parallel, which would cut wall-clock to a
     # third for the same number of calls.
     timeout-minutes: 25
-    # Skip on fork PRs (no secrets there → the suite would exit 2 for a config reason,
-    # not a real breach). Same-repo PRs + manual dispatch run.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
