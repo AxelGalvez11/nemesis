@@ -31,6 +31,7 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
+import { describeCoverage, type ExtractionCoverage } from "@nemesis/shared";
 import { extractFile, isExtractable, isImage } from "@/lib/workspace/chat-attachments";
 import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
 import { setLibrarySourceFolder, uploadLibrarySource, type LibrarySource } from "@/lib/workspace/library-sources";
@@ -65,6 +66,10 @@ interface UseLibraryImportArgs {
 export function useLibraryImport({ uid, notes, folders, createNote, saveNote, onImported, onSourcesChanged }: UseLibraryImportArgs) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  /** What imported successfully but INCOMPLETELY — one line per file, and empty
+   *  whenever everything was read in full. Not an error: the note is real and
+   *  worth keeping; the student simply has to know what is not in it. */
+  const [importNotices, setImportNotices] = useState<string[]>([]);
 
   /** Best-effort provenance stamp linking a note to its stored original. */
   const recordProvenance = async (noteId: string, fileName: string, sourceId: string | null, location?: object | null) => {
@@ -91,12 +96,14 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
     file: File,
     text: string,
     filed: LibrarySource | null,
+    coverage?: ExtractionCoverage,
   ): Promise<{ path: string; stored: LibrarySource | null } | null> => {
     if (!uid || text.trim().length < LIBRARIAN_MIN_CHARS) return null;
     try {
       const reply = await postChatCompletion(
         uid,
         buildLibrarianMessages({
+          coverage,
           fileName: file.name,
           outline: librarianOutline(notes.map((note) => note.path), folders),
           text,
@@ -127,8 +134,16 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
   const importFiles = async (files: File[]) => {
     if (files.length === 0) return;
     setImportError(null);
+    setImportNotices([]);
     setImporting(true);
     const failures: string[] = [];
+    // 🔴 NOT FAILURES, AND NOT SILENCE EITHER. A file whose pages could not all
+    // be read still imports, and the note built from it is still worth having —
+    // but the student has to be told which part of their lecture is not in it.
+    // Kept separate from `failures` because the two want different words and a
+    // different colour: one says "this did not work", the other says "this
+    // worked, and here is what is missing".
+    const notices: string[] = [];
     let lastPath: string | null = null;
     let storedAny = false;
     for (const file of files) {
@@ -140,11 +155,16 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
           // the extractor takes as its reference, so the bytes leave the device
           // exactly once and every later operation names the same object.
           const filed = uid ? await uploadLibrarySource(uid, file, "Imported") : null;
-          const { text, title } = await extractFile(file, uid, {
+          const { coverage, text, title } = await extractFile(file, uid, {
             folderPath: "Imported",
             sourceId: filed?.id,
           });
-          const organized = isImage(file) ? null : await organizeDocument(file, text, filed);
+          // describeCoverage returns null on a complete read, so a clean import
+          // adds nothing — a badge that appears on every file teaches people to
+          // stop reading badges.
+          const gap = coverage ? describeCoverage(coverage) : null;
+          if (gap) notices.push(`${file.name}: ${gap}`);
+          const organized = isImage(file) ? null : await organizeDocument(file, text, filed, coverage);
           if (organized) {
             lastPath = organized.path;
             storedAny = storedAny || organized.stored !== null;
@@ -177,7 +197,8 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
     if (storedAny) onSourcesChanged?.();
     if (lastPath) onImported(lastPath);
     if (failures.length) setImportError(failures.join(" · "));
+    setImportNotices(notices);
   };
 
-  return { importError, importFiles, importing };
+  return { importError, importFiles, importNotices, importing };
 }

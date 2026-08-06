@@ -95,7 +95,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   };
 
   // Import pipeline shared with the docs-nav — see use-library-import.ts.
-  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
+  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
 
   const importNotes = async (files: File[]) => {
     await importFiles(files);
@@ -173,6 +173,11 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
       </div>
 
       {importError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" role="alert">{importError}</p>}
+      {/* Imported, but not in full. Muted rather than red: the file is in the
+          Library and the note is real — this says which part of it is not. */}
+      {importNotices.map((notice) => (
+        <p className="mx-3 mb-1 text-[0.65rem] text-muted-foreground" key={notice} role="status">{notice}</p>
+      ))}
 
       {totalCount > 0 && searchOpen && (
         <div className="mx-3 mb-1">

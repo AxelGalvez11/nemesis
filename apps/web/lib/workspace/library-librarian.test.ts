@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { buildCoverage, type ExtractionCoverage } from "@nemesis/shared";
+
 import {
   appendRelatedLink,
   applyLibrarianPlan,
@@ -184,4 +186,35 @@ test("a failing provenance stamp or missing related note never sinks the pages",
     },
   });
   assert.equal(first, "A/T.md");
+});
+
+// --- The note writer is told what it cannot see --------------------------------
+
+test("🔴 the librarian's own prompt cut is disclosed, not silent", () => {
+  // buildLibrarianMessages has always done `text.slice(0, LIBRARIAN_TEXT_CHARS)`
+  // with no notice. A 300-slide deck was filed from its opening characters and
+  // the pages it produced claimed to be the document.
+  const long = "Digoxin. ".repeat(20_000);
+  const [, user] = buildLibrarianMessages({ fileName: "lecture.pptx", outline: "", text: long });
+  assert.match(String(user?.content), /This document is longer than what follows/);
+  assert.match(String(user?.content), /do not invent an ending/);
+});
+
+test("a document that fits produces no truncation notice", () => {
+  const [, user] = buildLibrarianMessages({ fileName: "handout.pdf", outline: "", text: "Two sentences. That is all." });
+  assert.doesNotMatch(String(user?.content), /longer than what follows/);
+});
+
+test("the librarian is told which pages the extractor could not read", () => {
+  const coverage = buildCoverage({
+    unitKind: "page", units: 36, unitsNative: 21, unitsUnread: 15,
+  }) as ExtractionCoverage;
+  const [, user] = buildLibrarianMessages({ coverage, fileName: "metabolism.pdf", outline: "", text: "Phase I reactions." });
+  assert.match(String(user?.content), /15 of 36 pages could NOT be read/);
+});
+
+test("a complete read adds nothing to the librarian's prompt", () => {
+  const coverage = buildCoverage({ unitKind: "page", units: 3, unitsNative: 3 }) as ExtractionCoverage;
+  const [, user] = buildLibrarianMessages({ coverage, fileName: "ok.pdf", outline: "", text: "All of it." });
+  assert.doesNotMatch(String(user?.content), /Incomplete source/);
 });
