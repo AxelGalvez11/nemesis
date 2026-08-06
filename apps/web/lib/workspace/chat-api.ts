@@ -582,6 +582,36 @@ export interface ChatCompletionOptions {
  *  copy). Streams when `onDelta` is supplied. Resolves (never rejects) for network/API failures —
  *  those come back as a student-readable line. Only an aborted `signal` rejects, so the caller can
  *  tell "the user stopped it" apart from "it failed". */
+/**
+ * The exact JSON body one turn sends to the valve.
+ *
+ * 🔴 EXTRACTED SO THE ABSENCE OF `tool_choice` IS A TEST, NOT A COMMENT. DeepSeek
+ * V4 defaults to thinking mode, and thinking mode REJECTS a forced tool choice —
+ * the provider answers "Thinking mode does not support this tool_choice"
+ * (api-docs.deepseek.com/guides/tool_calls, and the same string is quoted in
+ * supabase/functions/ask/llm.ts, which met it live). Every route in this chat
+ * now carries tools, so any future line that sets tool_choice would break the
+ * thinking routes specifically — the hardest questions — and would break them
+ * only in production. A comment saying "we never send it" cannot fail; this can.
+ *
+ * `tools` is omitted entirely rather than sent empty: an empty array is a
+ * different request from no tools at all, and the last round deliberately goes
+ * out with none so the model has to answer in text.
+ */
+export function completionPayload(
+  wireMessages: readonly WireMsg[],
+  decision: ChatRouteDecision,
+  options: Pick<ChatCompletionOptions, "onDelta" | "tools"> = {},
+): Record<string, unknown> {
+  return {
+    messages: wireMessages,
+    model: decision.model,
+    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
+    ...(options.onDelta ? { stream: true } : {}),
+    ...(options.tools?.length ? { tools: options.tools } : {}),
+  };
+}
+
 export async function postChatCompletion(
   uid: string,
   wireMessages: WireMsg[],
@@ -591,13 +621,7 @@ export async function postChatCompletion(
   if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
   const decision = options.decision ?? { route: "conversation", model: "deepseek-chat", searchWeb: false };
-  const payload = JSON.stringify({
-    messages: wireMessages,
-    model: decision.model,
-    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
-    ...(options.onDelta ? { stream: true } : {}),
-    ...(options.tools?.length ? { tools: options.tools } : {}),
-  });
+  const payload = JSON.stringify(completionPayload(wireMessages, decision, options));
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
@@ -997,38 +1021,73 @@ export async function sendChatTurn(
       const held = (result as Record<string, unknown> | null)?.pending_delete;
       if (!pendingDelete && held && typeof held === "object") pendingDelete = held as PendingDelete;
     }
-    messages = [
-      ...messages,
-      {
-        content: reply.text ?? "",
-        role: "assistant",
-        // The thinking that produced these calls rides with them. Without it a
-        // thinking-mode turn rejects the round, which is the constraint that
-        // used to cost every reasoner route its tools.
-        ...(reply.reasoning ? { reasoning_content: reply.reasoning } : {}),
-        tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
-      },
-      ...results.map(({ call, result }) => ({
-        // Never a blind slice: an over-budget result comes back as valid JSON
-        // that says complete:false and where to resume. See chat-tool-result.ts.
-        content: serializeToolResult(result),
-        role: "tool" as const,
-        tool_call_id: call.id,
-      })),
-    ];
+    messages = appendToolRound(messages, reply, calls, results.map(({ call, result }) => ({ id: call.id, result })));
   }
   const shown = collapseOutputs(outputs);
   onActivity?.(null);
   // Last line of defence: whatever survived the loop is checked for leaked
   // invocation syntax before it can be shown or saved (chat-tool-markup.ts).
   const cleaned = sanitizeAssistantText(reply.text);
+  // 🔴 THE REASONING STOPS HERE. It exists for exactly one purpose — being
+  // echoed back to the provider on the next tool round, which has already
+  // happened by now — and the turn is over. `...reply` would otherwise carry
+  // the model's private chain of thought out to the UI, where the caller
+  // persists what it is handed; today it reads named fields only, but a field
+  // that must never be stored should not be reachable in the first place.
+  // Deleted from the returned object rather than trusted to callers.
+  const { reasoning: _private, ...visible } = reply;
   return {
-    ...reply,
+    ...visible,
     text: cleaned.text,
     sources,
     ...(shown.length ? { outputs: shown } : {}),
     ...(pendingDelete ? { pendingDelete } : {}),
   };
+}
+
+/**
+ * The two messages one completed tool round adds to the conversation.
+ *
+ * 🔴 EXTRACTED SO IT CAN BE PROVEN, because this is the exact seam the historical
+ * bug lived in. DeepSeek V4 thinking mode requires that the reasoning a model
+ * produced BEFORE a tool call is concatenated back into context on every later
+ * round; drop it and the round is rejected. That is not visible from a single
+ * successful tool call — it only appears between rounds, which is why the tests
+ * beside this run four of them.
+ *
+ * Everything the assistant produced rides back unchanged and together:
+ * `reasoning_content`, `content`, and `tool_calls` with their original ids. The
+ * ids are what pair a result to its call; invent or reorder one and the provider
+ * either rejects the round or answers about the wrong tool.
+ */
+export function appendToolRound(
+  messages: readonly WireMsg[],
+  reply: ChatReply,
+  calls: readonly AgentToolCall[],
+  results: readonly { id: string; result: unknown }[],
+): WireMsg[] {
+  return [
+    ...messages,
+    {
+      content: reply.text ?? "",
+      role: "assistant",
+      // The thinking that produced these calls rides with them. Sent only when
+      // the model actually produced some: an empty `reasoning_content` on a
+      // non-thinking turn is a field the provider never asked for.
+      ...(reply.reasoning ? { reasoning_content: reply.reasoning } : {}),
+      tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
+    },
+    ...results.map(({ id, result }) => ({
+      // Never a blind slice: an over-budget result comes back as valid JSON
+      // that says complete:false and where to resume. See chat-tool-result.ts.
+      content: serializeToolResult(result),
+      role: "tool" as const,
+      // Paired by the id the model issued, never by position — a turn that
+      // calls two tools at once gets its results back in whatever order they
+      // resolved, and position would silently swap them.
+      tool_call_id: id,
+    })),
+  ];
 }
 
 /**

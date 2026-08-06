@@ -98,7 +98,49 @@ export function scoreCase(testCase: RoutingCase, observed: ObservedSources): Cas
   };
 }
 
+/**
+ * Which production configuration produced a set of numbers.
+ *
+ * 🔴 NOT OPTIONAL METADATA (owner 2026-08-06: "identify which production model
+ * and effort mode produced every result"). Nemesis has three effort settings
+ * that reach four different models across three providers, and thinking mode is
+ * on for some and off for others. A routing score with no configuration on it is
+ * unreproducible and uncomparable — two runs that disagree could be a
+ * regression, or could be v4-flash-with-thinking versus v4-pro, and nobody could
+ * tell which.
+ *
+ * `answeringModel` is what the provider SAID answered, not what we asked for.
+ * The valve silently downgrades: a client naming v4-pro without the plan gets
+ * v4-flash, a High turn that takes longer than 45s falls back to v4-flash, and
+ * any provider outage can land the turn on GLM, Qwen, Kimi or Anthropic. Asking
+ * for a model is not evidence of getting it.
+ */
+export interface RunConfig {
+  /** The Nemesis effort setting the run used: instant | medium | high. */
+  effort: string;
+  /** The model id the client asked the valve for. */
+  requestedModel: string;
+  /** What the provider reported as the answering model, when it reported one. */
+  answeringModel: string | null;
+  /** Whether DeepSeek thinking mode was expected to be on for this run. */
+  thinking: boolean;
+  /** The plan the key resolves to — it decides whether High reaches v4-pro. */
+  plan?: string;
+}
+
+/** One line naming the configuration, for the top of any report. */
+export function describeRun(config: RunConfig): string {
+  const answered = config.answeringModel && config.answeringModel !== config.requestedModel
+    ? ` → answered by ${config.answeringModel}`
+    : config.answeringModel
+      ? ""
+      : " → answering model NOT REPORTED";
+  return `effort=${config.effort} plan=${config.plan ?? "unknown"} requested=${config.requestedModel}${answered} thinking=${config.thinking ? "on" : "off"}`;
+}
+
 export interface RoutingReport {
+  /** Which production configuration produced these numbers. */
+  config?: RunConfig;
   total: number;
   passed: number;
   /** Share of turns that searched when the case forbade it, over the turns that
@@ -114,7 +156,11 @@ export interface RoutingReport {
 
 const rate = (numerator: number, denominator: number): number => (denominator === 0 ? 0 : numerator / denominator);
 
-export function scoreRouting(cases: RoutingCase[], observe: (testCase: RoutingCase) => ObservedSources): RoutingReport {
+export function scoreRouting(
+  cases: RoutingCase[],
+  observe: (testCase: RoutingCase) => ObservedSources,
+  config?: RunConfig,
+): RoutingReport {
   const verdicts = cases.map((testCase) => scoreCase(testCase, observe(testCase)));
   const forbidsWeb = cases.filter((testCase) => testCase.web === "forbidden").length;
   const requiresWeb = cases.filter((testCase) => testCase.web === "required").length;
@@ -124,6 +170,7 @@ export function scoreRouting(cases: RoutingCase[], observe: (testCase: RoutingCa
   const scoredPrivate = verdicts.filter((verdict) => verdict.privateScored).length;
 
   return {
+    ...(config ? { config } : {}),
     failures: verdicts.filter((verdict) => !verdict.passed),
     overSearchRate: rate(verdicts.filter((verdict) => verdict.overSearched).length, forbidsWeb),
     passed: verdicts.filter((verdict) => verdict.passed).length,
@@ -139,6 +186,9 @@ export function formatRoutingReport(label: string, report: RoutingReport): strin
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
   return [
     `${label}: ${report.passed}/${report.total} cases pass`,
+    // The configuration line is not decoration. A score with no model and no
+    // effort mode against it cannot be reproduced or compared to the next run.
+    `  configuration       ${report.config ? describeRun(report.config) : "UNRECORDED — this number cannot be compared to another run"}`,
     `  over-search rate    ${percent(report.overSearchRate)}`,
     `  under-search rate   ${percent(report.underSearchRate)}`,
     `  wrong-source rate   ${percent(report.wrongSourceRate)}`,
