@@ -38,8 +38,17 @@ export function ProcessingIndicator() {
     : `${failed.length} recording${failed.length === 1 ? "" : "s"} need${failed.length === 1 ? "s" : ""} attention`;
 
   return (
-    <div className="pointer-events-none fixed bottom-4 left-1/2 z-70 -translate-x-1/2">
-      <div className="pointer-events-auto flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-1 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) p-1 shadow-[0_6px_24px_rgba(0,0,0,0.14)]">
+    // 🔴 NOT bottom-centre. That is where the composer is, and a measurement on
+    // /sessions at 1280×720 put a `bottom-4` pill from y=670 to y=704 straight
+    // across a composer occupying 649–685 — over the single most-clicked control
+    // in the product. Sitting one step above `--composer-measured-height` clears
+    // it by construction rather than by a guessed offset: that variable is what
+    // the composer's own height resolves to, it grows with a multi-line draft,
+    // and it is declared at the workspace root so this shell-level element can
+    // read it. Surfaces with no composer fall back to the same value and simply
+    // float a little higher.
+    <div className="pointer-events-none fixed right-4 bottom-[calc(var(--composer-measured-height)+1rem)] z-70">
+      <div className="pointer-events-auto flex max-w-[min(20rem,calc(100vw-2rem))] flex-col gap-1 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) p-1 shadow-[0_6px_24px_rgba(0,0,0,0.14)]">
         <button
           aria-expanded={expanded}
           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]"
