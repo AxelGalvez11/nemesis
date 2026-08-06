@@ -84,23 +84,23 @@ Deno.test("stripping does not mutate the original — the chain retries from one
   assertEquals("reasoning_content" in (body.messages[2] as Record<string, unknown>), true);
 });
 
-// 🔴 ANTHROPIC IS NOT OPENAI-COMPATIBLE AND THE VALVE TREATS IT AS IF IT WERE.
-// `callProvider` posts `${base}/chat/completions` with `Authorization: Bearer`.
-// Anthropic's API is `/v1/messages` with `x-api-key` and `anthropic-version`,
-// and its request body puts `system` at the top level rather than in `messages`.
-// So the last link in the outage chain would fail on every call.
+// 🔴 ANTHROPIC IS NOT OPENAI-COMPATIBLE, and the valve used to treat it as if
+// it were: `callProvider` posts `${base}/chat/completions` with
+// `Authorization: Bearer`, while Anthropic's API is `/v1/messages` with
+// `x-api-key` and `anthropic-version`. The last link in the outage chain would
+// have failed on every call, and never fired, so nobody found out.
 //
-// This test documents the defect and PASSES today — it asserts the shape the
-// current code produces, so that the separate PR fixing it has something to
-// turn red. Deleting it without fixing the caller is how a known bug becomes an
-// unknown one again.
-Deno.test("KNOWN DEFECT: the Anthropic fallback is built in the OpenAI shape", () => {
+// It is translated now (anthropic-adapter.ts). What this asserts is the
+// property that matters at THIS layer: the stripped body still contains
+// everything the adapter needs to build a valid Anthropic request. The
+// translation itself is pinned in anthropic-adapter.test.ts.
+Deno.test("the stripped body still carries what the Anthropic adapter needs", () => {
   const sent = stripDeepSeekOnlyFields({ ...inFlight(), model: "claude-sonnet-4-6" });
-  // What the valve will send. Anthropic accepts none of this as-is.
-  assert("messages" in sent, "still an OpenAI messages array");
-  assertEquals((sent.messages as Record<string, unknown>[])[0].role, "system",
-    "a system message inside `messages` — Anthropic wants a top-level `system` field");
-  assert("tools" in sent, "tools are present but in the OpenAI schema, not Anthropic's");
-  // The fix is tracked as its own reviewable change; see
-  // docs/research/deepseek-v4-thinking-tool-calls-2026-08.md and the PR notes.
+  const messages = sent.messages as Record<string, unknown>[];
+  assertEquals(messages[0].role, "system", "the system prompt must survive to become a top-level field");
+  assert("tools" in sent, "the tool catalogue must survive to be re-schema'd");
+  // Tool pairing is what the adapter turns into tool_use / tool_result blocks;
+  // an id lost here becomes an unanswerable call there.
+  assertEquals(messages[2].tool_calls, inFlight().messages[2].tool_calls);
+  assertEquals(messages[3].tool_call_id, "call_a1");
 });
