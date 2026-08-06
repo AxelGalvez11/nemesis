@@ -67,11 +67,19 @@ with `maxDuration = 300`, reachable only with a shared worker secret. It is driv
 same job table, the same claim RPC, and the same cron kick — pg_net can call a Vercel URL
 as readily as a Supabase one.
 
-This still satisfies requirement 1. Vercel gives **each route its own function and its own
-instance pool**; Fluid Compute shares instances *within* a function, not across them. So
-ingestion competes with ingestion, never with page loads or chat. Its concurrency is
-capped explicitly by the claim RPC's `p_limit` rather than by whatever traffic happens to
-arrive.
+**What actually keeps ingestion out of the way of page loads is the claim limit.**
+`claim_source_ingest_jobs(p_limit)` is a hard cap on how many parses exist at once,
+enforced in the database, under our control, and true regardless of how Vercel bundles
+anything.
+
+It is tempting to add "and each route gets its own function and its own instance pool, so
+Fluid Compute never shares an instance between ingestion and a page load". That may well
+be true — Next.js on Vercel typically emits a function per route handler — but **it was
+not verifiable from the deployment API and is therefore not relied on here.** Automatic
+function grouping exists, and a design resting on an unverified runtime property is the
+kind of comment that goes stale silently. §9.4 measures the thing that matters directly:
+whether concurrent large jobs disturb unrelated requests. If they do, the answer is to
+lower `p_limit`, not to appeal to isolation.
 
 ### The upload request after this change
 
@@ -118,34 +126,54 @@ Because a 118 MiB deck would then parse in about 0.4 MiB and report success havi
 looked at a single figure. That is `office-slim.ts` again with a new mechanism — the same
 silent loss, at a different layer. **Rejected explicitly.**
 
-### Pass 1 — one sequential stream, constant memory
+### Phase A — the directory first, by range read
 
-A zip's central directory sits at the *end* of the file, and its local entry headers
-appear in stream order. So a single sequential read can do all of this at once:
+**A zip's central directory is at the END of the file, and it must be read BEFORE the
+stream, not during it.**
+
+The earlier draft of this design had one sequential pass that hashed, inflated
+entry-by-entry, and "cross-checked against the central directory when it arrives at the
+end of the same stream". That is wrong in a way worth recording, because it is the same
+mistake as `unzipBounded`'s deleted post-inflation sum: **a check positioned after the
+cost it exists to prevent.** By the time the directory arrives at byte 123,799,463, every
+local-header claim has already been trusted — already inflated against, already allocated
+against. Learning at the end that entry 31 lied is information you can no longer act on.
+
+It is also the only way the per-entry ratio guard in §7 — the genuinely new protection
+here — can work at all. Catching an entry that inflates past its declared size requires
+having an authoritative declared size *at that entry*, before inflating it.
+
+So the first I/O is a range read of the last ~64 KiB: End of Central Directory, then the
+central directory itself. Verified working against the real object (`accept-ranges: bytes`,
+206, 65,536 bytes returned). That yields the authoritative name list, sizes and methods
+before a single entry is touched — which `orderSlideFiles` and `planSlideMedia` want
+anyway, since both need the whole name list up front.
+
+### Phase B — one sequential stream, validated against the directory
 
 1. **Hash.** sha256 updated as bytes pass. Never buffered. This is the document's identity
    and the idempotency key.
-2. **Inflate entry by entry** with fflate's streaming `Unzip`, holding one entry at a
-   time. Peak = largest entry (20.26 MiB here).
-3. **Record every entry**: name, compressed size, declared size, actual inflated size,
-   method, and a disposition.
-4. **Compute per-asset facts** while the entry is in hand — mime, dimensions, content key.
-   Facts are tens of bytes; the bytes themselves are dropped unless small and needed.
-5. **Cross-check against the central directory** when it arrives at the end of the same
-   stream. An entry whose local header disagrees with the directory is recorded as such
-   rather than trusted.
+2. **Inflate entry by entry** with fflate's streaming `Unzip`, holding one at a time.
+   Peak = largest entry (20.26 MiB here).
+3. **Validate each local header against the directory entry, before inflating it.** A
+   disagreement stops that entry rather than being noticed afterwards.
+4. **Record every entry**: name, compressed size, declared size, actual inflated size,
+   method, disposition, and reason.
+5. **Compute per-asset facts** while the entry is in hand — mime, dimensions, content key.
+   Facts are tens of bytes; the bytes are dropped unless small and needed.
 
-One transfer, no per-entry latency, complete inventory.
+One transfer, no per-entry latency, complete inventory, and every bound checked at the
+entry it applies to.
 
-### Pass 2 — targeted range reads
+### Phase C — targeted range reads
 
 The media plan (which figures are worth describing) needs facts for *all* assets before it
-can choose, and pass 1 produced exactly that. The chosen set is small and already capped,
+can choose, and phase B produced exactly that. The chosen set is small and already capped,
 so pass 2 fetches just those by HTTP range — verified supported: `accept-ranges: bytes`,
 206 responses, and HEAD returns `content-length` for free.
 
 Range reads are the optimisation here, not the mechanism. The completeness guarantee comes
-from pass 1, which visits everything.
+from phase B, which visits every entry the directory declared.
 
 ### Peak memory
 
@@ -168,9 +196,14 @@ Every entry in the package lands in the inventory with exactly one disposition:
 | disposition | meaning |
 |---|---|
 | `read` | content extracted and used |
-| `inventoried` | seen, measured, deliberately not extracted (e.g. a thumbnail we do not need) |
+| `inventoried` | seen, measured, deliberately not extracted — **a reason string is required, not optional** |
 | `unsupported` | a real part in a format this parser cannot read — recorded with what it was |
 | `failed` | we tried and could not — recorded with why |
+
+`inventoried` carries a mandatory reason for a specific reason: it is the disposition most
+likely to quietly absorb things nobody actually decided to skip. "We saw it and chose not
+to read it" is only an honest statement if someone wrote down why. A blank reason fails
+the same check that an unbalanced count does.
 
 Two things follow, and both are enforced rather than described:
 
@@ -205,11 +238,23 @@ worker restarts are all normal.
 3. **Content identity short-circuit.** `parsed_documents` already carries
    `unique (user_id, content_hash, parser_version)`. Once `inventory` has the hash, an
    existing row for that triple means the parse is already done: the job skips to
-   `persist` and links. Re-uploading the same lecture costs one streaming hash, not a
-   re-parse.
+   `persist` and links.
+
+   🔴 **Be precise about what this saves: the PARSE, not the TRANSFER.** The authoritative
+   hash comes out of the phase-B stream, so a re-upload of the same lecture still reads
+   118 MiB before discovering there was nothing to do. That is the right trade — a second
+   hash-only pass would cost the same transfer to save nothing — but the doc should not
+   imply a saving it does not deliver. `library_sources.content_hash` may be populated by
+   the browser at upload time; if so it can be used as a *hint* to skip early, never as
+   the identity, because a client-supplied hash is a claim.
 4. **Per-stage resume.** Retry resumes from `failed_stage`, not from the beginning —
    inherited from `recording_jobs`, and it matters more here: the `assets` stage keeps
    `assets_done`, so a worker that dies on asset 40 of 68 resumes at 40.
+
+   That counter is only meaningful if the ordering is stable across restarts, so it
+   indexes into **the central directory order persisted with the job**, never a re-derived
+   iteration order. An object-key order that happens to be stable today is exactly the
+   kind of thing that works until it doesn't.
 
 `persist` is an upsert on the unique index, so even a duplicated final write converges.
 
@@ -224,11 +269,21 @@ header claims before inflating everything, or sum actual sizes after.
 | guard | bound | why |
 |---|---|---|
 | entry count | 20,000 | a zip can attack by count; a 500-slide deck runs to a few thousand parts |
-| per-entry inflated | 64 MiB | three times the largest real entry observed (20.26 MiB) |
+| per-entry inflated | 64 MiB, **provisional** | see below |
 | per-entry ratio | actual vs declared | **the new one.** An entry that inflates past its own header claim is caught *at that entry*, before the next is touched |
 | total inflated | `UNZIP_MAX_TOTAL_BYTES` | a memory budget set by the instance, never a multiple of the upload ceiling |
 | wall clock | worker deadline, stage-aware | a stage that runs out of time yields rather than dying, and is re-claimed |
 | concurrency | claim `p_limit` | the explicit cap on how many parses run at once |
+
+🔴 **The per-entry cap is derived from a sample of one deck and is labelled provisional
+until a second real fixture exists.** "Three times the largest entry observed" is the same
+reasoning shape as the "the route already refuses more than 25 MB" comment just deleted for
+going stale — a number justified by a circumstance rather than by a constraint. The
+constraint that does bound it is the DECODE working set, which is what actually threatens
+the instance: the deck's TIFFs run about 4 bytes per pixel, so a 64 MiB entry decodes to
+roughly 64 MiB of RGBA, and the two together are the ~128 MiB that must fit beside
+everything else. When the second fixture lands, re-derive it from that relationship rather
+than from the biggest file anyone has seen.
 
 Failure taxonomy, kept distinct because they mean different things to a student:
 
