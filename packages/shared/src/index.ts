@@ -213,3 +213,8 @@ export * from "./lms-import.ts";
 // places at once, and because a limit that appears twice eventually disagrees
 // with itself.
 export * from "./upload-limits.ts";
+// What was read out of an uploaded document, and what was not. Shared because the
+// record crosses the extraction route's JSON, the `parsed_documents.coverage`
+// column, the web client and the phone — and because a partial read presented as
+// a complete one is the same defect on every one of those surfaces.
+export * from "./extraction-coverage.ts";

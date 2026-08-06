@@ -26,6 +26,8 @@
 // Every failure — model down, malformed plan, over-limit — falls back to the
 // plain one-note import, so organizing can only ever be an upgrade.
 
+import { coverageNoticeForModel, type ExtractionCoverage } from "@nemesis/shared";
+
 import type { WireMsg } from "@/lib/workspace/chat-api";
 import { normalizeLibraryFolder, safeLibraryTitle } from "@/lib/workspace/library-links";
 
@@ -85,7 +87,13 @@ export function buildLibrarianMessages(input: {
   fileName: string;
   text: string;
   outline: string;
+  /** What the extractor managed to read. Absent means unknown — an older
+   *  deployment or a lane that does not report — and is stated as nothing at
+   *  all rather than as a clean bill of health. */
+  coverage?: ExtractionCoverage;
 }): WireMsg[] {
+  const kept = input.text.slice(0, LIBRARIAN_TEXT_CHARS);
+  const clipped = { dropped: input.text.length - kept.length, text: kept };
   return [
     {
       role: "system",
@@ -107,8 +115,23 @@ export function buildLibrarianMessages(input: {
       content: [
         `Uploaded file: ${input.fileName}`,
         input.outline ? `Current wiki structure:\n${input.outline}` : "The wiki is empty so far.",
-        `Document text:\n${input.text.slice(0, LIBRARIAN_TEXT_CHARS)}`,
-      ].join("\n\n"),
+        // 🔴 TWO WAYS THIS DOCUMENT CAN BE INCOMPLETE, AND THE LIBRARIAN MUST
+        // KNOW ABOUT BOTH — it is writing the pages a student will revise from,
+        // so a page presented as covering a lecture it only partly saw is worse
+        // than a page that says which part is missing.
+        //
+        //   the extractor could not read some of it  -> coverageNoticeForModel
+        //   the text is longer than this prompt      -> the slice below
+        //
+        // The slice was silent until now: a 300-slide deck was filed from its
+        // first LIBRARIAN_TEXT_CHARS characters and the resulting pages claimed
+        // to be the document.
+        ...(input.coverage ? [coverageNoticeForModel(input.coverage) ?? ""] : []),
+        clipped.dropped > 0
+          ? `[This document is longer than what follows: ${clipped.text.length.toLocaleString()} of ${input.text.length.toLocaleString()} characters are shown. Do not write pages that claim to cover what you cannot see, and do not invent an ending.]`
+          : "",
+        `Document text:\n${clipped.text}`,
+      ].filter(Boolean).join("\n\n"),
     },
   ];
 }

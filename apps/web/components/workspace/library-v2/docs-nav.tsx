@@ -140,7 +140,7 @@ export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged,
     onNavigate?.();
   };
 
-  const { importError, importFiles, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, onSourcesChanged, saveNote, uid });
+  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, onSourcesChanged, saveNote, uid });
 
   const attachNotesToChat = (noteIds: string[]) => {
     const chosen = notes.filter((note) => noteIds.includes(note.id));
@@ -238,6 +238,11 @@ export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged,
       </div>
 
       {importError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" role="alert">{importError}</p>}
+      {/* Imported, but not in full. Muted rather than red: the file is in the
+          Library and the note is real — this says which part of it is not. */}
+      {importNotices.map((notice) => (
+        <p className="mx-3 mb-1 text-[0.65rem] text-muted-foreground" key={notice} role="status">{notice}</p>
+      ))}
       {opError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" data-testid="library-op-error" role="alert">{opError}</p>}
 
       {/* No Home button (owner 2026-08-04): Home is a NOTE — it sits in the

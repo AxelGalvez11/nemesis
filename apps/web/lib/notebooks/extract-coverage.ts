@@ -1,0 +1,196 @@
+// Turning what each extractor actually did into one honest record.
+//
+// The extraction route knows different things about each format — per-page text
+// for a PDF, a slide/notes/chart tally for a deck, nothing but a byte count for
+// a Word file. This module is where those become the SAME shape, so every
+// surface downstream reads one type instead of four ad-hoc objects.
+//
+// It used to be four ad-hoc objects. `coverage` left the route as
+// `Record<string, number | boolean>` with different keys per format, the client
+// type had no field for it, and so nothing could consume it even in principle.
+//
+// PURE. Facts in, a record out — no pdf.js, no zip, no network.
+
+import {
+  buildCoverage,
+  type ExtractionCoverage,
+  type FigureCoverage,
+  type FigureSkipReason,
+  type TruncationRecord,
+} from "@nemesis/shared";
+import { pageTextLength, THIN_PAGE_CHARS } from "@/lib/pdf/pages";
+
+/**
+ * A record that could not be built is a bug, not a reason to stay quiet.
+ *
+ * 🔴 THE FALLBACK MUST NOT BE CHEERFUL. If the numbers do not reconcile we know
+ * something is wrong and know nothing about what — so the record says the whole
+ * document is unaccounted for, which reads as "partial" everywhere and makes the
+ * bug visible. Falling back to "complete" would restore exactly the silence this
+ * module exists to end.
+ */
+function orUnaccounted(result: ExtractionCoverage | string, unitKind: "page" | "slide" | "document", units: number): ExtractionCoverage {
+  if (typeof result !== "string") return result;
+  console.warn(JSON.stringify({ event: "coverage_inconsistent", detail: result }));
+  const fallback = buildCoverage({ unitKind, units: Math.max(units, 1), unitsNative: 0, unitsUnread: Math.max(units, 1) });
+  // The fallback is built from constants that cannot fail to reconcile; the cast
+  // documents that, and the throw is a tripwire in case it ever stops being true.
+  if (typeof fallback === "string") throw new Error(`coverage fallback is itself inconsistent: ${fallback}`);
+  return fallback;
+}
+
+/** A cut worth recording — nothing at all when nothing was dropped. */
+export function extractCut(limit: number, kept: number, original: number): TruncationRecord[] {
+  const dropped = original - kept;
+  return dropped > 0 ? [{ stage: "extract", limit, kept, dropped }] : [];
+}
+
+/**
+ * A PDF's coverage, from the per-page text and what vision managed to read.
+ *
+ * 🔴 THE FOUR STATES COME FROM TWO INDEPENDENT FACTS, and both have to be kept:
+ * whether a page had usable text of its own, and whether vision read it.
+ *
+ *     had text   vision read   ->  native   (the ordinary page)
+ *     had text   vision read   ->  both     (a heading over a screenshot)
+ *     no text    vision read   ->  vision   (a scan)
+ *     no text    not read      ->  unread   (the number that must not hide)
+ *
+ * `thin` is the set of pages judged not really read from their text alone, which
+ * is the same rule `planPdfRead` uses to decide what to send — so a page counted
+ * unread here is exactly a page the reader could not use.
+ */
+export function pdfCoverage(input: {
+  pageTexts: readonly string[];
+  /** 1-based page numbers vision actually returned text for. */
+  readByVision: ReadonlySet<number>;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  let native = 0;
+  let vision = 0;
+  let both = 0;
+  let unread = 0;
+  for (let index = 0; index < input.pageTexts.length; index += 1) {
+    const hasOwnText = pageTextLength(input.pageTexts[index] ?? "") >= THIN_PAGE_CHARS;
+    const wasRead = input.readByVision.has(index + 1);
+    if (hasOwnText && wasRead) both += 1;
+    else if (hasOwnText) native += 1;
+    else if (wasRead) vision += 1;
+    else unread += 1;
+  }
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "page",
+      units: input.pageTexts.length,
+      unitsNative: native,
+      unitsVision: vision,
+      unitsBoth: both,
+      unitsUnread: unread,
+      truncation: input.truncation,
+    }),
+    "page",
+    input.pageTexts.length,
+  );
+}
+
+/**
+ * A PDF read whole by a vision model in one request — every page came back from
+ * the pixels, so there is no per-page text to reason from.
+ */
+export function pdfWholeCoverage(pages: number, truncation?: readonly TruncationRecord[]): ExtractionCoverage {
+  return orUnaccounted(
+    buildCoverage({ unitKind: "page", units: pages, unitsNative: 0, unitsVision: pages, truncation }),
+    "page",
+    pages,
+  );
+}
+
+/** The deck tally `readPptxSlides` already produces, in the shared shape. */
+export interface DeckCounts {
+  slides: number;
+  imagesFound: number;
+  imagesReadable: number;
+  imagesUnreadable: number;
+  imagesGlyphs: number;
+  imagesDroppedToCap: number;
+}
+
+/**
+ * A deck's coverage.
+ *
+ * 🔴 EVERY SLIDE IS READ. A .pptx slide is XML, so its text always extracts —
+ * what goes missing in a deck is the PICTURES, which is why the figure tally
+ * carries the weight here and the unit counts are uniformly native. Claiming a
+ * slide "unread" because its figure was skipped would be the wrong unit and
+ * would make the page counts meaningless across formats.
+ *
+ * `described` is what vision actually returned, NOT what was planned: a planned
+ * figure whose description failed is a skip, and calling it read would put the
+ * lie back one level down.
+ */
+export function pptxCoverage(input: {
+  counts: DeckCounts;
+  described: number;
+  /** False when no vision key is configured, so unread figures get the reason
+   *  that names the real cause rather than being blamed on the file. */
+  visionAvailable: boolean;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  const { counts } = input;
+  const described = Math.min(input.described, counts.imagesFound);
+  const reasons: Partial<Record<FigureSkipReason, number>> = {};
+  if (counts.imagesGlyphs > 0) reasons.decorative = counts.imagesGlyphs;
+  if (counts.imagesUnreadable > 0) reasons["unreadable-format"] = counts.imagesUnreadable;
+  if (counts.imagesDroppedToCap > 0) reasons["over-cap"] = counts.imagesDroppedToCap;
+  // Whatever is left over: readable pictures that were planned and still have no
+  // description. Vision being off is the usual cause and the honest label; when
+  // it IS on, the call failed, which is the same loss to the student either way.
+  const accounted = described + counts.imagesGlyphs + counts.imagesUnreadable + counts.imagesDroppedToCap;
+  const undescribed = Math.max(0, counts.imagesFound - accounted);
+  if (undescribed > 0) reasons["vision-unavailable"] = undescribed;
+
+  const skipped = counts.imagesFound - described;
+  const figures: FigureCoverage = { found: counts.imagesFound, described, skipped, reasons };
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "slide",
+      units: counts.slides,
+      unitsNative: counts.slides,
+      figures,
+      truncation: input.truncation,
+    }),
+    "slide",
+    counts.slides,
+  );
+}
+
+/**
+ * A file with no unit structure this parser can see — a Word document, or a
+ * photograph.
+ *
+ * 🔴 `units: 1, unitKind: "document"` IS A CLAIM ABOUT THE PARSER, NOT THE FILE.
+ * A .docx has pages when Word lays it out; our extraction is a tag strip that
+ * cannot see them. Reporting one "document" says exactly that and leaves the
+ * page count to whichever parser earns the right to claim one. Inventing "page
+ * 1 of 1" for a 40-page dissertation would be a fabricated locator, and every
+ * citation built on it would point at nothing.
+ */
+export function singleUnitCoverage(input: {
+  read: boolean;
+  method: "native" | "vision";
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  const read = input.read ? 1 : 0;
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "document",
+      units: 1,
+      unitsNative: input.method === "native" ? read : 0,
+      unitsVision: input.method === "vision" ? read : 0,
+      unitsUnread: 1 - read,
+      truncation: input.truncation,
+    }),
+    "document",
+    1,
+  );
+}
