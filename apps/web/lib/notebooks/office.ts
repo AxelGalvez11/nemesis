@@ -27,9 +27,30 @@ import { createHash } from "node:crypto";
  * once open — the serverless instance dies before any text cap is consulted,
  * because TEXT_CAP is applied to the OUTPUT of extraction, long after.
  *
- * 400 MB is far above any real deck. The biggest thing in a genuine lecture file
- * is its images, and the route already refuses more than 25 MB of them
- * compressed; a lossless-heavy deck might triple, never sixteen-fold.
+ * 🔴 THIS IS A MEMORY BUDGET, NOT A MULTIPLE OF THE UPLOAD CEILING.
+ *
+ * The old justification was "the route already refuses more than 25 MB of them
+ * compressed" — a sentence that stopped being true when the extract route moved
+ * to 50 MiB, and would be off eight-fold at 200 MiB. A comment asserting a
+ * relationship between two numbers is not a mechanism.
+ *
+ * The obvious repair is to derive it, `N * MAX_SOURCE_BYTES`. That is wrong, and
+ * wrong in the dangerous direction: it makes the safety limit MOVE whenever the
+ * product limit moves, in whichever direction that happens to be. At the 50 MiB
+ * ceiling a doubling would have SHRUNK this to 100 MiB and started refusing
+ * lecture decks that work today.
+ *
+ * What actually constrains it is the machine. The function instance is 2 GB and
+ * Fluid Compute shares one instance between concurrent requests, so this has to
+ * fit ALONGSIDE the source buffer, several times over, without an
+ * out-of-memory that would also kill whatever unrelated requests were in flight.
+ * That number does not change when an upload limit changes.
+ *
+ * The one relationship that must hold is the floor, and it is asserted in the
+ * test rather than described here: a zip's entries can be STORED rather than
+ * deflated (the owner's real deck stores all 68 of its media parts at method 0),
+ * so a source at the ceiling can legitimately inflate to its own size. A budget
+ * below MAX_SOURCE_BYTES would refuse a file the product had just accepted.
  */
 export const UNZIP_MAX_TOTAL_BYTES = 400 * 1024 * 1024;
 
@@ -71,13 +92,22 @@ export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
     },
   });
 
-  let inflated = 0;
-  for (const name of Object.keys(files)) {
-    inflated += files[name]?.byteLength ?? 0;
-    if (inflated > UNZIP_MAX_TOTAL_BYTES) {
-      throw new Error("That file is too large once unpacked. Try exporting it again, or split it up.");
-    }
-  }
+  // 🔴 THE POST-INFLATION SUM THAT USED TO LIVE HERE HAS BEEN DELETED, AND
+  // NOTHING SHOULD PUT IT BACK.
+  //
+  // It walked `Object.keys(files)` adding up `byteLength` and threw if the total
+  // crossed the same ceiling — after `unzipSync` had already returned, which is
+  // to say after every byte it was measuring had already been allocated. It
+  // could only ever report a bomb that had already gone off, while reading like
+  // a guard: the comment above it claimed it was "what catches a liar".
+  //
+  // What actually protects this call is the filter above, which refuses before
+  // fflate commits memory. Its input is the entry header's own `originalSize`,
+  // which a crafted archive can understate — so state the limit honestly: an
+  // HONEST oversized file is refused for free, and a LIAR is bounded only by the
+  // source ceiling, because a zip cannot inflate what it does not contain and
+  // the object was capped at MAX_SOURCE_BYTES before it ever got here. Closing
+  // that gap properly needs streaming inflation, not another sum.
   return files;
 }
 

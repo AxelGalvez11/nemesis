@@ -181,12 +181,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const sourceSize = sourceBytes.byteLength;
-  // ONE defensive copy, here, at the door. pdf.js detaches whatever ArrayBuffer it
-  // is handed, so every later reader of these bytes — the page slicer, a second
-  // sniff — would silently see zeros. Copying at each call site instead would work
-  // right up until the next reader was added and forgot.
   const bytes = sourceBytes;
-  const original = new Uint8Array(bytes);
   // Name first (cheap and right almost always), contents second (right when a name
   // has lost its extension). Refusing only after both have failed.
   const kind = kindFor(sourceName, sourceType) ?? sniffKind(bytes);
@@ -196,6 +191,18 @@ export async function POST(req: Request): Promise<Response> {
       { status: 415 },
     );
   }
+  // The defensive copy, paid ONLY by the format that needs it.
+  //
+  // pdf.js detaches whatever ArrayBuffer it is handed, so every later reader of
+  // these bytes — the page slicer, a second sniff — would silently see zeros.
+  // That is real, and it is a property of pdf.js alone: the Office readers copy
+  // nothing and detach nothing.
+  //
+  // 🔴 It used to be unconditional, which made it a second full-size allocation
+  // on EVERY upload. On the owner's 118 MiB lecture that was 116 MiB of heap
+  // spent to protect a code path a .pptx never enters. Measured: it was the
+  // third of three copies that took the old route to 676 MiB of RSS.
+  const original = kind === "pdf" ? new Uint8Array(bytes) : bytes;
   if (kind === "image") {
     if (sourceSize > VISION_MAX_BYTES) {
       return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
