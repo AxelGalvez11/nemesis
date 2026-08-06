@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hashSeed } from "./daily";
+import { hashSeed } from "./daily.ts";
 import {
   boardCleared,
   generateTilesBoard,
@@ -10,7 +10,7 @@ import {
   matchableWith,
   sharedLayers,
   tileEmpty,
-} from "./tiles";
+} from "./tiles.ts";
 
 test("boards are deterministic per seed with even value counts per layer", () => {
   const first = generateTilesBoard(hashSeed("tiles:2026-08-04"));

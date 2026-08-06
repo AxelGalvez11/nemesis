@@ -9,8 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
 import { Button } from "@/components/ui/button";
-import { hashSeed } from "@/lib/workspace/break/daily";
-import { generateSudoku, isSudokuSolved, sudokuConflicts } from "@/lib/workspace/break/sudoku";
+import { generateSudoku, hashSeed, isSudokuSolved, sudokuConflicts } from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 interface SudokuState {

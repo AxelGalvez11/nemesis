@@ -3,7 +3,7 @@
 // a law student and an engineering student get the same fair shot. Validated
 // mechanically by the tests (4×4, no overlaps, unique titles).
 
-import type { ConnectionsPuzzle } from "./connections";
+import type { ConnectionsPuzzle } from "./connections.ts";
 
 export const CONNECTIONS_PUZZLES: ConnectionsPuzzle[] = [
   {

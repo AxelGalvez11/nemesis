@@ -10,16 +10,17 @@ import { useMemo, useState } from "react";
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
 import { Button } from "@/components/ui/button";
 import {
-  CONNECTIONS_LIVES,
   allConnectionsItems,
+  CONNECTIONS_LIVES,
   connectionsStatus,
   evaluateGuess,
+  hashSeed,
   mistakesUsed,
   remainingItems,
+  seededShuffle,
   solvedGroups,
   type ConnectionsPuzzle,
-} from "@/lib/workspace/break/connections";
-import { hashSeed, seededShuffle } from "@/lib/workspace/break/daily";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 const GROUP_TONES = ["#f5d76b", "#a8c66c", "#a9c1ef", "#c39bd3"];

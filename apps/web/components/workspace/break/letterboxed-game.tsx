@@ -8,15 +8,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
 import { Button } from "@/components/ui/button";
-import { breakLexicon } from "@/lib/workspace/break/break-lexicon";
 import {
+  breakLexicon,
   checkLetterBoxWord,
   letterBoxLetters,
   letterBoxSolved,
   lettersUsed,
   sideOfLetter,
   type LetterBoxPuzzle,
-} from "@/lib/workspace/break/letterboxed";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 const CORAL = "#fc716b";

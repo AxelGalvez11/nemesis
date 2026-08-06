@@ -11,9 +11,9 @@ import {
   wrongCells,
   type CrosswordEntries,
   type MiniPuzzle,
-} from "./crossword";
-import { MIDI_PUZZLES } from "./crossword-midis";
-import { MINI_PUZZLES } from "./crossword-puzzles";
+} from "./crossword.ts";
+import { MIDI_PUZZLES } from "./crossword-midis.ts";
+import { MINI_PUZZLES } from "./crossword-puzzles.ts";
 
 // Dense 5x5 where every row AND column is a word (machine-verified fill).
 const DENSE: MiniPuzzle = {

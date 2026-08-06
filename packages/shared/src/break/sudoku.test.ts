@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hashSeed, mulberry32 } from "./daily";
-import { generateSolvedGrid, generateSudoku, isSudokuSolved, solveSudoku, sudokuConflicts } from "./sudoku";
+import { hashSeed, mulberry32 } from "./daily.ts";
+import { generateSolvedGrid, generateSudoku, isSudokuSolved, solveSudoku, sudokuConflicts } from "./sudoku.ts";
 
 test("solver counts solutions and returns one", () => {
   const empty = new Array(81).fill(0);

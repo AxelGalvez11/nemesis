@@ -6,7 +6,7 @@
 // happen in pairs and a match always exists until the board is empty —
 // no deadlocks, ever (the test proves it by simulation).
 
-import { mulberry32 } from "./daily";
+import { mulberry32 } from "./daily.ts";
 
 export const TILE_LAYERS = 3;
 

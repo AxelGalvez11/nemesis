@@ -3,7 +3,7 @@
 // friendly solution pairs. Every board's two-word solution is re-played by
 // the tests against the shipping dictionary, so a board can never be unfair.
 
-import type { LetterBoxPuzzle } from "./letterboxed";
+import type { LetterBoxPuzzle } from "./letterboxed.ts";
 
 export const LETTERBOX_PUZZLES: LetterBoxPuzzle[] = [
   { sides: ["ens", "mdt", "uao", "icr"], solution: ["reminisce", "educator"] },

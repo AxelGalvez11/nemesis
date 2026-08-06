@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { breakDayNumber, dailyIndex, dateKeyLabel, extraKey, extraWalkIndex, hashSeed, localDateKey, mulberry32, seededShuffle } from "./daily";
+import { breakDayNumber, dailyIndex, dateKeyLabel, extraKey, extraWalkIndex, hashSeed, localDateKey, mulberry32, seededShuffle } from "./daily.ts";
 
 test("localDateKey uses local calendar fields, zero-padded", () => {
   const date = new Date(2026, 7, 4, 23, 59); // Aug 4 local, would be Aug 5 UTC in the Americas

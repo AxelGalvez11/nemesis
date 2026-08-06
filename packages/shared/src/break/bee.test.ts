@@ -12,7 +12,7 @@ import {
   isPangram,
   validateBeePuzzle,
   type BeePuzzle,
-} from "./bee";
+} from "./bee.ts";
 
 const PUZZLE: BeePuzzle = {
   center: "n",

@@ -14,7 +14,7 @@ export interface MiniPuzzle {
   };
 }
 
-export type Direction = "across" | "down";
+export type CrosswordDirection = "across" | "down";
 
 export interface CrosswordCell {
   row: number;
@@ -27,7 +27,7 @@ export interface CrosswordCell {
 }
 
 export interface CrosswordSlot {
-  direction: Direction;
+  direction: CrosswordDirection;
   number: number;
   cells: { row: number; col: number }[];
   answer: string;
@@ -104,7 +104,7 @@ export const cellKey = (row: number, col: number): string => `${row}-${col}`;
 /** Player entries: cellKey → single uppercase letter. */
 export type CrosswordEntries = Record<string, string>;
 
-export function slotAt(model: CrosswordModel, row: number, col: number, direction: Direction): CrosswordSlot | null {
+export function slotAt(model: CrosswordModel, row: number, col: number, direction: CrosswordDirection): CrosswordSlot | null {
   return (
     model.slots.find(
       (slot) => slot.direction === direction && slot.cells.some((cell) => cell.row === row && cell.col === col),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { breakLexicon } from "./break-lexicon";
+import { breakLexicon } from "./break-lexicon.ts";
 import {
   checkLetterBoxWord,
   letterBoxLetters,
@@ -10,8 +10,8 @@ import {
   sideOfLetter,
   validateLetterBoxPuzzle,
   type LetterBoxPuzzle,
-} from "./letterboxed";
-import { LETTERBOX_PUZZLES } from "./letterboxed-puzzles";
+} from "./letterboxed.ts";
+import { LETTERBOX_PUZZLES } from "./letterboxed-puzzles.ts";
 
 const PUZZLE: LetterBoxPuzzle = {
   sides: ["tse", "oua", "wig", "cpn"],

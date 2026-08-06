@@ -11,7 +11,7 @@ import {
   solvedGroups,
   validateConnectionsPuzzle,
   type ConnectionsPuzzle,
-} from "./connections";
+} from "./connections.ts";
 
 const PUZZLE: ConnectionsPuzzle = {
   groups: [

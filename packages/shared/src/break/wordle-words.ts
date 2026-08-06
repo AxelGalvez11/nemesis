@@ -5,7 +5,7 @@
 // unioned in, so an answer can always be typed even if the old dictionary
 // happens to lack it.
 
-import { WORDLE_GUESS_LIST } from "./wordle-guess-list";
+import { WORDLE_GUESS_LIST } from "./wordle-guess-list.ts";
 
 export const WORDLE_ANSWERS: string[] = [
   "break", "study", "brain", "focus", "learn", "think", "smart", "sharp", "quick", "fresh",

@@ -20,19 +20,30 @@ import { readBreakDayState, useBreakDateKey, useBreakPick } from "@/components/w
 import { WordleGame } from "@/components/workspace/break/wordle-game";
 import { Button } from "@/components/ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { BEE_PUZZLES } from "@/lib/workspace/break/bee-puzzles";
-import { beeMaxScore, beeRank, beeScore } from "@/lib/workspace/break/bee";
-import { CONNECTIONS_PUZZLES } from "@/lib/workspace/break/connections-puzzles";
-import { connectionsStatus } from "@/lib/workspace/break/connections";
-import { MIDI_PUZZLES } from "@/lib/workspace/break/crossword-midis";
-import { MINI_PUZZLES } from "@/lib/workspace/break/crossword-puzzles";
-import { buildCrossword, isSolved, type CrosswordEntries } from "@/lib/workspace/break/crossword";
-import { dailyIndex, dateKeyLabel, extraKey, extraWalkIndex } from "@/lib/workspace/break/daily";
-import { LETTERBOX_PUZZLES } from "@/lib/workspace/break/letterboxed-puzzles";
-import { letterBoxSolved } from "@/lib/workspace/break/letterboxed";
-import { boardCleared, tileEmpty, type Tile } from "@/lib/workspace/break/tiles";
-import { WORDLE_ANSWERS } from "@/lib/workspace/break/wordle-words";
-import { wordleStatus } from "@/lib/workspace/break/wordle";
+import {
+  BEE_PUZZLES,
+  beeMaxScore,
+  beeRank,
+  beeScore,
+  boardCleared,
+  buildCrossword,
+  CONNECTIONS_PUZZLES,
+  connectionsStatus,
+  dailyIndex,
+  dateKeyLabel,
+  extraKey,
+  extraWalkIndex,
+  isSolved,
+  LETTERBOX_PUZZLES,
+  letterBoxSolved,
+  MIDI_PUZZLES,
+  MINI_PUZZLES,
+  tileEmpty,
+  WORDLE_ANSWERS,
+  wordleStatus,
+  type CrosswordEntries,
+  type Tile,
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 export type BreakGameId = "wordle" | "bee" | "connections" | "mini" | "crossword" | "sudoku" | "letterboxed" | "tiles";
