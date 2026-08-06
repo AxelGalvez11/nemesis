@@ -63,8 +63,8 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 | S6 | Cloze cards treated as basic cards | 1 | not started |
 | S7 | Talk to Nemesis about the current deck (new) | 1 | not started |
 | D1 | Some pages were not readable | 2 | reproducing |
-| D4 | Slide deck truncated at slide 46 (live repro, owner) | 2 | reproducing |
-| D5 | Private reasoning leaks into the visible answer | 2 | reproducing |
+| D4 | Slide deck truncated (owner reported slide 46; really 57) | 2 | in PR ([#443](https://github.com/AxelGalvez11/nemesis/pull/443)) |
+| D5 | Private reasoning leaks into the visible answer | 2 | in PR, behaviour unverified ([#444](https://github.com/AxelGalvez11/nemesis/pull/444)) |
 | D2 | "Add cards" did not target the deck being discussed | 2 | not started |
 | D3 | Web search fired on a deck-editing request | 2 | not started |
 | L1 | Generated notes not cited at the claim | 3 | not started |
