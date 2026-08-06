@@ -563,7 +563,7 @@ export function fitAttachmentBlocks(
     // own header (never inside the untrusted fence) — this is what lets
     // "make notes from this lecture" produce pills that open the original.
     const sourceLine = source.sourceId
-      ? `\nStored in the student's Library as source ${source.sourceId} — when writing notes from this file, cite passages inline as [n](?source=${source.sourceId}).`
+      ? `\n${SOURCE_HEADER}${source.sourceId} — when writing notes from this file, cite passages inline as [n](?source=${source.sourceId}).`
       : "";
     // Header OUTSIDE the fence (chat-skills.ts matches on it, and the student's
     // own filename belongs to the app), content INSIDE it. The label is repeated
@@ -587,6 +587,35 @@ export function fitAttachmentBlocks(
   }
 
   return blocks;
+}
+
+/**
+ * The app's own header naming a filed attachment, written above the untrusted
+ * fence. ONE constant, used to both write the line and read it back: a copy of
+ * this sentence in a regex somewhere else would go stale the first time the
+ * wording changed, and would fail silently — the reader would simply find no
+ * attachments and everything downstream would look like "nothing was attached".
+ */
+const SOURCE_HEADER = "Stored in the student's Library as source ";
+
+/**
+ * The Library source ids of the documents attached to this turn.
+ *
+ * Read back out of the wire text because that is where the ids provably are —
+ * this function and the writer above share one constant, so they cannot drift.
+ * Order is preserved and duplicates are dropped.
+ */
+export function attachedSourceIds(wireText: string): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const line of wireText.split("\n")) {
+    if (!line.startsWith(SOURCE_HEADER)) continue;
+    const id = line.slice(SOURCE_HEADER.length).split(/\s/)[0]?.trim() ?? "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
 /** The sent message as the transcript should show it — the typed text plus the

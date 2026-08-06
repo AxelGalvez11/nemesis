@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
 
-import { DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { attachedSourceIds, DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -171,6 +171,38 @@ test("attachment blocks carry the Library source id when the file is filed", () 
   assert.match(withId!, /\[n\]\(\?source=src-123\)/);
   const [plain] = fitAttachmentBlocks([{ content: "Slide text.", label: "lecture.pptx", type: "application/pptx" }]);
   assert.doesNotMatch(plain!, /Stored in the student's Library/);
+});
+
+// ── Reading the turn's filed sources back out ───────────────────────────────
+// A deck built from a lecture is filed where that lecture lives, and the turn
+// finds those documents by reading back the header it wrote itself. These go
+// THROUGH fitAttachmentBlocks rather than through a hand-typed header string:
+// a test that spells the sentence out would keep passing after the wording
+// changed, while the real reader found nothing and every deck quietly went
+// back to being filed by guesswork.
+
+test("🔴 the ids of filed attachments survive the round trip out of the wire text", () => {
+  const wire = fitAttachmentBlocks([
+    { content: "Slide one.", label: "week3.pptx", sourceId: "src-123", type: "application/pptx" },
+    { content: "Slide two.", label: "week4.pptx", sourceId: "src-456", type: "application/pptx" },
+  ]).join("\n\n");
+
+  assert.deepEqual(attachedSourceIds(wire), ["src-123", "src-456"]);
+});
+
+test("an attachment that was never filed contributes no id, and prose contributes none", () => {
+  const wire = fitAttachmentBlocks([{ content: "Slide one.", label: "week3.pptx", type: "application/pptx" }]).join("\n");
+  assert.deepEqual(attachedSourceIds(wire), []);
+  assert.deepEqual(attachedSourceIds("Stored in my Library as source abc — I typed this myself"), []);
+  assert.deepEqual(attachedSourceIds(""), []);
+});
+
+test("the same file attached twice is one source, not two votes", () => {
+  const wire = fitAttachmentBlocks([
+    { content: "One.", label: "a.pptx", sourceId: "src-1", type: "application/pptx" },
+    { content: "Two.", label: "b.pptx", sourceId: "src-1", type: "application/pptx" },
+  ]).join("\n\n");
+  assert.deepEqual(attachedSourceIds(wire), ["src-1"]);
 });
 
 // ── Typed notes are files too ───────────────────────────────────────────────

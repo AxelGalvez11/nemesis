@@ -190,21 +190,77 @@ export function folderForNewItem(
  * Library fallbacks above, on the surface most naturally organized per course.
  */
 
+/**
+ * The folder a study item built FROM an attached document should inherit.
+ *
+ * 🔴 THE ANSWER WAS ALREADY IN THE DATABASE. Owner, 2026-08-06, one turn:
+ * "make notes, flashcards and test" over one lecture. The upload lane filed the
+ * file under the student's own `Pharmacy` at 15:01:55; the note lane wrote it
+ * to `Pharmacy/Lectures` a moment later; and at 15:03:43 the deck lane invented
+ * a folder called `Pharmacology` — a name the student never made — because it
+ * had only the lecture's words to go on, and a lecture about pharmacogenomics
+ * does not contain the word "pharmacy". Three folders, one file, 108 seconds.
+ *
+ * Where a document lives is a FACT about the student's workspace, not an
+ * inference from its prose, which is what makes this the strongest signal here
+ * and keeps it field-agnostic: a contracts PDF the student filed under
+ * "Contracts" produces a "Contracts" deck without anything knowing what a
+ * contract is.
+ *
+ * Only the TOP segment counts — `Pharmacy/Lectures` is the course, `Lectures`
+ * is the shelf. Inbox is by definition the pile for things we could not place,
+ * and Nemesis is ours, so neither is a course. Several attachments that
+ * disagree are a tie, and a tie is a refusal, exactly as in `matchCourse`.
+ */
+export function sourceCourseFolder(folderPaths: readonly (string | null | undefined)[]): string {
+  const folders = new Set<string>();
+  for (const raw of folderPaths) {
+    const top = (raw ?? "").split("/").filter(Boolean)[0]?.trim() ?? "";
+    if (!top) continue;
+    const lowered = top.toLowerCase();
+    if (lowered === UNSORTED_FOLDER.toLowerCase() || lowered === "nemesis") continue;
+    folders.add(top);
+  }
+  return folders.size === 1 ? [...folders][0]! : "";
+}
+
 /** The deck name a new chat-created deck should get: `<Course>::<name>` when
  *  the material clearly belongs to one of the student's courses, else the bare
  *  name (top level — honest, not a fake group). Never double-prefixes a name
- *  the model already wrote a folder into. */
-export function deckNameForNewDeck(name: string, text: string, courses: readonly string[]): string {
+ *  the model already wrote a folder into.
+ *
+ *  `sourceFolder` — the folder of the document the cards were built from, when
+ *  there is one — OUTRANKS both, including a folder the model wrote into the
+ *  name itself. That override is the whole fix: the invented `Pharmacology`
+ *  arrived as part of `deck_name`, so respecting the model's prefix is exactly
+ *  what let it through. The cost is that "put these in a folder called X" is
+ *  ignored on a turn that also attaches a filed document; `move_study_deck`
+ *  still does it in one sentence, and a wrong folder is worse than a late one. */
+export function deckNameForNewDeck(
+  name: string,
+  text: string,
+  courses: readonly string[],
+  sourceFolder = "",
+): string {
   const clean = name.trim();
-  if (!clean || clean.includes("::")) return clean;
+  if (!clean) return clean;
+  const inherited = safeSegment(sourceFolder.trim());
+  // Keep only the leaf: `Pharmacology::Pharmacogenomics` under an inherited
+  // `Pharmacy` must become `Pharmacy::Pharmacogenomics`, not a nested folder
+  // holding the invented one.
+  if (inherited) return `${inherited}::${clean.split("::").pop()!.trim() || clean}`;
+  if (clean.includes("::")) return clean;
   const matched = matchCourse(text, courses);
   if (!matched) return clean;
   return `${safeSegment(matched.course)}::${clean}`;
 }
 
-/** The Study group a new test/mindmap belongs in: the matched course's name,
- *  else "" (ungrouped at the top level). Never "Generated tests". */
-export function groupForNewArtifact(text: string, courses: readonly string[]): string {
+/** The Study group a new test/mindmap belongs in: the folder of the document it
+ *  was built from, else the matched course's name, else "" (ungrouped at the
+ *  top level). Never "Generated tests". */
+export function groupForNewArtifact(text: string, courses: readonly string[], sourceFolder = ""): string {
+  const inherited = safeSegment(sourceFolder.trim());
+  if (inherited) return inherited;
   const matched = matchCourse(text, courses);
   return matched ? safeSegment(matched.course) : "";
 }
