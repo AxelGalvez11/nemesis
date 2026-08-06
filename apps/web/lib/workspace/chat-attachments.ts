@@ -34,8 +34,17 @@ import type { SessionAttachment } from "@/lib/workspace/sessions-store";
 // working as designed and useless in practice. 150k chars is ~38k tokens,
 // which with HISTORY_CHAR_BUDGET (60k chars) and a skill packet (5k) still
 // fits the window; the server valve's own caps remain the final authority.
-export const MAX_ATTACHMENT_CHARS = 60_000;
+// 🔴 60k was a PER-FILE ceiling BELOW the total, so a single attachment could
+// be cut with most of the turn's budget still unspent. Measured on the owner's
+// real 57-slide lecture (2026-08-06): 62,040 characters against a 60,000 cap —
+// the ending was dropped to save 2,040 characters while 88,000 of the 150,000
+// total went unused. A per-file limit under the total only makes sense to stop
+// one file starving another, and `total - used` already does that, in order.
+// Kept as the historical figure the regression test measures against.
+export const LEGACY_PER_FILE_CHARS = 60_000;
 export const MAX_TOTAL_CHARS = 150_000;
+/** @deprecated The per-file ceiling is the whole remaining budget now. */
+export const MAX_ATTACHMENT_CHARS = MAX_TOTAL_CHARS;
 /** Formats whose original is stored and filed as a Library source.
  *  `.md`/`.txt` joined 2026-08-05: they were read inline and then thrown away,
  *  so a student who pasted in a set of typed lecture notes got an answer and no
@@ -524,9 +533,41 @@ export interface AttachmentSource {
  * silent `.slice()` is what let the model answer about a lecture it had only
  * partly seen, with no way for the student to know which part was missing.
  */
+/**
+ * Say where a clipped file stopped, in the units the document itself uses.
+ *
+ * 🔴 The old notice counted CHARACTERS, which the model cannot map onto a
+ * lecture. Given "60,000 of 62,040 characters" plus a coverage tally that
+ * happened to say 46 notes pages, it told the owner the deck was cut off at
+ * slide 46. The real boundary was slide 55. A confident, wrong location is
+ * worse than none — so when the text carries slide markers, name the slide.
+ *
+ * The marker COUNT is not usable: a slide with no text at all is dropped from
+ * the joined text, marker and all, so 57 slides can leave 56 markers. Only the
+ * numbers are trusted, and only to say "up to N" — a statement that stays true
+ * even when the sequence has a gap. PDFs and Word carry no such markers, so
+ * they fall back to characters, with the share shown.
+ */
+export function describeTruncation(full: string, clipped: string): string {
+  const marks: { at: number; n: number }[] = [];
+  const re = /^## Slide (\d+)\b/gm;
+  for (let m = re.exec(full); m; m = re.exec(full)) marks.push({ at: m.index, n: Number(m[1]) });
+
+  const lastSent = marks.filter((mark) => mark.at < clipped.length).at(-1)?.n;
+  const highest = marks.at(-1)?.n;
+  if (marks.length >= 2 && lastSent !== undefined && highest !== undefined && highest > lastSent) {
+    return `\n\n[Truncated. You received this file up to slide ${lastSent}. Slides after ${lastSent} (the file goes to ${highest}) were NOT sent to you. If the student's question touches those slides, say plainly that you were not given them rather than answering as though you read the whole deck.]`;
+  }
+  const share = Math.round((clipped.length / full.length) * 100);
+  return `\n\n[Truncated: ${clipped.length.toLocaleString()} of ${full.length.toLocaleString()} characters shown (${share}%). The rest of this file was NOT sent to you. Do not guess which section is missing — say plainly that the tail was not given to you if the student's question depends on it.]`;
+}
+
 export function fitAttachmentBlocks(
   sources: readonly AttachmentSource[],
-  perFile = MAX_ATTACHMENT_CHARS,
+  // Defaults to the whole remaining budget. A ceiling below the total only
+  // starves a file for no gain — `total - used` below already keeps one file
+  // from eating another's share, in the order they were attached.
+  perFile: number | null = null,
   total = MAX_TOTAL_CHARS,
 ): string[] {
   const blocks: string[] = [];
@@ -539,10 +580,8 @@ export function fitAttachmentBlocks(
       continue;
     }
     const full = source.content.trim();
-    const clipped = full.slice(0, Math.min(perFile, total - used));
-    const notice = clipped.length < full.length
-      ? `\n\n[Truncated: ${clipped.length.toLocaleString()} of ${full.length.toLocaleString()} characters shown. The rest of this file was NOT sent to you. If the student's question depends on the part you cannot see, say so plainly rather than answering as though you read the whole file.]`
-      : "";
+    const clipped = full.slice(0, Math.min(perFile ?? total, total - used));
+    const notice = clipped.length < full.length ? describeTruncation(full, clipped) : "";
     // 🔴 TWO DIFFERENT GAPS, BOTH DISCLOSED, AND THEY ARE NOT THE SAME GAP.
     //
     //   `notice` above  — the text exists but did not fit in this prompt.
