@@ -60,10 +60,28 @@ export function applyChatEffort(decision: ChatRouteDecision, effort: ChatEffort)
   return { ...decision, reasoningEffort: undefined };
 }
 
-/** Whether the workspace tools can ride this turn. Thinking-mode turns must
- *  echo `reasoning_content` on tool rounds, which our stream doesn't retain —
- *  so both the reasoner models and any high-effort turn (which the valve may
- *  upgrade to the thinking flagship) go out without tools. */
-export function toolsAllowed(decision: ChatRouteDecision): boolean {
-  return !decision.model.includes("reasoner") && decision.reasoningEffort !== "high";
+/**
+ * Whether the workspace tools can ride this turn. They always can.
+ *
+ * 🔴 THIS USED TO RETURN FALSE FOR EVERY REASONER AND EVERY HIGH-EFFORT TURN,
+ * and the stated reason was that thinking mode must echo `reasoning_content` on
+ * tool rounds "which our stream doesn't retain". The second half was true, and
+ * it was our own bug rather than a limit of the model: readCompletionStreamFull
+ * accumulated that field and then dropped it on return, so the following round
+ * had nothing to send back. The reasoner has supported tool calls all along.
+ *
+ * What it cost, measured 2026-08-06 against the source-routing acceptance set:
+ * the hardest questions — the ones routed to the reasoner precisely BECAUSE
+ * they are hard — were the only ones that could not reach the student's own
+ * Library, their calendar, or the live web. "Compare what my professor taught
+ * with the current guideline" needs two sources and was structurally guaranteed
+ * to get neither. A capability withheld from exactly the turns that need it is
+ * worse than one that was never built, because the gap looks deliberate.
+ *
+ * Now that the echo is carried (see the tool-round assistant message in
+ * chat-api.ts), depth and tools are no longer a trade. Kept as a function, and
+ * kept called, so there is one place to put the next real reason if one appears.
+ */
+export function toolsAllowed(_decision: ChatRouteDecision): boolean {
+  return true;
 }

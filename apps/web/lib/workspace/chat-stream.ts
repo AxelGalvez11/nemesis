@@ -11,6 +11,19 @@ export interface StreamedToolCall {
 export interface CompletionStreamResult {
   text: string;
   toolCalls: StreamedToolCall[];
+  /**
+   * The reasoner's own thoughts for this round (DeepSeek `reasoning_content`).
+   *
+   * 🔴 RETURNED, NOT MERELY STREAMED, AND THAT IS THE POINT. Thinking mode
+   * requires that when the model calls a tool, the reasoning it produced before
+   * that call is concatenated back into the context on every following round.
+   * This value was already being accumulated here and then dropped, so the next
+   * round had nothing to echo — which is why tools were withheld from every
+   * reasoner route (chat-effort.ts:toolsAllowed), and in turn why a question
+   * needing BOTH the student's own material and the live web could not be
+   * answered at all. Never part of the visible answer.
+   */
+  reasoning: string;
 }
 
 interface RawToolCallDelta {
@@ -45,7 +58,7 @@ export async function readCompletionStreamFull(
   onDelta?: CompletionDeltaHandler,
   onReasoning?: CompletionDeltaHandler,
 ): Promise<CompletionStreamResult> {
-  if (!body) return { text: "", toolCalls: [] };
+  if (!body) return { reasoning: "", text: "", toolCalls: [] };
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -99,6 +112,7 @@ export async function readCompletionStreamFull(
     buffer += decoder.decode();
     if (buffer) consumeLine(buffer);
     return {
+      reasoning: accumulatedReasoning,
       text: accumulated,
       toolCalls: [...toolCalls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call).filter((call) => call.name),
     };

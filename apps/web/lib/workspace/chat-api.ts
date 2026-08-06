@@ -58,6 +58,11 @@ export interface WireMsg {
   tool_calls?: WireToolCall[];
   /** Tool-result messages: which call this answers. */
   tool_call_id?: string;
+  /** The thinking the model did BEFORE it asked for those tools. Thinking mode
+   *  requires this to ride every subsequent round; omitting it is what kept
+   *  tools off the reasoner entirely. Assistant messages only, and only when
+   *  the model actually produced any. */
+  reasoning_content?: string;
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
@@ -373,6 +378,26 @@ export function completionText(body: unknown): string | null {
 }
 
 /**
+ * The reasoner's thoughts on a NON-streamed response.
+ *
+ * The streaming path assembles the same thing from `delta.reasoning_content`
+ * (chat-stream.ts). Both exist because the echo thinking mode requires on a
+ * tool round has to survive whichever path the turn took, and a turn is only
+ * streamed when the caller asked for deltas — the web-need pre-flight and the
+ * phone's non-streaming calls did not.
+ *
+ * "" rather than null: this value is concatenated, never branched on, and an
+ * absent field and an empty one mean the same thing to the next round.
+ */
+export function completionReasoning(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const choices = (body as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices.length) return "";
+  const message = (choices[0] as { message?: { reasoning_content?: unknown } }).message;
+  return typeof message?.reasoning_content === "string" ? message.reasoning_content : "";
+}
+
+/**
  * The model a non-streaming response says actually produced it.
  *
  * Pure and exported so the fallback-detection rule can be pinned by a test
@@ -479,6 +504,9 @@ export interface ChatReply {
   outputs?: SessionOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
+  /** The reasoner's thoughts for this round. Echoed back on the next round and
+   *  never shown or saved — see CompletionStreamResult.reasoning. */
+  reasoning?: string;
   /** A delete the model asked for and the gate held. NOTHING has been deleted;
    *  the page shows a card and only the student's click carries it out. Never
    *  persisted — a decision they have not made is not a deliverable. */
@@ -577,15 +605,21 @@ export async function postChatCompletion(
     let text: string | null = null;
     let toolCalls: AgentToolCall[] = [];
     let answeringModel: string | undefined;
+    // Carried out of BOTH paths: a turn is streamed or not depending on whether
+    // the caller wants deltas, and thinking mode's echo requirement does not
+    // care which one ran.
+    let reasoning = "";
     if (options.onDelta) {
       const streamed = await readCompletionStreamFull(res.body, options.onDelta);
       text = streamed.text.trim() ? streamed.text : null;
       toolCalls = streamed.toolCalls;
+      reasoning = streamed.reasoning;
     } else {
       const body = (await res.json().catch(() => null)) as unknown;
       text = completionText(body);
       toolCalls = completionToolCalls(body);
       answeringModel = completionModel(body);
+      reasoning = completionReasoning(body);
     }
     if (text || toolCalls.length) {
       return {
@@ -594,6 +628,7 @@ export async function postChatCompletion(
         sources: [],
         text,
         ...(answeringModel ? { model: answeringModel } : {}),
+        ...(reasoning ? { reasoning } : {}),
         ...(toolCalls.length ? { toolCalls } : {}),
       };
     }
@@ -958,6 +993,10 @@ export async function sendChatTurn(
       {
         content: reply.text ?? "",
         role: "assistant",
+        // The thinking that produced these calls rides with them. Without it a
+        // thinking-mode turn rejects the round, which is the constraint that
+        // used to cost every reasoner route its tools.
+        ...(reply.reasoning ? { reasoning_content: reply.reasoning } : {}),
         tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
       },
       ...results.map(({ call, result }) => ({
