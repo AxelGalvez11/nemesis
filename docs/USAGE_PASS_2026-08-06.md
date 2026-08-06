@@ -56,7 +56,7 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 | ID | Issue | Group | Status |
 |---|---|---|---|
 | S1 | Flashcard session position is not saved | 1 | not started |
-| S2 | Again/Hard do not affect review order | 1 | in PR (ordering half) |
+| S2 | Again/Hard do not affect review order | 1 | **verified live** (ordering half) |
 | S3 | Deck not filed into its course folder | 1 | not started |
 | S4 | Test position is not saved | 1 | not started |
 | S5 | Undo only works once | 1 | not started |
@@ -145,9 +145,34 @@ starts a fresh appropriate review session instead of reopening the last card.
   increasing. The four buttons previously carried hard-coded hints ("1 · soon",
   "2 · slower", "3 · normal", "4 · longer") which were keyboard shortcut numbers dressed
   up as scheduling information; they now show the real predicted interval per card.
-  **Production still pending — applying the replacement function to the live database
-  needs the owner's go-ahead (open decision 3).**
-- **Status**: in PR — ordering half complete, migration not yet applied to production
+- **Production acceptance — DONE 2026-08-06.** Owner approved applying the replacement
+  function; it is live. The deployed `grade_study_card` was then exercised directly on
+  all four card states, as the owner's own user, and every value matches the TypeScript
+  mirror exactly:
+
+  | Card state | Again | Hard | Good | Easy |
+  |---|---|---|---|---|
+  | New (interval 0, 0 reps) | 10 min | 60 min | 1 day | 4 days |
+  | Short interval, 6 lapses | 10 min | 2 days | 3 days | 4 days |
+  | Review, no lapses | 10 min | 12 days | **25 days** | 35 days |
+  | Review, same interval, 6 lapses | 10 min | 12 days | **16 days** | 26 days |
+
+  Strictly increasing in every row. The last two rows are the proof that `lapses` stopped
+  being dead data: identical interval, six failures, and Good drops from 25 days to 16.
+  A lapse is recorded against the graduated cards and not against the new one, as
+  intended.
+
+  Test data used a scratch deck created for this run
+  (`b6ec9624-4ce3-4116-928a-f436ff8f2289`, four cards, all ids recorded before use) and
+  was removed afterwards **by id** — never by name, date or `updated_at`. Verified after
+  cleanup: review-log count back to exactly 129, zero scratch rows, no real deck or card
+  touched.
+
+  Rollback kept at `docs/rollback/20260806160000_study_scheduler_ordering_ROLLBACK.sql`
+  (the previous definition verbatim, md5 `095aa19a4f90a8924cde9a4965392ad0`).
+- **Status**: verified live — ordering half complete. Note the database half is live now
+  while the button labels ship with the PR; the old labels are merely stale, and grading
+  itself is already correct.
 
 **Pre-reproduction finding (code and database inspection only — not yet reproduced in
 the app, and not being treated as confirmed).** The report asks for an audit of "the
