@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs, completionModel, isFallbackModel } from "@/lib/workspace/chat-api";
 import { WRITING_VOICE } from "@nemesis/shared";
-import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -69,11 +68,10 @@ test("a turn with tools is told to show the card, not reprint what it saved", ()
 });
 
 test("buildWireMessages derives the tools claim from the route, not from hope", () => {
-  // Every route carries tools now — chat-effort.ts records what changed and why
-  // the old restriction was our bug — so every route gets both the paragraph
-  // that says so and the policy telling it where an answer should come from.
+  // Every route carries tools now — the old restriction was our own dropped
+  // `reasoning_content`, not a limit of the model — so every route gets both the
+  // paragraph that says so and the policy telling it where an answer belongs.
   for (const ask of ["explain osmosis", "make me flashcards on ACE inhibitors"]) {
-    assert.equal(toolsAllowed(classifyChatRequest(ask)), true, ask);
     assert.match(systemText(ask), /through your tools/, ask);
     assert.match(systemText(ask), /DECIDE WHERE THE ANSWER LIVES/, ask);
   }

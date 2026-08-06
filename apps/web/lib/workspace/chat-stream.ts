@@ -19,7 +19,7 @@ export interface CompletionStreamResult {
    * that call is concatenated back into the context on every following round.
    * This value was already being accumulated here and then dropped, so the next
    * round had nothing to echo — which is why tools were withheld from every
-   * reasoner route (chat-effort.ts:toolsAllowed), and in turn why a question
+   * reasoner route, and in turn why a question
    * needing BOTH the student's own material and the live web could not be
    * answered at all. Never part of the visible answer.
    */

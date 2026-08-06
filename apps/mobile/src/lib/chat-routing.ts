@@ -8,18 +8,15 @@ import { isStudyCreationPreferenceReply } from "@nemesis/shared";
  *
  * The client makes this decision deterministically instead of spending a model
  * call on classification. The server remains the authority on plan eligibility:
- * `reasoningEffort: "high"` may upgrade Pro/Max to the premium model, while
+ * NOTE: this no longer names a model. See the block below.
  * lighter plans retain DeepSeek Flash with thinking enabled.
  */
 
 export type ChatRoute = "conversation" | "learning" | "current" | "research";
-export type ChatModelAlias = "deepseek-chat" | "deepseek-reasoner";
 
 export interface ChatRouteDecision {
   route: ChatRoute;
-  model: ChatModelAlias;
   searchWeb: boolean;
-  reasoningEffort?: "high";
   /** Set when the student asked Nemesis to SAVE something into their own
    *  workspace. Load-bearing, not a label: the write happens through a tool call,
    *  tool calls only ride the non-thinking model, and this flag is what stops the
@@ -100,11 +97,11 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
       RECENT_YEAR_PATTERN.test(compact) ||
       /https?:\/\//i.test(compact);
     return wantsWeb
-      ? { model: "deepseek-chat", route: "current", savesToWorkspace: true, searchWeb: true }
-      : { model: "deepseek-chat", route: "learning", savesToWorkspace: true, searchWeb: false };
+      ? { route: "current", savesToWorkspace: true, searchWeb: true }
+      : { route: "learning", savesToWorkspace: true, searchWeb: false };
   }
   if (RESEARCH_PATTERN.test(compact)) {
-    return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
+    return { route: "research", searchWeb: true };
   }
   if (
     CURRENT_PATTERN.test(compact) ||
@@ -115,15 +112,15 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
     RECENT_YEAR_PATTERN.test(compact) ||
     /https?:\/\//i.test(compact)
   ) {
-    return { route: "current", model: "deepseek-reasoner", searchWeb: true };
+    return { route: "current", searchWeb: true };
   }
   if (CASUAL_PATTERN.test(compact)) {
-    return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+    return { route: "conversation", searchWeb: false };
   }
   if (LEARNING_PATTERN.test(compact) || compact.length >= 120) {
-    return { route: "learning", model: "deepseek-reasoner", searchWeb: false };
+    return { route: "learning", searchWeb: false };
   }
-  return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+  return { route: "conversation", searchWeb: false };
 }
 
 /**
@@ -162,4 +159,25 @@ export function routeInstruction(route: ChatRoute): string {
     case "conversation":
       return "Respond directly and naturally. Keep simple questions concise, but do not omit details the user needs.";
   }
+}
+
+/**
+ * Whether the workspace tools ride this turn on the PHONE.
+ *
+ * 🔴 THIS IS A PHONE LIMITATION, NOT A ROUTING RULE, and it is deliberately
+ * unchanged by the server-side model selection. A thinking turn must echo the
+ * model's `reasoning_content` back on every tool round; web does that
+ * (chat-api.ts:appendToolRound) and this app does not. Until it does, the phone
+ * attaches tools only on the turns that used to ride the non-thinking model —
+ * exactly the set the old `!decision.model.includes("reasoner")` produced, now
+ * written from the flags instead of from a model name the client no longer owns.
+ *
+ * The gateway defends the same boundary from its side: this client does not send
+ * `x-nemesis-caps: reasoning-echo`, so any turn it sends WITH tools attached gets
+ * thinking switched off. Both halves say the same thing, and the server's half
+ * also covers the builds already on students' devices, which no app update
+ * reaches.
+ */
+export function toolsAllowed(decision: ChatRouteDecision): boolean {
+  return decision.savesToWorkspace === true || decision.workspaceIntent === true || decision.route === "conversation";
 }

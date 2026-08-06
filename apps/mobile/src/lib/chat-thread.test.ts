@@ -63,7 +63,7 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
 });
 
 Deno.test("buildWireMessages: an explicit decision overrides the auto-classified route", () => {
-  const wire = buildWireMessages([], "hi", { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" });
+  const wire = buildWireMessages([], "hi", { route: "research", searchWeb: true });
   assertEquals(wire[0], {
     content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
     role: "system",
@@ -233,7 +233,7 @@ Deno.test("withAttachmentNote: appends 'Attached: NAME' when a title is given, e
 });
 
 Deno.test("forcedResearchDecision: identical to chat-routing's own RESEARCH_PATTERN branch", () => {
-  assertEquals(forcedResearchDecision(), { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true });
+  assertEquals(forcedResearchDecision(), { route: "research", searchWeb: true });
 });
 
 Deno.test("nextDailyReset: next UTC midnight, never in the past", () => {

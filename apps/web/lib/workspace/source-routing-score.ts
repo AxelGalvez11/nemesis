@@ -102,40 +102,42 @@ export function scoreCase(testCase: RoutingCase, observed: ObservedSources): Cas
  * Which production configuration produced a set of numbers.
  *
  * 🔴 NOT OPTIONAL METADATA (owner 2026-08-06: "identify which production model
- * and effort mode produced every result"). Nemesis has three effort settings
- * that reach four different models across three providers, and thinking mode is
- * on for some and off for others. A routing score with no configuration on it is
- * unreproducible and uncomparable — two runs that disagree could be a
- * regression, or could be v4-flash-with-thinking versus v4-pro, and nobody could
- * tell which.
+ * and effort mode produced every result"). One prompt set can be answered by
+ * four different models across three providers with thinking on or off, so a
+ * routing score with no configuration on it is unreproducible: two runs that
+ * disagree could be a regression, or could be v4-flash-with-thinking versus
+ * v4-pro, and nobody could tell which.
  *
- * `answeringModel` is what the provider SAID answered, not what we asked for.
- * The valve silently downgrades: a client naming v4-pro without the plan gets
- * v4-flash, a High turn that takes longer than 45s falls back to v4-flash, and
- * any provider outage can land the turn on GLM, Qwen, Kimi or Anthropic. Asking
- * for a model is not evidence of getting it.
+ * 🔴 THERE IS NO "EFFORT MODE" TO RECORD ANY MORE, and recording one would be a
+ * lie rather than a gap. The composer's dial went in July; the field it set was
+ * stripped on every real turn; and since 2026-08-06 the client sends no effort
+ * and no model at all. What decides the tier is the SERVER'S reading of each
+ * question — so what a run must record is the class it assigned and the model
+ * that actually replied.
+ *
+ * `answeringModel` is what the provider SAID answered, never what was asked for.
+ * The valve downgrades silently: an unentitled account gets v4-flash, a premium
+ * turn that takes longer than 45s falls back to v4-flash, and any provider
+ * outage can land the turn on GLM, Qwen, Kimi or Anthropic.
  */
 export interface RunConfig {
-  /** The Nemesis effort setting the run used: instant | medium | high. */
-  effort: string;
-  /** The model id the client asked the valve for. */
-  requestedModel: string;
+  /** The work class the SERVER assigned, per case: simple | standard | complex. */
+  workClass: string;
+  /** Which signal decided it (work-class.ts's loggable slug). */
+  reason?: string;
   /** What the provider reported as the answering model, when it reported one. */
   answeringModel: string | null;
-  /** Whether DeepSeek thinking mode was expected to be on for this run. */
+  /** Whether reasoning actually came back — observed, not requested. */
   thinking: boolean;
-  /** The plan the key resolves to — it decides whether High reaches v4-pro. */
+  /** The plan the key resolves to — it decides whether complex reaches v4-pro. */
   plan?: string;
 }
 
 /** One line naming the configuration, for the top of any report. */
 export function describeRun(config: RunConfig): string {
-  const answered = config.answeringModel && config.answeringModel !== config.requestedModel
-    ? ` → answered by ${config.answeringModel}`
-    : config.answeringModel
-      ? ""
-      : " → answering model NOT REPORTED";
-  return `effort=${config.effort} plan=${config.plan ?? "unknown"} requested=${config.requestedModel}${answered} thinking=${config.thinking ? "on" : "off"}`;
+  const answered = config.answeringModel ? `answered by ${config.answeringModel}` : "answering model NOT REPORTED";
+  const why = config.reason ? ` (${config.reason})` : "";
+  return `class=${config.workClass}${why} plan=${config.plan ?? "unknown"} ${answered} thinking=${config.thinking ? "on" : "off"}`;
 }
 
 export interface RoutingReport {
@@ -187,7 +189,7 @@ export function formatRoutingReport(label: string, report: RoutingReport): strin
   return [
     `${label}: ${report.passed}/${report.total} cases pass`,
     // The configuration line is not decoration. A score with no model and no
-    // effort mode against it cannot be reproduced or compared to the next run.
+    // model and class against it cannot be reproduced or compared to the next run.
     `  configuration       ${report.config ? describeRun(report.config) : "UNRECORDED — this number cannot be compared to another run"}`,
     `  over-search rate    ${percent(report.overSearchRate)}`,
     `  under-search rate   ${percent(report.underSearchRate)}`,

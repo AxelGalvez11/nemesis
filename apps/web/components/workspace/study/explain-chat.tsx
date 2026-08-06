@@ -118,7 +118,7 @@ export function ExplainChat({ cache, className, context, contextKey, onClose, pr
             ...(followUp ? [{ content: followUp, role: "user" } as WireMsg] : []),
           ];
           const reply = await postChatCompletion(userId, wire, {
-            decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+            decision: { route: "conversation", searchWeb: false },
             onDelta: (_delta, accumulated) => {
               if (keyRef.current === key) setStreamText(accumulated);
             },

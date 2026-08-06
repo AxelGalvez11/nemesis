@@ -22,7 +22,6 @@ import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceO
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
 import { MAX_WEB_RESULTS, numberWebResults, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
-import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
@@ -36,7 +35,35 @@ const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 // Cost attribution: tells the metering valve WHICH app spent the tokens, so provider
 // spend can be reported per app. The valve falls back to the device-key label when
 // this is missing, and to "unknown" when neither says — never silently to "web".
-const CLIENT_HEADER = { "X-Nemesis-Client": "web" } as const;
+const CLIENT_HEADER = {
+  "X-Nemesis-Client": "web",
+  // 🔴 A CAPABILITY, NOT A PREFERENCE. The gateway may switch DeepSeek's thinking
+  // mode on by itself now, and a thinking turn must echo the model's
+  // `reasoning_content` back on every tool round or the round after it breaks.
+  // This client does (see appendToolRound). A client that does not say so gets
+  // thinking off whenever it attaches tools — which is what protects the phone
+  // builds already on students' devices, since a gateway deploy reaches them
+  // with no app update involved.
+  "X-Nemesis-Caps": "reasoning-echo",
+} as const;
+
+/**
+ * The model name on the wire. A CONSTANT, because the client no longer chooses.
+ *
+ * 🔴 THIS FIELD USED TO BE A SPEND DECISION MADE IN THE BROWSER. It alternated
+ * between `deepseek-chat` and `deepseek-reasoner`, and the gateway read it to
+ * pick the thinking mode — so the cost of a turn was set by a string in a JSON
+ * body that anyone holding a device key could edit. The gateway now ignores it
+ * (supabase/functions/_shared/model-routing.ts) and classifies the student's own
+ * words instead. It stays on the wire only because `/v1/chat/completions`
+ * requires the field.
+ *
+ * 🔴 DEPLOY ORDER: the gateway must go out BEFORE this build. Against the old
+ * gateway a constant `deepseek-chat` means thinking off on every turn — a real
+ * quality regression for the window in between. The reverse order is safe: the
+ * new gateway ignores whatever the old clients send.
+ */
+export const WIRE_MODEL = "deepseek-chat";
 
 export interface WireToolCall {
   id: string;
@@ -143,8 +170,8 @@ export const CHAT_TOOLS_PROMPT =
   "full ONLY when the student asked to see it rather than save it, or when the save failed and they would otherwise lose the work. ";
 
 /**
- * What replaces it when the turn goes out WITHOUT tools (a reasoner route, or
- * high effort — see chat-effort.ts:toolsAllowed).
+ * What replaces it when the turn goes out WITHOUT tools (a caller that passes
+ * `toolsEnabled: false` — no route withholds them any more).
  *
  * This paragraph exists because the sentence above used to ride every turn
  * unconditionally, including the ones with no tools attached. Observed live
@@ -254,9 +281,10 @@ export function buildWireMessages(
   history: SessionMessage[],
   userText: string,
   decision = classifyChatRequest(userText),
-  // Derived from the decision by default so a caller cannot accidentally
-  // describe tools that will not be sent.
-  toolsEnabled = toolsAllowed(decision),
+  // Every route carries tools. Kept as a parameter because a few mechanical
+  // callers (study generation, the librarian) genuinely send none, and the
+  // prompt must not promise what is not attached.
+  toolsEnabled = true,
   /** Retrieved background — the second-brain packet. Its OWN system message, on
    *  purpose; see the block comment on the grounding message below. */
   groundingContext = "",
@@ -600,13 +628,12 @@ export interface ChatCompletionOptions {
  */
 export function completionPayload(
   wireMessages: readonly WireMsg[],
-  decision: ChatRouteDecision,
+  _decision: ChatRouteDecision,
   options: Pick<ChatCompletionOptions, "onDelta" | "tools"> = {},
 ): Record<string, unknown> {
   return {
     messages: wireMessages,
-    model: decision.model,
-    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
+    model: WIRE_MODEL,
     ...(options.onDelta ? { stream: true } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
   };
@@ -849,7 +876,7 @@ function startWaitingStrip(onActivity?: (label: string | null) => void): Waiting
 // problem. Its own file said so: "the obvious design is to hand the model a
 // search_web tool and let it call it. It cannot", because tools were switched
 // off for every reasoner turn. That premise was a bug in our stream, not a
-// limit of the model, and it has been fixed (chat-effort.ts:toolsAllowed).
+// limit of the model, and it has been fixed.
 //
 // So the pre-flight is not merely redundant now, it is worse than the tool on
 // every axis: it spent a model call on EVERY qualifying turn whether or not a
@@ -865,7 +892,6 @@ export async function sendChatTurn(
   userText: string,
   signal?: AbortSignal,
   onDelta?: CompletionDeltaHandler,
-  effort: ChatEffort = DEFAULT_CHAT_EFFORT,
   /** Live thinking-strip copy (owner 2026-08-03: the static "Thinking" shimmer
    *  on a minute-long turn "wasn't dynamic"). Fed from two places: the
    *  reasoner's streamed thoughts and the agent's tool rounds. null = back to
@@ -902,9 +928,11 @@ export async function sendChatTurn(
   // The web is a tool now (search_web, agent-tools.ts). The model reads the
   // question, weighs the student's own material against the outside world, and
   // calls what it needs — including both, and including twice when the first
-  // results are thin. The route below still chooses how hard to think and which
-  // instruction rides; it no longer buys anything.
-  const decision = applyChatEffort(classified, effort);
+  // results are thin. The route below chooses which INSTRUCTION rides and
+  // whether a workspace snapshot is attached; it no longer buys anything, and
+  // since 2026-08-06 it does not pick the model either — the server does, from
+  // the student's own words (supabase/functions/_shared/work-class.ts).
+  const decision = classified;
   const groundedText = userText;
   // Everything search_web found this turn, in citation order. Appended to
   // across searches so [n] keeps meaning the same page — see numberWebResults.
@@ -945,7 +973,7 @@ export async function sendChatTurn(
   const overview = await overviewLookup;
   const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 
-  const toolsEnabled = toolsAllowed(decision);
+  const toolsEnabled = true;
   // Where the attached documents already live, resolved from the database
   // BEFORE the model runs. A deck or test written from a lecture belongs beside
   // that lecture, and the model cannot be the one to decide that: on

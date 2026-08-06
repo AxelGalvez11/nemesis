@@ -3,6 +3,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 import { resolvePlanCapabilities } from "./plan-capabilities.ts";
 import { resolvePlanCapabilities as canonical } from "../../../packages/shared/src/plan-capabilities.ts";
 import { chooseModel, FLASH_MODEL, PRO_MODEL, stripDeepSeekOnlyFields } from "./model-routing.ts";
+import type { WorkClass } from "./work-class.ts";
 
 // Every plan string that can appear in `subscriptions.plan`, gathered from the
 // CHECK constraints across migrations 0109, 0122 and 20260720101500 — not an
@@ -101,61 +102,83 @@ Deno.test("the edge mirror and the canonical resolver agree on every cell", () =
 
 // ── model selection ─────────────────────────────────────────────────────────
 
-const choose = (plan: string, status: string, requestedModel: string, effortHigh: boolean, extra: Partial<typeof flags> = {}) =>
-  chooseModel({ ...flags, ...extra, effortHigh, plan, requestedModel, status });
+// 🔴 THE WORK CLASS IS THE INPUT NOW, NOT AN EFFORT FLAG FROM THE CLIENT. The
+// prompts that produce each class live in work-class-cases.ts, and the matrix
+// that runs them end to end lives in model-routing.test.ts. What is left here is
+// the entitlement half: given a class, which plans reach which lane.
+const choose = (plan: string, status: string, requestedModel: string, workClass: WorkClass, extra: Partial<typeof flags> = {}) =>
+  chooseModel({ ...flags, ...extra, plan, reason: "default", requestedModel, status, workClass });
 
-Deno.test("High on active enterprise selects deepseek-v4-pro", () => {
-  const choice = choose("enterprise", "active", "deepseek-reasoner", true);
+Deno.test("complex work on active enterprise selects deepseek-v4-pro", () => {
+  const choice = choose("enterprise", "active", "deepseek-chat", "complex");
   assertEquals(choice.model, PRO_MODEL);
   assertEquals(choice.lane, "pro");
   assertEquals(choice.dropEffortSelectors, true, "v4-pro takes no thinking or effort selector");
+  assertEquals(choice.downgraded, false);
 });
 
-// 🔴 The owner's explicit limit: "Do not make every Enterprise request use Pro
-// — only the intended High lane." An entitled account must not buy the premium
-// model to answer "hi".
-Deno.test("Instant and ordinary Medium stay on Flash, even on enterprise", () => {
-  const instant = choose("enterprise", "active", "deepseek-chat", false);
-  assertEquals(instant.model, FLASH_MODEL);
-  assertEquals(instant.thinking?.type, "disabled");
-  assertEquals(instant.lane, "flash");
+// 🔴 The owner's explicit limit: "Do not make every Enterprise request use Pro."
+// An entitled account must not buy the premium model to answer "hi".
+Deno.test("simple and standard work stay on Flash, even on enterprise", () => {
+  const simple = choose("enterprise", "active", "deepseek-chat", "simple");
+  assertEquals(simple.model, FLASH_MODEL);
+  assertEquals(simple.thinking?.type, "disabled");
+  assertEquals(simple.lane, "flash");
 
-  const medium = choose("enterprise", "active", "deepseek-reasoner", false);
-  assertEquals(medium.model, FLASH_MODEL);
-  assertEquals(medium.thinking?.type, "enabled", "a deep route still thinks — on the fast model");
-  assertEquals(medium.lane, "flash-thinking");
+  const standard = choose("enterprise", "active", "deepseek-chat", "standard");
+  assertEquals(standard.model, FLASH_MODEL);
+  assertEquals(standard.thinking?.type, "enabled", "ordinary work still thinks — on the fast model");
+  assertEquals(standard.lane, "flash-thinking");
 });
 
-Deno.test("High on a plan that has not bought it is not refused, only not upgraded", () => {
+Deno.test("complex work on a plan that has not bought it is not refused, only not upgraded", () => {
+  // Owner's rule: "For noneligible plans, complex work should still use
+  // Flash-thinking and complete honestly within that plan's limits."
   for (const plan of ["free", "plus"]) {
-    const choice = choose(plan, "active", "deepseek-reasoner", true);
+    const choice = choose(plan, "active", "deepseek-chat", "complex");
     assertEquals(choice.model, FLASH_MODEL, `${plan} reached the premium model`);
     assertEquals(choice.thinking?.type, "enabled", `${plan} lost its thinking`);
+    assertEquals(choice.downgraded, true, "a plan limit that nothing records is a plan limit nobody can see");
   }
 });
 
 Deno.test("a cancelled enterprise account gets no premium model", () => {
-  const choice = choose("enterprise", "canceled", "deepseek-reasoner", true);
+  const choice = choose("enterprise", "canceled", "deepseek-chat", "complex");
   assertEquals(choice.model, FLASH_MODEL);
   assertEquals(choice.capabilities.tier, "none");
 });
 
 Deno.test("a client cannot buy v4-pro by naming it", () => {
-  const choice = choose("free", "active", "deepseek-v4-pro", false);
+  const choice = choose("free", "active", "deepseek-v4-pro", "simple");
   assertEquals(choice.model, FLASH_MODEL, "premium routing is server-owned");
+  assertEquals(choice.thinking?.type, "disabled", "and naming it must not switch thinking on either");
+});
+
+// 🔴 The retired aliases still arrive from every shipped build, and they used to
+// select the thinking mode. They are now ignored — the same string, two classes,
+// two different answers, decided entirely by the server.
+Deno.test("the client's model alias no longer selects the thinking mode", () => {
+  for (const alias of ["deepseek-chat", "deepseek-reasoner", "gpt-4o", ""]) {
+    assertEquals(choose("free", "active", alias, "simple").thinking?.type, "disabled", alias);
+    assertEquals(choose("free", "active", alias, "standard").thinking?.type, "enabled", alias);
+  }
 });
 
 Deno.test("the GLM lane needs its own flag as well as the tier", () => {
-  assertEquals(choose("enterprise", "active", "deepseek-reasoner", true, { glmHighMode: false }).lane, "pro");
-  assertEquals(choose("enterprise", "active", "deepseek-reasoner", true, { glmHighMode: true }).model, "glm-5.2");
+  assertEquals(choose("enterprise", "active", "deepseek-chat", "complex", { glmHighMode: false }).lane, "pro");
+  assertEquals(choose("enterprise", "active", "deepseek-chat", "complex", { glmHighMode: true }).model, "glm-5.2");
   // Flag on, tier too low: still no GLM.
-  assertEquals(choose("plus", "active", "deepseek-reasoner", true, { glmHighMode: true }).model, FLASH_MODEL);
+  assertEquals(choose("plus", "active", "deepseek-chat", "complex", { glmHighMode: true }).model, FLASH_MODEL);
+  // An explicit `glm*` request is a different product surface, not a tier, and
+  // is still honoured by name.
+  assertEquals(choose("free", "active", "glm-5.2", "simple").lane, "glm");
 });
 
 Deno.test("PRO_HIGH_MODE off drops the premium lane without dropping the student", () => {
-  const choice = choose("enterprise", "active", "deepseek-reasoner", true, { proHighMode: false });
+  const choice = choose("enterprise", "active", "deepseek-chat", "complex", { proHighMode: false });
   assertEquals(choice.model, FLASH_MODEL);
   assertEquals(choice.thinking?.type, "enabled");
+  assertEquals(choice.downgraded, true);
 });
 
 // ── cross-provider hygiene ──────────────────────────────────────────────────

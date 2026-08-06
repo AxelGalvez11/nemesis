@@ -62,7 +62,6 @@ import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type AttachedLibraryDoc, type BudgetResetKind, type ChatAttachment, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { generateUuidV4, mergeRefreshedMessages } from "@/lib/chat-threads";
-import { DEFAULT_CHAT_EFFORT } from "@/lib/chat-effort";
 import { hapticAnswerReady, hapticThinkingStarted } from "@/lib/haptics";
 import { PHOTO_ATTACHMENT_LABEL, photoAttachmentTitle, photoBubbleText, photoNoteBody, photoTurnText } from "@/lib/photo-note";
 import { GENERATED_NOTES_FOLDER } from "@/lib/academic-skills";
@@ -317,16 +316,13 @@ export default function ChatScreen() {
   // when the picker actually opens.
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  // NO INTELLIGENCE DIAL ANY MORE (owner 2026-07-31: remove Instant/Medium/High,
-  // "thats not necessary for the app"). The control is gone; the MACHINERY is
-  // not. lib/chat-effort.ts still routes every turn — every turn now simply goes
-  // out at DEFAULT_CHAT_EFFORT, which is what the overwhelming majority of turns
-  // already used, and which is the one level that always carries the workspace
-  // tools (see applyChatEffort: High cannot, because the thinking flagship can't
-  // hold tool calls). Pinning here rather than deleting the parameter also means
-  // the stored preference of anyone left on High simply stops applying — with no
-  // picker left, a student stuck on a level that can't save a deck would have had
-  // no way to get off it.
+  // NO INTELLIGENCE DIAL, AND NO MACHINERY BEHIND ONE EITHER (owner 2026-07-31:
+  // remove Instant/Medium/High, "thats not necessary for the app"; owner
+  // 2026-08-06: "Model effort is supposed to be selected automatically"). The
+  // control went in July and the plumbing outlived it — every turn announced a
+  // level nobody could change, and that level was the one that STRIPPED the only
+  // branch which ever asked for deep thinking. The server reads the question and
+  // picks the model now; nothing about effort leaves this screen.
   // How tall the floating composer block is (starter rows / attached-doc chip
   // included). The transcript reserves exactly this much at its foot so it can
   // scroll all the way under the composer without the last line hiding behind
@@ -636,7 +632,6 @@ export default function ChatScreen() {
     // router still picks the research lane by itself when a question needs current
     // sources; nothing here forces it.
     const research = false;
-    const chosenEffort = DEFAULT_CHAT_EFFORT;
     const userMsg: ChatMsg = {
       at: new Date().toISOString(),
       // A PHOTOGRAPH NAMES ITSELF. "Attached: Photo" under a question is worth
@@ -690,7 +685,6 @@ export default function ChatScreen() {
       // the query and then stripped by the mapper — a hand-rebuilt object is
       // where new fields go to die. Pass the whole thing.
       attachedDoc: doc ?? undefined,
-      effort: chosenEffort,
       forceResearch: research,
       onDelta: (_delta, accumulated) => {
         // Renders live into the assistant row as chunks arrive; stale turns

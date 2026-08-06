@@ -9,7 +9,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
-import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -47,8 +46,6 @@ export interface BuildNotebookWireOpts {
   history: SessionMessage[];
   userText: string;
   decision?: ChatRouteDecision;
-  /** The composer's answer-effort dial; ignored when `decision` is supplied. */
-  effort?: ChatEffort;
 }
 
 /** Assemble the injected source-context block: each source's name + its text, truncated to stay
@@ -78,7 +75,7 @@ export function buildSourceContext(sources: NotebookWireSource[], budget = SOURC
  *  student's instructions (if any), the source text (budgeted), then trimmed history + the new user
  *  message. PURE. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
-  const decision = opts.decision ?? applyChatEffort(classifyChatRequest(opts.userText), opts.effort ?? DEFAULT_CHAT_EFFORT);
+  const decision = opts.decision ?? classifyChatRequest(opts.userText);
   const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route)];
   const instructions = opts.instructions?.trim();
   if (instructions) {
@@ -214,8 +211,6 @@ export interface SendNotebookTurnOpts {
   userText: string;
   displayText?: string;
   signal?: AbortSignal;
-  /** The composer's answer-effort dial. Defaults to Medium. */
-  effort?: ChatEffort;
 }
 
 /** Append the user's message, run one turn with the notebook's instructions + source text injected,
@@ -230,7 +225,7 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
   notebookChatStore.append(opts.chatId, { role: "user", content: displayText, at: nowIso() });
   notebookChatStore.setWorking(opts.chatId, true);
   void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: displayText }).catch(() => {});
-  const decision = applyChatEffort(classifyChatRequest(userText), opts.effort ?? DEFAULT_CHAT_EFFORT);
+  const decision = classifyChatRequest(userText);
   const assistantAt = nowIso();
   try {
     // Grounded mode (owner 2026-07-20): notebook answers come only from the

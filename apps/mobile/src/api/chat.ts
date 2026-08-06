@@ -42,7 +42,6 @@ import {
   type WireMsg,
 } from "@/lib/chat-thread";
 import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
-import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
 import { folderForNewItem, type PendingDelete } from "@nemesis/shared";
@@ -100,6 +99,18 @@ const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nem
 // carrying this ships, the valve reads the device-key label ("Nemesis iPhone") instead,
 // so phone spend is attributed either way.
 const CLIENT_HEADER = { "X-Nemesis-Client": "ios" } as const;
+
+// 🔴 NO `x-nemesis-caps: reasoning-echo` HERE, ON PURPOSE. Web sends it; this
+// app must not, because it does not echo the model's `reasoning_content` back on
+// a tool round (see lib/chat-routing.ts:toolsAllowed). The header is what tells
+// the gateway it may switch DeepSeek's thinking mode on for a turn carrying
+// tools; claiming it before the echo exists would break tool rounds on every
+// phone, and the gateway deploy that acted on it would reach installed builds
+// with no app update in between.
+
+/** The model name on the wire. A CONSTANT — the client does not choose any more;
+ *  the gateway ignores this field and classifies the student's words instead. */
+const WIRE_MODEL = "deepseek-chat";
 const SEARCH_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-search/v2/search`;
 
 // SecureStore keys allow [A-Za-z0-9._-]; uuids fit as-is.
@@ -242,8 +253,7 @@ async function postChatCompletion(
 
   const payload = JSON.stringify({
     messages: wireMessages,
-    model: decision.model,
-    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
+    model: WIRE_MODEL,
     stream: true,
     // The valve forwards `tools` to the provider verbatim. `tool_choice` is never
     // sent: DeepSeek's thinking mode rejects a forced choice.
@@ -343,10 +353,6 @@ export interface SendChatOptions {
    *  records into the persisted ChatMsg it builds for its own history (see
    *  chat.tsx's send(), which uses withAttachmentNote for that). */
   attachedDoc?: AttachedLibraryDoc;
-  /** The composer "+" menu's Instant/Medium/High choice for this turn. An
-   *  explicit pick BEATS the route's own guess (see lib/chat-effort.ts);
-   *  omitted means Medium, which is the classifier's untouched behaviour. */
-  effort?: ChatEffort;
   /** Cancels this turn — the composer's Stop control (owner 2026-07-30: "there is
    *  also no pause button for once it begins thinking and doing").
    *
@@ -385,7 +391,7 @@ export async function sendChat(
   userText: string,
   options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase, onReasoning, signal } = options;
+  const { attachedDoc, forceResearch, onDelta, onPhase, onReasoning, signal } = options;
   onPhase?.({ kind: "routing" });
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -401,7 +407,6 @@ export async function sendChat(
       forceResearch ? forcedResearchDecision() : null,
       priorAssistantText,
     ),
-    effort,
   );
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
@@ -441,7 +446,10 @@ export async function sendChat(
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });
   }
-  onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
+  // A UI hint, and now only a hint: the server decides the thinking mode and
+  // never tells us which one it picked. The shape it reads is the same one that
+  // used to imply the reasoner, so the strip behaves as it did.
+  onPhase?.({ kind: "thinking", deep: !toolsAllowed(decision) });
 
   // Text already streamed by EARLIER rounds of this turn. Each round's stream
   // accumulates from empty, so without this prefix a model that says "Let me check
@@ -1102,7 +1110,7 @@ export function recordingOutputForChat(entry: ChatOutput): ChatOutput {
 
 // Live notes ride the cheap conversational slot — never search, never the
 // reasoner. Same decision web's recorder uses (live-audio-insights.ts).
-const LIVE_NOTES_DECISION: ChatRouteDecision = { model: "deepseek-chat", route: "conversation", searchWeb: false };
+const LIVE_NOTES_DECISION: ChatRouteDecision = { route: "conversation", searchWeb: false };
 
 /** One notes pass for the Record screen: the growing transcript (plus what's
  *  already on the board) in, up to six fresh bullets out. Metered like any

@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AGENT_TOOLS, executeAgentTool } from "./agent-tools";
-import { appendToolRound, completionPayload, completionReasoning, type ChatReply, type WireMsg } from "./chat-api";
-import { applyChatEffort } from "./chat-effort";
+import { appendToolRound, completionPayload, completionReasoning, WIRE_MODEL, type ChatReply, type WireMsg } from "./chat-api";
 import { classifyChatRequest } from "./chat-routing";
 import { readCompletionStreamFull } from "./chat-stream";
 
@@ -117,14 +116,11 @@ test("two tools in one round keep their own ids even when results resolve out of
 
 // (4) Thinking mode rejects a forced tool choice — the provider says so in as
 // many words ("Thinking mode does not support this tool_choice").
-test("no route ever sends tool_choice, at any effort", () => {
+test("no route ever sends tool_choice", () => {
   for (const ask of ["explain osmosis", "hello", "what is due this week", "make me flashcards on ACE inhibitors"]) {
-    for (const effort of ["instant", "medium", "high"] as const) {
-      const decision = applyChatEffort(classifyChatRequest(ask, ""), effort);
-      const payload = completionPayload([], decision, { tools: AGENT_TOOLS });
-      assert.ok(!("tool_choice" in payload), `${ask} at ${effort} sent tool_choice`);
-      assert.ok(!("function_call" in payload), `${ask} at ${effort} sent the legacy function_call`);
-    }
+    const payload = completionPayload([], classifyChatRequest(ask, ""), { tools: AGENT_TOOLS });
+    assert.ok(!("tool_choice" in payload), `${ask} sent tool_choice`);
+    assert.ok(!("function_call" in payload), `${ask} sent the legacy function_call`);
   }
 });
 
@@ -133,11 +129,20 @@ test("the final tool-free round omits tools entirely rather than sending an empt
   assert.ok(!("tools" in payload), "an empty array is a different request from no tools");
 });
 
-test("high effort is the only thing that sets reasoning_effort", () => {
-  const base = classifyChatRequest("explain osmosis", "");
-  assert.equal(completionPayload([], applyChatEffort(base, "high")).reasoning_effort, "high");
-  assert.ok(!("reasoning_effort" in completionPayload([], applyChatEffort(base, "medium"))));
-  assert.ok(!("reasoning_effort" in completionPayload([], applyChatEffort(base, "instant"))));
+// 🔴 THE CLIENT NO LONGER ASKS FOR ANYTHING (owner 2026-08-06: "The client must
+// not be trusted to authorize an expensive model by sending effort: high").
+// Every route sends the same constant model and no effort field at all; the
+// gateway classifies the student's words and decides. The old version of this
+// test asserted that High set `reasoning_effort` — true of a value no composer
+// could produce, since the effort pill went in July and Medium stripped it.
+test("no route sends an effort field or a varying model", () => {
+  for (const ask of ["explain osmosis", "hello", "write a literature review with citations", "reorganize my whole semester"]) {
+    const payload = completionPayload([], classifyChatRequest(ask, ""), { tools: AGENT_TOOLS });
+    assert.ok(!("reasoning_effort" in payload), `${ask} asked for an effort level`);
+    assert.ok(!("reasoning" in payload), `${ask} asked for an effort level`);
+    assert.ok(!("thinking" in payload), `${ask} chose a thinking mode`);
+    assert.equal(payload.model, WIRE_MODEL, `${ask} chose its own model`);
+  }
 });
 
 // (5) Arguments are generated text and are validated before anything runs.

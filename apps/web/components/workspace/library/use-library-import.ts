@@ -108,7 +108,7 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
           outline: librarianOutline(notes.map((note) => note.path), folders),
           text,
         }),
-        { decision: { model: LIBRARIAN_MODEL, route: "learning", searchWeb: false } },
+        { decision: { route: "learning", searchWeb: false } },
       );
       const plan = parseLibrarianPlan(reply.text ?? "", notes.map((note) => note.path));
       if (!plan) return null;

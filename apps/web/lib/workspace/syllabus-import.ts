@@ -109,7 +109,7 @@ export async function readSyllabus(options: ReadSyllabusOptions): Promise<Verifi
       { content: CENSUS_SYSTEM_PROMPT, role: "system" },
       { content: buildCensusPrompt(entries, header), role: "user" },
     ],
-    { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+    { decision: { route: "conversation", searchWeb: false } },
   );
   if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't read that syllabus. Try again.");
 

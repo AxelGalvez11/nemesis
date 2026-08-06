@@ -6,26 +6,36 @@ import { detectsWorkspaceIntent } from "./workspace-intent";
  * Zero-cost request routing for Nemesis chat.
  *
  * The browser makes this decision deterministically instead of spending a model
- * call on classification. The server remains the authority on plan eligibility:
- * `reasoningEffort: "high"` may upgrade Pro/Max to the premium model, while
- * lighter plans retain DeepSeek Flash with thinking enabled.
+ * call on classification. What it decides is how to TALK about the turn — which
+ * instruction rides, whether a workspace snapshot is attached.
+ *
+ * 🔴 IT NO LONGER DECIDES WHICH MODEL ANSWERS, OR HOW HARD (owner 2026-08-06:
+ * "The client must not be trusted to authorize an expensive model"). This type
+ * used to carry `model: "deepseek-chat" | "deepseek-reasoner"` and an optional
+ * `reasoningEffort: "high"`, both of which went out on the wire and both of
+ * which the gateway obeyed — so a browser chose what a turn cost. The server now
+ * classifies the student's own words and picks the model itself; see
+ * supabase/functions/_shared/work-class.ts.
+ *
+ * (`reasoningEffort` was already inert before it was removed: the composer's
+ * effort pill went in 2026-07-31, every turn has been pinned to Medium since,
+ * and Medium stripped the one branch that ever set it. The field survived its
+ * own feature by five weeks, which is the argument for deleting it rather than
+ * leaving it "in case".)
  */
 
 export type ChatRoute = "conversation" | "learning" | "current" | "research";
-export type ChatModelAlias = "deepseek-chat" | "deepseek-reasoner";
 
 export interface ChatRouteDecision {
   route: ChatRoute;
-  model: ChatModelAlias;
   searchWeb: boolean;
-  reasoningEffort?: "high";
   /** Set when the student asked Nemesis to SAVE something into their own
    *  workspace.
    *
    *  🔴 Read the history here as history. This flag used to be load-bearing for
    *  a reason that no longer exists — tool calls only rode the non-thinking
    *  model, and this was what stopped the effort dial switching the tools off.
-   *  Every route carries tools since 2026-08-06 (chat-effort.ts), so it defends
+   *  Every route carries tools since 2026-08-06, so it defends
    *  nothing now. What it still does: keep a save off the expensive flagship,
    *  and mark the turn for SAVE_INSTRUCTION. */
   savesToWorkspace?: boolean;
@@ -179,7 +189,7 @@ export function detectsSaveRequest(text: string, priorAssistantText = ""): boole
  * asked for one is the file itself, and a slide citing a recent year is not a
  * student asking for today's news.
  */
-export const ATTACHMENT_ONLY_DECISION: ChatRouteDecision = { model: "deepseek-reasoner", route: "learning", searchWeb: false };
+export const ATTACHMENT_ONLY_DECISION: ChatRouteDecision = { route: "learning", searchWeb: false };
 
 export function classifyChatRequest(text: string, priorAssistantText = ""): ChatRouteDecision {
   const compact = text.trim();
@@ -195,14 +205,14 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
     // live 2026-07-27: that phrasing bought a paid search it had no use for.
     const wantsWeb = RESEARCH_PATTERN.test(compact) || CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact);
     return wantsWeb
-      ? { route: "current", model: "deepseek-chat", savesToWorkspace: true, searchWeb: true }
-      : { route: "learning", model: "deepseek-chat", savesToWorkspace: true, searchWeb: false };
+      ? { route: "current", savesToWorkspace: true, searchWeb: true }
+      : { route: "learning", savesToWorkspace: true, searchWeb: false };
   }
   // An explicit deep-research request keeps the research pipeline — a student
   // asking for a literature review wants sources and synthesis, not their own
   // folders, even when the sentence brushes a workspace word.
   if (RESEARCH_PATTERN.test(compact)) {
-    return { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" };
+    return { route: "research", searchWeb: true };
   }
   // A question about the student's OWN workspace outranks the remaining
   // reasoner routes, exactly like a save does — the answer comes from tools,
@@ -214,18 +224,18 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
   // calendar incident).
   if (detectsWorkspaceIntent(compact)) {
     const wantsWeb = EXPLICIT_WEB_PATTERN.test(compact);
-    return { model: "deepseek-chat", route: wantsWeb ? "current" : "conversation", searchWeb: wantsWeb, workspaceIntent: true };
+    return { route: wantsWeb ? "current" : "conversation", searchWeb: wantsWeb, workspaceIntent: true };
   }
   if (CURRENT_PATTERN.test(compact) || EXPLICIT_WEB_PATTERN.test(compact) || RECENT_YEAR_PATTERN.test(compact)) {
-    return { route: "current", model: "deepseek-reasoner", searchWeb: true };
+    return { route: "current", searchWeb: true };
   }
   if (CASUAL_PATTERN.test(compact)) {
-    return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+    return { route: "conversation", searchWeb: false };
   }
   if (LEARNING_PATTERN.test(compact) || compact.length >= 120) {
-    return { route: "learning", model: "deepseek-reasoner", searchWeb: false };
+    return { route: "learning", searchWeb: false };
   }
-  return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+  return { route: "conversation", searchWeb: false };
 }
 
 /**

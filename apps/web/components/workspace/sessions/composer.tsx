@@ -4,12 +4,14 @@
 // contenteditable input, attachment/deep-research menu, dictation, and
 // send/stop/record controls.
 //
-// ANSWER EFFORT IS NO LONGER A CONTROL (owner 2026-07-31). The Instant/Medium/
-// High pill next to the send button is gone; every turn now runs at
-// DEFAULT_CHAT_EFFORT. THE FEATURE STAYS — effort is still chosen, still sent,
-// and session-chat/notebook-chat-view still read it through onEffortChange.
-// Only the dial the student had to think about was taken away. The phone lost
-// the same dial in #369, so the two surfaces agree again.
+// ANSWER EFFORT IS NOT A CONTROL, AND IS NO LONGER A CONCEPT HERE (owner
+// 2026-07-31 removed the Instant/Medium/High pill; owner 2026-08-06: "Nemesis
+// has no user-facing High selector and should not require one. Model effort is
+// supposed to be selected automatically"). The machinery outlived the pill by
+// five weeks — the composer kept announcing a level nobody could change, and it
+// was the level that STRIPPED the only branch that ever asked for deep thinking.
+// The server reads the question and picks the model now. Nothing about effort
+// crosses this component.
 //
 // RECORD MODE (owner 2026-07-22; controls reshaped 2026-08-03: "the composer
 // in record mode should contain the 'start button' … the way to end recording
@@ -44,7 +46,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { publishMicLevel, resetMicLevel, subscribeMicLevel } from "@/lib/workspace/mic-level";
 import { emptyWaveform, pushWaveBar } from "@/lib/workspace/waveform-history";
 import { Mic } from "@/lib/workspace/icons";
@@ -74,11 +75,6 @@ interface ComposerProps {
   placeholder: string;
   mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
-  /** Told the effort once on mount, so the sender can apply it to the turn.
-   *  There is no longer anything that changes it — the dial was removed — but
-   *  the channel stays open so effort remains a real, settable thing rather
-   *  than a constant buried in the sender. */
-  onEffortChange?: (effort: ChatEffort) => void;
   /** `discard` says WHY capture is ending: true means the student cancelled and
    *  the audio must be thrown away, false or absent means stop and write it up.
    *  Both arrive in one call so the recorder cannot act on half the decision. */
@@ -100,7 +96,7 @@ interface ComposerProps {
   belowCenter?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, recordingPaused = false, recordingBusy = false, onRecordingPauseToggle, onSubmit, onStop, showRecordCompanion = true, belowStart, belowCenter }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onRecordingChange, recordingPaused = false, recordingBusy = false, onRecordingPauseToggle, onSubmit, onStop, showRecordCompanion = true, belowStart, belowCenter }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -132,14 +128,6 @@ export function Composer({ busy, centered = false, placement = "floating", place
   }, [dropNotice]);
   const attachmentGroups = useMemo(() => groupChatAttachments(files), [files]);
 
-  useEffect(() => {
-    // The dial is gone, so there is one effort and the parent is told it once.
-    // Deliberately NOT read back from localStorage any more: a student who had
-    // set "High" before the pill was removed would otherwise be pinned to it
-    // forever with nothing on screen to change it.
-    onEffortChange?.(DEFAULT_CHAT_EFFORT);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (mode) return;

@@ -148,6 +148,10 @@ export * from "./field-router.ts";
 // query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
 export * from "./auto-depth.ts";
 
+// How hard a turn is, judged from the student's own words. The SERVER decides
+// the model from this — the client has no effort dial and no vote.
+export * from "./work-class.ts";
+
 // Real-World Signal (researcher-facing): PURE aggregation of patient-reported outcomes into descriptive
 // per-intervention COUNTS — never an effect estimate — graded at the lowest (anecdotal) tier and walled
 // from the cited evidence, abstaining below a minimum-reports floor. A hypothesis-generation / gap-detection

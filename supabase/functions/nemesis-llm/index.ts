@@ -28,7 +28,8 @@
 // image generation (owner decision 2026-07-14) — it plays no part in chat.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
-import { chooseModel, stripDeepSeekOnlyFields } from '../_shared/model-routing.ts'
+import { chooseModel, signalsFromBody, stripDeepSeekOnlyFields } from '../_shared/model-routing.ts'
+import { classifyWork, escalationCandidate } from '../_shared/work-class.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -65,6 +66,11 @@ const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6'
 // deep-thinking, because v4-pro runs ~2x slower and fails a minority of the time.
 // Kill without a deploy: supabase secrets set PRO_HIGH_MODE=off
 const PRO_HIGH_MODE = (Deno.env.get('PRO_HIGH_MODE') ?? 'on') === 'on'
+// The ONLY way to pin a model by hand, and it is a server secret rather than a
+// plan or a header a browser could copy. Unset by default, which refuses every
+// override — an investigation opts in with `supabase secrets set DEBUG_ROUTE_KEY=…`
+// and the requests that use it are logged.
+const DEBUG_ROUTE_KEY = Deno.env.get('DEBUG_ROUTE_KEY') ?? ''
 // PRO_MODEL now lives in _shared/model-routing.ts, beside the gate that picks it.
 const PRO_TIMEOUT_MS = 45_000
 
@@ -180,9 +186,12 @@ async function reportCost(props: Record<string, unknown>, distinctId: string): P
 // and splitting them across a helper and three inline plan comparisons is how
 // `enterprise` came to be unreachable in one of them.
 //
-// The alias behaviour is unchanged and is now tested: deepseek-chat → Flash
-// thinking-off, deepseek-reasoner → Flash thinking-ON (it has never meant
-// v4-pro), any unknown id → Flash, and a client naming v4-pro cannot buy it.
+// 🔴 THE CLIENT'S MODEL NAME IS NOW IGNORED ENTIRELY (except `glm*`, a separate
+// product surface a caller opts into by name). It used to select the thinking
+// mode: `deepseek-chat` meant off, `deepseek-reasoner` meant on — a cheaper
+// version of the same problem as `reasoning_effort`, since either way the
+// browser was choosing what the turn cost. Both aliases still arrive from every
+// shipped build; both are now dropped on the floor, and work-class.ts decides.
 
 // CORS — the web app (browser) calls this function cross-origin; without these
 // headers the browser blocks the device-key mint and chat before they run (native
@@ -626,12 +635,34 @@ async function chatCompletions(req: Request): Promise<Response> {
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
 
-  // Effort is read from every encoding a client can emit (OpenRouter-style
-  // reasoning.effort, flat reasoning_effort, DeepSeek-style thinking.effort).
-  const effortHigh =
-    ((body.reasoning as { effort?: string } | undefined)?.effort ??
-      (body.reasoning_effort as string | undefined) ??
-      (body.thinking as { effort?: string } | undefined)?.effort) === 'high'
+  // 🔴🔴 THE CLIENT NO LONGER HAS A VOTE (owner 2026-08-06: "The client must not
+  // be trusted to authorize an expensive model by sending effort: high").
+  //
+  // What stood here read High out of three body encodings — reasoning.effort,
+  // reasoning_effort, thinking.effort — and used it to open the premium lane.
+  // Two things were wrong with that. It was a spending decision taken by whoever
+  // held the device key, changeable with one line of JSON. And no client had
+  // actually sent it since the composer's effort pill was removed (phone #369,
+  // web 2026-07-31): both surfaces pin Medium and Medium strips it, so the lane
+  // it guarded was already dead. Audited across web chat, web notebooks, phone
+  // chat, phone notebooks and the gateway on 2026-08-06.
+  //
+  // The server now judges the turn from the student's own words. Every effort
+  // encoding is DELETED rather than read, so a body carrying one is treated
+  // exactly like a body that does not — which is what makes the hostile-body
+  // test in model-routing.test.ts able to assert byte-identical choices.
+  const signals = signalsFromBody(body, req.headers.get('x-nemesis-caps'))
+  const classified = classifyWork(signals)
+  delete body.reasoning
+  delete body.reasoning_effort
+  delete body.thinking
+
+  // A debug override so a model can be pinned while investigating. Gated on a
+  // server secret no client holds — not on a plan, not on a copyable header.
+  // Unset by default, which refuses every override.
+  const overrideModel = DEBUG_ROUTE_KEY && req.headers.get('x-nemesis-debug-key') === DEBUG_ROUTE_KEY
+    ? (req.headers.get('x-nemesis-debug-model') ?? '')
+    : ''
 
   // 🔴 ONE DECISION, IN ONE PLACE (owner 2026-08-06). What stood here was
   // `ctx.plan === 'pro' || ctx.plan === 'max'`, written three times over. Every
@@ -640,19 +671,43 @@ async function chatCompletions(req: Request): Promise<Response> {
   // nothing failed: the fast model simply answered, which looks identical to
   // the right model answering. See _shared/model-routing.ts.
   const choice = chooseModel({
-    effortHigh,
     glmConfigured: Boolean(GLM_KEY),
     glmHighMode: GLM_HIGH_MODE,
     glmModel: GLM_MODEL,
     plan: ctx.rawPlan,
     proHighMode: PRO_HIGH_MODE,
+    reason: classified.reason,
     requestedModel: requested,
-    status: ctx.status
+    status: ctx.status,
+    workClass: classified.workClass
   })
   const useGlm = choice.lane === 'glm'
   const proUpgrade = choice.lane === 'pro'
-  let model = choice.model
+  let model = overrideModel || choice.model
   body.model = model
+
+  // What the server chose and why: slugs and counts only, never a word the
+  // student typed and never any reasoning. This is the line that makes "which
+  // model actually answered" answerable from the logs instead of assumed.
+  console.log('route_choice', JSON.stringify({
+    class: choice.workClass,
+    client,
+    downgraded: choice.downgraded,
+    lane: choice.lane,
+    model,
+    override: Boolean(overrideModel),
+    reason: choice.reason,
+    thinking: choice.thinking?.type ?? 'default'
+  }))
+
+  // Watched, deliberately NOT acted on: a turn that drew on two or more sources
+  // while the prompt read as ordinary. Promoting there would move the
+  // conversation to a different model mid-turn, carrying the first model's
+  // `reasoning_content` — untested against any provider. Counted instead, so the
+  // question gets settled from production rather than argued about.
+  if (escalationCandidate(signals.toolNames, choice.workClass)) {
+    console.log('route_escalation_candidate', JSON.stringify({ class: choice.workClass, reason: choice.reason, tools: signals.toolNames.length }))
+  }
 
   // A plan string nobody mapped grants nothing, and must not do so quietly —
   // silence is exactly how `enterprise` went unrecognised. Sanitised by
@@ -661,12 +716,12 @@ async function chatCompletions(req: Request): Promise<Response> {
     console.error('entitlement_unknown_plan', JSON.stringify({ plan: choice.capabilities.unrecognisedPlan, surface: 'nemesis-llm' }))
   }
 
-  if (choice.dropEffortSelectors) {
-    // Neither GLM nor v4-pro takes the DeepSeek/OpenRouter effort selectors.
-    delete body.thinking
-    delete body.reasoning
-    delete body.reasoning_effort
-  } else if (choice.thinking && body.thinking === undefined) {
+  // Neither GLM nor v4-pro takes a thinking selector; the fast model always gets
+  // the one the server chose. Deliberately NOT `if (body.thinking === undefined)`
+  // any more: that clause let a client keep its own selector, which is the same
+  // client-picks-the-spend path as `reasoning_effort` wearing a different name.
+  // Everything the client sent was deleted above, so this is the only writer.
+  if (!choice.dropEffortSelectors && choice.thinking) {
     body.thinking = choice.thinking
   }
 

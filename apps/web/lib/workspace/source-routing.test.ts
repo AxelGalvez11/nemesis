@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AGENT_TOOLS } from "./agent-tools";
 import { CHAT_SYSTEM_PROMPT } from "./chat-api";
-import { applyChatEffort, toolsAllowed } from "./chat-effort";
+import { classifyWork } from "@nemesis/shared";
 import { classifyChatRequest } from "./chat-routing";
 import { HARD_CASES, ROUTING_CASES } from "./source-routing-cases";
 import { scoreCase, scoreRouting } from "./source-routing-score";
@@ -25,7 +25,7 @@ import { scoreCase, scoreRouting } from "./source-routing-score";
 // A structural failure here is unrecoverable at runtime: no prompt can make a
 // model call a tool that was never attached.
 
-const routeFor = (ask: string) => applyChatEffort(classifyChatRequest(ask, ""), "medium");
+const routeFor = (ask: string) => classifyChatRequest(ask, "");
 const toolNamed = (name: string) => AGENT_TOOLS.find((tool) => tool.function.name === name);
 
 test("the web is a tool the model can choose, beside the private ones", () => {
@@ -41,20 +41,44 @@ test("the web is a tool the model can choose, beside the private ones", () => {
 // read whatever the model decided. "Compare what my professor taught with the
 // current guideline" needs two sources and could reach neither.
 test("every case can reach every source it needs", () => {
+  // Nothing withholds tools from any route any more, so this is now a statement
+  // about the catalogue rather than about the route: every case is built with
+  // the full set attached.
   for (const testCase of ROUTING_CASES) {
-    const decision = routeFor(testCase.ask);
-    assert.equal(toolsAllowed(decision), true, `${JSON.stringify(testCase.ask)} rides ${decision.model} with no tools`);
+    assert.ok(routeFor(testCase.ask), testCase.ask);
+    assert.ok(AGENT_TOOLS.length > 0);
   }
 });
 
-test("the effort dial cannot take a source away", () => {
-  // Turning the dial UP used to strip every tool, so a student asking for more
-  // thought got less capability. Both hard composite cases, at every level.
+// 🔴 THE DIAL IS GONE AND SO IS THE QUESTION IT ASKED. This used to assert that
+// Instant/Medium/High could not take a tool away. There is no dial: the server
+// reads the question and picks the model (packages/shared/src/work-class.ts).
+// What replaces it is the check that actually matters for these two cases —
+// a composite question that needs the Library AND the web is judged hard enough
+// to deserve the reasoning, without anybody having asked for it.
+test("the owner's six requirements get the tier they deserve, unprompted", () => {
+  // The whole ladder in one place, keyed by the owner's own hand-written cases.
+  // Nobody asked for any of these levels; each one comes from the sentence.
+  const expected: Record<string, "simple" | "standard" | "complex"> = {
+    // small talk — and the exact question that used to buy a live web search
+    "who are you?": "simple",
+    // their own calendar, read directly
+    "When is my next exam?": "simple",
+    // an ordinary explanation
+    "What is photosynthesis?": "standard",
+    // their own material, read and explained
+    "What did lecture 7 say about Km?": "standard",
+    // the outside world, checked
+    "What is the latest FDA guidance on semaglutide?": "standard",
+    // 🔴 two sources held against each other — the case that was STRUCTURALLY
+    // guaranteed to reach neither before 2026-08-06, and the one that now
+    // reaches the premium model without anyone asking for it.
+    "Compare what my professor taught with the current guideline": "complex",
+  };
   for (const testCase of HARD_CASES) {
-    for (const effort of ["instant", "medium", "high"] as const) {
-      const decision = applyChatEffort(classifyChatRequest(testCase.ask, ""), effort);
-      assert.equal(toolsAllowed(decision), true, `${JSON.stringify(testCase.ask)} at ${effort}`);
-    }
+    const want = expected[testCase.ask];
+    assert.ok(want, `no expected tier recorded for ${JSON.stringify(testCase.ask)}`);
+    assert.equal(classifyWork({ prompt: testCase.ask }).workClass, want, testCase.ask);
   }
 });
 
