@@ -28,6 +28,11 @@ import UTIF, { type UtifImage } from "utif";
  *  way. */
 export const MAX_DRAWN_EDGE = 1600;
 
+/** How long to wait for `toBlob` before finishing the job synchronously. Long
+ *  enough that a genuinely slow encode is not abandoned, short enough that a
+ *  callback which is never coming cannot hold up the pictures behind it. */
+const BLOB_TIMEOUT_MS = 4000;
+
 /** Refuse anything whose pixel count alone would be hostile. 80 megapixels is
  *  well past any lecture figure and ~320 MB of RGBA. */
 const MAX_PIXELS = 80_000_000;
@@ -132,6 +137,41 @@ export async function tiffObjectUrl(bytes: ArrayBuffer | Uint8Array): Promise<st
   }
 
   // PNG, not JPEG: a JPEG would flatten the alpha this whole path preserves.
-  const blob = await new Promise<Blob | null>((resolve) => source.toBlob(resolve, "image/png"));
-  return blob ? URL.createObjectURL(blob) : null;
+  //
+  // `toBlob` hands its result to a CALLBACK, and decodes run through a single
+  // queue — so a callback that never fires would not just lose one picture, it
+  // would block every picture queued behind it, and the slides would sit on
+  // "Opening a picture…" with nothing to show the student anything was wrong.
+  //
+  // That has not been observed in the product (the callback fires reliably in
+  // testing), but the cost of guarding is nothing: the callback is raced against
+  // a deadline, and past it the SYNCHRONOUS `toDataURL` finishes the job. A data
+  // URL costs more memory than a blob, which is why it is the fallback rather
+  // than the default.
+  const blob = await new Promise<Blob | null>((resolve) => {
+    let settled = false;
+    const finish = (value: Blob | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), BLOB_TIMEOUT_MS);
+    try {
+      source.toBlob((value) => {
+        clearTimeout(timer);
+        finish(value);
+      }, "image/png");
+    } catch {
+      clearTimeout(timer);
+      finish(null);
+    }
+  });
+  if (blob) return URL.createObjectURL(blob);
+
+  try {
+    const dataUrl = source.toDataURL("image/png");
+    return dataUrl.startsWith("data:image/") ? dataUrl : null;
+  } catch {
+    return null;
+  }
 }
