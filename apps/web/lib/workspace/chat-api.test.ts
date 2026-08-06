@@ -175,3 +175,20 @@ test("isFallbackModel does NOT cry wolf on a dated build of the same engine", ()
 test("an unknown model is not reported as a downgrade", () => {
   assert.equal(isFallbackModel("deepseek-chat", undefined), false);
 });
+
+// ── Private planning must not be printed as the answer ─────────────────────
+// Owner 2026-08-06. A real reply opened with "Let me read the rest of the
+// existing note to confirm it's complete and learn where it actually lives."
+// — a sentence written on the way to an answer, shown AS the answer. The rule
+// only rides the tools-on prompt, because that is the only lane with a
+// process to narrate.
+test("the tools prompt forbids narrating process and third-person student talk", () => {
+  const withTools = chatSystemPrompt(true);
+  assert.match(withTools, /WRITE THE ANSWER, NOT YOUR WORKING/);
+  assert.match(withTools, /never narrate what you are about to do/i);
+  assert.match(withTools, /third person/i);
+});
+
+test("the tool-less prompt does not carry a rule about tools it has none of", () => {
+  assert.ok(!/WRITE THE ANSWER, NOT YOUR WORKING/.test(chatSystemPrompt(false)));
+});
