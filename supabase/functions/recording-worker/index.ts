@@ -31,6 +31,7 @@
 // advances, and why a re-run reads it back from there rather than re-polling.
 
 import { folderForNewItem, knownCourses } from "../../../packages/shared/src/course-filing.ts";
+import { isServiceCaller } from "../_shared/service-auth.ts";
 import {
   backoffSeconds,
   buildNoteMessages,
@@ -93,25 +94,55 @@ Deno.serve(async (req) => {
   if (!SB_URL || !SERVICE_KEY) return json({ error: "function not configured" }, 500);
 
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  // Constant-time-ish is overkill for a key this long, but an early return on
-  // length keeps a mismatched key from being compared byte by byte.
-  if (!token || token.length !== SERVICE_KEY.length || token !== SERVICE_KEY) {
+  // 🔴 NOT `token === SERVICE_KEY`. This project has two valid service-role
+  // credentials — the legacy JWT and the newer `sb_secret_…` key — and the web
+  // server holds a different one from the one the platform injects here. A plain
+  // comparison rejected every kick from the web app with a 403 while
+  // function-to-function calls sailed through. See _shared/service-auth.ts.
+  if (!await isServiceCaller(token, { serviceKey: SERVICE_KEY, supabaseUrl: SB_URL })) {
     return json({ error: "forbidden" }, 403);
   }
 
-  const body = await req.json().catch(() => ({})) as { jobId?: unknown };
+  const body = await req.json().catch(() => ({})) as { jobId?: unknown; wait?: unknown };
   const jobId = typeof body.jobId === "string" && body.jobId ? body.jobId : null;
+  // Tests and one-off diagnostics can ask for the synchronous behaviour. Nothing
+  // in the product does.
+  const wait = body.wait === true;
 
   const claimed = await claimJobs(jobId);
   if (claimed.length === 0) return json({ claimed: 0 }, 200);
 
-  const deadline = Date.now() + INVOCATION_BUDGET_MS;
-  let advanced = 0;
-  for (const job of claimed) {
-    if (Date.now() >= deadline) break;
-    advanced += await runJob(job, deadline);
+  const drain = async () => {
+    const deadline = Date.now() + INVOCATION_BUDGET_MS;
+    let advanced = 0;
+    for (const job of claimed) {
+      if (Date.now() >= deadline) break;
+      advanced += await runJob(job, deadline);
+    }
+    return advanced;
+  };
+
+  if (wait) return json({ advanced: await drain(), claimed: claimed.length }, 200);
+
+  // 🔴 ACKNOWLEDGE, THEN WORK. Measured before this was here: the web route
+  // awaits its kick, and the kick did not come back until the worker had run the
+  // job to completion — so creating a recording took 14.5 seconds and the
+  // student sat watching the recorder exactly as long as they used to. The whole
+  // point is that they stop waiting.
+  //
+  // EdgeRuntime.waitUntil keeps this isolate alive for the drain after the
+  // response has gone, which is what makes "return control immediately" true
+  // rather than a description of the intent. Guarded because it is a platform
+  // extension: without it, fall back to running inline, which is slow but never
+  // wrong — and the cron would pick the job up either way.
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof runtime?.waitUntil === "function") {
+    runtime.waitUntil(drain().catch((caught) => {
+      console.error("recording drain failed", describeFailure(caught, "unknown"));
+    }));
+    return json({ accepted: claimed.length }, 202);
   }
-  return json({ advanced, claimed: claimed.length }, 200);
+  return json({ advanced: await drain(), claimed: claimed.length }, 200);
 });
 
 /**
@@ -234,6 +265,16 @@ async function runStage(job: JobRow): Promise<StageOutcome> {
  * banked would otherwise come back empty and look like a failure.
  */
 async function stageTranscribe(job: JobRow): Promise<StageOutcome> {
+  // BEFORE SPENDING ANYTHING. The artifact is the only durable home a transcript
+  // has — nemesis-transcribe hands its text over once and clears it — so a job
+  // with no artifact would pay a provider for a lecture it then had nowhere to
+  // put, and fail one stage later with the money already gone. The web route
+  // never creates such a job; this is the guard for the ones that reach here
+  // some other way.
+  if (!job.artifact_id) {
+    return { kind: "fail", message: "This recording has nowhere to store its transcript. Record it again." };
+  }
+
   const banked = await artifactTranscript(job.artifact_id);
   if (banked) return { kind: "advance", to: "composing" };
 
@@ -346,10 +387,18 @@ async function stageFile(job: JobRow): Promise<StageOutcome> {
   if (!job.library_document_id) return { kind: "advance", to: "indexing" };
   if (job.notes_written_at) return { kind: "advance", to: "indexing" };
 
-  const notes = await artifactNotes(job.artifact_id);
+  const written = await artifactWriteUp(job.artifact_id);
+  const notes = written.notes;
   if (!notes) return { kind: "fail", message: "The notes for this recording could not be read back." };
 
-  const title = job.title ?? "";
+  // 🔴 THE TITLE COMES FROM THE ARTIFACT, NOT FROM `job`. `job` is the row as it
+  // was CLAIMED — before the compose stage ran — so `job.title` is still the
+  // dated placeholder, and using it named every Library note "Recording · Aug 5,
+  // 2026, 10-09 PM" while the job row and the chat card both showed "Renal
+  // Clearance and Maintenance Dose Scaling". Caught in production acceptance:
+  // the whole reason the compose pass writes a title is that the note in the
+  // Library is called something you can recognise a month later.
+  const title = written.title || job.title || "";
   const folder = folderForNewItem("recording", `${title}\n${notes}`, await knownCoursesFor(job.user_id));
   const writtenAt = new Date().toISOString();
 
@@ -620,9 +669,18 @@ async function artifactTranscript(artifactId: string | null): Promise<string> {
 }
 
 async function artifactNotes(artifactId: string | null): Promise<string> {
-  if (!artifactId) return "";
-  const row = await selectOne<{ notes?: unknown }>("chat_recording_artifacts", artifactId, "notes");
-  return typeof row?.notes === "string" ? row.notes.trim() : "";
+  return (await artifactWriteUp(artifactId)).notes;
+}
+
+/** The notes AND the title the compose stage wrote, read together because the
+ *  filing stage needs both and they land on the same row. */
+async function artifactWriteUp(artifactId: string | null): Promise<{ notes: string; title: string }> {
+  if (!artifactId) return { notes: "", title: "" };
+  const row = await selectOne<{ notes?: unknown; title?: unknown }>("chat_recording_artifacts", artifactId, "notes,title");
+  return {
+    notes: typeof row?.notes === "string" ? row.notes.trim() : "",
+    title: typeof row?.title === "string" ? row.title.trim() : "",
+  };
 }
 
 /** When the library indexer last finished this document, in epoch ms. */

@@ -47,6 +47,11 @@ const PLACEHOLDER_BODY =
  *  refused before anything is created for it. */
 const MAX_SECONDS = 3 * 60 * 60;
 
+/** How long to wait for the worker to say "got it". It answers in milliseconds
+ *  and does the work afterwards, so this only ever fires if something is wrong —
+ *  and then the cron takes over rather than the student waiting. */
+const KICK_TIMEOUT_MS = 5_000;
+
 function datedTitle(): string {
   return `Recording · ${new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`;
 }
@@ -209,14 +214,23 @@ async function createPlaceholderNote(
   return null;
 }
 
-/** Nudge the worker so a recording starts processing immediately instead of on
- *  the next cron tick. Never throws — see the call site. */
+/**
+ * Nudge the worker so a recording starts processing immediately instead of on
+ * the next cron tick.
+ *
+ * The worker acknowledges and then works in the background, so this returns in
+ * milliseconds. The abort is belt-and-braces for the day it does not: this call
+ * sits between the student and their confirmation, and NOTHING in that position
+ * may take as long as the work it is starting. A lost kick costs at most one
+ * cron tick.
+ */
 async function kickWorker(jobId: string): Promise<void> {
   try {
     await fetch(`${supabaseUrl}/functions/v1/recording-worker`, {
       body: JSON.stringify({ jobId }),
       headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
       method: "POST",
+      signal: AbortSignal.timeout(KICK_TIMEOUT_MS),
     });
   } catch (caught) {
     console.error("recording worker kick failed", (caught as Error)?.message);

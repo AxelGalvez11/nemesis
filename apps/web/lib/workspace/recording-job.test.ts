@@ -19,7 +19,7 @@ import {
 const repoFile = (path: string) => readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
 
 const WORKER_PIPELINE = "supabase/functions/recording-worker/pipeline.ts";
-const MIGRATION = "supabase/migrations/20260805T01_recording_jobs.sql";
+const MIGRATION = "supabase/migrations/20260806024500_recording_jobs.sql";
 
 // ── The vocabulary, in three places that must agree ─────────────────────────
 //

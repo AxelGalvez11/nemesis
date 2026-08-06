@@ -1,4 +1,10 @@
--- 20260805T01 — a recording finishes even when the page that made it is gone.
+-- 20260806024500 — a recording finishes even when the page that made it is gone.
+--
+-- 🔴 NAMED `<timestamp>_name.sql`, NOT `20260805T01_...`. The CLI SKIPS any file
+-- that does not match that pattern — silently, with a one-line notice — so every
+-- `T0x` migration in this directory (the library indexer's three included) is
+-- invisible to `supabase db push` and was applied some other way. A file this
+-- one's worker depends on must not be in that set.
 --
 -- THE BUG THIS EXISTS TO FIX. Everything that happens after you stop recording
 -- lived inside a React component: apps/web/components/workspace/sessions/
@@ -30,8 +36,10 @@
 --   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/recording-worker', 'recording_worker_url');
 --   select vault.create_secret('<service-role-key>', 'recording_worker_service_role_key');
 --
--- DEPLOY: owner-gated — `supabase db push`, and deploy the recording-worker
--- function FIRST (same ordering rule as 20260725T01: the table alone is inert,
+-- DEPLOY: applied 2026-08-06 via the Supabase management API, because `db push`
+-- cannot run against this project at all — the remote history holds 60+ versions
+-- that are not in this directory, so the CLI refuses and asks for a repair. The
+-- recording-worker function is deployed FIRST (same ordering rule as 20260725T01: the table alone is inert,
 -- but a cron firing at a function that does not exist is noise).
 
 create extension if not exists pg_cron;
