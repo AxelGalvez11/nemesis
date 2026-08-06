@@ -89,15 +89,19 @@ async function load(dateKey: string): Promise<void> {
 
 /**
  * Today's store, loaded once per calendar day. `ready` is false only until the
- * first read finishes — the games render from `initial` in the meantime, so a
- * cold start never shows a half-restored board.
+ * first read finishes.
+ *
+ * THE SCREEN CALLS THIS; the games do not. One loader means the calendar day
+ * has exactly one source, and a game never has to work out which day it is on —
+ * it is handed a puzzle key and reads the store the screen already opened.
  */
 export function useChillStore(dateKey: string): { store: ChillStore; ready: boolean } {
   const current = useSyncExternalStore(subscribe, snapshot, snapshot);
 
   useEffect(() => {
     if (loadedFor === dateKey) return;
-    // Two screens mounting together must not race two reads onto one file.
+    // Single-flight: two mounts in the same frame must not race two reads onto
+    // one file.
     loading = loading ?? load(dateKey).finally(() => {
       loading = null;
     });
@@ -105,6 +109,11 @@ export function useChillStore(dateKey: string): { store: ChillStore; ready: bool
   }, [dateKey]);
 
   return { store: current, ready: current.day === dateKey };
+}
+
+/** Read-only view for the games: subscribes, never loads. */
+function useChillSnapshot(): ChillStore {
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
 /** Today's date key, fixed for the lifetime of the mount — a session that
@@ -123,9 +132,12 @@ export function useChillDayState<T>(
   puzzleKey: string,
   initial: T,
 ): [T, (updater: (previous: T) => T) => void] {
-  const dateKey = puzzleKey.split("#")[0] ?? puzzleKey;
-  const { store: current, ready } = useChillStore(dateKey);
-  const saved = ready ? readChillEntry<T>(current, game, puzzleKey) : null;
+  // A snapshot, not a load. The screen does not mount a game until the store is
+  // open, so what is here is already today's — and this hook never has to work
+  // out the calendar day from the puzzle key, which would tie it to the exact
+  // shape extraKey() happens to produce.
+  const current = useChillSnapshot();
+  const saved = readChillEntry<T>(current, game, puzzleKey);
   const value = saved === null ? initial : saved;
 
   const update = useCallback(
@@ -147,8 +159,8 @@ export function useChillDayState<T>(
 /** Which puzzle number a game is on today (0 = the daily), persisted so
  *  leaving and coming back returns to the same puzzle. */
 export function useChillPick(game: string | null, dateKey: string): [number, (next: number) => void] {
-  const { store: current, ready } = useChillStore(dateKey);
-  const pick = game && ready ? readChillPick(current, game) : 0;
+  const current = useChillSnapshot();
+  const pick = game && current.day === dateKey ? readChillPick(current, game) : 0;
 
   const set = useCallback(
     (next: number) => {
