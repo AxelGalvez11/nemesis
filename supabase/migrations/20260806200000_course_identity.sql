@@ -10,17 +10,18 @@
 -- group_name. Nothing tied them together but word matching, so renaming a
 -- course orphaned its material and one course could wear three names at once.
 --
--- See docs/course-identity-design.md. Additive and idempotent: a new table plus
--- four NULLABLE columns, so nothing that exists today changes behaviour until
--- a student associates a source with a course.
+-- See docs/course-identity-design.md. Purely additive: a new table plus four
+-- NULLABLE columns. NOTHING is written by this migration — no course rows, no
+-- associations — so applying it changes no behaviour at all until a student
+-- creates a course and assigns it themselves.
 
 create table if not exists public.courses (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
-  -- Both nullable, at least one present. A trade course may have only a name;
-  -- a lecture course is often known only by its code until the student types
-  -- the rest. Requiring both would make this unusable for half the fields this
-  -- product serves.
+  -- Both nullable, at least one present (owner 2026-08-06). A trade course may
+  -- have only a name; a lecture course is often known only by its code until
+  -- the student types the rest. Requiring both would make this unusable for
+  -- half the fields this product serves.
   code        text,
   name        text,
   created_at  timestamptz not null default now(),
@@ -51,20 +52,25 @@ create index if not exists library_documents_course_idx on public.library_docume
 create index if not exists study_decks_course_idx       on public.study_decks (course_id) where course_id is not null;
 create index if not exists study_artifacts_course_idx   on public.study_artifacts (course_id) where course_id is not null;
 
--- Seed from the ONE place a student has already typed a course themselves.
--- Written to `code`, not `name`: "PHCY 2105" is a code, and a course shows as
--- its code alone until the student supplies the rest.
+-- 🔴🔴 THERE IS NO BACKFILL, AND THAT IS THE POINT.
 --
--- 🔴 NOTHING IS AUTO-ASSOCIATED. Matching existing notes to these courses by
--- word overlap is precisely the guessing this design removes, and it would
--- write a verified-LOOKING association from an unverified inference. Every
--- course_id starts null and is filled by the student, once, per source.
-insert into public.courses (user_id, code)
-select distinct e.user_id, trim(e.course)
-from public.calendar_events e
-where e.course is not null
-  and trim(e.course) <> ''
-  and not exists (
-    select 1 from public.courses c
-    where c.user_id = e.user_id and lower(coalesce(c.code, '')) = lower(trim(e.course))
-  );
+-- An earlier draft seeded one course per distinct calendar_events.course.
+-- Owner 2026-08-06 rejected it: "those values may include imports, duplicates,
+-- or earlier model-generated labels. The safest option is no automatic
+-- backfill." That is right, and the reason generalises — a seeded row is
+-- indistinguishable, once written, from one the student created, so a table
+-- meant to hold VERIFIED identity would begin life full of unverified guesses
+-- wearing the same clothes.
+--
+-- Every row in `courses` is therefore created by the student, which is what
+-- makes "verified" a property of the table rather than a column on it. Nothing
+-- here needs an `unverified` flag because nothing here can produce one.
+--
+-- The calendar strings are not lost. The course picker offers them as
+-- SUGGESTIONS, read live from calendar_events at pick time, and a suggestion
+-- becomes a course only when the student clicks it — at which point they have
+-- verified it, and their own spelling is what gets stored.
+--
+-- Existing sources also stay unassociated (owner: "do not backfill source
+-- associations by guessing"). A lecture that has always been in `Pharmacy`
+-- keeps appearing in `Pharmacy`; it simply has no course until asked.
