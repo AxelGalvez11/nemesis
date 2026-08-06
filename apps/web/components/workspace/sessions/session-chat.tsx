@@ -753,10 +753,27 @@ export function SessionChat() {
         transcript: artifact.transcript,
       };
 
-      // An already-resolved card is left alone HERE. Its wording, if it is one
-      // of the wrong ones, is corrected where the thread is rendered — see the
-      // `messages` memo above and displayedRecordingContent's comment for why a
-      // rewrite cannot work (no UPDATE grant, and cloud wins the merge).
+      // The conversation takes the lecture's real name as soon as the artifact
+      // carries one. Done for resolved cards TOO, not just pending ones, which
+      // is what repairs a conversation stranded on its dated placeholder: its
+      // job went `ready` and left the watch, so the job-driven rename above can
+      // never reach it again. Unlike a chat message, a thread's title IS
+      // updatable (renameThreadCloud), so this one really can be put right.
+      const session = sessionsStore.getState().sessions.find((entry) => entry.id === selectedId);
+      const renamed = session
+        ? nextRecordingSessionTitle({
+          composed: artifact.title,
+          current: session.title,
+          fallback: RECORDED_SESSION_TITLE,
+          placeholder: output.title,
+        })
+        : null;
+      if (renamed) sessionsStore.rename(selectedId, renamed);
+
+      // An already-resolved card's WORDING is left alone here. If it is one of
+      // the wrong ones it is corrected where the thread is rendered — see the
+      // `shownMessages` memo above, and displayedRecordingContent's comment for
+      // why a rewrite cannot work (no UPDATE grant, and cloud wins the merge).
       if (output.polish !== "pending") continue;
 
       // 🔴 THE DECISION IS NOT MADE HERE. It lives in recording-card-state.ts as
@@ -774,21 +791,8 @@ export function SessionChat() {
       });
       if (decision.action !== "resolve") continue;
 
+      // The rename already happened above, for pending and resolved cards alike.
       sessionsStore.resolvePending(selectedId, message.id, { content: decision.content, outputs: [finished] });
-
-      // The conversation borrows the lecture's real name at the same moment,
-      // for the same reason: this is the first point at which that name is known
-      // to be the composed one rather than the dated placeholder.
-      const session = sessionsStore.getState().sessions.find((entry) => entry.id === selectedId);
-      const renamed = session
-        ? nextRecordingSessionTitle({
-          composed: artifact.title,
-          current: session.title,
-          fallback: RECORDED_SESSION_TITLE,
-          placeholder: output.title,
-        })
-        : null;
-      if (renamed) sessionsStore.rename(selectedId, renamed);
     }
   }, [messages, preview, recordingArtifacts, recordingArtifactsFresh, recordingJobs, recordingJobsLoaded, selectedId]);
 
