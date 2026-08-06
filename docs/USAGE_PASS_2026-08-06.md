@@ -268,7 +268,41 @@ the existing in-session retry list is not an acceptable answer.
   **Not proven by a live model turn** — nothing fires until the model calls
   `add_flashcards`, which is already observed in production because it is how the bug
   happened, but I did not run one end to end.
-- **Status**: in PR (#446)
+- **Status**: in PR (#446), extended by owner instruction; course identity in #448
+
+Owner, 2026-08-06, after approving the direction — a precedence ladder, and the rule
+that separates a request from an invention:
+
+1. a folder/course selected in the UI
+2. a folder/course written in the latest user message
+3. the source's stable `courseId`
+4. the source's existing folder
+5. Inbox/unfiled
+
+"A model-provided folder override should only be accepted if that folder name appears in
+the user's actual message or came from structured UI context. Therefore 'put these in X'
+can override the source, while an invented 'Pharmacology' cannot."
+
+Rungs 1, 2, 4 and 5 shipped in #446. The vouching rule is strictly better than the
+alternative I would have reached for — "accept a folder that already exists" — which is
+wrong here: `Pharmacology` DID already exist as a Study folder, invented by an earlier
+turn, so existence would launder one invention into permission for the next. It also
+closes the tradeoff #446 originally had to accept, since "put these in X" is now
+distinguishable from invention rather than being collateral damage.
+
+Also fixed under the same instruction ("if the source has no verified course
+association, inherit its folder and remain honest; do not guess a course from the
+lecture topic"): a document sitting in Inbox resolved to the same empty string as no
+document at all, so the word matcher would overrule the student's own "not sorted yet".
+`sourceAttached` now carries that fact separately, and the matcher runs only when there
+is no document at all.
+
+**Rung 3 needs a database change and is NOT built** — #448 carries the design and an
+unapplied migration. There is no course identity anywhere in this product:
+`calendar_events.course` is free text and nothing else records a course at all, which is
+why one course wears three names in the owner's own workspace (`PHCY 2109` in the
+filename, `Pharmacy` as a Library folder, `Pharmacology` as an invented Study folder).
+Four decisions are open there, including whether to apply the migration at all.
 
 Carried criteria: inherit the course from material already associated with one; resolve
 on stable course and folder IDs rather than fuzzy title matching; file automatically
