@@ -25,12 +25,19 @@
 >
 > **The quality bar:** upload an arbitrary document to Nemesis, ChatGPT and Claude, and Nemesis should
 > extract and reason over essentially the same important information, with accurate citations.
+> **This is the goal, not a description of today.** Nothing here has been measured against it — see
+> [`document-benchmark.md`](./document-benchmark.md), which has no recorded values yet.
+>
+> **🔴 Before repeating any comparison to ChatGPT or Claude, read §6.2.** It lists which claims are
+> supported and which were withdrawn on 2026-08-06 as unverified or false. Claims about our own
+> quality are checkable against this repo; claims about anyone else's are not, unless we ran them.
 >
 > **Consequences for this document, which was written school-first and is wrong in places:**
 > - The visual schema's `educationalRelevance` is a domain judgement leaking into the core. The core
 >   field is *importance to understanding this document*; "is this worth a flashcard" belongs upstairs.
-> - The benchmark corpus in §6 Stage 4 is all academic. It must span fields **and formats** —
->   contracts, invoices, filings, manuals, resumes, forms — not twelve lecture files.
+> - The benchmark corpus must span fields **and formats** — contracts, invoices, filings, manuals,
+>   resumes, forms — not twelve lecture files. §8 and `document-benchmark.md` carry this now; the
+>   near-term academic corpus gates the phases, the universal corpus is the eventual bar.
 > - **Spreadsheets are not supported at all today.** `kindFor`/`sniffKind` know only pdf/docx/pptx/
 >   image, so an .xlsx is refused outright. A universal parser has to answer for that.
 
@@ -214,102 +221,165 @@ not sufficient. The real biases are in numbers with no words in them:
 
 ## 6. Plan
 
-Revised after review. Each stage ships alone and is worth shipping alone.
+> **Superseded and rewritten 2026-08-06 by the owner.** This section used to hold a Stage 0–9 list.
+> That list is gone, not because it was wrong — most of it was right and all of it is accounted for —
+> but because a second numbering scheme living beside the owner's is how a repo ends up with two
+> governing plans and a session that follows the stale one. **The Phase order below is the only
+> plan.** §6.6 maps every old stage into it so nothing is lost.
 
-### Stage 0 — MEASURED 2026-08-05. It is a live bug, and it outranks everything below.
+### 6.1 The target, stated precisely
 
-Probed the deployed route directly. No credentials needed: if the request reaches our handler it
-returns *our* 401; if the platform rejects it, it never gets there.
+The gap between Nemesis and a top-tier general system is that they are given *the page*, and we are
+given *the page's text*. Everything about where the words sat — the table grid, the two columns, the
+heading hierarchy, the diagram beside the paragraph — is discarded before any model sees it.
 
-```
-POST https://app.enternemesis.com/api/notebooks/extract/file
-  3.0 MB  -> 401   (our handler; our auth rejection)
-  4.0 MB  -> 401   (our handler)
-  4.4 MB  -> 401   (our handler)
-  4.6 MB  -> 413   x-vercel-error: FUNCTION_PAYLOAD_TOO_LARGE
-  6.0 MB  -> 413   x-vercel-error: FUNCTION_PAYLOAD_TOO_LARGE
-```
+**But "render every page and put the images in the request" is not the fix, and must not be built.**
+Vision costs tokens, misreads dense pages, and runs into context limits. Hundreds of page images in
+one request is a worse system than the one we have, not a better one. The target is four things
+together:
 
-**The real upload ceiling is ~4.5 MB, not 25 MB.** The 413 is Vercel's, at the edge, as `text/plain` —
-`server: Vercel`, `content-length: 93`. Our route's own 413 (`route.ts:109`) never fires.
+1. **Complete native extraction and rendering for every unit.** Every page, slide or sheet gets both
+   a native pass and a rendered image. Nothing is skipped at ingest because it looked simple.
+2. **Adaptive high-detail vision for units that are visually complex or uncertain.** Detail is spent
+   where the native pass is thin, contradictory, or structurally hard — not uniformly.
+3. **Query-time high-resolution reinspection.** When retrieval selects a page or region, that page or
+   region can be re-examined at full detail *then*, against the actual question. This is what keeps
+   ingest cost bounded without capping what can be answered.
+4. **Caching keyed on source version, unit, crop, parser version and model.** Re-inspection is only
+   affordable if the second look at the same crop is free. All five parts of the key matter: a new
+   parser version or a new model invalidates, a re-uploaded file invalidates, a different crop does
+   not collide.
 
-What the student sees: `chat-attachments.ts:243` does `response.json().catch(() => null)`. Vercel's
-plain-text body is not JSON, so `body` is null and the thrown message is the generic fallback —
-**"Couldn't read lecture.pdf."** No reason, no size, no advice.
+**Native and visual results are merged, never treated as alternatives.** A page with three paragraphs
+and one critical diagram must keep both. A scanned page with weak OCR must keep the visual evidence
+*and* the record that its text is uncertain.
 
-Meanwhile `notebook-sources-dialog.tsx:225` tells them *"up to 25 MB"*.
+### 6.2 What we may and may not claim
 
-And the browser-side media stripper only engages above `OFFICE_SLIM_THRESHOLD_BYTES = 24 MB`
-(`office-slim.ts:23`) — calibrated to the ceiling that doesn't exist. A 10 MB PowerPoint is **not**
-slimmed, because 10 < 24, and then dies at 4.5 MB. The one mechanism that could have saved it is
-gated on the wrong number.
+Claims about our own quality are checkable against the code. Claims about anyone else's are not,
+unless we ran them. Several claims made in conversation on 2026-08-06 are corrected here so they
+cannot be repeated from a stale doc.
 
-A typical lecture PDF or deck is 5–30 MB. So for a large share of real academic files, ingestion does
-not degrade — **it fails outright, with an error that explains nothing.** This is very likely the
-single largest contributor to "document ingestion is our biggest weakness", and no amount of better
-parsing downstream would have touched it.
+| Claim | Status |
+|---|---|
+| ChatGPT/OpenAI and Claude give the model both extracted text and page images for PDFs | **Supported.** |
+| Our ingest lane gives the model flattened text and invokes vision selectively | **Supported.** Verified in `apps/web/lib/pdf/extract.ts` and the extract route. |
+| We therefore lose layout, columns, tables, visual hierarchy and diagrams on text-rich pages | **Supported.** Follows from the above. |
+| Phase 2 should produce one native-plus-visual representation | **Supported.** §6.1. |
+| "Page images solve it for free" | **WITHDRAWN.** They cost tokens, misread dense pages, and hit context limits. See §6.1. |
+| "ChatGPT and Claude quietly cut long documents" | **WITHDRAWN — unverified.** Their published APIs have size, page and context limits, but we have not tested how their consumer apps disclose truncation. We may say *we are building explicit coverage reporting*. We may not say competitors hide truncation. |
+| "Their documents disappear after the answer" | **WITHDRAWN — false.** ChatGPT Projects retain files and sources across chats; Claude has persistent project and file workflows. |
+| "Nemesis already has exact citations" | **WITHDRAWN — premature.** Some stored locations are model-supplied, not validated. The reader and deep-link UI exist; citation *correctness* is Phase 5. |
+| "PowerPoint is already better than either competitor" | **REPHRASED.** We preserve speaker notes, SmartArt, chart labels, media relationships, TIFF/EMF recovery and recurring-art filtering — a real native-format advantage. We lack rendered-slide visual reasoning and have run no matched comparison. Promising, not proven. |
+| "One change, not ten" | **WITHDRAWN.** Rendering is the largest single visible gain and is not sufficient alone. See §6.3. |
 
-**Fix (Stage 1 below).** The bytes should not transit the function body at all. The chat lane
-*already* uploads originals straight to the `library-sources` bucket
-(`chat-attachments.ts:164-190`) — that path has no 4.5 MB limit. Upload first, then hand the route a
-storage key instead of a file, and have it fetch the bytes server-side. Every lane converges on the
-same change, the 25 MB ceiling becomes true, and the slim threshold can drop to something that helps.
+**The accurate description, to be used until the benchmark in `docs/document-benchmark.md` passes:**
 
-### Stage 1 — tell the truth about what was read (S, no migration)
+> Nemesis is already designed around a persistent academic workflow, but ChatGPT and Claude remain
+> ahead at understanding the visual meaning of an individual document. The document-intelligence
+> roadmap is closing that gap without sacrificing organization, provenance, or processing honesty.
 
-The route already computes a full `coverage` tally and the client throws it away. Add the field to the
-type, put one plain sentence in front of the student and one in the model's prompt:
-*"37 of 40 slides read; 12 pictures kept, 3 in a format we can't read."*
+**Nemesis's actual differentiation** is not "we keep your file" — everyone keeps your file. It is
+semester-wide academic organization; sources connected to courses; notes, decks, tests, recordings and
+calendar events all derived from one source; a dedicated reader; source-to-study provenance; and
+ongoing agent workflows rather than isolated document question-answering.
 
-No bucket, no migration, no schema. Fixes a live honesty bug and takes a day.
+### 6.3 A seamless system needs all of these
 
-### Stage 2 — make the item rules discipline-neutral (S)
+Rendering pages is the largest visible intelligence gain. It is not sufficient by itself. Top-tier
+requires: background processing · native and visual representations · a stable canonical structure ·
+original-source indexing · retrieval across the complete document · verified provenance · progress,
+retries and recovery · and no silent downstream truncation.
 
-`EXAM_ITEM_RULES` currently instructs the model to build a clinical vignette — a patient, a lab result,
-"the drug this one gets confused with". One leaf file, both test lanes. Also fold in `FIGURE_PROMPT`,
-which asks the model to judge whether an image "carries teaching content" and is biased toward labelled
-schematics — an art-history plate or a photographed apparatus loses.
+### 6.4 Phase order and acceptance
 
-Widen `TestQuestion` with a type discriminator so engineering can ask for a number.
+**Phase 0 — Truthfulness. DONE.** PR #442. `ExtractionCoverage` in `packages/shared` is the canonical
+contract and the only coverage shape permitted; rescued parser code adapts to it rather than
+introducing a second. Disclosure reaches the student and the model.
 
-### Stage 3 — keep the figures (M, migration)
+**Phase 0b — Durable persistence. DONE, deployed, live-accepted.** PR #447 (schema, applied as
+`20260806173152`) and #446 (runtime). A parse survives reload; re-parsing the same bytes is idempotent
+(verified: two POSTs, one row, `attempts=2`); `complete` cannot disagree with `coverage` because a
+CHECK constraint ties them.
 
-Bucket `document-visuals` + table `document_visuals`. Written by the service role — the route already
-resolves a `userId` at line 87 and discards it. Rows carry location, natural size, content hash, role and
-Gemini's description. **The id comes back in the response** so a screen can find it.
+**Phase 1 — Document worker.** Move parsing out of the upload request. Acceptance:
 
-Corpus must include a non-English lecture and a right-to-left document *before* it is used as a baseline.
+- Upload returns without waiting for the full parse.
+- Processing survives refresh and navigation.
+- Jobs have leases, retries, idempotency, progress and recovery.
+- A failed page or batch retries without restarting the whole document.
+- Uploading several lectures at once does not overwhelm the app.
+- A source is not marked ready until parsing *and* indexing are genuinely ready.
 
-### Stage 4 — the debug view (M)
+**Phase 2 — Canonical native-plus-visual PDF understanding.** Not page images stapled to the existing
+flat string. Every PDF page preserves: native text · geometry and reading order · font and style
+signals · page dimensions and rotation · ordered blocks · tables and figures · a rendered page image ·
+vision/OCR findings · extraction method and confidence · stable page/block/region locators · coverage
+and failures. Native and visual merged, per §6.1.
 
-`/dev-preview/extract`: drop a file, see four panes — units, visuals, coverage, and the exact bytes that
-go on the wire. This is what makes every later claim checkable instead of arguable.
+**Phase 3 — Office fidelity.** Native structure *plus* rendered appearance. DOCX: headings, lists,
+tables, images, captions, hyperlinks, page and section structure, footnotes, reading order — replacing
+today's regex tag strip. PPTX: keep the existing native advantages and add the rendered slide, so the
+model can reason about spatial relationships, arrows, callouts and overall composition.
 
-### Stage 5 — occlusion and flashcards from a stored figure (M)
+**Phase 4 — Original-source retrieval.** Index the canonical source directly; derived notes must not
+be the only searchable representation. Remove silent dependence on every cap below. A model's context
+may be bounded — the stored source and the searchable index may not be silently incomplete.
 
-A "from a document" picker in the occlusion editor. **Copies the bytes into `study-images`** at card
-creation — the only shape that works on the phone without a native release.
+| Cap | Value | Where |
+|---|---|---|
+| `TEXT_CAP` | 200,000 chars | `apps/web/lib/pdf/extract.ts:18` |
+| `MATERIAL_CHAR_LIMIT` | 9,000 chars | `apps/web/lib/workload-cost.ts:315` **and** `apps/web/lib/workspace/study-artifact-content.ts:44` — defined twice |
+| `LIBRARIAN_TEXT_CHARS` | 60,000 chars | `apps/web/lib/workspace/library-librarian.ts:39` |
+| `DOC_LIMIT` | 40 docs/tick | `supabase/functions/library-index/index.ts:41` |
+| `MAX_CHUNKS_PER_DOC` | 60 chunks | `supabase/functions/library-index/index.ts:42` |
+| fixed vision-page limit | 40 pages | PDF vision fallback |
 
-### Stage 6 — the typed document model + real PPTX tables (L, split in two)
+Salvage note: `supabase/migrations/20260805040000_source_indexing.sql` already drafts this schema
+(`library_chunks.origin_type`, a one-origin CHECK). It is **unapplied**, and #447 rewrote part of it in
+terms of `parsed_document_id`. Reconcile it; do not rewrite it.
 
-The model and serializer land first with a byte-identical golden test proving nothing changed. Fidelity
-gains (real table grids, slide order from `presentation.xml` rather than filename) land second, where the
-diff is readable.
+**Phase 5 — Verified citations.** Chat answers, notes, cards, tests and syllabus events cite canonical
+source locations. A citation is not accepted until: its source version exists · its page/slide/block
+locator exists · it opens the correct location · and the cited evidence supports the generated claim.
+Not complete until tested through the reader.
 
-### Stage 7 — PDF page rasters (M) · Stage 8 — PDF geometry (L)
+**Phase 7 — Capacity.** Large files, including the 123.8 MB immunology deck. Explicitly not earlier:
+file-size policy is not the primary quality problem, and raising the limit before Phase 1 exists would
+only move the failure.
 
-PDFium-WASM for pixels; `unpdf` ^1.8 for per-item transforms, which is what finally gives headings,
-two-column reading order and boxes. Both need a preview deploy to prove — the WASM load path cannot be
-verified locally.
+### 6.5 Seamless, defined behaviourally
 
-### Stage 9 — the generators read the model (L, split)
+Ingestion feels seamless when a student can do all twelve. This is the acceptance list for the
+programme as a whole, not for any one phase.
 
-Chunk study material at unit boundaries with the omission disclosed, and carry provenance onto every
-generated card and question. Re-price `workload-cost.ts:657`, which assumes exactly 9,000 characters.
+1. Upload a supported document.
+2. Immediately see that it was accepted.
+3. Navigate away while it processes.
+4. See meaningful progress.
+5. Return after refresh, or on another client.
+6. Know whether processing was complete or partial.
+7. Ask about information from any part of the source.
+8. Retrieve from tables, diagrams, images and speaker notes.
+9. Open the exact supporting page or slide.
+10. Generate notes, flashcards, tests and calendar items from the complete source.
+11. Retry failures without uploading again.
+12. Never receive a confident implication that unread content was processed.
 
-### Deferred, needs a decision
+### 6.6 Where the old stages went
 
-Slide rendering / SmartArt-as-drawn / vector figures — needs LibreOffice in a container.
+| Old stage | Now |
+|---|---|
+| 0 — the 4.5 MB ceiling | **Done.** By-reference ingest; `MAX_SOURCE_BYTES` is the real limit. |
+| 1 — tell the truth about what was read | **Done.** Phase 0 (#442) + Phase 0b (#447). |
+| 2 — discipline-neutral item rules | Carried, unscheduled. Belongs with Phase 5 generation. Still a live correctness bug: `EXAM_ITEM_RULES` writes clinical vignettes, which fails the law-student/mech-eng test. |
+| 3 — keep the figures | Phase 2. Figures become part of the canonical unit record rather than a side table. |
+| 4 — the debug view | Phase 1. `/dev-preview/extract` is how a job's output is inspected, and how the benchmark reads results. Build it with the worker, not after. |
+| 5 — occlusion from a stored figure | Domain layer, after Phase 2. |
+| 6 — typed document model · real PPTX tables | Phase 2 (model) · Phase 3 (PPTX). |
+| 7 — PDF page rasters · 8 — PDF geometry | Phase 2, merged. They were never separable: geometry without pixels cannot check itself. |
+| 9 — generators read the model | Phase 4 (retrieval) + Phase 5 (provenance). Includes re-pricing `workload-cost.ts`, which assumes exactly 9,000 characters. |
+| Deferred — slide rendering / SmartArt-as-drawn | Phase 3, still needs an owner decision (LibreOffice in a container). |
 
 ---
 
@@ -500,11 +570,22 @@ about.
 
 ### Benchmark
 
-Not lecture files. Difficult documents across **academic/scientific, legal, finance/business,
-technical manuals, healthcare, government forms, resumes, scanned documents, presentations and
-spreadsheets** — measured on structural fidelity, table fidelity, visual-content recovery, citation
-and location accuracy, retrieval recall, and question-answering accuracy. Successful ingestion is not
-the bar; parity with top general-purpose systems on an arbitrary document is.
+**The instrument lives in [`docs/document-benchmark.md`](./document-benchmark.md). That file is the
+only benchmark definition; this paragraph states the scope it has to grow into.**
+
+Two corpora, and they are not in tension — one is runnable now, the other is the eventual bar.
+
+- **Near-term, runnable today:** the owner's real academic corpus — syllabi, lecture decks, scanned
+  and multi-column and table-heavy material. This is what gates each phase, because it is what we
+  actually have and can re-run on every change.
+- **Long-term, the real bar:** difficult documents across **academic/scientific, legal,
+  finance/business, technical manuals, healthcare, government forms, resumes, scanned documents,
+  presentations and spreadsheets**. Successful ingestion is not the bar; parity with top
+  general-purpose systems on an *arbitrary* document is. A parser that only passes on lectures has
+  proved the domain layer, not the parser — which is what §8's whole premise rules out.
+
+Measured on structural fidelity, table fidelity, visual-content recovery, citation and location
+accuracy, retrieval recall, and question-answering accuracy.
 
 ## 9. What stays
 

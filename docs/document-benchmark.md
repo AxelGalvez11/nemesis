@@ -1,0 +1,117 @@
+# The document-intelligence benchmark
+
+> **Set by the owner 2026-08-06.** This file is the *only* benchmark definition for document
+> intelligence. [`document-intelligence.md`](./document-intelligence.md) §8 states the scope this has
+> to grow into; §6.4 states the phases it gates.
+
+## The rule this exists to enforce
+
+**An architectural comparison cannot establish parity.** Neither can a handful of good summaries, a
+green test suite, or a model producing a plausible answer. Parity is a measurement against the same
+files and the same questions, with the outputs saved.
+
+Until this benchmark passes, the accurate public description is the one in §6.2:
+
+> Nemesis is already designed around a persistent academic workflow, but ChatGPT and Claude remain
+> ahead at understanding the visual meaning of an individual document. The document-intelligence
+> roadmap is closing that gap without sacrificing organization, provenance, or processing honesty.
+
+## Two halves, and why the split is load-bearing
+
+Every metric below is tagged **SOLO** or **MATCHED**.
+
+- **SOLO** metrics are absolute. They compare our output against ground truth we labelled from the
+  file itself. They need no competitor and can run on every change. **These gate the phases.**
+- **MATCHED** metrics are relative. They require running the same corpus and the same questions
+  through Nemesis, ChatGPT and Claude, and saving all three outputs. **These, and only these, gate
+  the word "parity."**
+
+The split is written down because the SOLO half is the half that is easy to run — and a future
+session that runs it, sees good numbers, and announces parity would be making exactly the unsupported
+claim this document exists to prevent. **Passing the SOLO half means our own phase is done. It does
+not mean we caught anyone.**
+
+## Corpus
+
+Real files first. Synthetic fixtures are for regression, never for establishing a baseline.
+
+| Set | Files | Exercises |
+|---|---|---|
+| Syllabi | Fall 2026 syllabi | irregular schedules, date extraction, tables |
+| Lectures | Diabetes 1 and 2 | dense slides, speaker notes, figures |
+| Lectures | BIOL415 1 and 2 | second discipline, different deck conventions |
+| Large deck | the 123.8 MB immunology deck | **Phase 7 only** — after the large-file/repacking work. Not before. |
+| Fixtures | scanned, multi-column, table-heavy, diagram-heavy | the four failure shapes the current parser cannot see |
+
+Two corpus rules carried from §8, both learned the hard way:
+
+- A non-English document and a right-to-left document must be in the set **before** it is used as a
+  baseline. A baseline that has only ever seen English is a baseline that will silently encode
+  English assumptions.
+- Real files find defects fixtures cannot. The reader work found five that way — a straight
+  apostrophe matching nothing, an invariant tested in code points while offsets indexed code units,
+  a two-column interleave whose fix broke tables, TIFF pictures vanishing silently, and duplicate
+  outline ids. Keep real files in the loop.
+
+## Questions
+
+The corpus is only half the instrument. Questions must be chosen so the **evidence sits somewhere
+specific**, because that is what distinguishes a system that read the document from one that read the
+first few pages and wrote something plausible.
+
+At least one question whose evidence occurs:
+
+1. On the final page — catches truncation.
+2. In a table — catches grid flattening.
+3. Inside a diagram — catches text-only extraction.
+4. In speaker notes — catches slide-surface-only extraction.
+5. In a two-column section — catches reading-order failure.
+6. Across distant sections — catches chunk-local retrieval.
+7. In a scanned page — catches the missing OCR lane.
+8. In a figure label — catches figures kept as pixels but never read.
+9. In an irregular syllabus schedule — catches date parsing that only handles the tidy case.
+
+**Ground truth is labelled before the run, not after.** A expected answer written after seeing the
+output is not ground truth; it is a rationalisation.
+
+## Metrics
+
+| Metric | Kind | Definition |
+|---|---|---|
+| Unit coverage | SOLO | units read ÷ units present. Ground truth from the file's own page/slide count. |
+| Last-page recall | SOLO | question 1 answered correctly from the real final page. |
+| Table accuracy | SOLO | cells recovered in the right row/column against a labelled grid. |
+| Diagram / image accuracy | SOLO | facts recovered from figure content against a labelled description. |
+| Reading-order accuracy | SOLO | sequence of blocks against labelled human reading order. |
+| Speaker-note recall | SOLO | notes recovered ÷ notes present. |
+| Retrieval recall@k | SOLO | does the retrieved set contain the labelled evidence unit, at k = 1, 5, 20. |
+| Citation locator accuracy | SOLO | the citation resolves, and opens the labelled location in the reader. Mechanical — no judgement. |
+| Citation support | SOLO | the cited evidence actually supports the claim. Judgement; label it. |
+| Syllabus-date accuracy | SOLO | extracted dates against the labelled schedule, including the irregular rows. |
+| Note / flashcard source coverage | SOLO | share of the source represented in generated material — catches `MATERIAL_CHAR_LIMIT` silently deciding what gets studied. |
+| Upload-to-ready time | SOLO | accepted → genuinely queryable. The number the student feels. |
+| Peak memory | SOLO | **not observable from outside the function** — must be instrumented inside the worker and recorded on the job row, or it cannot be reported at all. Do not estimate it. |
+| Cost | SOLO | tokens and storage per document, split native vs vision vs re-inspection. |
+| Failure disclosure | SOLO | when coverage is partial, is the gap stated — to the student *and* in the model's prompt. A pass here is honesty, not accuracy. |
+| **Relative accuracy on any metric above** | **MATCHED** | same file, same question, three systems, all outputs saved. |
+
+## Protocol
+
+1. Label ground truth for the fixture. Commit the labels.
+2. Run Nemesis. Record every metric, including the failures.
+3. For MATCHED metrics only: run the identical file and identical question text through ChatGPT and
+   Claude. **Save the prompts and the outputs**, not a summary of them.
+4. Record the run with the parser version and the model, so a number can be attributed to a build.
+5. Publish failures alongside passes. A benchmark that only ever reports improvements is a marketing
+   document.
+
+## Status
+
+Nothing has been run. No metric below has a recorded value.
+
+| Half | State |
+|---|---|
+| SOLO | not run — corpus not yet labelled |
+| MATCHED | not run — requires access and matched prompts |
+
+**Therefore: no parity claim of any kind is currently supported.**
