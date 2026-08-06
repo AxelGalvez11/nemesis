@@ -17,7 +17,12 @@
 --   * production has 7 columns main does not define (state, failed_stage, error,
 --     attempts, updated_at, unreferenced_at, complete);
 --   * production's doc_kind allows 'html' and main's does not;
---   * two indexes have different NAMES for the same definition;
+--   * two indexes have different names AND different definitions;
+--   * main defines `library_chunks.source_id`, which production does not have at
+--     all — production keys source chunks on `parsed_document_id`. Found only by
+--     EXECUTING the migration; comparing column lists between the two files
+--     would have shown a column present in one and absent in the other and read
+--     as "additive".
 --   * a database built from main alone is a different schema from production.
 --
 -- 🔴 AND MAIN'S UNAPPLIED FILE IS A LOADED GUN. Because 20260805040000 is not in
@@ -135,8 +140,35 @@ create index if not exists parsed_documents_state_idx
 create index if not exists parsed_documents_gc_idx
   on public.parsed_documents(unreferenced_at) where unreferenced_at is not null;
 
+-- 🔴 A CHUNK HANGS OFF THE PARSE, NEVER OFF A PLACEMENT — and main's draft got
+-- this backwards in a way only running the SQL revealed.
+--
+-- Main adds `library_chunks.source_id -> library_sources(id)` and writes
+-- `library_chunks_one_origin` in terms of it. Production has NO such column: it
+-- keys source chunks on `parsed_document_id`, which is the correct design and
+-- the one the branch's own comments argue for — the same file filed in two
+-- folders is two placements and ONE parse, so chunking per placement would pay
+-- for the same embeddings twice and make "which chunks are stale" unanswerable.
+--
+-- Left alone, `supabase db push` from main would add the column AND replace the
+-- constraint with one demanding `source_id is not null` for every source chunk,
+-- so the first real source chunk written would violate it. That is not a naming
+-- difference; it is a schema that cannot accept the data the indexer produces.
+--
+-- The column carries no data on either path (production has never had it; a
+-- fresh database from main has it and zero rows), so dropping it is additive in
+-- effect and destroys nothing.
+alter table public.library_chunks drop column if exists source_id;
+
+alter table public.library_chunks drop constraint if exists library_chunks_one_origin;
+alter table public.library_chunks add constraint library_chunks_one_origin check (
+  (origin_type = 'note'   and document_id is not null and parsed_document_id is null)
+  or
+  (origin_type = 'source' and parsed_document_id is not null and document_id is null)
+);
+
 create index if not exists library_chunks_parse_idx
-  on public.library_chunks(user_id, source_id) where origin_type = 'source';
+  on public.library_chunks(parsed_document_id) where origin_type = 'source';
 
 -- "Which placements point at this parse" — the question the reference count and
 -- every reload of a filed source asks.
@@ -182,8 +214,6 @@ create or replace function public.record_parsed_document(
   p_structure jsonb,
   p_unit_count integer,
   p_visual_count integer,
-  p_state text,
-  p_failed_stage text default null,
   p_error text default null
 ) returns uuid
 language plpgsql
@@ -192,9 +222,25 @@ set search_path = public
 as $$
 declare
   v_id uuid;
-  -- Derived here as well as in the CHECK, so a caller cannot pass a `complete`
-  -- that disagrees with the coverage it is writing in the same statement.
-  v_complete boolean := coalesce(p_coverage ->> 'state', '') = 'complete';
+  -- 🔴 EVERY FACT THAT FOLLOWS FROM THE COVERAGE IS DERIVED HERE, FROM THE
+  -- COVERAGE. `state`, `complete` and `failed_stage` were all parameters at
+  -- first, which meant three chances for a caller to ship a record whose
+  -- headline disagreed with its own numbers — in a different language from the
+  -- constraint meant to catch it. There is now exactly one derivation, in one
+  -- place, and the caller cannot route around it.
+  v_parse_state text := coalesce(p_coverage ->> 'state', '');
+  v_complete boolean := v_parse_state = 'complete';
+  -- `partially_parsed` is a RESTING state, not a failure: a 300-page scan with
+  -- 40 pages transcribed is parsed, and partially so, and both are true.
+  v_state text := case
+    when v_parse_state = 'failed' then 'failed'
+    when v_parse_state = 'partial' then 'partially_parsed'
+    when v_parse_state = 'complete' then 'parsed'
+    -- No coverage at all: the row has been claimed but nothing has been read.
+    else 'pending'
+  end;
+  -- Phase 0b only runs the parse stage, so a failure can only have happened there.
+  v_failed_stage text := case when v_parse_state = 'failed' then 'parse' else null end;
 begin
   insert into public.parsed_documents as pd (
     user_id, content_hash, doc_kind, parser_version,
@@ -203,7 +249,7 @@ begin
   ) values (
     p_user_id, p_content_hash, p_doc_kind, p_parser_version,
     p_coverage, p_structure, p_unit_count, p_visual_count,
-    p_state, v_complete, p_failed_stage, p_error, 1, now()
+    v_state, v_complete, v_failed_stage, p_error, 1, now()
   )
   on conflict (user_id, content_hash, parser_version) do update set
     coverage      = excluded.coverage,
@@ -238,5 +284,11 @@ $$;
 
 -- 🔴 SERVICE ROLE ONLY. A client that could call this could write its own
 -- coverage — that is, it could tell itself a half-read lecture was complete.
-revoke all on function public.record_parsed_document(uuid, text, text, text, jsonb, jsonb, integer, integer, text, text, text) from public, anon, authenticated;
-grant execute on function public.record_parsed_document(uuid, text, text, text, jsonb, jsonb, integer, integer, text, text, text) to service_role;
+revoke all on function public.record_parsed_document(uuid, text, text, text, jsonb, jsonb, integer, integer, text) from public, anon, authenticated;
+grant execute on function public.record_parsed_document(uuid, text, text, text, jsonb, jsonb, integer, integer, text) to service_role;
+
+-- An older signature may exist from an earlier apply; Postgres overloads rather
+-- than replaces, so a caller could still reach the version that trusted its
+-- `p_state` argument. Dropped by exact signature, guarded so a fresh database
+-- (where it never existed) is unaffected.
+drop function if exists public.record_parsed_document(uuid, text, text, text, jsonb, jsonb, integer, integer, text, text, text);

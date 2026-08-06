@@ -41,11 +41,16 @@ export type ParsedDocKind = "pdf" | "pptx" | "docx" | "xlsx" | "image" | "text" 
  * Where the row sits in the PIPELINE — a different question from what the parse
  * achieved.
  *
- * 🔴 DERIVED FROM THE COVERAGE, NEVER DECIDED SEPARATELY. Two fields that answer
- * overlapping questions and are written independently disagree eventually, and
- * the flattering one is the one that gets believed. Phase 0b stops at parsing,
- * so `chunking`/`embedding`/`ready` are not reachable from here yet — a parse
- * that read something rests at `parsed` or `partially_parsed`.
+ * 🔴 THIS IS A MIRROR OF THE SQL, NOT THE DECISION. `record_parsed_document`
+ * derives `state`, `complete` and `failed_stage` from the coverage it is handed,
+ * inside the same statement that writes them, so a caller CANNOT ship a headline
+ * that disagrees with its own numbers. This function exists only so the mapping
+ * can be read and tested in TypeScript; nothing passes its result to the
+ * database. If the two ever diverge, the database wins — that is the point of
+ * putting it there.
+ *
+ * Phase 0b stops at parsing, so `chunking`/`embedding`/`ready` are not reachable
+ * yet: a parse that read something rests at `parsed` or `partially_parsed`.
  */
 export function pipelineStateFor(coverage: ExtractionCoverage): "parsed" | "partially_parsed" | "failed" {
   if (coverage.state === "failed") return "failed";
@@ -121,7 +126,6 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
     return { ok: false, reason: "unavailable" };
   }
 
-  const state = pipelineStateFor(input.coverage);
   try {
     // The preservation rule — never replace a complete parse with a worse one —
     // lives inside this function, in the database, so two requests racing on the
@@ -131,9 +135,7 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
       p_coverage: input.coverage as unknown as Record<string, unknown>,
       p_doc_kind: input.docKind,
       p_error: null,
-      p_failed_stage: state === "failed" ? "parse" : null,
       p_parser_version: PARSER_VERSION,
-      p_state: state,
       p_structure: structureEnvelope({ text: input.text, title: input.title }) as unknown as Record<string, unknown>,
       p_unit_count: input.coverage.units,
       // What was actually described, not what was found — the number a reader
