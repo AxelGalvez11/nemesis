@@ -16,7 +16,7 @@ import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
 import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
-import type { StudyGrade } from "@/lib/workspace/study-scheduler";
+import { formatDueIn, predictSchedule, type StudyGrade } from "@/lib/workspace/study-scheduler";
 import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
 import { cn } from "@/lib/utils";
 
@@ -24,11 +24,16 @@ import { ExplainChat, type ExplainTurn } from "./explain-chat";
 import { OcclusionCardView } from "./occlusion-card";
 import type { StudyReviewSettings } from "./study-chrome";
 
-const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "outline" | "secondary" }[] = [
-  { grade: "again", label: "Again", hint: "1 · soon", variant: "outline" },
-  { grade: "hard", label: "Hard", hint: "2 · slower", variant: "secondary" },
-  { grade: "good", label: "Good", hint: "3 · normal", variant: "secondary" },
-  { grade: "easy", label: "Easy", hint: "4 · longer", variant: "secondary" },
+// 🔴 These buttons used to carry fixed hints — "1 · soon", "2 · slower",
+// "3 · normal", "4 · longer" — which were the keyboard shortcut numbers dressed
+// up as scheduling information. While Hard was being scheduled LATER than Good
+// (see study-scheduler.ts) they told the student the exact opposite of what the
+// app was about to do. The real interval is computed per card instead.
+const GRADES: { grade: StudyGrade; label: string; variant: "outline" | "secondary" }[] = [
+  { grade: "again", label: "Again", variant: "outline" },
+  { grade: "hard", label: "Hard", variant: "secondary" },
+  { grade: "good", label: "Good", variant: "secondary" },
+  { grade: "easy", label: "Easy", variant: "secondary" },
 ];
 
 const GRADE_KEYS: Record<string, StudyGrade> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
@@ -101,6 +106,27 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const currentBucket = current
     ? retryIds.includes(current.id) || (progressById[current.id] ?? 0) > 0 ? "learn" : current.repetitions === 0 ? "new" : "due"
     : null;
+
+  // What each button will ACTUALLY do to THIS card. A press that re-queues the
+  // card inside the sitting is labelled as such rather than by its stored
+  // interval, because the stored interval is not what the student experiences
+  // next — that mismatch is how the old fixed hints stayed wrong unnoticed.
+  const gradeHints = useMemo(() => {
+    if (!current) return null;
+    const predicted = predictSchedule(current);
+    const sessionState = {
+      inRetry: retryIds.includes(current.id),
+      progress: progressById[current.id] ?? 0,
+      repetitions: current.repetitions,
+    };
+    const hints = {} as Record<StudyGrade, string>;
+    for (const { grade: value } of GRADES) {
+      hints[value] = decideSessionGrade(sessionState, value).requeue
+        ? "this session"
+        : formatDueIn(predicted[value].dueInMinutes);
+    }
+    return hints;
+  }, [current, progressById, retryIds]);
 
   // A new card on deck closes the panel — opening it is a deliberate ask per
   // card, so advancing through a deck never quietly bills every card.
@@ -428,10 +454,10 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 <Button className="bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" title="Show answer (Space)" variant="ghost">Show answer</Button>
               ) : (
                 <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
-                  {GRADES.map(({ grade: value, hint, label, variant }) => (
+                  {GRADES.map(({ grade: value, label, variant }) => (
                     <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
                       <span>{label}</span>
-                      <span className="text-[0.625rem] font-normal opacity-70">{hint}</span>
+                      <span className="text-[0.625rem] font-normal opacity-70">{gradeHints?.[value] ?? ""}</span>
                     </Button>
                   ))}
                 </div>
