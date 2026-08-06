@@ -11,14 +11,15 @@
 // picture in the file, so it will not appear, and pretending otherwise by
 // calling this a "rendered slide" would be the actual failure.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
+import { officeImageUrl, openOfficeArchive, unzipOne } from "@/lib/reader/office-zip";
 import { notesPathFor, parseSlide, slideOrder, slideText, type ParsedSlide } from "@/lib/reader/pptx-slides";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { resolveSlidePictures } from "@/lib/reader/slide-pictures";
+import { isTiff, tiffObjectUrl } from "@/lib/reader/tiff-image";
 import { cn } from "@/lib/utils";
 
 export type SlideTab = "slides" | "outline" | "notes";
@@ -86,6 +87,28 @@ export function SlidesDocumentView({
 
   useEffect(() => onScaleChange(scale), [onScaleChange, scale]);
 
+  // Every object URL this view has minted, eager or lazily decoded, revoked
+  // together on unmount. A ref rather than state: creating one must not render.
+  const mintedUrls = useRef<string[]>([]);
+  // Targets a decode has already been started for, so a slide scrolling in and
+  // out of view does not decode the same picture again.
+  const decodeStarted = useRef<Set<string>>(new Set());
+  // Targets whose decode came back with nothing. State, not a ref: the slide has
+  // to re-render to swap "Opening…" for the honest "cannot be shown".
+  const [failedTargets, setFailedTargets] = useState<ReadonlySet<string>>(new Set());
+  // Decodes run through this one chain, so the deck never has more than one in
+  // flight however fast the student scrolls.
+  const decodeQueue = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(
+    () => () => {
+      // Only blob: URLs hold anything; a data: URL fallback has nothing to free.
+      for (const url of mintedUrls.current) if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      mintedUrls.current = [];
+    },
+    [],
+  );
+
   useEffect(() => {
     let urls: string[] = [];
     try {
@@ -114,15 +137,81 @@ export function SlidesDocumentView({
 
       setSlides(parsed);
       setImages(resolved);
+      mintedUrls.current.push(...urls);
+      urls = [];
       onReady({ slides: parsed, unitTexts: parsed.map((slide) => ({ unit: slide.index, text: slideText(slide) })) });
     } catch (error) {
       onError(error instanceof Error ? error.message : "This deck could not be opened.");
     }
     return () => {
-      for (const url of urls) URL.revokeObjectURL(url);
+      for (const url of urls) if (url.startsWith("blob:")) URL.revokeObjectURL(url);
       urls = [];
     };
   }, [bytes, onError, onReady]);
+
+  /** Decode this slide's TIFF pictures, once, when it comes into view.
+   *
+   *  🔴 LAZY ON PURPOSE. Decoding is fast — all 57 TIFFs in a real immunology
+   *  lecture decode in 368 ms — but the PIXELS are not small: that deck's
+   *  largest picture is 3110×1707, which is 21 MB of RGBA, and holding all 57
+   *  at once would be over a gigabyte. One slide at a time costs nothing.
+   *
+   *  The single entry is re-inflated from the original bytes (11 ms measured)
+   *  rather than keeping the whole unzipped archive alive for the session. */
+  const ensurePictures = useCallback(
+    (slide: ParsedSlide) => {
+      const targets = slide.pictures
+        .map((picture) => picture.target)
+        .filter((target): target is string => target !== null)
+        .filter((target) => isTiff(target) && !decodeStarted.current.has(target));
+      if (targets.length === 0) return;
+      for (const target of targets) decodeStarted.current.add(target);
+
+      // ONE DECODE AT A TIME, ACROSS THE WHOLE DECK. Scrolling quickly through
+      // a real 37-slide lecture brings a dozen-odd slides into view at once, and
+      // each decode holds a full-size canvas (up to 3110×1707 = 21 MB of RGBA),
+      // a scaled copy and a PNG blob at the same moment. Serialising bounds that
+      // to one picture's worth, and costs nothing in time: the whole deck's 57
+      // TIFFs decode in 368 ms end to end (measured).
+      //
+      // 🔴 THE CHAIN MUST NEVER BE LEFT REJECTED. A `.then()` on a rejected
+      // promise skips its callback and stays rejected, so one thrown error
+      // would silently cancel every decode queued after it for the rest of the
+      // session — the same "Opening…" forever, with no error anywhere.
+      decodeQueue.current = decodeQueue.current.catch(() => undefined).then(async () => {
+        for (const target of targets) {
+          let url: string | null = null;
+          try {
+            const entry = unzipOne(bytes, target);
+            url = entry ? await tiffObjectUrl(entry) : null;
+          } catch {
+            url = null;
+          }
+          if (url) {
+            mintedUrls.current.push(url);
+            setImages((current) => {
+              if (current.has(target)) return current;
+              const next = new Map(current);
+              next.set(target, url);
+              return next;
+            });
+            continue;
+          }
+          // 🔴 A DECODE THAT FAILED MUST STOP SAYING "OPENING". It is already
+          // marked as started, so without this the slide claims a picture is on
+          // its way forever. Recording the failure moves it back to the honest
+          // "cannot be shown" placeholder, which is the truth.
+          setFailedTargets((current) => {
+            if (current.has(target)) return current;
+            const next = new Set(current);
+            next.add(target);
+            return next;
+          });
+        }
+      }).catch(() => undefined);
+    },
+    [bytes],
+  );
 
   const withNotes = useMemo(() => (slides ?? []).filter((slide) => slide.notes), [slides]);
 
@@ -206,8 +295,10 @@ export function SlidesDocumentView({
         </div>
         {slides.map((slide) => (
           <SlideCanvas
+            failedTargets={failedTargets}
             images={images}
             key={slide.index}
+            onNeedsPictures={ensurePictures}
             onVisible={onUnitChange}
             query={query}
             registerElement={registerElement}
@@ -237,25 +328,41 @@ function Disclaimer() {
 
 /** A slide-shaped canvas, 16:9, holding the slide's real contents. */
 function SlideCanvas({
-  slide, images, query, scale, onVisible, registerElement,
+  slide, images, failedTargets, query, scale, onVisible, onNeedsPictures, registerElement,
 }: {
   slide: ParsedSlide;
   images: Map<string, string>;
+  /** Pictures whose decode already failed — no longer "on the way". */
+  failedTargets: ReadonlySet<string>;
   query: string | null;
   scale: number;
   onVisible: (unit: number) => void;
+  onNeedsPictures: (slide: ParsedSlide) => void;
   registerElement: (unit: number, element: HTMLElement | null) => void;
 }) {
   const [element, setElement] = useState<HTMLElement | null>(null);
-  const { shown, overflow, missing, missingFormats } = resolveSlidePictures(slide.pictures, images, MAX_SLIDE_PICTURES);
-  const hasPictureColumn = shown.length > 0 || overflow > 0 || missing > 0;
+  const { shown, overflow, missing, missingFormats, pending } = resolveSlidePictures(
+    slide.pictures,
+    images,
+    MAX_SLIDE_PICTURES,
+    // A TIFF is only "still opening" while its decode has not failed.
+    { decodable: (target) => isTiff(target) && !failedTargets.has(target) },
+  );
+  const hasPictureColumn = shown.length > 0 || overflow > 0 || missing > 0 || pending > 0;
 
   useEffect(() => {
     registerElement(slide.index, element);
     if (!element) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) if (entry.intersectionRatio > 0.45) onVisible(slide.index);
+        for (const entry of entries) {
+          if (entry.intersectionRatio <= 0) continue;
+          // Decoding starts as soon as ANY of the slide is on screen, well
+          // before it counts as the current slide, so the picture is usually
+          // there by the time the slide is.
+          onNeedsPictures(slide);
+          if (entry.intersectionRatio > 0.45) onVisible(slide.index);
+        }
       },
       { threshold: [0, 0.45, 0.9] },
     );
@@ -264,7 +371,7 @@ function SlideCanvas({
       observer.disconnect();
       registerElement(slide.index, null);
     };
-  }, [element, onVisible, registerElement, slide.index]);
+  }, [element, onNeedsPictures, onVisible, registerElement, slide, slide.index]);
 
   return (
     <figure className="flex flex-col items-center gap-1.5" ref={setElement}>
@@ -299,6 +406,15 @@ function SlideCanvas({
                 // eslint-disable-next-line @next/next/no-img-element -- an in-memory object URL for bytes already in the browser
                 <img alt="" className="min-h-0 w-full flex-1 rounded object-contain" key={index} src={url} />
               ))}
+              {pending > 0 && (
+                <p
+                  className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed px-2 text-center leading-snug"
+                  data-testid={`reader-slide-${slide.index}-pending-pictures`}
+                  style={{ borderColor: "#dfe3e8", color: "#9aa0a8", fontSize: `${0.7 * scale}rem` }}
+                >
+                  Opening {pending === 1 ? "a picture" : `${pending} pictures`}…
+                </p>
+              )}
               {missing > 0 && (
                 <p
                   className="flex min-h-0 flex-1 items-center justify-center rounded border border-dashed px-2 text-center leading-snug"
