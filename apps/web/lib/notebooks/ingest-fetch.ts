@@ -110,39 +110,58 @@ export async function fetchIngestSource(ref: IngestRef, userId: string): Promise
 
   // 🔴 NOT `.download()`. See ./bounded-fetch — supabase-js resolves that call
   // to a Blob, and a Blob cannot exist without its bytes, so every size check
-  // written after it has already been paid for. `fetch` hands back the response
-  // once the HEADERS are in, which is the only moment an oversized object can
-  // still be refused for free.
-  let response: Response;
+  // written after it has already been paid for.
+  const url = objectUrl(row.bucket, row.storage_path);
+  const auth = { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` };
+
+  // ASK FIRST. A HEAD has no body, so an object over the ceiling is refused
+  // without a stream ever existing — which is what makes the refusal cheap. The
+  // earlier version read `content-length` off a GET and cancelled the body;
+  // that measured beautifully in isolation and timed out in production, because
+  // cancelling a large undici body drains it rather than hanging up.
+  let head: Response;
   try {
-    response = await fetch(objectUrl(row.bucket, row.storage_path), {
-      headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` },
-    });
+    head = await fetch(url, { cache: "no-store", headers: auth, method: "HEAD" });
   } catch {
     return { ok: false, reason: "unavailable" };
   }
+  if (head.status === 404 || head.status === 400) return { ok: false, reason: "missing" };
+  if (!head.ok) return { ok: false, reason: "unavailable" };
 
+  const declared = declaredLength(head.headers);
+  if (declared !== null && declared > MAX_SOURCE_BYTES) return { ok: false, reason: "too-large" };
+
+  // Only now is the body worth asking for.
+  //
+  // `cache: "no-store"` because Next.js patches global fetch and will try to
+  // put a cacheable GET through its Data Cache — a place a hundred megabytes of
+  // someone's lecture has no business being.
+  const controller = new AbortController();
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: "no-store", headers: auth, signal: controller.signal });
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
   if (response.status === 404 || response.status === 400) {
-    await response.body?.cancel().catch(() => {});
+    controller.abort();
     return { ok: false, reason: "missing" };
   }
   if (!response.ok || !response.body) {
-    await response.body?.cancel().catch(() => {});
+    controller.abort();
     return { ok: false, reason: "unavailable" };
   }
 
-  const declared = declaredLength(response.headers);
-  // The free refusal. The body is still untouched at this point, so a 200 MiB
-  // object over the ceiling costs a request and a set of headers — not 200 MiB
-  // of heap, which is what it used to cost.
-  if (declared !== null && declared > MAX_SOURCE_BYTES) {
-    await response.body.cancel().catch(() => {});
-    return { ok: false, reason: "too-large" };
-  }
-
-  // Belt and braces: an object with no content-length, or one whose header
-  // understates it, is still stopped mid-transfer by the per-chunk total.
-  const read = await readBounded(response.body, MAX_SOURCE_BYTES, declared);
+  // Belt and braces: an object with no content-length, one whose header
+  // understates it, or one that changed between the HEAD and the GET is still
+  // stopped mid-transfer by the per-chunk total — and the abort hangs up rather
+  // than politely draining what we just refused.
+  const read = await readBounded(
+    response.body,
+    MAX_SOURCE_BYTES,
+    declaredLength(response.headers) ?? declared,
+    () => controller.abort(),
+  );
   if (!read.ok) return { ok: false, reason: read.reason };
 
   return {
