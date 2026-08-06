@@ -11,7 +11,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
 import type { NoteOutlineEntry } from "@/lib/workspace/note-outline";
+import { usePersistentFlag } from "@/lib/workspace/use-persistent-flag";
 import { cn } from "@/lib/utils";
 
 interface DocsTocProps {
@@ -28,6 +30,7 @@ const ACTIVE_LINE_PX = 96;
 
 export function DocsToc({ outline, articleRef, scrollRef }: DocsTocProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [collapsed, setCollapsed] = usePersistentFlag("nemesis.web.docs-toc-collapsed", false);
   const minDepth = useMemo(() => Math.min(4, ...outline.map((entry) => entry.depth)), [outline]);
 
   useEffect(() => {
@@ -63,9 +66,43 @@ export function DocsToc({ outline, articleRef, scrollRef }: DocsTocProps) {
     heading?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // Collapsed, the rail keeps only its toggle, so a long note gets the width
+  // back without losing the way to bring the contents list back (owner
+  // 2026-08-05). The choice is remembered per browser, like the sidebar's own
+  // auto-hide, because a reading-width preference that resets every reload is
+  // not really a preference.
+  if (collapsed) {
+    return (
+      <nav aria-label="On this page" className="shrink-0 px-2 py-6 max-lg:hidden">
+        <button
+          aria-expanded={false}
+          className="grid size-7 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
+          data-testid="docs-toc-toggle"
+          onClick={() => setCollapsed(false)}
+          title="Show On this page"
+          type="button"
+        >
+          <Codicon name="list-unordered" size="0.85rem" />
+        </button>
+      </nav>
+    );
+  }
+
   return (
     <nav aria-label="On this page" className="w-52 shrink-0 overflow-y-auto px-4 py-6 max-lg:hidden">
-      <h2 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">On this page</h2>
+      <div className="mb-2 flex items-center justify-between gap-1">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">On this page</h2>
+        <button
+          aria-expanded
+          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
+          data-testid="docs-toc-toggle"
+          onClick={() => setCollapsed(true)}
+          title="Hide On this page"
+          type="button"
+        >
+          <Codicon name="chevron-right" size="0.8rem" />
+        </button>
+      </div>
       <ul className="grid gap-px border-l border-(--ui-stroke-tertiary)">
         {outline.map((entry, index) => (
           <li key={`${entry.label}:${index}`}>

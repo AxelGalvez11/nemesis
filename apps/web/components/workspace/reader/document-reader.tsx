@@ -395,7 +395,14 @@ export function DocumentReader({
               onClick={() => setSlideTab(tab)}
               type="button"
             >
-              {tab === "notes" ? "Study notes" : tab}
+              {/* 🔴 "Speaker notes", NOT "Study notes". What this tab shows is
+                  the LECTURER'S own notes, stored inside the .pptx — it is part
+                  of the file, which is why it belongs in the reader. Calling it
+                  "Study notes" made it sound like the student's own notes,
+                  which are a different thing entirely and live in the Library
+                  (owner 2026-08-05: "shouldn't Study Notes be separate from the
+                  reader?"). Naming it for what it is settles that. */}
+              {tab === "notes" ? "Speaker notes" : tab}
             </button>
           ))}
         </div>

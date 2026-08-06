@@ -150,7 +150,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         />
       )}
 
-      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-input) px-2 py-1">
+      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 py-1">
         <Codicon className="text-(--ui-text-quaternary)" name="search" size="0.75rem" />
         <input
           aria-label={`Search this ${unitLabel === "image" ? "image" : "document"}`}
@@ -197,7 +197,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         <div className="nemesis-reader-counter flex shrink-0 items-center gap-1 text-[0.75rem] text-(--ui-text-tertiary)">
           <input
             aria-label={`${unitLabel} number`}
-            className="w-9 rounded border border-(--ui-stroke-tertiary) bg-(--ui-bg-input) px-1 py-0.5 text-center tabular-nums text-foreground outline-none focus:border-(--ui-stroke-secondary)"
+            className="w-9 rounded border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-1 py-0.5 text-center tabular-nums text-foreground outline-none focus:border-(--ui-stroke-secondary)"
             data-testid="reader-unit-input"
             inputMode="numeric"
             onChange={(event) => {
