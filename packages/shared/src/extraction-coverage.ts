@@ -1,0 +1,349 @@
+/**
+ * What was actually read out of an uploaded document — and what was not.
+ *
+ * 🔴 WHY THIS TYPE EXISTS. `/api/notebooks/extract/file` has always computed a
+ * coverage tally and put it in its JSON response. Nothing ever read it: the
+ * client type (`ExtractedFile`) had no such field, so a 40-of-300-page vision
+ * pass reached the student, the note generator and the chat model as a complete
+ * read of the lecture. The model then answered about pages it had never seen,
+ * and nobody — including us — could tell from the outside.
+ *
+ * A partial read is allowed. Presenting a partial read as a complete one is not.
+ *
+ * 🔴 THE FOUR UNIT COUNTS ARE DISJOINT AND MUST SUM TO `units`. "Read natively"
+ * and "read as pixels" are not exclusive — a page with a heading and a
+ * screenshot underneath it is both — so a fifth state (`unitsBoth`) exists
+ * rather than forcing such a page into one lane and losing the other fact.
+ * `checkCoverage()` enforces the sum, and the builders below are the only
+ * supported way to construct one, because a hand-built record that does not add
+ * up is a lie with a type annotation on it.
+ *
+ * 🔴 THIS IS A WIRE AND STORAGE CONTRACT. It crosses the extraction route's
+ * JSON, `parsed_documents.coverage` (jsonb), the web client and the phone. It
+ * lives in @nemesis/shared for the same reason the upload ceiling does: a number
+ * that appears in more than one file eventually disagrees with itself. Add
+ * optional fields; never rename or repurpose one.
+ *
+ * PURE. No imports, no I/O.
+ */
+
+/** Bumped when the SHAPE changes. Stored alongside every record so a reader can
+ *  tell an old row from a new one instead of guessing from which keys exist. */
+export const EXTRACTION_COVERAGE_VERSION = 1;
+
+/**
+ * Which extraction produced a record.
+ *
+ * 🔴 BUMP THIS WHENEVER EXTRACTION CHANGES WHAT IT CAN READ — a new parser, a
+ * new vision model ladder, a raised page cap. It is what makes "reprocess
+ * everything parsed by version X" an answerable question, and it is the unique
+ * key on `parsed_documents` together with the file's content hash, so a bump
+ * produces a NEW parse row rather than silently overwriting the old one.
+ *
+ * Not a package version: extraction quality does not move with the app's
+ * release number, and tying them would reparse the world on every deploy.
+ */
+export const PARSER_VERSION = "extract-2026-08-06";
+
+/** What the document divides into. `document` is the honest answer for a file
+ *  with no meaningful subdivision — better than inventing "page 1 of 1". */
+export type CoverageUnitKind = "page" | "slide" | "sheet" | "document";
+
+/**
+ * How completely the source was read.
+ *
+ * `partial` is a first-class success: the text is real and worth keeping, and
+ * the student gets it. It carries an obligation — every surface that shows or
+ * uses this document must say what is missing.
+ */
+export type ExtractionState = "complete" | "partial" | "failed";
+
+/** Why a picture in a deck was not described. Counted, never dropped in
+ *  silence — each of these is a different fix, so one bucket would hide which. */
+export type FigureSkipReason =
+  /** A bullet, rule, icon or divider. Correctly ignored. */
+  | "decorative"
+  /** A genuine drawing in a format nothing here can rasterise (vector art). */
+  | "unreadable-format"
+  /** Real content that lost out to the per-deck ceiling. The one that hurts. */
+  | "over-cap"
+  /** Vision is not configured or the provider failed. */
+  | "vision-unavailable";
+
+export interface FigureCoverage {
+  /** Distinct pictures found on the slides, after content deduplication. */
+  found: number;
+  /** …of which this many were actually read and described. */
+  described: number;
+  /** …and this many were not. `skipped === found - described` always. */
+  skipped: number;
+  /** Why, broken down. Only non-zero reasons appear. */
+  reasons: Partial<Record<FigureSkipReason, number>>;
+}
+
+/**
+ * Where text was cut, and by how much.
+ *
+ * The stage matters more than the number: a prompt-budget clip is recoverable
+ * (ask a narrower question, retrieve a different part) while an extraction clip
+ * means the stored source itself is short and nothing downstream can ever get
+ * the rest. Two different problems that must not share one flag.
+ */
+export interface TruncationRecord {
+  stage:
+    /** Cut before the text was ever returned or stored. */
+    | "extract"
+    /** Cut on the way into a model prompt. The source is intact. */
+    | "prompt"
+    /** Cut on the way into study generation. The source is intact. */
+    | "study-material";
+  /** The ceiling that applied, in characters. */
+  limit: number;
+  /** Characters kept. */
+  kept: number;
+  /** Characters dropped. Always > 0 — a record that dropped nothing is not
+   *  recorded at all, so the presence of an entry is itself the signal. */
+  dropped: number;
+}
+
+export interface ExtractionCoverage {
+  version: number;
+  parserVersion: string;
+  unitKind: CoverageUnitKind;
+  /** Total pages / slides / sheets the file contains. */
+  units: number;
+  /** Read ONLY from the file's own text layer. */
+  unitsNative: number;
+  /** Read ONLY by looking at the pixels (vision/OCR). */
+  unitsVision: number;
+  /** Read both ways — a page with real text AND content locked in a picture. */
+  unitsBoth: number;
+  /** Not read at all. The number that must never be hidden. */
+  unitsUnread: number;
+  figures: FigureCoverage;
+  /** Empty when nothing was cut. */
+  truncation: TruncationRecord[];
+  state: ExtractionState;
+}
+
+const NO_FIGURES: FigureCoverage = { found: 0, described: 0, skipped: 0, reasons: {} };
+
+/**
+ * Build a record and derive its state, refusing anything that does not add up.
+ *
+ * Returns the record, or a string saying what is inconsistent. A caller that
+ * cannot build a coherent record must not fall back to a cheerful one — that is
+ * precisely the failure this module exists to prevent — so this is deliberately
+ * awkward to ignore.
+ */
+export function buildCoverage(input: {
+  unitKind: CoverageUnitKind;
+  units: number;
+  unitsNative: number;
+  unitsVision?: number;
+  unitsBoth?: number;
+  unitsUnread?: number;
+  figures?: FigureCoverage;
+  truncation?: readonly TruncationRecord[];
+  parserVersion?: string;
+}): ExtractionCoverage | string {
+  const unitsVision = input.unitsVision ?? 0;
+  const unitsBoth = input.unitsBoth ?? 0;
+  const unitsUnread = input.unitsUnread ?? 0;
+  const parts = [input.unitsNative, unitsVision, unitsBoth, unitsUnread];
+  if (parts.some((n) => !Number.isInteger(n) || n < 0)) return "unit counts must be non-negative integers";
+  if (!Number.isInteger(input.units) || input.units < 0) return "units must be a non-negative integer";
+  const sum = parts.reduce((total, n) => total + n, 0);
+  if (sum !== input.units) return `unit counts sum to ${sum}, but the document has ${input.units} units`;
+
+  const figures = input.figures ?? NO_FIGURES;
+  if (figures.described + figures.skipped !== figures.found) {
+    return `figures: ${figures.described} described + ${figures.skipped} skipped != ${figures.found} found`;
+  }
+  const truncation = [...(input.truncation ?? [])].filter((cut) => cut.dropped > 0);
+
+  const coverage: ExtractionCoverage = {
+    version: EXTRACTION_COVERAGE_VERSION,
+    parserVersion: input.parserVersion ?? PARSER_VERSION,
+    unitKind: input.unitKind,
+    units: input.units,
+    unitsNative: input.unitsNative,
+    unitsVision,
+    unitsBoth,
+    unitsUnread,
+    figures,
+    truncation,
+    state: "complete",
+  };
+  return { ...coverage, state: deriveState(coverage) };
+}
+
+/**
+ * Complete, partial or failed — from the numbers alone.
+ *
+ * 🔴 A SKIPPED DECORATION IS NOT A GAP. Counting icons and rules as missing
+ * content would mark almost every real deck partial, the warning would appear
+ * everywhere, and a warning that appears everywhere is read nowhere. Only
+ * skips that cost real content — an unreadable drawing, a figure over the cap,
+ * vision being off — downgrade the state.
+ */
+export function deriveState(coverage: Omit<ExtractionCoverage, "state">): ExtractionState {
+  const read = coverage.unitsNative + coverage.unitsVision + coverage.unitsBoth;
+  if (coverage.units > 0 && read === 0) return "failed";
+  if (coverage.unitsUnread > 0) return "partial";
+  if (lostFigures(coverage.figures) > 0) return "partial";
+  if (coverage.truncation.some((cut) => cut.stage === "extract")) return "partial";
+  return "complete";
+}
+
+/**
+ * Add a cut that was discovered after the record was built, and re-derive the
+ * state.
+ *
+ * 🔴 THE STATE MUST BE RE-DERIVED, NEVER CARRIED OVER. Text caps are applied
+ * downstream of extraction — a deck's coverage is known before its assembled
+ * markdown is measured against the ceiling — so a record that was `complete`
+ * when built can stop being true a few lines later. Appending the cut while
+ * keeping the old state is exactly the silent-partial bug in miniature.
+ */
+export function withTruncation(coverage: ExtractionCoverage, cuts: readonly TruncationRecord[]): ExtractionCoverage {
+  const added = cuts.filter((cut) => cut.dropped > 0);
+  if (added.length === 0) return coverage;
+  const merged = { ...coverage, truncation: [...coverage.truncation, ...added] };
+  return { ...merged, state: deriveState(merged) };
+}
+
+/** Figures whose absence actually costs the student something. */
+export function lostFigures(figures: FigureCoverage): number {
+  const reasons = figures.reasons;
+  return (reasons["unreadable-format"] ?? 0) + (reasons["over-cap"] ?? 0) + (reasons["vision-unavailable"] ?? 0);
+}
+
+/** Pages/slides read by any means. */
+export function unitsRead(coverage: ExtractionCoverage): number {
+  return coverage.unitsNative + coverage.unitsVision + coverage.unitsBoth;
+}
+
+const UNIT_WORDS: Record<CoverageUnitKind, [one: string, many: string]> = {
+  page: ["page", "pages"],
+  slide: ["slide", "slides"],
+  sheet: ["sheet", "sheets"],
+  document: ["document", "documents"],
+};
+
+function unitWord(kind: CoverageUnitKind, count: number): string {
+  const pair = UNIT_WORDS[kind];
+  return count === 1 ? pair[0] : pair[1];
+}
+
+/**
+ * One sentence for the student, or null when there is genuinely nothing to say.
+ *
+ * Null on a complete read is deliberate: a badge that says "all 40 slides read"
+ * on every document trains people to stop reading badges, and then the one that
+ * says something real is invisible too.
+ */
+export function describeCoverage(coverage: ExtractionCoverage): string | null {
+  if (coverage.state === "complete") return null;
+  const parts: string[] = [];
+  if (coverage.unitsUnread > 0) {
+    const read = unitsRead(coverage);
+    parts.push(
+      `${read} of ${coverage.units} ${unitWord(coverage.unitKind, coverage.units)} could be read`,
+    );
+  }
+  const lost = lostFigures(coverage.figures);
+  if (lost > 0) parts.push(`${lost} ${lost === 1 ? "picture" : "pictures"} couldn't be read`);
+  const cut = coverage.truncation.find((entry) => entry.stage === "extract");
+  if (cut) {
+    parts.push(`the text was cut at ${cut.limit.toLocaleString()} characters (${cut.dropped.toLocaleString()} more were not kept)`);
+  }
+  if (parts.length === 0) return coverage.state === "failed" ? "Nothing in this file could be read." : null;
+  const sentence = parts.join(", and ");
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+/**
+ * The same facts, addressed to the model, with the instruction that makes them
+ * useful.
+ *
+ * 🔴 STATING THE GAP IS NOT ENOUGH — the model has to be told what to DO about
+ * it, or it will helpfully answer from the part it has and never mention the
+ * part it does not. The wording mirrors the truncation notice already used for
+ * prompt-budget clipping in chat-attachments.ts, so the model meets one
+ * consistent rule rather than two competing ones.
+ */
+export function coverageNoticeForModel(coverage: ExtractionCoverage): string | null {
+  if (coverage.state === "complete") return null;
+  if (coverage.state === "failed") {
+    return "[Nothing in this file could be read. Do not answer as though you have its contents; say it could not be read.]";
+  }
+  const facts: string[] = [];
+  if (coverage.unitsUnread > 0) {
+    facts.push(
+      `${coverage.unitsUnread} of ${coverage.units} ${unitWord(coverage.unitKind, coverage.units)} could NOT be read and are not below`,
+    );
+  }
+  const lost = lostFigures(coverage.figures);
+  if (lost > 0) facts.push(`${lost} ${lost === 1 ? "picture was" : "pictures were"} not read`);
+  const cut = coverage.truncation.find((entry) => entry.stage === "extract");
+  if (cut) facts.push(`${cut.dropped.toLocaleString()} characters were dropped when the file was read`);
+  if (facts.length === 0) return null;
+  return `[Incomplete source: ${facts.join("; ")}. If the student's question depends on what is missing, say so plainly rather than answering as though you read the whole document.]`;
+}
+
+/** Parse a record that came back from storage or the wire, or null if it is not
+ *  one. Storage rows predate this type and JSON is not a type system, so every
+ *  field is checked rather than asserted. */
+export function readCoverage(value: unknown): ExtractionCoverage | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  const num = (key: string): number | null => (typeof raw[key] === "number" && Number.isFinite(raw[key]) ? (raw[key] as number) : null);
+  const units = num("units");
+  const unitsNative = num("unitsNative");
+  const unitsVision = num("unitsVision");
+  const unitsBoth = num("unitsBoth");
+  const unitsUnread = num("unitsUnread");
+  if (units === null || unitsNative === null || unitsVision === null || unitsBoth === null || unitsUnread === null) return null;
+  const unitKind = raw["unitKind"];
+  if (unitKind !== "page" && unitKind !== "slide" && unitKind !== "sheet" && unitKind !== "document") return null;
+  const state = raw["state"];
+  if (state !== "complete" && state !== "partial" && state !== "failed") return null;
+
+  const figuresRaw = (typeof raw["figures"] === "object" && raw["figures"] !== null ? raw["figures"] : {}) as Record<string, unknown>;
+  const figureNum = (key: string): number => (typeof figuresRaw[key] === "number" && Number.isFinite(figuresRaw[key]) ? (figuresRaw[key] as number) : 0);
+  const reasonsRaw = (typeof figuresRaw["reasons"] === "object" && figuresRaw["reasons"] !== null ? figuresRaw["reasons"] : {}) as Record<string, unknown>;
+  const reasons: Partial<Record<FigureSkipReason, number>> = {};
+  for (const reason of ["decorative", "unreadable-format", "over-cap", "vision-unavailable"] as const) {
+    const count = reasonsRaw[reason];
+    if (typeof count === "number" && Number.isFinite(count) && count > 0) reasons[reason] = count;
+  }
+
+  const truncation: TruncationRecord[] = [];
+  if (Array.isArray(raw["truncation"])) {
+    for (const entry of raw["truncation"] as unknown[]) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const cut = entry as Record<string, unknown>;
+      const stage = cut["stage"];
+      if (stage !== "extract" && stage !== "prompt" && stage !== "study-material") continue;
+      const limit = typeof cut["limit"] === "number" ? cut["limit"] : 0;
+      const kept = typeof cut["kept"] === "number" ? cut["kept"] : 0;
+      const dropped = typeof cut["dropped"] === "number" ? cut["dropped"] : 0;
+      if (dropped > 0) truncation.push({ stage, limit, kept, dropped });
+    }
+  }
+
+  return {
+    version: typeof raw["version"] === "number" ? raw["version"] : EXTRACTION_COVERAGE_VERSION,
+    parserVersion: typeof raw["parserVersion"] === "string" ? raw["parserVersion"] : "unknown",
+    unitKind,
+    units,
+    unitsNative,
+    unitsVision,
+    unitsBoth,
+    unitsUnread,
+    figures: { found: figureNum("found"), described: figureNum("described"), skipped: figureNum("skipped"), reasons },
+    truncation,
+    state,
+  };
+}

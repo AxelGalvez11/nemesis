@@ -27,7 +27,15 @@
 // upload into a billed API call on our account. That is why the gate below is a real lookup.
 import { NextResponse } from "next/server";
 
+import { withTruncation, type ExtractionCoverage } from "@nemesis/shared";
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
+import {
+  extractCut,
+  pdfCoverage,
+  pdfWholeCoverage,
+  pptxCoverage,
+  singleUnitCoverage,
+} from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
@@ -224,13 +232,18 @@ export async function POST(req: Request): Promise<Response> {
     let result: { title: string | null; text: string };
     let readBy: string | undefined;
     let skippedFigures = 0;
-    let coverage: Record<string, number | boolean> | undefined;
+    // 🔴 ALWAYS SET, for every format and every outcome. It used to be optional
+    // and per-format, so "no coverage field" meant both "read completely" and
+    // "nobody computed it" — and the caller could not tell which. A record that
+    // is absent cannot be checked; a record that is always present can.
+    let coverage: ExtractionCoverage;
     if (kind === "image") {
       const seen = await readWithVision(original, visionMime(sourceName, sourceType) ?? "image/jpeg", {
         prompt: PHOTO_PROMPT,
       });
       result = { text: seen?.text ?? "", title: seen ? guessTitle(seen.text) : null };
       readBy = seen?.model;
+      coverage = singleUnitCoverage({ read: Boolean(seen?.text.trim()), method: "vision" });
     } else if (kind === "pdf") {
       const r = await extractPdfText(original);
       result = { title: r.meta.title, text: r.text };
@@ -239,16 +252,28 @@ export async function POST(req: Request): Promise<Response> {
       // forty pictures of slides counted as fully read. Measured on the owner's real
       // course: 308 such pages across 83 files that all "read" fine before.
       const plan = planPdfRead(r.pageTexts);
+      // The uncapped length, so a cut can be reported as an amount rather than a
+      // boolean. `pageTexts` is what `extractPdfText` capped to produce `text`,
+      // and it keeps every page — so this is the only place the original size is
+      // still knowable.
+      const wholeTextLength = r.pageTexts.join("\n").trim().length;
+      // Which pages vision actually returned text for. Carried rather than
+      // recomputed: "we asked for these pages" and "these pages came back" are
+      // different facts, and counting the request as the result is how a failed
+      // batch would disappear.
+      let readByVision = new Set<number>();
+      let pdfRecord: ExtractionCoverage | undefined;
       // Every page is a picture: readPdfWithVision reads the whole document in one
       // request, with no per-document page cap. Slicing is the fallback for that
       // shape, never the upgrade.
       if (plan.kind === "whole") {
         const whole = await readPdfWithVision(original);
         if (whole?.text.trim()) {
-          const { text: capped, truncated } = capText(whole.text.trim(), TEXT_CAP);
+          const raw = whole.text.trim();
+          const { text: capped } = capText(raw, TEXT_CAP);
           result = { title: result.title ?? guessTitle(capped), text: capped };
           readBy = whole.model;
-          coverage = { pages: r.meta.pages, pagesFromText: 0, pagesRead: r.meta.pages, pagesUnread: 0, truncated };
+          pdfRecord = pdfWholeCoverage(r.meta.pages, extractCut(TEXT_CAP, capped.length, raw.length));
         }
       }
       if (plan.kind !== "text" && !readBy) {
@@ -261,25 +286,34 @@ export async function POST(req: Request): Promise<Response> {
         if (seen.size > 0) {
           result = { ...result, text: read.text };
           readBy = "pages";
+          readByVision = new Set(seen.keys());
         }
-        coverage = {
-          pages: r.meta.pages,
-          pagesFromText: r.meta.pages - thin.length,
-          pagesRead: seen.size,
-          // Counted against EVERY picture-page, not just the ones that were sent —
-          // a page dropped to the per-document cap is unread too, and rolling it
-          // into pagesFromText would make the cap invisible.
-          pagesUnread: thin.length - seen.size,
-          truncated: seen.size > 0 ? read.truncated : r.meta.truncated,
-        };
-      } else if (plan.kind === "text" && r.meta.truncated) {
-        // Nothing to read as a picture, but the tail was still dropped at TEXT_CAP.
-        // That was computed and thrown away; say it, so a clipped source is never
-        // presented as a whole one.
-        coverage = { pages: r.meta.pages, truncated: true };
+        pdfRecord = pdfCoverage({
+          pageTexts: r.pageTexts,
+          readByVision,
+          truncation: extractCut(TEXT_CAP, result.text.length, Math.max(wholeTextLength, result.text.length)),
+        });
       }
+      if (plan.kind === "text") {
+        // Nothing to read as a picture. The tail may still have been dropped at
+        // TEXT_CAP, which used to be computed and thrown away.
+        pdfRecord = pdfCoverage({
+          pageTexts: r.pageTexts,
+          readByVision,
+          truncation: extractCut(TEXT_CAP, r.text.length, wholeTextLength),
+        });
+      }
+      // A "whole" plan whose vision call produced nothing: neither branch above
+      // set a record, and the pages genuinely were not read.
+      coverage = pdfRecord ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision });
     } else if (kind === "docx") {
       result = extractDocxText(bytes);
+      // 🔴 ONE "document", NOT ONE PAGE. Word paginates at layout time and this
+      // extraction is a tag strip — it cannot see page boundaries, so claiming
+      // "page 1 of 1" for a 40-page dissertation would invent a locator that
+      // every later citation would point at falsely. Replacing this with real
+      // units is Phase 3's job, and the honest unit until then is the file.
+      coverage = singleUnitCoverage({ read: result.text.trim().length > 0, method: "native" });
     } else {
       // A lecture deck's content is often a picture — a pathway, a curve, a labelled
       // figure — and the text extractor cannot see any of it. Read the figures the
@@ -304,7 +338,13 @@ export async function POST(req: Request): Promise<Response> {
       // and diagrams were read, how many pictures were found, and for each picture
       // that was NOT described, which reason applied.
       if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
-      coverage = { ...deck.coverage, imagesDescribed: figures.size };
+      coverage = pptxCoverage({
+        counts: deck.coverage,
+        // What vision RETURNED, not what was planned. A figure that was queued
+        // and whose description failed is a figure the student did not get.
+        described: figures.size,
+        visionAvailable: visionConfigured(),
+      });
     }
 
     let text = result.text.trim();
@@ -316,8 +356,11 @@ export async function POST(req: Request): Promise<Response> {
     // outcome this route is built to avoid.
     if (kind !== "pdf") {
       const capped = capText(text, TEXT_CAP);
+      // withTruncation re-derives the state: a deck that was complete when its
+      // slides were counted stops being complete once its text is clipped, and
+      // appending the cut without re-deriving would leave the old answer.
+      coverage = withTruncation(coverage, extractCut(TEXT_CAP, capped.text.length, text.length));
       text = capped.text;
-      if (capped.truncated) coverage = { ...(coverage ?? {}), truncated: true };
     }
     // A scanned or photographed PDF has no text LAYER to extract — the words are
     // pixels. That used to be the end of the road (the 422 below). When vision is
@@ -333,6 +376,10 @@ export async function POST(req: Request): Promise<Response> {
         // always arrived here with title null. Now that there IS text, guess from
         // it — but ONLY on this path, so Word/PowerPoint titles are untouched.
         result = { ...result, title: result.title ?? guessTitle(text) };
+        // The record built above counted every page unread, which was true a
+        // moment ago and is not any more. Replace it rather than leaving the
+        // pessimistic one: an honest record is one that keeps up.
+        coverage = pdfWholeCoverage(coverage.units || 1);
       }
     }
 
@@ -364,6 +411,11 @@ export async function POST(req: Request): Promise<Response> {
       kind,
       readBy: readBy ?? "text",
       chars: text.length,
+      // Logged so a partial read is findable in production without a student
+      // having to report one. `state` is the field to alert on.
+      state: coverage.state,
+      unitsUnread: coverage.unitsUnread,
+      figuresSkipped: coverage.figures.skipped,
       durationMs: Date.now() - startedAt,
     }));
     return NextResponse.json({
@@ -377,10 +429,14 @@ export async function POST(req: Request): Promise<Response> {
       // Present only when a deck had more figures than the per-deck cap, so a
       // partial read is never presented as a complete one.
       ...(skippedFigures > 0 ? { skippedFigures } : {}),
-      // The full account of what was read and what was not: slides, notes, charts
-      // and figures for a deck; pages read from text, read as pictures, and left
-      // unread for a PDF.
-      ...(coverage ? { coverage } : {}),
+      // 🔴 ALWAYS PRESENT. What was read and what was not — pages/slides read
+      // natively, read as pixels, read both ways, and left unread; figures kept
+      // and skipped with reasons; every cut with its stage and amount.
+      //
+      // Unconditional on purpose. While this was optional, its absence was
+      // ambiguous between "complete" and "nobody computed it", and every client
+      // resolved that ambiguity the flattering way.
+      coverage,
     });
   } catch (err) {
     console.error(JSON.stringify({

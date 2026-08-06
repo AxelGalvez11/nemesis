@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE } from "@nemesis/shared";
+import { buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
 
 import { DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
@@ -206,4 +206,66 @@ test("🔴 every importable document type has the mime its bucket needs", () => 
   }
   assert.equal(DOCUMENT_MIME[".md"], "text/markdown");
   assert.equal(DOCUMENT_MIME[".txt"], "text/plain");
+});
+
+// --- The model is told what was NOT read ---------------------------------------
+
+test("🔴 a partly-read lecture reaches the model with the gap stated", () => {
+  // The defect this whole change exists for: the route knew 260 of 300 pages
+  // were unread, the client dropped the field, and the model answered about the
+  // lecture as though it had seen all of it.
+  const coverage = buildCoverage({
+    unitKind: "page", units: 300, unitsNative: 0, unitsVision: 40, unitsUnread: 260,
+  }) as ExtractionCoverage;
+  const [block] = fitAttachmentBlocks([
+    { content: "Digoxin has a narrow therapeutic index.", coverage, label: "lecture.pdf", type: "application/pdf" },
+  ]);
+  assert.match(block ?? "", /260 of 300 pages could NOT be read/);
+  assert.match(block ?? "", /say so plainly/);
+});
+
+test("the coverage line sits OUTSIDE the untrusted fence", () => {
+  // 🔴 It is our measurement, not the document's words. Inside the fence, a
+  // lecture containing the sentence "all pages were read" could impersonate it.
+  const coverage = buildCoverage({
+    unitKind: "slide", units: 40, unitsNative: 40,
+    figures: { found: 71, described: 10, skipped: 61, reasons: { "unreadable-format": 61 } },
+  }) as ExtractionCoverage;
+  const [block] = fitAttachmentBlocks([
+    { content: "Slide 1", coverage, label: "immunology.pptx", type: "application/pptx" },
+  ]);
+  const fenceAt = (block ?? "").indexOf(UNTRUSTED_FENCE);
+  const noticeAt = (block ?? "").indexOf("61 pictures were not read");
+  assert.ok(noticeAt > -1, "the notice must be present");
+  assert.ok(fenceAt > -1 && noticeAt < fenceAt, "the notice must come before the fence opens");
+});
+
+test("a complete read spends no prompt on a disclaimer", () => {
+  const coverage = buildCoverage({ unitKind: "page", units: 4, unitsNative: 4 }) as ExtractionCoverage;
+  const [block] = fitAttachmentBlocks([
+    { content: "All four pages.", coverage, label: "handout.pdf", type: "application/pdf" },
+  ]);
+  assert.doesNotMatch(block ?? "", /Incomplete source/);
+});
+
+test("an attachment with NO coverage says nothing either way", () => {
+  // Absent means unknown — an older deployment, or a lane that does not report.
+  // It must not be narrated as complete, and it must not invent a warning.
+  const [block] = fitAttachmentBlocks([{ content: "text", label: "notes.txt", type: "text/plain" }]);
+  assert.doesNotMatch(block ?? "", /Incomplete source/);
+});
+
+test("a prompt-budget cut and an unread-page gap are stated SEPARATELY", () => {
+  // Different problems: one is recoverable with a narrower question, the other
+  // is content that is not in the system at all.
+  const coverage = buildCoverage({
+    unitKind: "page", units: 10, unitsNative: 6, unitsUnread: 4,
+  }) as ExtractionCoverage;
+  const [block] = fitAttachmentBlocks(
+    [{ content: "z".repeat(500), coverage, label: "long.pdf", type: "application/pdf" }],
+    100,
+    100,
+  );
+  assert.match(block ?? "", /Truncated: 100 of 500 characters shown/);
+  assert.match(block ?? "", /4 of 10 pages could NOT be read/);
 });

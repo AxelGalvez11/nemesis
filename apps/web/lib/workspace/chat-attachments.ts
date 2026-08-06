@@ -1,6 +1,15 @@
 "use client";
 
-import { courseFolderSegment, matchCourse, UNSORTED_FOLDER, UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@nemesis/shared";
+import {
+  courseFolderSegment,
+  coverageNoticeForModel,
+  matchCourse,
+  readCoverage,
+  UNSORTED_FOLDER,
+  UNTRUSTED_CONTENT_RULE,
+  wrapUntrusted,
+  type ExtractionCoverage,
+} from "@nemesis/shared";
 
 import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
@@ -264,6 +273,18 @@ export interface ExtractedFile {
   kind?: "pdf" | "docx" | "pptx" | "image";
   /** Bytes actually read. */
   bytes?: number;
+  /**
+   * 🔴 WHAT WAS READ, AND WHAT WAS NOT. The route has computed this all along;
+   * this type did not have the field, so it was dropped at the boundary and had
+   * ZERO consumers repo-wide. A 40-of-300-page vision pass therefore reached the
+   * student, the note generator and the chat model as a complete read.
+   *
+   * Optional only because a response from an older deployment will not carry
+   * one. A MISSING record means "unknown", never "complete" — read it with
+   * `readCoverage`, and when it is null say nothing rather than claiming a full
+   * read on the strength of a field that was not there.
+   */
+  coverage?: ExtractionCoverage;
 }
 
 /**
@@ -417,10 +438,21 @@ export async function extractFile(
     readBy?: string;
     kind?: ExtractedFile["kind"];
     bytes?: number;
+    coverage?: unknown;
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
-  return { bytes: body.bytes, kind: body.kind, readBy: body.readBy, text: body.text, title: body.title ?? null };
+  return {
+    bytes: body.bytes,
+    kind: body.kind,
+    readBy: body.readBy,
+    text: body.text,
+    title: body.title ?? null,
+    // Validated rather than cast: this crossed the wire as JSON, and a shape
+    // that does not check out must become `undefined` (unknown) rather than a
+    // half-built record that later reads as a claim about the document.
+    coverage: readCoverage(body.coverage) ?? undefined,
+  };
 }
 
 /** Marks the trailing line of a sent message that lists what was attached. */
@@ -474,6 +506,12 @@ export interface AttachmentSource {
   /** Library source row for this file — teaches the model the ?source= id
    *  its note citations must use. */
   sourceId?: string;
+  /**
+   * What the extractor managed to read. Absent means UNKNOWN (an older
+   * deployment, or a file read by a path that does not report) — never
+   * "complete".
+   */
+  coverage?: ExtractionCoverage;
 }
 
 /**
@@ -504,6 +542,17 @@ export function fitAttachmentBlocks(
     const notice = clipped.length < full.length
       ? `\n\n[Truncated: ${clipped.length.toLocaleString()} of ${full.length.toLocaleString()} characters shown. The rest of this file was NOT sent to you. If the student's question depends on the part you cannot see, say so plainly rather than answering as though you read the whole file.]`
       : "";
+    // 🔴 TWO DIFFERENT GAPS, BOTH DISCLOSED, AND THEY ARE NOT THE SAME GAP.
+    //
+    //   `notice` above  — the text exists but did not fit in this prompt.
+    //   `gap` below     — the text does NOT exist: pages nobody could read,
+    //                     figures nobody could see, a source clipped at
+    //                     extraction. No later prompt can recover it.
+    //
+    // Collapsing them into one sentence would tell the model to "ask a narrower
+    // question" about content that is simply not in the system.
+    const gap = source.coverage ? coverageNoticeForModel(source.coverage) : null;
+    const gapNotice = gap ? `\n\n${gap}` : "";
     // The rule rides the FIRST block only, not every one. It has to sit inside an
     // attachment block rather than above them all, because chat-routing.ts splits
     // the wire text at the first "### Attachment: " marker to recover what the
@@ -520,8 +569,13 @@ export function fitAttachmentBlocks(
     // own filename belongs to the app), content INSIDE it. The label is repeated
     // on the fence line by wrapUntrusted so the model can tell two fenced blocks
     // apart without leaving the fence.
+    // 🔴 THE COVERAGE LINE GOES OUTSIDE THE FENCE. It is OUR measurement of the
+    // file, not something the file said — and the fence exists precisely to mark
+    // everything inside it as words a stranger wrote. A document that contained
+    // the sentence "all pages were read successfully" must never be able to
+    // impersonate this line.
     blocks.push(
-      `### Attachment: ${source.label}\nType: ${source.type || "unknown"}${sourceLine}\n\n` +
+      `### Attachment: ${source.label}\nType: ${source.type || "unknown"}${sourceLine}${gapNotice}\n\n` +
       rule +
       wrapUntrusted(source.label, `${clipped}${notice}`),
     );
@@ -612,6 +666,10 @@ export async function prepareChatAttachments(text: string, files: readonly File[
   // fitAttachmentBlocks depends on for its budget arithmetic.
   const sources: AttachmentSource[] = await Promise.all(files.map(async (file, index) => {
     let content = "";
+    // 🔴 THE FIELD THAT USED TO BE THROWN AWAY ON THIS LINE. `extractFile(...).text`
+    // discarded the whole record, which is how a partly-read lecture reached the
+    // model looking whole.
+    let coverage: ExtractionCoverage | undefined;
     try {
       if (isReadableText(file)) content = await file.text();
       // A picture goes to the same extractor as a document now: the server reads it with a
@@ -623,13 +681,15 @@ export async function prepareChatAttachments(text: string, files: readonly File[
       // thirty-megabyte deck is uploaded ONCE and everything afterwards refers to that one
       // object. Without this the extractor would upload its own copy of the same bytes.
       else if (isExtractable(file)) {
-        content = (await extractFile(file, uid, { sourceId: attachments[index]?.sourceId })).text;
+        const extracted = await extractFile(file, uid, { sourceId: attachments[index]?.sourceId });
+        content = extracted.text;
+        coverage = extracted.coverage;
       }
       else content = "File attached; no text extractor is available for this format.";
     } catch (cause) {
       content = cause instanceof Error ? cause.message : "This attachment could not be read.";
     }
-    return { content, label: relativePath(file) || file.name, type: file.type };
+    return { content, coverage, label: relativePath(file) || file.name, type: file.type };
   }));
 
   // Marry each file's text to its Library source id (persistChatAttachment
