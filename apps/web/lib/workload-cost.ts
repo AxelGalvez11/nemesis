@@ -159,7 +159,7 @@ export const PLAN_LIMITS_CHECKED = "2026-08-05";
  * no paying customer: 25 owner enterprise rows and one canceled free.
  *
  * TWO MORE MOVES ON 2026-08-05, owner's call, both on the recording meter only:
- *   free  7,200s (2 hours)   -> 1,800s (30 minutes)
+ *   free  7,200s (2 hours)   -> 1,800s (30 minutes)   [raised again 08-06, below]
  *   plus 72,000s (20 hours)  -> 108,000s (30 hours)
  * Free's 2 hours was the one cap in the ladder that cost real money with no
  * revenue behind it, and it was set when the audio lane was a guess. 30 minutes
@@ -171,15 +171,26 @@ export const PLAN_LIMITS_CHECKED = "2026-08-05";
  * is what protects this.
  *
  * THEN MAX WAS RETIRED, same day (owner: "max is retired, agent pro is the
- * ceiling"). It is gone from PlanCode and PLANS, so **the ladder is now
- * 0.5 / 30 / 70 hours across three plans** and every figure this module reports
- * is about those three. Its plan_entitlements rows are untouched — deleting
- * them would change `consume_usage` behaviour for any legacy record, and Max
- * had no subscribers to migrate. Revert recipe if it ever comes back:
+ * ceiling"). It is gone from PlanCode and PLANS. Its plan_entitlements rows are
+ * untouched — deleting them would change `consume_usage` behaviour for any
+ * legacy record, and Max had no subscribers to migrate. Revert recipe if it ever
+ * comes back:
  *   max  price $99 · 12,000 recording minutes · 125M/20M tokens · 750 searches
  *        · 1,250 asks/day · premium answer lane true
+ *
+ * FREE WENT BACK UP ON 2026-08-06 (owner: "change free tier to have 1 hour of
+ * free recording, lectures are ~1hr"): 1,800s -> 3,600s, so **the ladder is now
+ * 1 / 30 / 70 hours across three plans**. This is an ACQUISITION move, not a
+ * cost one, and the model says so: a free student who burns the whole allowance
+ * goes from $1.38 to $1.43 a month — five cents, because $1.17 of it is the flat
+ * platform line and the audio lane is $0.10/hour. What changes is that the
+ * allowance now finishes a lecture instead of stopping halfway through one,
+ * which is the difference between demonstrating the pipeline and demonstrating
+ * that it cuts out. Plus is still exactly 30x Free, which is the floor the
+ * "free stays a demonstration" test enforces — see the comment there before
+ * raising Free again.
  */
-export const LADDER_RESHAPED = "2026-08-05";
+export const LADDER_RESHAPED = "2026-08-06";
 
 /**
  * The plans that exist. Max ($99 / 200 hours) was RETIRED 2026-08-05 (owner:
@@ -223,8 +234,11 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     premiumAnswerLane: false,
     priceUsd: 0,
     searchMonthly: 60,
-    // 1,800s = 30 minutes (owner 2026-08-05). One class, not a month of them.
-    transcriptionMinutes: 30,
+    // 3,600s = 1 hour (owner 2026-08-06: "lectures are ~1hr"). The unit a student
+    // measures in is ONE LECTURE, and 30 minutes cut a real one in half — the free
+    // plan has to finish the thing it starts or it demonstrates nothing. Still one
+    // class, not a month of them.
+    transcriptionMinutes: 60,
   },
   plus: {
     askDaily: 125,

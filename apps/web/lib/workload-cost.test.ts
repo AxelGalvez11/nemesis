@@ -163,9 +163,12 @@ test("Plus is half of Pro on the meters that scale, and Pro is the ceiling", () 
 // owner sets these three numbers directly.
 test("recording follows the owner's three numbers, not the half-of-Pro rule", () => {
   // Owner 2026-08-05: Free 2h -> 30 minutes, Student 20h -> 30h. Free's is the
-  // one allowance in the ladder with no revenue behind it at all, and 30 minutes
-  // is a demonstration — one class, start to finish — not a month of lectures.
-  assert.equal(PLANS.free.transcriptionMinutes, 30);
+  // one allowance in the ladder with no revenue behind it at all, so it is a
+  // demonstration — one class, start to finish — not a month of lectures.
+  // Owner 2026-08-06: 30 minutes -> 1 hour, "lectures are ~1hr". Same intent,
+  // corrected unit: half an hour stops in the middle of the one class it was
+  // meant to demonstrate. Costs 5c more per active free user (see the model).
+  assert.equal(PLANS.free.transcriptionMinutes, 60);
   assert.equal(PLANS.plus.transcriptionMinutes, 30 * 60);
   // Pro cut to 70 hours on 2026-07-29 (owner). 83 hours sat inside the 103.7-hour
   // break-even wall but left only $3.27 a month on the plan pushed hardest.
@@ -183,7 +186,15 @@ test("recording follows the owner's three numbers, not the half-of-Pro rule", ()
   assert.ok(share > 0.35 && share < 0.55, `Student holds ${round(share, 3)} of Pro's hours`);
   // Free is a taste of the product, not a fraction of a plan: the gap to Student
   // has to be big enough that upgrading is obviously the way to keep going.
-  assert.ok(PLANS.plus.transcriptionMinutes >= PLANS.free.transcriptionMinutes * 30, "free stays a demonstration");
+  //
+  // 🔴 SITTING EXACTLY ON THE LINE since 2026-08-06 — Free's hour against
+  // Student's 30 is 30x, not 30x-and-change. That is deliberate (an hour is one
+  // lecture, and a lecture is the unit a student thinks in), but it means the
+  // NEXT rise in Free fails here rather than anywhere near the number that
+  // moved. If that is the intended trade, move this threshold in the same
+  // commit and say why; do not discover it as a mystery red test.
+  const demonstrationMultiple = PLANS.plus.transcriptionMinutes / PLANS.free.transcriptionMinutes;
+  assert.ok(demonstrationMultiple >= 30, `free stays a demonstration — Student is only ${demonstrationMultiple}x it`);
 });
 
 // Every surface that advertises a recording allowance, and the cap it must agree
@@ -205,22 +216,38 @@ const RECORDING_COPY_FILES = [
 ] as const;
 
 test("advertised recording allowances match the plan caps, everywhere they are advertised", () => {
-  const paidHours = new Set([PLANS.plus, PLANS.pro].map((plan) => plan.transcriptionMinutes / 60));
+  // EVERY plan, not just the paid ones. Free was sub-hour until 2026-08-06 and
+  // could only ever be advertised in minutes; at a whole hour it belongs in the
+  // hours set, and a plan that goes back to a fraction drops out of it again and
+  // is carried by the minutes branch below. Neither list is hand-maintained.
+  const advertisedHours = new Set(
+    Object.values(PLANS)
+      .map((plan) => plan.transcriptionMinutes / 60)
+      .filter((hours) => Number.isInteger(hours)),
+  );
   let claims = 0;
   for (const path of RECORDING_COPY_FILES) {
     const source = repoFile(path);
     // Up to two words may sit between the number and the unit, so "20 hours",
     // "20 recording hours" and "20 hours of recording" all get caught.
-    for (const [claim, hours] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}hours\b/g)) {
+    // 🔴 `hours?` — SINGULAR COUNTS. Free's own copy reads "1 hour of lecture
+    // recording", which matched neither branch while this said `hours`: the
+    // guard went green with Free's only two claims completely unchecked, and
+    // the claims floor below absorbed the loss because two minutes-claims had
+    // gone away in the same edit.
+    for (const [claim, hours] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}hours?\b/g)) {
       claims += 1;
-      assert.ok(paidHours.has(Number(hours!.replace(/,/g, ""))), `${path} advertises "${claim}", which is no plan's cap`);
+      assert.ok(
+        advertisedHours.has(Number(hours!.replace(/,/g, ""))),
+        `${path} advertises "${claim}", which is no plan's cap`,
+      );
     }
     for (const [claim, minutes] of source.matchAll(/(\d[\d,]*)\s+(?:\w+\s+){0,2}minutes\b/g)) {
       claims += 1;
       assert.equal(
         Number(minutes!.replace(/,/g, "")),
         PLANS.free.transcriptionMinutes,
-        `${path} advertises "${claim}" — the only sub-hour allowance is Free's`,
+        `${path} advertises "${claim}" — a minute figure can only be Free's allowance`,
       );
     }
   }
@@ -275,7 +302,10 @@ test("every plan can record what it advertises", () => {
   // allowance test so a future edit cannot quietly restore an 80-hour promise.
   assert.equal(modelStudentMonth(HEAVY_STUDENT).withinTranscriptionCap, false);
   assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 30, plan: "plus" }).withinTranscriptionCap, true);
-  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 0.5, plan: "free" }).withinTranscriptionCap, true);
+  // Free advertises one hour as of 2026-08-06, and one hour is the whole point:
+  // a lecture runs about an hour, so an allowance that cannot hold one is not a
+  // demonstration of anything.
+  assert.equal(modelStudentMonth({ ...HEAVY_STUDENT, audioHours: 1, plan: "free" }).withinTranscriptionCap, true);
 });
 
 // ── The two ledgers ──────────────────────────────────────────────────────────
