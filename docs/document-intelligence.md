@@ -225,7 +225,9 @@ not sufficient. The real biases are in numbers with no words in them:
 > That list is gone, not because it was wrong — most of it was right and all of it is accounted for —
 > but because a second numbering scheme living beside the owner's is how a repo ends up with two
 > governing plans and a session that follows the stale one. **The Phase order below is the only
-> plan.** §6.6 maps every old stage into it so nothing is lost.
+> plan.** §6.6 maps every old stage into it so nothing is lost, and **§6.7 is the progress ledger** —
+> the one place a phase's status is recorded, and the only place the words DONE / IN PROGRESS /
+> BLOCKED / NOT STARTED may be used about a phase.
 
 ### 6.1 The target, stated precisely
 
@@ -293,11 +295,16 @@ retries and recovery · and no silent downstream truncation.
 
 ### 6.4 Phase order and acceptance
 
-**Phase 0 — Truthfulness. DONE.** PR #442. `ExtractionCoverage` in `packages/shared` is the canonical
+> **Status lives in §6.7, not here.** These entries state what each phase *is* and what would count as
+> acceptance. Where it currently stands — and whether it is live — is recorded once, in the ledger.
+> Two copies of a status is how a phase comes to be described as finished in one paragraph and
+> unstarted in another.
+
+**Phase 0 — Truthfulness.** PR #442. `ExtractionCoverage` in `packages/shared` is the canonical
 contract and the only coverage shape permitted; rescued parser code adapts to it rather than
 introducing a second. Disclosure reaches the student and the model.
 
-**Phase 0b — Durable persistence. DONE, deployed, live-accepted.** PR #447 (schema, applied as
+**Phase 0b — Durable persistence.** PR #447 (schema, applied as
 `20260806173152`) and #446 (runtime). A parse survives reload; re-parsing the same bytes is idempotent
 (verified: two POSTs, one row, `attempts=2`); `complete` cannot disagree with `coverage` because a
 CHECK constraint ties them.
@@ -329,11 +336,31 @@ may be bounded — the stored source and the searchable index may not be silentl
 | Cap | Value | Where |
 |---|---|---|
 | `TEXT_CAP` | 200,000 chars | `apps/web/lib/pdf/extract.ts:18` |
+| `MAX_ATTACHMENT_CHARS` | 60,000 chars | `apps/web/lib/workspace/chat-attachments.ts:37` — the chat handoff, **per file** |
+| `MAX_TOTAL_CHARS` | 150,000 chars | `apps/web/lib/workspace/chat-attachments.ts:38` — the chat handoff, per turn |
 | `MATERIAL_CHAR_LIMIT` | 9,000 chars | `apps/web/lib/workload-cost.ts:315` **and** `apps/web/lib/workspace/study-artifact-content.ts:44` — defined twice |
 | `LIBRARIAN_TEXT_CHARS` | 60,000 chars | `apps/web/lib/workspace/library-librarian.ts:39` |
 | `DOC_LIMIT` | 40 docs/tick | `supabase/functions/library-index/index.ts:41` |
 | `MAX_CHUNKS_PER_DOC` | 60 chunks | `supabase/functions/library-index/index.ts:42` |
 | fixed vision-page limit | 40 pages | PDF vision fallback |
+
+🔴 **The two chat-handoff caps were missing from this table until 2026-08-06, and their absence is
+the exact failure the table exists to prevent.** They are the boundary *after* extraction: a document
+can be read completely, recorded as `complete`, and still reach the model with its ending removed.
+The per-file cap sat **below** the per-turn budget, so a single ordinary lecture — 57 slides, 62,040
+characters — lost its last slides to save 3.3% of itself while 88,000 characters of that same turn's
+budget went unspent. PR #443 corrects the arithmetic and the wording of the notice. **It is listed
+here anyway, and must stay listed**: the immediate bug and the standing obligation are different
+things. Every cap on this line has to remain justified, observable, and disclosed when it changes
+what can be answered — a fix does not retire the entry, it only changes the value.
+
+Two general rules this row makes concrete:
+
+- **A cap after the parse is still a cap on understanding.** Auditing only the extraction lane would
+  have declared this document fully understood on the same day it was being cut.
+- **Disclosure must be in the document's own units.** The cut *was* announced, in characters. The
+  model could not map "60,000 of 62,040 characters" onto a lecture, so it named slide 46 when the
+  real boundary was slide 55. A confident wrong location is worse than no location.
 
 Salvage note: `supabase/migrations/20260805040000_source_indexing.sql` already drafts this schema
 (`library_chunks.origin_type`, a one-origin CHECK). It is **unapplied**, and #447 rewrote part of it in
@@ -343,6 +370,32 @@ terms of `parsed_document_id`. Reconcile it; do not rewrite it.
 source locations. A citation is not accepted until: its source version exists · its page/slide/block
 locator exists · it opens the correct location · and the cited evidence supports the generated claim.
 Not complete until tested through the reader.
+
+**Phase 6 — Semantic extractors.** 🔴 **This phase was missing from this list until 2026-08-06** — the
+numbering ran 5 → 7, and a phase that is not written down is a phase nobody schedules. It is restored
+here with its original meaning from the owner's eight, not re-scoped: it is where *document*
+understanding becomes *academic* understanding.
+
+The extractors: learning objectives · key concepts · definitions · processes and pathways · equations ·
+important figures and tables · dates and deadlines · grading rules · exam information · assignments ·
+required readings · syllabus events · instructor emphasis where the evidence supports it.
+
+Two constraints make this a phase rather than a prompt:
+
+- **Every extracted fact keeps a locator back to the source blocks it came from.** Without that, a
+  semantic extractor is just a second summary corpus that cannot be checked, cannot be re-derived when
+  the parser improves, and cannot be cited. It would recreate the problem Phase 5 exists to solve, one
+  layer up.
+- **Structure before inference.** Where the document states something structurally — a heading that
+  says "Learning objectives", a table of due dates — that is read, not guessed at. A model is for the
+  cases where deterministic structure genuinely does not exist.
+
+Derived artifacts (notes, decks, tests, calendar events) inherit provenance *and* course identity from
+the source rather than carrying copied labels.
+
+Carried in from old Stage 2, still unfixed and still a correctness bug: `EXAM_ITEM_RULES` writes
+clinical vignettes, which fails the law-student / mechanical-engineering test in `CLAUDE.md`. Field
+neutrality belongs to this phase because this is where generated material acquires its shape.
 
 **Phase 7 — Capacity.** Large files, including the 123.8 MB immunology deck. Explicitly not earlier:
 file-size policy is not the primary quality problem, and raising the limit before Phase 1 exists would
@@ -372,7 +425,7 @@ programme as a whole, not for any one phase.
 |---|---|
 | 0 — the 4.5 MB ceiling | **Done.** By-reference ingest; `MAX_SOURCE_BYTES` is the real limit. |
 | 1 — tell the truth about what was read | **Done.** Phase 0 (#442) + Phase 0b (#447). |
-| 2 — discipline-neutral item rules | Carried, unscheduled. Belongs with Phase 5 generation. Still a live correctness bug: `EXAM_ITEM_RULES` writes clinical vignettes, which fails the law-student/mech-eng test. |
+| 2 — discipline-neutral item rules | **Phase 6.** Was "carried, unscheduled" while Phase 6 was missing from §6.4; now that the phase is restored it has a home. Still a live correctness bug: `EXAM_ITEM_RULES` writes clinical vignettes, which fails the law-student/mech-eng test. |
 | 3 — keep the figures | Phase 2. Figures become part of the canonical unit record rather than a side table. |
 | 4 — the debug view | Phase 1. `/dev-preview/extract` is how a job's output is inspected, and how the benchmark reads results. Build it with the worker, not after. |
 | 5 — occlusion from a stored figure | Domain layer, after Phase 2. |
@@ -380,6 +433,35 @@ programme as a whole, not for any one phase.
 | 7 — PDF page rasters · 8 — PDF geometry | Phase 2, merged. They were never separable: geometry without pixels cannot check itself. |
 | 9 — generators read the model | Phase 4 (retrieval) + Phase 5 (provenance). Includes re-pricing `workload-cost.ts`, which assumes exactly 9,000 characters. |
 | Deferred — slide rendering / SmartArt-as-drawn | Phase 3, still needs an owner decision (LibreOffice in a container). |
+
+### 6.7 Progress ledger
+
+**Five different things are routinely confused, so this table separates them.** Designed ≠ coded ≠
+merged ≠ deployed ≠ proven on real documents. A phase is **DONE** only when its acceptance criteria
+are *proven*, not when its code merges and not when its tests pass.
+
+Statuses are exactly four: **DONE · IN PROGRESS · BLOCKED · NOT STARTED**.
+
+| Phase | Status | Live in production? | Benchmark evidence | Blocking gap |
+|---|---|---|---|---|
+| 0 — Truthfulness | DONE | **Yes** — `95ecd9e3` (#442), carried live by `cc5093fe`. Proven by grepping the deployed bundle for `reader-coverage-note` and `Incomplete source`, never from a deploy badge. | SOLO not run. The *complete* case is live-accepted on a real 12-page syllabus. **The partial case is unverified**: no real partial fixture under 50 MiB exists. | Nothing blocks the phase; the partial-disclosure claim stays open until a genuine partial is measured — **do not manufacture one**. |
+| 0b — Durable parse | DONE | **Yes** — `ab3e7178` (#447) schema applied as `20260806173152`; runtime carried by `cc5093fe`. | SOLO not run. Live acceptance: same file POSTed twice → **1** row, `attempts=2`, `state=parsed`, `complete=true`, coverage `complete` 12/12 native; RLS cross-user read returns 0. | None. |
+| Immediate — chat handoff truncation | IN PROGRESS | **No.** The defect is live; the fix is not. | Reproduced on the owner's real 9.6 MB / 57-slide deck: cut at slide 55, model reported slide 46. | PR #443 conflicts with `main` and needs a rebase. |
+| 1 — Document worker | IN PROGRESS | No | Runtime chosen by measurement (`docs/document-worker-spike.md`): Supabase Edge disqualified at 959 MB Deno / 808 MB Node against a 256 MB cap. Lease heartbeat 0/49 inline vs 50/50 in a `worker_thread`. | PR #454 is foundation only — worker endpoint, `worker_thread` execution, kick, cron recovery, status API and cutover are unbuilt. |
+| 2 — PDF native + visual | NOT STARTED | No | Baseline measured: `pdfCoverage` accepts no figure input at all, so a diagram lost from a text-rich page is invisible to the honesty layer as well as the parser. | Depends on Phase 1. |
+| 3 — Office fidelity | NOT STARTED | No | Baseline measured: DOCX is a regex tag strip; PPTX is genuinely strong (notes, SmartArt, charts, tables, TIFF/EMF, glyph filtering). | Depends on Phase 2's canonical model. Slide rendering needs an owner decision. |
+| 4 — Source retrieval | NOT STARTED | No | Baseline: `parsed_documents` = 1 row; `library_chunks where origin_type='source'` = 0. Only notes are indexed. | Depends on Phases 2–3. |
+| 5 — Verified citations | NOT STARTED | No | None. Some stored locations are model-supplied. | Depends on Phase 4. |
+| 6 — Semantic extractors | NOT STARTED | No | None. | Was missing from this document entirely until 2026-08-06. Depends on Phase 5's locators. |
+| 7 — Capacity | NOT STARTED | No | Measured on the real 123.8 MB deck: old fetch path peaked at 676 MiB RSS (5.73×); after #434/#435, 391 MiB (3.31×). Parse side still holds the whole archive (+121 MiB, 99.7% of it media). | Depends on Phase 1. Bounded entry-at-a-time Office reader is designed (`docs/source-ingestion-jobs.md`) and unbuilt. |
+
+**Benchmark status, both halves: not run.** `docs/document-benchmark.md` records no value for any
+metric. Therefore no parity claim of any kind is currently supported, in either direction.
+
+**Two CI signals are currently unavailable and must not be read as failures**: GitHub Actions returns
+red with **zero steps executed** (a quota lockout, not a test result), and Vercel's `nemesis-web`
+check fails to `?upgradeToPro=build-rate-limit` (the daily build cap). Local test runs are the gate
+until both clear, and production verification of any phase is blocked in the meantime.
 
 ---
 

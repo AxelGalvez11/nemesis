@@ -40,8 +40,24 @@ Real files first. Synthetic fixtures are for regression, never for establishing 
 | Syllabi | Fall 2026 syllabi | irregular schedules, date extraction, tables |
 | Lectures | Diabetes 1 and 2 | dense slides, speaker notes, figures |
 | Lectures | BIOL415 1 and 2 | second discipline, different deck conventions |
+| **PDF — text** | a lecture or paper with a real text layer | the baseline case; catches regressions in the ordinary path |
+| **PDF — two-column** | an academic paper | reading order; the column interleave that broke tables when fixed once already |
+| **PDF — tables** | a syllabus or data-heavy handout | grid recovery, row/column identity |
+| **PDF — scanned** | a photographed or scanned handout | the OCR lane |
+| **PDF — mixed text + diagram** | a page with full paragraphs *and* a load-bearing figure | 🔴 **the shape the current parser cannot even see it is missing**: the page is not thin, so it never reaches vision, and `pdfCoverage` has no figure field to record the loss |
+| **PDF — very long** | the 13 MB / 2,116-page document from the worker spike | unit-count cost (12.3 s), `TEXT_CAP` as a fraction of the whole, chunk volume |
+| **DOCX — structured** | a real assignment brief or course handbook | headings and hierarchy — **the format had no corpus entry at all until 2026-08-06** |
+| **DOCX — numbered lists** | a document with ordered and nested lists | numbering lives in `numbering.xml`; a tag strip loses "1., 2., 3." entirely |
+| **DOCX — complex tables** | a grading rubric or schedule grid | 🔴 cells currently survive as orphan lines, which reads *confidently wrong* rather than absent |
+| **DOCX — figures** | a document with embedded images and captions | figure recovery and caption association |
 | Large deck | the 123.8 MB immunology deck | **Phase 7 only** — after the large-file/repacking work. Not before. |
-| Fixtures | scanned, multi-column, table-heavy, diagram-heavy | the four failure shapes the current parser cannot see |
+| **Adversarial** | truncated zip, corrupt PDF, Office archive with a bad central directory, a decompression bomb, an image with hostile dimensions | fail *closed* and *named*: `oversized` / `corrupt` / `bomb_suspected` / `unsupported_format` / `partial` — never a silent empty parse |
+| **Duplicate** | the same bytes uploaded twice, and the same file placed in two folders | idempotency: one parse, one row, two placements; a worse retry must not replace a better parse |
+| Fixtures | generated regression cases | **regression only.** A generated fixture never establishes a baseline. |
+
+🔴 **Word had no entry in this table until 2026-08-06**, while Phase 3 exists specifically to rebuild
+Word extraction. A benchmark missing the format a phase is about cannot gate that phase — the four
+DOCX rows above are what makes Phase 3 measurable rather than assertable.
 
 Two corpus rules carried from §8, both learned the hard way:
 
@@ -70,6 +86,12 @@ At least one question whose evidence occurs:
 7. In a scanned page — catches the missing OCR lane.
 8. In a figure label — catches figures kept as pixels but never read.
 9. In an irregular syllabus schedule — catches date parsing that only handles the tidy case.
+10. Under a specific Word heading — catches hierarchy loss, and is the only way to tell a real DOCX
+    locator from an invented one.
+11. At a specific position in a Word numbered list ("what is step 4?") — catches numbering that lives
+    in `numbering.xml` and is never opened.
+12. In a Word table cell identified by its row *and* column — catches a grid flattened into orphan
+    lines, which answers confidently and wrongly rather than not at all.
 
 **Ground truth is labelled before the run, not after.** A expected answer written after seeing the
 output is not ground truth; it is a rationalisation.
@@ -108,6 +130,10 @@ output is not ground truth; it is a rationalisation.
 ## Status
 
 Nothing has been run. No metric below has a recorded value.
+
+Per-phase status is **not** duplicated here — it lives once, in
+[`document-intelligence.md`](./document-intelligence.md) §6.7. This file records what a run measured;
+the ledger records what that measurement means for a phase.
 
 | Half | State |
 |---|---|
