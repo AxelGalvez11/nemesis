@@ -11,7 +11,9 @@ import {
   folderForNewItem,
   groupForNewArtifact,
   knownCourses,
+  signalsDecided,
   sourceCourseFolder,
+  type StudyFilingSignals,
   calendarEventPatch,
   deckDeletionVerdict,
   describeTarget,
@@ -1478,7 +1480,7 @@ async function moveLibraryNote(path: string, folder: string) {
   }
 }
 
-async function addPracticeTest(args: Record<string, unknown>, sourceFolder: string) {
+async function addPracticeTest(args: Record<string, unknown>, options: AgentToolOptions) {
   const title = str(args.title).trim().slice(0, 160);
   if (!title) return { error: "A test title is required." };
   const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
@@ -1486,17 +1488,25 @@ async function addPracticeTest(args: Record<string, unknown>, sourceFolder: stri
   // own course when the material clearly matches one, and left at the top
   // level when it doesn't. Provenance is metadata, never a folder.
   //
-  // A test written from an ATTACHED document goes where that document lives,
-  // ahead of any group the model names — including one it names confidently.
-  // Same turn, same file, three different folders is the failure this closes.
+  // A test written from an ATTACHED document goes where that document lives —
+  // ahead of any group the model names, unless the student's own words named
+  // it. Same turn, same file, three different folders is the failure this
+  // closes; "put this in Contract Law" is the request it must still honour.
   const questionText = rawQuestions
     .map((row) => (row && typeof row === "object" ? str((row as Record<string, unknown>).q) : ""))
     .join("\n")
     .slice(0, 4_000);
-  const groupName = sourceFolder
-    ? groupForNewArtifact("", [], sourceFolder)
-    : str(args.group_name).trim().slice(0, 120)
-      || groupForNewArtifact(`${title}\n${questionText}`, await loadKnownCourses());
+  const signals: StudyFilingSignals = {
+    askText: options.askText ?? "",
+    modelFolder: str(args.group_name).trim().slice(0, 120),
+    sourceAttached: options.sourceAttached ?? false,
+    sourceFolder: options.sourceFolder ?? "",
+  };
+  const groupName = groupForNewArtifact(
+    `${title}\n${questionText}`,
+    signalsDecided(signals) ? [] : await loadKnownCourses(),
+    signals,
+  );
   // Validate through the same parser the generation flow uses so a malformed
   // question (bad answer index, <2 options) is dropped, not saved broken.
   const parsed = parseTestContent({ attempts: [], questions: rawQuestions });
@@ -1726,7 +1736,7 @@ type AgentFlashcard = {
   card_type?: "basic" | "cloze" | "reversed";
 };
 
-async function addFlashcards(deckName: string, cards: AgentFlashcard[], sourceFolder: string) {
+async function addFlashcards(deckName: string, cards: AgentFlashcard[], options: AgentToolOptions) {
   const name = deckName.trim().slice(0, 120);
   if (!name) return { error: "Deck name is required." };
   const cleanCards = cards
@@ -1772,9 +1782,17 @@ async function addFlashcards(deckName: string, cards: AgentFlashcard[], sourceFo
     // where that document already lives: a lecture's own words rarely contain
     // its course's name, which is how one turn on 2026-08-06 filed the note
     // under the student's "Pharmacy" and the deck under an invented
-    // "Pharmacology". The lookup only runs when there is something to look up.
+    // "Pharmacology". A folder the model wrote into deck_name overrides that
+    // only when the student's own words asked for it. The courses lookup only
+    // runs when the ladder has nothing and the matcher is all that is left.
+    const signals: StudyFilingSignals = {
+      askText: options.askText ?? "",
+      modelFolder: name.includes("::") ? name.split("::").slice(0, -1).join("::") : "",
+      sourceAttached: options.sourceAttached ?? false,
+      sourceFolder: options.sourceFolder ?? "",
+    };
     const cardText = cleanCards.map((card) => `${card.front}\n${card.back}`).join("\n").slice(0, 4_000);
-    const filedName = deckNameForNewDeck(name, `${name}\n${cardText}`, sourceFolder ? [] : await loadKnownCourses(), sourceFolder);
+    const filedName = deckNameForNewDeck(name, `${name}\n${cardText}`, signalsDecided(signals) ? [] : await loadKnownCourses(), signals);
     const { data: created, error: createError } = await supabase.from("study_decks").insert({ name: filedName }).select("id").single();
     if (createError || !created) return { error: createError?.message ?? "Couldn't create the deck." };
     deckId = created.id as string;
@@ -2437,6 +2455,14 @@ export interface AgentToolOptions {
    *  from the database before the model ran. "" when nothing was attached, the
    *  files are unplaced, or two of them disagree. */
   sourceFolder?: string;
+  /** A filed document was attached this turn at all. Distinct from
+   *  `sourceFolder`, which is "" both when nothing was attached and when the
+   *  attachment sits unsorted in Inbox — and those two must end differently. */
+  sourceAttached?: boolean;
+  /** What the student TYPED this turn, attachment content stripped. A folder
+   *  the model asks for is honoured only if it appears in here — that is what
+   *  lets "put these in X" through and keeps an invented folder out. */
+  askText?: string;
 }
 
 /** The dispatch table itself. Split out so executeAgentTool can act on the
@@ -2461,8 +2487,8 @@ async function dispatchTool(
     case "read_study_deck": return await readStudyDeck(str(args.deck_name), Number(args.offset), Number(args.limit));
     case "list_study_artifacts": return await listStudyArtifacts(str(args.kind));
     case "read_study_artifact": return await readStudyArtifact(str(args.id));
-    case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : [], options.sourceFolder ?? "");
-    case "add_practice_test": return await addPracticeTest(args, options.sourceFolder ?? "");
+    case "add_flashcards": return await addFlashcards(str(args.deck_name), Array.isArray(args.cards) ? (args.cards as AgentFlashcard[]) : [], options);
+    case "add_practice_test": return await addPracticeTest(args, options);
     case "add_mindmap": return await addMindmap(args);
     case "list_calendar_events": return await listCalendarEvents(args);
     case "find_calendar_issues": return await findCalendarIssuesTool(args);

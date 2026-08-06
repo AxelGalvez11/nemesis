@@ -38,11 +38,20 @@ test("every advertised tool has a case in the dispatch", () => {
 // Read from the source in the same way the dispatch-coverage test above does,
 // because these two lines are plumbing: there is no behaviour to observe, only
 // a value that is either passed or silently lost.
-test("the two study creation lanes are handed the turn's source folder", () => {
+test("the two study creation lanes are handed the turn's filing signals", () => {
   const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
   for (const name of ["add_flashcards", "add_practice_test"]) {
     const line = source.split("\n").find((row) => row.includes(`case "${name}":`)) ?? "";
-    assert.match(line, /options\.sourceFolder/, `${name} no longer receives the turn's source folder`);
+    assert.match(line, /\boptions\b/, `${name} no longer receives the turn's filing signals`);
+  }
+  // And each lane actually READS all three. Passing the object through while
+  // quietly dropping one field is the same silent failure by another door:
+  // without askText nothing can be vouched, without sourceAttached an unsorted
+  // attachment looks like no attachment, without sourceFolder there is nothing
+  // to inherit.
+  for (const field of ["askText", "modelFolder", "sourceAttached", "sourceFolder"]) {
+    const uses = source.split(`${field}:`).length - 1;
+    assert.ok(uses >= 2, `only ${uses} of the two study lanes build signals with ${field}`);
   }
 });
 
