@@ -55,11 +55,11 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 
 | ID | Issue | Group | Status |
 |---|---|---|---|
-| S1 | Flashcard session position is not saved | 1 | not started |
+| S1 | Flashcard session position is not saved | 1 | in PR ([#441](https://github.com/AxelGalvez11/nemesis/pull/441)) |
 | S2 | Again/Hard do not affect review order | 1 | **verified live** (ordering half) |
 | S3 | Deck not filed into its course folder | 1 | not started |
 | S4 | Test position is not saved | 1 | not started |
-| S5 | Undo only works once | 1 | not started |
+| S5 | Undo only works once | 1 | in PR ([#441](https://github.com/AxelGalvez11/nemesis/pull/441)) |
 | S6 | Cloze cards treated as basic cards | 1 | not started |
 | S7 | Talk to Nemesis about the current deck (new) | 1 | not started |
 | D1 | Some pages were not readable | 2 | reproducing |
@@ -83,7 +83,7 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 | U4 | "On this page" should collapse | 5 | not started |
 | U5 | Sources folder styled unlike other folders | 5 | not started |
 | U6 | Chill Groups serves no fresh puzzle | 5 | not started |
-| U7 | The word "Library" renders twice, overlapping (reported mid-pass) | 5 | in PR |
+| U7 | The word "Library" renders twice, overlapping (reported mid-pass) | 5 | in PR ([#440](https://github.com/AxelGalvez11/nemesis/pull/440)) |
 
 ---
 
