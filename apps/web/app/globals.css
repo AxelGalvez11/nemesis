@@ -362,6 +362,16 @@ a { color: inherit; text-decoration: none; }
    affordance: a hairline at 40% that solidifies on hover. Recognisable at a
    glance, quiet enough to read past, and it never fights the sentence. */
 .note-wiki-link {
+  /* 🔴 DELIBERATELY NEUTRAL, NOT ACCENT-COLOURED — and that is a change, because
+     the old rule painted links in --theme-primary. Two goes at keeping the
+     accent were tried and both were worse. Using it neat re-creates the exact
+     bug above: the DEFAULT accent is a mid graphite, so a graphite underline on
+     a dark note is dimmer than the text it belongs to. Mixing it with the prose
+     colour reads correctly but does not survive the build — the CSS pipeline
+     flattens a nested color-mix() held in a custom property and drops the
+     percentages, so the shipped rule is not the authored one. A link is
+     therefore the prose's own colour with a hairline of it, in every theme and
+     under all six accent choices. The accent still applies everywhere else. */
   color: inherit;
   text-decoration: underline;
   text-decoration-thickness: 1px;
