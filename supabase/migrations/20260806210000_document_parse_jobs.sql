@@ -4,19 +4,35 @@
 -- request that uploaded the file. See docs/document-intelligence.md §6.4 and
 -- docs/document-worker-spike.md for the measurements that shaped this.
 --
--- ── WHERE THE LEASE LIVES, AND WHY IT IS NOT ON parsed_documents ────────────
+-- ── THE OWNERSHIP CONTRACT (owner, 2026-08-06) ─────────────────────────────
 --
--- The owner's instruction was to use `parsed_documents` as the single
--- authoritative lifecycle record and NOT to add a second job table. Both hold
--- here, but the lease columns land on `library_sources`, and that needs saying
--- plainly because it looks like a deviation until you try the alternative.
+-- 🔴 `parsed_documents` CANNOT BE THE SOLE LIFECYCLE AUTHORITY BEFORE IT EXISTS.
+-- That is the whole reason the lease lives elsewhere, and it is worth stating as
+-- a correction rather than as a deviation: its identity is
+-- (user_id, content_hash, parser_version), and `content_hash` is `not null` with
+-- a 64-character CHECK. It is the sha256 of the bytes — not knowable until
+-- something has READ them, and reading them IS the work being queued. A parse
+-- row cannot exist before its own job runs, and a queue whose rows cannot be
+-- created at enqueue time is not a queue.
 --
--- `parsed_documents`'s identity is (user_id, content_hash, parser_version).
--- `content_hash` is `not null` with a 64-character CHECK. It is the sha256 of
--- the file's bytes — which is not knowable until something has READ the bytes,
--- and reading the bytes IS the work being queued. So a parse row cannot exist
--- before its own job runs, and a queue whose rows cannot be created at enqueue
--- time is not a queue.
+-- So ownership splits by time, not by preference:
+--
+--   `library_sources`  owns enqueue · fetch and hash attempts · the lease ·
+--                      retry timing · and every failure that happens BEFORE a
+--                      parse artifact exists.
+--
+--   `parsed_documents` owns the canonical parse artifact · coverage · parser
+--                      version · and the downstream parse/chunk/embed lifecycle,
+--                      from the moment the content hash is known.
+--
+-- 🔴 `parsed_document_id IS NOT NULL` MEANS "AN ARTIFACT IS LINKED", NOT
+-- "COMPLETE". A partial parse is a real, linked, useful artifact. Completion is
+-- read from the parsed document's own `state` and `coverage` — never from the
+-- presence of the link, which is merely the convenient column.
+--
+-- A SINGLE SHARED RESOLVER derives the user-facing status from both records:
+-- `apps/web/lib/notebooks/document-status.ts`. There is no second opinion and no
+-- stored status column anywhere.
 --
 -- The alternatives were considered and are worse:
 --   * Client-supplied hash. Makes row identity depend on untrusted input, and
