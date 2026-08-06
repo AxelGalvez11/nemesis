@@ -28,6 +28,7 @@
 // image generation (owner decision 2026-07-14) — it plays no part in chat.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
+import { anthropicHeaders, fromAnthropicResponse, sseFromCompletion, toAnthropicRequest } from '../_shared/anthropic-adapter.ts'
 import { chooseModel, stripDeepSeekOnlyFields } from '../_shared/model-routing.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -534,17 +535,66 @@ interface ProviderFallback {
   base: string
   key: string
   model: string
+  /** Which API this provider actually speaks. Absent means OpenAI-compatible,
+   *  which is what every entry was ASSUMED to be — the assumption that made the
+   *  Anthropic fallback dead on arrival. */
+  dialect?: 'anthropic'
 }
 
 const SECONDARY_FALLBACKS: ProviderFallback[] = [
   { base: QWEN_BASE, key: QWEN_KEY, model: QWEN_MODEL },
   { base: KIMI_BASE, key: KIMI_KEY, model: KIMI_MODEL },
-  { base: ANTHROPIC_BASE, key: ANTHROPIC_KEY, model: ANTHROPIC_MODEL }
+  // 🔴 ANTHROPIC IS NOT OPENAI-COMPATIBLE and used to sit here as though it
+  // were — posted to /chat/completions with a Bearer token, which its API does
+  // not accept on any route. It is now marked so callSecondaryFallbacks
+  // translates instead of pretending. See _shared/anthropic-adapter.ts.
+  { base: ANTHROPIC_BASE, dialect: 'anthropic', key: ANTHROPIC_KEY, model: ANTHROPIC_MODEL }
 ]
 
-/** Continue an outage across the extra providers the owner configured. All
- * three expose OpenAI-compatible chat/completions APIs, including streaming
- * and tool calls, so the valve can preserve the client contract byte-for-byte.
+/**
+ * One Anthropic attempt, translated in and out.
+ *
+ * Non-streaming upstream on purpose: Anthropic's event stream is a different
+ * protocol again, and this path exists only when four providers are already
+ * down. A correct answer that arrives whole beats an elegant one that arrives
+ * malformed. `sseFromCompletion` replays it as an OpenAI stream when the client
+ * asked for one, so nothing above this function can tell the difference.
+ */
+async function callAnthropic(
+  provider: ProviderFallback,
+  body: Record<string, unknown>
+): Promise<Response | null> {
+  const wantsStream = body.stream === true
+  const request = toAnthropicRequest(body, provider.model)
+  let upstream: Response | null = null
+  try {
+    upstream = await fetch(`${provider.base}/messages`, {
+      body: JSON.stringify(request),
+      headers: anthropicHeaders(provider.key),
+      method: 'POST'
+    })
+  } catch {
+    return null
+  }
+  // A refusal keeps its status so isProviderUnusable can judge it exactly as it
+  // judges the others; only a SUCCESS needs translating.
+  if (!upstream.ok) return upstream
+
+  const completion = fromAnthropicResponse(await upstream.json().catch(() => null))
+  if (!wantsStream) {
+    return new Response(JSON.stringify(completion), {
+      headers: { 'Content-Type': 'application/json', ...CORS },
+      status: 200
+    })
+  }
+  return new Response(sseFromCompletion(completion), {
+    headers: { 'Cache-Control': 'no-cache', 'Content-Type': 'text/event-stream', ...CORS },
+    status: 200
+  })
+}
+
+/** Continue an outage across the extra providers the owner configured. Qwen and
+ * Kimi are genuinely OpenAI-compatible; Anthropic is translated (see above).
  * A request error is not retried; only an unusable provider reaches here. */
 async function callSecondaryFallbacks(
   body: Record<string, unknown>
@@ -561,7 +611,9 @@ async function callSecondaryFallbacks(
   for (const provider of SECONDARY_FALLBACKS) {
     if (!provider.key) continue
     clean.model = provider.model
-    const response = await callProvider(provider.base, provider.key, clean)
+    const response = provider.dialect === 'anthropic'
+      ? await callAnthropic(provider, clean)
+      : await callProvider(provider.base, provider.key, clean)
     if (!response) continue
     last = { model: provider.model, response }
     if (!(await isProviderUnusable(response))) return last
