@@ -293,7 +293,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
     return (
       <main className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-(--ui-bg-chrome)">
         {!leftSidebarOpen && <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2" onClick={onExpandLeft} size="icon-xs" variant="ghost"><IconLayoutSidebarLeftExpand size={14} stroke={1.7} /></Button>}
-        <EmptyState description="Create a note, then connect ideas with [[double brackets]]." title="No note open" />
+        <EmptyState description="Create a note and Nemesis connects it to what you already have." title="No note open" />
         <Button onClick={() => void createBlankNote()} size="sm" variant="secondary">New note</Button>
       </main>
     );
@@ -437,7 +437,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             {rightPanel === "links" && (
               <LinkSection title="Links on page">
-                {outgoing.length === 0 ? <PanelEmpty>Type [[Note name]] to connect an idea.</PanelEmpty> : outgoing.map((link) => {
+                {outgoing.length === 0 ? <PanelEmpty>Nothing linked from this page yet.</PanelEmpty> : outgoing.map((link) => {
                   const linked = findLibraryNote(notes, link.target);
                   return linked ? (
                     <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`${libraryBase}?note=${encodeURIComponent(linked.path)}`} key={link.target} onClick={(event) => { event.preventDefault(); void openWikiTarget(link.target); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{link.label}</a>
@@ -484,7 +484,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
 
       <Dialog onOpenChange={setConfirmDelete} open={confirmDelete}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Are you sure you want to delete “{note.title}”?</DialogTitle><DialogDescription>The note will disappear from your Library and Graph. Existing [[links]] to it will become uncreated nodes.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Are you sure you want to delete “{note.title}”?</DialogTitle><DialogDescription>The note will disappear from your Library. Other notes that point here will keep the link, ready for whenever you write it again.</DialogDescription></DialogHeader>
           <DialogFooter><Button onClick={() => setConfirmDelete(false)} variant="ghost">Cancel</Button><Button onClick={() => void removeCurrentNote()} variant="destructive">Delete note</Button></DialogFooter>
         </DialogContent>
       </Dialog>

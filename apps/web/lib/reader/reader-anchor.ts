@@ -71,3 +71,27 @@ export function resolveAnchorUnit(anchor: ReaderAnchor, unitCount: number): numb
   if (anchor.unit === null || unitCount <= 0) return null;
   return anchor.unit <= unitCount ? anchor.unit : null;
 }
+
+/**
+ * What ONE unit of a document is called, per kind of file.
+ *
+ * Lifted out of document-reader.tsx so a citation pill in a note and the reader
+ * it opens use the same word. "Slide 18" in the note landing on something the
+ * reader calls page 18 is the kind of small inconsistency that makes a citation
+ * feel automated rather than authored.
+ *
+ * Capitalised at the point of use — a pill wants "Slide 18", a sentence wants
+ * "on slide 18".
+ */
+const UNIT_NOUNS: Record<string, string> = {
+  pdf: "page",
+  slides: "slide",
+  image: "image",
+  document: "section",
+  audio: "track",
+  file: "part",
+};
+
+export function unitNoun(kind: string): string {
+  return UNIT_NOUNS[kind] ?? "part";
+}
