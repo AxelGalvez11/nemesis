@@ -27,6 +27,7 @@ import {
   type PendingDelete,
 } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
+import { formatWebSearchContext, type NumberedWebResult } from "./chat-web-search";
 import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
 import {
   calendarCoverage,
@@ -76,6 +77,49 @@ export const AGENT_TOOLS = [
       name: "search_library",
       parameters: {
         properties: { query: { description: "Words to look for", type: "string" } },
+        required: ["query"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      // 🔴 THE WEB IS NOW A TOOL THE MODEL CHOOSES, AND THIS TEXT IS THE POLICY.
+      // Until 2026-08-06 there was no web tool at all: a keyword list decided
+      // BEFORE the turn whether to buy a search, pasted the results in, and the
+      // model was never consulted. "who are you?" matched /\bwho\s+(is|are)/ and
+      // searched the live web to answer what Nemesis is.
+      //
+      // Written as WHEN NOT TO at least as much as when to, because the defect
+      // being fixed is over-search, and a tool description that only lists
+      // reasons to call it reads as an instruction to call it.
+      //
+      // Deliberately carries no subject-matter words: "guideline", "standard",
+      // "statute" are SHAPES of knowledge that goes stale, which a law, nursing
+      // and mechanical-engineering student all meet. A list of topics would be
+      // the keyword bug rebuilt one layer up (CLAUDE.md: a rule that only makes
+      // sense for one field is wrong).
+      description:
+        "Search the live web and read back result snippets. Answer from your own knowledge by default — reach for this ONLY when the answer genuinely "
+        + "depends on information that is both external and current.\n\n"
+        + "USE IT WHEN: the answer turns on something that changes over time (a guideline, standard, statute, ruling, price, release, version, ranking "
+        + "or ongoing event); the student names a URL or an outside source for you to read; the student asks you to look something up; or the answer "
+        + "depends on something published after your knowledge cutoff.\n\n"
+        + "DO NOT USE IT FOR: who or what you are, or what you can do. Settled explanations, definitions, derivations, calculations, translations, or "
+        + "work on text already in this conversation. And never for the STUDENT'S OWN MATERIAL — their lectures, notes, slides, recordings, syllabus, "
+        + "deadlines, courses or grades. That lives in this workspace, and only search_library, read_library_note, read_recording_transcript and "
+        + "list_calendar_events can reach it; the web does not have it and never will. A word like 'latest', 'current', 'schedule', 'sources' or a "
+        + "recent year sitting inside a question about the student's own course is not a reason to search.\n\n"
+        + "WRITE A REAL QUERY. Pass the terms you would type into a search engine, not the student's sentence. Drop the conversational framing and the "
+        + "possessives, keep the entity and what is being asked about it, and add the qualifier that makes it current only when currency is the point.\n\n"
+        + "You may call this more than once in a turn. If results come back thin, off-topic or contradictory, search again with better terms rather "
+        + "than answering from a weak result. When a question needs both the student's material and the outside world, do both.",
+      name: "search_web",
+      parameters: {
+        properties: {
+          query: { description: "Search terms, written as a query rather than as the student's question", type: "string" },
+        },
         required: ["query"],
         type: "object",
       },
@@ -815,6 +859,33 @@ async function semanticLibrarySearch(query: string): Promise<SemanticHit[]> {
     return Array.isArray(json.hits) ? json.hits : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * The live web, as a tool result.
+ *
+ * Returns the fenced, numbered block the model reads plus the bare count, so a
+ * search that found nothing is unmistakably a search that found nothing. That
+ * distinction is the whole reason this returns a result instead of throwing:
+ * "I could not verify this" is a real answer, and a turn that silently skips
+ * an empty search will happily state a remembered fact as a current one.
+ */
+async function searchWebTool(query: string, options: AgentToolOptions) {
+  const terms = query.trim();
+  if (!terms) return { error: "Empty query. Pass the search terms you would type." };
+  if (!options.searchWeb) {
+    return { error: "Web search is not available on this turn. Answer from what you know and say the current position could not be checked." };
+  }
+  try {
+    const results = await options.searchWeb(terms);
+    if (!results.length) {
+      return { found: 0, query: terms, results: "", warning: "No usable results. Do not state a current fact you could not verify; either search again with different terms or say plainly that it could not be checked." };
+    }
+    return { found: results.length, query: terms, results: formatWebSearchContext(results) };
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+    return { error: cause instanceof Error ? cause.message : "Web search failed." };
   }
 }
 
@@ -2463,6 +2534,20 @@ export interface AgentToolOptions {
    *  the model asks for is honoured only if it appears in here — that is what
    *  lets "put these in X" through and keeps an invented folder out. */
   askText?: string;
+  /**
+   * Runs one live web search and returns the results.
+   *
+   * Injected rather than imported because the search goes through
+   * chat-api.ts's searchWebContext, which needs the signed-in student's device
+   * key — and chat-api already imports this file, so importing back would close
+   * a cycle. Absent means no web search is available on this turn, and
+   * search_web answers with a plain error the model can react to rather than
+   * pretending it ran.
+   *
+   * Returns results ALREADY NUMBERED: the numbers run across every search in
+   * the turn, and only the turn knows what it has collected so far.
+   */
+  searchWeb?: (query: string) => Promise<NumberedWebResult[]>;
 }
 
 /** The dispatch table itself. Split out so executeAgentTool can act on the
@@ -2474,6 +2559,7 @@ async function dispatchTool(
 ): Promise<unknown> {
   switch (call.name) {
     case "search_library": return await searchLibrary(str(args.query));
+    case "search_web": return await searchWebTool(str(args.query), options);
     case "read_library_note": return await readLibraryNote(str(args.path));
     case "list_recordings": return await listRecordings(num(args.limit));
     case "read_recording_transcript": return await readRecordingTranscript(str(args.recording_id), num(args.offset));

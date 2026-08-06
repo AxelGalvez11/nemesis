@@ -49,13 +49,26 @@ test("web search survives every effort level", () => {
   }
 });
 
-test("tools ride instant turns but never reasoner or high-effort turns", () => {
-  // A NON-save prompt for the high case: a save now keeps its tools at High on
-  // purpose (see the test above), so asserting it here would pin the old bug.
+// 🔴 THIS TEST USED TO ASSERT THE OPPOSITE, and the assertion was the bug.
+// It read "tools ride instant turns but never reasoner or high-effort turns",
+// and it passed for as long as it existed — pinning a restriction that was
+// only ever true because our own stream dropped `reasoning_content` and could
+// not echo it back on a tool round. The reasoner has always supported tool
+// calls; we were not sending the field.
+//
+// The cost was precise and exactly inverted: the deepest routes — a hard
+// question, or a student who deliberately turned the effort dial up — were the
+// only ones that could not open their own Library, read their calendar, or
+// search the web. Turning the dial to High made Nemesis less able to look
+// anything up.
+test("every route keeps its tools, including the reasoner and High effort", () => {
   const chatty = classifyChatRequest("hello");
-  assert.equal(toolsAllowed(applyChatEffort(chatty, "instant")), true);
-  assert.equal(toolsAllowed(applyChatEffort(chatty, "high")), false);
-  assert.equal(toolsAllowed(applyChatEffort(classifyChatRequest("explain osmosis"), "medium")), false);
+  const thinking = classifyChatRequest("explain osmosis");
+  assert.equal(thinking.model, "deepseek-reasoner", "the premise of this test: that route does think");
+  for (const effort of ["instant", "medium", "high"] as const) {
+    assert.equal(toolsAllowed(applyChatEffort(chatty, effort)), true, `chat turn at ${effort}`);
+    assert.equal(toolsAllowed(applyChatEffort(thinking, effort)), true, `reasoner turn at ${effort}`);
+  }
 });
 
 // The regression this batch fixes: a save request phrased like a lesson used to

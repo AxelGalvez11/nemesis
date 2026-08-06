@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { applyChatEffort, toolsAllowed } from "./chat-effort";
 import { acceptsOffer, classifyChatRequest, detectsSaveRequest, offersToCreate, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION } from "./chat-routing";
 import { buildWireMessages } from "./chat-api";
-import { shouldSearchWeb } from "./chat-web-search";
 
 // Ordinary conversation stays on the least expensive lane.
 assert.deepEqual(classifyChatRequest("hello"), {
@@ -134,12 +133,16 @@ assert.equal(classifyChatRequest("explain how beta blockers work").model, "deeps
 // The regression that raising the attachment budget amplified: a lecture slide
 // citing a recent year tripped the web-search matcher, buying a paid search on
 // every upload. Routing reads what the student TYPED; skills still read it all.
+//
+// The matcher itself is gone (2026-08-06 — the web is a tool the model calls,
+// so no regex reads this text looking for a reason to search). The SPLIT still
+// matters and is still asserted: it decides which model answers and what the
+// turn is treated as, and a lecture must not be able to answer that on the
+// student's behalf.
 {
   const wireText = "summarise this\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024. Updated guidance.";
   assert.equal(promptWithoutAttachments(wireText), "summarise this");
-  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
-  // The raw wire text is exactly what used to trip it.
-  assert.equal(shouldSearchWeb(wireText), true);
+  assert.equal(classifyChatRequest(promptWithoutAttachments(wireText)).searchWeb, false);
 }
 // The same regression, in the case that actually happens most: files attached
 // with NOTHING typed. prepareChatAttachments trims the wire text, so the blank
@@ -153,12 +156,10 @@ assert.equal(classifyChatRequest("explain how beta blockers work").model, "deeps
   const wireText = `${"".trim()}\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024.`.trim();
   assert.ok(wireText.startsWith("### Attachment: "), "the real shape has no leading blank line");
   assert.equal(promptWithoutAttachments(wireText), "");
-  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
 }
 
-// A message with no attachment is untouched, and a real live-info question still searches.
+// A message with no attachment is untouched.
 assert.equal(promptWithoutAttachments("what is the latest guidance"), "what is the latest guidance");
-assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidance")), true);
 
 // Accepting the offer our OWN lecture-intake skill makes. Observed live
 // 2026-07-27: the student replied "flashcards", LEARNING_PATTERN matched

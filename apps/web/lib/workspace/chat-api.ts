@@ -21,14 +21,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
-import {
-  readWebNeedReply,
-  shouldAskModelAboutWeb,
-  WEB_NEED_PROMPT,
-  WEB_NEED_TIMEOUT_MS,
-  type WebNeedContext,
-} from "@/lib/workspace/chat-web-need";
-import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { MAX_WEB_RESULTS, numberWebResults, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -74,8 +67,35 @@ const CHAT_PROMPT_HEAD =
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
-  "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. ";
+
+/**
+ * WHERE AN ANSWER SHOULD COME FROM. Rides every turn that carries tools.
+ *
+ * The tool descriptions say what each tool does; this says how to CHOOSE, and
+ * the two have to agree. Owner 2026-08-06: "Nemesis should reason about what
+ * information it needs and where that information should come from."
+ *
+ * The order is the policy. Retrieving nothing comes first because the defect
+ * being fixed is reaching for a tool that adds nothing, and the private-beats-
+ * public rule comes before the web because for a student's own coursework the
+ * web is not merely unnecessary — it does not hold the answer at any price.
+ */
+const SOURCE_ROUTING_POLICY =
+  "BEFORE ANSWERING, DECIDE WHERE THE ANSWER LIVES. Work through these in order and stop at the first that fits.\n"
+  + "1. YOU ALREADY KNOW IT. Explanations, definitions, derivations, calculations, translations, feedback on their writing, and anything about "
+  + "yourself or this app. Answer directly. Most questions end here, and a tool call that adds nothing costs the student time and money.\n"
+  + "2. IT IS THE STUDENT'S OWN MATERIAL. Their lectures, notes, slides, recordings, syllabus, deadlines, courses, decks or grades. Read it with "
+  + "the workspace tools. Their material always beats an outside source when the question is about their course — the web has never seen their "
+  + "lecture and cannot guess what their professor said.\n"
+  + "3. IT DEPENDS ON THE OUTSIDE WORLD, AND ON IT BEING CURRENT. Something that gets revised, released, ruled on, or published; a URL they "
+  + "named; or a fact from after your knowledge cutoff. Use search_web.\n"
+  + "4. IT NEEDS BOTH. A question that sets their material against the outside world — 'is what I was taught still right?' — needs the private "
+  + "source AND the search. Do both and say plainly where the two agree and where they differ.\n"
+  + "Judge the QUESTION, never a word in it. 'Latest', 'current', 'schedule', 'sources', 'who is', and a recent year all appear constantly in "
+  + "questions about a student's own course, and none of them is a reason to search the web. Conversely a question can need fresh information "
+  + "while containing no such word at all. When you genuinely cannot tell whether something has changed since you learned it, checking is the "
+  + "cheaper mistake — but say what you checked. ";
 
 /** True ONLY on a turn that actually carries AGENT_TOOLS. */
 export const CHAT_TOOLS_PROMPT =
@@ -177,7 +197,11 @@ export function chatSystemPrompt(toolsEnabled: boolean): string {
   // hedge-heavy prose the voice rules exist to prevent — so they need to be read
   // in that order. Shared with the phone (packages/shared) so the two surfaces
   // cannot drift.
-  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
+  // The routing policy rides with the tools and only with them: telling a
+  // tool-free turn where the answer lives is telling it to promise a lookup it
+  // cannot perform, which is the fabrication CHAT_NO_TOOLS_PROMPT exists to
+  // prevent.
+  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT + SOURCE_ROUTING_POLICY : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
 }
 
 /** The tools-on prompt, kept as a named export for callers and tests that want
@@ -794,37 +818,22 @@ function startWaitingStrip(onActivity?: (label: string | null) => void): Waiting
   };
 }
 
-/**
- * Ask the model whether this turn needs the live web.
- *
- * Bounded twice over: it is only called when the cheap checks could not decide
- * (shouldAskModelAboutWeb), and it gives up after WEB_NEED_TIMEOUT_MS. Every
- * failure path — timeout, network, auth, a reply that is not the one word it
- * was asked for — resolves to false, so the worst case is the behaviour we had
- * before this existed rather than a stalled turn.
- */
-async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: AbortSignal): Promise<boolean> {
-  if (!shouldAskModelAboutWeb(context)) return false;
-  const timer = new AbortController();
-  // Linked to the caller's signal so pressing Stop kills the pre-flight too,
-  // rather than leaving a request running against a turn nobody wants.
-  const onAbort = () => timer.abort();
-  signal?.addEventListener("abort", onAbort, { once: true });
-  const deadline = setTimeout(() => timer.abort(), WEB_NEED_TIMEOUT_MS);
-  try {
-    const reply = await postChatCompletion(
-      uid,
-      [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
-      { background: true, decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
-    );
-    return readWebNeedReply(reply.text);
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(deadline);
-    signal?.removeEventListener("abort", onAbort);
-  }
-}
+// 🔴 THE WEB-NEED PRE-FLIGHT LIVED HERE AND IS GONE (owner 2026-08-06).
+//
+// It asked a small model one YES/NO question — "does answering this need a live
+// search?" — before the real turn, and it was a reasonable answer to the wrong
+// problem. Its own file said so: "the obvious design is to hand the model a
+// search_web tool and let it call it. It cannot", because tools were switched
+// off for every reasoner turn. That premise was a bug in our stream, not a
+// limit of the model, and it has been fixed (chat-effort.ts:toolsAllowed).
+//
+// So the pre-flight is not merely redundant now, it is worse than the tool on
+// every axis: it spent a model call on EVERY qualifying turn whether or not a
+// search followed, it decided from the question alone with none of the turn's
+// context, it could not tell the web apart from the student's own Library, and
+// it could not look twice. The tool does all four. Deleted rather than left
+// dormant — a second decision-maker for the same question is how the two
+// keyword lists came to disagree with each other in the first place.
 
 export async function sendChatTurn(
   uid: string,
@@ -853,37 +862,29 @@ export async function sendChatTurn(
     ? ATTACHMENT_ONLY_DECISION
     : classifyChatRequest(askText, priorAssistant);
   // 🔴 THE STRIP STARTS HERE, NOT AT THE MODEL CALL. Everything between this
-  // line and the answer is time the student spends waiting — the web-need
-  // pre-flight, the search itself, the brain lookup — and a strip that only
-  // woke up for the final call would leave a silent gap in front of it and
-  // then restart its clock at zero, which is the exact staleness this is
-  // meant to fix. One strip, one clock, for the whole turn.
+  // line and the answer is time the student spends waiting — the brain lookup,
+  // the tool rounds — and a strip that only woke up for the final call would
+  // leave a silent gap in front of it and then restart its clock at zero,
+  // which is the exact staleness this is meant to fix. One strip, one clock.
   let strip = startWaitingStrip(onActivity);
-  // The keyword lists are a fast path, not the whole decision: when they miss,
-  // the model itself is asked whether this question needs live sources. See
-  // chat-web-need.ts for why this is a pre-flight and not a tool.
+  // 🔴 NOTHING DECIDES ABOUT THE WEB HERE ANY MORE (owner 2026-08-06).
   //
-  // A WORKSPACE turn opts out of the whole web apparatus unless the student
-  // explicitly asked for the web (classifyChatRequest already set searchWeb
-  // then): "what's my schedule tomorrow" is a database read, and it used to
-  // buy a paid search off the word "tomorrow" AND get promoted onto the
-  // tool-less reasoner below — the two halves of the calendar incident.
-  const regexSaidYes = classified.workspaceIntent
-    ? classified.searchWeb
-    : classified.searchWeb || shouldSearchWeb(askText);
-  const needsWeb = regexSaidYes || (!classified.workspaceIntent && await modelWantsWeb(uid, {
-    ask: askText,
-    hasAttachments: userText.trim() !== askText.trim(),
-    regexSaidYes,
-    savesToWorkspace: classified.savesToWorkspace === true,
-  }, signal));
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.workspaceIntent
-    ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
-    : classified;
-  // The student's dial wins over the route's own guess at how hard to think.
-  const decision = applyChatEffort(routed, effort);
-  let groundedText = userText;
-  let sources: ChatWebResult[] = [];
+  // What stood here: a keyword list, then a small model asked YES/NO, then a
+  // paid search, then a promotion of the whole turn onto the tool-less
+  // reasoner. Three mechanisms, none of which could see the question the way
+  // the answering model can, and all of them spent before it was consulted.
+  // "who are you?" came through this path and searched the live web.
+  //
+  // The web is a tool now (search_web, agent-tools.ts). The model reads the
+  // question, weighs the student's own material against the outside world, and
+  // calls what it needs — including both, and including twice when the first
+  // results are thin. The route below still chooses how hard to think and which
+  // instruction rides; it no longer buys anything.
+  const decision = applyChatEffort(classified, effort);
+  const groundedText = userText;
+  // Everything search_web found this turn, in citation order. Appended to
+  // across searches so [n] keeps meaning the same page — see numberWebResults.
+  const sources: ChatWebResult[] = [];
   // Start the second-brain lookup beside live web search. It combines semantic
   // Library passages with typed graph neighbors, Calendar deadlines, and Study
   // weak spots in one bounded packet; failures are a normal empty context.
@@ -896,15 +897,23 @@ export async function sendChatTurn(
   const overviewLookup: Promise<unknown> = classified.workspaceIntent
     ? loadWorkspaceOverview().catch(() => null)
     : Promise.resolve(null);
-  if (needsWeb) {
+  /**
+   * One search_web call, numbered into this turn's running source list.
+   *
+   * Handed to the tool rather than imported by it, so agent-tools.ts never has
+   * to know about device keys or about this turn (see AgentToolOptions).
+   */
+  const runWebSearch = async (query: string) => {
     strip.pin("Searching the web");
-    const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
-    strip.resume();
-    sources = result.sources;
-    groundedText = result.context
-      ? `${userText}\n\n${result.context}`
-      : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
-  }
+    try {
+      const found = await searchWebContext(uid, query, signal);
+      const { added, numbered } = numberWebResults(sources, found);
+      sources.push(...added);
+      return numbered;
+    } finally {
+      strip.resume();
+    }
+  };
   // The question decides which parts of the packet survive — Calendar and Study
   // rows have to be asked for or share vocabulary with it now, rather than
   // riding along on every turn. See brain-context.ts.
@@ -976,7 +985,7 @@ export async function sendChatTurn(
     onActivity?.(activityLabel(calls));
     const results = await Promise.all(calls.map(async (call) => ({
       call,
-      result: await executeAgentTool(call, { askText, sourceAttached: attachedIds.length > 0, sourceFolder }),
+      result: await executeAgentTool(call, { askText, searchWeb: runWebSearch, sourceAttached: attachedIds.length > 0, sourceFolder }),
     })));
     onActivity?.(null);
     for (const { result } of results) {
@@ -1022,9 +1031,19 @@ export async function sendChatTurn(
   };
 }
 
-export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
+/**
+ * One metered web search. Returns the usable results and nothing else.
+ *
+ * It used to return a formatted prompt block alongside them, from back when
+ * the results were stapled to the student's message before the turn. The
+ * formatting now belongs to search_web's tool result, where the numbering can
+ * account for earlier searches in the same turn — so this stays the thin
+ * network call it always wanted to be. An empty array is a legitimate answer
+ * and callers must treat it as one; it is never an exception.
+ */
+export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<ChatWebResult[]> {
   const key = await deviceKey(uid);
-  if (!key) return { context: "", sources: [] };
+  if (!key) return [];
   try {
     const response = await fetch("/api/workspace/search", {
       body: JSON.stringify({ query, limit: MAX_WEB_RESULTS }),
@@ -1032,14 +1051,11 @@ export async function searchWebContext(uid: string, query: string, signal?: Abor
       method: "POST",
       signal,
     });
-    if (!response.ok) return { context: "", sources: [] };
+    if (!response.ok) return [];
     const body = (await response.json()) as { data?: { web?: ChatWebResult[] } };
-    // Same list the prompt numbers, so an inline [n] in the answer resolves to
-    // the source the model actually cited.
-    const sources = usableWebResults(body.data?.web ?? []);
-    return { context: formatWebSearchContext(sources), sources };
+    return usableWebResults(body.data?.web ?? []);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    return { context: "", sources: [] };
+    return [];
   }
 }

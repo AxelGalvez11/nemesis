@@ -6,38 +6,77 @@ export interface ChatWebResult {
   description: string;
 }
 
-const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
-const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live)\b/i;
-const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
-const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
-const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
-const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;
-
-export function shouldSearchWeb(query: string): boolean {
-  const compact = query.trim();
-  if (compact.length < 3) return false;
-  return EXPLICIT_WEB_PATTERN.test(compact)
-    || CURRENT_INFO_PATTERN.test(compact)
-    || CHANGING_FACT_PATTERN.test(compact)
-    || LIVE_SPORTS_PATTERN.test(compact)
-    || EMERGING_ENTITY_PATTERN.test(compact)
-    || RECENT_YEAR_PATTERN.test(compact)
-    || /https?:\/\//i.test(compact);
+/**
+ * A result as the model sees it, carrying the number it must cite.
+ *
+ * 🔴 THE NUMBER IS ASSIGNED BY THE TURN, NOT BY THE SEARCH. An answer's inline
+ * [n] markers resolve POSITIONALLY against the sources stored on the message,
+ * so a second search_web call in the same turn cannot start counting at 1
+ * again: its results append to one running list and are numbered from where
+ * the previous call stopped. Getting this wrong does not fail loudly — it
+ * points a citation pill at the wrong page.
+ */
+export interface NumberedWebResult extends ChatWebResult {
+  n: number;
 }
 
-/** Time-sensitive searches need an explicit date. Without it, providers can
- * rank an old winner or schedule above today's result. */
-export function buildFreshSearchQuery(query: string, now = new Date()): string {
-  if (!CURRENT_INFO_PATTERN.test(query) && !CHANGING_FACT_PATTERN.test(query) && !LIVE_SPORTS_PATTERN.test(query)) return query;
-  const date = now.toISOString().slice(0, 10);
-  return `${query.trim()} current as of ${date}`;
-}
+// 🔴 THE KEYWORD LISTS THAT USED TO LIVE HERE ARE GONE (owner 2026-08-06).
+//
+// Seven regexes decided, before the model ever saw the question, whether to buy
+// a live web search. Measured against the source-routing acceptance set on the
+// day they were removed, they:
+//
+//   * searched the web to answer "who are you?"          (\bwho\s+(is|are))
+//   * searched for "who is my professor for pharmacology" (same rule, and the
+//     answer is in the student's own course data — the web has never heard of
+//     their professor)
+//   * searched for "what are my sources for this note"    ("sources")
+//   * searched for "explain the 2026 syllabus"            (a recent year, which
+//     in a syllabus is a DATE)
+//   * and missed "Has the Supreme Court ruled on that case yet?", which needs
+//     the web and contains not one listed word.
+//
+// The lists could not have worked. A word list is English-only, it cannot see
+// whether "schedule" means the student's timetable or a train timetable, and
+// every fix to one false positive opened another. What replaces it is the
+// search_web tool in agent-tools.ts: the model reads the question and decides,
+// the same way it already decided about the Library and the Calendar.
+//
+// Nothing takes their place here on purpose. A "narrow fast path" for a literal
+// URL was considered and dropped: the model handles a pasted URL correctly, and
+// a surviving shortcut is where the next keyword list starts growing back.
 
 /** How many web results reach the model. Ten, not five (owner 2026-08-04):
  *  a medicine, law, or engineering question rarely settles inside the first
  *  five hits, a search costs one metered unit regardless of how many results
  *  it returns, and five more snippets are only a few hundred extra tokens. */
 export const MAX_WEB_RESULTS = 10;
+
+/**
+ * Number a fresh batch of results, continuing from what the turn already has.
+ *
+ * `already` is every source collected by earlier search_web calls this turn.
+ * A result whose URL is already on the list keeps its ORIGINAL number rather
+ * than being added twice — two searches on one topic legitimately overlap, and
+ * the same page cited as both [2] and [7] reads as two sources agreeing.
+ */
+export function numberWebResults(already: ChatWebResult[], fresh: ChatWebResult[]): {
+  numbered: NumberedWebResult[];
+  added: ChatWebResult[];
+} {
+  const sources = [...already];
+  const numbered: NumberedWebResult[] = [];
+  for (const result of usableWebResults(fresh)) {
+    const seen = sources.findIndex((existing) => existing.url === result.url);
+    if (seen >= 0) {
+      numbered.push({ ...sources[seen]!, n: seen + 1 });
+      continue;
+    }
+    sources.push(result);
+    numbered.push({ ...result, n: sources.length });
+  }
+  return { added: sources.slice(already.length), numbered };
+}
 
 /** The results that actually reach the model, in the exact order they are numbered in the prompt.
  *  The sources stored on the message MUST come from this same list: the answer's inline [n] markers
@@ -46,20 +85,27 @@ export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
   return results.filter((result) => result.url && (result.title || result.description)).slice(0, MAX_WEB_RESULTS);
 }
 
-export function formatWebSearchContext(results: ChatWebResult[]): string {
-  const usable = usableWebResults(results);
-  if (usable.length === 0) return "";
-  // Titles and snippets are whatever a stranger put on a web page, and a page
-  // that wants to be found by a study assistant can say anything it likes in the
-  // description a search engine echoes back. Same fence as an attachment: this
-  // is the more exposed of the two, because nobody chose to open it.
+/**
+ * One search_web result batch, as the model reads it.
+ *
+ * Still fenced as untrusted, and MORE carefully than before rather than less:
+ * these snippets are whatever a stranger put on a web page, and a page that
+ * wants to be found by a study assistant can write anything it likes in the
+ * description a search engine echoes back. The one thing that changed is who
+ * asked for them — the model now chose to search, so this text arrives as a
+ * tool result rather than stapled to the student's message.
+ */
+export function formatWebSearchContext(results: NumberedWebResult[]): string {
+  if (results.length === 0) return "";
   return [
-    "Live web search results. Use these for current facts. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
+    "Live web search results. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. "
+    + "Use the number shown against each result — they continue across searches within this turn, so do not renumber them. Only cite a number for a "
+    + "fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
     UNTRUSTED_CONTENT_RULE,
-    ...usable.map((result, index) =>
+    ...results.map((result) =>
       wrapUntrusted(
-        `result ${index + 1}`,
-        `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`,
+        `result ${result.n}`,
+        `${result.n}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`,
       ),
     ),
   ].join("\n\n");
