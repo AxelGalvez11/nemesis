@@ -141,10 +141,13 @@ Deno.serve(async (req) => {
   }
 
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const userId = await verifyUser(token);
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  // Either/or, never a fallback chain: a service-role call with a bad uid must
+  // be rejected outright, not retried against the auth server with a key that
+  // is not a user token.
+  const userId = isServiceCall(token) ? serviceCallerId(body) : await verifyUser(token);
   if (!userId) return json({ error: "Sign in to enhance transcripts." }, 401, req);
 
-  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   // Sub-path first, `action` in the body as the fallback — a client that cannot
   // easily append a path segment is still able to reach both halves.
   const action = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";
@@ -701,8 +704,44 @@ const restHeaders = {
   "Content-Type": "application/json",
 };
 
+/** A uuid, and nothing that merely looks like one. The service-role branch below
+ *  trusts this value, so it is checked in full rather than for length. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The ONE case where a uid may come from the request body: the caller holds the
+ * service-role key.
+ *
+ * Added 2026-08-05 for the recording-worker function, which advances a
+ * recording's transcription long after the browser that started it has gone.
+ * It has no user JWT — a durable background job cannot hold one, and storing a
+ * student's token so a worker could impersonate them later would be a far worse
+ * design than this.
+ *
+ * 🔴 THE SERVICE KEY IS THE WHOLE GATE. It is never in an app bundle, never in
+ * the browser, and never in a phone build — it lives in function secrets and in
+ * the web server's environment. A caller who has it can already read and write
+ * every row in this project directly, so trusting a uid from them adds no
+ * authority they did not have. A caller who does NOT have it falls through to
+ * verifyUser and can still only ever reach their own recordings: the uid comes
+ * out of their token, and handleSubmit additionally requires the storage path to
+ * start with it.
+ *
+ * Deliberately synchronous and deliberately first — no auth round-trip is made
+ * for the worker's calls, which happen on every poll of every job.
+ */
+function isServiceCall(token: string): boolean {
+  return Boolean(SERVICE_KEY) && token.length === SERVICE_KEY.length && token === SERVICE_KEY;
+}
+
+function serviceCallerId(body: Record<string, unknown>): string | null {
+  const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+  return UUID.test(userId) ? userId : null;
+}
+
 /** The caller's uid from their bearer token, or null. Never trusts a uid from
- *  the body — you can only transcribe your own recordings. */
+ *  the body — you can only transcribe your own recordings. (The one exception is
+ *  resolveServiceCaller above, which is gated on the service-role key itself.) */
 async function verifyUser(token: string): Promise<string | null> {
   if (!token) return null;
   try {

@@ -190,6 +190,10 @@ export * from "./workspace-agent-tools.ts";
 // iOS use the same bounds, graph vocabulary, and injection fence.
 export * from "./word-overlap.ts";
 export * from "./course-filing.ts";
+// The recording-notes prompt. It lives in shared because THREE surfaces compose
+// one, and a private copy is how the phone quietly shipped worse notes for days
+// in July while every signal read as success.
+export * from "./recording-note.ts";
 export * from "./study-occlusion.ts";
 export * from "./occlusion-suggest.ts";
 export * from "./brain-context.ts";

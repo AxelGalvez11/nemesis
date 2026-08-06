@@ -1,28 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+// READING recordings that already exist.
+//
+// This file used to create them too. It does not any more (2026-08-05): the
+// artifact row is written by /api/recordings/jobs at the same moment as the job
+// and the Library note, and then filled in by the recording-worker function as
+// each stage lands. A browser that creates the row is a browser that can be
+// closed halfway through creating it.
+//
+// So there is no "draft" type here now either. There was one because the page
+// held a finished transcript and a finished set of notes in memory and then
+// wrote them; today it holds neither — the transcript arrives on the row.
+
+import { useEffect, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
 export type RecordingSurface = "sessions" | "notebook";
 
-export interface RecordingArtifactDraft {
-  /** Seconds of audio actually captured — the silence gate's quiet is not in
-   *  here, and neither is it in the file, the upload, or the bill. */
-  durationSeconds: number;
-  notes: string;
-  transcript: string;
-  /** A ready-made line like "12 minutes of quiet skipped", when there was
-   *  enough to be worth saying. Not persisted — it belongs in the chat message
-   *  that announces the recording, not in the artifact row. */
-  silenceSkipped?: string;
-}
-
-export interface RecordingArtifact extends RecordingArtifactDraft {
+export interface RecordingArtifact {
   id: string;
   surface: RecordingSurface;
   contextId: string;
   title: string;
+  /** Empty until the transcription stage lands, then permanent — this row is
+   *  the transcript's durable home, which is why the transcription job hands its
+   *  text over once and clears it. */
+  transcript: string;
+  /** Empty until the compose stage lands. */
+  notes: string;
+  /** Seconds of audio actually captured — the silence gate's quiet is not in
+   *  here, and neither is it in the file, the upload, or the bill. */
+  durationSeconds: number;
   createdAt: string;
 }
 
@@ -48,17 +57,32 @@ export function toRecordingArtifact(value: unknown): RecordingArtifact | null {
 interface UseRecordingArtifactsOptions {
   contextId: string | null;
   preview: boolean;
+  /**
+   * Change this to re-read.
+   *
+   * These rows are written by the recording worker now, not by this page, so
+   * there is no local write to update from — a job moving on the server is the
+   * only signal that an artifact has grown a transcript or a set of notes.
+   * Callers pass a fingerprint of the jobs they are watching.
+   */
+  refreshKey?: string;
   surface: RecordingSurface;
   userId: string | null;
 }
 
-export function useRecordingArtifacts({ contextId, preview, surface, userId }: UseRecordingArtifactsOptions) {
+export function useRecordingArtifacts({ contextId, preview, refreshKey = "", surface, userId }: UseRecordingArtifactsOptions) {
   const [artifacts, setArtifacts] = useState<RecordingArtifact[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    setArtifacts([]);
-    if (preview || !userId || !contextId) return () => { cancelled = true; };
+    if (preview || !userId || !contextId) {
+      setArtifacts([]);
+      return () => { cancelled = true; };
+    }
+    // Deliberately NOT blanked before the read. It used to be, because the only
+    // thing that changed these inputs was switching conversation; `refreshKey`
+    // now also fires on every stage change, and clearing first would make a
+    // finished card flicker back to empty each time a job moved.
     void supabase
       .from("chat_recording_artifacts")
       .select("id,surface,context_id,title,transcript,notes,duration_seconds,created_at")
@@ -74,60 +98,8 @@ export function useRecordingArtifacts({ contextId, preview, surface, userId }: U
         }));
       });
     return () => { cancelled = true; };
-  }, [contextId, preview, surface, userId]);
+  }, [contextId, preview, refreshKey, surface, userId]);
 
-  /**
-   * Save a finished recording.
-   *
-   * `intoContextId` exists for the caller that CREATES the conversation at save
-   * time rather than before recording (sessions/session-chat.tsx — a session is
-   * no longer made the moment you open the recorder, so there may be nothing to
-   * attach to until the recording is done). `contextId` here is a prop, so a
-   * conversation created inside the same callback is not visible to this closure
-   * until the next render — which is exactly one render too late to save into.
-   * Passing the id through sidesteps the closure instead of racing it.
-   */
-  const createArtifact = useCallback(async (draft: RecordingArtifactDraft, title?: string, intoContextId?: string) => {
-    const target = intoContextId ?? contextId;
-    if (!target) throw new Error("Choose a conversation before saving a recording.");
-    const createdAt = new Date().toISOString();
-    const artifact: RecordingArtifact = {
-      id: crypto.randomUUID(),
-      contextId: target,
-      surface,
-      title: title?.trim() || `Recording · ${new Date(createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
-      transcript: draft.transcript.trim(),
-      notes: draft.notes.trim(),
-      durationSeconds: Math.max(0, Math.round(draft.durationSeconds)),
-      createdAt,
-    };
-    setArtifacts((current) => [artifact, ...current]);
-    if (preview) return artifact;
-    if (!userId) throw new Error("Sign in to save recording outputs.");
-    const { data, error } = await supabase
-      .from("chat_recording_artifacts")
-      .insert({
-        id: artifact.id,
-        user_id: userId,
-        surface,
-        context_id: target,
-        title: artifact.title,
-        transcript: artifact.transcript,
-        notes: artifact.notes,
-        duration_seconds: artifact.durationSeconds,
-        created_at: createdAt,
-      })
-      .select("id,surface,context_id,title,transcript,notes,duration_seconds,created_at")
-      .single();
-    if (error) {
-      setArtifacts((current) => current.filter((item) => item.id !== artifact.id));
-      throw new Error(error.message);
-    }
-    const saved = toRecordingArtifact(data);
-    if (saved) setArtifacts((current) => current.map((item) => item.id === saved.id ? saved : item));
-    return saved ?? artifact;
-  }, [contextId, preview, surface, userId]);
-
-  return { artifacts, createArtifact };
+  return { artifacts };
 }
 

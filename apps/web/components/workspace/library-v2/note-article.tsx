@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { DocsCrumbs } from "./docs-crumbs";
+import { RecordingNoteBanner } from "./recording-note-banner";
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { folderIndexFor } from "@/lib/workspace/library-folder-index";
@@ -308,6 +309,10 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           spellCheck
           value={title}
         />
+        {/* Only ever rendered for a note a recording is still being written
+            into. It disappears on its own when the job finishes — there is no
+            "done" state to dismiss. */}
+        <RecordingNoteBanner noteId={note.id} />
         {sources.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="note-sources">
             {sources.map((source) => {
