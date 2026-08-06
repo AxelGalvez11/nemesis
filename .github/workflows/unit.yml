@@ -73,6 +73,12 @@ jobs:
         run: deno test --allow-env supabase/functions/ask/
       - name: Deno unit tests (shared cost attribution)
         run: deno test --allow-env supabase/functions/_shared/
+      # The recording pipeline's decisions — the backoff curve, when a stage
+      # gives up, where the model's title ends and its notes begin. This is the
+      # function that finishes a lecture after the page that recorded it has
+      # gone, so a bug here is a lost lecture rather than a broken screen.
+      - name: Deno unit tests (recording worker)
+        run: deno test --allow-env supabase/functions/recording-worker/
       # --allow-read is for no-external-purchase.test.ts, which reads the app's
       # own source to prove no App Store 3.1.1(a) purchase link has crept back in.
       #

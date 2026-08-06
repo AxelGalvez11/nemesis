@@ -9,7 +9,9 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
+import { supabase } from "@/lib/supabase";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 import {
   closeOutputViewer,
   outputViewerServerSnapshot,
@@ -45,8 +47,16 @@ export function OutputViewerDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity of `output` churns; the id is what changes meaningfully.
   }, [outputId, state.open]);
 
-  const transcript = output?.transcript?.trim() ?? "";
-  const notes = output?.notes?.trim() ?? "";
+  // A RECORDING IS READ FROM ITS ROW, NOT FROM THE MESSAGE.
+  //
+  // The message is written once, when the recording is handed to the pipeline,
+  // and at that point there is no transcript and no write-up — both are filled
+  // in later by the worker. Reading the artifact here is what lets the popup
+  // open on a transcript while the notes are still being composed, and then
+  // grow the notes underneath without the student closing and reopening it.
+  const live = useLiveRecording(output?.kind === "recording" ? output.id : null);
+  const transcript = (live?.transcript ?? output?.transcript ?? "").trim();
+  const notes = (live?.notes ?? output?.notes ?? "").trim();
   const showToggle = Boolean(transcript && notes);
   const activeTab: ViewerTab = showToggle ? tab : notes ? "notes" : "transcript";
 
@@ -83,4 +93,46 @@ export function OutputViewerDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * The current transcript and notes for one recording artifact.
+ *
+ * Re-read whenever a watched job moves, which is exactly when these can have
+ * changed — the worker writes the transcript at one stage and the notes at the
+ * next. Returns null for anything that is not a recording, or before the first
+ * read lands, so the caller falls back to whatever the message carries.
+ */
+function useLiveRecording(artifactId: string | null): { notes: string; transcript: string } | null {
+  const { jobs } = useRecordingJobs();
+  const [row, setRow] = useState<{ id: string; notes: string; transcript: string } | null>(null);
+  // Only the jobs that could still change this artifact. Depending on the whole
+  // snapshot would re-read on every unrelated recording's stage change.
+  const stamp = jobs.find((job) => job.artifactId === artifactId)?.updatedAt ?? "";
+
+  useEffect(() => {
+    if (!artifactId) {
+      setRow(null);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from("chat_recording_artifacts")
+      .select("id,transcript,notes")
+      .eq("id", artifactId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setRow({
+          id: data.id as string,
+          notes: typeof data.notes === "string" ? data.notes : "",
+          transcript: typeof data.transcript === "string" ? data.transcript : "",
+        });
+      });
+    return () => { cancelled = true; };
+  }, [artifactId, stamp]);
+
+  // Guard against showing the PREVIOUS artifact's text for a frame when the
+  // student opens one recording straight after another.
+  return row && row.id === artifactId ? row : null;
 }

@@ -16,7 +16,9 @@ import { appendMessage } from "@/lib/notebooks/chats-api";
 import { consumeNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
+import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
+import type { RecordingHandoff, RecordingTarget } from "../sessions/use-recording";
 
 import { NotebookComposer } from "./notebook-composer";
 import { NotebookTranscript } from "./notebook-transcript";
@@ -41,7 +43,9 @@ export function NotebookChatView() {
   const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
   const [recordCanvasOpen, setRecordCanvasOpen] = useState(false);
-  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
+  // Read-only now: recordings are created by /api/recordings/jobs so the rows
+  // exist before this view is told anything, and nothing here writes them.
+  const { artifacts: recordingArtifacts } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
 
   const wireSources: NotebookWireSource[] = useMemo(
     () => sources.map((s) => ({ name: s.name, content: s.content })),
@@ -111,31 +115,38 @@ export function NotebookChatView() {
     }
   }, [activeChatId]);
 
-  const handleRecordingFinished = useCallback((draft: RecordingArtifactDraft) => {
+  /** A notebook recording files under the notebook's own chat. Same durable
+   *  pipeline as the main chat — the surface only decides which context the
+   *  artifact is attached to. */
+  const resolveRecordingTarget = useCallback((): RecordingTarget | null => {
+    if (!activeChatId) return null;
+    return { contextId: activeChatId, messageId: crypto.randomUUID(), surface: "notebook" };
+  }, [activeChatId]);
+
+  const handleRecordingFinished = useCallback((handoff: RecordingHandoff) => {
     setRecording(false);
     setRecordCanvasOpen(false);
     setComposerMode("chat");
-    if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
+    refreshRecordingJobs();
     setRightPanel("outputs");
     setRightRailOpen(true);
     const chatId = activeChatId;
     const targetNotebookId = notebookId;
-    void createArtifact(draft)
-      .then((artifact) => {
-        if (!chatId) return;
-        const content = "Recording captured — transcript and notes are ready.";
-        notebookChatStore.append(chatId, {
-          at: new Date().toISOString(),
-          content,
-          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
-          role: "assistant",
-        });
-        // Cloud rows carry plain content only; the artifact itself persists in
-        // chat_recording_artifacts, so a reload still shows it under Outputs.
-        if (!preview && targetNotebookId) void appendMessage({ chatId, content, notebookId: targetNotebookId, role: "assistant" }).catch(() => {});
-      })
-      .catch(() => undefined);
-  }, [activeChatId, createArtifact, notebookId, preview]);
+    if (!chatId) return;
+    // Posted immediately, with no await in front of it: the transcript and notes
+    // are written by the recording-worker function, and this view no longer
+    // waits for — or owns — any of that.
+    const content = "Recording saved. I'm writing it up now — you can keep working, or close this page.";
+    notebookChatStore.append(chatId, {
+      at: new Date().toISOString(),
+      content,
+      outputs: [{ durationSeconds: handoff.durationSeconds, id: handoff.artifactId, kind: "recording", polish: "pending", title: handoff.title }],
+      role: "assistant",
+    });
+    // Cloud rows carry plain content only; the artifact itself persists in
+    // chat_recording_artifacts, so a reload still shows it under Outputs.
+    if (!preview && targetNotebookId) void appendMessage({ chatId, content, notebookId: targetNotebookId, role: "assistant" }).catch(() => {});
+  }, [activeChatId, notebookId, preview]);
 
   const submit = useCallback(
     async (text: string, files: File[]) => {
@@ -189,9 +200,11 @@ export function NotebookChatView() {
               uid={uid}
               onBusyChange={setRecordingBusy}
               onDiscarded={handleRecordingDiscarded}
+              onEmpty={handleRecordingDiscarded}
               onFinished={handleRecordingFinished}
               onPausedChange={setRecordingPaused}
               registerControls={registerRecordControls}
+              resolveTarget={resolveRecordingTarget}
             />
           ) : (
             <NotebookTranscript messages={messages} working={working} />

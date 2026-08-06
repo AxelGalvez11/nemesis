@@ -23,8 +23,6 @@ import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
 import {
   describeRecordingBlob,
   pickRecordingFormat,
-  POLL_TIMEOUT_MS,
-  pollDelayMs,
   RECORDING_BITS_PER_SECOND,
   RECORDING_CHUNK_MS,
   RECORDING_MAX_BYTES,
@@ -32,9 +30,37 @@ import {
   type RecordingStatus,
   type TranscriptionUsage,
 } from "@/lib/workspace/recording-capture";
-import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 import { createSilenceGate, describeSilenceSkipped, stepSilenceGate, type SilenceGate } from "@/lib/workspace/silence-gate";
 import { emptyWaveform, pushWaveBar, WAVEFORM_SAMPLE_MS, type WaveBar } from "@/lib/workspace/waveform-history";
+
+/** Which conversation a finished recording belongs to. Answered by the caller
+ *  at hand-off time, because opening the recorder must not create a session. */
+export interface RecordingTarget {
+  contextId: string;
+  /** The chat message the caller is about to post for this recording, so the job
+   *  can point back at it when a page returns later. */
+  messageId: string;
+  /** Which chat this belongs to. Defaults to the main Sessions chat; notebooks
+   *  keep their artifacts under their own context. */
+  surface?: "sessions" | "notebook";
+  /** "12 minutes of quiet skipped", when the silence gate saved enough to be
+   *  worth saying. Filled in by the hook, not the caller. */
+  silenceSkipped?: string;
+}
+
+/** What the page gets back once the recording is safely in the pipeline. There
+ *  is no transcript here on purpose — it does not exist yet, and waiting for it
+ *  is exactly what this design stopped doing. */
+export interface RecordingHandoff {
+  jobId: string;
+  artifactId: string;
+  contextId: string;
+  messageId: string;
+  title: string;
+  libraryPath: string | null;
+  durationSeconds: number;
+  silenceSkipped?: string;
+}
 
 interface UseRecordingOptions {
   active: boolean;
@@ -47,11 +73,18 @@ interface UseRecordingOptions {
    * commit as it clears `active` — "cancel" is one decision, not two.
    */
   discard?: boolean;
-  /** Called once, when the transcript is back — not when the microphone closes.
-   *  The caller keeps the recording panel mounted until this fires. */
-  onComplete?: (draft: RecordingArtifactDraft) => void;
+  /** Which conversation to file this recording under. Called once, only when
+   *  there is audio worth keeping, and may create the conversation. */
+  resolveTarget?: () => RecordingTarget | null;
+  /** Called once the job exists — which is as soon as the audio is uploaded, not
+   *  when the transcript is back. The caller closes the recorder here and posts
+   *  the card that watches the job from then on. */
+  onComplete?: (handoff: RecordingHandoff) => void;
+  /** The microphone heard nothing worth keeping. Nothing was uploaded, nothing
+   *  was created, and the caller just closes the panel. */
+  onEmpty?: () => void;
   /** Called after a discard, so the caller can close the panel. Nothing was
-   *  saved, so there is no draft to hand back. */
+   *  saved, so there is nothing to hand back. */
   onDiscarded?: () => void;
 }
 
@@ -94,7 +127,9 @@ function frameLevel(samples: Float32Array): number {
   return Math.min(1, Math.sqrt(squares / Math.max(1, samples.length)) * 4);
 }
 
-const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+// The `sleep` helper that used to sit here went with the transcription poll
+// loop (2026-08-05). Nothing in the recorder waits on a timer any more: the
+// microphone closes, the audio uploads, and the job takes over.
 
 export function useRecordingSession(options: UseRecordingOptions) {
   const [status, setStatus] = useState<RecordingStatus>("idle");
@@ -115,6 +150,10 @@ export function useRecordingSession(options: UseRecordingOptions) {
   completeRef.current = options.onComplete;
   const discardedRef = useRef(options.onDiscarded);
   discardedRef.current = options.onDiscarded;
+  const emptyRef = useRef(options.onEmpty);
+  emptyRef.current = options.onEmpty;
+  const targetRef = useRef(options.resolveTarget);
+  targetRef.current = options.resolveTarget;
   // Read at stop time rather than passed to a callback: `active` and `discard`
   // change in the same render, and a callback captured earlier would still be
   // holding the old answer.
@@ -259,7 +298,23 @@ export function useRecordingSession(options: UseRecordingOptions) {
     }
   }, []);
 
-  const transcribe = useCallback(async (blob: Blob, seconds: number): Promise<string> => {
+  /**
+   * Get the audio somewhere durable, then hand it to the pipeline.
+   *
+   * 🔴 THIS IS THE ONLY PART OF PROCESSING A PAGE STILL OWNS, and it is the only
+   * part it can: until the upload lands, the recording exists ONLY as an array
+   * of blobs in this component's memory, so there is nothing for a server to be
+   * durable about. Everything after the job is created — transcribing, the notes
+   * pass, filing into a course, indexing — happens in recording_jobs and the
+   * recording-worker function, and survives navigation, refresh and closing the
+   * tab.
+   *
+   * The client-side poll loop that used to live here is GONE. It waited up to
+   * fifteen minutes inside a React hook and threw its own result away if the
+   * component had unmounted (`if (!mountedRef.current) return`), which is to say
+   * a student who opened their Library while a lecture transcribed lost it.
+   */
+  const handOff = useCallback(async (blob: Blob, seconds: number, target: RecordingTarget): Promise<RecordingHandoff> => {
     const { accessToken, uid } = options;
     if (!accessToken || !uid) throw new Error("Sign in to save this recording.");
 
@@ -274,41 +329,40 @@ export function useRecordingSession(options: UseRecordingOptions) {
     const uploaded = await supabase.storage.from("recordings").upload(path, blob, { contentType, upsert: false });
     if (uploaded.error) throw new Error("Your recording could not be uploaded. Check your connection and try again.");
 
-    setStatus("transcribing");
-    const authorization = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
-    const submitted = await fetch("/api/transcription/submit", {
-      body: JSON.stringify({ seconds, storagePath: path }),
-      headers: authorization,
+    const created = await fetch("/api/recordings/jobs", {
+      body: JSON.stringify({
+        contextId: target.contextId,
+        durationSeconds: seconds,
+        messageId: target.messageId,
+        silenceSkipped: target.silenceSkipped ?? null,
+        storagePath: path,
+        surface: target.surface ?? "sessions",
+      }),
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
       method: "POST",
     });
-    const submitBody = await submitted.json().catch(() => null) as
-      | { jobId?: string; usage?: TranscriptionUsage; error?: string; limitSeconds?: number; plan?: string; usedSeconds?: number }
+    const body = await created.json().catch(() => null) as
+      | { artifactId?: string; jobId?: string; libraryPath?: string | null; title?: string; error?: string; limitSeconds?: number; plan?: string; usedSeconds?: number }
       | null;
-    if (submitted.status === 429) {
-      setUsage({ limitSeconds: submitBody?.limitSeconds ?? 0, plan: submitBody?.plan ?? "free", usedSeconds: submitBody?.usedSeconds ?? 0 });
-      const quota = new Error(submitBody?.error ?? "You have reached this month's transcription limit.") as Error & { quota?: boolean };
+    if (created.status === 429) {
+      setUsage({ limitSeconds: body?.limitSeconds ?? 0, plan: body?.plan ?? "free", usedSeconds: body?.usedSeconds ?? 0 });
+      const quota = new Error(body?.error ?? "You have reached this month's transcription limit.") as Error & { quota?: boolean };
       quota.quota = true;
       throw quota;
     }
-    if (!submitted.ok || !submitBody?.jobId) throw new Error(submitBody?.error ?? "The transcription service is unavailable. Try again in a moment.");
-    if (submitBody.usage && mountedRef.current) setUsage(submitBody.usage);
-
-    // Poll. Groq finishes inside the submit request and parks its text, so the
-    // first poll usually already has it; AssemblyAI is the slow fallback lane.
-    const deadline = Date.now() + POLL_TIMEOUT_MS;
-    for (let attempt = 1; Date.now() < deadline; attempt += 1) {
-      await sleep(pollDelayMs(attempt));
-      const polled = await fetch("/api/transcription/status", {
-        body: JSON.stringify({ jobId: submitBody.jobId }),
-        headers: authorization,
-        method: "POST",
-      });
-      const pollBody = await polled.json().catch(() => null) as { status?: string; transcript?: string | null; error?: string } | null;
-      if (!polled.ok) continue;
-      if (pollBody?.status === "error") throw new Error(pollBody.error ?? "The recording could not be transcribed.");
-      if (pollBody?.status === "done") return (pollBody.transcript ?? "").trim();
+    if (!created.ok || !body?.jobId || !body.artifactId) {
+      throw new Error(body?.error ?? "This recording could not be queued. Try again in a moment.");
     }
-    throw new Error("The transcription is taking longer than expected. Your recording is safe — try again shortly.");
+    return {
+      artifactId: body.artifactId,
+      contextId: target.contextId,
+      durationSeconds: seconds,
+      jobId: body.jobId,
+      libraryPath: body.libraryPath ?? null,
+      messageId: target.messageId,
+      title: body.title ?? "Recording",
+      ...(target.silenceSkipped ? { silenceSkipped: target.silenceSkipped } : {}),
+    };
   }, [options.accessToken, options.uid]);
 
   /** Stop the microphone, then run the single pass. */
@@ -354,26 +408,41 @@ export function useRecordingSession(options: UseRecordingOptions) {
         setStatus("idle");
       }
       finishingRef.current = false;
-      completeRef.current?.({ durationSeconds: 0, notes: "", transcript: "" });
+      emptyRef.current?.();
       return;
     }
 
     try {
-      const transcript = await transcribe(blob, capturedSeconds);
-      if (!mountedRef.current) return;
-      setStatus("idle");
+      // The caller decides WHICH conversation this belongs to, and creates one
+      // if there is not one yet. Asked for here rather than passed in at mount:
+      // a session must not be created merely because the recorder was opened
+      // (owner 2026-07-29), so the question can only be answered once there is
+      // audio worth keeping.
+      const target = targetRef.current?.();
+      if (!target) throw new Error("Choose a conversation before saving a recording.");
+
+      const handoff = await handOff(blob, capturedSeconds, {
+        ...target,
+        ...(skipped ? { silenceSkipped: skipped } : {}),
+      });
       finishingRef.current = false;
-      completeRef.current?.({ durationSeconds: capturedSeconds, notes: "", transcript, ...(skipped ? { silenceSkipped: skipped } : {}) });
+      // NOT guarded on `mountedRef`. The old code returned early here if the
+      // component had gone, which is how a finished recording could vanish. The
+      // job now exists on the server whatever this page does, and the callback
+      // writes to a module-level store rather than to this component's state.
+      if (mountedRef.current) setStatus("idle");
+      completeRef.current?.(handoff);
     } catch (caught) {
       const failure = caught as Error & { quota?: boolean };
+      finishingRef.current = false;
       if (!mountedRef.current) return;
       setStatus(failure.quota ? "quota" : "error");
       setError(failure.message);
-      finishingRef.current = false;
       // Deliberately NOT calling onComplete: the caller unmounts this panel when
-      // it fires, and a student whose transcription failed needs to read why.
+      // it fires, and a student whose upload failed needs to read why. Nothing
+      // was created server-side on this path, so there is no orphan to clean up.
     }
-  }, [closeCaptureWindow, closeRecording, releaseMedia, runningMs, transcribe]);
+  }, [closeCaptureWindow, closeRecording, handOff, releaseMedia, runningMs]);
 
   /**
    * Throw the recording away. Nothing is uploaded, nothing is transcribed,

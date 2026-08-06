@@ -79,8 +79,11 @@ test("the cache weight matches the meter in the valve", () => {
   assert.match(source, new RegExp(`CACHE_HIT_WEIGHT = ${CACHE_HIT_WEIGHT}`));
 });
 
+// The prompt and its window moved to packages/shared on 2026-08-05, when the
+// compose pass moved off the browser and into the recording worker. Same claim,
+// new home: ONE pass per recording, over a window this size.
 test("the note pass runs once per recording, over the whole transcript", () => {
-  const source = repoFile("apps/web/lib/workspace/recording-note.ts");
+  const source = repoFile("packages/shared/src/recording-note.ts");
   assert.match(source, new RegExp(`RECORDING_NOTE_TRANSCRIPT_CHARS = ${RECORDING_NOTE_TRANSCRIPT_CHARS / 1000}_000`));
 });
 
@@ -92,11 +95,18 @@ test("the study material clip matches the generator", () => {
 // The lane the whole model turns on. If the web recorder ever moves off the batch
 // route — back to streaming, or onto something new — every dollar figure here is
 // wrong, and this is the test that says so.
+//
+// The evidence moved on 2026-08-05 without the claim changing. The browser used
+// to POST /api/transcription/submit itself; now it hands the audio to a durable
+// job and the WORKER calls that same lane. Still one file, still one paid pass,
+// still nothing streaming — so the check follows the work rather than the file.
 test("the web recorder is on the batch lane, and the rolling live-notes lane is gone", () => {
   const recorder = repoFile("apps/web/components/workspace/sessions/use-recording.ts");
-  assert.match(recorder, /transcription\/submit/, "web records to a file and uploads it once");
+  assert.match(recorder, /api\/recordings\/jobs/, "web records to a file, uploads it once, and queues a job");
   assert.doesNotMatch(recorder, /live-audio/, "web must not be streaming");
-  const note = repoFile("apps/web/lib/workspace/recording-note.ts");
+  const worker = repoFile("supabase/functions/recording-worker/index.ts");
+  assert.match(worker, /nemesis-transcribe/, "the worker is what reaches the batch transcription lane");
+  const note = repoFile("packages/shared/src/recording-note.ts");
   assert.doesNotMatch(note, /INSIGHT_INTERVAL_MS = |45_000/, "no pass-every-45-seconds lane on web");
 });
 

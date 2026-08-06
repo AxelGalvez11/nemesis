@@ -13,10 +13,9 @@ import { useEffect } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import { isCapturing, isFinishing, recordingStatusCopy } from "@/lib/workspace/recording-capture";
-import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { RecordingWaveform } from "./recording-waveform";
-import { useRecordingSession } from "./use-recording";
+import { useRecordingSession, type RecordingHandoff, type RecordingTarget } from "./use-recording";
 
 /** The recorder's own pause/resume, handed up so the composer can host the
  *  Pause/Continue button while the hook stays down here with the microphone. */
@@ -32,14 +31,22 @@ interface RecordWorkspaceProps {
   /** Set in the same commit that clears `active` to cancel instead of save. */
   discard?: boolean;
   uid?: string | null;
-  onFinished?: (draft: RecordingArtifactDraft) => void;
+  /** Which conversation to file the recording under, asked for only once there
+   *  is audio worth keeping. Returning null aborts the hand-off. */
+  resolveTarget?: () => RecordingTarget | null;
+  /** The recording is safely in the pipeline. Fires as soon as the audio is
+   *  uploaded — NOT when the transcript is back, which is the whole point. */
+  onFinished?: (handoff: RecordingHandoff) => void;
+  /** The microphone heard nothing worth keeping. Nothing was created. */
+  onEmpty?: () => void;
   onDiscarded?: () => void;
   /** Told whenever the student's own pause flips, so the composer's control
    *  can read Continue while the panel reads Paused — one source of truth. */
   onPausedChange?: (paused: boolean) => void;
-  /** Told while a finished recording is still uploading/transcribing. The
-   *  parent MUST keep this panel mounted while true — unmounting mid-flight
-   *  loses the recording silently (finish() checks mountedRef). */
+  /** Told while a finished recording is still UPLOADING. A much shorter window
+   *  than it used to be: it once covered the whole transcription, because that
+   *  ran in here. The parent should still keep this panel mounted while true so
+   *  the student can see the upload finish. */
   onBusyChange?: (busy: boolean) => void;
   /** Hands pause/resume up on mount and null on unmount. */
   registerControls?: (controls: RecordControls | null) => void;
@@ -56,12 +63,23 @@ export function RecordWorkspace({
   discard = false,
   uid = null,
   onDiscarded,
+  onEmpty,
   onFinished,
   onPausedChange,
   onBusyChange,
   registerControls,
+  resolveTarget,
 }: RecordWorkspaceProps) {
-  const recording = useRecordingSession({ accessToken, active, discard, onComplete: onFinished, onDiscarded, uid });
+  const recording = useRecordingSession({
+    accessToken,
+    active,
+    discard,
+    onComplete: onFinished,
+    onDiscarded,
+    onEmpty,
+    resolveTarget,
+    uid,
+  });
   const capturing = isCapturing(recording.status);
   const finishing = isFinishing(recording.status);
 

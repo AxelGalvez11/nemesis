@@ -114,24 +114,11 @@ export function recordingStoragePath(userId: string, id: string, extension: stri
   return `${userId}/${id}.${extension}`;
 }
 
-/**
- * Backoff between status polls.
- *
- * Groq transcribes inside the submit request, so the FIRST poll usually already
- * has the text — that is why this starts fast. AssemblyAI is the fallback lane
- * and takes minutes on a long lecture, so the gap widens rather than hammering
- * a queue that is not going to answer sooner for being asked.
- */
-export function pollDelayMs(attempt: number): number {
-  if (attempt <= 1) return 800;
-  if (attempt <= 4) return 2_000;
-  if (attempt <= 12) return 5_000;
-  return 10_000;
-}
-
-/** Give up after this long rather than polling a lost job forever. The audio is
- *  gone from the bucket by then either way, so there is nothing left to wait for. */
-export const POLL_TIMEOUT_MS = 15 * 60 * 1_000;
+// `pollDelayMs` and `POLL_TIMEOUT_MS` lived here until 2026-08-05. They paced a
+// transcription poll loop that ran INSIDE the recording hook, and they went with
+// it: the browser no longer waits for a transcript at all. The equivalent
+// decisions now live in supabase/functions/recording-worker/pipeline.ts
+// (backoffSeconds, stageAttemptLimit), where they can outlive the page.
 
 /** What the batch route reports back about this month's allowance. */
 export interface TranscriptionUsage {
@@ -140,21 +127,23 @@ export interface TranscriptionUsage {
   limitSeconds: number;
 }
 
+/** `transcribing` is gone from this list (2026-08-05) and its absence is the
+ *  point: the recorder's job now ends at the upload. What happens next is a
+ *  recording_jobs row with its own stages, which the chat card reports — see
+ *  lib/workspace/recording-job.ts. */
 export type RecordingStatus =
   | "idle"
   | "recording"
   | "uploading"
-  | "transcribing"
   | "quota"
   | "error";
 
-/** One line of student-readable state. No jargon: "uploading" and
- *  "transcribing" are what is happening, but "Saving audio" is what it means. */
+/** One line of student-readable state. No jargon: "uploading" is what is
+ *  happening, but "Saving audio" is what it means. */
 export function recordingStatusCopy(status: RecordingStatus): string {
   switch (status) {
     case "recording": return "Recording";
     case "uploading": return "Saving audio";
-    case "transcribing": return "Writing it up";
     case "quota": return "Monthly limit reached";
     case "error": return "Unavailable";
     default: return "Ready";
@@ -167,7 +156,8 @@ export function isCapturing(status: RecordingStatus): boolean {
 }
 
 /** Whether we are still doing work after the microphone closed, so the UI keeps
- *  its spinner instead of looking finished while the transcript is in flight. */
+ *  its spinner instead of looking finished while the audio is still uploading.
+ *  This is now a SHORT window — the upload — rather than the whole write-up. */
 export function isFinishing(status: RecordingStatus): boolean {
-  return status === "uploading" || status === "transcribing";
+  return status === "uploading";
 }

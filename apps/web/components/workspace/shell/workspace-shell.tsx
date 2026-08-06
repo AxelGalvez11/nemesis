@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
+import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
 import { useMediaQuery } from "./use-media-query";
@@ -147,6 +148,11 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       </main>
       <UpgradePromptDialog />
       <OutputViewerDialog />
+      {/* Mounted at the SHELL, not on a surface. A recording keeps processing
+          after you leave the chat, so the thing that says so has to outlive
+          every route change — and a failure that happened while the student was
+          on another page has nowhere else to reach them. */}
+      <ProcessingIndicator />
       </SettingsModalProvider>
     </div>
   );

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { folderForNewItem, studyCreationPreferencePrompt } from "@nemesis/shared";
+import { studyCreationPreferencePrompt } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
@@ -20,16 +20,16 @@ import { sniffsAsSyllabus } from "@/lib/workspace/syllabus-sniff";
 import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
-import { executeAgentTool, loadKnownCourses } from "@/lib/workspace/agent-tools";
+import { executeAgentTool } from "@/lib/workspace/agent-tools";
 import type { PendingDelete } from "@nemesis/shared";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
-import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
+import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
+import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
+import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 import { loadCalendarEvents, saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
-import { requestRecordingNote } from "@/lib/workspace/recording-note";
-import { writeLibraryNote } from "@/lib/workspace/library-write";
 
 
 import { ChatHeader } from "./chat-header";
@@ -40,11 +40,15 @@ import { Thread } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 import { RecordWorkspace, type RecordControls } from "./record-workspace";
+import type { RecordingHandoff, RecordingTarget } from "./use-recording";
 import { SyllabusDialog } from "../calendar/syllabus-dialog";
 
-// Recordings are filed by COURSE like everything else (folderForNewItem,
-// owner 2026-08-05) — the old hardcoded "Nemesis/Recordings" pile organized a
-// semester of lectures by who made the note instead of what class it was.
+// Recordings are still filed by COURSE (owner 2026-08-05) — the old hardcoded
+// "Nemesis/Recordings" pile organized a semester of lectures by who made the
+// note instead of what class it was. That matching moved SERVER-SIDE on the same
+// day: it needs the finished notes to decide a course, and waiting for those is
+// exactly what this page stopped doing. See the `filing` stage in
+// supabase/functions/recording-worker.
 
 /** The placeholder name a session gets when the recorder creates it. Only a
  *  session still carrying this gets renamed to the recording's own title. */
@@ -163,7 +167,21 @@ export function SessionChat() {
   // reviewed importer through them one dialog at a time (owner 2026-08-03
   // attached four). Closing a dialog — imported or cancelled — advances it.
   const [syllabusImport, setSyllabusImport] = useState<{ files: File[]; targetId: string } | null>(null);
-  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
+  const { jobs: recordingJobs } = useRecordingJobs();
+  // Re-read the artifacts whenever ANY watched job moves. That is what makes
+  // results appear progressively: the transcript lands on the artifact at the
+  // `composing` stage, so the card becomes openable then rather than at the end.
+  // Cheap — one indexed read of this conversation's own rows, a handful of times
+  // per recording.
+  const recordingJobsRefreshKey = useMemo(
+    () => recordingJobs.map((job) => `${job.id}:${job.stage}:${job.status}`).join("|"),
+    [recordingJobs],
+  );
+  // Read-only: the artifact row is created server-side by /api/recordings/jobs
+  // together with the job and the Library note, so nothing on this page writes
+  // one any more. `recordingJobs` is the account-wide watch — this component
+  // observes it, and unmounting does not stop it.
+  const { artifacts: recordingArtifacts } = useRecordingArtifacts({ contextId: selectedId, preview, refreshKey: recordingJobsRefreshKey, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -570,149 +588,141 @@ export function SessionChat() {
     setComposerMode(mode);
   }, []);
 
-  const handleRecordingFinished = useCallback((draft: RecordingArtifactDraft) => {
+  /**
+   * Where a finished recording goes, decided the moment there is audio.
+   *
+   * Opening the recorder still does not create a conversation (owner
+   * 2026-07-29): this is called from inside the hook's finish path, AFTER its
+   * empty-capture guard, so a recording that heard nothing leaves no "Recorded
+   * session" row behind. The message id is minted here rather than by the hook
+   * because it is this component's message.
+   */
+  const resolveRecordingTarget = useCallback((): RecordingTarget => {
+    const contextId = selectedId ?? sessionsStore.create(RECORDED_SESSION_TITLE).id;
+    return { contextId, messageId: newLocalId() };
+  }, [selectedId]);
+
+  /**
+   * The recording is in the pipeline. Post the card and get out of the way.
+   *
+   * 🔴 EVERYTHING THIS FUNCTION USED TO DO NOW HAPPENS SERVER-SIDE. It used to
+   * run the compose pass, write the artifact, match the course, write the
+   * Library note and then resolve the placeholder — an awaited chain of four
+   * network calls living inside a callback on a chat page. Navigating away
+   * killed it part way through, which meant a recording that had already been
+   * uploaded, transcribed and BILLED could end up with no notes and no note,
+   * and nothing on screen to say why.
+   *
+   * All of it is now recording_jobs + the recording-worker function. What is
+   * left here is one local write: a message carrying the artifact's id. The card
+   * reads the job by that id and reports its stage, so the same card renders
+   * identically on a page opened ten minutes later on another device.
+   */
+  const handleRecordingFinished = useCallback((handoff: RecordingHandoff) => {
     setRecording(false);
     setComposerMode("chat");
-    if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
-    // Deliberately NOT opening the Outputs panel (owner 2026-07-28: "recorded
-    // session did not save into chat as part of the conversation as artifact,
-    // it only saved in the outputs section"). Leaving the panel alone keeps the
-    // student in the conversation, where the artifact belongs.
-    //
-    // That alone did not fix it, and the earlier note here — blaming the rail
-    // sliding open — was wrong. The card was posted and persisted every time
-    // (chat_messages holds it with the artifact under meta.outputs); the THREAD
-    // was throwing it away, because grouping dropped any assistant message with
-    // no unanswered question above it, which is every recording. See
-    // lib/workspace/session-turns.ts.
-    // Deliberately BELOW the empty-draft guard above: a recording that captured
-    // nothing must leave no conversation behind, which was the whole point of
-    // not creating one when the recorder opened. create() also selects the new
-    // session and hands it back, so this names it and opens it in one step.
-    const targetId = selectedId ?? sessionsStore.create(RECORDED_SESSION_TITLE).id;
+    // Read the new job NOW rather than on the next scheduled poll — which, with
+    // nothing else running, can be twenty seconds away. Twenty seconds of "did
+    // that work?" after stopping a lecture is the exact gap being closed here.
+    refreshRecordingJobs();
 
-    // THE CARD GOES UP FIRST, BEFORE ANY OF THE WORK BELOW.
-    //
-    // Everything that follows is awaited — a whole compose pass over the
-    // transcript, then the artifact write, then the Library write — and until
-    // this callback was changed NOTHING was posted until all of it finished. So
-    // the recorder closed, the thread appeared empty for the length of an LLM
-    // call, and the student's recording looked like it had been thrown away
-    // (owner 2026-07-30: "when i 'saved to chat' the chat went back to blank").
-    //
-    // The placeholder carries the transcript it already has, so even the pending
-    // card is backed by something real rather than being pure decoration.
-    const pendingMessageId = newLocalId();
-    sessionsStore.appendPending(targetId, {
+    sessionsStore.appendPending(handoff.contextId, {
       at: new Date().toISOString(),
-      content: "Recording captured. Writing up your notes…",
-      id: pendingMessageId,
+      content: [
+        "Recording saved. I'm writing it up now — you can keep working, or close this page.",
+        // The silence gate's saving is reported, not hidden: the student's
+        // allowance was charged for the shorter audio, so they should be able to
+        // reconcile a 60-minute lecture reading as 45 minutes.
+        handoff.silenceSkipped ? `\n\n${handoff.silenceSkipped}.` : "",
+      ].join(""),
+      id: handoff.messageId,
       outputs: [{
-        durationSeconds: draft.durationSeconds,
-        id: newLocalId(),
+        durationSeconds: handoff.durationSeconds,
+        // THE ARTIFACT'S id, not a fresh local one. It is how the card finds its
+        // job, how the outputs rail dedupes, and how a later page load pairs
+        // this message with the finished transcript and notes.
+        id: handoff.artifactId,
         kind: "recording",
-        // Not the finished title: that is written by the same pass that writes
-        // the notes and does not exist yet. Renaming under the student as it
-        // resolves is honest — it is what actually happens.
         polish: "pending",
-        title: "Recording",
-        transcript: draft.transcript,
+        title: handoff.title,
       }],
       role: "assistant",
     });
 
-    void (async () => {
-      // ONE compose pass over the whole transcript (owner 2026-07-27). There are
-      // no live notes to fall back on any more — nothing is written during the
-      // recording — so when this fails the transcript is what the student keeps,
-      // and the message below has to say so rather than claim notes exist.
-      //
-      // The same pass names the recording (owner 2026-07-28: "can the note
-      // title also be renamed instead of being just 'recording'") — a title
-      // costs nothing extra folded in here, and it is what the Library note,
-      // its filename, and the chat card are all called. An empty title is not
-      // an error: createArtifact falls back to the dated name.
-      const { fallbackModel, notes, title } = uid
-        ? await requestRecordingNote({ transcript: draft.transcript, uid })
-        : { fallbackModel: null, notes: "", title: "" };
-      // targetId, not the hook's own contextId: when this callback created the
-      // session a moment ago, that prop is still the previous render's value.
-      const artifact = await createArtifact({ ...draft, notes }, title, targetId);
+    // A sidebar of identical "Recorded session" rows is the problem the recording
+    // title exists to fix, so the session borrows it once the notes pass has
+    // named the recording. Done by the effect below rather than here, because
+    // that name does not exist yet — it arrives with the job.
+  }, []);
 
-      // A sidebar of identical "Recorded session" rows has the same problem the
-      // title fixes, so borrow it — but only while the session still carries the
-      // name the recorder gave it. A student who renamed it, or who recorded
-      // partway through a real conversation, keeps their own title.
-      const sessionTitle = sessionsStore.getState().sessions.find((entry) => entry.id === targetId)?.title;
-      if (targetId && title && sessionTitle === RECORDED_SESSION_TITLE) sessionsStore.rename(targetId, title);
+  /**
+   * Keep the conversation in step with jobs that finished elsewhere.
+   *
+   * "Elsewhere" is the normal case now: another tab, another device, or this
+   * same tab before a refresh. Everything here is derived from rows the server
+   * already wrote, so it converges to the same state however the student got
+   * here — which is what makes closing the page safe.
+   */
+  useEffect(() => {
+    if (preview) return;
+    for (const job of recordingJobs) {
+      if (job.status !== "processing" || !job.title || !job.contextId) continue;
+      const session = sessionsStore.getState().sessions.find((entry) => entry.id === job.contextId);
+      // Only while the session still carries the name the recorder gave it. A
+      // student who renamed it, or who recorded partway through a real
+      // conversation, keeps their own title.
+      if (session?.title === RECORDED_SESSION_TITLE) sessionsStore.rename(job.contextId, job.title);
+    }
+  }, [preview, recordingJobs]);
 
-      // The third destination (owner ask 2026-07-27). Until now a recording
-      // reached the Outputs panel and the chat card but never the Library, so
-      // it stayed stranded in one conversation instead of joining the semester.
-      let libraryPath: string | null = null;
-      if (uid && !preview && notes.trim()) {
-        try {
-          // Course-matched like every other lane: "<Course>/Lectures" when the
-          // lecture clearly belongs to one of the student's courses, Inbox
-          // when it doesn't — never a provenance pile.
-          const folder = folderForNewItem("recording", `${artifact.title}\n${notes}`, await loadKnownCourses());
-          libraryPath = (await writeLibraryNote({ content: notes, folder, title: artifact.title, userId: uid })).path;
-        } catch {
-          // Saving to the Library is a bonus destination, not the recording
-          // itself — a failure here must not discard the artifact above.
-          libraryPath = null;
-        }
-      }
-
-      // The artifact also lands in the chat itself as a clickable card
-      // (owner ask 2026-07-20) — message outputs sync to cloud meta.
-      if (!targetId) return;
-      // RESOLVES the placeholder rather than appending beside it — appending
-      // would leave the pulsing card on screen forever, next to the finished
-      // one. This is also the first and only time this message reaches the
-      // cloud, which is what keeps a half-written state from being persisted.
-      sessionsStore.resolvePending(targetId, pendingMessageId, {
-        // The silence gate's saving is reported, not hidden: the student's
-        // allowance was charged for the shorter audio, so they should be able
-        // to reconcile a 60-minute lecture reading as 45 minutes.
-        content: [
-          libraryPath
-            ? `Recording captured. The notes are saved in your Library at ${libraryPath}. Want me to link them to your existing notes on this topic?`
-            : notes.trim()
-              ? "Recording captured — transcript and notes are ready."
-              : "Recording captured. The transcript is saved, but writing the notes failed — ask me to write them up and I will use the transcript.",
-          draft.silenceSkipped ? `\n\n${draft.silenceSkipped}.` : "",
-          // SAY WHEN A BACKUP ENGINE WROTE THESE. The answer engine falls
-          // through to a spare when the usual one is unreachable, which keeps
-          // recordings working during an outage and is worth keeping. But on
-          // 2026-07-29 it downgraded the notes for days with nothing to show
-          // for it — they stopped following their own prompt and every signal
-          // still read as success. A student cannot ask for a rewrite of a
-          // problem nobody told them about.
-          fallbackModel
-            ? "\n\nHeads up: my usual notes engine was unavailable, so a backup wrote these and they may be less organised than normal. Ask me to rewrite them and I will use the transcript."
-            : "",
-        ].join(""),
-        outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
+  /**
+   * Swap a pending recording card for the finished one.
+   *
+   * Driven by the ARTIFACT rows rather than by the job that produced them, and
+   * that is deliberate: a job disappears once it is ready, but the artifact is
+   * permanent. So this works identically for a recording that finished a second
+   * ago and one that finished last week and is being scrolled back to — there is
+   * no completion event to have missed.
+   *
+   * Idempotent: a message whose output already carries the transcript is left
+   * alone, so this cannot loop against its own writes.
+   */
+  useEffect(() => {
+    if (preview || !selectedId) return;
+    const byId = new Map(recordingArtifacts.map((artifact) => [artifact.id, artifact]));
+    const stillRunning = new Set(
+      recordingJobs.filter((job) => job.status === "processing").map((job) => job.artifactId),
+    );
+    for (const message of messages) {
+      const output = message.outputs?.[0];
+      if (!output || output.kind !== "recording" || output.polish !== "pending") continue;
+      // NOT while the job is still going. The wording below is final — it says
+      // whether the notes exist — and a job part way through composing has no
+      // notes yet without having failed. Saying "writing the notes did not
+      // finish" at that moment would be plainly untrue, and the card is already
+      // reporting the live stage anyway.
+      if (stillRunning.has(output.id)) continue;
+      const artifact = byId.get(output.id);
+      // `message.id` is optional on the type for messages built before the store
+      // minted ids. One without an id cannot be addressed, so it is left alone
+      // rather than resolved by position, which would rewrite the wrong message.
+      if (!artifact || !message.id || !artifact.transcript.trim()) continue;
+      sessionsStore.resolvePending(selectedId, message.id, {
+        content: artifact.notes.trim()
+          ? "Your recording is written up — transcript and notes are ready."
+          : "Your recording is transcribed. Writing the notes did not finish, so ask me to write them up and I will use the transcript.",
+        outputs: [{
+          createdAt: artifact.createdAt,
+          durationSeconds: artifact.durationSeconds,
+          id: artifact.id,
+          kind: "recording",
+          notes: artifact.notes,
+          title: artifact.title,
+          transcript: artifact.transcript,
+        }],
       });
-    })().catch((cause) => {
-      // Was `.catch(() => undefined)`. Anything that threw between saving the
-      // artifact and posting the card vanished without a trace, which is a
-      // recording that exists in Outputs and nowhere else with no way to tell
-      // why. Say so in the thread instead of dropping it.
-      console.error("recording follow-up failed", cause);
-      if (!targetId) return;
-      // Also RESOLVES rather than appends. A throw used to be the one path that
-      // left the placeholder untouched, so the student would have been told the
-      // write-up failed while a card pulsed away beside it, apparently still
-      // working. `outputs: []` clears the pending card; the transcript is not
-      // lost, it is on the artifact this failure did not reach.
-      sessionsStore.resolvePending(targetId, pendingMessageId, {
-        content: "Your recording was saved, but writing it up failed. The audio and transcript are safe — ask me to write the notes and I will use them.",
-        outputs: [],
-      });
-    });
-  }, [createArtifact, preview, selectedId, uid]);
+    }
+  }, [messages, preview, recordingArtifacts, recordingJobs, selectedId]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");
@@ -733,9 +743,14 @@ export function SessionChat() {
               uid={uid}
               onBusyChange={setRecordingBusy}
               onDiscarded={() => setComposerMode("chat")}
+              // A recording that captured nothing leaves NOTHING behind — no
+              // conversation, no card, no note. That is why the hook asks for a
+              // target only after its empty-capture guard.
+              onEmpty={() => { setRecording(false); setComposerMode("chat"); }}
               onFinished={handleRecordingFinished}
               onPausedChange={setRecordingPaused}
               registerControls={registerRecordControls}
+              resolveTarget={resolveRecordingTarget}
             />
           ) : (
             <Thread activity={liveActivity?.sessionId === selectedId ? liveActivity.label : null} busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />

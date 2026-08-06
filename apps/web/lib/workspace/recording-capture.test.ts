@@ -6,8 +6,6 @@ import {
   isCapturing,
   isFinishing,
   pickRecordingFormat,
-  pollDelayMs,
-  POLL_TIMEOUT_MS,
   RECORDING_BITS_PER_SECOND,
   RECORDING_MAX_BYTES,
   RECORDING_MIME_PREFERENCE,
@@ -74,23 +72,11 @@ test("the storage path is namespaced to the owner", () => {
   assert.ok(path.startsWith("user-123/"));
 });
 
-// Groq transcribes inside the submit request and parks its text, so the first
-// poll usually already has it — hence a fast first gap. AssemblyAI is the slow
-// fallback and will not answer sooner for being asked more often.
-test("polling starts fast and then backs off", () => {
-  assert.equal(pollDelayMs(1), 800);
-  assert.ok(pollDelayMs(3) > pollDelayMs(1));
-  assert.ok(pollDelayMs(8) > pollDelayMs(3));
-  assert.ok(pollDelayMs(50) >= pollDelayMs(20));
-  // Monotonic, so a long job never polls faster as it ages.
-  for (let attempt = 2; attempt < 40; attempt += 1) {
-    assert.ok(pollDelayMs(attempt) >= pollDelayMs(attempt - 1), `attempt ${attempt}`);
-  }
-});
-
-test("the poll window is long enough for a slow batch job", () => {
-  assert.ok(POLL_TIMEOUT_MS >= 10 * 60 * 1_000);
-});
+// The two polling tests that stood here went with the poll loop itself on
+// 2026-08-05 — the browser no longer waits for a transcript, so there is no
+// client-side backoff left to pin. Their replacements live beside the code that
+// took the job over: backoffSeconds and stageAttemptLimit in
+// supabase/functions/recording-worker/pipeline.test.ts.
 
 // Speech, not music: an hour at this rate is about 14 MB, which uploads on a
 // lecture-hall connection and stays well inside the bucket's file cap.
@@ -103,7 +89,6 @@ test("the bitrate is sized for speech", () => {
 test("status copy says what is happening, without jargon", () => {
   assert.equal(recordingStatusCopy("recording"), "Recording");
   assert.equal(recordingStatusCopy("uploading"), "Saving audio");
-  assert.equal(recordingStatusCopy("transcribing"), "Writing it up");
   assert.equal(recordingStatusCopy("idle"), "Ready");
 });
 
@@ -112,9 +97,8 @@ test("status copy says what is happening, without jargon", () => {
 // navigate away and lose the write-up.
 test("the microphone and the work after it are different states", () => {
   assert.equal(isCapturing("recording"), true);
-  assert.equal(isCapturing("transcribing"), false);
+  assert.equal(isCapturing("uploading"), false);
   assert.equal(isFinishing("uploading"), true);
-  assert.equal(isFinishing("transcribing"), true);
   assert.equal(isFinishing("recording"), false);
   assert.equal(isFinishing("idle"), false);
 });

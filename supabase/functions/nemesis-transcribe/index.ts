@@ -30,6 +30,7 @@
 //
 // The service role lives ONLY in the function env, never in an app bundle.
 
+import { isServiceCaller, uuidOrNull } from "../_shared/service-auth.ts";
 import { formatDiarizedTranscript, utterancesFromWords, utterancesOf } from "../_shared/transcript-speakers.ts";
 import { batchCostUsd, batchProviderFor, PRICE_REV } from "../_shared/voice-cost.ts";
 
@@ -141,10 +142,14 @@ Deno.serve(async (req) => {
   }
 
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const userId = await verifyUser(token);
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  // Either/or, never a fallback chain: a service-role call with a bad uid must
+  // be rejected outright, not retried against the auth server with a key that
+  // is not a user token.
+  const service = await isServiceCaller(token, { serviceKey: SERVICE_KEY, supabaseUrl: SB_URL });
+  const userId = service ? uuidOrNull(body.userId) : await verifyUser(token);
   if (!userId) return json({ error: "Sign in to enhance transcripts." }, 401, req);
 
-  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   // Sub-path first, `action` in the body as the fallback — a client that cannot
   // easily append a path segment is still able to reach both halves.
   const action = new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";
@@ -701,8 +706,29 @@ const restHeaders = {
   "Content-Type": "application/json",
 };
 
+/**
+ * The ONE case where a uid may come from the request body: the caller holds
+ * service-role authority.
+ *
+ * Added 2026-08-05 for the recording-worker function, which advances a
+ * recording's transcription long after the browser that started it has gone. It
+ * has no user JWT — a durable background job cannot hold one, and storing a
+ * student's token so a worker could impersonate them later would be a far worse
+ * design than this.
+ *
+ * 🔴 SERVICE-ROLE AUTHORITY IS THE WHOLE GATE, and recognising it is NOT a
+ * string comparison — see _shared/service-auth.ts for the two-key trap that
+ * makes it look like one. A caller with that authority can already read and
+ * write every row in this project directly, so trusting a uid from them adds
+ * nothing they did not have. A caller WITHOUT it falls through to verifyUser and
+ * can still only ever reach their own recordings: the uid comes out of their
+ * token, and handleSubmit additionally requires the storage path to start with
+ * it.
+ */
+
 /** The caller's uid from their bearer token, or null. Never trusts a uid from
- *  the body — you can only transcribe your own recordings. */
+ *  the body — you can only transcribe your own recordings. (The one exception is
+ *  resolveServiceCaller above, which is gated on the service-role key itself.) */
 async function verifyUser(token: string): Promise<string | null> {
   if (!token) return null;
   try {
@@ -780,14 +806,32 @@ async function createSignedUrl(path: string, expiresIn: number): Promise<string 
   }
 }
 
-/** Nothing is retained once the transcript exists. Never throws — a leaked
- *  object is a storage bill, not a broken transcript. */
+/**
+ * Nothing is retained once the transcript exists. Never throws — a leaked object
+ * is a storage bill, not a broken transcript.
+ *
+ * 🔴 NO Content-Type HEADER, AND THE RESULT IS CHECKED. This sent `restHeaders`,
+ * which carries `Content-Type: application/json`, on a DELETE with no body —
+ * and Supabase Storage answers that with
+ * `400 Body cannot be empty when content-type is set to 'application/json'`.
+ * The response was never inspected, so it failed silently on every recording
+ * from both the phone and the web: 29 lecture files were still sitting in the
+ * bucket when this was found on 2026-08-06, the oldest from 2026-07-28.
+ *
+ * That is a promise this lane makes in its own comments — "lecture text is the
+ * student's, and the recording artifact is its durable home" — and it had been
+ * quietly false for the audio the whole time. Deleting the objects already there
+ * is the owner's call, not this function's.
+ */
 async function removeObject(path: string): Promise<void> {
   try {
-    await fetch(`${SB_URL}/storage/v1/object/recordings/${path}`, {
-      headers: restHeaders,
+    const res = await fetch(`${SB_URL}/storage/v1/object/recordings/${path}`, {
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
       method: "DELETE",
     });
+    if (!res.ok) {
+      console.error("recording cleanup rejected", res.status, (await res.text().catch(() => "")).slice(0, 200));
+    }
   } catch (err) {
     console.error("recording cleanup failed", (err as Error)?.message);
   }
