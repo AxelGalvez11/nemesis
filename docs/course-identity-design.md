@@ -149,19 +149,74 @@ both — the course by identity, the folder from the course's own display label.
 - Renaming a course updates every artifact's label at once, because they share
   an id rather than a copy of a string.
 
-## 6. Open decisions for the owner
+## 6. Decisions — settled by the owner, 2026-08-06
 
-1. **Apply the migration?** It is additive — a new table plus four nullable
-   columns — so nothing existing breaks and the backfill is idempotent. It still
-   needs an explicit go-ahead.
-2. **Where does the course picker live?** On the Library source row, on the
-   reader's header, or in the upload flow. The upload flow catches it earliest
-   but adds a step to every upload.
-3. **Should the chat be able to associate a source with a course?** It is the
-   natural place to say "this is for PHCY 2109" — but that is the model writing
-   an identity, which is the thing rung 2 exists to constrain. My inclination:
-   yes, but only when the student's message names the course, using the same
-   vouching rule as folders.
-4. **Retire the topic matcher entirely?** It runs today only when there is no
-   attachment at all. Once course association exists, that last case gets rarer,
-   and removing it would make "never guess" absolute.
+These were open questions when this document was written. They are not open any
+more, and the answers are requirements, not preferences.
+
+### 6.1 Apply the migration — YES
+
+Additive: one new table plus four nullable columns. Applied through the
+Management API under a production-assigned timestamp, with the stored statements
+verified against the merged file afterwards.
+
+🔴 **`supabase db push` is PROHIBITED in this repository**, and so is
+`supabase migration repair`, until the migration-governance task lands. The
+repository has 62 local-only versions, 65 remote-only versions and only 28 that
+match, plus two files sharing the version `20260724200000`. A push would run
+~62 migrations, including one that would install a constraint production cannot
+satisfy.
+
+### 6.2 The picker lives in the reader/source header — an editable course pill
+
+**The reader/source header is the canonical place to see and change a source's
+course.** It reads as its code when one is known — `PHCY 2109` — and as
+**Assign course** when none is. Editable in place.
+
+Upload MAY offer an optional picker, and MAY inherit a course when the student
+uploads from a context whose course is already verified. It **must not add a
+mandatory step to every upload**: a student adding four lectures before class
+should not answer four questions to do it. Library bulk assignment comes later.
+
+### 6.3 Chat may associate — ONLY when the student vouches
+
+The chat may create or set a course association **only when the student
+explicitly vouches for it** — "this is for PHCY 2109", "put this in Contract
+Law". The student's actual code or name is preserved verbatim; the model does
+not tidy `contract law` into `Contract Law I` or expand `PHCY 2109` into a title
+it inferred.
+
+🔴 If the wording is ambiguous, **ask**. Never infer an association from:
+
+- the file's contents
+- the filename
+- topic overlap with an existing course
+- the existence of a folder with a similar name
+
+The same vouching rule that governs folders (`folderNamedByStudent`), applied to
+an identity that outlives the folder.
+
+### 6.4 Topic matching is retired as an authority
+
+`matchCourse` and everything built on it **must never create, file, or write a
+course association**. It may remain only as a clearly labelled *suggestion* that
+requires the student to confirm before anything is written.
+
+It keeps its existing, narrower job — choosing a folder for a NEW item when
+nothing better is known — because a folder is a place and not a claim about
+identity. The moment a suggestion becomes a `course_id`, a guess has been
+recorded as a fact.
+
+### 6.5 Existing material stays unassociated
+
+Every `course_id` starts null and is filled by the student, once, per source.
+**No backfill by guessing.** The migration seeds the `courses` TABLE from
+`calendar_events.course` — a place the student typed the course themselves — and
+associates nothing.
+
+### 6.6 A verified association is inherited and survives renaming
+
+Once a source has a verified `course_id`, notes, flashcards and tests generated
+from it **inherit that same id**, not a copy of its label. Renaming a course or
+moving a folder must not orphan them — which is the whole reason this is a table
+with an id rather than a string in four places.
