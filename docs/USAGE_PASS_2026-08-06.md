@@ -83,6 +83,7 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 | U4 | "On this page" should collapse | 5 | not started |
 | U5 | Sources folder styled unlike other folders | 5 | not started |
 | U6 | Chill Groups serves no fresh puzzle | 5 | not started |
+| U7 | The word "Library" renders twice, overlapping (reported mid-pass) | 5 | in PR |
 
 ---
 
@@ -615,3 +616,31 @@ are grouped.
   day once hit; one deployment per fix would spend that budget fast.
 - The working tree on `main` carries unrelated untracked marketing files. Every commit
   uses explicit paths — never a blanket add — so none of it lands in a PR.
+
+---
+
+## U7 — The word "Library" renders twice, overlapping (reported 2026-08-06, mid-pass)
+
+- **Reproduction result**: **REPRODUCED.** Turn on "Hide sidebar automatically" in the
+  Library "…" menu, then hover the left edge. Measured in the live DOM: two elements
+  carrying the text "Library", 3px apart on the same baseline (x=279 and x=282), both
+  fully opaque. That is the smear in the owner's screenshot.
+- **Root cause**: auto-hide mode draws a floating "Library" word to mark where the hidden
+  panel lives. When the pointer opens the peek, the panel slides out carrying *its own*
+  `<h1>Library</h1>` — and the marker's render condition never accounted for the panel
+  being open, so both painted at once. Replaying the old conditions across all 32
+  reachable states shows **3 of them render the word twice**: hover-peek, menu-held, and
+  both together — all in auto-hide mode.
+- **Change**: `apps/web/lib/workspace/library-sidebar-layout.ts` (new) decides what the
+  left chrome shows; `library-docs-page.tsx` consumes it. The marker is hidden with
+  **opacity, not by unmounting it** — it is one of the hover targets holding the panel
+  open, so removing it under the pointer fires mouseleave, closes the panel, remounts the
+  marker and reopens it, flickering forever. `visibility: hidden` has the same defect
+  because a hidden element stops receiving the pointer.
+- **Automated test**: `library-sidebar-layout.test.ts`, 7 tests, including a sweep of all
+  32 states asserting the word is never rendered twice, plus a test that the marker stays
+  *mounted* while the panel is open (the flicker guard).
+- **Browser acceptance**: auto-hide on, peek opened by hover — 2 elements in the DOM,
+  **exactly 1 visible**; the panel heading at opacity 1, the marker at opacity 0. Panel
+  still slides out and still pushes the page.
+- **Status**: in PR
