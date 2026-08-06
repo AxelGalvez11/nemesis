@@ -7,6 +7,7 @@
 import {
   ARTIFACT_REFERENCE_RULE,
   type PendingDelete,
+  attachedSourceIds,
   expandArtifactContext,
   formatBrainContext,
   shouldRecallBrain,
@@ -17,7 +18,7 @@ import {
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
-import { AGENT_TOOLS, executeAgentTool, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
+import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
 import {
@@ -877,6 +878,19 @@ export async function sendChatTurn(
   const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 
   const toolsEnabled = toolsAllowed(decision);
+  // Where the attached documents already live, resolved from the database
+  // BEFORE the model runs. A deck or test written from a lecture belongs beside
+  // that lecture, and the model cannot be the one to decide that: on
+  // 2026-08-06 a single turn filed the note under the student's own "Pharmacy"
+  // and the deck under an invented "Pharmacology". "" whenever nothing was
+  // attached, so a plain conversation costs no lookup at all.
+  //
+  // The COUNT is carried separately from the folder. A document sitting in
+  // Inbox resolves to "", exactly like no document at all, and the two must end
+  // differently: an unsorted attachment is the student's own filing saying
+  // "not sorted yet", which the topic matcher must not overrule with a guess.
+  const attachedIds = toolsEnabled ? attachedSourceIds(userText) : [];
+  const sourceFolder = attachedIds.length ? await loadAttachedSourceFolder(attachedIds) : "";
   let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext, workspaceSnapshot);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
@@ -925,7 +939,10 @@ export async function sendChatTurn(
     const calls = reply.toolCalls ?? [];
     if (!calls.length || reply.errorKind) break;
     onActivity?.(activityLabel(calls));
-    const results = await Promise.all(calls.map(async (call) => ({ call, result: await executeAgentTool(call) })));
+    const results = await Promise.all(calls.map(async (call) => ({
+      call,
+      result: await executeAgentTool(call, { askText, sourceAttached: attachedIds.length > 0, sourceFolder }),
+    })));
     onActivity?.(null);
     for (const { result } of results) {
       const output = outputFromToolResult(result);

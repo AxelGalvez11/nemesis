@@ -190,21 +190,166 @@ export function folderForNewItem(
  * Library fallbacks above, on the surface most naturally organized per course.
  */
 
-/** The deck name a new chat-created deck should get: `<Course>::<name>` when
- *  the material clearly belongs to one of the student's courses, else the bare
- *  name (top level — honest, not a fake group). Never double-prefixes a name
- *  the model already wrote a folder into. */
-export function deckNameForNewDeck(name: string, text: string, courses: readonly string[]): string {
+/**
+ * The folder a study item built FROM an attached document should inherit.
+ *
+ * 🔴 THE ANSWER WAS ALREADY IN THE DATABASE. Owner, 2026-08-06, one turn:
+ * "make notes, flashcards and test" over one lecture. The upload lane filed the
+ * file under the student's own `Pharmacy` at 15:01:55; the note lane wrote it
+ * to `Pharmacy/Lectures` a moment later; and at 15:03:43 the deck lane invented
+ * a folder called `Pharmacology` — a name the student never made — because it
+ * had only the lecture's words to go on, and a lecture about pharmacogenomics
+ * does not contain the word "pharmacy". Three folders, one file, 108 seconds.
+ *
+ * Where a document lives is a FACT about the student's workspace, not an
+ * inference from its prose, which is what makes this the strongest signal here
+ * and keeps it field-agnostic: a contracts PDF the student filed under
+ * "Contracts" produces a "Contracts" deck without anything knowing what a
+ * contract is.
+ *
+ * Only the TOP segment counts — `Pharmacy/Lectures` is the course, `Lectures`
+ * is the shelf. Inbox is by definition the pile for things we could not place,
+ * and Nemesis is ours, so neither is a course. Several attachments that
+ * disagree are a tie, and a tie is a refusal, exactly as in `matchCourse`.
+ */
+export function sourceCourseFolder(folderPaths: readonly (string | null | undefined)[]): string {
+  const folders = new Set<string>();
+  for (const raw of folderPaths) {
+    const top = (raw ?? "").split("/").filter(Boolean)[0]?.trim() ?? "";
+    if (!top) continue;
+    const lowered = top.toLowerCase();
+    if (lowered === UNSORTED_FOLDER.toLowerCase() || lowered === "nemesis") continue;
+    folders.add(top);
+  }
+  return folders.size === 1 ? [...folders][0]! : "";
+}
+
+/**
+ * Did the student themselves name this folder?
+ *
+ * 🔴 THE TEST THAT SEPARATES A REQUEST FROM AN INVENTION. Owner, 2026-08-06:
+ * "a model-provided folder override should only be accepted if that folder name
+ * appears in the user's actual message or came from structured UI context.
+ * Therefore 'put these in X' can override the source, while an invented
+ * 'Pharmacology' cannot."
+ *
+ * This is a strictly better rule than "does the folder already exist", which was
+ * the obvious alternative and is wrong: `Pharmacology` DID already exist as a
+ * Study folder — an earlier turn had invented it — so existence launders one
+ * invention into permission for the next.
+ *
+ * Matching is on whole words, case- and separator-insensitive, so "put these in
+ * contract law" authorises `Contract Law`. `askText` must be what the student
+ * TYPED, with attachment content stripped: a folder name appearing somewhere in
+ * an uploaded lecture is the document talking, not the student.
+ */
+export function folderNamedByStudent(folder: string, askText: string): boolean {
+  const wanted = separated(folder).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!wanted) return false;
+  const said = ` ${separated(askText).toLowerCase().replace(/\s+/g, " ").trim()} `;
+  return said.includes(` ${wanted} `)
+    // Word-boundary either side, so "law" does not match "lawn" but a trailing
+    // comma or full stop still counts as the end of the phrase.
+    || new RegExp(`(^|[^a-z0-9])${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(said);
+}
+
+/**
+ * Everything that can decide where a new study item goes, in the order it wins.
+ *
+ * Owner, 2026-08-06 — the precedence, and the reason each rung sits where it
+ * does:
+ *
+ *   1. `selectedFolder` — the student picked it in the UI. Nothing outranks a
+ *      deliberate choice they can see on screen.
+ *   2. `modelFolder`, but ONLY if `folderNamedByStudent`. This is the student
+ *      asking in words; the model is just relaying it. An unvouched model
+ *      folder is dropped entirely, never demoted to a guess.
+ *   3. (course identity — NOT BUILT. There is no course id anywhere in this
+ *      product yet: `calendar_events.course` is free text and nothing else
+ *      records a course at all. When a source carries a verified course, it
+ *      belongs HERE, above its folder. The gap is left explicit rather than
+ *      papered over with a topic guess.)
+ *   4. `sourceFolder` — where the document this was built from already lives.
+ *   5. nothing — top level, honestly unfiled.
+ *
+ * 🔴 THE TOPIC MATCHER IS NOT ON THIS LADDER, and that is deliberate. Owner:
+ * "if the source has no verified course association, inherit its folder and
+ * remain honest. Do not guess a course from the lecture topic." It still runs
+ * for items with NO source at all, where there is nothing else to go on — see
+ * the callers below.
+ */
+export interface StudyFilingSignals {
+  /** A folder chosen in the UI. */
+  selectedFolder?: string;
+  /** A folder the model asked for — vouched against `askText` before use. */
+  modelFolder?: string;
+  /** What the student typed this turn, attachment content stripped. */
+  askText?: string;
+  /** The folder the source document is already filed in. */
+  sourceFolder?: string;
+  /** A filed document WAS attached this turn, whether or not its folder was
+   *  usable. Separate from `sourceFolder` because "" is ambiguous: it means
+   *  both "no attachment" and "an attachment sitting in Inbox", and those two
+   *  must end differently. Owner 2026-08-06: "if the source has no verified
+   *  course association, inherit its folder and remain honest. Do not guess a
+   *  course from the lecture topic." An unplaced document is an answer — the
+   *  student has not sorted it yet — so the topic matcher must not overrule it
+   *  with a guess. */
+  sourceAttached?: boolean;
+}
+
+/** The winning folder from the signals above, or "" for none. Pure. */
+export function studyFolderFromSignals({ selectedFolder = "", modelFolder = "", askText = "", sourceFolder = "" }: StudyFilingSignals): string {
+  const chosen = safeSegment(selectedFolder.trim());
+  if (chosen) return chosen;
+  const asked = safeSegment(modelFolder.trim());
+  if (asked && folderNamedByStudent(modelFolder.trim(), askText)) return asked;
+  return safeSegment(sourceFolder.trim());
+}
+
+/** True when the signals decide it, so a caller knows not to fall back to the
+ *  topic matcher. A document that exists but is unplaced still counts: the
+ *  student's own filing said "unsorted", and guessing over it is the thing this
+ *  whole ladder exists to stop. */
+export function signalsDecided(signals: StudyFilingSignals): boolean {
+  return Boolean(studyFolderFromSignals(signals)) || Boolean(signals.sourceAttached) || Boolean(signals.sourceFolder?.trim());
+}
+
+/** The deck name a new chat-created deck should get: `<Course>::<name>`.
+ *
+ *  The folder comes from the signal ladder when anything on it fires. Only a
+ *  deck with NO source and no named folder — cards from a conversation, not a
+ *  document — falls through to matching the material's words against the
+ *  student's courses. A name the model wrote a folder into is respected only
+ *  in that last case; when the ladder decides, the invented parent is dropped
+ *  and the leaf kept. */
+export function deckNameForNewDeck(
+  name: string,
+  text: string,
+  courses: readonly string[],
+  signals: StudyFilingSignals = {},
+): string {
   const clean = name.trim();
-  if (!clean || clean.includes("::")) return clean;
+  if (!clean) return clean;
+  const decided = studyFolderFromSignals(signals);
+  // Keep only the leaf: `Pharmacology::Pharmacogenomics` under a decided
+  // `Pharmacy` must become `Pharmacy::Pharmacogenomics`, not a nested folder
+  // holding the invented one.
+  if (decided) return `${decided}::${clean.split("::").pop()!.trim() || clean}`;
+  // A source that exists but sits unplaced ends the ladder honestly.
+  if (signalsDecided(signals)) return clean.split("::").pop()!.trim() || clean;
+  if (clean.includes("::")) return clean;
   const matched = matchCourse(text, courses);
   if (!matched) return clean;
   return `${safeSegment(matched.course)}::${clean}`;
 }
 
-/** The Study group a new test/mindmap belongs in: the matched course's name,
- *  else "" (ungrouped at the top level). Never "Generated tests". */
-export function groupForNewArtifact(text: string, courses: readonly string[]): string {
+/** The Study group a new test/mindmap belongs in, by the same ladder. Never
+ *  "Generated tests". */
+export function groupForNewArtifact(text: string, courses: readonly string[], signals: StudyFilingSignals = {}): string {
+  const decided = studyFolderFromSignals(signals);
+  if (decided) return decided;
+  if (signalsDecided(signals)) return "";
   const matched = matchCourse(text, courses);
   return matched ? safeSegment(matched.course) : "";
 }

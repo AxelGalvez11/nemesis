@@ -28,6 +28,33 @@ test("every advertised tool has a case in the dispatch", () => {
   assert.deepEqual(missing, [], `advertised with no executor: ${missing.join(", ")}`);
 });
 
+// 🔴 THE HOP THAT MAKES SOURCE FILING REAL. Where an attached lecture lives is
+// resolved once per turn and handed to the study lanes through the dispatch. If
+// that argument is ever dropped, nothing fails: the folder simply arrives empty
+// and both lanes go back to guessing from the material's own words, which is
+// exactly the state that filed one lecture's note under the student's own
+// "Pharmacy" and its deck under an invented "Pharmacology" in the same turn.
+//
+// Read from the source in the same way the dispatch-coverage test above does,
+// because these two lines are plumbing: there is no behaviour to observe, only
+// a value that is either passed or silently lost.
+test("the two study creation lanes are handed the turn's filing signals", () => {
+  const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
+  for (const name of ["add_flashcards", "add_practice_test"]) {
+    const line = source.split("\n").find((row) => row.includes(`case "${name}":`)) ?? "";
+    assert.match(line, /\boptions\b/, `${name} no longer receives the turn's filing signals`);
+  }
+  // And each lane actually READS all three. Passing the object through while
+  // quietly dropping one field is the same silent failure by another door:
+  // without askText nothing can be vouched, without sourceAttached an unsorted
+  // attachment looks like no attachment, without sourceFolder there is nothing
+  // to inherit.
+  for (const field of ["askText", "modelFolder", "sourceAttached", "sourceFolder"]) {
+    const uses = source.split(`${field}:`).length - 1;
+    assert.ok(uses >= 2, `only ${uses} of the two study lanes build signals with ${field}`);
+  }
+});
+
 // A recording's transcript is not, and has never been, a Library note. Whenever
 // that stops being obvious from the schema text, the model goes back to
 // searching the Library for one and concluding it is gone.

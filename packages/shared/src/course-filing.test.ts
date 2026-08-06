@@ -8,7 +8,9 @@ import {
   folderForNewItem,
   groupForNewArtifact,
   knownCourses,
+  folderNamedByStudent,
   matchCourse,
+  sourceCourseFolder,
   UNSORTED_FOLDER,
 } from "./course-filing.ts";
 
@@ -119,6 +121,148 @@ test("a new chat deck inherits its matched course as its '::' folder", () => {
 test("a new test files under its matched course, else the top level — never 'Generated tests'", () => {
   assert.equal(groupForNewArtifact("pharmacology exam practice questions", COURSES), "Pharmacology");
   assert.equal(groupForNewArtifact("mixed trivia round", COURSES), "");
+});
+
+// ── A study item goes where its source document already lives ────────────────
+// Owner 2026-08-06, one turn over one lecture: the note landed in the student's
+// own "Pharmacy", the deck in an invented "Pharmacology", the test in the same
+// invented folder. The upload lane had resolved the real folder 108 seconds
+// earlier and written it to the database; the study lanes never asked.
+
+test("🔴 a deck built from a filed document inherits that document's folder, not an invented one", () => {
+  // The real case: the lecture is about pharmacogenomics, so nothing in its
+  // words matches "Pharmacy" — only where the student keeps the file does.
+  assert.equal(
+    deckNameForNewDeck("Pharmacogenomics (Lectures 1-2)", "CYP2D6 alleles, metabolizer phenotypes", COURSES, { sourceFolder: "Pharmacy" }),
+    "Pharmacy::Pharmacogenomics (Lectures 1-2)",
+  );
+  assert.equal(
+    groupForNewArtifact("CYP2D6 alleles, metabolizer phenotypes", COURSES, { sourceFolder: "Pharmacy" }),
+    "Pharmacy",
+  );
+});
+
+test("🔴 the source folder overrides a folder the model wrote into the name, and does not nest under it", () => {
+  // This is the exact shape that shipped the bug: the invented folder arrived
+  // as part of deck_name, so "respect a name that already has a folder" was
+  // what let it through. The leaf is kept; the invented parent is dropped.
+  assert.equal(
+    deckNameForNewDeck("Pharmacology::Pharmacogenomics", "CYP2D6 alleles", COURSES, { askText: "make notes, flashcards and test", sourceFolder: "Pharmacy" }),
+    "Pharmacy::Pharmacogenomics",
+  );
+  // Deeper invention collapses the same way — never Pharmacy::A::B::Leaf.
+  assert.equal(deckNameForNewDeck("A::B::Leaf", "", COURSES, { sourceFolder: "Pharmacy" }), "Pharmacy::Leaf");
+});
+
+// ── A folder the model asks for needs the student's own words behind it ──────
+// Owner 2026-08-06: "a model-provided folder override should only be accepted
+// if that folder name appears in the user's actual message or came from
+// structured UI context. Therefore 'put these in X' can override the source,
+// while an invented 'Pharmacology' cannot."
+
+test("🔴 'put these in X' beats the source folder — the student asked, the model only relayed", () => {
+  assert.equal(
+    deckNameForNewDeck("Pharmacogenomics", "CYP2D6", COURSES, {
+      askText: "make cards from this and put them in Contract Law",
+      modelFolder: "Contract Law",
+      sourceFolder: "Pharmacy",
+    }),
+    "Contract Law::Pharmacogenomics",
+  );
+});
+
+test("🔴 an invented folder is DROPPED, not demoted — the student never said it", () => {
+  // The real turn: "make notes, flashcards and test" says nothing about a
+  // folder, so "Pharmacology" is the model's own idea and carries no weight.
+  assert.equal(folderNamedByStudent("Pharmacology", "make notes, flashcards and test"), false);
+  assert.equal(
+    deckNameForNewDeck("Pharmacogenomics", "CYP2D6", COURSES, {
+      askText: "make notes, flashcards and test",
+      modelFolder: "Pharmacology",
+      sourceFolder: "Pharmacy",
+    }),
+    "Pharmacy::Pharmacogenomics",
+  );
+});
+
+test("🔴 an EXISTING folder is not permission — that is how the first invention laundered itself", () => {
+  // "Pharmacology" was already a Study folder when this happened, invented by
+  // an earlier turn. Accepting a folder because it exists would let one
+  // invention authorise every one after it.
+  assert.equal(folderNamedByStudent("Pharmacology", "make some cards from the lecture"), false);
+});
+
+test("a folder picked in the UI outranks everything, including the student's own sentence", () => {
+  assert.equal(
+    groupForNewArtifact("anything", COURSES, {
+      askText: "put this in Contract Law",
+      modelFolder: "Contract Law",
+      selectedFolder: "Thermodynamics II",
+      sourceFolder: "Pharmacy",
+    }),
+    "Thermodynamics II",
+  );
+});
+
+test("vouching is on whole words, and reads the student's words only", () => {
+  assert.equal(folderNamedByStudent("Contract Law", "put these in contract law please"), true);
+  assert.equal(folderNamedByStudent("Contract Law", "put these in CONTRACT LAW."), true);
+  // A hyphenated or run-together spelling of the same request still counts.
+  assert.equal(folderNamedByStudent("PHCY 2109", "file it under PHCY-2109"), true);
+  // Not a word fragment.
+  assert.equal(folderNamedByStudent("Law", "I mowed the lawn"), false);
+  assert.equal(folderNamedByStudent("", "anything"), false);
+});
+
+test("only the top segment of a source path is the course — the shelf below it is not", () => {
+  assert.equal(sourceCourseFolder(["Pharmacy/Lectures"]), "Pharmacy");
+  assert.equal(sourceCourseFolder(["PHCY 2114/Notes/Week 3"]), "PHCY 2114");
+});
+
+test("🔴 Inbox is not a course, so a deck from an unplaced file stays honestly unfiled", () => {
+  // The other real deck that day came from a file sitting in Inbox. Inheriting
+  // it would put "Inbox" on the Study page as though it were a subject; the
+  // deck belongs at the top level until the student says otherwise.
+  assert.equal(sourceCourseFolder(["Inbox"]), "");
+  assert.equal(sourceCourseFolder(["Nemesis/Recordings"]), "");
+  assert.equal(sourceCourseFolder([""]), "");
+  assert.equal(
+    deckNameForNewDeck("Diabetes Mellitus", "insulin resistance and the ominous octet", COURSES, { sourceAttached: true, sourceFolder: sourceCourseFolder(["Inbox"]) }),
+    "Diabetes Mellitus",
+  );
+});
+
+test("🔴 an unsorted attachment is an ANSWER, so the topic matcher does not overrule it", () => {
+  // Owner 2026-08-06: "if the source has no verified course association,
+  // inherit its folder and remain honest. Do not guess a course from the
+  // lecture topic." A document in Inbox resolves to the same "" as no document
+  // at all, so the two are told apart by sourceAttached — without it, a lecture
+  // the student has deliberately not sorted gets a folder guessed from its
+  // words, which is the behaviour this whole ladder replaces.
+  const material = "today's pharmacology lecture on beta blockers";
+  assert.equal(deckNameForNewDeck("Beta Blockers", material, COURSES, {}), "Pharmacology::Beta Blockers");
+  assert.equal(deckNameForNewDeck("Beta Blockers", material, COURSES, { sourceAttached: true }), "Beta Blockers");
+  assert.equal(groupForNewArtifact(material, COURSES, { sourceAttached: true }), "");
+  // And the student can still say where it goes.
+  assert.equal(
+    deckNameForNewDeck("Beta Blockers", material, COURSES, { askText: "put these in Thermodynamics II", modelFolder: "Thermodynamics II", sourceAttached: true }),
+    "Thermodynamics II::Beta Blockers",
+  );
+});
+
+test("attachments that disagree about the course are a tie, and a tie is a refusal", () => {
+  assert.equal(sourceCourseFolder(["Pharmacy/Lectures", "Contracts"]), "");
+  // An unplaced file alongside a filed one is not a disagreement — it is one
+  // signal and one silence, so the signal stands.
+  assert.equal(sourceCourseFolder(["Pharmacy/Lectures", "Inbox"]), "Pharmacy");
+  // The same course twice is one course.
+  assert.equal(sourceCourseFolder(["Pharmacy/Lectures", "Pharmacy/Slides"]), "Pharmacy");
+});
+
+test("with no source document, filing behaves exactly as it did before", () => {
+  assert.equal(deckNameForNewDeck("Beta Blockers", "pharmacology beta blockers", COURSES, {}), "Pharmacology::Beta Blockers");
+  assert.equal(deckNameForNewDeck("cardio::Beta Blockers", "pharmacology beta blockers", COURSES, {}), "cardio::Beta Blockers");
+  assert.equal(groupForNewArtifact("mixed trivia round", COURSES, {}), "");
 });
 
 // ── The course NUMBER is part of the name ───────────────────────────────────

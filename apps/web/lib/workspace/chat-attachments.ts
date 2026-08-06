@@ -5,6 +5,7 @@ import {
   coverageNoticeForModel,
   matchCourse,
   readCoverage,
+  SOURCE_HEADER,
   UNSORTED_FOLDER,
   UNTRUSTED_CONTENT_RULE,
   wrapUntrusted,
@@ -563,7 +564,7 @@ export function fitAttachmentBlocks(
     // own header (never inside the untrusted fence) — this is what lets
     // "make notes from this lecture" produce pills that open the original.
     const sourceLine = source.sourceId
-      ? `\nStored in the student's Library as source ${source.sourceId} — when writing notes from this file, cite passages inline as [n](?source=${source.sourceId}).`
+      ? `\n${SOURCE_HEADER}${source.sourceId} — when writing notes from this file, cite passages inline as [n](?source=${source.sourceId}).`
       : "";
     // Header OUTSIDE the fence (chat-skills.ts matches on it, and the student's
     // own filename belongs to the app), content INSIDE it. The label is repeated
