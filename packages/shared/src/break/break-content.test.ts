@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateBeePuzzle } from "./bee";
-import { BEE_PUZZLES } from "./bee-puzzles";
-import { validateConnectionsPuzzle } from "./connections";
-import { CONNECTIONS_PUZZLES } from "./connections-puzzles";
-import { WORDLE_ANSWERS, wordleAllowedSet } from "./wordle-words";
+import { validateBeePuzzle } from "./bee.ts";
+import { BEE_PUZZLES } from "./bee-puzzles.ts";
+import { validateConnectionsPuzzle } from "./connections.ts";
+import { CONNECTIONS_PUZZLES } from "./connections-puzzles.ts";
+import { WORDLE_ANSWERS, wordleAllowedSet } from "./wordle-words.ts";
 
 // The content banks are hand-curated; these tests are the mechanical safety
 // net that keeps an authoring slip (bad letter, overlap, missing pangram,

@@ -213,3 +213,24 @@ export * from "./lms-import.ts";
 // places at once, and because a limit that appears twice eventually disagrees
 // with itself.
 export * from "./upload-limits.ts";
+// The Chill games. Shared, not copied, because "today's puzzle" has to be the
+// SAME puzzle on the laptop and on the phone — the whole selection is derived
+// from the calendar date by daily.ts, so two copies of these files would drift
+// into two different Wednesdays the first time either side edited a bank.
+// Pure logic and puzzle content only; each app draws its own board.
+export * from "./break/daily.ts";
+export * from "./break/wordle.ts";
+export * from "./break/wordle-words.ts";
+export * from "./break/wordle-guess-list.ts";
+export * from "./break/bee.ts";
+export * from "./break/bee-puzzles.ts";
+export * from "./break/connections.ts";
+export * from "./break/connections-puzzles.ts";
+export * from "./break/crossword.ts";
+export * from "./break/crossword-puzzles.ts";
+export * from "./break/crossword-midis.ts";
+export * from "./break/sudoku.ts";
+export * from "./break/letterboxed.ts";
+export * from "./break/letterboxed-puzzles.ts";
+export * from "./break/break-lexicon.ts";
+export * from "./break/tiles.ts";

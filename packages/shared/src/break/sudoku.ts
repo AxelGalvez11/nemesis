@@ -3,7 +3,7 @@
 // counting solver proves the puzzle still has exactly one solution. The
 // same date seed produces the same board for everyone, offline.
 
-import { mulberry32 } from "./daily";
+import { mulberry32 } from "./daily.ts";
 
 export const SUDOKU_SIZE = 81;
 

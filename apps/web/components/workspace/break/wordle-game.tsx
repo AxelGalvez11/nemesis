@@ -12,15 +12,15 @@ import { useBreakDayState } from "@/components/workspace/break/use-break-day";
 import { Button } from "@/components/ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
-  MAX_GUESSES,
-  WORD_LENGTH,
   guessProblem,
   keyboardStates,
+  MAX_GUESSES,
   scoreGuess,
+  WORD_LENGTH,
+  wordleAllowedSet,
   wordleStatus,
   type LetterState,
-} from "@/lib/workspace/break/wordle";
-import { wordleAllowedSet } from "@/lib/workspace/break/wordle-words";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 const JUDGE_COLORS: Record<LetterState, string> = {

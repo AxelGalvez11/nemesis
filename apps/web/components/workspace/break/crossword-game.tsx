@@ -15,11 +15,11 @@ import {
   isFilled,
   isSolved,
   wrongCells,
+  type CrosswordDirection,
   type CrosswordEntries,
   type CrosswordSlot,
-  type Direction,
   type MiniPuzzle,
-} from "@/lib/workspace/break/crossword";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 interface MiniState {
@@ -51,7 +51,7 @@ export function CrosswordGame({
   const [saved, update] = useBreakDayState<MiniState>(storageKey, dateKey, { entries: {}, seconds: 0 }, puzzleKey);
   const firstOpen = model.cells.flat().find((cell) => !cell.block)!;
   const [cursor, setCursor] = useState<{ row: number; col: number }>({ row: firstOpen.row, col: firstOpen.col });
-  const [direction, setDirection] = useState<Direction>("across");
+  const [direction, setDirection] = useState<CrosswordDirection>("across");
   const [marked, setMarked] = useState<string[]>([]);
   const [revealArmed, setRevealArmed] = useState(false);
 
@@ -198,7 +198,7 @@ export function CrosswordGame({
     });
   };
 
-  const clueLists: { direction: Direction; slots: CrosswordSlot[] }[] = [
+  const clueLists: { direction: CrosswordDirection; slots: CrosswordSlot[] }[] = [
     { direction: "across", slots: model.slots.filter((slot) => slot.direction === "across") },
     { direction: "down", slots: model.slots.filter((slot) => slot.direction === "down") },
   ];

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { guessProblem, keyboardStates, scoreGuess, wordleStatus } from "./wordle";
+import { guessProblem, keyboardStates, scoreGuess, wordleStatus } from "./wordle.ts";
 
 test("scoring marks exact, misplaced, and absent letters", () => {
   assert.deepEqual(scoreGuess("crane", "crane"), ["correct", "correct", "correct", "correct", "correct"]);

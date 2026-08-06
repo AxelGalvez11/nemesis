@@ -8,7 +8,7 @@
 // lists were too thin). Regenerate with scratchpad/regen-bee.mts.
 // The test suite runs validateBeePuzzle over the whole bank.
 
-import type { BeePuzzle } from "./bee";
+import type { BeePuzzle } from "./bee.ts";
 
 export const BEE_PUZZLES: BeePuzzle[] = [
   {

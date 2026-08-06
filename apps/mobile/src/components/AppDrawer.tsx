@@ -14,6 +14,7 @@ import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor } from "./MiniMenu";
 import { useRowDrag } from "./useRowDrag";
 import { TextPromptSheet, type RowAction } from "./RowActionSheets";
+import { ChillIcon } from "./chill/chill-icon";
 import { CalendarIcon, ChevronIcon, LibraryIcon, NotebookIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -535,6 +536,9 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
             <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
           )}
           <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
+          {/* Chill sits last, same as the web sidebar (owner 2026-08-04) — the
+              work surfaces keep the top of the eye line. */}
+          <NavRow Icon={ChillIcon} label="Chill" onPress={() => go("/chill")} />
         </View>
 
         {searchOpen ? (

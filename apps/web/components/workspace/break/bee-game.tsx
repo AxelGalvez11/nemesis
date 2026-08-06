@@ -18,10 +18,11 @@ import {
   beeScore,
   beeWordScore,
   checkBeeWord,
+  hashSeed,
   isPangram,
+  seededShuffle,
   type BeePuzzle,
-} from "@/lib/workspace/break/bee";
-import { hashSeed, seededShuffle } from "@/lib/workspace/break/daily";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 const HONEY = "#f2c94c";

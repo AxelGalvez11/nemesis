@@ -23,16 +23,16 @@ import { useMemo, useState } from "react";
 
 import { useBreakDayState } from "@/components/workspace/break/use-break-day";
 import { Button } from "@/components/ui/button";
-import { hashSeed } from "@/lib/workspace/break/daily";
 import {
   boardCleared,
   generateTilesBoard,
-  matchTiles,
+  hashSeed,
   matchableWith,
-  tileEmpty,
+  matchTiles,
   TILE_LAYERS,
+  tileEmpty,
   type Tile,
-} from "@/lib/workspace/break/tiles";
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 /** Pale fills, so one fixed dark ink reads on every one of them in both

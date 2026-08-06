@@ -4,7 +4,7 @@
 // to the same bar), then clued by hand. Same engine as the Mini —
 // validateMini runs over this bank in the tests too.
 
-import type { MiniPuzzle } from "./crossword";
+import type { MiniPuzzle } from "./crossword.ts";
 
 export const MIDI_PUZZLES: MiniPuzzle[] = [
   {

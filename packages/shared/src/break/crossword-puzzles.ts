@@ -3,7 +3,7 @@
 // enforced it), then clued by hand. Clues are original. The tests run
 // validateMini over every entry, so structure and clue coverage cannot drift.
 
-import type { MiniPuzzle } from "./crossword";
+import type { MiniPuzzle } from "./crossword.ts";
 
 export const MINI_PUZZLES: MiniPuzzle[] = [
   {

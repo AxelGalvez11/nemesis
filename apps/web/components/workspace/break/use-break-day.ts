@@ -7,7 +7,7 @@
 //
 // "More than one puzzle per day" (owner 2026-08-04) adds a second axis: a
 // game can be on puzzle n=0 (the daily) or n>0 (an extra). Every puzzle
-// number gets its OWN save, keyed by lib/workspace/break/daily.ts's
+// number gets its OWN save, keyed by @nemesis/shared's break/daily.ts's
 // extraKey(dateKey, n) — n=0 reproduces the plain dateKey, so daily saves
 // are byte-identical to before this feature existed. The one thing that
 // still needs the PLAIN dateKey (not extraKey) is knowing what counts as
@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { localDateKey } from "@/lib/workspace/break/daily";
+import { localDateKey } from "@nemesis/shared";
 
 const PREFIX = "nemesis.web.break.";
 
