@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { mergeLibraryHits } from "./library-search-merge";
@@ -9,6 +10,32 @@ test("web advertises the canonical cross-client workspace tool set", () => {
     AGENT_TOOLS.map((tool) => tool.function.name).sort(),
     [...AGENT_TOOL_NAMES].sort(),
   );
+});
+
+// 🔴 AN ADVERTISED TOOL WITH NO EXECUTOR IS WORSE THAN NO TOOL. The model does
+// not experience a missing capability as a missing capability — it experiences
+// it as missing DATA, and it reports that to the student as loss. A student
+// asked for notes from a lecture Nemesis had recorded and transcribed; there was
+// no recording tool, so the model searched the Library, where transcripts have
+// never lived, and told them the transcript "appears to have been lost". It was
+// sitting on chat_recording_artifacts, 34,250 characters of it.
+//
+// The name list and the schema list already had to agree (above). Nothing made
+// either agree with the code that RUNS them, so this reads the dispatch itself.
+test("every advertised tool has a case in the dispatch", () => {
+  const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
+  const missing = AGENT_TOOL_NAMES.filter((name) => !source.includes(`case "${name}":`));
+  assert.deepEqual(missing, [], `advertised with no executor: ${missing.join(", ")}`);
+});
+
+// A recording's transcript is not, and has never been, a Library note. Whenever
+// that stops being obvious from the schema text, the model goes back to
+// searching the Library for one and concluding it is gone.
+test("the recording tools say plainly that search_library cannot find a transcript", () => {
+  const list = AGENT_TOOLS.find((tool) => tool.function.name === "list_recordings");
+  assert.ok(list, "list_recordings is missing from AGENT_TOOLS");
+  assert.match(list.function.description, /never a Library note/i);
+  assert.match(list.function.description, /search_library will never find one/i);
 });
 
 // A tool's schema description rides EVERY turn, so it outranks anything the

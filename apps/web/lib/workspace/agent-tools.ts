@@ -587,6 +587,41 @@ export const AGENT_TOOLS = [
   {
     function: {
       description:
+        "List the student's recorded lectures — newest first — with each one's id, title, when it was recorded, how long it ran, whether its notes have been written, and where those notes were filed in the Library. "
+        + "A recording's TRANSCRIPT is never a Library note, so search_library will never find one: use this, then read_recording_transcript. "
+        + "Use this whenever the student refers to a lecture they recorded, asks for notes from a recording, or asks what happened to one.",
+      name: "list_recordings",
+      parameters: {
+        properties: {
+          limit: { description: "How many to return (default 20, max 50)", type: "number" },
+        },
+        required: [],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
+        "Read what was actually said in one recorded lecture, by its id from list_recordings. "
+        + "Long lectures are returned in CHUNKS: the reply says how many characters exist in total and whether more remain, so call again with a larger offset to keep reading. "
+        + "Prefer the finished notes when they exist (list_recordings gives their Library path) and use this when the student wants the exact words, a part the notes skipped, or notes rewritten from scratch.",
+      name: "read_recording_transcript",
+      parameters: {
+        properties: {
+          offset: { description: "Character to start from (default 0). Use the next_offset from the previous call.", type: "number" },
+          recording_id: { description: "The recording's id from list_recordings", type: "string" },
+        },
+        required: ["recording_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description:
         "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
         + "Needs the note's id from search_library or read_library_note. "
         + "Cite web sources inline as numbered links like [1](https://the-source-url); an attached file stored as a Library source cites as [n](?source=<its id from the attachment header>). The Library turns them into source pills and a Sources section; never write a manual \"Sources\" list.",
@@ -708,6 +743,17 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/** A model sometimes sends a count as a string ("20"). Both are accepted; the
+ *  callers clamp, so anything unusable becomes 0 and takes their default. */
+function num(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
 function safeLibraryLeaf(value: string): string {
   return value.trim().replace(/[\\/:]/g, "-").slice(0, 120) || "Untitled note";
 }
@@ -815,6 +861,105 @@ async function readLibraryNote(path: string) {
     id: str(data.id),
     path: str(data.path),
     title: str(data.title),
+  };
+}
+
+/** How much transcript one read hands back.
+ *
+ *  🔴 A BOUND, NOT A STYLE CHOICE. The lecture that exposed all of this is
+ *  34,250 characters and it is a normal 47-minute class; a three-hour session is
+ *  several times that. Returning a whole transcript would spend most of a turn's
+ *  context on one tool result and leave no room to write anything from it. So a
+ *  read is a WINDOW, and the reply says plainly how much is left, which is what
+ *  lets the model decide whether to keep reading or start writing. */
+const TRANSCRIPT_WINDOW_CHARS = 12_000;
+
+/**
+ * The student's recorded lectures.
+ *
+ * Joined to recording_jobs for the Library path, because "where did the notes
+ * go" is the question that actually gets asked and the artifact does not know.
+ * A LEFT join in spirit: recordings made before the job pipeline existed have no
+ * job row and must still be listed.
+ */
+async function listRecordings(limit: number) {
+  const capped = Math.max(1, Math.min(Number.isFinite(limit) && limit > 0 ? Math.round(limit) : 20, 50));
+  const { data, error } = await supabase
+    .from("chat_recording_artifacts")
+    .select("id,title,transcript,notes,duration_seconds,created_at")
+    .order("created_at", { ascending: false })
+    .limit(capped);
+  if (error) return { error: error.message };
+  const rows = data ?? [];
+  if (rows.length === 0) return { count: 0, recordings: [], note: "This student has not recorded any lectures." };
+
+  const { data: jobRows } = await supabase
+    .from("recording_jobs")
+    .select("artifact_id,library_path,status,stage,error")
+    .in("artifact_id", rows.map((row) => str(row.id)));
+  const jobByArtifact = new Map((jobRows ?? []).map((job) => [str(job.artifact_id), job]));
+
+  return {
+    count: rows.length,
+    recordings: rows.map((row) => {
+      const job = jobByArtifact.get(str(row.id));
+      const transcript = str(row.transcript);
+      const notes = str(row.notes);
+      return {
+        id: str(row.id),
+        // Present tense about what EXISTS, never a guess about what happened.
+        // The old failure here was narration ("appears to have been lost") in
+        // place of a fact, so these are facts only.
+        notes_written: notes.length > 0,
+        notes_path: job?.library_path ? str(job.library_path) : null,
+        recorded_at: str(row.created_at),
+        // Only a job may report a failure — see recording-card-state.ts. An
+        // absent transcript with no failed job means still in progress.
+        still_processing: job?.status === "processing",
+        failed: job?.status === "failed" ? str(job.error) || "Processing failed." : null,
+        title: str(row.title),
+        transcript_chars: transcript.length,
+        duration_seconds: typeof row.duration_seconds === "number" ? row.duration_seconds : 0,
+      };
+    }),
+  };
+}
+
+/** One window of a recording's transcript. See TRANSCRIPT_WINDOW_CHARS. */
+async function readRecordingTranscript(recordingId: string, offset: number) {
+  if (!recordingId.trim()) return { error: "Needs a recording_id from list_recordings." };
+  const { data, error } = await supabase
+    .from("chat_recording_artifacts")
+    .select("id,title,transcript,notes,created_at")
+    .eq("id", recordingId.trim())
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: `No recording with id '${recordingId}'. Use list_recordings to get valid ids.` };
+
+  const transcript = str(data.transcript);
+  if (!transcript) {
+    // Deliberately not "lost". An empty transcript is a recording still being
+    // transcribed or one that failed, and list_recordings says which.
+    return {
+      id: str(data.id),
+      title: str(data.title),
+      transcript: "",
+      note: "This recording has no transcript yet. Check list_recordings for whether it is still processing or failed — do not tell the student it was lost.",
+    };
+  }
+
+  const start = Math.max(0, Number.isFinite(offset) ? Math.round(offset) : 0);
+  const end = Math.min(transcript.length, start + TRANSCRIPT_WINDOW_CHARS);
+  const more = end < transcript.length;
+  return {
+    id: str(data.id),
+    title: str(data.title),
+    notes_written: str(data.notes).length > 0,
+    total_chars: transcript.length,
+    offset: start,
+    next_offset: more ? end : null,
+    more,
+    transcript: transcript.slice(start, end),
   };
 }
 
@@ -2257,6 +2402,8 @@ async function dispatchTool(
   switch (call.name) {
     case "search_library": return await searchLibrary(str(args.query));
     case "read_library_note": return await readLibraryNote(str(args.path));
+    case "list_recordings": return await listRecordings(num(args.limit));
+    case "read_recording_transcript": return await readRecordingTranscript(str(args.recording_id), num(args.offset));
     case "create_library_note": return await createLibraryNote(str(args.title), str(args.content), str(args.folder));
     case "create_slide_deck": return await createSlideDeck(args);
     case "append_library_note": return await appendLibraryNote(str(args.path), str(args.content));

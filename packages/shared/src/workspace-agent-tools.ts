@@ -59,6 +59,17 @@ export const WEB_EXTRA_AGENT_TOOL_NAMES = [
   // sitting at the Library root are source rows, not notes.
   "plan_library_migration",
   "move_library_source",
+  // 🔴 A RECORDING WAS INVISIBLE TO THE CHAT. A student asked Nemesis to write
+  // notes from a lecture it had just recorded and transcribed; with no tool for
+  // it, the model searched the Library — where transcripts have never lived —
+  // found nothing, and told them the transcript "appears to have been lost".
+  // It was not. It was on chat_recording_artifacts the whole time, 34,250
+  // characters of it, alongside finished notes.
+  //
+  // A missing capability does not read as a missing capability from inside the
+  // model. It reads as missing DATA, and the model reports it as loss.
+  "list_recordings",
+  "read_recording_transcript",
 ] as const;
 
 export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [

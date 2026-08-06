@@ -72,11 +72,32 @@ interface UseRecordingArtifactsOptions {
 
 export function useRecordingArtifacts({ contextId, preview, refreshKey = "", surface, userId }: UseRecordingArtifactsOptions) {
   const [artifacts, setArtifacts] = useState<RecordingArtifact[]>([]);
+  /**
+   * The `refreshKey` these rows were actually READ FOR — not the one being asked
+   * for right now.
+   *
+   * 🔴 THIS IS THE FIX FOR A REAL DATA-LOSS SCARE, not bookkeeping. This hook is
+   * always at least one network round trip behind the jobs that drive it: the
+   * key changes, the effect fires, and the rows arrive some time later. A caller
+   * that reads `artifacts` in between is holding a snapshot of an OLDER job
+   * state, and for a recording mid-write-up that snapshot has a transcript and
+   * no notes — indistinguishable, from the outside, from a write-up that failed.
+   *
+   * A chat card believed exactly that and told a student their 47-minute lecture
+   * had been lost, while the notes sat finished in their Library. Comparing this
+   * against the current key is what lets a caller tell "the notes are not there"
+   * apart from "the notes are not here YET".
+   *
+   * Starts as null rather than "" so a fresh mount, whose key is also "", cannot
+   * accidentally look fresh before anything has been read.
+   */
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     if (preview || !userId || !contextId) {
       setArtifacts([]);
+      setLoadedKey(null);
       return () => { cancelled = true; };
     }
     // Deliberately NOT blanked before the read. It used to be, because the only
@@ -96,10 +117,13 @@ export function useRecordingArtifacts({ contextId, preview, refreshKey = "", sur
           const artifact = toRecordingArtifact(row);
           return artifact ? [artifact] : [];
         }));
+        // AFTER the rows, and in the same commit, so there is no moment where
+        // the key claims freshness for data that has not landed.
+        setLoadedKey(refreshKey);
       });
     return () => { cancelled = true; };
   }, [contextId, preview, refreshKey, surface, userId]);
 
-  return { artifacts };
+  return { artifacts, fresh: loadedKey === refreshKey };
 }
 
