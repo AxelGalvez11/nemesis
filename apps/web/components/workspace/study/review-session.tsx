@@ -93,7 +93,10 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   // mid-sitting and overwrite the reviewer's live progress with stored state.
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
-  const sessionKey = studySessionKey(userId, deck?.id ?? null);
+  // Preview has no signed-in account, but losing your place there is the same
+  // bug — so it gets its own stable owner. A real account id is a uuid and can
+  // never collide with this, so the account scoping still holds.
+  const sessionKey = studySessionKey(userId ?? (previewMode ? "preview" : null), deck?.id ?? null);
 
   // Opening a deck resumes the sitting already in progress instead of starting
   // it over.
