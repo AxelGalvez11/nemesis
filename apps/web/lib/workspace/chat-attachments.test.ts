@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
+import { attachedSourceIds, buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
 
-import { attachedSourceIds, DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
