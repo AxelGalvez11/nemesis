@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
@@ -44,7 +45,7 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { findFolderNote, folderNoteTitle, isFolderNote, parentFolderOf } from "@/lib/workspace/library-folder-note";
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
-import { readerHrefFrom } from "@/lib/reader/reader-anchor";
+import { NO_ANCHOR, readerHrefFrom, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
@@ -86,6 +87,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   const requestedSource = searchParams.get("source");
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
+  const preview = Boolean(useWorkspacePreview());
   const { status, notes, select, createNote, saveNote, deleteNote } = useCloudLibrary();
 
   const [articleContent, setArticleContent] = useState("");
@@ -133,8 +135,12 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   // page. The reader owns the whole surface (its own contents rail, its own
   // side panel), so it cannot be a pane of the notes layout.
   const openSource = useCallback(
-    (id: string) => {
-      router.push(readerHrefFrom(pathname, id));
+    // The anchor is optional and is passed straight through: readerHrefFrom
+    // already knows how to write ?page=/?q=, and the reader already knows how
+    // to scroll and highlight from them. A citation carrying "slide 18" lands
+    // on slide 18 because of that existing contract, not a new one.
+    (id: string, anchor: ReaderAnchor = NO_ANCHOR) => {
+      router.push(readerHrefFrom(pathname, id, anchor));
     },
     [pathname, router],
   );
@@ -244,7 +250,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   useEffect(() => {
     let cancelled = false;
     setSourcesLoaded(false);
-    void loadLibrarySources(uid).then((loaded) => {
+    void loadLibrarySources(uid, { preview }).then((loaded) => {
       if (cancelled) return;
       setLibrarySources(loaded);
       setSourcesLoaded(true);
@@ -423,6 +429,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
               onDelete={removeNote}
               onOpenFolder={(path) => void openFolderPage(path)}
               onOpenPath={openPath}
+              onOpenRoot={goHome}
               onOpenSource={openSource}
               onOpenWikiTarget={(target, fromPath) => void openWikiTarget(target, fromPath)}
               onStudyAction={startStudyAction}

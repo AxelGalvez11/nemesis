@@ -345,22 +345,50 @@ a { color: inherit; text-decoration: none; }
   text-align: left;
   outline: none;
 }
-/* [[Wiki links]] are live links while editing — click follows, double-click
-   melts to raw text. Missing targets look faded, like the reader. */
+/* A link to another note — the connection the Agent Brain made, as the student
+   sees it. Reworked 2026-08-06 (owner: "links to other notes need to actually
+   look like links … understated underline, hover state … do not use giant
+   pills/buttons for normal note links").
+
+   🔴 THE OLD RULE WAS `color: var(--theme-primary)` PLUS A 2px UNDERLINE, and
+   what made that read as "blends into normal text" was the colour, not the
+   underline. The accent was retired to neutral on 2026-07-28, so
+   --theme-primary now resolves to a mid grey — measured rgb(110,110,110)
+   against near-white body text. Every note link was therefore DIMMER than the
+   prose around it, which is the visual language of disabled text rather than of
+   a link.
+
+   So the text takes the body's own colour and the UNDERLINE carries the
+   affordance: a hairline at 40% that solidifies on hover. Recognisable at a
+   glance, quiet enough to read past, and it never fights the sentence. */
 .note-wiki-link {
-  color: var(--theme-primary);
+  color: inherit;
   text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.25rem;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 0.2em;
   cursor: pointer;
-  border-radius: 0.25rem;
+  transition: text-decoration-color 120ms ease;
 }
-.note-wiki-link:hover { background: color-mix(in srgb, var(--theme-primary) 10%, transparent); }
-.note-wiki-link-missing { color: var(--ui-text-quaternary); text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
-.note-wiki-link-missing:hover { color: var(--ui-text-secondary); }
-/* Inline citation pills — the chat's favicon-dot citations, living in a note.
-   [1](https://…) renders as a small circle carrying the site's favicon (or
-   the number when there is none); [n](?source=…) carries a file glyph. */
+.note-wiki-link:hover { text-decoration-color: currentColor; }
+/* A concept connected to a page that does not exist yet. It is STILL a real
+   connection, so it keeps the prose's colour: the old rule faded the TEXT to
+   --ui-text-quaternary (36% opacity), which made exactly the links worth
+   noticing the hardest ones to see. A dotted underline says "nothing written
+   here yet" without hiding the word. */
+.note-wiki-link-missing { text-decoration-style: dotted; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); }
+.note-wiki-link-missing:hover { text-decoration-color: color-mix(in srgb, currentColor 70%, transparent); }
+/* ── Inline source citations ───────────────────────────────────────────────
+   TWO SHAPES ON PURPOSE, because they answer different questions.
+
+   A WEB citation stays the compact favicon dot: its identity is the site, the
+   Sources list at the foot of the note carries the rest, and a paragraph of
+   research would drown in labelled chips.
+
+   A LIBRARY-SOURCE citation gets a small labelled pill — "Con Law slides ·
+   Slide 18" — because naming it inline is the whole point (owner 2026-08-06:
+   "important claims should be traceable back to the source"). A student's own
+   lecture is not a footnote to look up later. */
 .note-citation {
   display: inline-flex;
   align-items: center;
@@ -379,6 +407,24 @@ a { color: inherit; text-decoration: none; }
 .note-citation-favicon { width: 12px; height: 12px; border-radius: 9999px; }
 .note-citation-n { font-size: 9px; font-weight: 500; line-height: 1; color: var(--ui-text-tertiary); }
 .note-citation .note-citation-glyph { font-size: 9px; color: var(--ui-text-tertiary); }
+/* The labelled variant. The dot's fixed size and centring are reset because it
+   is no longer a dot; the border, radius and hover are deliberately SHARED so
+   the two shapes read as one family rather than two systems. */
+.note-citation-labelled {
+  width: auto;
+  height: auto;
+  gap: 0.25rem;
+  max-width: 15rem;
+  padding: 0.0625rem 0.4375rem 0.0625rem 0.375rem;
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--ui-base) 4%, transparent);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--ui-text-tertiary);
+}
+.note-citation-labelled:hover { color: var(--ui-text-secondary); background: var(--ui-control-hover-background); }
+.note-citation-label { overflow: hidden; text-overflow: ellipsis; }
 /* A picture in a note: sized to the column, click opens the lightbox. */
 .note-prosemirror img.note-image {
   display: inline-block;

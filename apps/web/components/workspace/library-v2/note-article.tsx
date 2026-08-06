@@ -20,7 +20,7 @@
 // unchanged: 650ms autosave, dirty-draft save on switch, remote edits adopted
 // only while nothing is unsaved here.
 
-import { IconArrowNarrowLeft, IconDots, IconTrash, IconTypography } from "@tabler/icons-react";
+import { IconDots, IconTrash, IconTypography } from "@tabler/icons-react";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
@@ -50,7 +50,8 @@ import { isHomeNote } from "@/lib/workspace/library-home";
 import { backlinksFor, findLibraryNote } from "@/lib/workspace/library-links";
 import { loadNoteSources, sourceKindIcon, sourceKindLabel, type NoteSource } from "@/lib/workspace/library-provenance";
 import { librarySourceKindIcon, type LibrarySource } from "@/lib/workspace/library-sources";
-import { citationSourceId, extractNoteCitations, isSafeExternalHref } from "@/lib/workspace/note-citations";
+import { citationAnchor, citationSourceId, citationSources, describeCitation, extractNoteCitations, isSafeExternalHref } from "@/lib/workspace/note-citations";
+import type { ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { isEditableNote } from "@/lib/workspace/note-markdown";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
@@ -87,7 +88,9 @@ interface NoteArticleProps {
   onOpenFolder: (path: string) => void;
   /** Open a source FILE's page. Pills whose source id isn't in
    *  `openableSourceIds` stay inert text (nothing to open yet). */
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, anchor?: ReaderAnchor) => void;
+  /** Back to the Library root, for the first breadcrumb. */
+  onOpenRoot: () => void;
   openableSourceIds: ReadonlySet<string>;
   /** All stored source files — names the rows in the Sources footer. */
   librarySources: readonly LibrarySource[];
@@ -107,7 +110,12 @@ interface NoteArticleProps {
   onToolbarHiddenChange: (hidden: boolean) => void;
 }
 
-export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef, toolbarHidden, onToolbarHiddenChange }: NoteArticleProps) {
+/** How many related notes the foot of an article shows. Past a handful this
+ *  stops being "see also" and becomes the backlink panel the owner asked us not
+ *  to build. */
+const RELATED_NOTES_SHOWN = 6;
+
+export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWikiTarget, onOpenFolder, onOpenRoot, onOpenSource, openableSourceIds, librarySources, onDelete, onStudyAction, saveNote, articleRef, toolbarHidden, onToolbarHiddenChange }: NoteArticleProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [saving, setSaving] = useState(false);
@@ -187,6 +195,10 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 
   const backlinks = useMemo(() => backlinksFor(notes, note), [note, notes]);
   const citations = useMemo(() => extractNoteCitations(content), [content]);
+  // One row per FILE down in Sources, even when the prose cites three different
+  // slides of the same deck — the same lecture listed three times reads as
+  // three lectures. The pills upstairs stay per-claim; this is the index.
+  const sourceRows = useMemo(() => citationSources(citations), [citations]);
   // Container pages (the Home note, folder notes) list what lives inside
   // them — derived at render, never stored, so it can never drift (owner
   // 2026-08-04: "shouldnt the library home note automatically link to all
@@ -212,14 +224,28 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
       onOpen: (href) => {
         const sourceId = citationSourceId(href);
         if (sourceId) {
-          onOpenSource(sourceId);
+          // Land on the slide/page the claim came from, and highlight the
+          // passage when the citation named one — the reader has consumed that
+          // anchor since the document reader shipped; until now nothing in a
+          // note ever wrote one.
+          const anchor = citationAnchor(href);
+          onOpenSource(sourceId, { query: anchor.query, unit: anchor.unit });
           return;
         }
         if (isSafeExternalHref(href)) window.open(href, "_blank", "noopener,noreferrer");
       },
       onOpenImage: (src, alt) => setLightbox({ alt, src }),
+      // "Con Law slides · Slide 18". Built HERE because the words come from the
+      // source file, and the article is what holds the list of sources.
+      describe: (href) => {
+        const sourceId = citationSourceId(href);
+        if (!sourceId) return null;
+        const source = librarySources.find((item) => item.id === sourceId);
+        if (!source) return null;
+        return describeCitation({ kind: source.kind, name: source.fileName }, citationAnchor(href));
+      },
     }),
-    [onOpenSource],
+    [librarySources, onOpenSource],
   );
 
   function updateDraft(next: { title?: string; content?: string }) {
@@ -258,7 +284,9 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           ) : (
             <DocsCrumbs
               className="min-w-0 flex-1"
+              currentTitle={note.title}
               onOpenFolder={onOpenFolder}
+              onOpenRoot={onOpenRoot}
               path={note.path.split("/").slice(0, -1).join("/")}
             />
           )}
@@ -427,11 +455,11 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
           and a bottom sources section for any that require sources"), so a
           note with no citations simply has no section, and the list can
           never disagree with the prose. */}
-      {citations.length > 0 && (
+      {sourceRows.length > 0 && (
         <footer className="mt-10 border-t border-(--ui-stroke-tertiary) pt-4" data-testid="note-citation-sources">
           <h2 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Sources</h2>
           <ol className="grid gap-1">
-            {citations.map((citation) => (
+            {sourceRows.map((citation) => (
               <CitationSourceRow
                 citation={citation}
                 key={citation.href}
@@ -444,17 +472,20 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
       )}
 
       {backlinks.length > 0 && (
+        // Kept, but as READING material rather than graph plumbing (owner
+        // 2026-08-06: "no excessive backlink panels"). "Linked from" is the
+        // vocabulary of a graph tool; "Related notes" is what a reader wants at
+        // the foot of an article, and it is the Wikipedia end of the model the
+        // owner asked for. Capped, because a popular concept can be referenced
+        // by dozens of notes and a wall of chips IS the panel they rejected.
         <footer className="mt-10 border-t border-(--ui-stroke-tertiary) pt-4" data-testid="note-backlinks">
-          <h2 className="mb-2 flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">
-            <IconArrowNarrowLeft size={13} /> Linked from
+          <h2 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">
+            Related notes
           </h2>
-          <div className="flex flex-wrap gap-1.5">
-            {backlinks.map((backlink) => (
+          <div className="flex flex-col gap-0.5">
+            {backlinks.slice(0, RELATED_NOTES_SHOWN).map((backlink) => (
               <button
-                className={cn(
-                  "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1 text-xs font-medium",
-                  "text-(--ui-text-secondary) hover:border-(--ui-stroke-secondary) hover:text-foreground",
-                )}
+                className="w-fit max-w-full truncate rounded-sm text-left text-sm text-(--ui-text-secondary) underline decoration-[color-mix(in_srgb,currentColor_40%,transparent)] underline-offset-[0.2em] hover:text-foreground hover:decoration-current"
                 key={backlink.id}
                 onClick={() => onOpenPath(backlink.path)}
                 type="button"
@@ -468,7 +499,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 
       <Dialog onOpenChange={setConfirmDelete} open={confirmDelete}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Are you sure you want to delete “{note.title}”?</DialogTitle><DialogDescription>The note will disappear from your Library and Graph. Existing [[links]] to it will become uncreated nodes.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Are you sure you want to delete “{note.title}”?</DialogTitle><DialogDescription>The note will disappear from your Library. Other notes that point here will keep the link, ready for whenever you write it again.</DialogDescription></DialogHeader>
           <DialogFooter><Button onClick={() => setConfirmDelete(false)} variant="ghost">Cancel</Button><Button onClick={() => void removeNote()} variant="destructive">Delete note</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -495,7 +526,7 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
 function CitationSourceRow({ citation, source, onOpenSource }: {
   citation: { n: number; href: string };
   source: LibrarySource | null;
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, anchor?: ReaderAnchor) => void;
 }) {
   const sourceId = citationSourceId(citation.href);
   const rowClass = "group flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground";

@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Button } from "@/components/desktop-ui/button";
 import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { seedChatIntent } from "@/lib/workspace/composer-seed";
@@ -40,6 +41,7 @@ export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }:
   const searchParams = useSearchParams();
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
+  const preview = Boolean(useWorkspacePreview());
   const { notes } = useCloudLibrary();
 
   const [sources, setSources] = useState<LibrarySource[] | null>(null);
@@ -47,7 +49,7 @@ export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }:
 
   useEffect(() => {
     let cancelled = false;
-    void loadLibrarySources(uid).then((loaded) => {
+    void loadLibrarySources(uid, { preview }).then((loaded) => {
       if (!cancelled) setSources(loaded);
     });
     return () => {

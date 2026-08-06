@@ -13,7 +13,7 @@ export function LibraryTreeBlankState({ onCreate }: { onCreate: () => void }) {
         <Codicon className="text-(--ui-text-quaternary)" name="root-folder" size="1.25rem" />
         <p className="text-xs text-(--ui-text-tertiary)">Start your Library</p>
         <p className="max-w-52 text-[0.6875rem] leading-relaxed text-(--ui-text-quaternary)">
-          Create a note, then connect ideas with [[double brackets]].
+          Create a note and Nemesis connects it to what you already have.
         </p>
         <button className="text-xs font-medium text-primary hover:underline" onClick={onCreate} type="button">New note</button>
       </div>

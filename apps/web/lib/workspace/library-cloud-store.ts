@@ -48,7 +48,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     // Carries inline [n](url) citations on purpose: the preview demos the
     // citation pills and the derived Sources footer (owner 2026-08-04).
     content:
-      "# The commerce clause\n\n**Rule:** Congress may regulate the channels of interstate commerce, its instrumentalities, and activities that substantially affect it [1](https://constitution.congress.gov/browse/essay/artI-S8-C3-1/ALDE_00013403/).\n\n## Key points\n- The substantial-effects prong is the broadest of the three [2](https://www.law.cornell.edu/wex/commerce_clause)\n- Aggregation: small local acts count once you add them up [1](https://constitution.congress.gov/browse/essay/artI-S8-C3-1/ALDE_00013403/)\n\n## Related\n- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]",
+      "# The commerce clause\n\n**Rule:** Congress may regulate the channels of interstate commerce, its instrumentalities, and activities that substantially affect it [1](?source=preview-src-conlaw-slides&page=2).\n\n## Key points\n- The substantial-effects prong is the broadest of the three [2](?source=preview-src-conlaw-slides&page=3&q=structure)\n- Aggregation: small local acts count once you add them up [3](?source=preview-src-conlaw-recording&t=1010)\n- The doctrine is summarised the same way in the casebook note [4](https://www.law.cornell.edu/wex/commerce_clause)\n\n## Related\n- Contrasts with: [[Dormant commerce]]\n- Applied in: [[Wickard v. Filburn]]",
   },
   {
     id: "preview-beams",

@@ -61,7 +61,7 @@ export function LibraryCreateDialog({ kind, open, onOpenChange, initialFolder = 
             <DialogTitle>New {noun}</DialogTitle>
             <DialogDescription>
               {kind === "note"
-                ? "Create a cloud note. Use [[double brackets]] in the editor to connect it to your Library."
+                ? "Create a cloud note. Nemesis connects it to the rest of your Library as you write."
                 : "Folders can be nested with a slash, such as Contract law/Week 4."}
             </DialogDescription>
           </DialogHeader>

@@ -63,6 +63,16 @@ export interface NoteEditorLinks {
   onOpen: (href: string) => void;
   /** A picture was clicked — the article opens its lightbox. */
   onOpenImage: (src: string, alt: string) => void;
+  /**
+   * What a Library-source citation should SAY: "Con Law slides · Slide 18".
+   *
+   * The editor deliberately does not know this. A pill's words come from the
+   * source FILE — its name, plus the anchor in the href — and the list of
+   * sources belongs to the article, so the article answers and this only draws.
+   * Returning null falls back to the bare dot rather than inventing a caption
+   * for a source that cannot be found.
+   */
+  describe?: (href: string) => string | null;
 }
 
 interface NoteEditorProps {
@@ -241,56 +251,89 @@ function plainClick(event: MouseEvent): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.detail === 1;
 }
 
-/** A citation pill: the chat's favicon-dot look, atomic in the document.
- *  Web citations show the site's favicon (number fallback when there is
- *  none); Library-source citations show a file glyph. Click opens the
- *  source; double-click melts to raw [n](target) text like a wiki link. */
+function citationNumber(n: number): HTMLElement {
+  const span = document.createElement("span");
+  span.className = "note-citation-n";
+  span.textContent = String(n);
+  return span;
+}
+
+/**
+ * Draw one citation pill into `dom`, replacing whatever was there.
+ *
+ * Split out of the node view because the pill's WORDS arrive later than the
+ * pill does. A Library-source label is looked up from the source file, and the
+ * list of sources is fetched after the note opens — but a ProseMirror node view
+ * is built once and never asked again, so a pill created in that window would
+ * stay a bare dot for the rest of the session. `repaintCitations` below runs
+ * this again over the live document the moment the sources land.
+ */
+function paintCitation(dom: HTMLElement, href: string, n: number, noteLinks: NoteEditorLinks | undefined): void {
+  const sourceId = citationSourceId(href);
+  const host = sourceId ? null : hostnameOf(href);
+  // A Library source gets its NAME and its place in the file — "Con Law slides
+  // · Slide 18" — because that is what makes a claim checkable without leaving
+  // the sentence. A web citation stays a dot: its identity is the favicon, and
+  // a research paragraph would drown in labelled chips.
+  const label = sourceId ? (noteLinks?.describe?.(href) ?? null) : null;
+
+  dom.className = label ? "note-citation note-citation-labelled" : "note-citation";
+  dom.title = sourceId
+    ? `${label ?? "Open this source file"} — click to open it, double-click to edit the citation`
+    : `${sourceLabel(href) ?? host ?? href} — double-click to edit the citation`;
+  dom.replaceChildren();
+
+  if (sourceId) {
+    const glyph = document.createElement("span");
+    glyph.className = "codicon codicon-file note-citation-glyph";
+    glyph.setAttribute("aria-hidden", "true");
+    dom.appendChild(glyph);
+    if (label) {
+      const text = document.createElement("span");
+      text.className = "note-citation-label";
+      text.textContent = label;
+      dom.appendChild(text);
+    }
+    return;
+  }
+  if (host) {
+    const icon = document.createElement("img");
+    icon.className = "note-citation-favicon";
+    icon.alt = sourceLabel(href) ?? host;
+    icon.src = faviconUrl(host);
+    // A dead favicon service must degrade to the number, not a broken image.
+    icon.addEventListener("error", () => { icon.replaceWith(citationNumber(n)); });
+    dom.appendChild(icon);
+    return;
+  }
+  dom.appendChild(citationNumber(n));
+}
+
+/** Re-draw every citation in the open document. Called when the article learns
+ *  something the pills depend on — today, which source files exist. */
+function repaintCitations(view: EditorView, noteLinks: NoteEditorLinks | undefined): void {
+  view.state.doc.descendants((node, pos) => {
+    if (node.type !== noteSchema.nodes.citation) return true;
+    const dom = view.nodeDOM(pos);
+    if (dom instanceof HTMLElement) paintCitation(dom, node.attrs.href as string, node.attrs.n as number, noteLinks);
+    return false;
+  });
+}
+
+/** A citation pill, atomic in the document. Click opens the source;
+ *  double-click melts to raw [n](target) text like a wiki link. */
 class CitationView {
   dom: HTMLElement;
 
   constructor(node: PmNode, noteLinks: NoteEditorLinks | undefined) {
     const href = node.attrs.href as string;
-    const n = node.attrs.n as number;
-    const sourceId = citationSourceId(href);
-    const host = sourceId ? null : hostnameOf(href);
-
     this.dom = document.createElement("span");
-    this.dom.className = "note-citation";
-    this.dom.title = sourceId
-      ? "Open this source file — double-click to edit the citation"
-      : `${sourceLabel(href) ?? host ?? href} — double-click to edit the citation`;
-
-    if (sourceId) {
-      const glyph = document.createElement("span");
-      glyph.className = "codicon codicon-file note-citation-glyph";
-      glyph.setAttribute("aria-hidden", "true");
-      this.dom.appendChild(glyph);
-    } else if (host) {
-      const icon = document.createElement("img");
-      icon.className = "note-citation-favicon";
-      icon.alt = sourceLabel(href) ?? host;
-      icon.src = faviconUrl(host);
-      // A dead favicon service must degrade to the number, not a broken image.
-      icon.addEventListener("error", () => {
-        icon.replaceWith(this.numberSpan(n));
-      });
-      this.dom.appendChild(icon);
-    } else {
-      this.dom.appendChild(this.numberSpan(n));
-    }
-
+    paintCitation(this.dom, href, node.attrs.n as number, noteLinks);
     this.dom.addEventListener("mousedown", (event) => {
       if (!plainClick(event)) return;
       event.preventDefault();
       noteLinks?.onOpen(href);
     });
-  }
-
-  private numberSpan(n: number): HTMLElement {
-    const span = document.createElement("span");
-    span.className = "note-citation-n";
-    span.textContent = String(n);
-    return span;
   }
 }
 
@@ -523,6 +566,17 @@ export function NoteEditor({ className, markdown, noteId, onChange, wikiLinks, n
     // that the editor owns it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId]);
+
+  // A citation pill's words come from the source FILE, and the list of source
+  // files is fetched after the note opens. Node views are built once, so
+  // without this every pill drawn during that window would stay a bare dot for
+  // the rest of the session. Repainting touches only the pills — the document,
+  // the selection and the undo history are untouched.
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    repaintCitations(editor, latest.current.noteLinks);
+  }, [noteLinks?.describe]);
 
   return <div className={className} ref={host} />;
 }

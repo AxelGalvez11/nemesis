@@ -29,18 +29,32 @@ export function pickLibraryLandingNote(notes: CloudLibraryNote[]): CloudLibraryN
   return notes.reduce((latest, note) => ((note.updatedAt || "") > (latest.updatedAt || "") ? note : latest));
 }
 
-/** First-run Home note, in the student's own hands from the first keystroke. */
-export const LIBRARY_HOME_SEED = `Welcome to your Library — one connected wiki of everything you are learning. This page is a note like any other: click anywhere and start typing.
+/**
+ * First-run Home note, in the student's own hands from the first keystroke.
+ *
+ * 🔴 IT NO LONGER TEACHES SYNTAX (owner 2026-08-06: "I do NOT want
+ * Obsidian-style complexity exposed to the user … no visible [[wiki links]]").
+ * This note used to say "Connect ideas by typing `[[` — pages link like a
+ * wiki" — the single most visible piece of that complexity anywhere in the
+ * product: seeded onto every new account, on the first page anyone opens, in a
+ * product whose whole promise is that the connecting happens for you.
+ *
+ * The capability is unchanged. Notes still link and the brain still writes
+ * those links; we just stopped asking a first-year student to learn a markup
+ * convention in order to get them.
+ */
+export const LIBRARY_HOME_SEED = `Welcome to your Library — everything you are learning, in one place. This page is a note like any other: click anywhere and start typing.
 
 ## Get started
 
 - Make a note with New note in the sidebar.
 - Import documents and Nemesis files them into organized topic pages, keeping the original file under Sources.
-- Connect ideas by typing \`[[\` — pages link like a wiki.
+- Record or upload a lecture and Nemesis writes the notes up here for you.
 
 ## Around the Library
 
 - Left: your folders, notes, and source files.
 - Right: the outline of the page you are reading.
 - Every folder is a page too — open one and it lists the notes inside it.
+- Related ideas link to each other on their own, so following a concept is one click.
 `;

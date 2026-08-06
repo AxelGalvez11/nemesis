@@ -176,8 +176,15 @@ function rowToLibrarySource(row: SourceRow): LibrarySource {
 /** Every source file the user has, newest first. No uid = the signed-out /
  *  dev-preview demo, which gets the fixtures. Errors (including "table does
  *  not exist yet") degrade to an empty list — the truthful state today. */
-export async function loadLibrarySources(uid: string | null): Promise<LibrarySource[]> {
-  if (!uid) return PREVIEW_LIBRARY_SOURCES;
+export async function loadLibrarySources(uid: string | null, options?: { preview?: boolean }): Promise<LibrarySource[]> {
+  // 🔴 `!uid` IS NOT THE PREVIEW TEST. The dev-preview harness signs a MOCK
+  // account in (uid 00000000-0000-4000-8000-000000000000), so "fixtures when
+  // signed out" never fired there: the harness queried a database it has no
+  // connection to, got nothing, and every source-file feature — the Sources
+  // footer, the openable pills, the citation labels — silently rendered as
+  // "no sources" in the one place the design is reviewed. Same `{ preview }`
+  // option loadNoteSources already takes, for the same reason.
+  if (options?.preview || !uid) return PREVIEW_LIBRARY_SOURCES;
   try {
     const { data, error } = await supabase
       .from("library_sources")
