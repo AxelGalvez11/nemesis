@@ -26,6 +26,11 @@ import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effor
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
+import {
+  decideRecordingCard,
+  displayedRecordingContent,
+  nextRecordingSessionTitle,
+} from "@/lib/workspace/recording-card-state";
 import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
 import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 import { loadCalendarEvents, saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
@@ -167,7 +172,7 @@ export function SessionChat() {
   // reviewed importer through them one dialog at a time (owner 2026-08-03
   // attached four). Closing a dialog — imported or cancelled — advances it.
   const [syllabusImport, setSyllabusImport] = useState<{ files: File[]; targetId: string } | null>(null);
-  const { jobs: recordingJobs } = useRecordingJobs();
+  const { jobs: recordingJobs, loaded: recordingJobsLoaded } = useRecordingJobs();
   // Re-read the artifacts whenever ANY watched job moves. That is what makes
   // results appear progressively: the transcript lands on the artifact at the
   // `composing` stage, so the card becomes openable then rather than at the end.
@@ -181,7 +186,11 @@ export function SessionChat() {
   // together with the job and the Library note, so nothing on this page writes
   // one any more. `recordingJobs` is the account-wide watch — this component
   // observes it, and unmounting does not stop it.
-  const { artifacts: recordingArtifacts } = useRecordingArtifacts({ contextId: selectedId, preview, refreshKey: recordingJobsRefreshKey, surface: "sessions", userId: uid });
+  // `fresh` says whether these rows were read FOR the current job state. Without
+  // it a snapshot one round trip behind — transcript present, notes not fetched
+  // yet — is indistinguishable from a write-up that failed, which is exactly how
+  // a finished lecture came to be reported as lost.
+  const { artifacts: recordingArtifacts, fresh: recordingArtifactsFresh } = useRecordingArtifacts({ contextId: selectedId, preview, refreshKey: recordingJobsRefreshKey, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -205,7 +214,27 @@ export function SessionChat() {
     return () => window.clearInterval(id);
   }, [busy]);
 
-  const turns = useMemo(() => groupTurns(messages), [messages]);
+  /**
+   * 🔴 A MESSAGE THAT WRONGLY SAYS A LECTURE WAS LOST IS CORRECTED HERE, ON THE
+   * WAY TO THE SCREEN — never by rewriting it. Cards written before the fix in
+   * recording-card-state.ts still carry that sentence, and a student re-reads it
+   * every time they scroll past. It cannot be rewritten: `chat_messages` has no
+   * UPDATE grant, the cloud write ignores duplicates, and the cloud copy wins
+   * the merge — so a rewrite reverts. Correcting the rendered text needs none of
+   * that, and leaves the student's history untouched.
+   */
+  const shownMessages = useMemo(() => {
+    const notesById = new Map(recordingArtifacts.map((artifact) => [artifact.id, artifact.notes]));
+    if (notesById.size === 0) return messages;
+    return messages.map((message) => {
+      const output = message.outputs?.[0];
+      if (!output || output.kind !== "recording") return message;
+      const content = displayedRecordingContent(message.content, notesById.get(output.id) ?? "");
+      return content === message.content ? message : { ...message, content };
+    });
+  }, [messages, recordingArtifacts]);
+
+  const turns = useMemo(() => groupTurns(shownMessages), [shownMessages]);
   const turnError: TurnError | null = error && error.sessionId === selectedId ? { kind: error.kind, text: error.text } : null;
 
   const runTurn = useCallback(async (targetUid: string, targetId: string, history: SessionMessage[], text: string) => {
@@ -666,12 +695,26 @@ export function SessionChat() {
   useEffect(() => {
     if (preview) return;
     for (const job of recordingJobs) {
-      if (job.status !== "processing" || !job.title || !job.contextId) continue;
+      if (!job.title || !job.contextId) continue;
+      // 🔴 ONLY ONCE THE NOTES PASS HAS RUN. A job is born titled
+      // `Recording · <date>` — a placeholder minted before a word has been
+      // heard — and `note_sections` is written by the compose pass that also
+      // writes the real title, so it is the signal that `job.title` means
+      // something. The old code adopted the placeholder the moment the job
+      // appeared and then refused to replace it, because its guard only allowed
+      // overwriting the "Recorded session" default. Every recorded lecture kept
+      // a dated name for good while its real title sat unused on the row.
+      if (job.noteSections === null) continue;
       const session = sessionsStore.getState().sessions.find((entry) => entry.id === job.contextId);
-      // Only while the session still carries the name the recorder gave it. A
-      // student who renamed it, or who recorded partway through a real
-      // conversation, keeps their own title.
-      if (session?.title === RECORDED_SESSION_TITLE) sessionsStore.rename(job.contextId, job.title);
+      if (!session) continue;
+      // A title Nemesis wrote may be improved on. A title the STUDENT wrote is
+      // theirs, and nothing here touches it.
+      const renamed = nextRecordingSessionTitle({
+        composed: job.title,
+        current: session.title,
+        fallback: RECORDED_SESSION_TITLE,
+      });
+      if (renamed) sessionsStore.rename(job.contextId, renamed);
     }
   }, [preview, recordingJobs]);
 
@@ -690,39 +733,68 @@ export function SessionChat() {
   useEffect(() => {
     if (preview || !selectedId) return;
     const byId = new Map(recordingArtifacts.map((artifact) => [artifact.id, artifact]));
-    const stillRunning = new Set(
-      recordingJobs.filter((job) => job.status === "processing").map((job) => job.artifactId),
-    );
+    const jobFor = new Map(recordingJobs.map((job) => [job.artifactId, job]));
     for (const message of messages) {
       const output = message.outputs?.[0];
-      if (!output || output.kind !== "recording" || output.polish !== "pending") continue;
-      // NOT while the job is still going. The wording below is final — it says
-      // whether the notes exist — and a job part way through composing has no
-      // notes yet without having failed. Saying "writing the notes did not
-      // finish" at that moment would be plainly untrue, and the card is already
-      // reporting the live stage anyway.
-      if (stillRunning.has(output.id)) continue;
+      if (!output || output.kind !== "recording") continue;
       const artifact = byId.get(output.id);
       // `message.id` is optional on the type for messages built before the store
       // minted ids. One without an id cannot be addressed, so it is left alone
       // rather than resolved by position, which would rewrite the wrong message.
-      if (!artifact || !message.id || !artifact.transcript.trim()) continue;
-      sessionsStore.resolvePending(selectedId, message.id, {
-        content: artifact.notes.trim()
-          ? "Your recording is written up — transcript and notes are ready."
-          : "Your recording is transcribed. Writing the notes did not finish, so ask me to write them up and I will use the transcript.",
-        outputs: [{
-          createdAt: artifact.createdAt,
-          durationSeconds: artifact.durationSeconds,
-          id: artifact.id,
-          kind: "recording",
-          notes: artifact.notes,
-          title: artifact.title,
-          transcript: artifact.transcript,
-        }],
+      if (!artifact || !message.id) continue;
+
+      const finished = {
+        createdAt: artifact.createdAt,
+        durationSeconds: artifact.durationSeconds,
+        id: artifact.id,
+        kind: "recording" as const,
+        notes: artifact.notes,
+        title: artifact.title,
+        transcript: artifact.transcript,
+      };
+
+      // The conversation takes the lecture's real name as soon as the artifact
+      // carries one. Done for resolved cards TOO, not just pending ones, which
+      // is what repairs a conversation stranded on its dated placeholder: its
+      // job went `ready` and left the watch, so the job-driven rename above can
+      // never reach it again. Unlike a chat message, a thread's title IS
+      // updatable (renameThreadCloud), so this one really can be put right.
+      const session = sessionsStore.getState().sessions.find((entry) => entry.id === selectedId);
+      const renamed = session
+        ? nextRecordingSessionTitle({
+          composed: artifact.title,
+          current: session.title,
+          fallback: RECORDED_SESSION_TITLE,
+          placeholder: output.title,
+        })
+        : null;
+      if (renamed) sessionsStore.rename(selectedId, renamed);
+
+      // An already-resolved card's WORDING is left alone here. If it is one of
+      // the wrong ones it is corrected where the thread is rendered — see the
+      // `shownMessages` memo above, and displayedRecordingContent's comment for
+      // why a rewrite cannot work (no UPDATE grant, and cloud wins the merge).
+      if (output.polish !== "pending") continue;
+
+      // 🔴 THE DECISION IS NOT MADE HERE. It lives in recording-card-state.ts as
+      // a pure function, because the version that lived inline in this effect
+      // shipped a card telling a student their finished lecture had been lost,
+      // and no test could reach it. `fresh` is the load-bearing input: without
+      // it, an artifact fetched one job-state ago looks exactly like a failed
+      // write-up.
+      const decision = decideRecordingCard({
+        job: jobFor.get(output.id) ?? null,
+        jobsLoaded: recordingJobsLoaded,
+        notes: artifact.notes,
+        snapshotFresh: recordingArtifactsFresh,
+        transcript: artifact.transcript,
       });
+      if (decision.action !== "resolve") continue;
+
+      // The rename already happened above, for pending and resolved cards alike.
+      sessionsStore.resolvePending(selectedId, message.id, { content: decision.content, outputs: [finished] });
     }
-  }, [messages, preview, recordingArtifacts, recordingJobs, selectedId]);
+  }, [messages, preview, recordingArtifacts, recordingArtifactsFresh, recordingJobs, recordingJobsLoaded, selectedId]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");
