@@ -56,7 +56,7 @@ export function outputMetaLine(output: SessionOutput): string {
 
 export function OutputCard({ output }: { output: SessionOutput }) {
   const router = useRouter();
-  const jobs = useRecordingJobs();
+  const { jobs, loaded } = useRecordingJobs();
   // THE CARD OBSERVES A JOB; IT DOES NOT RUN ONE.
   //
   // Until 2026-08-05 this card pulsed and said "Writing up your notes…" for as
@@ -70,10 +70,15 @@ export function OutputCard({ output }: { output: SessionOutput }) {
   // artifact is created with the job and is what every surface already keys on,
   // so a message that predates this feature still finds its job.
   const job = jobs.find((entry) => entry.artifactId === output.id) ?? null;
-  // `polish: "pending"` is the fallback for a card with no live job — an older
-  // recording that finished before the page loaded, or one whose job row has
-  // aged out of the watch.
-  const pending = job ? job.status === "processing" : output.polish === "pending";
+  // 🔴 `polish: "pending"` IS ONLY BELIEVED UNTIL THE JOBS HAVE BEEN READ.
+  //
+  // That field is frozen into the message when the recording is handed over, and
+  // nothing ever rewrites it on some surfaces. Trusting it forever is how a card
+  // ends up pulsing and unclickable for the rest of the semester: the job
+  // finishes, leaves the watch, `job` goes null, and the stale claim is all
+  // that is left. Once `loaded` is true, the absence of a job is itself the
+  // answer — nobody is working on this recording, so the card opens.
+  const pending = job ? job.status === "processing" : !loaded && output.polish === "pending";
   const failed = job?.status === "failed";
   // Results appear progressively. The transcript exists from the moment
   // transcription finishes, so the card opens THEN — the student can read what

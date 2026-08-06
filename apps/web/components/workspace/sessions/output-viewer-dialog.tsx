@@ -104,7 +104,7 @@ export function OutputViewerDialog() {
  * read lands, so the caller falls back to whatever the message carries.
  */
 function useLiveRecording(artifactId: string | null): { notes: string; transcript: string } | null {
-  const jobs = useRecordingJobs();
+  const { jobs } = useRecordingJobs();
   const [row, setRow] = useState<{ id: string; notes: string; transcript: string } | null>(null);
   // Only the jobs that could still change this artifact. Depending on the whole
   // snapshot would re-read on every unrelated recording's stage change.

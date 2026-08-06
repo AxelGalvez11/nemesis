@@ -12,26 +12,29 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
-import type { RecordingJob } from "@/lib/workspace/recording-job";
 import {
   recordingJobsSnapshot,
   startRecordingJobsWatch,
   subscribeRecordingJobs,
+  type RecordingJobsState,
 } from "@/lib/workspace/recording-jobs-store";
 
-/** Stable empty array for the server snapshot — a fresh `[]` on each call makes
- *  useSyncExternalStore throw about an infinite render loop. */
-const NONE: RecordingJob[] = [];
+/** Stable server snapshot — a fresh object on each call makes
+ *  useSyncExternalStore throw about an infinite render loop. `loaded: false`
+ *  because on the server nothing has been read, which is exactly what a card
+ *  rendered there should assume. */
+const SERVER_STATE: RecordingJobsState = { jobs: [], loaded: false };
 
 /**
- * Every recording this account has not finished, live.
+ * Every recording this account has not finished, live, plus whether they have
+ * been read yet.
  *
  * Safe to call from as many components as you like: `startRecordingJobsWatch` is
  * idempotent, and the watch is deliberately NOT stopped on unmount — a component
  * unmounting is a route change, and a recording does not stop processing because
  * the student opened their Library.
  */
-export function useRecordingJobs(): RecordingJob[] {
+export function useRecordingJobs(): RecordingJobsState {
   const { session } = useAuth();
   const preview = useWorkspacePreview();
   // Preview surfaces (/dev-preview/...) render with fixture data and no account,
@@ -42,5 +45,5 @@ export function useRecordingJobs(): RecordingJob[] {
     startRecordingJobsWatch(uid);
   }, [uid]);
 
-  return useSyncExternalStore(subscribeRecordingJobs, recordingJobsSnapshot, () => NONE);
+  return useSyncExternalStore(subscribeRecordingJobs, recordingJobsSnapshot, () => SERVER_STATE);
 }

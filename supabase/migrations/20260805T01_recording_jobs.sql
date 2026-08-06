@@ -287,7 +287,82 @@ comment on function public.retry_recording_job is
 revoke execute on function public.retry_recording_job(uuid) from public, anon;
 grant execute on function public.retry_recording_job(uuid) to authenticated, service_role;
 
--- ── 5. Is there allowance left? ─────────────────────────────────────────────
+-- ── 5. The placeholder note is not indexed ──────────────────────────────────
+
+-- The Library note exists from the second the microphone closes, and until the
+-- notes are written its whole body is "Nemesis is processing this recording."
+-- That is a note like any other to the indexer: list_dirty_library_docs picks it
+-- up within two minutes and embeds the placeholder into library_chunks. For the
+-- couple of minutes a recording takes, every semantic search that student runs
+-- can match a sentence Nemesis wrote about itself.
+--
+-- One embedding call and a passage of pure boilerplate — small, and exactly the
+-- kind of small that reads as "search returned garbage". It is also avoidable:
+-- the note carries the job it belongs to, so the feeder can simply wait.
+--
+-- 🔴 ORDER-INDEPENDENT, unlike 20260725T01's change to this same function. That
+-- one also rewrote run_library_indexing() to take a lease the deployed function
+-- did not yet release, so applying it early cost a 5x slowdown. This adds one
+-- WHERE clause to the feeder and touches nothing the indexer does, so it is safe
+-- to apply before or after any deploy. It only ever selects FEWER documents.
+--
+-- CREATE OR REPLACE with the same signature and return type as 20260725T01, so
+-- that file's grants survive untouched.
+create or replace function public.list_dirty_library_docs(p_limit int default 40)
+returns table (
+  document_id uuid,
+  user_id uuid,
+  path text,
+  title text,
+  content text,
+  known_hash text,
+  deleted boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    d.id,
+    d.user_id,
+    d.path,
+    coalesce(d.title, ''),
+    coalesce(d.content, ''),
+    s.content_hash,
+    d.deleted
+  from public.readable_library_documents d
+  left join public.library_index_state s on s.document_id = d.id
+  left join public.library_index_failures f on f.document_id = d.id
+  where d.kind = 'note'
+    and (
+      -- A live note never indexed, or edited since it was.
+      (d.deleted = false and (s.document_id is null or s.indexed_at < d.updated_at))
+      -- A deleted note that still has an index row, i.e. chunks to remove. Once
+      -- the indexer purges it, s.document_id is null and it stops being selected.
+      or (d.deleted = true and s.document_id is not null)
+    )
+    -- Backing off. The `is null` half is load-bearing: without it this clause
+    -- would drop every document that has NEVER failed, which is all of them.
+    and (f.document_id is null or f.next_attempt_at <= now())
+    -- Still being written by a recording. Deliberately keyed on the JOB's status
+    -- rather than on recording_job_id being set: that column is provenance and
+    -- is never cleared, so testing it alone would exclude every recording note
+    -- from search forever.
+    and not exists (
+      select 1 from public.recording_jobs j
+       where j.id = d.recording_job_id and j.status = 'processing'
+    )
+  -- Purges first. They cost no embedding calls, so a backlog of edits must never
+  -- be what keeps a deleted note's chunks alive for another tick.
+  order by (d.deleted = false) asc, d.updated_at asc
+  limit greatest(1, least(p_limit, 200));
+$$;
+
+comment on function public.list_dirty_library_docs is
+  'Documents needing (re)indexing or PURGING: never indexed, touched since last index, or deleted-but-still-indexed — excluding any that are backing off after a failure, and any whose recording is still being written up. Service-role only — it reads across all users by design.';
+
+-- ── 6. Is there allowance left? ─────────────────────────────────────────────
 
 -- A READ, not a reservation. reserve_transcription_seconds is still the only
 -- thing that takes allowance, and it still runs inside the transcription lane
@@ -344,7 +419,7 @@ comment on function public.transcription_quota_state is
 revoke execute on function public.transcription_quota_state(uuid) from public, anon, authenticated;
 grant execute on function public.transcription_quota_state(uuid) to service_role;
 
--- ── 6. The safety net ───────────────────────────────────────────────────────
+-- ── 7. The safety net ───────────────────────────────────────────────────────
 
 -- The web server kicks the worker the moment it creates a job, so this cron is
 -- not the normal path — it is what catches a job whose kick was lost (the

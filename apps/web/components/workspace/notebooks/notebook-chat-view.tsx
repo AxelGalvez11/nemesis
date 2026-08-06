@@ -17,6 +17,7 @@ import { consumeNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
+import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
 import type { RecordingHandoff, RecordingTarget } from "../sessions/use-recording";
 
 import { NotebookComposer } from "./notebook-composer";
@@ -126,6 +127,7 @@ export function NotebookChatView() {
     setRecording(false);
     setRecordCanvasOpen(false);
     setComposerMode("chat");
+    refreshRecordingJobs();
     setRightPanel("outputs");
     setRightRailOpen(true);
     const chatId = activeChatId;

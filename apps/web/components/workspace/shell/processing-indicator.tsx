@@ -26,7 +26,7 @@ export function ProcessingIndicator() {
   // Mounting this in the shell is also what STARTS the account-wide watch, so a
   // job left running by a previous page — or created in another tab — is picked
   // up wherever the student happens to be.
-  const jobs = useRecordingJobs();
+  const { jobs } = useRecordingJobs();
   const [expanded, setExpanded] = useState(false);
 
   const processing = useMemo(() => jobs.filter((job) => job.status === "processing"), [jobs]);

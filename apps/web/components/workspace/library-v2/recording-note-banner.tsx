@@ -20,7 +20,7 @@ import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 import { useState } from "react";
 
 export function RecordingNoteBanner({ noteId }: { noteId: string }) {
-  const jobs = useRecordingJobs();
+  const { jobs } = useRecordingJobs();
   const [retrying, setRetrying] = useState(false);
   // Finished jobs are not watched, so a note that is done simply has no job and
   // renders nothing — no "complete" state to dismiss, and no flag to clear.

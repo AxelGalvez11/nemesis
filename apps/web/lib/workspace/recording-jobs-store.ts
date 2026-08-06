@@ -36,8 +36,24 @@ const MAX_WATCHED = 20;
 
 type Listener = () => void;
 
+export interface RecordingJobsState {
+  jobs: RecordingJob[];
+  /**
+   * Whether this account's jobs have been read at least once.
+   *
+   * 🔴 LOAD-BEARING, not a spinner flag. A chat message carries `polish:
+   * "pending"` — a claim about how things were when it was written — and the
+   * card has to decide whether to still believe it. Before the first read,
+   * believing it is all we can do. AFTER it, the jobs are the truth: a message
+   * that says pending with no job behind it is a recording nobody is working on,
+   * and treating that as "still writing" leaves a card pulsing and unclickable
+   * forever.
+   */
+  loaded: boolean;
+}
+
 const listeners = new Set<Listener>();
-let jobs: RecordingJob[] = [];
+let state: RecordingJobsState = { jobs: [], loaded: false };
 let userId: string | null = null;
 let timer: number | null = null;
 let inFlight = false;
@@ -48,8 +64,8 @@ function emit(): void {
 
 /** The snapshot React reads. Reference-stable between real changes, because
  *  useSyncExternalStore re-renders on every new reference and this store polls. */
-export function recordingJobsSnapshot(): RecordingJob[] {
-  return jobs;
+export function recordingJobsSnapshot(): RecordingJobsState {
+  return state;
 }
 
 export function subscribeRecordingJobs(listener: Listener): () => void {
@@ -57,28 +73,6 @@ export function subscribeRecordingJobs(listener: Listener): () => void {
   return () => {
     listeners.delete(listener);
   };
-}
-
-/** Jobs still moving. What the "N items processing" indicator counts. */
-export function processingJobs(): RecordingJob[] {
-  return jobs.filter((job) => job.status === "processing");
-}
-
-export function recordingJobById(id: string | null | undefined): RecordingJob | null {
-  if (!id) return null;
-  return jobs.find((job) => job.id === id) ?? null;
-}
-
-/** The job that produced a given chat artifact, so a card can find its own
- *  progress without the message having to carry it. */
-export function recordingJobForArtifact(artifactId: string | null | undefined): RecordingJob | null {
-  if (!artifactId) return null;
-  return jobs.find((job) => job.artifactId === artifactId) ?? null;
-}
-
-export function recordingJobForDocument(documentId: string | null | undefined): RecordingJob | null {
-  if (!documentId) return null;
-  return jobs.find((job) => job.libraryDocumentId === documentId) ?? null;
 }
 
 function sameJobs(a: readonly RecordingJob[], b: readonly RecordingJob[]): boolean {
@@ -89,21 +83,20 @@ function sameJobs(a: readonly RecordingJob[], b: readonly RecordingJob[]): boole
   });
 }
 
-function replace(next: RecordingJob[]): void {
-  if (sameJobs(jobs, next)) return;
-  jobs = next;
+function replace(next: RecordingJob[], loaded: boolean): void {
+  if (state.loaded === loaded && sameJobs(state.jobs, next)) return;
+  state = { jobs: next, loaded };
   emit();
 }
 
 /**
- * Put a job on screen the instant it is created, without waiting for a poll.
+ * Read this account's jobs NOW rather than on the next scheduled poll.
  *
- * Two seconds of "did that work?" after stopping a lecture is exactly the gap
- * this feature is about, and the create call already returned the row's shape —
- * there is nothing to wait for.
+ * Called the moment a recording is handed over, because the idle poll can be
+ * twenty seconds away and "did that work?" for twenty seconds after stopping a
+ * lecture is the exact gap this whole feature exists to close.
  */
-export function noteRecordingJob(job: RecordingJob): void {
-  replace([job, ...jobs.filter((existing) => existing.id !== job.id)].slice(0, MAX_WATCHED));
+export function refreshRecordingJobs(): void {
   schedule(0);
 }
 
@@ -125,14 +118,14 @@ async function refresh(): Promise<void> {
     replace((data ?? []).flatMap((row) => {
       const job = toRecordingJob(row);
       return job ? [job] : [];
-    }));
+    }), true);
   } catch {
     // A failed read is a network blip, not a state change. Keeping the last
     // snapshot means a flaky connection does not make a running job disappear
     // from the screen and then come back.
   } finally {
     inFlight = false;
-    schedule(processingJobs().length > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    schedule(state.jobs.some((job) => job.status === "processing") ? ACTIVE_POLL_MS : IDLE_POLL_MS);
   }
 }
 
@@ -151,7 +144,10 @@ export function startRecordingJobsWatch(nextUserId: string | null): void {
   userId = nextUserId;
   if (timer !== null) window.clearTimeout(timer);
   timer = null;
-  replace([]);
+  // `loaded: false` again on every account switch: until the new account's jobs
+  // have been read, a card must fall back to what its message claims rather than
+  // to the previous account's (empty) answer.
+  replace([], false);
   if (userId) schedule(0);
 }
 

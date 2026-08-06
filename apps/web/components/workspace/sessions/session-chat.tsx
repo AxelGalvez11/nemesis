@@ -26,6 +26,7 @@ import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effor
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
+import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
 import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 import { loadCalendarEvents, saveCalendarEvent, type CalendarEvent } from "@/lib/workspace/calendar-model";
 import { AnkiImportDialog } from "@/components/workspace/study/anki-import-dialog";
@@ -166,7 +167,7 @@ export function SessionChat() {
   // reviewed importer through them one dialog at a time (owner 2026-08-03
   // attached four). Closing a dialog — imported or cancelled — advances it.
   const [syllabusImport, setSyllabusImport] = useState<{ files: File[]; targetId: string } | null>(null);
-  const recordingJobs = useRecordingJobs();
+  const { jobs: recordingJobs } = useRecordingJobs();
   // Re-read the artifacts whenever ANY watched job moves. That is what makes
   // results appear progressively: the transcript lands on the artifact at the
   // `composing` stage, so the card becomes openable then rather than at the end.
@@ -620,6 +621,10 @@ export function SessionChat() {
   const handleRecordingFinished = useCallback((handoff: RecordingHandoff) => {
     setRecording(false);
     setComposerMode("chat");
+    // Read the new job NOW rather than on the next scheduled poll — which, with
+    // nothing else running, can be twenty seconds away. Twenty seconds of "did
+    // that work?" after stopping a lecture is the exact gap being closed here.
+    refreshRecordingJobs();
 
     sessionsStore.appendPending(handoff.contextId, {
       at: new Date().toISOString(),

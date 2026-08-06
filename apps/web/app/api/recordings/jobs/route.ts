@@ -82,12 +82,20 @@ export async function POST(req: NextRequest) {
   // already knew about. The reservation inside the transcription lane is still
   // the authority; this is a courtesy read that can lag it by seconds.
   const { data: quota } = await admin.rpc("transcription_quota_state", { p_user_id: auth.id });
-  const limitSeconds = Number((quota as { limit?: unknown } | null)?.limit ?? 0);
+  const rawLimit = (quota as { limit?: unknown } | null)?.limit;
+  const limitSeconds = Number(rawLimit ?? 0);
   const usedSeconds = Number((quota as { used?: unknown } | null)?.used ?? 0);
   const plan = String((quota as { plan?: unknown } | null)?.plan ?? "free");
-  if (Number.isFinite(limitSeconds) && usedSeconds + durationSeconds > limitSeconds) {
+  if (usedSeconds + durationSeconds > limitSeconds) {
     return json({
-      error: "You have reached this month's transcription limit.",
+      // A NULL limit is not a limit that was reached — it is a plan with no
+      // transcription entitlement row at all, which the transcription lane also
+      // treats as "not available on this plan". Telling someone they used up an
+      // allowance they never had sends them looking for usage that does not
+      // exist. Same 429, different sentence.
+      error: rawLimit === null || rawLimit === undefined
+        ? "Recording transcription isn't available on this plan yet."
+        : "You have reached this month's transcription limit.",
       limitSeconds,
       plan,
       usedSeconds,
