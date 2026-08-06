@@ -28,6 +28,24 @@ test("every advertised tool has a case in the dispatch", () => {
   assert.deepEqual(missing, [], `advertised with no executor: ${missing.join(", ")}`);
 });
 
+// 🔴 THE HOP THAT MAKES SOURCE FILING REAL. Where an attached lecture lives is
+// resolved once per turn and handed to the study lanes through the dispatch. If
+// that argument is ever dropped, nothing fails: the folder simply arrives empty
+// and both lanes go back to guessing from the material's own words, which is
+// exactly the state that filed one lecture's note under the student's own
+// "Pharmacy" and its deck under an invented "Pharmacology" in the same turn.
+//
+// Read from the source in the same way the dispatch-coverage test above does,
+// because these two lines are plumbing: there is no behaviour to observe, only
+// a value that is either passed or silently lost.
+test("the two study creation lanes are handed the turn's source folder", () => {
+  const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
+  for (const name of ["add_flashcards", "add_practice_test"]) {
+    const line = source.split("\n").find((row) => row.includes(`case "${name}":`)) ?? "";
+    assert.match(line, /options\.sourceFolder/, `${name} no longer receives the turn's source folder`);
+  }
+});
+
 // A recording's transcript is not, and has never been, a Library note. Whenever
 // that stops being obvious from the schema text, the model goes back to
 // searching the Library for one and concluding it is gone.

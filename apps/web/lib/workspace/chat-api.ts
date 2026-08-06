@@ -7,6 +7,7 @@
 import {
   ARTIFACT_REFERENCE_RULE,
   type PendingDelete,
+  attachedSourceIds,
   expandArtifactContext,
   formatBrainContext,
   shouldRecallBrain,
@@ -18,7 +19,6 @@ import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
-import { attachedSourceIds } from "@/lib/workspace/chat-attachments";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
 import {

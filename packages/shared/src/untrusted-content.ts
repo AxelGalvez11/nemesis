@@ -105,3 +105,41 @@ export function wrapUntrusted(label: string, content: string): string {
     UNTRUSTED_FENCE,
   ].join("\n");
 }
+
+/**
+ * The app's own header naming a filed attachment, written ABOVE the fence.
+ *
+ * It lives here, beside the fence vocabulary, for two reasons. It belongs to
+ * the same contract — what the app says about a document, as opposed to what
+ * the document says — and it has to be readable by the turn that WRITES the
+ * blocks and by the turn that later asks which documents were attached. Those
+ * two live in modules that already import each other, so a home in either one
+ * makes a cycle.
+ *
+ * ONE constant, used to both write the line and read it back: a copy of this
+ * sentence in a regex somewhere else would go stale the first time the wording
+ * changed, and would fail SILENTLY — the reader would simply find no
+ * attachments, and everything downstream would look like "nothing was sent".
+ */
+export const SOURCE_HEADER = "Stored in the student's Library as source ";
+
+/**
+ * The Library source ids of the documents attached to a turn. PURE.
+ *
+ * Read back out of the wire text because that is provably where the ids are,
+ * and because this function and the writer share the constant above, so they
+ * cannot drift. Order is preserved and duplicates are dropped — the same file
+ * attached twice is one document, not two votes about where it lives.
+ */
+export function attachedSourceIds(wireText: string): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const line of wireText.split("\n")) {
+    if (!line.startsWith(SOURCE_HEADER)) continue;
+    const id = line.slice(SOURCE_HEADER.length).split(/\s/)[0]?.trim() ?? "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
