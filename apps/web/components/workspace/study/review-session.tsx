@@ -17,6 +17,17 @@ import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStu
 import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
 import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
 import { formatDueIn, predictSchedule, type StudyGrade } from "@/lib/workspace/study-scheduler";
+import {
+  EMPTY_SESSION,
+  hasSessionProgress,
+  parseSessionState,
+  popUndo,
+  pruneSessionState,
+  pushUndo,
+  serializeSessionState,
+  studySessionKey,
+  type GradeUndoEntry,
+} from "@/lib/workspace/study-session-state";
 import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +69,13 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot | null; progress: number; wasRetry: boolean } | null>(null);
+  // A stack, not one slot. Undo used to work exactly once because the single
+  // slot was nulled after unwinding it. Not persisted — see study-session-state.
+  const [undoStack, setUndoStack] = useState<GradeUndoEntry<StudyScheduleSnapshot>[]>([]);
+  // The clock the queue is built against. Held as state and moved only at a
+  // card boundary: if it advanced on a timer, a card falling due mid-answer
+  // could take over the screen while the reviewer was reading the one in hand.
+  const [now, setNow] = useState<Date>(() => new Date());
   // Editing swaps the card area for an inline form — no nested dialog, which
   // Radix would dismiss during the dropdown-menu close sequence.
   const [editOpen, setEditOpen] = useState(false);
@@ -71,24 +88,73 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const explainCache = useRef(new Map<string, ExplainTurn[]>());
   const [explainOpen, setExplainOpen] = useState(false);
 
+  // `cards` changes on every grade, so the restore below reads it through a ref
+  // rather than depending on it — a dependency would re-run the restore
+  // mid-sitting and overwrite the reviewer's live progress with stored state.
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+  // Preview has no signed-in account, but losing your place there is the same
+  // bug — so it gets its own stable owner. A real account id is a uuid and can
+  // never collide with this, so the account scoping still holds.
+  const sessionKey = studySessionKey(userId ?? (previewMode ? "preview" : null), deck?.id ?? null);
+
+  // Opening a deck resumes the sitting already in progress instead of starting
+  // it over.
+  //
+  // 🔴 The restore lives in the SAME effect that clears the previous deck's
+  // state. As two effects, the clear would run after the restore on the very
+  // first open and silently eat it — the bug would look like "persistence
+  // doesn't work" while the round trip itself was fine.
   useEffect(() => {
     if (!open) return;
-    setPassedIds([]);
-    setRetryIds([]);
-    setProgressById({});
-    setPriorityId(null);
+    let restored = EMPTY_SESSION;
+    if (sessionKey) {
+      try {
+        restored = parseSessionState(window.localStorage.getItem(sessionKey));
+      } catch {
+        // Storage unavailable (private mode): start clean rather than fail.
+      }
+      // Prune against the deck's real cards — but only once they have loaded.
+      // Pruning against a list that has not arrived yet would throw the whole
+      // sitting away on open.
+      const deckCards = cardsRef.current.filter((card) => card.deckId === deck?.id);
+      if (deckCards.length > 0) restored = pruneSessionState(restored, new Set(deckCards.map((card) => card.id)));
+    }
+    setPassedIds([...restored.passedIds]);
+    setRetryIds([...restored.retryIds]);
+    setProgressById({ ...restored.progressById });
+    setPriorityId(restored.priorityId);
     setRevealed(false);
     setError(null);
-    setLastGrade(null);
+    setUndoStack([]);
     setEditOpen(false);
-  }, [open, deck?.id]);
+    setNow(new Date());
+  }, [open, deck?.id, sessionKey]);
 
   const queue = useMemo(
-    () => buildReviewQueue({ cards, deckId: deck?.id ?? null, passedIds, retryIds, priorityId }),
-    [cards, deck?.id, passedIds, retryIds, priorityId],
+    () => buildReviewQueue({ cards, deckId: deck?.id ?? null, passedIds, retryIds, priorityId, now }),
+    [cards, deck?.id, passedIds, retryIds, priorityId, now],
   );
   const current = queue[0] ?? null;
   const currentId = current?.id ?? null;
+
+  // Write the sitting down so it survives a refresh, a route change, and
+  // closing the deck.
+  //
+  // An empty sitting is removed rather than stored, and so is a FINISHED one:
+  // once the queue drains, reopening the deck has to start a fresh review
+  // rather than restoring an all-passed session that reports itself instantly
+  // complete. Undo repopulates the queue and the entry comes back.
+  useEffect(() => {
+    if (!open || !sessionKey) return;
+    const state = { passedIds, priorityId, progressById, retryIds };
+    try {
+      if (queue.length === 0 || !hasSessionProgress(state)) window.localStorage.removeItem(sessionKey);
+      else window.localStorage.setItem(sessionKey, serializeSessionState(state));
+    } catch {
+      // Storage unavailable: the sitting still works, it just won't come back.
+    }
+  }, [open, passedIds, priorityId, progressById, queue.length, retryIds, sessionKey]);
 
   // Anki-style remaining counts for the footer: cards failed this sitting
   // count as learning, untouched cards as new, the rest as due reviews.
@@ -163,7 +229,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         // counts in stats — Anki logs every answer.
         logStudyPress(graded.id, value);
       }
-      setLastGrade({ cardId: graded.id, snapshot, progress, wasRetry });
+      setUndoStack((stack) => pushUndo(stack, { cardId: graded.id, progress, snapshot, wasRetry }));
+      // The card boundary: this is the one moment the queue may safely be
+      // rebuilt against a later clock, so cards that came due while the
+      // reviewer was working now enter. Mid-card it would swap the card out
+      // from under them.
+      setNow(new Date());
       setPriorityId((id) => (id === graded.id ? null : id));
       setProgressById((map) => ((map[graded.id] ?? 0) === decision.progress ? map : { ...map, [graded.id]: decision.progress }));
       if (decision.requeue) {
@@ -183,8 +254,9 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   }
 
   async function undo() {
-    if (!lastGrade || saving) return;
-    const { cardId, snapshot, progress, wasRetry } = lastGrade;
+    const { entry, rest } = popUndo(undoStack);
+    if (!entry || saving) return;
+    const { cardId, snapshot, progress, wasRetry } = entry;
     setSaving(true);
     setError(null);
     try {
@@ -194,7 +266,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       setRetryIds((ids) => (wasRetry ? (ids.includes(cardId) ? ids : [...ids, cardId]) : ids.filter((id) => id !== cardId)));
       setProgressById((map) => ({ ...map, [cardId]: progress }));
       setPriorityId(cardId);
-      setLastGrade(null);
+      // Pop, don't clear. Undo used to null a single slot here, which is why a
+      // second press did nothing — the presses before it were never recorded.
+      setUndoStack(rest);
+      // Undo is also a card boundary, so the clock moves with it.
+      setNow(new Date());
       setRevealed(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't undo the review.");
@@ -330,8 +406,8 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
             <div className="flex items-center justify-between pr-10">
               <span className="min-w-0 truncate text-xs text-(--ui-text-tertiary)">{deck ? deck.name.split("::").at(-1) : "All decks"}</span>
               <div className="flex items-center gap-1">
-                {lastGrade && (
-                  <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title="Undo last grade (Z)" variant="ghost">
+                {undoStack.length > 0 && (
+                  <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title={`Undo last grade (Z) — ${undoStack.length} to undo`} variant="ghost">
                     Undo
                   </Button>
                 )}

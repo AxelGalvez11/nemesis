@@ -55,16 +55,16 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 
 | ID | Issue | Group | Status |
 |---|---|---|---|
-| S1 | Flashcard session position is not saved | 1 | not started |
+| S1 | Flashcard session position is not saved | 1 | in PR ([#441](https://github.com/AxelGalvez11/nemesis/pull/441)) |
 | S2 | Again/Hard do not affect review order | 1 | **verified live** (ordering half) |
-| S3 | Deck not filed into its course folder | 1 | not started |
+| S3 | Deck not filed into its course folder | 1 | in PR (#446) |
 | S4 | Test position is not saved | 1 | not started |
-| S5 | Undo only works once | 1 | not started |
+| S5 | Undo only works once | 1 | in PR ([#441](https://github.com/AxelGalvez11/nemesis/pull/441)) |
 | S6 | Cloze cards treated as basic cards | 1 | not started |
 | S7 | Talk to Nemesis about the current deck (new) | 1 | not started |
 | D1 | Some pages were not readable | 2 | reproducing |
-| D4 | Slide deck truncated at slide 46 (live repro, owner) | 2 | reproducing |
-| D5 | Private reasoning leaks into the visible answer | 2 | reproducing |
+| D4 | Slide deck truncated (owner reported slide 46; really 57) | 2 | in PR ([#443](https://github.com/AxelGalvez11/nemesis/pull/443)) |
+| D5 | Private reasoning leaks into the visible answer | 2 | in PR, behaviour unverified ([#444](https://github.com/AxelGalvez11/nemesis/pull/444)) |
 | D2 | "Add cards" did not target the deck being discussed | 2 | not started |
 | D3 | Web search fired on a deck-editing request | 2 | not started |
 | L1 | Generated notes not cited at the claim | 3 | not started |
@@ -83,7 +83,7 @@ Status values: `not started` · `reproducing` · `root cause found` · `in PR` �
 | U4 | "On this page" should collapse | 5 | not started |
 | U5 | Sources folder styled unlike other folders | 5 | not started |
 | U6 | Chill Groups serves no fresh puzzle | 5 | not started |
-| U7 | The word "Library" renders twice, overlapping (reported mid-pass) | 5 | in PR |
+| U7 | The word "Library" renders twice, overlapping (reported mid-pass) | 5 | in PR ([#440](https://github.com/AxelGalvez11/nemesis/pull/440)) |
 
 ---
 
@@ -227,19 +227,101 @@ the existing in-session retry list is not an acceptable answer.
 
 - **Reported**: a deck generated from lecture material did not land in the right
   Study folder for that course.
-- **Reproduction result**: _not started_
-- **Root cause**: _not started_
-- **Proposed change**: _pending reproduction_
-- **Automated test**: course resolution across course codes, hyphenated filenames,
-  renamed courses and similarly named courses.
-- **Browser/production acceptance**: generate a deck from real lecture material in the
-  owner's account and confirm where it lands.
-- **Status**: not started
+- **Reproduction result**: reproduced, and sharper than reported. **One turn, one file,
+  three different folders.** 08-06 15:01:51, "make notes, flashcards and test" over
+  `Pharmacogenomics PHCY 2109 2026 - Lectures 1 and 2 .pptx`. At 15:01:55 the upload
+  lane filed the file under the student's own `Pharmacy`. The note lane wrote to
+  `Pharmacy/Lectures` ✅. At 15:03:43 the deck lane created
+  `Pharmacology::Pharmacogenomics (Lectures 1-2)` and the test went to the same
+  `Pharmacology` ❌ — a folder the student never made, invented 108 seconds after the
+  right answer was already in the database. The second real deck that day
+  (`Physiology and Pathophysiology of Diabetes Mellitus`, 13:17) got no folder at all.
+- **Root cause**: **not the course matcher** — it was asked an impossible question. The
+  study lanes had only the material's own words, and a lecture about pharmacogenomics
+  does not contain the word "pharmacy". Courses are known by code (`PHCY 2105`) or by a
+  folder the student made (`Pharmacy`); lectures are titled by topic, so there is no
+  overlap to match on. Two mechanisms: (a) nothing asked where the document lives —
+  `add_flashcards` gets a name and cards, never the source, so `library_sources
+  .folder_path` was never read; (b) `deckNameForNewDeck` returned early on any name
+  containing `::` ("never double-prefix"), and the invented `Pharmacology::` arrived as
+  part of the name, so that rule is exactly what waved it through.
+- **Proposed change**: shipped in PR #446. A study item built from an attached document
+  goes where that document already lives. Where a document lives is a *fact* about the
+  workspace, not an inference from prose — which is why it beats everything else here
+  and stays field-agnostic (a contracts PDF under "Contracts" makes a "Contracts" deck
+  with nothing knowing what a contract is). `sourceCourseFolder` takes the top segment
+  (`Pharmacy/Lectures` → the course is Pharmacy); Inbox and Nemesis are not courses;
+  disagreeing attachments are a tie and a tie is a refusal. The folder is resolved once
+  per turn, before the model runs, and outranks a folder the model wrote into the name
+  — leaf kept, invented parent dropped, never nested.
+- **Automated test**: 13 new — 7 filing rules incl. both real shapes, 3 wire round trips
+  *through* `fitAttachmentBlocks` (a hand-typed header would keep passing after the
+  wording changed while the real reader found nothing), 2 guards that filing without a
+  source is byte-identical to before, 1 that both lanes still receive the source folder.
+  Web 1256 pass, shared 33 pass under node and Deno, tsc clean.
+- **Browser/production acceptance**: every deterministic link verified three ways.
+  Replay on real production values: Pharmacogenomics deck `Pharmacology::…` →
+  `Pharmacy::Pharmacogenomics (Lectures 1-2)`, test `Pharmacology` → `Pharmacy`.
+  Real browser: ids read back out of the wire, the lookup issues exactly
+  `library_sources?select=folder_path&id=in.(9a3360d1-…)&deleted=eq.false`, and that
+  row's value produces the right deck name. Production: that query returns `Pharmacy`.
+  **Not proven by a live model turn** — nothing fires until the model calls
+  `add_flashcards`, which is already observed in production because it is how the bug
+  happened, but I did not run one end to end.
+- **Status**: in PR (#446), extended by owner instruction; course identity in #448
+
+Owner, 2026-08-06, after approving the direction — a precedence ladder, and the rule
+that separates a request from an invention:
+
+1. a folder/course selected in the UI
+2. a folder/course written in the latest user message
+3. the source's stable `courseId`
+4. the source's existing folder
+5. Inbox/unfiled
+
+"A model-provided folder override should only be accepted if that folder name appears in
+the user's actual message or came from structured UI context. Therefore 'put these in X'
+can override the source, while an invented 'Pharmacology' cannot."
+
+Rungs 1, 2, 4 and 5 shipped in #446. The vouching rule is strictly better than the
+alternative I would have reached for — "accept a folder that already exists" — which is
+wrong here: `Pharmacology` DID already exist as a Study folder, invented by an earlier
+turn, so existence would launder one invention into permission for the next. It also
+closes the tradeoff #446 originally had to accept, since "put these in X" is now
+distinguishable from invention rather than being collateral damage.
+
+Also fixed under the same instruction ("if the source has no verified course
+association, inherit its folder and remain honest; do not guess a course from the
+lecture topic"): a document sitting in Inbox resolved to the same empty string as no
+document at all, so the word matcher would overrule the student's own "not sorted yet".
+`sourceAttached` now carries that fact separately, and the matcher runs only when there
+is no document at all.
+
+**Rung 3 needs a database change and is NOT built** — #448 carries the design and an
+unapplied migration. There is no course identity anywhere in this product:
+`calendar_events.course` is free text and nothing else records a course at all, which is
+why one course wears three names in the owner's own workspace (`PHCY 2109` in the
+filename, `Pharmacy` as a Library folder, `Pharmacology` as an invented Study folder).
+Four decisions are open there, including whether to apply the migration at all.
 
 Carried criteria: inherit the course from material already associated with one; resolve
 on stable course and folder IDs rather than fuzzy title matching; file automatically
 when there is one confident match; when ambiguous, use an explicit unfiled state or ask
 — never guess silently. Shares its resolution path with L2 and must use the same logic.
+
+Against those criteria: "inherit from material already associated with one" and "stable
+IDs, not fuzzy title matching" are now met **for the attachment path** — a source id
+resolves to a stored folder, no titles compared. A deck made with no attachment still
+falls back to the word matcher, because there is no id to follow. Two things the fix
+does **not** do, both deliberate: it never moves decks that already exist (scope rule at
+the top of `course-filing.ts` — a bulk reorganise of hand-arranged material is
+indistinguishable from data loss), and it does not **ask** when ambiguous; it leaves the
+deck at the top level, honestly unfiled, which is the existing convention. The diabetes
+deck is the ambiguous case and stays unfiled correctly: its source is in `Inbox` and no
+course in the system teaches diabetes physiology — the assistant said so itself at 13:08
+that day. **Open question for the owner**: `Pharmacy` (Library) and `Pharmacology`
+(Study) are now consistent but neither is a course. If Study should be organised by
+course code, that is a naming decision, not a filing one.
 
 ### S4 · Test position is not saved
 
