@@ -1,6 +1,11 @@
 // File source extraction — turns an uploaded PDF / Word / PowerPoint / photo into text server side
 // (Node runtime: unpdf + fflate need it) and hands that text back to the client, which writes its own
-// rows under its own RLS session. This route does no DB writes.
+// rows under its own RLS session.
+//
+// It makes exactly ONE kind of DB write of its own, and only on the by-reference path: the durable
+// record of what the parse achieved (lib/notebooks/parse-record.ts). That cannot be left to the
+// client, because coverage is a MEASUREMENT the server made — a client able to write it could tell
+// itself its own half-read lecture was complete.
 //
 // It is the single chokepoint for every upload lane — Library import, coursework import, notebook
 // sources, chat attachments and the syllabus reader — so the scanned-PDF vision fallback below
@@ -37,6 +42,7 @@ import {
   singleUnitCoverage,
 } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
+import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
@@ -135,6 +141,10 @@ export async function POST(req: Request): Promise<Response> {
   // old multipart form. The content type decides, so a client that sends neither
   // gets one clear answer rather than a parse error from whichever branch ran.
   let sourceBytes: Uint8Array;
+  // Set only on the by-reference path. Without a stored row there is nothing to
+  // attach a durable parse record to, so the multipart lane keeps its old
+  // behaviour of returning the text and writing nothing.
+  let sourceId: string | null = null;
   let sourceName: string;
   let sourceType: string;
   const byRef = (req.headers.get("content-type") ?? "").includes("application/json");
@@ -160,6 +170,7 @@ export async function POST(req: Request): Promise<Response> {
       }
       return NextResponse.json({ error: "Can't reach storage right now. Try again in a moment." }, { status: 503 });
     }
+    sourceId = ref.ref.sourceId;
     sourceBytes = fetched.source.bytes;
     sourceName = fetched.source.fileName;
     sourceType = fetched.source.mimeType ?? "";
@@ -404,6 +415,32 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
+    // ── The durable record ─────────────────────────────────────────────────
+    // 🔴 AFTER the text is known and BEFORE the response, so what the caller
+    // receives and what survives a reload are the same account of the same
+    // parse. Written for the by-reference lane only: a multipart upload has no
+    // stored row to attach a parse to, and inventing one would create a source
+    // the student never asked us to keep.
+    //
+    // Best-effort by design. A student who cannot add their lecture because a
+    // bookkeeping write timed out has lost more than the caveat was worth, so a
+    // failure here is logged and the extraction still succeeds — but it is a
+    // failure, and `persisted` says so rather than the response implying a
+    // record exists.
+    let parsedDocumentId: string | null = null;
+    if (sourceId) {
+      const saved = await persistParse({
+        contentHash: contentHashOf(original),
+        coverage,
+        docKind: kind,
+        sourceId,
+        text,
+        title: result.title,
+        userId: check.userId,
+      });
+      if (saved.ok) parsedDocumentId = saved.parsedDocumentId;
+    }
+
     const baseName = sourceName.replace(/\.[^.]+$/, "").trim();
     console.info(JSON.stringify({
       event: "file_extract_completed",
@@ -413,9 +450,10 @@ export async function POST(req: Request): Promise<Response> {
       chars: text.length,
       // Logged so a partial read is findable in production without a student
       // having to report one. `state` is the field to alert on.
-      state: coverage.state,
+      ...recordSummary(coverage),
       unitsUnread: coverage.unitsUnread,
       figuresSkipped: coverage.figures.skipped,
+      persisted: parsedDocumentId !== null,
       durationMs: Date.now() - startedAt,
     }));
     return NextResponse.json({
@@ -437,6 +475,10 @@ export async function POST(req: Request): Promise<Response> {
       // ambiguous between "complete" and "nobody computed it", and every client
       // resolved that ambiguity the flattering way.
       coverage,
+      // The durable record's id, when one was written. Absent on the multipart
+      // lane (nothing to attach to) and when the write failed — and absent is
+      // read as "no record", never as "the record says it was fine".
+      ...(parsedDocumentId ? { parsedDocumentId } : {}),
     });
   } catch (err) {
     console.error(JSON.stringify({

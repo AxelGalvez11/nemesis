@@ -32,6 +32,8 @@ import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { readerActionPrompt, type ReaderActionId } from "@/lib/reader/reader-actions";
 import { parseReaderAnchor, resolveAnchorUnit, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { findInDocument, stepMatch, type SearchMatch } from "@/lib/reader/reader-search";
+import { describeCoverage } from "@nemesis/shared";
+
 import { courseOf, describeSource, type ReaderSource } from "@/lib/reader/reader-source";
 import { FIT_WIDTH, zoomIn, zoomOut, type ZoomMode } from "@/lib/reader/reader-zoom";
 
@@ -312,6 +314,12 @@ export function DocumentReader({
   }, []);
 
   const meta = describeSource(source, KIND_LABELS[source.kind] ?? "File");
+  // 🔴 SAID ON THE SCREEN THE STUDENT IS LOOKING AT THE DOCUMENT FROM. A page
+  // that was never read still renders — a scan looks perfect and selects
+  // nothing — so the reader is the one place where "we could not read all of
+  // this" cannot be inferred from what is on screen. `describeCoverage` returns
+  // null for a complete read, so a good document says nothing.
+  const coverageNote = source.coverage ? describeCoverage(source.coverage) : null;
   // Said out loud in the menu, because from a menu you cannot see what is
   // selected behind it.
   const actionScope = selection
@@ -351,6 +359,7 @@ export function DocumentReader({
         fileName={source.fileName}
         fitActive={zoom.kind === "fit-width"}
         matchCount={matches.length}
+        coverageNote={coverageNote}
         meta={meta}
         mode={mode}
         modeAvailable={readingAvailable}

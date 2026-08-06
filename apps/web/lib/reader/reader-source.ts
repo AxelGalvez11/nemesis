@@ -9,6 +9,8 @@
 // Supabase, never sees a bucket name, and cannot leak a storage URL into the
 // page, because it only ever holds a promise for one.
 
+import type { ExtractionCoverage } from "@nemesis/shared";
+
 import { librarySourceKind, librarySourceUrl, type LibrarySource, type LibrarySourceKind } from "@/lib/workspace/library-sources";
 
 /** How the reader will DISPLAY a document. Narrower than the storage kind:
@@ -27,6 +29,15 @@ export interface ReaderSource {
   sizeBytes: number | null;
   /** ISO timestamp, or null when the caller doesn't track one. */
   createdAt: string | null;
+  /**
+   * What the extractor managed to read, as persisted at parse time.
+   *
+   * 🔴 NULL MEANS UNKNOWN, NOT COMPLETE. Chat attachments and anything filed
+   * before the record existed have no parse row, and a reader that rendered
+   * null as "fully read" would put the original defect back on the one screen
+   * where the student is looking straight at the document.
+   */
+  coverage?: ExtractionCoverage | null;
   /** Slash-joined Library folder. "" = filed at the root. */
   folderPath: string;
   /** Mints a short-lived URL for the original bytes, or null when nothing is
@@ -103,6 +114,7 @@ export function readerSourceFromLibrary(source: LibrarySource): ReaderSource {
     sizeBytes: source.sizeBytes,
     createdAt: source.createdAt,
     folderPath: source.folderPath,
+    coverage: source.coverage,
     resolveUrl: () => librarySourceUrl(source),
   };
 }

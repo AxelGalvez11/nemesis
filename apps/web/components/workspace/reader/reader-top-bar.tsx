@@ -40,6 +40,9 @@ export interface ReaderTopBarProps {
   fileName: string;
   course: string | null;
   meta: string;
+  /** One sentence naming what could not be read, or null when the whole
+   *  document was. Built by the caller so this bar stays presentational. */
+  coverageNote?: string | null;
   mode: ReaderMode;
   onModeChange: (mode: ReaderMode) => void;
   modeAvailable: boolean;
@@ -80,6 +83,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     fileName,
     course,
     meta,
+    coverageNote = null,
     mode,
     onModeChange,
     modeAvailable,
@@ -136,6 +140,17 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           {fileName}
         </h1>
         <p className="truncate text-[0.6875rem] text-(--ui-text-tertiary)">{course ? `${course} · ${meta}` : meta}</p>
+        {coverageNote && (
+          // Not truncated and not muted into the metadata line: this is the one
+          // fact on this bar that changes what the document can be trusted for.
+          <p
+            className="text-[0.6875rem] text-(--ui-text-secondary)"
+            data-testid="reader-coverage-note"
+            role="status"
+          >
+            {coverageNote}
+          </p>
+        )}
       </div>
 
       {modeAvailable && (

@@ -16,6 +16,8 @@
 // file behind them, which is exactly what they had before storage existed.
 // The preview fixtures below carry the design for the signed-out demo.
 
+import { readCoverage, type ExtractionCoverage } from "@nemesis/shared";
+
 import { supabase } from "@/lib/supabase";
 
 export type LibrarySourceKind = "pdf" | "slides" | "document" | "image" | "audio" | "file";
@@ -32,6 +34,15 @@ export interface LibrarySource {
    *  or rows written before storage existed). Null = viewer shows metadata
    *  and says the original isn't kept, instead of a broken embed. */
   storagePath: string | null;
+  /**
+   * What the extractor managed to read, as persisted at parse time.
+   *
+   * 🔴 NULL MEANS UNKNOWN. It is null for every source filed before this record
+   * existed, for anything added through the small-file multipart lane, and when
+   * the parse write failed. A surface that renders null as "fully read" would
+   * recreate the exact defect the record was built to close.
+   */
+  coverage: ExtractionCoverage | null;
 }
 
 const KIND_META: Record<LibrarySourceKind, { label: string; icon: string }> = {
@@ -94,6 +105,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     // A leading slash means "this is already a URL", which is only ever true
     // for these fixtures (see librarySourceUrl).
     storagePath: "/reader-sample.pdf",
+    coverage: null,
   },
   {
     id: "preview-src-diagram",
@@ -104,6 +116,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     createdAt: "2026-07-30T11:20:00.000Z",
     // public/reader-sample-diagram.png — see the note on the PDF fixture above.
     storagePath: "/reader-sample-diagram.png",
+    coverage: null,
   },
   {
     id: "preview-src-conlaw-recording",
@@ -113,6 +126,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     sizeBytes: 11_800_000,
     createdAt: "2026-07-29T18:40:00.000Z",
     storagePath: null,
+    coverage: null,
   },
   {
     id: "preview-src-brief",
@@ -130,6 +144,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     sizeBytes: 1_790,
     createdAt: "2026-07-31T09:05:00.000Z",
     storagePath: "/reader-sample.docx",
+    coverage: null,
   },
   {
     id: "preview-src-deck",
@@ -139,6 +154,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     sizeBytes: 4_009,
     createdAt: "2026-08-01T14:30:00.000Z",
     storagePath: "/reader-sample.pptx",
+    coverage: null,
   },
   {
     id: "preview-src-mech-ch6",
@@ -148,6 +164,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     sizeBytes: 8_120_000,
     createdAt: "2026-07-25T09:12:00.000Z",
     storagePath: null,
+    coverage: null,
   },
 ];
 
@@ -159,6 +176,14 @@ interface SourceRow {
   size_bytes: number | null;
   storage_path: string | null;
   created_at: string;
+  // The durable parse. An embedded select, so one round trip answers both "what
+  // files does this student have" and "how completely was each one read".
+  // Null on every row filed before the record existed, and on the multipart
+  // lane — which reads as UNKNOWN, never as a clean bill of health.
+  // 🔴 AN ARRAY, even though it is a to-one relation. PostgREST embeds return a
+  // list and supabase-js types them that way; reading it as an object gives
+  // `undefined` at runtime and a coverage that is silently always null.
+  parsed_documents?: { coverage: unknown }[] | { coverage: unknown } | null;
 }
 
 function rowToLibrarySource(row: SourceRow): LibrarySource {
@@ -170,6 +195,13 @@ function rowToLibrarySource(row: SourceRow): LibrarySource {
     sizeBytes: typeof row.size_bytes === "number" && Number.isFinite(row.size_bytes) ? row.size_bytes : null,
     createdAt: row.created_at,
     storagePath: row.storage_path,
+    // 🔴 VALIDATED, NOT CAST. This is jsonb that has been through the database
+    // and back; a row written by an older parser, or by nothing at all, must
+    // become `null` rather than a half-built record that later reads as a claim
+    // about the document.
+    coverage: readCoverage(
+      Array.isArray(row.parsed_documents) ? row.parsed_documents[0]?.coverage : row.parsed_documents?.coverage,
+    ) ?? null,
   };
 }
 
@@ -188,7 +220,7 @@ export async function loadLibrarySources(uid: string | null, options?: { preview
   try {
     const { data, error } = await supabase
       .from("library_sources")
-      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at")
+      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_documents(coverage,state)")
       .eq("user_id", uid)
       .eq("deleted", false)
       .order("created_at", { ascending: false })
@@ -245,7 +277,7 @@ export async function uploadLibrarySource(uid: string, file: File, folderPath: s
         storage_path: key,
         user_id: uid,
       })
-      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at")
+      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_documents(coverage,state)")
       .single();
     if (error || !data) {
       await supabase.storage.from("library-sources").remove([key]);
