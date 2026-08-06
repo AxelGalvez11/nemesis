@@ -9,6 +9,8 @@ import { test } from "node:test";
 
 import { zipSync } from "fflate";
 
+import { MAX_SOURCE_BYTES } from "@nemesis/shared";
+
 import { extractDocxText, UNZIP_MAX_ENTRIES, UNZIP_MAX_TOTAL_BYTES, unzipBounded } from "./office";
 
 /** A zip whose contents inflate to `megabytes`, from almost nothing on disk.
@@ -49,4 +51,26 @@ test("a zip that attacks by COUNT is refused too", () => {
   const many: Record<string, Uint8Array> = {};
   for (let i = 0; i < UNZIP_MAX_ENTRIES + 50; i += 1) many[`ppt/slides/slide${i}.xml`] = new Uint8Array(1);
   assert.throws(() => unzipBounded(zipSync(many)), /too many parts/);
+});
+
+test("🔴 the unpack budget can never fall below what the product accepts", () => {
+  // The one relationship that MUST hold, pinned because the obvious "tidy-up"
+  // breaks it silently.
+  //
+  // A zip entry can be STORED rather than deflated — the owner's real 118 MiB
+  // lecture stores all 68 of its media parts at method 0 — so a source sitting
+  // exactly at the upload ceiling can legitimately inflate to its own size. If
+  // this budget were ever below MAX_SOURCE_BYTES, the product would accept an
+  // upload and then refuse to open it, which reads to a student as "it just
+  // doesn't work".
+  //
+  // This is why UNZIP_MAX_TOTAL_BYTES is NOT written as `N * MAX_SOURCE_BYTES`.
+  // Deriving it looks tidier and couples a MEMORY limit to a PRODUCT limit: at
+  // the 50 MiB ceiling, `2 *` would have quietly cut the budget from 400 MiB to
+  // 100 MiB and started refusing decks that work today.
+  assert.ok(
+    UNZIP_MAX_TOTAL_BYTES >= MAX_SOURCE_BYTES,
+    `unpack budget ${UNZIP_MAX_TOTAL_BYTES} is below the ${MAX_SOURCE_BYTES}-byte upload ceiling: ` +
+      "a file at the ceiling would upload and then fail to open",
+  );
 });

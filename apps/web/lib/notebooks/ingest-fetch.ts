@@ -15,8 +15,10 @@
  * object we created, for this user. No path from a request body is ever handed
  * to storage.
  */
+import { serviceRoleKey, supabaseUrl } from "@/lib/env";
 import { adminClient } from "@/lib/server";
 
+import { declaredLength, readBounded } from "./bounded-fetch";
 import { isIngestBucket, MAX_SOURCE_BYTES, type IngestBucket, type IngestRef } from "./ingest-ref";
 
 export interface ResolvedSource {
@@ -106,32 +108,63 @@ export async function fetchIngestSource(ref: IngestRef, userId: string): Promise
   // become an arbitrary bucket name in a storage call.
   if (!isIngestBucket(row.bucket)) return { ok: false, reason: "unavailable" };
 
-  let blob: Blob;
+  // 🔴 NOT `.download()`. See ./bounded-fetch — supabase-js resolves that call
+  // to a Blob, and a Blob cannot exist without its bytes, so every size check
+  // written after it has already been paid for. `fetch` hands back the response
+  // once the HEADERS are in, which is the only moment an oversized object can
+  // still be refused for free.
+  let response: Response;
   try {
-    const { data, error } = await admin.storage.from(row.bucket).download(row.storage_path);
-    if (error || !data) return { ok: false, reason: "missing" };
-    blob = data;
+    response = await fetch(objectUrl(row.bucket, row.storage_path), {
+      headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` },
+    });
   } catch {
     return { ok: false, reason: "unavailable" };
   }
 
-  // Checked BEFORE materialising the bytes: `size` is the blob's own length, not
-  // a client claim, so an oversized object costs one rejected header rather than
-  // fifty megabytes of heap.
-  if (blob.size > MAX_SOURCE_BYTES) return { ok: false, reason: "too-large" };
-
-  try {
-    return {
-      ok: true,
-      source: {
-        bucket: row.bucket,
-        bytes: new Uint8Array(await blob.arrayBuffer()),
-        fileName: row.file_name,
-        mimeType: row.mime_type,
-        storagePath: row.storage_path,
-      },
-    };
-  } catch {
+  if (response.status === 404 || response.status === 400) {
+    await response.body?.cancel().catch(() => {});
+    return { ok: false, reason: "missing" };
+  }
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => {});
     return { ok: false, reason: "unavailable" };
   }
+
+  const declared = declaredLength(response.headers);
+  // The free refusal. The body is still untouched at this point, so a 200 MiB
+  // object over the ceiling costs a request and a set of headers — not 200 MiB
+  // of heap, which is what it used to cost.
+  if (declared !== null && declared > MAX_SOURCE_BYTES) {
+    await response.body.cancel().catch(() => {});
+    return { ok: false, reason: "too-large" };
+  }
+
+  // Belt and braces: an object with no content-length, or one whose header
+  // understates it, is still stopped mid-transfer by the per-chunk total.
+  const read = await readBounded(response.body, MAX_SOURCE_BYTES, declared);
+  if (!read.ok) return { ok: false, reason: read.reason };
+
+  return {
+    ok: true,
+    source: {
+      bucket: row.bucket,
+      bytes: read.bytes,
+      fileName: row.file_name,
+      mimeType: row.mime_type,
+      storagePath: row.storage_path,
+    },
+  };
+}
+
+/**
+ * The storage REST URL for an object we already own.
+ *
+ * Each path segment is encoded, and the separators are not: a storage key is
+ * `<uid>/<uuid>.<ext>`, and collapsing that to one encoded blob would address a
+ * file that does not exist. Both halves come out of OUR row, never a request.
+ */
+function objectUrl(bucket: IngestBucket, storagePath: string): string {
+  const encoded = storagePath.split("/").map(encodeURIComponent).join("/");
+  return `${supabaseUrl}/storage/v1/object/${bucket}/${encoded}`;
 }
