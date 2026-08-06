@@ -37,9 +37,15 @@ interface PdfPageViewProps {
   highlights: readonly PageHighlight[];
   onVisible: (pageNumber: number) => void;
   registerElement: (pageNumber: number, element: HTMLDivElement | null) => void;
+  /** This page is a PICTURE of a page — it carries no text layer, so nothing on
+   *  it can be selected, searched or quoted. Said out loud rather than left for
+   *  the student to discover by getting no results. */
+  isImageOnly?: boolean;
 }
 
-export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVisible, registerElement }: PdfPageViewProps) {
+export function PdfPageView({
+  document: pdf, pageNumber, scale, highlights, onVisible, registerElement, isImageOnly = false,
+}: PdfPageViewProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -240,6 +246,18 @@ export function PdfPageView({ document: pdf, pageNumber, scale, highlights, onVi
       style={size ? { width, height } : { width: "100%", aspectRatio: "1 / 1.294" }}
     >
       <canvas className="block" ref={canvasRef} />
+      {isImageOnly && (
+        // A corner pill, not a banner across the page. The point is to explain
+        // why selecting and searching find nothing here — covering the very
+        // content being explained would be its own small betrayal.
+        <p
+          className="pointer-events-none absolute right-2 top-2 max-w-[75%] rounded-md bg-black/65 px-2 py-1 text-[0.625rem] leading-snug text-white"
+          data-testid={`reader-page-${pageNumber}-image-only`}
+          title="This page carries no text layer, so there is nothing on it to select, search or quote."
+        >
+          Image of a page — no text to select or search
+        </p>
+      )}
       {rects.map((rect, index) => (
         <div
           className="nemesis-reader-highlight"

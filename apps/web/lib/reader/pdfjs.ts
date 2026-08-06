@@ -27,6 +27,28 @@ export type PdfPage = Awaited<ReturnType<PdfDocument["getPage"]>>;
 /** Served from public/. Kept in step with node_modules by scripts/copy-pdf-worker.mjs. */
 export const PDF_WORKER_URL = "/pdf/pdf.worker.min.mjs";
 
+/** The drawing operators `lib/reader/pdf-page-scan.ts` needs to measure how much
+ *  of a page an image covers. Read from the module rather than hard-coded: the
+ *  numbers are pdf.js internals and are free to change between versions. */
+export async function imageOpcodes(): Promise<{
+  save: number; restore: number; transform: number; paintImage: number[];
+}> {
+  const { OPS } = await loadPdfjs();
+  const ops = OPS as unknown as Record<string, number | undefined>;
+  // Every operator that paints an image, filtered to the ones this version
+  // actually has — pdf.js 6 removed `paintJpegXObject`, and a missing name here
+  // must not become an `undefined` that silently matches nothing.
+  const paintImage = [
+    "paintImageXObject",
+    "paintInlineImageXObject",
+    "paintImageXObjectRepeat",
+    "paintImageMaskXObject",
+  ]
+    .map((name) => ops[name])
+    .filter((value): value is number => typeof value === "number");
+  return { save: OPS.save, restore: OPS.restore, transform: OPS.transform, paintImage };
+}
+
 let pdfjsPromise: Promise<Pdfjs> | null = null;
 
 export async function loadPdfjs(): Promise<Pdfjs> {
