@@ -138,19 +138,35 @@ export function decideRecordingCard(inputs: RecordingCardInputs): RecordingCardD
 }
 
 /**
- * Should an ALREADY-RESOLVED card be corrected?
+ * What an already-written recording message should SAY ON SCREEN.
  *
- * Fixing the logic above does not repair a message that is already wrong: the
+ * Fixing the decision above does not repair a message that is already wrong: the
  * card is no longer pending, so nothing re-runs for it, and the student keeps
  * reading a false claim that their lecture was lost every time they scroll past.
+ *
+ * 🔴 A CORRECTION AT READ TIME, NOT A REWRITE. The obvious fix — resolve the
+ * message again with better words — does not work here, and quietly:
+ *   · `chat_messages` has NO UPDATE grant for a signed-in student. Messages are
+ *     deliberately immutable in the cloud; the only writer is an insert.
+ *   · `appendMessageCloud` upserts with `ignoreDuplicates: true`, so a second
+ *     write against an existing id is a silent no-op.
+ *   · `mergeSessionMessages` iterates `[...cloud, ...local]` and keeps the first
+ *     of each id — CLOUD WINS. So a locally rewritten message is thrown away at
+ *     the next cloud refresh and the false sentence comes back.
+ * A rewrite would therefore have looked fixed on the machine it was tested on
+ * and reverted for the student minutes later.
+ *
+ * Correcting at render instead needs no grant, no migration and no write; it is
+ * idempotent, it works on every device including ones that never saw the bug,
+ * and the student's actual history is left exactly as it was.
  *
  * Matched on the exact sentence this module wrote, never on a fuzzy pattern, so
  * it can only ever replace Nemesis's own words. A student who typed something
  * similar keeps what they typed.
  */
-export function shouldHealRecordingCard(content: string, notes: string): boolean {
-  if (!notes.trim()) return false;
-  return RECORDING_NOTES_MISSING_WORDINGS.includes(content.trim());
+export function displayedRecordingContent(content: string, notes: string): string {
+  if (!notes.trim()) return content;
+  return RECORDING_NOTES_MISSING_WORDINGS.includes(content.trim()) ? RECORDING_NOTES_READY : content;
 }
 
 /**

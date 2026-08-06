@@ -28,9 +28,8 @@ import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } f
 import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
 import {
   decideRecordingCard,
+  displayedRecordingContent,
   nextRecordingSessionTitle,
-  RECORDING_NOTES_READY,
-  shouldHealRecordingCard,
 } from "@/lib/workspace/recording-card-state";
 import { refreshRecordingJobs } from "@/lib/workspace/recording-jobs-store";
 import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
@@ -215,7 +214,27 @@ export function SessionChat() {
     return () => window.clearInterval(id);
   }, [busy]);
 
-  const turns = useMemo(() => groupTurns(messages), [messages]);
+  /**
+   * 🔴 A MESSAGE THAT WRONGLY SAYS A LECTURE WAS LOST IS CORRECTED HERE, ON THE
+   * WAY TO THE SCREEN — never by rewriting it. Cards written before the fix in
+   * recording-card-state.ts still carry that sentence, and a student re-reads it
+   * every time they scroll past. It cannot be rewritten: `chat_messages` has no
+   * UPDATE grant, the cloud write ignores duplicates, and the cloud copy wins
+   * the merge — so a rewrite reverts. Correcting the rendered text needs none of
+   * that, and leaves the student's history untouched.
+   */
+  const shownMessages = useMemo(() => {
+    const notesById = new Map(recordingArtifacts.map((artifact) => [artifact.id, artifact.notes]));
+    if (notesById.size === 0) return messages;
+    return messages.map((message) => {
+      const output = message.outputs?.[0];
+      if (!output || output.kind !== "recording") return message;
+      const content = displayedRecordingContent(message.content, notesById.get(output.id) ?? "");
+      return content === message.content ? message : { ...message, content };
+    });
+  }, [messages, recordingArtifacts]);
+
+  const turns = useMemo(() => groupTurns(shownMessages), [shownMessages]);
   const turnError: TurnError | null = error && error.sessionId === selectedId ? { kind: error.kind, text: error.text } : null;
 
   const runTurn = useCallback(async (targetUid: string, targetId: string, history: SessionMessage[], text: string) => {
@@ -734,17 +753,11 @@ export function SessionChat() {
         transcript: artifact.transcript,
       };
 
-      // 🔴 ALREADY RESOLVED, AND WRONG. A card that was told the write-up had
-      // failed keeps saying so forever — resolving clears `pending`, so nothing
-      // re-runs for it. Correcting the logic does not correct the sentence a
-      // student is still reading, so the sentence is corrected here, and only
-      // when the notes it denies are in hand.
-      if (output.polish !== "pending") {
-        if (shouldHealRecordingCard(message.content, artifact.notes)) {
-          sessionsStore.resolvePending(selectedId, message.id, { content: RECORDING_NOTES_READY, outputs: [finished] });
-        }
-        continue;
-      }
+      // An already-resolved card is left alone HERE. Its wording, if it is one
+      // of the wrong ones, is corrected where the thread is rendered — see the
+      // `messages` memo above and displayedRecordingContent's comment for why a
+      // rewrite cannot work (no UPDATE grant, and cloud wins the merge).
+      if (output.polish !== "pending") continue;
 
       // 🔴 THE DECISION IS NOT MADE HERE. It lives in recording-card-state.ts as
       // a pure function, because the version that lived inline in this effect

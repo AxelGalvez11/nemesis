@@ -3,10 +3,10 @@ import test from "node:test";
 
 import {
   decideRecordingCard,
+  displayedRecordingContent,
   nextRecordingSessionTitle,
   RECORDING_NOTES_MISSING,
   RECORDING_NOTES_READY,
-  shouldHealRecordingCard,
   type RecordingCardInputs,
 } from "./recording-card-state";
 import type { RecordingJob } from "./recording-job";
@@ -143,15 +143,15 @@ test("a card with no transcript yet is not resolved by any combination of the re
 
 // ── Healing what is already on screen ───────────────────────────────────────
 
-test("a card already carrying the false claim is corrected once the notes are in hand", () => {
-  assert.equal(shouldHealRecordingCard(RECORDING_NOTES_MISSING, NOTES), true);
+test("a card already carrying the false claim reads correctly once the notes are in hand", () => {
+  assert.equal(displayedRecordingContent(RECORDING_NOTES_MISSING, NOTES), RECORDING_NOTES_READY);
 });
 
-test("the false claim stands while there really are no notes", () => {
-  assert.equal(shouldHealRecordingCard(RECORDING_NOTES_MISSING, ""), false);
+test("the claim stands while there really are no notes", () => {
+  assert.equal(displayedRecordingContent(RECORDING_NOTES_MISSING, ""), RECORDING_NOTES_MISSING);
 });
 
-test("healing only ever rewrites Nemesis's own sentence", () => {
+test("the correction only ever replaces Nemesis's own sentence", () => {
   // A student who typed something similar keeps every character of it.
   for (const written of [
     "Writing the notes did not finish",
@@ -160,8 +160,13 @@ test("healing only ever rewrites Nemesis's own sentence", () => {
     RECORDING_NOTES_READY,
     "",
   ]) {
-    assert.equal(shouldHealRecordingCard(written, NOTES), false, `would have rewritten: ${written}`);
+    assert.equal(displayedRecordingContent(written, NOTES), written, `would have rewritten: ${written}`);
   }
+});
+
+test("correcting is idempotent — the corrected sentence stays corrected", () => {
+  const once = displayedRecordingContent(RECORDING_NOTES_MISSING, NOTES);
+  assert.equal(displayedRecordingContent(once, NOTES), once);
 });
 
 // ── The conversation's name ─────────────────────────────────────────────────
