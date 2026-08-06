@@ -23,25 +23,42 @@ const result = (n: number): ChatWebResult => ({ description: `Result ${n}.`, tit
 
 assert.equal(formatWebSearchContext([]), "", "no results is no block, not an empty fence");
 
-// 🔴 THE NUMBERS CONTINUE ACROSS SEARCHES. The model may search twice in one
-// turn; [n] resolves positionally against the sources stored on the message, so
-// a second batch that restarted at 1 would point every pill from it at a page
-// from the first batch.
+// 🔴 THE NUMBERS CONTINUE ACROSS SEARCHES. The model may search several times
+// in one turn; [n] resolves positionally against the sources stored on the
+// message, so a later batch that restarted at 1 would point every pill from it
+// at a page from the first batch.
+//
+// 🔴 AND THE TEST MUST ACCUMULATE THE WAY THE CALLER DOES. `added` is the
+// DELTA, not the running list. Feeding one call's `added` straight into the
+// next as its `already` argument agrees with the real caller only at the first
+// step — where `already` was empty and so the delta happens to equal the whole
+// list — and diverges from the second step onward. That is why there are three
+// searches here and not two: two would pass against a broken implementation.
 {
-  const first = numberWebResults([], [result(1), result(2)]);
-  assert.deepEqual(first.numbered.map((item) => item.n), [1, 2]);
-  const second = numberWebResults(first.added, [result(3)]);
-  assert.deepEqual(second.numbered.map((item) => item.n), [3]);
-  assert.deepEqual(second.added.map((item) => item.url), ["https://example.com/3"], "only the new source is appended");
+  const sources: ChatWebResult[] = [];
+  const search = (fresh: ChatWebResult[]) => {
+    const { added, numbered } = numberWebResults(sources, fresh);
+    sources.push(...added);
+    return numbered;
+  };
+  assert.deepEqual(search([result(1), result(2)]).map((item) => item.n), [1, 2]);
+  assert.deepEqual(search([result(3)]).map((item) => item.n), [3]);
+  assert.deepEqual(search([result(4), result(5)]).map((item) => item.n), [4, 5], "the third search keeps counting");
+  assert.deepEqual(sources.map((item) => item.url), [1, 2, 3, 4, 5].map((n) => `https://example.com/${n}`));
 }
 
 // Two searches on one topic legitimately return the same page. Cited twice
 // under two numbers it reads as two independent sources agreeing.
 {
-  const first = numberWebResults([], [result(1), result(2)]);
-  const second = numberWebResults(first.added, [result(2), result(3)]);
-  assert.deepEqual(second.numbered.map((item) => item.n), [2, 3], "the repeat keeps its original number");
-  assert.deepEqual(second.added.map((item) => item.url), ["https://example.com/3"]);
+  const sources: ChatWebResult[] = [];
+  const search = (fresh: ChatWebResult[]) => {
+    const { added, numbered } = numberWebResults(sources, fresh);
+    sources.push(...added);
+    return numbered;
+  };
+  search([result(1), result(2)]);
+  assert.deepEqual(search([result(2), result(3)]).map((item) => item.n), [2, 3], "the repeat keeps its original number");
+  assert.equal(sources.length, 3, "the repeat is not stored twice");
 }
 
 // A result with no URL cannot be opened or cited, so it never takes a number.

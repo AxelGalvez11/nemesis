@@ -43,17 +43,21 @@ export function applyChatEffort(decision: ChatRouteDecision, effort: ChatEffort)
     return { ...decision, model: "deepseek-chat", reasoningEffort: undefined };
   }
   if (effort === "high") {
-    // A SAVE KEEPS ITS TOOLS, whatever the dial says. High effort means the
-    // thinking flagship, which cannot carry tool calls (see toolsAllowed) — so
-    // "make me flashcards on beta blockers" with the dial left on High would come
-    // back as prose having saved nothing, with no way for the student to tell why.
-    // The dial is a stored preference that persists across sessions; the save is
-    // what they typed a second ago. The specific, fresher instruction wins.
-    // Deliberately silent: there is nothing for the student to fix, and the answer
-    // they asked for still arrives.
-    // Same rule for a workspace READ: "what's due this week" on the High dial
-    // used to lose every tool and answer blind. Both flags mean the answer
-    // comes THROUGH tools, so both outrank the stored preference.
+    // 🔴 THE ORIGINAL REASON FOR THIS BRANCH IS GONE, AND IT IS KEPT ANYWAY.
+    //
+    // It read: a save must keep its tools whatever the dial says, because High
+    // effort means the thinking flagship and that "cannot carry tool calls" —
+    // so "make me flashcards on beta blockers" on a High dial came back as
+    // prose having saved nothing. That premise was our own dropped
+    // `reasoning_content`, corrected 2026-08-06, and toolsAllowed now returns
+    // true for every turn. Nothing here protects a tool any more.
+    //
+    // What survives is a COST judgement, which is why the line stays: filing a
+    // deck or reading back a calendar is bookkeeping the flagship answers no
+    // better than the fast model, and the dial is a stored preference rather
+    // than something the student chose for this turn. Left as behaviour that
+    // was already shipping — changing what a High-effort save costs is its own
+    // decision, not a side effect of fixing the tools.
     if (decision.savesToWorkspace || decision.workspaceIntent) return { ...decision, reasoningEffort: undefined };
     return { ...decision, reasoningEffort: "high" };
   }

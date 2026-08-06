@@ -20,17 +20,23 @@ export interface ChatRouteDecision {
   searchWeb: boolean;
   reasoningEffort?: "high";
   /** Set when the student asked Nemesis to SAVE something into their own
-   *  workspace. Load-bearing, not a label: the write happens through a tool call,
-   *  tool calls only ride the non-thinking model, and this flag is what stops the
-   *  effort dial from quietly switching the tools off (chat-effort.ts). */
+   *  workspace.
+   *
+   *  🔴 Read the history here as history. This flag used to be load-bearing for
+   *  a reason that no longer exists — tool calls only rode the non-thinking
+   *  model, and this was what stopped the effort dial switching the tools off.
+   *  Every route carries tools since 2026-08-06 (chat-effort.ts), so it defends
+   *  nothing now. What it still does: keep a save off the expensive flagship,
+   *  and mark the turn for SAVE_INSTRUCTION. */
   savesToWorkspace?: boolean;
   /** Set when the student is asking ABOUT their own workspace — their calendar,
-   *  Library, or Study state — or asking for it to be reorganized. As
-   *  load-bearing as savesToWorkspace, for the same reason: these turns are
-   *  answered THROUGH tools, so they must ride the tools-capable model and the
-   *  effort dial must not strip them. This flag also stops sendChatTurn's web
-   *  re-promotion and its paid web search: "what's my schedule tomorrow" is a
-   *  database read, not a news question (see workspace-intent.ts). */
+   *  Library, or Study state — or asking for it to be reorganized.
+   *
+   *  🔴 Also historical in the same way: it used to guarantee the tools-capable
+   *  model AND suppress sendChatTurn's web re-promotion and its paid pre-turn
+   *  search. Neither mechanism exists any more — every route has tools, and the
+   *  model decides about the web through search_web. What remains is the
+   *  workspace instruction and the orientation snapshot. */
   workspaceIntent?: boolean;
 }
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
@@ -42,12 +48,16 @@ const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 
 // A message that asks Nemesis to SAVE or CREATE something in the student's own
 // workspace — a flashcard deck, a practice test, a mind map, a Library note, or
-// a calendar event. These MUST leave on the tools-capable model: the write is
-// performed by a tool call, and tool calls only ride the non-thinking model
-// (deepseek-chat, see chat-effort.ts:toolsAllowed). Route a save to the reasoner
-// and it answers in prose and saves nothing — which is exactly why "make me
-// flashcards on beta blockers" (LEARNING_PATTERN matches "flashcards") used to
-// do nothing. See classifyChatRequest below.
+// a calendar event.
+//
+// 🔴 THE ORIGINAL STAKES ARE HISTORY, AND THE MATCHING IS NOT. This used to
+// read "these MUST leave on the tools-capable model", because tool calls only
+// rode deepseek-chat and routing a save to the reasoner meant it answered in
+// prose and saved nothing — which is why "make me flashcards on beta blockers"
+// (LEARNING_PATTERN matches "flashcards") once did nothing at all. Every route
+// carries tools since 2026-08-06, so that failure cannot recur through this
+// path. Detecting a save still decides which INSTRUCTION rides the turn, and
+// the phrasings below are the ones students actually use.
 //
 // Two shapes are matched, deliberately narrow so ordinary learning questions
 // never trip it:
