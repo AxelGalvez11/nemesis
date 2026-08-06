@@ -28,6 +28,8 @@
 // image generation (owner decision 2026-07-14) — it plays no part in chat.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
+import { chooseModel, stripDeepSeekOnlyFields } from '../_shared/model-routing.ts'
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') ?? ''
@@ -63,7 +65,7 @@ const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6'
 // deep-thinking, because v4-pro runs ~2x slower and fails a minority of the time.
 // Kill without a deploy: supabase secrets set PRO_HIGH_MODE=off
 const PRO_HIGH_MODE = (Deno.env.get('PRO_HIGH_MODE') ?? 'on') === 'on'
-const PRO_MODEL = 'deepseek-v4-pro'
+// PRO_MODEL now lives in _shared/model-routing.ts, beside the gate that picks it.
 const PRO_TIMEOUT_MS = 45_000
 
 const COUNTER_KEY = 'nemesis_llm_tokens'
@@ -172,32 +174,15 @@ async function reportCost(props: Record<string, unknown>, distinctId: string): P
   }
 }
 
-/**
- * DeepSeek retires the 'deepseek-chat'/'deepseek-reasoner' aliases on 2026-07-24.
- * Mirror of resolveDeepSeekModel in supabase/functions/ask/llm.ts — map to the durable
- * V4 names plus the `thinking` mode selector, so desktop clients keep working after the
- * aliases die. A client-supplied body.thinking always wins over this default.
- *
- * Any OTHER model id maps to deepseek-v4-flash instead of passing through: the upstream
- * engine's deep defaults still name third-party models (e.g. anthropic/claude-opus-4.6
- * in agent_init) and a sub-agent path that misses the configured model would otherwise
- * surface DeepSeek's raw 400 ("supported API model names are...") to the student. We
- * bill/provide the model, so the valve — not the client — owns the final model name.
- */
-function resolveModel(model: string): { model: string; thinking?: { type: 'disabled' | 'enabled' } } {
-  const m = model.toLowerCase()
-
-  if (m === 'deepseek-chat') return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
-  if (m === 'deepseek-reasoner') return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
-  if (m.includes('v4-flash')) return { model, thinking: { type: 'disabled' } }
-  // Premium routing is server-owned. A client cannot bypass the plan +
-  // high-effort gate below by naming v4-pro directly; it receives Flash with
-  // thinking instead. This protects the product's gross-margin budget while
-  // preserving a strong answer.
-  if (m.includes('v4-pro')) return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
-
-  return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
-}
+// The alias map and the premium-lane gate that stood here now live together in
+// _shared/model-routing.ts, because they were never really two decisions: which
+// model answers depends on the requested alias AND on what the plan may reach,
+// and splitting them across a helper and three inline plan comparisons is how
+// `enterprise` came to be unreachable in one of them.
+//
+// The alias behaviour is unchanged and is now tested: deepseek-chat → Flash
+// thinking-off, deepseek-reasoner → Flash thinking-ON (it has never meant
+// v4-pro), any unknown id → Flash, and a client naming v4-pro cannot buy it.
 
 // CORS — the web app (browser) calls this function cross-origin; without these
 // headers the browser blocks the device-key mint and chat before they run (native
@@ -259,6 +244,14 @@ async function mintDeviceKey(req: Request): Promise<Response> {
 interface KeyContext {
   userId: string
   plan: string
+  /** The subscription plan EXACTLY as stored, before the collapse to 'free'.
+   *  Only the capability resolver reads this; everything else wants `plan`. */
+  rawPlan: string
+  /** The RAW subscription status. Carried alongside rawPlan because the
+   *  entitlement resolver reads status FIRST — a cancelled Max is a cancelled
+   *  account, and a plan string that has already been collapsed to 'free'
+   *  cannot tell "never paid" apart from "stopped paying". */
+  status: string
   dailyLimit: number
   used: number
   periodStart: string
@@ -297,10 +290,14 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     .limit(1)
     .maybeSingle()
 
-  let plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
-
-  // Free accounts remain on the bounded freemium tier. A paid subscription may
-  // still be `trialing`, but account age alone never grants the full Pro budget.
+  // The plan used for LIMITS is still collapsed to 'free' when the
+  // subscription is not entitling — that keeps the daily/monthly caps exactly
+  // where they were. The RAW pair travels on so the capability resolver can
+  // make the model decision from both halves rather than from a collapsed
+  // string that has already forgotten why it says 'free'.
+  const rawPlan = typeof sub?.plan === 'string' ? sub.plan : ''
+  const rawStatus = typeof sub?.status === 'string' ? sub.status : ''
+  const plan = rawPlan && rawStatus && ACTIVE.has(rawStatus) ? rawPlan : 'free'
 
   // Daily + monthly entitlements in one round trip.
   const { data: ents } = await admin
@@ -338,7 +335,12 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     monthlyLimit,
     monthlyUsed: usedFor(MONTHLY_COUNTER_KEY, monthStart),
     periodStart,
+    // The COLLAPSED billing plan, unchanged: limits, metering metadata and the
+    // /usage card all read this, and a cancelled account must report 'free'
+    // rather than the plan it used to hold.
     plan,
+    rawPlan,
+    status: rawStatus,
     used: usedFor(COUNTER_KEY, periodStart),
     userId: keyRow.user_id
   }
@@ -547,15 +549,19 @@ const SECONDARY_FALLBACKS: ProviderFallback[] = [
 async function callSecondaryFallbacks(
   body: Record<string, unknown>
 ): Promise<{ model: string; response: Response } | null> {
-  delete body.thinking
-  delete body.reasoning
-  delete body.reasoning_effort
+  // 🔴 STRIPS THE MESSAGES TOO, not just the top-level selectors. This used to
+  // delete `thinking`/`reasoning`/`reasoning_effort` and hand over a history
+  // still carrying `reasoning_content` on every assistant turn we echoed back
+  // to DeepSeek — a field none of these providers defined. It also meant the
+  // model's private reasoning travelled to a third party during an outage,
+  // which is exactly when nobody is watching.
+  const clean = stripDeepSeekOnlyFields(body)
 
   let last: { model: string; response: Response } | null = null
   for (const provider of SECONDARY_FALLBACKS) {
     if (!provider.key) continue
-    body.model = provider.model
-    const response = await callProvider(provider.base, provider.key, body)
+    clean.model = provider.model
+    const response = await callProvider(provider.base, provider.key, clean)
     if (!response) continue
     last = { model: provider.model, response }
     if (!(await isProviderUnusable(response))) return last
@@ -619,45 +625,49 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
-  let useGlm = requested.toLowerCase().startsWith('glm')
 
-  // High answer mode rides the premium GLM lane for Agent Pro / Max (owner routing
-  // decision 2026-07-14): Instant and Medium stay on DeepSeek; a High-effort turn is
-  // upgraded to GLM when the plan qualifies. Students picking High are NOT errored —
-  // they keep DeepSeek's own deep thinking. Effort is read from every encoding the
-  // desktop backend can emit (OpenRouter-style reasoning.effort, flat reasoning_effort,
-  // DeepSeek-style thinking.effort).
+  // Effort is read from every encoding a client can emit (OpenRouter-style
+  // reasoning.effort, flat reasoning_effort, DeepSeek-style thinking.effort).
   const effortHigh =
     ((body.reasoning as { effort?: string } | undefined)?.effort ??
       (body.reasoning_effort as string | undefined) ??
       (body.thinking as { effort?: string } | undefined)?.effort) === 'high'
-  const glmUpgrade = GLM_HIGH_MODE && !useGlm && effortHigh && Boolean(GLM_KEY) && (ctx.plan === 'pro' || ctx.plan === 'max')
 
-  if (glmUpgrade) useGlm = true
-
-  // The mix (2026-07-17): a High-effort turn on Agent Pro / Max routes to the
-  // premium v4-pro model — unless GLM is the chosen High lane. The hard timeout +
-  // fast-tier fallback live in the DeepSeek branch below (v4-pro is ~2x slower and
-  // fails a minority of the time). Students on lighter plans keep fast deep-thinking.
-  const proUpgrade = PRO_HIGH_MODE && !useGlm && effortHigh && (ctx.plan === 'pro' || ctx.plan === 'max')
-
-  const resolved = useGlm
-    ? { model: glmUpgrade ? GLM_MODEL : requested }
-    : proUpgrade
-      ? { model: PRO_MODEL } // v4-pro reasons natively — no thinking selector
-      : resolveModel(requested)
-  let model = resolved.model
+  // 🔴 ONE DECISION, IN ONE PLACE (owner 2026-08-06). What stood here was
+  // `ctx.plan === 'pro' || ctx.plan === 'max'`, written three times over. Every
+  // production subscription is `enterprise` — neither string — so the premium
+  // reasoning lane was unreachable by every account including the owner's, and
+  // nothing failed: the fast model simply answered, which looks identical to
+  // the right model answering. See _shared/model-routing.ts.
+  const choice = chooseModel({
+    effortHigh,
+    glmConfigured: Boolean(GLM_KEY),
+    glmHighMode: GLM_HIGH_MODE,
+    glmModel: GLM_MODEL,
+    plan: ctx.rawPlan,
+    proHighMode: PRO_HIGH_MODE,
+    requestedModel: requested,
+    status: ctx.status
+  })
+  const useGlm = choice.lane === 'glm'
+  const proUpgrade = choice.lane === 'pro'
+  let model = choice.model
   body.model = model
 
-  if (glmUpgrade || proUpgrade) {
-    // Neither GLM nor v4-pro takes the DeepSeek/OpenRouter effort selectors — drop them.
+  // A plan string nobody mapped grants nothing, and must not do so quietly —
+  // silence is exactly how `enterprise` went unrecognised. Sanitised by
+  // construction: the plan code and the surface, no user id and no email.
+  if (choice.capabilities.unrecognisedPlan) {
+    console.error('entitlement_unknown_plan', JSON.stringify({ plan: choice.capabilities.unrecognisedPlan, surface: 'nemesis-llm' }))
+  }
+
+  if (choice.dropEffortSelectors) {
+    // Neither GLM nor v4-pro takes the DeepSeek/OpenRouter effort selectors.
     delete body.thinking
     delete body.reasoning
     delete body.reasoning_effort
-  }
-
-  if (!useGlm && !proUpgrade && resolved.thinking && body.thinking === undefined) {
-    body.thinking = resolved.thinking
+  } else if (choice.thinking && body.thinking === undefined) {
+    body.thinking = choice.thinking
   }
 
   const streaming = body.stream === true
@@ -677,14 +687,16 @@ async function chatCompletions(req: Request): Promise<Response> {
     // GLM 5.2 is the premium "highest" answer mode — Agent Pro and Max plans only
     // (owner pricing decision 2026-07-14). The automatic DeepSeek-outage failover
     // below is deliberately NOT gated: uptime insurance covers every plan.
-    if (ctx.plan !== 'pro' && ctx.plan !== 'max') {
+    // Asks for the CAPABILITY, not for two plan strings. This is the check that
+    // told every enterprise account the highest answer mode was not theirs.
+    if (!choice.capabilities.highestReasoningTier) {
       return json(
         { error: { code: 'plan_required', message: 'The highest answer mode needs the Agent Pro or Max plan.' } },
         403
       )
     }
 
-    upstream = await callProvider(GLM_BASE, GLM_KEY, body)
+    upstream = await callProvider(GLM_BASE, GLM_KEY, stripDeepSeekOnlyFields(body))
   } else if (proUpgrade) {
     // Premium lane: v4-pro with a hard timeout. If it's slow or errors, fall back to
     // the fast tier's own deep-thinking (same provider, reliable) — the student still
@@ -703,7 +715,7 @@ async function chatCompletions(req: Request): Promise<Response> {
       model = GLM_MODEL
       body.model = GLM_MODEL
       delete body.thinking
-      upstream = await callProvider(GLM_BASE, GLM_KEY, body)
+      upstream = await callProvider(GLM_BASE, GLM_KEY, stripDeepSeekOnlyFields(body))
     }
   } else {
     upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body) : null
@@ -715,7 +727,7 @@ async function chatCompletions(req: Request): Promise<Response> {
       model = GLM_MODEL
       body.model = GLM_MODEL
       delete body.thinking
-      upstream = await callProvider(GLM_BASE, GLM_KEY, body)
+      upstream = await callProvider(GLM_BASE, GLM_KEY, stripDeepSeekOnlyFields(body))
     }
   }
 

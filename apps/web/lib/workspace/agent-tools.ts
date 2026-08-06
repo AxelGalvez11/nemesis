@@ -2,7 +2,9 @@
 // student's Library, Study, and Calendar). Schemas ride the OpenAI `tools`
 // field straight through the valve to the model (tool_choice stays auto —
 // DeepSeek thinking mode rejects forced choices, see
-// docs/research/deepseek-tool-calling-fix-2026-07.md); executors run here in
+// docs/research/deepseek-v4-thinking-tool-calls-2026-08.md; the file this used
+// to cite has never existed, and the rule is now also a test rather than a
+// comment — completionPayload in chat-api.ts); executors run here in
 // the browser against the same RLS-scoped Supabase tables the pages use, so
 // the agent can never see or touch another account's data.
 
