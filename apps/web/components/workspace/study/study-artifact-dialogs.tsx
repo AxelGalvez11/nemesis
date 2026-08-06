@@ -12,6 +12,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { ExplainChat, type ExplainRevise, type ExplainTurn } from "@/components/workspace/study/explain-chat";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
+import { EMPTY_TEST_SESSION, hasTestProgress, parseTestSession, serializeTestSession, testQuestionIndex, testSessionKey } from "@/lib/workspace/test-session-state";
 import { explainQuestionContext, explainTranscript, parseRevisedQuestion, reviseQuestionMessages } from "@/lib/workspace/study-ai-extras";
 import {
   Dialog,
@@ -223,8 +224,9 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   const [contentOverride, setContentOverride] = useState<TestContent | null>(null);
   const content = useMemo(() => contentOverride ?? parseTestContent(artifact.content), [artifact.content, contentOverride]);
   const [picks, setPicks] = useState<number[]>([]);
-  const [index, setIndex] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
+  // Restored before anything is written, cleared the instant the attempt saves.
+  const [restored, setRestored] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [addedTo, setAddedTo] = useState<string | null>(null);
@@ -238,7 +240,15 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // Hooks first, early return after — content can be null for legacy shells.
   const questions = useMemo(() => content?.questions ?? [], [content]);
   const finished = questions.length > 0 && picks.length === questions.length;
-  const question = questions[Math.min(index, Math.max(questions.length - 1, 0))];
+  // 🔴 DERIVED, never stored. Two facts about "which question am I on" can
+  // disagree; one cannot. See test-session-state.testQuestionIndex.
+  const index = testQuestionIndex(picks, questions.length);
+  const question = questions[index];
+  // Per account AND per test: a bare key would restore one account's sitting
+  // into another's on a shared browser. The preview surface has no account, so
+  // it gets a stable owner of its own rather than falling back to a null key.
+  const sessionKey = testSessionKey(study.userId ?? (previewMode ? "preview" : null), artifact.id);
+  const optionCounts = useMemo(() => questions.map((row) => row.options.length), [questions]);
   const attempt = useMemo(
     () => (finished ? scoreAttempt(questions, picks, new Date().toISOString()) : null),
     // picks fully determines the attempt; a fresh timestamp per finish is fine.
@@ -253,9 +263,42 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
     if (!attempt || saved || !content) return;
     setSaved(true);
     const nextContent: TestContent = { attempts: [...content.attempts, attempt], questions };
+    // 🔴 THE STORED SITTING DIES HERE, in the same effect that saves the
+    // attempt — not in a cleanup, not on close. A finished sitting left in
+    // storage would be restored on the next open, and this effect would score
+    // it AGAIN the moment its answer count came back complete.
+    if (sessionKey) { try { window.localStorage.removeItem(sessionKey); } catch { /* private mode */ } }
     void study.updateArtifact(artifact.id, { content: nextContent }).catch(() => setSaveError(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, saved]);
+
+  // Restore ONCE, and only after the questions exist — every stored answer is
+  // validated against the options actually on screen, and before they load
+  // there is nothing to validate against.
+  useEffect(() => {
+    if (restored || optionCounts.length === 0) return;
+    setRestored(true);
+    if (!sessionKey) return;
+    let raw: string | null = null;
+    try { raw = window.localStorage.getItem(sessionKey); } catch { return; }
+    const stored = parseTestSession(raw, optionCounts);
+    if (stored === EMPTY_TEST_SESSION || !hasTestProgress(stored)) return;
+    setPicks([...stored.picks]);
+    setPicked(stored.picked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionCounts, restored, sessionKey]);
+
+  // Write after every answer. `saved` is deliberately NOT persisted: it is a
+  // per-mount write-once latch, and restoring it true would suppress the real
+  // save. An untouched sitting removes its key instead of writing an empty one.
+  useEffect(() => {
+    if (!restored || !sessionKey || saved) return;
+    const state = { picked, picks };
+    try {
+      if (hasTestProgress(state)) window.localStorage.setItem(sessionKey, serializeTestSession(state));
+      else window.localStorage.removeItem(sessionKey);
+    } catch { /* private mode: the sitting just does not survive */ }
+  }, [picked, picks, restored, saved, sessionKey]);
 
   if (!content) {
     return (
@@ -278,11 +321,18 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
 
   function next() {
     if (picked === null) return;
-    const nextPicks = [...picks, picked];
-    setPicks(nextPicks);
+    setPicks([...picks, picked]);
     setPicked(null);
     setExplainFor(null);
-    if (nextPicks.length < questions.length) setIndex(index + 1);
+  }
+
+  /** Abandon a sitting that was never submitted and start clean. Only offered
+   *  while nothing has been scored, so it destroys no record — see the button. */
+  function startOver() {
+    setPicks([]);
+    setPicked(null);
+    setExplainFor(null);
+    if (sessionKey) { try { window.localStorage.removeItem(sessionKey); } catch { /* private mode */ } }
   }
 
   // Owner 2026-08-01: "test should not be able to be retaken." One attempt,
@@ -531,6 +581,24 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                   <DialogTitle className="truncate text-sm font-medium text-(--ui-text-secondary)">{artifact.title}</DialogTitle>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <DialogDescription className="tabular-nums">Question {index + 1} of {questions.length}</DialogDescription>
+                    {/* Owner's criterion: restart stays a SEPARATE, deliberate
+                        action. Offered only while nothing has been scored —
+                        a never-submitted sitting has no attempt row, so
+                        starting over destroys no record. On a finished test the
+                        same button would be a retake, which the owner ruled out
+                        on 2026-08-01. */}
+                    {picks.length > 0 && !finished && !reviewAttempt && (
+                      <Button
+                        data-testid="test-start-over"
+                        onClick={startOver}
+                        size="xs"
+                        title="Clear these answers and start this test again"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Start over
+                      </Button>
+                    )}
                     {picked !== null && (
                       <Button
                         aria-label="Have Nemesis explain this question"
