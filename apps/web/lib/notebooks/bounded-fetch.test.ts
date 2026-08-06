@@ -136,3 +136,42 @@ test("declaredLength distinguishes 'absent' from 'zero'", () => {
     assert.equal(declaredLength(new Headers({ "content-length": bad })), null, bad);
   }
 });
+
+test("🔴 a broken bound ABORTS the request, it does not politely cancel the body", async () => {
+  // The production failure this pins: reading content-length off a GET and
+  // calling `body.cancel()` looked correct and timed out at 300 s, because
+  // undici drains a cancelled body to reuse the connection instead of hanging
+  // up. Aborting destroys the socket. A test that only checks the verdict
+  // cannot tell those apart — so check that abort was actually called, and
+  // called BEFORE the function returned.
+  let aborted = 0;
+  const body = countingBody(Array.from({ length: 10 }, () => filled(200)));
+  const read = await readBounded(body.stream, CAP, null, () => { aborted += 1; });
+
+  assert.equal(read.ok, false);
+  assert.equal(read.ok === false && read.reason, "too-large");
+  assert.equal(aborted, 1, "the refused transfer was left running");
+});
+
+test("the abort hook fires on a lying content-length and on a broken stream too", async () => {
+  let aborted = 0;
+  const lying = countingBody([filled(100), filled(200)]);
+  await readBounded(lying.stream, CAP, 100, () => { aborted += 1; });
+  assert.equal(aborted, 1, "an object that outgrew its own header kept transferring");
+
+  const broken = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(filled(50));
+      controller.error(new Error("connection reset"));
+    },
+  });
+  await readBounded(broken, CAP, 500, () => { aborted += 1; });
+  assert.equal(aborted, 2, "a broken transfer was left open");
+});
+
+test("a healthy read never aborts — the hook is for failure only", async () => {
+  let aborted = 0;
+  const read = await readBounded(countingBody([filled(300)]).stream, CAP, 300, () => { aborted += 1; });
+  assert.equal(read.ok, true);
+  assert.equal(aborted, 0, "a perfectly good transfer was torn down");
+});

@@ -11,17 +11,26 @@
 // times over (Blob, then `arrayBuffer()`, then the route's defensive copy)
 // before a parser saw them.
 //
-// `fetch` gives us the one thing `.download()` cannot: the response resolves
-// when the HEADERS arrive, with the body still unread. So:
+// So:
 //
-//   1. `content-length` is read first. Over the cap => cancel the body and
-//      return. Cost: one set of headers. No content bytes are transferred at
-//      all, which is what makes an oversized file cheap to refuse.
-//   2. The body is then read chunk by chunk with the cap re-checked on every
-//      chunk, so an object with no `content-length`, or one that lies, is still
-//      stopped mid-transfer rather than after it.
+//   1. A HEAD asks how big the object is. It has no body by definition, so an
+//      oversized object is refused having opened nothing at all. This is the
+//      cheap refusal, and it is cheap because there is no stream to get rid of.
+//   2. Only then is the body requested. It is read chunk by chunk with the cap
+//      re-checked every time, so an object with no `content-length`, one that
+//      lies, or one that changed between the two calls is still stopped
+//      mid-transfer rather than after it.
 //   3. What survives is written into ONE buffer, allocated once at the declared
 //      size. No chunk array, no concat pass, no second copy.
+//
+// 🔴 STEP 1 USED TO BE A GET WHOSE BODY WAS CANCELLED, AND THAT IS A TRAP.
+// Reading `content-length` off a GET and calling `body.cancel()` looks like it
+// avoids the transfer. It does not: undici wants the connection back, so
+// cancelling drains the rest instead of hanging up. Measured through the
+// deployed function against the real 118 MiB object, refusals took 5.6 s and
+// 9.0 s and then one hit `Vercel Runtime Timeout Error: Task timed out after
+// 300 seconds`. A HEAD has nothing to drain; where a body must be abandoned
+// anyway, `AbortController.abort()` destroys the socket and `cancel()` does not.
 //
 // The cap is a hard stop, never a truncation: going over returns "too-large" and
 // throws the partial away. Silently keeping the first N bytes of a document
@@ -50,6 +59,19 @@ export async function readBounded(
   body: ReadableStream<Uint8Array>,
   cap: number,
   declared: number | null,
+  /**
+   * Kills the underlying connection when a bound is broken.
+   *
+   * 🔴 NOT OPTIONAL IN PRODUCTION, AND `body.cancel()` IS NOT A SUBSTITUTE.
+   *
+   * Cancelling a large undici body does not hang up — the pool wants the
+   * connection back, so it drains what is left. Measured against the real
+   * 118 MiB object through the deployed function: two refusals took 5.6 s and
+   * 9.0 s, and the third never returned at all — `Vercel Runtime Timeout Error:
+   * Task timed out after 300 seconds`. Aborting the request destroys the socket
+   * instead, which is the only way to stop paying for bytes we have refused.
+   */
+  abort?: () => void,
 ): Promise<BoundedRead> {
   const sized = declared !== null && Number.isInteger(declared) && declared >= 0 && declared <= cap;
   // One allocation of the exact size when the length is known and within the
@@ -70,14 +92,14 @@ export async function readBounded(
       if (read > cap) {
         // Stop the transfer. Everything already read is dropped on the floor:
         // a partial document must never be handed onward as a whole one.
-        await reader.cancel().catch(() => {});
+        stop(reader, abort);
         return { ok: false, reason: "too-large", declared, read };
       }
       if (out) {
         // The object grew, or its content-length lied low. Either way this is
         // not the object we sized for, so it is not safe to keep.
         if (read > out.length) {
-          await reader.cancel().catch(() => {});
+          stop(reader, abort);
           return { ok: false, reason: "unavailable" };
         }
         out.set(value, read - value.byteLength);
@@ -86,7 +108,7 @@ export async function readBounded(
       }
     }
   } catch {
-    await reader.cancel().catch(() => {});
+    stop(reader, abort);
     return { ok: false, reason: "unavailable" };
   }
 
@@ -125,4 +147,21 @@ export function declaredLength(headers: Headers): number | null {
   if (raw === null || !/^\d+$/.test(raw)) return null;
   const n = Number(raw);
   return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
+ * Hang up, without waiting to be let go.
+ *
+ * `cancel()` is still called so the stream is not left dangling, but it is
+ * deliberately NOT awaited: awaiting it is what allowed a refused transfer to
+ * keep running for five minutes. `abort()` is what actually destroys the
+ * socket, so it goes first.
+ */
+function stop(reader: { cancel: () => Promise<void> }, abort?: () => void): void {
+  try {
+    abort?.();
+  } catch {
+    // An abort that throws must not mask the refusal that caused it.
+  }
+  void reader.cancel().catch(() => {});
 }
