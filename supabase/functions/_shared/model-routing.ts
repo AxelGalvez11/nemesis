@@ -153,17 +153,23 @@ export function signalsFromBody(
   capsHeader: string | null,
 ): WorkSignals & { toolNames: string[] } {
   const messages = Array.isArray(body.messages) ? (body.messages as Record<string, unknown>[]) : [];
-  let wireText = "";
+  let lastUser = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message?.role === "user" && typeof message.content === "string") {
-      wireText = message.content;
+    if (messages[i]?.role === "user" && typeof messages[i]?.content === "string") {
+      lastUser = i;
       break;
     }
   }
+  const wireText = lastUser >= 0 ? (messages[lastUser].content as string) : "";
 
+  // 🔴 THIS TURN'S TOOLS, NOT THE THREAD'S. Everything before the last user
+  // message belongs to questions already answered. Counting those would make
+  // `escalationCandidate` fire on the word "hi" typed into a long conversation
+  // where the student happened to read their calendar and their Library an hour
+  // ago — and the whole point of that signal is to measure whether ONE turn
+  // reached for two sources.
   const toolNames: string[] = [];
-  for (const message of messages) {
+  for (const message of messages.slice(lastUser + 1)) {
     if (!Array.isArray(message?.tool_calls)) continue;
     for (const call of message.tool_calls as Record<string, unknown>[]) {
       const name = (call?.function as { name?: unknown } | undefined)?.name;

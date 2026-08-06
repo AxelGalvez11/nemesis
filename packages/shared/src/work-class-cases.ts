@@ -75,6 +75,28 @@ export const WORK_CASES: readonly WorkCase[] = [
     workClass: "standard",
   },
 
+  // ── 🔴 A RELATION IS NOT AUTOMATICALLY SYNTHESIS ──────────────────────────
+  //
+  // These two were promoted to the premium model by an earlier draft, found by
+  // running the acceptance set rather than by reading the regex. Comparing two
+  // terms somebody named in passing is a textbook teaching question; paying
+  // flagship rates for it is how a routing change becomes a bill. What separates
+  // them from the block below is that the block below relates the student's OWN
+  // material to something else.
+  { note: "law", prompt: "What is the difference between a tort and a crime?", reason: "default", workClass: "standard" },
+  {
+    note: "mechanical engineering — identical shape",
+    prompt: "What is the difference between torque and horsepower?",
+    reason: "default",
+    workClass: "standard",
+  },
+  {
+    note: "no possessive anywhere, but stated at enough length to be real work",
+    prompt: "Compare the 2026 guidance with the 2024 guidance and explain exactly where the two diverge",
+    reason: "reconciliation",
+    workClass: "complex",
+  },
+
   // ── reconciliation: hold two accounts of one thing at once ────────────────
   {
     note: "the owner's own example",

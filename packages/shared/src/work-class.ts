@@ -147,6 +147,28 @@ const BRIEF_WORDS = 8;
 /** A message this long is carrying several parts whatever its wording. */
 const EXTENDED_WORDS = 45;
 
+/**
+ * A relation alone is not synthesis.
+ *
+ * 🔴 MEASURED, NOT GUESSED. Running the acceptance set through an earlier draft
+ * promoted "What is the difference between a tort and a crime?" and "Compare
+ * negligence and strict liability" to the premium model. Those are textbook
+ * teaching questions — two terms the student named in passing — and paying
+ * flagship rates for them is how a routing change turns into a bill.
+ *
+ * Every one of the owner's own complex examples relates the student's OWN
+ * material to something else: "what MY professor taught" against the current
+ * guideline, "MY lecture's formula" against the code, "MY notes" against the
+ * textbook. That is the difference between comparing two definitions and
+ * reconciling two accounts of one thing. A relation stated at length counts too
+ * — "compare the 2026 guidance with the 2024 guidance and explain where they
+ * diverge" is real work with no possessive in it.
+ *
+ * A miss here is not silent: a turn that ends up reading two sources anyway is
+ * logged as an escalation candidate (see below).
+ */
+const RELATIONAL_WORDS = 12;
+
 // ── attachments ─────────────────────────────────────────────────────────────
 
 /**
@@ -232,7 +254,9 @@ export function classifyWork(signals: WorkSignals): WorkClassification {
   const depth = DEPTH.test(prompt);
 
   // ── promote ───────────────────────────────────────────────────────────────
-  if (relational) return { reason: "reconciliation", workClass: "complex" };
+  if (relational && (SELF_SCOPED.test(prompt) || words >= RELATIONAL_WORDS)) {
+    return { reason: "reconciliation", workClass: "complex" };
+  }
   if (SCOPE.test(prompt) && clauseCount(prompt) >= 2) return { reason: "multi_constraint", workClass: "complex" };
   if (words >= EXTENDED_WORDS) return { reason: "extended_request", workClass: "complex" };
 

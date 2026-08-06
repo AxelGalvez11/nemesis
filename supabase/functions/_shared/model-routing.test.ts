@@ -213,6 +213,28 @@ Deno.test("🔴 the LAST USER message is read, not the last message", () => {
   assertEquals(classifyWork(signals).workClass, "complex");
 });
 
+Deno.test("🔴 an EARLIER turn's tools are not this turn's", () => {
+  // The student read their calendar and their Library an hour ago, then typed
+  // "hi". Counting the whole thread would log an escalation candidate on a
+  // greeting — and the signal is meant to measure whether ONE turn reached for
+  // two sources.
+  const thread = {
+    messages: [
+      { content: "what's on my calendar and what did lecture 6 say?", role: "user" },
+      { content: "", role: "assistant", tool_calls: [{ function: { name: "list_calendar_events" }, id: "a", type: "function" }] },
+      { content: "{}", role: "tool", tool_call_id: "a" },
+      { content: "", role: "assistant", tool_calls: [{ function: { name: "search_library" }, id: "b", type: "function" }] },
+      { content: "{}", role: "tool", tool_call_id: "b" },
+      { content: "Here you go.", role: "assistant" },
+      { content: "hi", role: "user" },
+    ],
+  };
+  const signals = signalsFromBody(thread, REASONING_ECHO_CAP);
+  assertEquals(signals.prompt, "hi");
+  assertEquals(signals.toolNames, [], "the previous turn's reads leaked into this one");
+  assertEquals(escalationCandidate(signals.toolNames, classifyWork(signals).workClass), false);
+});
+
 Deno.test("the class does not move between the rounds of one turn", () => {
   // 🔴 If it did, the conversation would change model mid-turn while carrying
   // the first model's `reasoning_content` — untested against any provider, and
