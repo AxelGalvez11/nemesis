@@ -50,6 +50,44 @@ test("🔴 the TypeScript attempt limit matches the one the SQL claim predicate 
   assert.equal(Number(match[1]), MAX_ATTEMPTS);
 });
 
+test("🔴 the claim predicate requires an explicit enqueue, so applying the migration cannot backfill", () => {
+  // MEASURED against production on 2026-08-06, before this migration was applied:
+  // the predicate as originally written matched **16 of the 17 existing sources**,
+  // because every column it rests on defaults to due — attempts 0, leased_until
+  // '-infinity', next_attempt_at now(). Enabling the cron would have parsed the
+  // whole back catalogue at once, each one able to bill vision on our key.
+  //
+  // Proven by dry run in a rolled-back transaction against the real schema:
+  //   old predicate -> 16 rows claimed
+  //   this predicate -> 0 rows claimed
+  //
+  // The rule is the one the coverage work already enforces a layer up: a missing
+  // record means UNKNOWN, never a flattering default. An unparsed source is not a
+  // queued source — something has to ASK. Backfilling may well be wanted, but as
+  // one deliberate UPDATE a person chose to run, not a side effect of a schema
+  // change.
+  const sql = readFileSync(
+    new URL("../../../../supabase/migrations/20260806210000_document_parse_jobs.sql", import.meta.url),
+    "utf8",
+  );
+  const predicate = sql.match(/select c\.id\s+from public\.library_sources c\s+where([\s\S]*?)order by/);
+  assert.ok(predicate, "could not find the claim predicate in the migration");
+  const where = predicate[1] ?? "";
+
+  assert.match(where, /c\.parse_enqueued_at is not null/,
+    "without an enqueue gate, every unparsed row in the table is immediately claimable");
+  assert.match(where, /not c\.deleted/,
+    "a source the student threw away must not be parsed, nor linked to a parse");
+  // The column has to exist for the predicate to mean anything.
+  assert.match(sql, /add column if not exists parse_enqueued_at timestamptz/);
+  // And the partial index must agree with the predicate, or the scan it exists to
+  // keep cheap silently stops being used.
+  const index = sql.match(/create index if not exists library_sources_parse_due_idx([\s\S]*?);/);
+  assert.ok(index, "the due index must exist");
+  assert.match(index[1] ?? "", /parse_enqueued_at is not null/);
+  assert.match(index[1] ?? "", /not deleted/);
+});
+
 test("the worker secret comparison rejects length and content mismatches", () => {
   assert.equal(secretMatches("abc123", "abc123"), true);
   assert.equal(secretMatches("abc123", "abc124"), false);

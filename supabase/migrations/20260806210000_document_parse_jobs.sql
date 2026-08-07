@@ -74,6 +74,25 @@ create extension if not exists supabase_vault with schema vault;
 -- ── 1. Retry bookkeeping on the work item ──────────────────────────────────
 
 alter table public.library_sources
+  -- 🔴 QUEUED IS A POSITIVE FACT, NOT THE ABSENCE OF A PARSE.
+  --
+  -- Without this column the claim predicate reads "unparsed and not currently
+  -- leased", and every column it depends on defaults to due: `parse_attempts` 0,
+  -- `parse_leased_until` '-infinity', `parse_next_attempt_at` now(). Measured
+  -- against production before applying: **16 of 17 existing sources match it**.
+  -- Enabling the cron would therefore have parsed the entire back catalogue at
+  -- once — sixteen unrequested parses, each able to bill vision on our key —
+  -- and the migration header's promise that applying it "changes no behaviour"
+  -- would have held only until somebody flipped the switch it ships with.
+  --
+  -- This is the same rule the coverage work already enforces one layer up: a
+  -- missing record means UNKNOWN, never a flattering default. An unparsed source
+  -- is not a queued source. Something has to ASK.
+  --
+  -- Backfilling the existing sources may well be desirable — but it is then one
+  -- deliberate, auditable UPDATE that a person chose to run, not a side effect of
+  -- a schema change.
+  add column if not exists parse_enqueued_at timestamptz,
   -- Which worker holds it, for diagnosis only — never trusted for correctness.
   add column if not exists parse_lease_owner text,
   -- 🔴 THE TOKEN IS THE CORRECTNESS MECHANISM. Minted fresh on every claim. Every
@@ -95,6 +114,8 @@ alter table public.library_sources
   add column if not exists parse_ms int,
   add column if not exists parse_peak_rss_mb int;
 
+comment on column public.library_sources.parse_enqueued_at is
+  'Set when a source is deliberately queued for parsing. The claim predicate requires it, so an unparsed source is never mistaken for a queued one and applying this migration cannot backfill the existing table.';
 comment on column public.library_sources.parse_lease_token is
   'Minted per claim. Every heartbeat, completion and failure write must match it in its WHERE clause, so an expired worker cannot overwrite a newer one.';
 comment on column public.library_sources.parse_failed_at is
@@ -104,7 +125,10 @@ comment on column public.library_sources.parse_failed_at is
 -- parsed (which is eventually all of them).
 create index if not exists library_sources_parse_due_idx
   on public.library_sources (parse_next_attempt_at)
-  where parsed_document_id is null and parse_failed_at is null;
+  where parse_enqueued_at is not null
+    and parsed_document_id is null
+    and parse_failed_at is null
+    and not deleted;
 
 -- ── 2. Claiming, atomically ────────────────────────────────────────────────
 
@@ -145,8 +169,10 @@ as $$
    where s.id in (
      select c.id
        from public.library_sources c
-      where c.parsed_document_id is null      -- not already parsed
+      where c.parse_enqueued_at is not null   -- 🔴 somebody ASKED for this parse
+        and c.parsed_document_id is null      -- not already parsed
         and c.parse_failed_at is null         -- not terminally failed
+        and not c.deleted                     -- the student threw it away
         and c.storage_path is not null        -- there are bytes to fetch
         and c.parse_next_attempt_at <= clock_timestamp()  -- backoff has elapsed
         and c.parse_leased_until < clock_timestamp()      -- nobody holds it
@@ -159,7 +185,7 @@ as $$
 $$;
 
 comment on function public.claim_document_parses is
-  'Atomically lease due parse jobs. Returns only rows this caller won. skip locked makes concurrent workers safe; the attempt counter increments at claim so a worker that dies still burns an attempt.';
+  'Atomically lease due parse jobs that were explicitly enqueued and not deleted. Returns only rows this caller won. skip locked makes concurrent workers safe; the attempt counter increments at claim so a worker that dies still burns an attempt.';
 
 revoke execute on function public.claim_document_parses(int, int, text) from public, anon, authenticated;
 grant execute on function public.claim_document_parses(int, int, text) to service_role;
