@@ -302,22 +302,47 @@ export async function loadLibrarySources(uid: string | null, options?: { preview
   // "no sources" in the one place the design is reviewed. Same `{ preview }`
   // option loadNoteSources already takes, for the same reason.
   if (options?.preview || !uid) return PREVIEW_LIBRARY_SOURCES;
-  try {
-    const { data, error } = await supabase
+
+  const query = (columns: string) =>
+    supabase
       .from("library_sources")
-      .select(
-        "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id,parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at,parsed_documents(coverage,state,complete,failed_stage,error)",
-      )
+      .select(columns)
       .eq("user_id", uid)
       .eq("deleted", false)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (error || !data) return [];
-    return (data as SourceRow[]).map(rowToLibrarySource);
+
+  try {
+    const { data, error } = await query(WITH_PARSE_STATUS);
+    if (!error && data) return (data as unknown as SourceRow[]).map(rowToLibrarySource);
+
+    // 🔴 THE APP DEPLOYS AND THE MIGRATION IS APPLIED SEPARATELY, IN EITHER
+    // ORDER. `main` auto-deploys the web app; a schema change is a deliberate,
+    // owner-gated `supabase db push`. So there is always a window where this
+    // code is live and the `parse_*` columns are not — and PostgREST answers a
+    // request for a column it does not have with an ERROR, not by omitting it.
+    //
+    // Without this fallback that window is not a degraded Library. It is an
+    // EMPTY one: the error lands on `return []`, and every student sees zero
+    // files in a Library that is full. Losing the status banner is a cost worth
+    // paying; losing the Library is not.
+    const base = await query(BASE_COLUMNS);
+    if (base.error || !base.data) return [];
+    return (base.data as unknown as SourceRow[]).map(rowToLibrarySource);
   } catch {
     return [];
   }
 }
+
+/** What a source needs to be listed at all. Present since the table existed. */
+const BASE_COLUMNS =
+  "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id,parsed_documents(coverage,state,complete,failed_stage,error)";
+
+/** The above plus the queue columns from `20260806210000_document_parse_jobs`. */
+const WITH_PARSE_STATUS =
+  "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id," +
+  "parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at," +
+  "parsed_documents(coverage,state,complete,failed_stage,error)";
 
 /** Short-lived signed URL for the original bytes, or null when nothing is
  *  stored / the bucket doesn't exist yet. The viewer treats null as "explain,

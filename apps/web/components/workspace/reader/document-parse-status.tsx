@@ -50,6 +50,7 @@ interface DocumentParseStatusProps {
 export function DocumentParseStatus({ sourceId, initial, className }: DocumentParseStatusProps) {
   const [status, setStatus] = useState<DocumentStatus>(initial);
   const [asking, setAsking] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const startedAt = useRef(Date.now());
 
   // A fresh source means a fresh poll window; without this a student who opens
@@ -93,15 +94,27 @@ export function DocumentParseStatus({ sourceId, initial, className }: DocumentPa
 
   const ask = useCallback(async () => {
     setAsking(true);
+    setProblem(null);
     try {
       const headers = await authHeader();
       if (!headers) return;
-      await fetch(`/api/library/sources/${sourceId}/parse`, { headers, method: "POST" });
+      const res = await fetch(`/api/library/sources/${sourceId}/parse`, { headers, method: "POST" });
+      // 🔴 A BUTTON THAT DOES NOTHING IS WORSE THAN A BUTTON THAT SAYS WHY.
+      // The queue's schema is applied separately from the app deploy, so there
+      // is a window where this route answers 503 because the columns do not
+      // exist yet. Swallowing that leaves a student clicking a button that
+      // never changes anything and never explains itself.
+      if (!res.ok) {
+        setProblem("Reading isn't switched on yet for this account. Nothing is wrong with your file.");
+        return;
+      }
       startedAt.current = Date.now();
       // Show what the server says, not an optimistic "reading now". The request
       // may have been declined — already parsed, already queued — and inventing
       // a state here is how the UI and the database start disagreeing.
       await refresh();
+    } catch {
+      setProblem("That didn't go through. It's worth trying again in a moment.");
     } finally {
       setAsking(false);
     }
@@ -120,7 +133,7 @@ export function DocumentParseStatus({ sourceId, initial, className }: DocumentPa
       data-testid="document-parse-status"
       role="status"
     >
-      <span>{documentStatusLine(status)}</span>
+      <span>{problem ?? documentStatusLine(status)}</span>
       {offersAction && (
         <Button disabled={asking} onClick={() => void ask()} size="sm" variant="secondary">
           {status.kind === "failed" ? "Try reading it again" : "Read this document"}

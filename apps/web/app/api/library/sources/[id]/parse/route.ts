@@ -108,16 +108,24 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   // proof, exactly as the recording kick route does. A service-role read here
   // would put that check in this file, where getting it wrong is silent.
   const client = userClient(req);
-  const { data: source } = await client
-    .from("library_sources")
-    .select(
-      "id,deleted,storage_path,parsed_document_id,parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at",
-    )
-    .eq("id", id)
-    .maybeSingle();
+  const read = (columns: string) =>
+    client.from("library_sources").select(columns).eq("id", id).maybeSingle();
+
+  let result = await read(
+    "id,deleted,storage_path,parsed_document_id,parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at",
+  );
+  if (result.error) {
+    // 🔴 THE QUEUE MIGRATION MAY NOT BE APPLIED YET. The app deploys from `main`
+    // automatically; a schema change is a separate, owner-gated push, so this
+    // code is live before those columns exist. PostgREST ERRORS on a column it
+    // does not have rather than omitting it, and reporting that as "not found"
+    // would tell a student their document is missing when it is right there.
+    result = await read("id,deleted,storage_path,parsed_document_id");
+  }
+  const source = result.data;
   if (!source) return json({ error: "not found" }, 404);
 
-  const row = source as Record<string, unknown>;
+  const row = source as unknown as Record<string, unknown>;
   const text = (key: string): string | null => (typeof row[key] === "string" ? (row[key] as string) : null);
 
   let parsed: ParsedDocumentRow | null = null;
