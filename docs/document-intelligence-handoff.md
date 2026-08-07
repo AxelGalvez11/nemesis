@@ -167,6 +167,16 @@ optional, and none may be counted as done by inference.** When deploys work agai
 - [ ] **SOLO benchmark** for PDF, PPTX and DOCX — the gate for any phase reaching DONE.
 - [ ] **MATCHED benchmark** — required before any sentence containing the word "parity", in either direction. Nothing MATCHED has been run.
 
+### Added 2026-08-07, as Phases 1–7 were built out
+
+- [ ] **Apply `20260807030000_source_chunk_retrieval.sql` to production**, whose `library_chunks` already holds 158 note rows. The round-trip harness proves the migration applies to an *empty* table of the same shape; the new unique index on `(parsed_document_id, chunker_version, embedding_version, chunk_index)` has never met existing data.
+- [ ] **Apply `20260807031000_source_index_scheduler.sql`**, then decide separately whether to create its two Vault secrets. It is dormant without them, and creating them starts real embedding spend — an owner decision, not a deploy step.
+- [ ] **Deploy the `source-index` function with JWT verification disabled**, so its own service-role check is the gate. Getting this wrong on a function of this shape has caused a production outage before (`nemesis-verify-jwt-deploy-trap`).
+- [ ] **Confirm the first source chunks exist.** `select count(*) from library_chunks where origin_type = 'source'` should stop being 0.
+- [ ] **Confirm search returns one.** The search route reports `sources: true` when the new function answered and `false` when it fell back to notes-only, so this is one field, not an inference.
+- [ ] **Confirm the parse worker bundle LOADS**, not merely that it shipped. POST to `/api/documents/parse/worker`; an outcome of `no-worker-bundle` means the traced file is not loadable in the deployed runtime — the one thing `check-worker-trace.mjs` cannot tell you.
+- [ ] **Describe one real figure.** Nothing has ever called the vision provider on a PDF figure. 246 of 305 routed figures produce PNG bytes locally and not one has been sent, so Phase 2's visual half is plumbing that is known to carry water and has never carried any.
+
 ---
 
 ## 7. Rules this handoff must not be read as relaxing
