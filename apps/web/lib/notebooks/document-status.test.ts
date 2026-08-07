@@ -13,9 +13,15 @@ import {
 
 const NOW = new Date("2026-08-06T12:00:00Z");
 
+// Defaults to ENQUEUED, because that is what every state below is about — a job
+// somebody asked for. A source that was never enqueued is its own state, tested
+// separately, and it must not be the silent default here: a fixture builder that
+// quietly queues nothing would make "pending" and "never scheduled" look alike,
+// which is the confusion the status type exists to prevent.
 const src = (over: Partial<SourceParseRow> = {}): SourceParseRow => ({
   parseAttempts: 0,
   parsedDocumentId: null,
+  parseEnqueuedAt: "2026-08-06T11:59:00Z",
   parseError: null,
   parseFailedAt: null,
   parseLeasedUntil: null,
@@ -33,6 +39,36 @@ const doc = (over: Partial<ParsedDocumentRow> = {}): ParsedDocumentRow => ({
 });
 
 // ── The six states Phase 1 can reach ───────────────────────────────────────
+
+test("🔴 not_queued — stored, readable, and scheduled for nothing", () => {
+  // The claim predicate requires parse_enqueued_at, so a source without it is
+  // invisible to every worker and every cron. Measured in production: 16 of 17
+  // sources are in exactly this state, because they predate the worker.
+  //
+  // Reporting it as `pending` would show a spinner for work that will never
+  // start, and would tell isInFlight to keep waiting for it — a silent lie of
+  // precisely the kind this whole roadmap exists to remove.
+  const s = describeDocument(src({ parseEnqueuedAt: null }), null, NOW);
+  assert.equal(s.kind, "not_queued");
+  assert.equal(isInFlight(s), false, "nothing is coming, so nothing is in flight");
+  assert.equal(isWholeDocument(s), false);
+  // The wording must not imply progress.
+  const line = documentStatusLine(s);
+  assert.doesNotMatch(line, /waiting|reading|working/i);
+  assert.match(line, /not read yet/i);
+});
+
+test("🔴 a never-enqueued source that ALREADY has a parse still reads as parsed", () => {
+  // The synchronous upload lane links an artifact without ever enqueuing. The
+  // artifact is authoritative once it exists, so the enqueue gate must not drag
+  // a genuinely-parsed document backwards into "not read yet".
+  const s = describeDocument(
+    src({ parseEnqueuedAt: null, parsedDocumentId: "pd-1" }),
+    doc(),
+    NOW,
+  );
+  assert.equal(s.kind, "parsed");
+});
 
 test("pending — enqueued, nothing has touched it", () => {
   const s = describeDocument(src(), null, NOW);

@@ -40,6 +40,17 @@
 export interface SourceParseRow {
   /** A LINK, not a completion flag. See the header. */
   parsedDocumentId: string | null;
+  /**
+   * 🔴 NULL MEANS NOBODY EVER ASKED FOR THIS PARSE, WHICH IS NOT "WAITING".
+   *
+   * The claim predicate requires this column, so a source without it will never
+   * be picked up by anything, ever. Reporting that as `pending` would have been
+   * the exact lie this module exists to prevent: a spinner that spins forever,
+   * and `isInFlight` telling every caller to keep waiting for work that is not
+   * scheduled. 16 of the 17 sources in production are in this state — they
+   * predate the worker entirely.
+   */
+  parseEnqueuedAt: string | null;
   parseAttempts: number;
   parseLeasedUntil: string | null;
   parseNextAttemptAt: string | null;
@@ -60,6 +71,8 @@ export interface ParsedDocumentRow {
 
 export type DocumentStatus =
   // ── owned by library_sources: nothing has been read yet ──
+  /** Stored, readable, and not scheduled to be read. Deliberately NOT in flight. */
+  | { kind: "not_queued" }
   | { kind: "pending"; attempts: number }
   | { kind: "parsing"; attempts: number }
   | { kind: "retrying"; attempts: number; nextAttemptAt: string }
@@ -125,6 +138,13 @@ export function describeDocument(
     };
   }
 
+  // 🔴 Nothing has been asked for, so nothing is coming. Must be distinguishable
+  // from "queued and waiting its turn": the claim predicate requires
+  // parse_enqueued_at, so this row is invisible to every worker and every cron.
+  // Calling it `pending` would show a student a spinner for work that will never
+  // start, and would tell `isInFlight` to keep waiting for it.
+  if (!source.parseEnqueuedAt) return { kind: "not_queued" };
+
   const leasedUntil = source.parseLeasedUntil ? new Date(source.parseLeasedUntil) : null;
   if (leasedUntil && leasedUntil > now) return { attempts: source.parseAttempts, kind: "parsing" };
 
@@ -168,6 +188,10 @@ export const MAX_ATTEMPTS = 5;
  */
 export function documentStatusLine(status: DocumentStatus): string {
   switch (status.kind) {
+    case "not_queued":
+      // Says what is true and offers the action, rather than implying progress.
+      // "Waiting to be read" would be a spinner for work nobody scheduled.
+      return "Stored, but not read yet. Read it to search and study from it.";
     case "pending":
       return "Waiting to be read.";
     case "parsing":
