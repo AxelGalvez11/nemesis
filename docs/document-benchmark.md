@@ -186,6 +186,36 @@ citation sees it:
 Numbering is the most common loss and the most complete one: it is not degraded, it is absent, and
 unlike headings it cannot be guessed back from the text.
 
+### 🟢 Recovery run 2026-08-06 — the Word structure reader, over the same 124 files
+
+`apps/web/lib/notebooks/docx-structure.ts`, measured by
+`apps/web/scripts/phase3-docx-recovery.mts` against the baseline above.
+
+| | Present | Recovered | Rate |
+|---|---|---|---|
+| Headings | 123 | 111 | 90% |
+| Numbered paragraphs | 2,266 | 2,116 | 93% |
+| Tables | 198 | 197 | 99% |
+| Table cells | 8,355 | 8,345 | **100%** |
+
+- **2,116 list items now carry a marker.** Previously zero — the numbers are not in the paragraph
+  text at all, so no re-reading could recover them.
+- **524 blocks know which section they are in.** Previously zero.
+- 5,227 blocks produced across the corpus.
+
+**Real files found a defect fixtures never would.** `Equations.docx` was silently losing **72% of
+its content**: Word stores equations as OMML in a different namespace, so the characters live in
+`<m:t>`, not `<w:t>` — 53 against 7 in that file. Clearance, half-life, extraction ratio and the
+bioavailability identities were all disappearing while the surrounding paragraphs reported as read.
+Fixed, and equations are now counted.
+
+**🔴 OPEN, UNEXPLAINED.** Seven of the 124 documents still render 82–97% of the old extractor's
+alphanumeric content. The two largest gaps were traced and are *gains*, not losses — the tag strip
+swept Word field codes into the student's text (`FORMCHECKBOX` thirteen times in one form; bookmark
+ids fused onto words as `477519233174Formulae`) and the new reader correctly omits them; the
+comparison now excludes that class. The remaining 3–18% is **not accounted for** and must be
+explained before Phase 3 can be called done. It is recorded here rather than rounded away.
+
 ### Everything else
 
 No other metric has a recorded value.
