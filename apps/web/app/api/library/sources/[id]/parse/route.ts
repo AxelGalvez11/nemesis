@@ -29,7 +29,24 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Fire the worker without waiting for it. Failures are logged, never surfaced. */
+/**
+ * How long to wait for the worker to ACCEPT the nudge.
+ *
+ * 🔴 NOT HOW LONG THE PARSE TAKES. The worker route parses before it responds —
+ * up to `DEADLINE_ABORT_MS`, four minutes — so awaiting its response would make
+ * this student-facing request wait for the whole document. Phase 1's first
+ * acceptance criterion is "upload returns without waiting for the full parse",
+ * and a kick that blocks for four minutes fails it just as completely as parsing
+ * inline would.
+ *
+ * Simply dropping the `await` is NOT the fix on a serverless host: an outbound
+ * request that has not left before the invocation freezes may never be sent at
+ * all. Aborting after the request is on the wire gets both halves — the worker
+ * invocation is running, and we stop waiting for a response we do not read.
+ */
+const NUDGE_TIMEOUT_MS = 1_500;
+
+/** Fire the worker without waiting for it to finish. Failures are never surfaced. */
 async function nudgeWorker(): Promise<boolean> {
   const secret = process.env.DOCUMENT_WORKER_SECRET || serviceRoleKey;
   if (!secret) return false;
@@ -40,10 +57,16 @@ async function nudgeWorker(): Promise<boolean> {
     await fetch(`${appUrl}/api/documents/parse/worker`, {
       headers: { "Content-Type": "application/json", "x-worker-secret": secret },
       method: "POST",
+      signal: AbortSignal.timeout(NUDGE_TIMEOUT_MS),
     });
     return true;
   } catch (caught) {
-    console.error("document worker nudge failed", (caught as Error)?.message);
+    // A timeout here is the EXPECTED path, not a failure: it means the worker
+    // took the job and is still working, which is exactly what we wanted. Only
+    // a real transport error is worth a log line.
+    const error = caught as Error;
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") return true;
+    console.error("document worker nudge failed", error?.message);
     return false;
   }
 }

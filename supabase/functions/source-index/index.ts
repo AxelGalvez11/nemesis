@@ -67,6 +67,8 @@ interface UnchunkedParse {
   parsed_document_id: string
   user_id: string
   doc_kind: string
+  /** 🔴 THE PARSE'S OWN VERSION, not the document's format. */
+  parser_version: string
   structure: unknown
 }
 
@@ -163,7 +165,7 @@ async function indexOne(parse: UnchunkedParse) {
       p_chunks: rows,
       p_embedding_version: EMBEDDING_VERSION,
       p_parsed_document_id: id,
-      p_parser_version: model.format,
+      p_parser_version: parse.parser_version,
       p_path: placement?.folder_path ?? '',
       p_title: placement?.file_name ?? model.title ?? 'Untitled document',
       p_user_id: parse.user_id,

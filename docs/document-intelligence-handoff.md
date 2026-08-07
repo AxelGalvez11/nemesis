@@ -175,6 +175,7 @@ optional, and none may be counted as done by inference.** When deploys work agai
 - [ ] **Confirm the first source chunks exist.** `select count(*) from library_chunks where origin_type = 'source'` should stop being 0.
 - [ ] **Confirm search returns one.** The search route reports `sources: true` when the new function answered and `false` when it fell back to notes-only, so this is one field, not an inference.
 - [ ] **Confirm the parse worker bundle LOADS**, not merely that it shipped. POST to `/api/documents/parse/worker`; an outcome of `no-worker-bundle` means the traced file is not loadable in the deployed runtime — the one thing `check-worker-trace.mjs` cannot tell you.
+- [ ] **Decide where figure vision may run.** It is enabled only on the background worker lane and off on the synchronous upload route. Enabling it more widely multiplies spend on the one primitive the 2026-08-06 unit-economics audit found unmetered.
 - [ ] **Describe one real figure.** Nothing has ever called the vision provider on a PDF figure. 246 of 305 routed figures produce PNG bytes locally and not one has been sent, so Phase 2's visual half is plumbing that is known to carry water and has never carried any.
 
 ---

@@ -68,6 +68,12 @@ export async function runParseThread(
       new Uint8Array(input.bytes),
       input.fileName,
       input.mimeType,
+      // 🔴 THE BACKGROUND LANE IS WHERE A DOCUMENT MAY COST MINUTES AND MONEY.
+      // The synchronous upload route calls the same parser and deliberately does
+      // NOT set this: up to 40 vision calls on a request path is latency the
+      // student waits through, on the one primitive with no entitlement, no
+      // counter and no cache. Here the student is not waiting.
+      { lookAtFigures: true },
     );
     sampleRss();
     post(

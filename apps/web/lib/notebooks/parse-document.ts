@@ -120,10 +120,28 @@ export type ParseOutcome =
  * ownership of the buffer it is handed. A caller that needs the original
  * afterwards (to hash it, to re-sniff it) must pass a copy or hash first.
  */
+export interface ParseOptions {
+  /**
+   * Send unexamined figures to a vision model.
+   *
+   * 🔴 OFF BY DEFAULT, AND THAT IS A COST DECISION, NOT A DEFAULT-BY-ACCIDENT.
+   * The figure router selects up to 40 figures per document. On the synchronous
+   * upload lane that is up to 40 vision calls before the request returns —
+   * latency the student waits through, on the one primitive with no entitlement,
+   * no counter and no cache (`docs` unit-economics audit, 2026-08-06). The
+   * background worker is where a document may cost minutes and money; the
+   * request path is not. Structure, figure DETECTION and coverage are unchanged
+   * either way, so an upload still knows a diagram is there and still says
+   * nobody has looked at it.
+   */
+  lookAtFigures?: boolean;
+}
+
 export async function parseDocument(
   bytes: Uint8Array,
   fileName: string,
   mimeType: string,
+  options: ParseOptions = {},
 ): Promise<ParseOutcome> {
   // Name first (cheap and right almost always), contents second (right when a
   // name has lost its extension).
@@ -151,7 +169,7 @@ export async function parseDocument(
     readBy = seen?.model;
     coverage = singleUnitCoverage({ read: Boolean(seen?.text.trim()), method: "vision" });
   } else if (kind === "pdf") {
-    const parsed = await parsePdf(bytes);
+    const parsed = await parsePdf(bytes, options);
     ({ coverage, model, readBy, text, title } = parsed);
   } else if (kind === "docx") {
     model = extractDocxModel(bytes);
@@ -241,7 +259,7 @@ export async function parseDocument(
  * open, because a worse parse is better than no parse — but it never REPLACES a
  * structural one, per "a worse retry never replaces a better parse".
  */
-async function parsePdf(bytes: Uint8Array): Promise<{
+async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<{
   coverage: ExtractionCoverage;
   model: DocumentModel | undefined;
   readBy: string | undefined;
@@ -259,7 +277,9 @@ async function parsePdf(bytes: Uint8Array): Promise<{
     // 🔴 CAPTURE THE FIGURES ON THE WAY PAST, BECAUSE THERE IS NO WAY BACK.
     // `page.cleanup()` releases the decoded image data, so a later pass would
     // have to re-parse every page's operator list to see a diagram again.
-    const structural = await readPdfStructure(new Uint8Array(bytes), { captureFigures: true });
+    const structural = await readPdfStructure(new Uint8Array(bytes), {
+      captureFigures: options.lookAtFigures === true,
+    });
     model = structural.model;
     unreadBeyondCap = Math.max(structural.declaredUnits - structural.model.units.length, 0);
 
@@ -268,8 +288,10 @@ async function parsePdf(bytes: Uint8Array): Promise<{
     // figures — are never examined, because they have plenty of words AND a
     // load-bearing diagram. `planFigureVision` routes on an unexamined figure
     // large enough to hold something OR thin text, and either is sufficient.
-    const looked = await lookAtFigures(model, structural.figureImages);
-    model = looked.model;
+    if (options.lookAtFigures) {
+      const looked = await lookAtFigures(model, structural.figureImages);
+      model = looked.model;
+    }
   } catch {
     // Recorded as absent structure, not as a failed parse: the fallback below
     // still produces real text, and calling the document unreadable because the

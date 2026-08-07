@@ -22,6 +22,17 @@
 
 -- ── The search a source chunk can be found by ────────────────────────────────
 
+-- 🔴 DROPPED BEFORE CREATED, BECAUSE `create or replace` CANNOT CHANGE A RETURN
+-- TYPE. All three functions are new in this migration, so nothing is being taken
+-- away from a caller — but a migration that has been applied once and then has
+-- its signature corrected fails with "cannot change return type of existing
+-- function", and it fails at deploy time on whichever environment ran the
+-- earlier version. Found exactly that way: the local round-trip harness had the
+-- older `list_unchunked_parses` and refused the corrected one.
+drop function if exists public.match_document_chunks(vector, int, float, text);
+drop function if exists public.list_unchunked_parses(text, text, int);
+drop function if exists public.replace_source_chunks(uuid, uuid, text, text, text, text, text, jsonb);
+
 -- 🔴 A NEW NAME, NOT A REPLACEMENT. `match_library_chunks` keeps its exact
 -- signature and behaviour: it is called by a shipped client, and a deployed app
 -- that is one deploy behind must not start receiving rows in a shape it does not
@@ -143,13 +154,18 @@ create or replace function public.list_unchunked_parses(
   p_embedding_version text,
   p_limit int default 20
 )
-returns table (parsed_document_id uuid, user_id uuid, doc_kind text, structure jsonb)
+returns table (parsed_document_id uuid, user_id uuid, doc_kind text, parser_version text, structure jsonb)
 language sql
 stable
 security invoker
 set search_path = public
 as $$
-  select p.id, p.user_id, p.doc_kind, p.structure
+  -- 🔴 `parser_version` IS RETURNED, NOT RECONSTRUCTED. The chunk column is
+  -- documented as denormalised from the parse so a sweep can find stale chunks
+  -- without joining; an indexer that substituted the document FORMAT for it
+  -- would write 'pdf' where 'units-blocks-3' belongs, and every reprocess query
+  -- keyed on a parser version would silently match nothing.
+  select p.id, p.user_id, p.doc_kind, p.parser_version, p.structure
     from public.parsed_documents p
    where p.state in ('parsed', 'partially_parsed', 'chunked', 'ready')
      and p.unreferenced_at is null
