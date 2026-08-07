@@ -129,7 +129,42 @@ output is not ground truth; it is a rationalisation.
 
 ## Status
 
-Nothing has been run. No metric below has a recorded value.
+### 🔴 Baseline run 2026-08-06 — figures lost on text-rich PDF pages
+
+The first recorded measurement. **SOLO, and it is a baseline of the defect, not of a fix.**
+Run: `apps/web/scripts/phase2-figure-baseline.mts` over **120 real academic PDFs** from the owner's
+own course folders — not fixtures.
+
+Production routes a page to vision only when it holds fewer than `THIN_PAGE_CHARS` (120) characters
+of its own. A page with several paragraphs *and* a load-bearing diagram is not thin, so it is never
+sent — and `pdfCoverage` has no figure field, so nothing records that anything was missed. The page
+is counted as fully read.
+
+| | Pages | Share |
+|---|---|---|
+| Total pages | 952 | |
+| Thin — vision reads these today | 121 | 12.7% |
+| Text-rich | 831 | 87.3% |
+| **Text-rich AND carrying a figure** | **326** | **34.2% of every page** |
+
+- **1,807 figures** sit on those 326 pages.
+- **80 of the 120 files (67%) contain at least one.**
+- Worst single file: `TDM- Cyclosporine and Tacrolimus 2026.pdf` — 35 pages, **708 figures**.
+
+**What this number is and is not.** It is the count of pages where production's own routing rule
+guarantees a figure is never looked at, measured with pdf.js operator lists (`paintImageXObject`
+and friends) — which the production extractor, `unpdf`, does not expose at all. That is the
+mechanism: we cannot currently *see* these figures, so we cannot report them either. It is **not**
+a claim that all 1,807 figures are load-bearing; decorative marks are counted too, and separating
+them is part of Phase 2's work (`ExtractionCoverage` already draws that distinction for PPTX, where
+a decorative skip is deliberately not a gap).
+
+This is the number Phase 2 has to move, and the number any "we read your lecture" claim currently
+has to answer for.
+
+### Everything else
+
+No other metric has a recorded value.
 
 Per-phase status is **not** duplicated here — it lives once, in
 [`document-intelligence.md`](./document-intelligence.md) §6.7. This file records what a run measured;
