@@ -296,6 +296,90 @@ text was fully read but whose diagram nobody looked at reports `partial`.
   observed after a lazy pdf.js import entered the suite's module graph. Two subsequent full runs
   passed. Recorded as an unexplained flake rather than dismissed.
 
+## Run: fact extraction, 124 real Word documents (2026-08-06)
+
+`apps/web/scripts/phase3-model-check.mts`, Phase 6 section.
+
+| Fact kind | Count |
+|---|---|
+| table | 197 |
+| outline | 111 |
+| definition | 89 |
+| procedure | 51 |
+| date | 24 |
+| **total** | **472** over 94 of 124 files |
+
+Facts with valid provenance: **472 / 472**. Facts claiming a page on a `.docx`: **0**.
+
+### 🔴 The definition extractor was cut twice, by real files, and both cuts are the result
+
+| Rule | Definitions found | What the sample showed |
+|---|---|---|
+| dash **or colon**, single line | 925 | ~4 false positives per true one |
+| dash only, single line | 265 | ~3 false positives per true one |
+| dash only, **run of ≥3 siblings** | **89** | a clear majority genuine |
+
+The colon marks a labelled **field** far more often than a meaning: `LinkedIn: …`,
+`Company Name: ______`, `Question #1: What are…`, `Physical exam: BP today…`. And a single dashed
+line in prose is an aside; a glossary is a **list**. Precision was chosen over recall deliberately —
+a definition nobody extracted costs a student nothing, and a wrong one becomes a flashcard that
+teaches something untrue.
+
+A fixture corpus would not have found this. Almost every hand-written example of a definition is a
+true one, so the false-positive rate is invisible until real documents are run.
+
+### Field-agnosticism, asserted rather than assumed
+
+Two fixtures — a contract-law syllabus and a shielded-metal-arc-welding manual — share no vocabulary
+and produce the same five fact kinds. A weighting scheme is found in both without the word
+*grading*: a table column of shares summing to a whole. The section label comes from the document
+("Assessment" / "Marking Scheme"), never from us.
+
+### Open gaps in this phase
+
+- **Nothing consumes these facts yet.** No study material, calendar entry or answer is built from them.
+- **English month names only.** Numeric and ISO date forms are language-independent and cover the
+  rest; an ambiguous form like `03/04/2026` is deliberately not matched, because guessing puts a
+  calendar entry a month out while looking entirely correct.
+- **A trailing letter is not treated as an enumerator.** It is one in *Answer D* and a real term in
+  *Vitamin D*, *Hepatitis B* and *Grade A*. The run rule handles answer options in practice.
+
+## Run: adversarial and capacity fixtures (2026-08-06)
+
+18 tests: `apps/web/lib/notebooks/hardening.test.ts` (13) and `office-unzip.test.ts` (5).
+
+| Input | Behaviour |
+|---|---|
+| Archive bomb by declared size | refused before inflation |
+| Archive bomb by entry count | refused at 20,000 entries |
+| Truncated archive | readable refusal |
+| Valid archive holding no Word document | names the format it expected |
+| Random bytes named `.docx` | refused |
+| Document past `MAX_UNITS_PER_PARSE` | read to the cap; the rest reported as **unread**, state `partial` |
+| 100,000-page declaration | "5,000 of 100,000 pages could be read" |
+| Corrupt PDF | verdict (`empty`), not an exception |
+| Empty file | verdict, not an exception |
+| Unsupported type | verdict, not an exception |
+
+### 🔴 Three defects these fixtures found
+
+1. **`MAX_UNITS_PER_PARSE` was enforced nowhere.** It was declared, had a unit test asserting its
+   value, and no code path applied it. Cost tracks units rather than bytes, so the upload byte
+   ceiling bounded nothing: a few hundred kilobytes of generated PDF can declare a hundred thousand
+   pages.
+2. **A PDF that would not open threw out of the parser and took the upload request with it.** The
+   student saw a server error for a problem with their file.
+3. **fflate's `invalid zip data` reached the upload response verbatim** for any truncated,
+   mislabelled or renamed archive — a developer string presented as an explanation.
+
+### Open gaps in this phase
+
+- Bounded, entry-at-a-time Office reading is designed (`docs/source-ingestion-jobs.md`) and unbuilt;
+  the parse side still holds the whole archive.
+- An archive that **understates** `originalSize` is bounded only by `MAX_SOURCE_BYTES`. Closing that
+  properly needs streaming inflation, not another sum.
+- Concurrency and memory behaviour under the real runtime is unmeasured and blocked on a deploy.
+
 ### Everything else
 
 No other metric has a recorded value.
