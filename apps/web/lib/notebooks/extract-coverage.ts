@@ -65,6 +65,16 @@ export function pdfCoverage(input: {
   /** 1-based page numbers vision actually returned text for. */
   readByVision: ReadonlySet<number>;
   truncation?: readonly TruncationRecord[];
+  /**
+   * The document's figures, when a reader that can see them produced the parse.
+   *
+   * 🔴 OMITTING IT MEANS UNKNOWN, NOT NONE — and the two must not look alike.
+   * `unpdf`, which production ships today, exposes no image operators at all, so
+   * a parse from that lane genuinely does not know whether the file has figures.
+   * Passing a zeroed record from there would assert "this document has no
+   * pictures" about 89 of 120 real course files that do.
+   */
+  figures?: FigureCoverage;
 }): ExtractionCoverage {
   let native = 0;
   let vision = 0;
@@ -87,6 +97,7 @@ export function pdfCoverage(input: {
       unitsBoth: both,
       unitsUnread: unread,
       truncation: input.truncation,
+      ...(input.figures ? { figures: input.figures } : {}),
     }),
     "page",
     input.pageTexts.length,

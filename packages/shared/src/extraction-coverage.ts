@@ -68,7 +68,23 @@ export type FigureSkipReason =
   /** Real content that lost out to the per-deck ceiling. The one that hurts. */
   | "over-cap"
   /** Vision is not configured or the provider failed. */
-  | "vision-unavailable";
+  | "vision-unavailable"
+  /**
+   * Nobody looked, and nobody decided not to.
+   *
+   * 🔴 THE LARGEST CATEGORY, AND IT WAS INVISIBLE UNTIL 2026-08-06. PDF figures
+   * had no representation here at all, so a page carrying an unread diagram was
+   * reported as fully read. Measured over 120 real course PDFs / 952 pages:
+   * 1,963 figures exist, 239 are running art and 635 are furniture — leaving
+   * **1,089 pieces of real content nobody has ever examined**, on pages the
+   * routing rule calls text-rich and therefore never sends to vision.
+   *
+   * It counts as lost, which is what makes those documents `partial` instead of
+   * `complete`. That is a large and deliberate change: under "Unknown is not
+   * complete", the fix for the noise is to look at the figures, not to stop
+   * counting them.
+   */
+  | "not-examined";
 
 export interface FigureCoverage {
   /** Distinct pictures found on the slides, after content deduplication. */
@@ -213,10 +229,22 @@ export function withTruncation(coverage: ExtractionCoverage, cuts: readonly Trun
   return { ...merged, state: deriveState(merged) };
 }
 
-/** Figures whose absence actually costs the student something. */
+/**
+ * Figures whose absence actually costs the student something.
+ *
+ * `decorative` is the only reason that is genuinely free — a bullet or a rule
+ * carries nothing. Everything else is content the student uploaded and did not
+ * get, including `not-examined`, which is the case where no decision was made
+ * at all.
+ */
 export function lostFigures(figures: FigureCoverage): number {
   const reasons = figures.reasons;
-  return (reasons["unreadable-format"] ?? 0) + (reasons["over-cap"] ?? 0) + (reasons["vision-unavailable"] ?? 0);
+  return (
+    (reasons["unreadable-format"] ?? 0) +
+    (reasons["over-cap"] ?? 0) +
+    (reasons["vision-unavailable"] ?? 0) +
+    (reasons["not-examined"] ?? 0)
+  );
 }
 
 /** Pages/slides read by any means. */

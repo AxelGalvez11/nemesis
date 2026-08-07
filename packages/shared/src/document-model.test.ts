@@ -7,11 +7,13 @@ import {
   countDocument,
   describeLocator,
   documentToText,
+  figureCoverageOf,
   locate,
   tableToMarkdown,
   type DocBlock,
   type DocUnitKind,
 } from "./document-model.ts";
+import { deriveState, lostFigures } from "./extraction-coverage.ts";
 
 function doc(
   blocks: readonly Omit<DocBlock, "id">[],
@@ -160,6 +162,52 @@ test("a list item keeps the marker the numbering resolved", () => {
     unit: 0,
   });
   assert.equal(text, "  3. Reduce the dose");
+});
+
+test("figure coverage charges for what was lost and not for furniture", () => {
+  const built = doc([
+    { figure: { description: "a curve" }, headingPath: [], kind: "figure", text: "", unit: 0 },
+    { figure: { skipped: "decorative" }, headingPath: [], kind: "figure", text: "", unit: 0 },
+    { figure: { skipped: "too-small" }, headingPath: [], kind: "figure", text: "", unit: 0 },
+    { figure: { skipped: "unsupported" }, headingPath: [], kind: "figure", text: "", unit: 0 },
+    { figure: {}, headingPath: [], kind: "figure", text: "", unit: 0 },
+  ]);
+  const coverage = figureCoverageOf(built);
+  assert.equal(coverage.found, 5);
+  assert.equal(coverage.described, 1);
+  assert.equal(coverage.skipped, 4, "found minus described must always hold");
+  assert.deepEqual(coverage.reasons, { decorative: 2, "not-examined": 1, "unreadable-format": 1 });
+  // Two decorative skips cost nothing; the unsupported one and the unexamined
+  // one are both content the student uploaded and did not get.
+  assert.equal(lostFigures(coverage), 2);
+});
+
+// 🔴 THE PHASE 2 HONESTY FIX, ASSERTED.
+// Every page's text was read, so the old record called the document complete —
+// while a diagram on it had never been looked at by anything. Measured over 120
+// real course PDFs, 1,089 figures are in exactly this state.
+test("a fully-read page carrying an unexamined figure is partial, not complete", () => {
+  const figures = figureCoverageOf(
+    doc([{ figure: {}, headingPath: [], kind: "figure", text: "", unit: 0 }], "page", 1),
+  );
+  const base = {
+    figures,
+    parserVersion: "test",
+    truncation: [],
+    unitKind: "page" as const,
+    units: 3,
+    unitsBoth: 0,
+    unitsNative: 3,
+    unitsUnread: 0,
+    unitsVision: 0,
+    version: 1,
+  };
+  assert.equal(deriveState(base), "partial");
+  assert.equal(
+    deriveState({ ...base, figures: { described: 0, found: 0, reasons: {}, skipped: 0 } }),
+    "complete",
+    "with no figures at all the same pages are complete — the figure is the only difference",
+  );
 });
 
 test("documentToText drops empty blocks but keeps every non-empty one", () => {

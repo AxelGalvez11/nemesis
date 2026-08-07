@@ -48,6 +48,8 @@
  * it as "no unit at all" would break the invariant that every block belongs
  * somewhere — which is what makes counts reconcile.
  */
+import type { FigureCoverage, FigureSkipReason } from "./extraction-coverage.ts";
+
 export type DocUnitKind = "page" | "slide" | "sheet" | "body" | "image";
 
 /** Which formats can produce this model. */
@@ -349,6 +351,36 @@ export function countDocument(doc: DocumentModel): DocumentCounts {
     } else counts.paragraphs += 1;
   }
   return counts;
+}
+
+/**
+ * The model's figures, in the shape coverage records.
+ *
+ * 🔴 THE MAPPING IS WHERE HONESTY IS DECIDED, so it is written once, here.
+ * `decorative` is free — a rule or a bullet costs the student nothing. Anything
+ * else, including a figure with no description and no stated reason, is content
+ * that was uploaded and not delivered, and `lostFigures` counts it. That is what
+ * stops a page with an unread diagram from being reported as fully read.
+ */
+export function figureCoverageOf(doc: DocumentModel): FigureCoverage {
+  const reasons: Partial<Record<FigureSkipReason, number>> = {};
+  let found = 0;
+  let described = 0;
+  for (const block of doc.blocks) {
+    if (block.kind !== "figure") continue;
+    found += 1;
+    if (block.figure?.description) { described += 1; continue; }
+    const reason: FigureSkipReason =
+      block.figure?.skipped === "decorative" || block.figure?.skipped === "too-small"
+        ? "decorative"
+        : block.figure?.skipped === "unsupported"
+          ? "unreadable-format"
+          : block.figure?.skipped === "over-cap"
+            ? "over-cap"
+            : "not-examined";
+    reasons[reason] = (reasons[reason] ?? 0) + 1;
+  }
+  return { described, found, reasons, skipped: found - described };
 }
 
 /** Which units hold a figure nobody examined. Drives per-unit coverage. */
