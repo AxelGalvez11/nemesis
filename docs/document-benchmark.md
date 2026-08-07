@@ -162,6 +162,30 @@ a decorative skip is deliberately not a gap).
 This is the number Phase 2 has to move, and the number any "we read your lecture" claim currently
 has to answer for.
 
+### 🔴 Baseline run 2026-08-06 — structure discarded by the DOCX tag strip
+
+The Phase 3 baseline. **SOLO.** Run: `apps/web/scripts/phase3-docx-baseline.mts` over **124 real
+Word documents** from the owner's own course folders, 16,997 paragraphs.
+
+`docxXmlToText` turns `</w:p>` into a newline and deletes every other tag. All of the following is
+present in the files, is read by the extractor, and is thrown away before any model, index or
+citation sees it:
+
+| Structure | Count | Files | What is lost |
+|---|---|---|---|
+| Table cells | **8,355** (198 tables) | 57 | Each becomes its own orphan line. **This is worse than dropping the table** — a grid read as loose lines answers confidently and wrongly. |
+| Numbered paragraphs | **2,266** | **76 of 124 (61%)** | Numbering lives in `numbering.xml`, which is never opened. "What is step 4?" is unanswerable. |
+| Headings | 123 | 17 | No hierarchy, and therefore no locator finer than "the file". |
+| Hyperlinks | 116 | 21 | Targets live in the rels part; only the anchor text survives. |
+| Figures | 149 | 40 | `<w:drawing>` / `<w:object>` dropped entirely. |
+
+**103 of the 124 files (83%) lose structure.** Worst single file:
+`P1_Medication_Evaluation_Template_2025.docx` — 10 tables, **1,860 cells**, which reach the model as
+1,860 unlabelled lines.
+
+Numbering is the most common loss and the most complete one: it is not degraded, it is absent, and
+unlike headings it cannot be guessed back from the text.
+
 ### Everything else
 
 No other metric has a recorded value.
