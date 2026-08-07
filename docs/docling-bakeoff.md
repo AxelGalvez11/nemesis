@@ -168,6 +168,33 @@ file that is 20 vision calls to describe one icon — on the one primitive the
 2026-08-06 audit found has no entitlement, no counter and no cache. **Worth
 fixing regardless of what happens with Docling.**
 
+#### Two-column reading order — DIFFERENTIAL, N=2 files, and it does not go one way
+
+**39 of 155 digital PDFs are two-column** (classified independently of both
+parsers, by looking for a vertical gutter that text lines respect). A quarter of
+the corpus, so the class matters.
+
+Hand-read on two of them:
+
+- **`Aqueous degradation of clindamycin.pdf` — our parser interleaves the
+  columns, on every paragraph of two separate pages.** Real output:
+  *"…containing 10mg./ml. cholesteryl **pH less than 4 was establishe**"* and
+  *"…Peak 2 may represent **ability of the substituent on th**"*. Left-column text
+  glued to right-column text mid-sentence. It reads fluently and is nonsense —
+  the worst possible failure, because nothing downstream can detect it.
+- **`The Emerging Role of Pharmacists as Social Media Influencers.pdf` — clean.**
+  Every paragraph coherent and complete.
+
+So the interleave is **real and reproducible, but not universal**. Do not report
+it as "our PDF lane cannot do two columns"; report it as a failure mode that
+fires on some real documents and is invisible when it does. Memory records a
+two-column interleave being fixed once before, in a way that broke tables — this
+is either a regression or a case that fix never covered.
+
+Docling on the same pages did not interleave, but produced noisy fragments from
+chart axis labels ("6", "2 MIN.", "T") on the figure-heavy page. Neither output
+is clean; they are wrong in different ways.
+
 ### DOCX — genuinely split, and forcing a winner would be wrong
 
 **MEASURED**, all 158 DOCX:
@@ -359,8 +386,9 @@ better parser for a worse one.
   chunk knows its heading path, whether its blocks carry geometry. Real retrieval
   needs embeddings and a live index, and `20260807030000_source_chunk_retrieval`
   is unapplied. Embedding the corpus would also start real spend.
-- **Reading order and two-column correctness.** UNSCORED. No labels exist, and
-  the triage never classified column count.
+- **Reading order in general.** UNSCORED — there is no ground-truth ordering to
+  diff against. Two-column behaviour was hand-read on **2 files only**, and the
+  two disagreed with each other. That is a signal, not a rate.
 - **Equation fidelity.** UNSCORED beyond counts. Docling produced 19 equations on
   DOCX where we produce 0, but nobody has checked whether the 19 are right.
 - **Anything about a production deployment.** The service has never run outside
