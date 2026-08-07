@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { attachedSourceIds, buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
 
-import { DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { describeTruncation, DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, LEGACY_PER_FILE_CHARS, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -300,4 +300,70 @@ test("a prompt-budget cut and an unread-page gap are stated SEPARATELY", () => {
   );
   assert.match(block ?? "", /Truncated: 100 of 500 characters shown/);
   assert.match(block ?? "", /4 of 10 pages could NOT be read/);
+});
+
+// ── The owner's real lecture, 2026-08-06 ────────────────────────────────────
+// "Pharmacogenomics PHCY 2109 2026 - Lectures 1 and 2.pptx": 57 slides,
+// 62,040 characters of extracted text. Shaped here to the same numbers rather
+// than committing a 9.6 MB file. The old per-file ceiling was 60,000 — so this
+// entirely ordinary lecture lost its ending to save 2,040 characters, while
+// 88,000 of the 150,000 shared budget went unspent.
+function lectureLikeTheOwners(): string {
+  const slides: string[] = [];
+  for (let n = 1; n <= 57; n++) slides.push(`## Slide ${n}: Topic ${n}\n${"Content line. ".repeat(76)}`);
+  return slides.join("\n\n");
+}
+
+test("a 57-slide lecture is sent whole — the old per-file ceiling cut it to save 3% of it", () => {
+  const deck = lectureLikeTheOwners();
+  assert.ok(deck.length > LEGACY_PER_FILE_CHARS, "the fixture must actually exceed the old ceiling");
+  assert.ok(deck.length < MAX_TOTAL_CHARS, "and must fit the shared budget, which is the whole point");
+
+  const [block] = fitAttachmentBlocks([{ content: deck, label: "lecture.pptx", type: "application/pptx" }]);
+  assert.ok(block?.includes("## Slide 57:"), "the last slide must reach the model");
+  assert.ok(!block?.includes("Truncated"), "nothing was cut, so nothing should claim it was");
+
+  // The same deck under the old rule: cut, and the ending lost.
+  const [old] = fitAttachmentBlocks([{ content: deck, label: "lecture.pptx", type: "application/pptx" }], LEGACY_PER_FILE_CHARS);
+  assert.ok(!old?.includes("## Slide 57:"), "the old ceiling genuinely dropped the ending");
+});
+
+test("a clipped deck is described in slides, never in characters the model must guess from", () => {
+  const deck = lectureLikeTheOwners();
+  const notice = describeTruncation(deck, deck.slice(0, LEGACY_PER_FILE_CHARS));
+
+  assert.match(notice, /up to slide \d+/, "name where the reading stopped");
+  assert.match(notice, /the file goes to 57/, "and how far the file actually went");
+  assert.ok(!/characters/.test(notice), "characters are what produced the wrong 'slide 46' answer");
+});
+
+// A slide with no text at all is dropped from the joined text, marker and all,
+// so 57 slides can leave 56 markers. The notice must survive that gap: it only
+// ever claims "up to N", which stays true whether or not N+1 exists.
+test("a gap in the slide numbering does not make the notice lie", () => {
+  const deck = ["## Slide 1: One", "x".repeat(500), "## Slide 2: Two", "y".repeat(500), "## Slide 4: Four", "z".repeat(500)].join("\n\n");
+  const notice = describeTruncation(deck, deck.slice(0, 1_000));
+
+  assert.match(notice, /up to slide 2/);
+  assert.match(notice, /the file goes to 4/);
+});
+
+// If the cut lands inside the LAST slide, no slide is wholly missing — so the
+// notice must not claim any are. It falls back to characters rather than
+// asserting a boundary it cannot stand behind.
+test("a cut inside the final slide does not claim a slide was skipped", () => {
+  const deck = ["## Slide 1: One", "x".repeat(500), "## Slide 2: Two", "y".repeat(500)].join("\n\n");
+  const notice = describeTruncation(deck, deck.slice(0, deck.length - 50));
+
+  assert.ok(!/up to slide/.test(notice), "nothing whole was lost, so name no slide");
+  assert.match(notice, /characters shown/);
+});
+
+test("a file with no slide markers falls back to characters and says not to guess", () => {
+  const paper = "Prose with no slide markers at all. ".repeat(400);
+  const notice = describeTruncation(paper, paper.slice(0, 5_000));
+
+  assert.match(notice, /5,000 of/, "PDFs and Word have no slides to name");
+  assert.match(notice, /Do not guess/, "so it must not invent a location");
+  assert.ok(!/slide/i.test(notice), "and must not mention slides for a file that has none");
 });
