@@ -394,3 +394,165 @@ the ledger records what that measurement means for a phase.
 | MATCHED | not run — requires access and matched prompts |
 
 **Therefore: no parity claim of any kind is currently supported.**
+
+---
+
+## Run: the visual half of Phase 2 — 120 real course PDFs / 952 pages (2026-08-07)
+
+Script: `apps/web/scripts/phase2-vision-routing.mts`. Same corpus as the 2026-08-06
+structural run, so the numbers are directly comparable.
+
+| | |
+|---|---|
+| Figures found | 1,963 |
+| Unexamined before routing | 1,089 |
+| **Selected for inspection** | **305** across 40 files |
+| — because a large figure sits on a page dense with text | **302** |
+| — because the page's text is thin (production's only signal) | 3 |
+| Qualified and over the 40-per-document budget | 330 |
+| **Converted to PNG without a rasterizer** | **246 (80.7%)**, 37.3 MB |
+| No decodable pixels — recorded `unsupported` | 59 |
+
+**302 of 305 were selected for the reason production is structurally blind to.**
+That is the finding: routing on text sparsity alone does not merely miss some
+figures, it misses almost exactly the ones that matter, because a page carrying
+an argument in a diagram usually also carries prose.
+
+### 🔴 `page.objs.has()` cost 75% of the figures, silently
+
+The first run converted **78 of 305 (25.6%)**. The reader gated on
+`page.objs.has(ref)` before reading the image, and pdf.js resolves image objects
+*asynchronously after* `getOperatorList()` returns — so the check is a race the
+reader loses most of the time. It loses it as "this figure had no pixels", which
+is indistinguishable from a figure that genuinely has none. Awaiting the callback
+form took it to 246.
+
+A second defect fell out of the same change: the wait timer was `unref`ed, so
+when the only outstanding work was an image object that never resolved, Node
+emptied the event loop and **the await never settled** — the parse stopped
+mid-document with no error at all.
+
+**Not measured: description quality.** No `GEMINI_API_KEY` in this worktree, so
+no figure has actually been described. That half is BLOCKED, not built-and-unverified.
+
+**Known cost choice, stated rather than hidden:** a figure between 1% (the
+furniture line) and 3% (the worth-looking line) of its page is examined by
+nothing and keeps `not-examined`, which counts as lost. 784 figures are in that
+band or over budget. Coverage therefore still reports those pages `partial`,
+which is the truthful answer.
+
+---
+
+## Run: PPTX on the canonical model — 15 real decks / 490 slides (2026-08-07)
+
+Script: `apps/web/scripts/phase3-pptx-check.mts`.
+
+| | |
+|---|---|
+| Blocks | 5,163 |
+| Headings | 313 |
+| Renderer text vs model text | 246,994 → 261,962 chars |
+| **Lines lost against the old renderer** | **0** |
+| **Blocks whose locator fails to name their slide** | **0** |
+
+Compared line by line, not by length: a re-shaping that drops one slide and
+repeats another passes every length comparison ever written.
+
+**Defect found:** a slide title that never appears in its own slide body was
+`unshift`ed into the DOCUMENT's block list, so a late slide's heading landed at
+the front of the deck. Every locator still said the right slide, so nothing
+looked wrong — while reading order, chunking and "what comes next" were all
+answering about somewhere else.
+
+---
+
+## Run: chunks into and out of the index — real Postgres (2026-08-07)
+
+Script: `apps/web/scripts/phase4-index-roundtrip.mts`. A local Postgres 17 with
+pgvector, built to production's schema column by column, then **the real
+migration file applied unmodified**. 20 of 20 checks pass.
+
+Every claim in Phase 4 is a claim about SQL — that a CHECK permits the row, that
+a unique index makes re-indexing idempotent, that a LEFT JOIN is what lets a
+source chunk out. An in-memory fake would have agreed with whatever the test
+asserted, which is why one was not used.
+
+**🔴 The harness caught a defect in the migration it was testing.** The ordering
+put `origin_type = 'source'` first outright, so a source at similarity 0.000
+ranked above a note at 1.000 — a perfect answer buried under an irrelevant one,
+which is worse than the notes-only search it replaces. It is an additive
+tie-break now (+0.05), and both directions are asserted: a tie goes to the
+original, and a clearly better note still wins.
+
+**Not proven:** that the migration applies to PRODUCTION, whose `library_chunks`
+already holds 158 note rows. Deferred.
+
+---
+
+## Run: citation resolution — 168 real files, 1,462 resolutions (2026-08-07)
+
+Script: `apps/web/scripts/phase5-citation-benchmark.mts`. Ground truth is
+mechanical: a quote is lifted from a known block, so the right answer is known
+exactly, with no labelling and no judgement call.
+
+| Population | Tries | Right | **Wrong** | Refused |
+|---|---|---|---|---|
+| whole block quoted | 731 | 701 (95.9%) | **0** | 30 ambiguous |
+| sentence from inside a block | 731 | 659 (90.2%) | **0** | 72 ambiguous |
+| under 24 characters | 731 | — | **0 cited** | 731 |
+| not in the document at all | 731 | — | **0 cited** | 731 |
+
+**Zero wrong locations** is the number that matters. The refusals are repeated
+boilerplate — a running header, a recurring instruction — where any answer would
+be a guess, and a guess stored as a fact is what this layer exists to prevent.
+
+🔴 **This measures the VERIFIER, not whether a model cites well.** That needs a
+model in the loop, a question set, and a judgement about whether cited evidence
+supports a claim. Reporting this as "citation accuracy" would be the
+designed-versus-proven confusion one layer up.
+
+---
+
+## Run: what the facts build — 200 real files (2026-08-07)
+
+Script: `apps/web/scripts/phase6-artifacts.mts`.
+
+| | |
+|---|---|
+| Facts extracted | 2,385 |
+| Flashcards | 147 across 35 files |
+| Calendar candidates | 96 across 41 files |
+| Note sections | 949 (259 with no text beneath them) |
+| **Grading schemes** | **1** |
+| Artifacts with no source blocks | **0** |
+| Word artifacts claiming a page | **0** |
+| Cards containing text not in the document | **0** |
+| Facts that built nothing | 1,005 figure, 187 table |
+
+### 🔴 The grading-scheme extractor found ZERO, and the reason was structural
+
+Its shape test is right — a column of shares summing to a whole, which works for
+a moot-court rubric and a weld inspection alike. But its only input was a `table`
+block, and **PDF table detection is deliberately unbuilt**, so on the format
+syllabi actually use it could never see anything. A rule with no reachable input
+is not conservative; it does nothing.
+
+Reading a run of sibling lines each ending in a percent finds **1** across 200
+files. That is a small number and it is the honest one: most real syllabi put
+weightings in a PDF table this system cannot yet detect, which makes PDF table
+detection a Phase 2 gap with a measured Phase 6 cost.
+
+---
+
+## Run: adversarial fixtures through the INTEGRATED pipeline (2026-08-07)
+
+`apps/web/lib/notebooks/pipeline-hardening.test.ts`. Each fixture goes
+bytes → parse → model → chunk → rows → facts → artifacts. The database half is
+proven separately, above, against a real Postgres.
+
+**Defect found:** a chunk was reported `oversized` only when it held exactly one
+block. A heading opens a chunk and never closes one, so the ordinary case — a
+20,000-character paragraph preceded by its own heading — was carried whole and
+reported as ordinary. The content was never at risk; the disclosure was, and a
+chunk that will not retrieve well has to say so or it surfaces later as "search
+is bad on this file".
