@@ -51,3 +51,7 @@ graphify-out/
 # excluded from the workspace in pnpm-workspace.yaml so pnpm never counts it —
 # both are needed, because pnpm globs the filesystem rather than git.
 apps/desktop-agent/
+
+# Built by apps/web/scripts/build-parse-thread.mjs on prebuild. A 1 MB generated
+# bundle in git would be reviewed by nobody and would drift from its source.
+apps/web/workers/

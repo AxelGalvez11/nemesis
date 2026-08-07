@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/copy-pdf-worker.mjs",
+    "predev": "node scripts/copy-pdf-worker.mjs && node scripts/build-parse-thread.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-pdf-worker.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/build-parse-thread.mjs",
     "build": "next build",
     "start": "next start",
     "pdf-worker": "node scripts/copy-pdf-worker.mjs",
@@ -13,7 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:export": "tsx scripts/smoke-export.mts",
     "test": "tsx --test components/workspace/*/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
-    "lint": "next lint"
+    "lint": "next lint",
+    "parse-thread": "node scripts/build-parse-thread.mjs"
   },
   "dependencies": {
     "3d-force-graph": "^1.79.0",

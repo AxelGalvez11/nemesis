@@ -65,6 +65,33 @@ export function pdfCoverage(input: {
   /** 1-based page numbers vision actually returned text for. */
   readByVision: ReadonlySet<number>;
   truncation?: readonly TruncationRecord[];
+  /**
+   * The document's figures, when a reader that can see them produced the parse.
+   *
+   * 🔴 OMITTING IT MEANS UNKNOWN, NOT NONE — and the two must not look alike.
+   * `unpdf`, which production ships today, exposes no image operators at all, so
+   * a parse from that lane genuinely does not know whether the file has figures.
+   * Passing a zeroed record from there would assert "this document has no
+   * pictures" about 89 of 120 real course files that do.
+   */
+  figures?: FigureCoverage;
+  /**
+   * Units the file declares beyond the ones `pageTexts` describes.
+   *
+   * 🔴 THE UNIT CAP REACHES THE STUDENT THROUGH HERE, AS UNREAD PAGES.
+   * A hundred-thousand-page PDF is stopped at `MAX_UNITS_PER_PARSE`, and without
+   * this the record would describe the 5,000 pages we read as the whole file —
+   * complete, nothing missing, a document quietly renamed to its own prefix.
+   * Counting them as unread is both the truth and the existing mechanism: the
+   * four buckets still reconcile and `describeCoverage` already knows how to say
+   * "5,000 of 100,000 pages could be read".
+   *
+   * They are counted rather than materialised because the cap exists precisely
+   * for files whose declared unit count is adversarially large; building 100,000
+   * empty strings to represent them would be the same denial-of-service wearing
+   * a different hat.
+   */
+  unreadBeyondCap?: number;
 }): ExtractionCoverage {
   let native = 0;
   let vision = 0;
@@ -78,18 +105,21 @@ export function pdfCoverage(input: {
     else if (wasRead) vision += 1;
     else unread += 1;
   }
+  const beyond = Math.max(input.unreadBeyondCap ?? 0, 0);
+  const units = input.pageTexts.length + beyond;
   return orUnaccounted(
     buildCoverage({
       unitKind: "page",
-      units: input.pageTexts.length,
+      units,
       unitsNative: native,
       unitsVision: vision,
       unitsBoth: both,
-      unitsUnread: unread,
+      unitsUnread: unread + beyond,
       truncation: input.truncation,
+      ...(input.figures ? { figures: input.figures } : {}),
     }),
     "page",
-    input.pageTexts.length,
+    units,
   );
 }
 

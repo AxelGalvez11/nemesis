@@ -218,3 +218,26 @@ export * from "./upload-limits.ts";
 // column, the web client and the phone — and because a partial read presented as
 // a complete one is the same defect on every one of those surfaces.
 export * from "./extraction-coverage.ts";
+// The canonical shape every parsed document takes: units → blocks. Shared because
+// the same document is chunked for retrieval, cited in an answer, reopened in the
+// reader and turned into study material — and those four had been reading four
+// different flattenings of it. Its rule travels with it: a locator is only ever
+// as specific as the format can honestly support.
+export * from "./document-model.ts";
+// Cutting a document along its own seams instead of every N characters. Shared
+// because the pieces retrieval returns are the pieces an answer cites, and a
+// chunk that split a table row is a set of values under the wrong column names —
+// which retrieves confidently and answers wrongly.
+export * from "./document-chunks.ts";
+export * from "./document-envelope.ts";
+export * from "./document-artifacts.ts";
+// Citations that are found rather than believed. Shared because a model asked to
+// cite will produce a page number, and that number is a guess dressed as a fact —
+// right often enough to look reliable, wrong often enough to matter, and the same
+// shape either way. Nothing here trusts a claimed location.
+export * from "./document-citations.ts";
+// Facts pulled out by SHAPE, never by subject vocabulary — a table of shares that
+// sums to a whole is a weighting scheme whether it divides a moot court score or
+// a weld inspection, and the heading path carries whatever the document called
+// it. A keyword list here would be a hidden claim about who the student is.
+export * from "./document-facts.ts";

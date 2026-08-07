@@ -59,12 +59,29 @@ export async function POST(req: NextRequest) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data, error } = await scoped.rpc("match_library_chunks", {
-    query_embedding: embedding,
+  // 🔴 SEARCHES THE ORIGINALS AND THE NOTES, PREFERRING THE ORIGINAL.
+  // `match_library_chunks` filtered to `origin_type = 'note'` AND inner-joined
+  // the notes table, so a stored, parsed lecture could never be a result — the
+  // only way to find anything in it was through notes generated from it.
+  const { data, error } = await scoped.rpc("match_document_chunks", {
     match_count: limit,
     match_threshold: MATCH_THRESHOLD,
+    origin_filter: null,
+    query_embedding: embedding,
   });
-  if (error) return NextResponse.json({ error: "semantic search unavailable" }, { status: 503 });
+  if (error) {
+    // A deployment whose database has not had the migration applied yet does not
+    // lose search: it falls back to the notes-only function it has always had.
+    // Silently returning nothing would look exactly like an empty library.
+    console.warn("source-aware search unavailable, falling back to notes", error.message);
+    const fallback = await scoped.rpc("match_library_chunks", {
+      match_count: limit,
+      match_threshold: MATCH_THRESHOLD,
+      query_embedding: embedding,
+    });
+    if (fallback.error) return NextResponse.json({ error: "semantic search unavailable" }, { status: 503 });
+    return NextResponse.json({ hits: fallback.data ?? [], sources: false });
+  }
 
-  return NextResponse.json({ hits: data ?? [] });
+  return NextResponse.json({ hits: data ?? [], sources: true });
 }

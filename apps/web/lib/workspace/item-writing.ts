@@ -16,6 +16,18 @@
 // effect is that flawed items let test-wise students score above their actual
 // knowledge, and penalise students who know the material but read carefully.
 //
+// 🔴 FIELD-NEUTRAL, AND THAT IS A CORRECTNESS REQUIREMENT, NOT A STYLE NOTE.
+// Until 2026-08-07 these rules told the model to build a stem from "a patient, a
+// case, a lab result", to keep options homogeneous as "all drugs, or all
+// diagnoses, or all mechanisms", and never to invent "a lab value, dose, or
+// clinical detail". Nemesis is a field-agnostic academic OS: a law student sits
+// exams made of fact patterns and a mechanical engineering student sits exams
+// made of loaded beams, and both were being handed a prompt that told the model
+// to write medicine. The craft below is unchanged — it is the NBME's, and it
+// generalises — but every example is now structural. Where a concrete instance
+// is needed, it comes from the STUDENT'S OWN MATERIAL, which is field-correct by
+// construction and needs no list of subjects to be maintained.
+//
 // Pure data. No imports, no dependencies — safe for any lane to pull in.
 
 /** The rules themselves, written as instructions to a model. Kept compact on
@@ -23,15 +35,15 @@
  *  (see chat-skills.ts SKILL_CHAR_BUDGET) as well as inside a generation
  *  prompt that already carries up to 9,000 characters of source material. */
 export const EXAM_ITEM_RULES = [
-  "Write one-best-answer questions only. Never true/false, never 'select all that apply', and never a stem like 'Which of the following statements is correct?' — those measure test-taking, not knowledge.",
-  "Build the stem as a short concrete situation — a patient, a case, a lab result, a scenario — and ask what it implies. A question answerable by reciting a definition tests recall; the point is application.",
-  "The stem must be answerable BEFORE the options are read. Cover the options: if the question becomes unanswerable, the stem is missing something. Ask one closed, specific question.",
-  "Keep every option in the same category (all drugs, or all diagnoses, or all mechanisms) and about the same length. The longest, most hedged, most detailed option must not be the correct one — that is the single most common giveaway in real exams.",
-  "Build wrong options from mistakes students actually make: the drug this one gets confused with, a step of the mechanism out of order, a value off by a factor, the right answer to a neighbouring question. Never write permutations of the correct answer, and never an option nobody would pick.",
-  "Never use: 'all of the above', 'none of the above', a negative stem ('which is NOT', 'all EXCEPT'), absolutes ('always', 'never'), vague quantifiers ('usually', 'may', 'often') inside the options, or options that overlap or contain one another.",
-  "Vary which position holds the correct answer, and never in a repeating cycle. Refer to options by their TEXT, never by letter — the app re-seats them afterwards, so 'option B' would become wrong.",
-  "Give the correct answer and explain what makes each wrong option wrong — name the specific misunderstanding it represents, so a miss teaches something.",
-  "Never invent a lab value, dose, or clinical detail to make a case work. Take the specifics from the student's own material, or write the stem so it does not need them.",
+  "Write one-best-answer questions only. Never true/false, never 'select all that apply', never 'Which of the following statements is correct?' — those measure test-taking, not knowledge.",
+  "Build the stem as a short concrete situation from the material's own subject and ask what it implies. A question answerable by reciting a definition tests recall; the point is application.",
+  "The stem must be answerable BEFORE the options are read: cover them, and if the question becomes unanswerable the stem is missing something. Ask one closed, specific question.",
+  "Keep every option in the same category — all naming the same KIND of thing, whatever kind the material deals in — and about the same length. The longest, most hedged option must not be the correct one; that is the most common giveaway in real exams.",
+  "Build wrong options from mistakes students actually make: what this is routinely confused with, a step out of order, a quantity off by a factor or a unit, the answer to a neighbouring question. Never permutations of the correct answer, never an option nobody would pick.",
+  "Never use 'all of the above', 'none of the above', a negative stem ('which is NOT', 'all EXCEPT'), absolutes ('always', 'never'), vague quantifiers ('usually', 'often') in options, or options that overlap.",
+  "Vary which position holds the correct answer, never in a cycle. Refer to options by their TEXT, never by letter — the app re-seats them, so 'option B' would become wrong.",
+  "Give the correct answer and name the specific misunderstanding each wrong option represents, so a miss teaches something.",
+  "Never invent a specific to make a situation work — a measurement, a quantity, a date, a named authority. Take every specific from the student's own material, or write the stem so it needs none: an invented specific is indistinguishable from a real one to the student revising from it.",
 ].join("\n");
 
 /** One-line version for prompts that only have room for a pointer. */

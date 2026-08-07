@@ -30,7 +30,12 @@
 
 import { createHash } from "node:crypto";
 
-import { PARSER_VERSION, unitsRead, type ExtractionCoverage } from "@nemesis/shared";
+import {
+  PARSER_VERSION,
+  unitsRead,
+  type DocumentModel,
+  type ExtractionCoverage,
+} from "@nemesis/shared";
 
 import { adminClient } from "@/lib/server";
 
@@ -57,29 +62,29 @@ export function pipelineStateFor(coverage: ExtractionCoverage): "parsed" | "part
   return coverage.state === "partial" ? "partially_parsed" : "parsed";
 }
 
-/** The envelope written into `parsed_documents.structure`. */
-export interface StructureEnvelope {
-  /**
-   * 🔴 THE VERSION IS THE POINT. Phase 2 will put a real unit/block model in
-   * this column. A row written today must be distinguishable from one written
-   * then WITHOUT inspecting its shape and guessing, or every later reader ends
-   * up sniffing keys and getting it wrong on some edge.
-   */
-  v: 1;
-  /**
-   * What kind of parse produced it. `text-only` says exactly what this is: the
-   * flat string the current extractor returns, with no units, no blocks and no
-   * locators. Naming it is what keeps a later reader from mistaking an absence
-   * of structure for a document that had none.
-   */
-  shape: "text-only";
-  title: string | null;
-  text: string;
-}
+/**
+ * The envelope written into `parsed_documents.structure`.
+ *
+ * 🔴 THE VERSION IS THE POINT, AND PHASE 2 IS WHY IT EXISTED. A row written by
+ * the flat extractor must be distinguishable from one written by the structural
+ * reader WITHOUT inspecting its shape and guessing, or every later reader ends
+ * up sniffing keys and getting it wrong on some edge.
+ *
+ * 🔴 AND `text-only` IS NOT THE SAME CLAIM AS "THIS DOCUMENT HAD NO STRUCTURE".
+ * It says only that the parse which produced this row could not see any. That
+ * distinction is what tells a later pass which rows are worth reparsing.
+ */
+// 🔴 RE-EXPORTED, NOT REDEFINED. The envelope contract and its validator moved
+// to `packages/shared` when a second runtime started reading these rows. Every
+// existing import of `structureEnvelope` / `readStructureEnvelope` from this
+// module keeps working, and there is still exactly one definition.
+import { structureEnvelope } from "@nemesis/shared";
 
-export function structureEnvelope(input: { title: string | null; text: string }): StructureEnvelope {
-  return { shape: "text-only", text: input.text, title: input.title, v: 1 };
-}
+export {
+  readStructureEnvelope,
+  structureEnvelope,
+  type StructureEnvelope,
+} from "@nemesis/shared";
 
 /** sha256 of the original bytes, lowercase hex — the file's physical identity. */
 export function contentHashOf(bytes: Uint8Array): string {
@@ -97,6 +102,17 @@ export interface PersistParseInput {
   coverage: ExtractionCoverage;
   title: string | null;
   text: string;
+  /**
+   * The structural read, when one was produced.
+   *
+   * 🔴 THIS IS THE COLUMN THAT DECIDES WHETHER PHASE 2 SURVIVES THE REQUEST.
+   * Everything downstream — chat, retrieval, study generation, the reader —
+   * loads from `parsed_documents`, so a model computed and not written here is a
+   * model that dies with the upload. That is precisely the defect Phase 3 had one
+   * layer down, where the Word reader's structure was rendered to a string and
+   * discarded at the function boundary.
+   */
+  model?: DocumentModel;
 }
 
 export type PersistParseResult =
@@ -136,7 +152,11 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
       p_doc_kind: input.docKind,
       p_error: null,
       p_parser_version: PARSER_VERSION,
-      p_structure: structureEnvelope({ text: input.text, title: input.title }) as unknown as Record<string, unknown>,
+      p_structure: structureEnvelope({
+        text: input.text,
+        title: input.title,
+        ...(input.model ? { model: input.model } : {}),
+      }) as unknown as Record<string, unknown>,
       p_unit_count: input.coverage.units,
       // What was actually described, not what was found — the number a reader
       // should trust is the one that says how much made it through.

@@ -21,6 +21,7 @@ import { seedChatIntent } from "@/lib/workspace/composer-seed";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { loadNoteIdsForSource } from "@/lib/workspace/library-provenance";
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
+import { DocumentParseStatus } from "./document-parse-status";
 import { parseReaderAnchor } from "@/lib/reader/reader-anchor";
 import { readerSourceFromLibrary } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
@@ -108,7 +109,14 @@ export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }:
   }
 
   return (
-    <div className={cn("min-h-0 min-w-0 flex-1", className)}>
+    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
+      {source && (
+        <DocumentParseStatus
+          className="flex items-center justify-between gap-3 border-b border-(--ui-border) px-4 py-2 text-xs text-(--ui-text-secondary)"
+          initial={source.status}
+          sourceId={source.id}
+        />
+      )}
       <DocumentReader
         anchor={anchor}
         linkedNotes={linkedNotes}

@@ -17,6 +17,8 @@
 import { strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 
+import { documentToText, type DocumentModel } from "@nemesis/shared";
+
 /**
  * Most a .docx/.pptx may weigh once unpacked.
  *
@@ -72,28 +74,55 @@ export const UNZIP_MAX_ENTRIES = 20_000;
  * error, and "this file is too big once unpacked" is true and actionable, while
  * a crashed instance tells them nothing at all.
  */
+/**
+ * A refusal WE decided on, as opposed to a container that would not parse.
+ *
+ * 🔴 THE DISTINCTION MATTERS AT THE CATCH BELOW. Our refusals already say
+ * something true and readable about the file; fflate's do not. Without a way to
+ * tell them apart, wrapping the parse failure would also swallow "that file has
+ * too many parts to open safely" and replace it with something vaguer.
+ */
+class ArchiveRefusal extends Error {}
+
 export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   let total = 0;
   let entries = 0;
-  const files = unzipSync(bytes, {
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipEntries();
+  } catch (cause) {
+    if (cause instanceof ArchiveRefusal) throw cause;
+    // 🔴 `invalid zip data` IS NOT A SENTENCE FOR A STUDENT. fflate's message
+    // reached the upload response verbatim whenever a file was truncated, was
+    // not really an Office file, or had been renamed from something else — and
+    // it reads as an application fault rather than as a fact about their file.
+    throw new Error("That file couldn't be opened. It may be damaged, or not really a Word, PowerPoint or Excel file.");
+  }
+  return files;
+
+  function unzipEntries(): Record<string, Uint8Array> {
+  return unzipSync(bytes, {
     filter(file) {
       entries += 1;
       if (entries > UNZIP_MAX_ENTRIES) {
-        throw new Error("That file has too many parts to open safely.");
+        throw new ArchiveRefusal("That file has too many parts to open safely.");
       }
       // `originalSize` is the header's claim, which a crafted zip can lie about.
       // It is still worth checking: an honest bomb is refused before a single
       // byte is inflated. The post-inflation sum below is what catches a liar.
       total += file.originalSize ?? 0;
       if (total > UNZIP_MAX_TOTAL_BYTES) {
-        throw new Error("That file is too large once unpacked. Try exporting it again, or split it up.");
+        throw new ArchiveRefusal("That file is too large once unpacked. Try exporting it again, or split it up.");
       }
       return true;
     },
   });
+  }
+}
 
-  // 🔴 THE POST-INFLATION SUM THAT USED TO LIVE HERE HAS BEEN DELETED, AND
-  // NOTHING SHOULD PUT IT BACK.
+// 🔴 THE POST-INFLATION SUM THAT USED TO LIVE IN `unzipBounded` HAS BEEN
+// DELETED, AND NOTHING SHOULD PUT IT BACK.
+/*
   //
   // It walked `Object.keys(files)` adding up `byteLength` and threw if the total
   // crossed the same ceiling — after `unzipSync` had already returned, which is
@@ -108,8 +137,7 @@ export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   // source ceiling, because a zip cannot inflate what it does not contain and
   // the object was capped at MAX_SOURCE_BYTES before it ever got here. Closing
   // that gap properly needs streaming inflation, not another sum.
-  return files;
-}
+*/
 
 import { emfEmbeddedImage } from "./emf-bitmap";
 import { imageSize } from "./image-dimensions";
@@ -134,15 +162,60 @@ import {
   type MediaFact,
   type SlideMediaPlan,
 } from "./slide-media";
+import { docxToModel } from "./docx-model";
+import { readDocxStructure, type DocxDocument } from "./docx-structure";
 import { tiffImage } from "./tiff-image";
 
-/** Extract text from .docx bytes. Throws on a non-zip / a file missing word/document.xml. */
+/**
+ * Extract text from .docx bytes, with its structure intact.
+ *
+ * 🔴 THIS USED TO BE A TAG STRIP, AND THE TAG STRIP'S COST WAS MEASURED.
+ *
+ * Over 124 real course documents it discarded 8,355 table cells (each becoming
+ * an orphan line, which reads confidently WRONG rather than absent), 2,266
+ * numbered paragraphs in 61% of the files, 123 headings, and every equation in
+ * the corpus. See ./docx-structure.
+ *
+ * `word/numbering.xml` is optional: a document with no lists does not ship the
+ * part, and a list whose definition is missing degrades to a bullet rather than
+ * losing the item.
+ *
+ * Throws on a non-zip / a file missing word/document.xml.
+ */
 export function extractDocxText(bytes: Uint8Array): OfficeExtract {
+  const model = extractDocxModel(bytes);
+  // 🔴 DERIVED FROM THE MODEL, NOT ALONGSIDE IT. Rendering the structure a
+  // second time here is how the string and the blocks would drift, and a model
+  // reading one while a citation pointed into the other is a class of bug that
+  // reads as hallucination.
+  const text = documentToText(model);
+  return { title: model.title, text };
+}
+
+/**
+ * The same read, as the canonical model.
+ *
+ * 🔴 THIS IS NOW THE PRIMARY PATH. `extractDocxText` is the flattening of it,
+ * kept because the chat handoff and the current index still take a string.
+ * Previously it was the other way round and the structure was discarded.
+ */
+export function extractDocxModel(bytes: Uint8Array): DocumentModel {
+  const structure = extractDocxStructure(bytes);
+  // The title is the first HEADING when the document has one — a real document
+  // outline beats guessing at the first line, which on a form or a cover page is
+  // whatever happened to be typed at the top.
+  const heading = structure.blocks.find((b) => b.kind === "heading")?.text;
+  const model = docxToModel(structure, heading ?? null);
+  return model.title ? model : { ...model, title: firstLine(documentToText(model)) };
+}
+
+/** The format-specific structure, before it becomes the canonical model. */
+export function extractDocxStructure(bytes: Uint8Array): DocxDocument {
   const files = unzipBounded(bytes);
   const doc = files["word/document.xml"];
   if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
-  const text = docxXmlToText(strFromU8(doc));
-  return { title: firstLine(text), text };
+  const numbering = files["word/numbering.xml"];
+  return readDocxStructure(strFromU8(doc), numbering ? strFromU8(numbering) : null);
 }
 
 /** Extract text from .pptx bytes (every slide, in order, with its notes, charts and SmartArt). */
