@@ -224,6 +224,13 @@ export * from "./extraction-coverage.ts";
 // different flattenings of it. Its rule travels with it: a locator is only ever
 // as specific as the format can honestly support.
 export * from "./document-model.ts";
+// A third-party reader, normalised into the model above and nowhere else. Shared
+// because the adapter is the ONLY place Docling exists as far as Nemesis is
+// concerned: everything downstream — chunking, citations, facts, artifacts —
+// receives a DocumentModel and a coverage record and cannot tell which program
+// produced them. Exporting it here rather than reaching into the file by path is
+// what keeps that boundary a single door instead of a habit.
+export * from "./docling-adapter.ts";
 // Cutting a document along its own seams instead of every N characters. Shared
 // because the pieces retrieval returns are the pieces an answer cites, and a
 // chunk that split a table row is a set of values under the wrong column names —

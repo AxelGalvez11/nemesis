@@ -108,14 +108,89 @@ export interface DoclingObservations {
   danglingRefs: number;
   /** Nodes dropped because they were page furniture. */
   droppedFurniture: number;
+  /**
+   * …of which this many were PICTURES, broken out of the lump above.
+   *
+   * 🔴 MEASURED: 30 of the corpus's 1,941 pictures are dropped this way — 11
+   * `furniture` and 19 `invisible`, and 21 of those sit under a group Docling
+   * itself named "page header". They are header logos, correctly dropped. But
+   * "30 pictures the student will never see" and "1,554 running heads" are not
+   * the same fact, and one bucket made the first one unanswerable.
+   */
+  picturesDroppedAsFurniture: number;
   /** Pictures Docling recorded. NONE of them have been examined by anyone. */
   pictures: number;
+  /**
+   * …of which this many were found INSIDE a table and had to be dug out.
+   *
+   * 🔴 MEASURED: 30 pictures, in a table's descendants, reachable no other way.
+   * Before the sub-walk below existed they were the largest single cause of
+   * picture loss and were disclosed to nobody. Kept as its own counter because
+   * a regression here looks identical to "this corpus has fewer tables".
+   */
+  picturesInsideTables: number;
   /** Pictures with usable geometry — the ones a vision pass could actually crop. */
   picturesWithRect: number;
+  /**
+   * List items sitting inside a table cell, counted and NOT re-emitted.
+   *
+   * 🔴 THIS IS ACCOUNTING, NOT A LOSS, AND THE DISTINCTION IS MEASURED. All 200
+   * of these in the corpus are children of a `list` group inside a table cell,
+   * and for all 163 with non-empty text the same string is already present in
+   * that table's `table_cells` — so the content reaches the student inside the
+   * grid. Emitting them again as loose list items is precisely the "cell text
+   * arrives looking like prose" bug `DocTable` exists to prevent. Counted so
+   * that "the adapter kept 98% of list items" can be read as a fact about
+   * representation rather than mistaken for a fact about loss.
+   */
+  listItemsInsideTables: number;
+  /** Table captions lifted out of the table's children into the table's text. */
+  tableCaptions: number;
+  /** Table footnotes recovered as `note` blocks after their table. */
+  tableFootnotes: number;
+  /**
+   * Nodes with a known kind but no text at all, dropped.
+   *
+   * Not a gap — an empty paragraph carries nothing — but it was a silent path,
+   * and a silent path is how the next real loss hides. 4,277 across the corpus.
+   */
+  droppedEmptyText: number;
+  /**
+   * Equations Docling located and could not transcribe. A REAL gap.
+   *
+   * 🔴 27 OF 49 FORMULAS IN THE CORPUS, AND THEY WERE COUNTED NOWHERE. Docling
+   * emits a `formula` node with a page number, a bounding box, and `text: ""` —
+   * it found an equation and produced nothing for it. The old
+   * `if (text || kind === "listItem")` gate dropped those in silence, so a
+   * lecture whose every derivation was unreadable reported a clean parse. This
+   * feeds `ExtractionCoverage.unreadableRegions` and makes such a file
+   * `partial`, which is the honest answer.
+   *
+   * No block is emitted: there is nothing to put in `text`, and inventing a
+   * `figure` to carry it would move an equation into the picture counts. The
+   * bounding boxes are therefore discarded — a future vision pass that wants to
+   * crop and read them has to re-parse.
+   */
+  equationsUnreadable: number;
   /** Units the file claims to have, from Docling's own page table. */
   declaredUnits: number;
   /** Units that received at least one block. `declaredUnits - this` is a gap. */
   unitsWithContent: number;
+  /**
+   * WHICH units received a block, 0-based and ascending.
+   *
+   * 🔴 A COUNT CANNOT BE JOINED. `unitsWithContent` answers "how many pages did
+   * Docling fill", which is all a single-lane coverage record ever needed. The
+   * native/OCR split asks a per-page question — did THIS page have its own text
+   * layer, and did Docling fill THIS page — and no arithmetic on two totals can
+   * answer it. The set is recorded here so `doclingCoverage` can do the join
+   * instead of a caller re-walking `model.blocks` and inventing its own rule.
+   *
+   * Optional because observations produced before this field existed are still
+   * valid input; absent means the split is unavailable, NOT that no unit was
+   * filled.
+   */
+  unitIndexesWithContent?: readonly number[];
 }
 
 export interface DoclingAdaptation {
@@ -146,6 +221,21 @@ interface RawNode {
   enumerated?: boolean;
   content_layer?: string;
   children?: { $ref?: string }[];
+  /**
+   * Cross-references Docling keeps ALONGSIDE `children`, not instead of it.
+   *
+   * 🔴 MEASURED, BECAUSE THE OBVIOUS FEAR IS WRONG: 121 such refs exist across
+   * the 345-file corpus (81 picture captions, 23 table captions, 17 table
+   * footnotes) and every single target is ALSO listed in that node's `children`.
+   * So nothing is reachable only through these fields, and a walk that followed
+   * them as an extra edge would recover nothing and risk emitting things twice.
+   * They are read for one narrow purpose — naming exactly which child of a table
+   * is its caption or footnote, which a label scan over cells could not do
+   * safely.
+   */
+  captions?: { $ref?: string }[];
+  footnotes?: { $ref?: string }[];
+  references?: { $ref?: string }[];
   prov?: RawProv[];
   data?: {
     num_rows?: number;
@@ -280,8 +370,15 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
     unmappedLabels: {},
     danglingRefs: 0,
     droppedFurniture: 0,
+    picturesDroppedAsFurniture: 0,
     pictures: 0,
+    picturesInsideTables: 0,
     picturesWithRect: 0,
+    listItemsInsideTables: 0,
+    tableCaptions: 0,
+    tableFootnotes: 0,
+    droppedEmptyText: 0,
+    equationsUnreadable: 0,
     declaredUnits: 0,
     unitsWithContent: 0,
   };
@@ -308,6 +405,174 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
 
   const seen = new Set<string>();
 
+  /** Resolve one `$ref` to its node without visiting it. */
+  const nodeAt = (ref: string | undefined): RawNode | undefined => {
+    const parsed = parseRef(ref);
+    if (!parsed) return undefined;
+    return buckets[parsed.bucket]?.[parsed.index];
+  };
+
+  const isDropped = (node: RawNode): boolean =>
+    !!node.content_layer && DROPPED_CONTENT_LAYERS.has(node.content_layer);
+
+  const refOf = (node: RawNode, fallback: string): string => node.self_ref ?? fallback;
+
+  /**
+   * The caption text a TABLE points at, in `captions[]` order.
+   *
+   * 🔴 TABLES ONLY, ON PURPOSE. A picture's caption is also listed in its
+   * `captions[]` — all 81 in the corpus — but a picture's children ARE walked,
+   * so that caption already arrives as its own `caption` block in reading order.
+   * Folding it into the figure's text as well would both duplicate it and, via
+   * the `seen` claim below, delete the block that used to carry it. A table is
+   * the only node whose children are deliberately not walked, so it is the only
+   * one whose caption needs lifting out.
+   */
+  const tableCaptionTextOf = (node: RawNode): string => {
+    const parts: string[] = [];
+    for (const entry of node.captions ?? []) {
+      const target = nodeAt(entry.$ref);
+      if (!target || isDropped(target)) continue;
+      const text = (target.text ?? "").trim();
+      if (!text) continue;
+      // Claimed by the table, so the general walk must not emit it again if the
+      // export ever also reaches it from somewhere else.
+      seen.add(refOf(target, entry.$ref ?? ""));
+      observations.tableCaptions += 1;
+      parts.push(text);
+    }
+    return parts.join(" ");
+  };
+
+  /**
+   * Emit ONLY the pictures buried in a table's descendants.
+   *
+   * 🔴 THIS IS NOT `visit` WITH THE TABLE GUARD REMOVED, AND IT MUST NOT BECOME
+   * THAT. Turning the general walk on inside a table re-emits every cell as a
+   * loose paragraph — the exact bug the `return` above prevents. This walk emits
+   * pictures and nothing else: it descends through groups and pictures, and it
+   * NEVER emits a text node, so cell prose cannot escape the grid however deeply
+   * a cell nests.
+   *
+   * Measured: 30 pictures in the corpus live here and were reachable no other
+   * way. A picture has no representation in `table_cells` — the grid holds
+   * strings — so unlike cell text, leaving it is a real loss of something the
+   * student can see on the page.
+   *
+   * Emitted immediately after their table, which is where a depth-first read of
+   * `body.children` would have put them anyway.
+   */
+  const emitTableFigures = (table: RawNode): void => {
+    const queue: (string | undefined)[] = (table.children ?? []).map((c) => c.$ref);
+    // Local, so descending past a text node does not mark it `seen` and silently
+    // move it if the export reaches it again elsewhere.
+    const walked = new Set<string>();
+    while (queue.length > 0) {
+      const ref = queue.shift();
+      const node = nodeAt(ref);
+      if (!node) continue;
+      const key = refOf(node, ref ?? "");
+      if (walked.has(key)) continue;
+      walked.add(key);
+      if (isDropped(node)) {
+        observations.droppedFurniture += 1;
+        if (key.startsWith("#/pictures/")) observations.picturesDroppedAsFurniture += 1;
+        continue;
+      }
+      if (key.startsWith("#/pictures/") && !seen.has(key)) {
+        seen.add(key);
+        observations.picturesInsideTables += 1;
+        emitPicture(node);
+      }
+      for (const child of node.children ?? []) queue.push(child.$ref);
+    }
+  };
+
+  /** A table's footnotes, as `note` blocks after the table. */
+  const emitTableFootnotes = (table: RawNode): void => {
+    for (const entry of table.footnotes ?? []) {
+      const target = nodeAt(entry.$ref);
+      if (!target || isDropped(target)) continue;
+      const text = (target.text ?? "").trim();
+      if (!text) continue;
+      const key = refOf(target, entry.$ref ?? "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      observations.tableFootnotes += 1;
+      seq += 1;
+      const rect = rectFor(target);
+      blocks.push({
+        id: `d${seq - 1}`,
+        // `footnote` maps to `note` in LABEL_TO_KIND; a table's footnote is the
+        // same thing in a different place, so it keeps the same kind.
+        kind: "note",
+        unit: unitFor(target),
+        text,
+        headingPath: headingStack.map((h) => h.text),
+        ...(rect ? { rect } : {}),
+      });
+    }
+  };
+
+  /**
+   * Count the list items inside a table. Deliberately emit nothing.
+   *
+   * See `DoclingObservations.listItemsInsideTables`: their text is already in
+   * the grid, so this is a representation choice that must be disclosed, not a
+   * loss that must be repaired.
+   */
+  const countTableListItems = (table: RawNode): void => {
+    const queue: (string | undefined)[] = (table.children ?? []).map((c) => c.$ref);
+    const walked = new Set<string>();
+    while (queue.length > 0) {
+      const ref = queue.shift();
+      const node = nodeAt(ref);
+      if (!node) continue;
+      const key = refOf(node, ref ?? "");
+      if (walked.has(key)) continue;
+      walked.add(key);
+      if (isDropped(node)) continue;
+      if (node.label === "list_item") observations.listItemsInsideTables += 1;
+      for (const child of node.children ?? []) queue.push(child.$ref);
+    }
+  };
+
+  /** Pictures in a dropped subtree, counted on the way past. Emits nothing. */
+  const countPicturesUnder = (root: RawNode): void => {
+    const queue: (string | undefined)[] = (root.children ?? []).map((c) => c.$ref);
+    const walked = new Set<string>();
+    while (queue.length > 0) {
+      const ref = queue.shift();
+      const node = nodeAt(ref);
+      if (!node) continue;
+      const key = refOf(node, ref ?? "");
+      if (walked.has(key)) continue;
+      walked.add(key);
+      if (key.startsWith("#/pictures/")) observations.picturesDroppedAsFurniture += 1;
+      for (const child of node.children ?? []) queue.push(child.$ref);
+    }
+  };
+
+  /** One figure block. Shared so a recovered picture counts exactly like any other. */
+  const emitPicture = (node: RawNode): void => {
+    const rect = rectFor(node);
+    observations.pictures += 1;
+    if (rect) observations.picturesWithRect += 1;
+    seq += 1;
+    blocks.push({
+      id: `d${seq - 1}`,
+      kind: "figure",
+      unit: unitFor(node),
+      text: (node.text ?? "").trim(),
+      headingPath: headingStack.map((h) => h.text),
+      // 🔴 NO `description`. Docling detects a picture; it does not look at it.
+      // Absent means NOBODY LOOKED, which is what makes the figure countable as
+      // a gap instead of silently reading as "nothing there".
+      figure: { ...(node.self_ref ? { ref: node.self_ref } : {}) },
+      ...(rect ? { rect } : {}),
+    });
+  };
+
   const visit = (ref: string | undefined): void => {
     const parsed = parseRef(ref);
     if (!parsed) {
@@ -327,6 +592,16 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
 
     if (node.content_layer && DROPPED_CONTENT_LAYERS.has(node.content_layer)) {
       observations.droppedFurniture += 1;
+      // A dropped PICTURE is worth its own line. See the field's note: the lump
+      // is dominated by running heads, and a picture hiding inside it is a
+      // different question from a page number hiding inside it.
+      if (parsed.bucket === "pictures") observations.picturesDroppedAsFurniture += 1;
+      // 🔴 AND THE ONES UNDERNEATH IT. Dropping a node drops its whole subtree,
+      // so counting only the node the walk stopped at reported 5 of the corpus's
+      // 30 dropped pictures: the other 25 sit under a GROUP whose own layer is
+      // furniture — one Docling itself named "page header". A counter that sees
+      // a sixth of what it claims to count is worse than no counter.
+      countPicturesUnder(node);
       return;
     }
 
@@ -349,7 +624,15 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
         kind: "table",
         unit,
         // A table's text is its caption if it has one; the grid is the content.
-        text: (node.text ?? "").trim(),
+        //
+        // 🔴 `node.text` IS EMPTY ON ALL 649 TABLES IN THE CORPUS — measured, not
+        // assumed. Docling does not put the caption on the table node: it puts it
+        // in a `caption`-labelled text node, lists it in `captions[]`, AND files
+        // it under the table's children, where the deliberate no-recursion below
+        // then buried it. So all 23 table captions were lost. Resolving the
+        // `captions[]` refs is exact — it cannot pick up a cell by accident the
+        // way scanning children for a label would.
+        text: tableCaptionTextOf(node) || (node.text ?? "").trim(),
         headingPath: headingStack.map((h) => h.text),
         ...(table ? { table } : {}),
         ...(rect ? { rect } : {}),
@@ -357,25 +640,22 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
       // Cell text lives in `texts` and is referenced from inside the table. It
       // has already been captured in the grid, so the children are NOT visited —
       // doing so is what re-emits every cell as a loose paragraph.
+      //
+      // But "do not re-emit cell text" was implemented as "do not look inside a
+      // table at all", and those are different rules. Three kinds of node live
+      // in there that the grid does NOT carry, and each is handled on its own
+      // terms rather than by turning the general walk back on:
+      emitTableFigures(node); //   a picture — no text representation anywhere
+      emitTableFootnotes(node); // a footnote — content, and not a cell
+      countTableListItems(node); // a list item — already IN the grid, so counted
       return;
     }
 
     if (bucket === "pictures") {
-      observations.pictures += 1;
-      if (rect) observations.picturesWithRect += 1;
-      seq += 1;
-      blocks.push({
-        id,
-        kind: "figure",
-        unit,
-        text: (node.text ?? "").trim(),
-        headingPath: headingStack.map((h) => h.text),
-        // 🔴 NO `description`. Docling detects a picture; it does not look at it.
-        // Absent means NOBODY LOOKED, which is what makes the figure countable as
-        // a gap instead of silently reading as "nothing there".
-        figure: { ...(node.self_ref ? { ref: node.self_ref } : {}) },
-        ...(rect ? { rect } : {}),
-      });
+      // One emitter for both entry points — a picture found inside a table must
+      // be counted and shaped identically to one found in the body, or the
+      // figure totals stop matching the blocks.
+      emitPicture(node);
       for (const child of node.children ?? []) visit(child.$ref);
       return;
     }
@@ -424,6 +704,20 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
         ...(kind === "listItem" && node.marker ? { marker: node.marker } : {}),
         ...(rect ? { rect } : {}),
       });
+    } else if (kind === "equation") {
+      // 🔴 THE SILENT DROP THAT MATTERED. Docling emits a `formula` node with a
+      // page, a bounding box and `text: ""` when its formula model located an
+      // equation it could not transcribe: 27 of the corpus's 49 formulas, in 5
+      // real course PDFs, every one of them with geometry. The `if (text)` above
+      // swallowed all 27 without a counter, so a lecture whose derivations were
+      // all unreadable reported a clean parse. It is a gap, it is now counted,
+      // and `doclingCoverage` turns it into `unreadableRegions`.
+      observations.equationsUnreadable += 1;
+    } else {
+      // Everything else with a known kind and no text: an empty paragraph, which
+      // costs the student nothing. Counted anyway — an uncounted branch is how
+      // the formula case above stayed invisible for as long as it did.
+      observations.droppedEmptyText += 1;
     }
     for (const child of node.children ?? []) visit(child.$ref);
   };
@@ -435,11 +729,13 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
   // "Docling said SUCCESS" stops being the same sentence as "we read it all".
   const declared = flowing ? 1 : Math.max(pageSizes.size, usedPages.size, blocks.length ? 1 : 0);
   observations.declaredUnits = declared;
-  observations.unitsWithContent = flowing
+  const filled = flowing
     ? blocks.length > 0
-      ? 1
-      : 0
-    : new Set(blocks.map((b) => b.unit)).size;
+      ? [0]
+      : []
+    : [...new Set(blocks.map((b) => b.unit))].sort((a, b) => a - b);
+  observations.unitsWithContent = filled.length;
+  observations.unitIndexesWithContent = filled;
 
   const units: DocUnit[] = Array.from({ length: declared }, (_, index) => {
     const size = pageSizes.get(index + 1);
@@ -480,17 +776,62 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
  * here, because Docling's labels do not tell us. If a vision pass later runs
  * over these, it moves them to `described` and the state rises on its own.
  *
- * 🔴 THE NATIVE/OCR SPLIT IS NOT AVAILABLE ON THIS PATH. Docling's JSON does not
- * say which pages RapidOCR read, so a scan that OCR rescued is indistinguishable
- * here from a page with a real text layer. Read units are therefore reported as
- * `unitsNative`, which is WRONG for the 7 scanned PDFs in the corpus. It does
- * not change the state — read is read — but it does mean the vision column is
- * not trustworthy on this path, and that is a gate before the flag goes on, not
- * a detail. Fix it by having the sidecar return per-page OCR flags.
+ * 🔴 THE NATIVE/OCR SPLIT NEEDS `nativeText`, AND WITHOUT IT EVERY READ UNIT IS
+ * REPORTED AS `unitsNative`. Docling's JSON carries no OCR signal — a key sweep
+ * over all 322 exports in the corpus found no ocr/confidence/source field, only
+ * the document `origin` block (filename, mimetype, hash) — so a scan that
+ * RapidOCR rescued is, in this file alone, indistinguishable from a page with a
+ * real text layer. That fallback is WRONG for the scanned PDFs in the corpus and
+ * it is kept only so an old caller keeps working.
+ *
+ * The split IS available whenever the caller can also answer, per page, "did the
+ * page have its own text layer" — which for a PDF is
+ * `probePdfNativeText` + `nativeTextMap` in apps/web/lib/pdf/native-probe.ts,
+ * using the SAME `pageTextLength` / `THIN_PAGE_CHARS` predicate our own lane
+ * uses, so the same page cannot classify differently on the two lanes. Pass that
+ * map as `nativeText` and the four counts become real. It is a PDF answer: for a
+ * flowing document there are no pages to probe, and passing a map for one is
+ * refused rather than ignored.
+ *
+ * The rule is deliberately the SAME SHAPE the native lane uses in `pdfCoverage`,
+ * with "Docling produced blocks for this page" standing where "the vision model
+ * returned text for this page" stands there:
+ *
+ *   own text + blocks    -> native      own text + no blocks    -> UNREAD
+ *   no own text + blocks -> vision      no own text + no blocks -> unread
+ *
+ * A page whose text layer we have but which Docling emitted nothing for is
+ * unread, not native: the model holds no content for it, and a text layer nobody
+ * read is not a read.
+ *
+ * 🔴 `unitsBoth` IS ALWAYS 0 HERE, AND THE OTHER TWO ARE DEFINITIONS, NOT PROOFS.
+ * Docling's default pipeline may OCR a bitmap region on a page that ALSO has a
+ * text layer, and the export does not say so, so a page with native text is
+ * credited to the text layer and `unitsBoth` can never be observed. Measured
+ * over the 164 corpus PDFs (1,474 pages), supplying the map moves 182 pages out
+ * of `unitsNative`, and of those 182: 65 had NO text layer at all and can only
+ * have come from pixels, 44 had a thin layer and Docling returned more than
+ * twice its characters, and 73 had a thin layer Docling roughly echoed — for
+ * that last group `vision` is the lane the page belongs to under the predicate,
+ * not evidence that anything looked at it. Nothing in the export can tell the
+ * three apart, which is why the sidecar returning per-page OCR flags would still
+ * be an improvement on this.
  */
 export function doclingCoverage(
   observations: DoclingObservations,
-  options: { format: DocFormat; unitsInModel: number },
+  options: {
+    format: DocFormat;
+    unitsInModel: number;
+    /**
+     * 0-based unit index -> did that page carry its own usable text layer.
+     *
+     * A unit missing from the map is UNKNOWN, not false. Supplying a map that
+     * does not cover every unit Docling filled is refused, because guessing a
+     * lane for the uncovered ones is precisely the fabrication this argument
+     * exists to remove.
+     */
+    nativeText?: ReadonlyMap<number, boolean>;
+  },
 ): ExtractionCoverage | string {
   const unitKind: CoverageUnitKind =
     options.format === "pptx" ? "slide" : options.format === "pdf" ? "page" : "document";
@@ -499,19 +840,68 @@ export function doclingCoverage(
   // the file's own page table, but never below what the model actually holds.
   const declared = Math.max(observations.declaredUnits, options.unitsInModel);
   const units = options.format === "docx" ? Math.max(1, options.unitsInModel) : declared;
-  const read = Math.min(observations.unitsWithContent, units);
 
-  return buildCoverage({
+  // 🔴 EVERYTHING THAT IS NOT A UNIT COUNT LIVES HERE, ONCE. There are two ways
+  // out of this function — with the split and without it — and a field added to
+  // only one of them would be reported on some documents and silently missing on
+  // others, which is indistinguishable from the parser not having found it.
+  const base = {
     unitKind,
     units,
-    unitsNative: read,
-    unitsUnread: units - read,
     figures: {
       found: observations.pictures,
       described: 0,
       skipped: observations.pictures,
       reasons: observations.pictures > 0 ? { "not-examined": observations.pictures } : {},
     },
+    // 🔴 KEPT OUT OF `figures`, DELIBERATELY. An equation Docling located and
+    // could not transcribe is lost content, but it is not a picture, and putting
+    // it in the figure count would make the student's sentence read "27 pictures
+    // couldn't be read" about a document missing no pictures at all. Its own
+    // field says the true thing, and `deriveState` still makes the file
+    // `partial`, which is the part that actually protects the reader.
+    unreadableRegions: observations.equationsUnreadable,
     parserVersion: `docling+adapter/${observations.status}`,
+  };
+
+  if (!options.nativeText) {
+    const read = Math.min(observations.unitsWithContent, units);
+    return buildCoverage({ ...base, unitsNative: read, unitsUnread: units - read });
+  }
+
+  if (options.format === "docx") {
+    return "nativeText describes pages; a flowing document has none, so omit it";
+  }
+  const filled = observations.unitIndexesWithContent;
+  if (!filled) {
+    return "nativeText needs unitIndexesWithContent, and these observations carry none";
+  }
+
+  const filledSet = new Set(filled.filter((index) => index >= 0 && index < units));
+  let native = 0;
+  let vision = 0;
+  let unread = 0;
+  for (let index = 0; index < units; index += 1) {
+    // A page Docling produced nothing for is unread whatever its text layer says:
+    // the model has no content for it, and a text layer nobody read is not a read.
+    if (!filledSet.has(index)) {
+      unread += 1;
+      continue;
+    }
+    const hasOwnText = options.nativeText.get(index);
+    if (hasOwnText === undefined) {
+      return `nativeText has no entry for unit ${index}, which Docling filled`;
+    }
+    if (hasOwnText) native += 1;
+    else vision += 1;
+  }
+
+  return buildCoverage({
+    ...base,
+    unitsNative: native,
+    unitsVision: vision,
+    // See the header note: never observable from this export, so never claimed.
+    unitsBoth: 0,
+    unitsUnread: unread,
   });
 }

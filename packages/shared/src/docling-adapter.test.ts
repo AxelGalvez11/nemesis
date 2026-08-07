@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { adaptDoclingDocument, doclingCoverage } from "./docling-adapter.ts";
 import type { DoclingObservations } from "./docling-adapter.ts";
+import { EXTRACTION_COVERAGE_VERSION } from "./extraction-coverage.ts";
 
 /** Minimal DoclingDocument, shaped exactly like the real export. */
 function doclingDoc(parts: {
@@ -326,8 +327,15 @@ function obs(over: Partial<DoclingObservations> = {}): DoclingObservations {
     unmappedLabels: {},
     danglingRefs: 0,
     droppedFurniture: 0,
+    picturesDroppedAsFurniture: 0,
     pictures: 0,
+    picturesInsideTables: 0,
     picturesWithRect: 0,
+    listItemsInsideTables: 0,
+    tableCaptions: 0,
+    tableFootnotes: 0,
+    droppedEmptyText: 0,
+    equationsUnreadable: 0,
     declaredUnits: 1,
     unitsWithContent: 1,
     ...over,
@@ -405,4 +413,456 @@ test("nonsensical observations are refused, not rounded into a cheerful record",
     unitsInModel: 4,
   });
   assert.equal(typeof coverage, "string");
+});
+
+/* ---- the native/OCR split, once a caller can answer "did this page have its
+   own text layer". The map comes from apps/web/lib/pdf/native-probe.ts and uses
+   the SAME pageTextLength/THIN_PAGE_CHARS predicate the native lane uses. ---- */
+
+/** Observations for `pages` units, with `filled` the ones Docling gave blocks. */
+function paged(pages: number, filled: readonly number[], over: Partial<DoclingObservations> = {}) {
+  return obs({
+    declaredUnits: pages,
+    unitsWithContent: filled.length,
+    unitIndexesWithContent: filled,
+    ...over,
+  });
+}
+
+/** unit index -> had its own usable text layer. */
+const layers = (...had: boolean[]) => new Map(had.map((value, index) => [index, value]));
+
+test("a scan reports ZERO native pages — the whole point of the split", () => {
+  // Measured shape: a 3-page scan with no text layer on any page, which Docling
+  // filled because RapidOCR read the pixels. Reported as `unitsNative` this
+  // would tell the student the file had a real text layer, and would tell us the
+  // OCR lane cost nothing because it apparently never ran.
+  const coverage = doclingCoverage(paged(3, [0, 1, 2]), {
+    format: "pdf",
+    unitsInModel: 3,
+    nativeText: layers(false, false, false),
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitsNative, 0);
+  assert.equal(coverage.unitsVision, 3);
+  assert.equal(coverage.unitsUnread, 0);
+  assert.equal(coverage.units, 3);
+});
+
+test("an ordinary PDF is still all native", () => {
+  const coverage = doclingCoverage(paged(3, [0, 1, 2]), {
+    format: "pdf",
+    unitsInModel: 3,
+    nativeText: layers(true, true, true),
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitsNative, 3);
+  assert.equal(coverage.unitsVision, 0);
+  assert.equal(coverage.state, "complete");
+});
+
+test("a mixed document splits by page, including the page nobody read", () => {
+  // page 0: text layer, Docling filled it        -> native
+  // page 1: no text layer, Docling filled it     -> vision (OCR rescued it)
+  // page 2: no text layer, Docling filled nothing-> unread
+  // page 3: text layer, Docling filled nothing   -> unread, NOT native. The
+  //         model holds no content for it, and a text layer nobody read is not
+  //         a read — counting it native is how a gap becomes invisible.
+  const coverage = doclingCoverage(paged(4, [0, 1]), {
+    format: "pdf",
+    unitsInModel: 4,
+    nativeText: layers(true, false, false, true),
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitsNative, 1);
+  assert.equal(coverage.unitsVision, 1);
+  assert.equal(coverage.unitsBoth, 0);
+  assert.equal(coverage.unitsUnread, 2);
+  assert.equal(coverage.state, "partial");
+});
+
+test("`both` is never claimed, because this export cannot show it", () => {
+  // Docling may OCR a bitmap on a page that also has text, and says so nowhere.
+  // Inventing `both` from a page that has a text layer would be a guess wearing
+  // a number, so a native page is credited to its text layer and no further.
+  const coverage = doclingCoverage(paged(2, [0, 1]), {
+    format: "pdf",
+    unitsInModel: 2,
+    nativeText: layers(true, false),
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitsBoth, 0);
+});
+
+test("without the map the record is EXACTLY what it has always been", () => {
+  // The old path is the one every existing caller is on. Pinned against a
+  // literal rather than against itself, so a change to it has to be typed out.
+  const coverage = doclingCoverage(obs({ declaredUnits: 4, unitsWithContent: 3, pictures: 2 }), {
+    format: "pdf",
+    unitsInModel: 4,
+  });
+  assert.deepEqual(coverage, {
+    version: EXTRACTION_COVERAGE_VERSION,
+    parserVersion: "docling+adapter/ConversionStatus.SUCCESS",
+    unitKind: "page",
+    units: 4,
+    unitsNative: 3,
+    unitsVision: 0,
+    unitsBoth: 0,
+    unitsUnread: 1,
+    figures: { found: 2, described: 0, skipped: 2, reasons: { "not-examined": 2 } },
+    truncation: [],
+    state: "partial",
+  });
+});
+
+test("the same observations WITH a map move pages out of native, not out of read", () => {
+  const before = doclingCoverage(obs({ declaredUnits: 4, unitsWithContent: 3 }), {
+    format: "pdf",
+    unitsInModel: 4,
+  });
+  const after = doclingCoverage(paged(4, [0, 1, 2]), {
+    format: "pdf",
+    unitsInModel: 4,
+    nativeText: layers(true, false, false, false),
+  });
+  assert.ok(typeof before !== "string" && typeof after !== "string");
+  assert.equal(before.unitsNative, 3);
+  assert.equal(after.unitsNative, 1);
+  assert.equal(after.unitsVision, 2);
+  // What was read did not change — only where we say it came from.
+  assert.equal(before.unitsUnread, after.unitsUnread);
+});
+
+test("a map that does not cover a filled page is refused, not guessed at", () => {
+  // The probe stopped at its cap and Docling did not. Picking a lane for the
+  // uncovered page — either lane — invents the fact the map exists to supply.
+  const coverage = doclingCoverage(paged(3, [0, 1, 2]), {
+    format: "pdf",
+    unitsInModel: 3,
+    nativeText: layers(true, true),
+  });
+  assert.equal(typeof coverage, "string");
+  assert.match(coverage as string, /unit 2/);
+});
+
+test("a map is refused when the observations never recorded WHICH units filled", () => {
+  const coverage = doclingCoverage(obs({ declaredUnits: 2, unitsWithContent: 2 }), {
+    format: "pdf",
+    unitsInModel: 2,
+    nativeText: layers(true, false),
+  });
+  assert.equal(typeof coverage, "string");
+});
+
+test("a flowing document refuses a page map rather than ignoring it", () => {
+  const coverage = doclingCoverage(paged(1, [0]), {
+    format: "docx",
+    unitsInModel: 1,
+    nativeText: layers(false),
+  });
+  assert.equal(typeof coverage, "string");
+});
+
+test("the adapter records WHICH units it filled, not just how many", () => {
+  // Without this the join is impossible: two totals cannot answer a per-page
+  // question. Page 2 is deliberately empty.
+  const raw = doclingDoc({
+    texts: [
+      { self_ref: "#/texts/0", label: "text", text: "one", prov: [{ page_no: 1 }] },
+      { self_ref: "#/texts/1", label: "text", text: "three", prov: [{ page_no: 3 }] },
+    ],
+    pages: { "1": { size: { width: 600, height: 800 }, page_no: 1 }, "2": { size: { width: 600, height: 800 }, page_no: 2 }, "3": { size: { width: 600, height: 800 }, page_no: 3 } },
+    children: [{ $ref: "#/texts/0" }, { $ref: "#/texts/1" }],
+  });
+  const { observations } = adaptDoclingDocument(raw, { format: "pdf" });
+  assert.deepEqual(observations.unitIndexesWithContent, [0, 2]);
+  assert.equal(observations.unitsWithContent, 2);
+});
+
+// ---------------------------------------------------------------------------
+// What the walk used to lose, and where each lost node now goes.
+//
+// Measured over 345 real course files before any of this existed: 60 of 1,941
+// pictures and 200 of 9,731 list items never reached the model, and NOTHING
+// said so. Every case below is one of the causes that audit named, with the
+// corpus count in the comment so a regression is legible as a regression.
+// ---------------------------------------------------------------------------
+
+/** A table whose cell holds prose AND a picture, two group levels deep. */
+function tableWithNestedPicture() {
+  return doclingDoc({
+    texts: [
+      { self_ref: "#/texts/0", label: "text", text: "before" },
+      { self_ref: "#/texts/1", label: "text", text: "Cell A" },
+      { self_ref: "#/texts/2", label: "text", text: "after" },
+    ],
+    pictures: [
+      {
+        self_ref: "#/pictures/0",
+        label: "picture",
+        parent: { $ref: "#/groups/1" },
+        prov: [{ page_no: 1, bbox: { l: 60, r: 300, t: 700, b: 500, coord_origin: "BOTTOMLEFT" } }],
+      },
+    ],
+    groups: [
+      // A cell group, and inside it another one — the picture is NOT a direct
+      // child of the table, which is how it looks in every real file.
+      { self_ref: "#/groups/0", parent: { $ref: "#/tables/0" }, children: [{ $ref: "#/texts/1" }, { $ref: "#/groups/1" }] },
+      { self_ref: "#/groups/1", parent: { $ref: "#/groups/0" }, children: [{ $ref: "#/pictures/0" }] },
+    ],
+    tables: [
+      {
+        self_ref: "#/tables/0",
+        label: "table",
+        children: [{ $ref: "#/groups/0" }],
+        data: {
+          num_rows: 1,
+          num_cols: 1,
+          table_cells: [{ text: "Cell A", start_row_offset_idx: 0, start_col_offset_idx: 0 }],
+        },
+      },
+    ],
+    pages: PAGE,
+    children: [{ $ref: "#/texts/0" }, { $ref: "#/tables/0" }, { $ref: "#/texts/2" }],
+  });
+}
+
+test("a picture buried in a table is recovered — and cell prose still is not", () => {
+  // 30 pictures in the corpus were reachable ONLY through a table's descendants.
+  // A picture has no representation in `table_cells`, so leaving it there loses
+  // something the student can see on the page. Cell TEXT is the opposite case:
+  // the grid already holds it, so re-emitting it is the bug next door.
+  const { model, observations } = adaptDoclingDocument(tableWithNestedPicture(), { format: "pdf" });
+
+  assert.deepEqual(
+    model.blocks.map((b) => b.kind),
+    ["paragraph", "table", "figure", "paragraph"],
+    "the recovered picture sits immediately after its table, where a depth-first read would put it",
+  );
+  assert.equal(model.blocks[2]!.figure?.ref, "#/pictures/0");
+  assert.ok(model.blocks[2]!.rect, "geometry survives, so a vision pass can crop it");
+  assert.equal(
+    model.blocks.filter((b) => b.text === "Cell A").length,
+    0,
+    "cell text must NOT escape the grid, however deeply the cell nests",
+  );
+  assert.deepEqual(model.blocks[1]!.table?.rows, [["Cell A"]]);
+  assert.equal(observations.picturesInsideTables, 1);
+  assert.equal(observations.pictures, 1, "a recovered picture counts exactly like any other");
+  assert.equal(observations.picturesWithRect, 1);
+});
+
+test("a recovered picture is disclosed as unexamined, like every other picture", () => {
+  // The recovery must not quietly improve the coverage verdict: nobody has
+  // looked at it, and that is still the honest answer.
+  const { model, observations } = adaptDoclingDocument(tableWithNestedPicture(), { format: "pdf" });
+  const coverage = doclingCoverage(observations, { format: "pdf", unitsInModel: model.units.length });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.figures.found, 1);
+  assert.equal(coverage.figures.reasons["not-examined"], 1);
+  assert.equal(coverage.state, "partial");
+});
+
+test("a table's caption becomes the table's text, and is not also loose prose", () => {
+  // 🔴 `tables[].text` IS EMPTY ON ALL 649 TABLES IN THE CORPUS. Docling files
+  // the caption as a child of the table, which the no-recursion rule then
+  // buried: all 23 table captions were lost.
+  const raw = doclingDoc({
+    texts: [{ self_ref: "#/texts/0", label: "caption", text: "Table 1. Doses by weight" }],
+    tables: [
+      {
+        self_ref: "#/tables/0",
+        label: "table",
+        captions: [{ $ref: "#/texts/0" }],
+        children: [{ $ref: "#/texts/0" }],
+        data: {
+          num_rows: 1,
+          num_cols: 1,
+          table_cells: [{ text: "5 mg", start_row_offset_idx: 0, start_col_offset_idx: 0 }],
+        },
+      },
+    ],
+    children: [{ $ref: "#/tables/0" }],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "docx" });
+
+  assert.equal(model.blocks.length, 1, "the caption rides on the table, it does not become a second block");
+  assert.equal(model.blocks[0]!.kind, "table");
+  assert.equal(model.blocks[0]!.text, "Table 1. Doses by weight");
+  assert.equal(observations.tableCaptions, 1);
+});
+
+test("a table's footnote survives as a note after the table", () => {
+  // 17 in the corpus, e.g. "*P value<.05 versus terazosin." — a qualifier that
+  // changes what the row above it means, and it was being dropped whole.
+  const raw = doclingDoc({
+    texts: [{ self_ref: "#/texts/0", label: "footnote", text: "*P value<.05 versus control." }],
+    tables: [
+      {
+        self_ref: "#/tables/0",
+        label: "table",
+        footnotes: [{ $ref: "#/texts/0" }],
+        children: [{ $ref: "#/texts/0" }],
+        data: {
+          num_rows: 1,
+          num_cols: 1,
+          table_cells: [{ text: "12%", start_row_offset_idx: 0, start_col_offset_idx: 0 }],
+        },
+      },
+    ],
+    children: [{ $ref: "#/tables/0" }],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "pdf" });
+
+  assert.deepEqual(model.blocks.map((b) => b.kind), ["table", "note"]);
+  assert.equal(model.blocks[1]!.text, "*P value<.05 versus control.");
+  assert.equal(observations.tableFootnotes, 1);
+});
+
+test("a list item inside a cell is COUNTED, never re-emitted as a loose bullet", () => {
+  // 200 in the corpus, and for all 163 with text the same string is already in
+  // `table_cells`. So this is a representation choice that must be disclosed —
+  // not a loss to repair by putting cell text back into the prose stream.
+  const raw = doclingDoc({
+    texts: [{ self_ref: "#/texts/0", label: "list_item", text: "Take with food", marker: "-" }],
+    groups: [
+      {
+        self_ref: "#/groups/0",
+        label: "list",
+        name: "list",
+        parent: { $ref: "#/tables/0" },
+        children: [{ $ref: "#/texts/0" }],
+      },
+    ],
+    tables: [
+      {
+        self_ref: "#/tables/0",
+        label: "table",
+        children: [{ $ref: "#/groups/0" }],
+        data: {
+          num_rows: 1,
+          num_cols: 1,
+          table_cells: [{ text: "Take with food", start_row_offset_idx: 0, start_col_offset_idx: 0 }],
+        },
+      },
+    ],
+    children: [{ $ref: "#/tables/0" }],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "docx" });
+
+  assert.equal(model.blocks.filter((b) => b.kind === "listItem").length, 0);
+  assert.equal(observations.listItemsInsideTables, 1, "counted, so the retention number can be read honestly");
+  assert.deepEqual(model.blocks[0]!.table?.rows, [["Take with food"]], "the content reaches the student in the grid");
+});
+
+test("an equation Docling could not transcribe is counted, not swallowed", () => {
+  // 🔴 27 OF THE CORPUS'S 49 FORMULAS. Docling emits a `formula` node with a
+  // page, a box and an EMPTY string — it found the equation and read nothing.
+  // The old `if (text)` gate dropped all 27 with no counter anywhere.
+  const raw = doclingDoc({
+    texts: [
+      { self_ref: "#/texts/0", label: "formula", text: "C = D / V", prov: [{ page_no: 1 }] },
+      {
+        self_ref: "#/texts/1",
+        label: "formula",
+        text: "",
+        prov: [{ page_no: 1, bbox: { l: 126, r: 289, t: 229, b: 206, coord_origin: "BOTTOMLEFT" } }],
+      },
+      { self_ref: "#/texts/2", label: "text", text: "", prov: [{ page_no: 1 }] },
+    ],
+    pages: PAGE,
+    children: [{ $ref: "#/texts/0" }, { $ref: "#/texts/1" }, { $ref: "#/texts/2" }],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "pdf" });
+
+  assert.equal(model.blocks.filter((b) => b.kind === "equation").length, 1, "only the readable one becomes a block");
+  assert.equal(observations.equationsUnreadable, 1);
+  assert.equal(observations.droppedEmptyText, 1, "an empty paragraph is counted too, but kept apart — it is not a gap");
+});
+
+test("an unreadable equation alone is enough to make a file partial", () => {
+  // The case that used to read as a clean parse: every page filled, no pictures,
+  // and a derivation nobody could read. `complete` here would be the lie.
+  const coverage = doclingCoverage(obs({ equationsUnreadable: 27 }), { format: "pdf", unitsInModel: 1 });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unreadableRegions, 27);
+  assert.equal(coverage.figures.found, 0, "an equation is NOT filed as a picture — the sentence would be false");
+  assert.equal(coverage.state, "partial");
+});
+
+test("dropped pictures are counted, including the ones under a furniture group", () => {
+  // 30 in the corpus. Only 5 are the node the walk stops at; the other 25 sit
+  // beneath a group whose own layer is furniture, which Docling named
+  // "page header". Counting only the stopping node reported a sixth of them.
+  const raw = doclingDoc({
+    pictures: [
+      { self_ref: "#/pictures/0", label: "picture", content_layer: "furniture" },
+      { self_ref: "#/pictures/1", label: "picture" },
+      { self_ref: "#/pictures/2", label: "picture", content_layer: "invisible" },
+      { self_ref: "#/pictures/3", label: "picture" },
+    ],
+    groups: [
+      {
+        self_ref: "#/groups/0",
+        label: "section",
+        name: "page header",
+        content_layer: "furniture",
+        children: [{ $ref: "#/pictures/1" }],
+      },
+    ],
+    children: [
+      { $ref: "#/pictures/0" },
+      { $ref: "#/groups/0" },
+      { $ref: "#/pictures/2" },
+      { $ref: "#/pictures/3" },
+    ],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "pdf" });
+
+  assert.equal(model.blocks.filter((b) => b.kind === "figure").length, 1, "only the body picture survives");
+  assert.equal(observations.picturesDroppedAsFurniture, 3);
+  assert.equal(observations.pictures, 1);
+  assert.ok(observations.droppedFurniture >= 2, "the general furniture lump still counts the nodes it stopped at");
+});
+
+test("every raw picture ends up either in the model or in a counter", () => {
+  // The property the corpus audit checks (1,941 = 1,911 + 30) as a unit test:
+  // no picture may leave without a receipt.
+  const raw = doclingDoc({
+    texts: [{ self_ref: "#/texts/0", label: "text", text: "Cell", parent: { $ref: "#/groups/0" } }],
+    pictures: [
+      { self_ref: "#/pictures/0", label: "picture" },
+      { self_ref: "#/pictures/1", label: "picture", content_layer: "furniture" },
+      { self_ref: "#/pictures/2", label: "picture", parent: { $ref: "#/groups/0" } },
+    ],
+    groups: [
+      {
+        self_ref: "#/groups/0",
+        parent: { $ref: "#/tables/0" },
+        children: [{ $ref: "#/texts/0" }, { $ref: "#/pictures/2" }],
+      },
+    ],
+    tables: [
+      {
+        self_ref: "#/tables/0",
+        label: "table",
+        children: [{ $ref: "#/groups/0" }],
+        data: {
+          num_rows: 1,
+          num_cols: 1,
+          table_cells: [{ text: "Cell", start_row_offset_idx: 0, start_col_offset_idx: 0 }],
+        },
+      },
+    ],
+    children: [{ $ref: "#/pictures/0" }, { $ref: "#/pictures/1" }, { $ref: "#/tables/0" }],
+  });
+  const { model, observations } = adaptDoclingDocument(raw, { format: "pdf" });
+  const rawPictures = 3;
+  assert.equal(
+    model.blocks.filter((b) => b.kind === "figure").length + observations.picturesDroppedAsFurniture,
+    rawPictures,
+    "emitted + dropped-and-counted must equal what the file declared",
+  );
+  assert.equal(observations.pictures, 2);
 });
