@@ -125,17 +125,29 @@ slide itself.
 
 ### PDF — Docling wins, and it is not close
 
-**MEASURED**, 93 PDFs completed at time of writing:
+**MEASURED**, the complete set — all 164 PDFs, 1,474 pages:
 
-| | Nemesis | Docling → adapter |
-|---|---:|---:|
-| tables | **0** | **33** |
-| table cells | 0 | 937 |
-| cells in marked header rows | 0 | 95 |
-| list items | **0** | **224** |
-| …carrying a real marker | 0 | 115 |
-| headings | 107 | 201 |
-| captions | 0 | 10 |
+| | Nemesis | Docling raw | Docling → adapter |
+|---|---:|---:|---:|
+| tables | **0** | 349 | **349** |
+| table cells | 0 | 14,215 | 18,550 |
+| cells in marked header rows | 0 | 1,228 | 2,656 |
+| list items | **0** | 5,221 | **5,249** |
+| …carrying a real marker | 0 | 3,139 | 3,139 |
+| headings | 2,010 | 2,695 | 2,695 |
+| captions | 0 | 190 | 167 |
+| speaker notes | 0 | — | 18 |
+| text characters | **1,674,826** | 1,572,071 | 1,514,852 |
+| blocks carrying geometry | 14,101 | — | 24,765 |
+
+Read the last two rows together with the rest. We extract **more raw text** —
+we win the character count on 120 of 164 files — and **none of it is organised**.
+Docling gives up ~10% of the characters and returns 349 tables and 5,249 list
+items that we do not have at all.
+
+The per-file split is the honest form of this: Nemesis produces more characters
+on 120 files, the adapter on 44; but on tables and list items the score is
+**86–106 files to zero**, never once in our favour.
 
 Our PDF lane produces **no tables and no list items at all**. That is not a
 tuning gap, it is an absent capability — PDF table detection was deliberately
@@ -297,6 +309,31 @@ Docling's raw character count** — nothing is dropped.
 
 ### PPTX — ours, decisively
 
+**MEASURED**, all 23 decks, 618 slides. This table only exists because the
+PowerPoint run failed twice first; see the import-shadow trap below, which is
+mine, not Docling's.
+
+| | Nemesis | Docling → adapter |
+|---|---:|---:|
+| text characters | **298,893** | 247,547 |
+| …files where we extract more | **23 of 23** | 0 |
+| headings | 374 | 374 |
+| tables | **0** | 65 |
+| table cells | 0 | 951 |
+| list items | 0 | 1,798 |
+| figures | 0 | 470 |
+| blocks carrying geometry | **0** | 5,291 |
+
+We extract more text than Docling on **every single deck, without exception** —
+the only format where that is true. That is the notes, chart and SmartArt
+recovery showing up in the numbers.
+
+The two zeros in our column are real and are ours to fix: no table grids, and
+**no geometry anywhere**. The `speaker notes: 0` in our row is a *labelling*
+artefact, not a gap — the notes text is present (it is why we lead on characters)
+but our lane never tags it `note`, so nothing downstream can tell a lecturer's
+aside from slide body text. That is worth fixing regardless of Docling.
+
 Our PPTX lane wins on the thing a lecture is actually for. Speaker notes are
 reached through **each slide's own relationships** rather than by filename index,
 and SmartArt and chart text are recovered the same way. Images are deduped by
@@ -319,6 +356,47 @@ it has honest per-deck coverage (`slides`, `notesPages`, `charts`, `diagrams`,
 Those are real defects, but they are **defects in our renderer, fixable in our
 own code**, and they do not outweigh losing notes/charts/diagrams and a working
 dedupe.
+
+---
+
+## Speed, memory, and failure behaviour
+
+**MEASURED.** Docling is one to two orders of magnitude slower than our lane, and
+that is the price of the structure above, not a defect.
+
+| | Nemesis | Docling | ratio |
+|---|---:|---:|---:|
+| PDF, 163 files / ~1,440 pages | 88.4s | 4,925s | **~56×** |
+| DOCX, 158 files | 0.6s | 198.8s | ~316× |
+| PPTX, 23 decks | 9.7s | 10.9s | **1.1×** |
+| peak RSS | 456 MB | 2,086 MB | 4.6× |
+
+PowerPoint is the surprise: Docling is **the same speed as us** there, because
+no layout model runs on a format that already declares its own structure. The
+cost is specifically the PDF vision models (RT-DETR layout + TableFormer), which
+is also why the slowest PDFs are the table-dense ones.
+
+**Distribution matters more than the mean.** Per PDF: median **12.8s**, p90 65s,
+p95 99s, p99 145s. There is **no pathological tail** — with one unresolved
+exception noted below, the slowest legitimate document is 297s (17 pages,
+15 tables).
+
+🔴 **One timing in the raw data is 3,555s and it is not real.** The laptop was
+closed for an hour mid-run. Wall-clock counts straight through a suspend, so the
+single file in flight absorbs the entire nap and every other file is unaffected.
+Re-measured awake, that file is still genuinely slow (>7 minutes, exceeding the
+measurement window) — so it is a real outlier of unknown size, and the headline
+"one file = 49% of all runtime" was an artefact. **Never size a timeout from a
+number measured on an unattended laptop.**
+
+**Failure behaviour.** Nemesis: 0 refusals across 345 files. Docling: 53
+exceptions across 398, and **all 53 are the `~$` Office lock stubs** — 162-byte
+files that are not documents. Failing those closed with a named error is correct.
+On real documents neither parser threw.
+
+The practical consequence is that **Docling cannot be synchronous**. At a median
+of 12.8s and a p95 of 99s it belongs behind the existing job queue, which is
+where PDFs already go.
 
 ---
 
