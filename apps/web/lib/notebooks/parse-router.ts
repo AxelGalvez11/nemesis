@@ -35,7 +35,7 @@ export type ParserChoice = "nemesis" | "docling";
  * rather than throwing: a typo in an environment variable must not take document
  * reading offline.
  */
-export function doclingFormats(env: NodeJS.ProcessEnv = process.env): ReadonlySet<DocumentKind> {
+export function doclingFormats(env: Readonly<Record<string, string | undefined>> = process.env): ReadonlySet<DocumentKind> {
   const raw = (env.DOCLING_FORMATS ?? "").trim().toLowerCase();
   if (!raw) return new Set();
   const allowed: DocumentKind[] = ["pdf", "docx", "pptx"];

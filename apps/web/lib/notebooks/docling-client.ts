@@ -40,7 +40,7 @@ export interface DoclingServiceConfig {
  * Absent URL means "not configured", which is the normal production state and
  * is NOT an error — the router simply keeps using our own parsers.
  */
-export function doclingConfig(env: NodeJS.ProcessEnv = process.env): DoclingServiceConfig | null {
+export function doclingConfig(env: Readonly<Record<string, string | undefined>> = process.env): DoclingServiceConfig | null {
   const baseUrl = (env.DOCLING_SERVE_URL ?? "").trim().replace(/\/+$/, "");
   if (!baseUrl) return null;
   if (!/^https?:\/\//i.test(baseUrl)) return null;
