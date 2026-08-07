@@ -134,15 +134,46 @@ import {
   type MediaFact,
   type SlideMediaPlan,
 } from "./slide-media";
+import { readDocxStructure, renderDocx, type DocxDocument } from "./docx-structure";
 import { tiffImage } from "./tiff-image";
 
-/** Extract text from .docx bytes. Throws on a non-zip / a file missing word/document.xml. */
+/**
+ * Extract text from .docx bytes, with its structure intact.
+ *
+ * 🔴 THIS USED TO BE A TAG STRIP, AND THE TAG STRIP'S COST WAS MEASURED.
+ *
+ * Over 124 real course documents it discarded 8,355 table cells (each becoming
+ * an orphan line, which reads confidently WRONG rather than absent), 2,266
+ * numbered paragraphs in 61% of the files, 123 headings, and every equation in
+ * the corpus. See ./docx-structure.
+ *
+ * `word/numbering.xml` is optional: a document with no lists does not ship the
+ * part, and a list whose definition is missing degrades to a bullet rather than
+ * losing the item.
+ *
+ * Throws on a non-zip / a file missing word/document.xml.
+ */
 export function extractDocxText(bytes: Uint8Array): OfficeExtract {
   const files = unzipBounded(bytes);
   const doc = files["word/document.xml"];
   if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
-  const text = docxXmlToText(strFromU8(doc));
-  return { title: firstLine(text), text };
+  const numbering = files["word/numbering.xml"];
+  const structure = readDocxStructure(strFromU8(doc), numbering ? strFromU8(numbering) : null);
+  const text = renderDocx(structure);
+  // The title is the first HEADING when the document has one — a real document
+  // outline beats guessing at the first line, which on a form or a cover page is
+  // whatever happened to be typed at the top.
+  const heading = structure.blocks.find((b) => b.kind === "heading")?.text;
+  return { title: heading ?? firstLine(text), text };
+}
+
+/** The same read, with the structure kept rather than rendered away. */
+export function extractDocxStructure(bytes: Uint8Array): DocxDocument {
+  const files = unzipBounded(bytes);
+  const doc = files["word/document.xml"];
+  if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
+  const numbering = files["word/numbering.xml"];
+  return readDocxStructure(strFromU8(doc), numbering ? strFromU8(numbering) : null);
 }
 
 /** Extract text from .pptx bytes (every slide, in order, with its notes, charts and SmartArt). */
