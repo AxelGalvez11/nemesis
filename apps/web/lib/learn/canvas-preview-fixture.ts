@@ -11,7 +11,7 @@
 
 import { emptyCanvas, type CanvasSource, type LearningCanvas } from "./canvas-model";
 
-export type PreviewSeed = "lesson" | "recall" | "test" | "diagnose" | "complete";
+export type PreviewSeed = "empty" | "lesson" | "recall" | "test" | "diagnose" | "complete" | "retest";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 
@@ -56,7 +56,7 @@ const CONCEPTS = [
   { id: "k5", label: "Effective refractory period" },
 ];
 
-function lessonCanvas(): LearningCanvas {
+export function lessonSeed(): LearningCanvas {
   return {
     ...emptyCanvas("preview-canvas", NOW),
     title: "Cardiac action potentials",
@@ -200,9 +200,9 @@ const QUESTIONS = [
 
 /** The state after a test that went partly wrong — one right, two wrong — so the diagnosis has
  *  something real to name and the targeted rewrite has a genuine target. */
-function diagnoseCanvas(): LearningCanvas {
+export function diagnoseSeed(): LearningCanvas {
   return {
-    ...lessonCanvas(),
+    ...lessonSeed(),
     state: "diagnose",
     recall: RECALL,
     recallResults: [{ cardId: "r1", conceptId: "k2", grade: "good" }],
@@ -217,13 +217,18 @@ function diagnoseCanvas(): LearningCanvas {
   };
 }
 
-export const PREVIEW_CANVASES: Record<PreviewSeed, () => LearningCanvas> = {
-  lesson: lessonCanvas,
-  recall: () => ({ ...lessonCanvas(), state: "recall", recall: RECALL }),
-  test: () => ({ ...lessonCanvas(), state: "test", questions: QUESTIONS, answers: [] }),
-  diagnose: diagnoseCanvas,
+/** "retest" is served by canvas-preview-fixture-retest.ts, which has to run the real
+ *  clear-evidence function and so cannot live in this literal. */
+export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>> = {
+  // The blank canvas, for checking both documented ways in (§6): drop material, or type
+  // a topic. The topic-first path used to read a ref React had not written yet.
+  empty: () => emptyCanvas("preview-canvas-empty", NOW),
+  lesson: lessonSeed,
+  recall: () => ({ ...lessonSeed(), state: "recall", recall: RECALL }),
+  test: () => ({ ...lessonSeed(), state: "test", questions: QUESTIONS, answers: [] }),
+  diagnose: diagnoseSeed,
   complete: () => ({
-    ...diagnoseCanvas(),
+    ...diagnoseSeed(),
     state: "complete",
     weakConceptIds: [],
     correctedConceptIds: ["k4", "k5"],

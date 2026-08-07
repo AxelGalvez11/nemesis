@@ -65,6 +65,31 @@ export function diagnose(
   return { understood, weak, untested, score: { correct, total } };
 }
 
+/** Clear the evidence a retest is about to replace.
+ *
+ *  🔴 WHY THIS HAS TO EXIST. `diagnose` lets failure outrank success, which is right WITHIN one
+ *  round — a learner who got something right once and wrong once has not got it. It is wrong
+ *  ACROSS rounds. Answers were already wiped when a retest was generated, but recall results
+ *  were not, so one "Again" on a card made that concept permanently weak: the learner could
+ *  answer it correctly on every retest and the diagnosis would still name it, `correctedConceptIds`
+ *  would stay empty, and "Finish" would never appear. Relearn → retest → complete — the arc the
+ *  whole pilot exists to test — was unreachable.
+ *
+ *  A retest is newer evidence about exactly these concepts, so the older evidence about them
+ *  goes. Evidence about everything else is untouched. */
+export function clearEvidenceForRetest<
+  T extends Pick<LearningCanvas, "recallResults" | "answers">,
+>(canvas: T, conceptIds: readonly string[]): T {
+  const retested = new Set(conceptIds);
+  return {
+    ...canvas,
+    recallResults: canvas.recallResults.filter(
+      (result) => !result.conceptId || !retested.has(result.conceptId),
+    ),
+    answers: [],
+  };
+}
+
 /** The blocks that teach a given set of concepts. This is what makes targeted relearning
  *  cheap: the 400-word lesson is written from these blocks, not from the original 2,200. */
 export function blocksForConcepts(

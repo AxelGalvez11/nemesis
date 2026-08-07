@@ -8,7 +8,7 @@
 // other behaviour — the states, selection, citations, recall keys, scoring, the diagnosis —
 // runs exactly as it does in production against a seeded canvas.
 //
-// ?seed=lesson|recall|test|diagnose|complete picks the state to open in.
+// ?seed=lesson|recall|test|diagnose|complete|retest picks the state to open in.
 //
 // The query string is read off `window` after mount rather than through useSearchParams,
 // following the convention the reader harness set: a Suspense boundary here left the whole
@@ -19,14 +19,16 @@ import { useEffect, useState } from "react";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
-import { PREVIEW_CANVASES, type PreviewSeed } from "@/lib/learn/canvas-preview-fixture";
+import { lessonSeed, PREVIEW_CANVASES, type PreviewSeed } from "@/lib/learn/canvas-preview-fixture";
+import { retestAfterFailedRecall } from "@/lib/learn/canvas-preview-fixture-retest";
 
 export default function LearnPreviewPage() {
   const [canvasId, setCanvasId] = useState<string | null>(null);
 
   useEffect(() => {
     const requested = (new URLSearchParams(window.location.search).get("seed") ?? "lesson") as PreviewSeed;
-    const canvas = PREVIEW_CANVASES[requested] ? PREVIEW_CANVASES[requested]() : PREVIEW_CANVASES.lesson();
+    const build = requested === "retest" ? retestAfterFailedRecall : (PREVIEW_CANVASES[requested] ?? lessonSeed);
+    const canvas = build();
     // Written where the store's signed-out path reads from, so the real loader picks it up —
     // no preview-only branch inside the surface itself.
     window.localStorage.setItem(`nemesis.learn.canvas.v1.${canvas.id}`, JSON.stringify(canvas));

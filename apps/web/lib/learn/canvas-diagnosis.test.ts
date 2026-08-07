@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { blocksForConcepts, diagnose, masteryReached, summariseCompletion } from "./canvas-diagnosis";
+import {
+  blocksForConcepts,
+  clearEvidenceForRetest,
+  diagnose,
+  masteryReached,
+  summariseCompletion,
+} from "./canvas-diagnosis";
 import { emptyCanvas, type CanvasBlock, type LearningCanvas } from "./canvas-model";
 
 const CONCEPTS = [
@@ -131,6 +137,44 @@ test("the score counts answers, not concepts", () => {
     }),
   );
   assert.deepEqual(result.score, { correct: 1, total: 2 });
+});
+
+test("a retest clears the recall evidence for the concepts it re-assesses", () => {
+  // 🔴 The bug this exists for: recall evidence outlived the retest, so a learner who pressed
+  // "Again" once on a card could answer that concept correctly forever and it would stay weak.
+  // Relearn -> retest -> complete was unreachable; "Finish" never appeared.
+  const before = canvasWith({
+    recallResults: [
+      { cardId: "r1", conceptId: "k2", grade: "again" },
+      { cardId: "r2", conceptId: "k1", grade: "again" },
+    ],
+    weakConceptIds: ["k2"],
+  });
+  const after = clearEvidenceForRetest(before, ["k2"]);
+  assert.deepEqual(after.recallResults.map((r) => r.conceptId), ["k1"]);
+  assert.deepEqual(after.answers, []);
+});
+
+test("after a retest is answered correctly the concept is understood, not still weak", () => {
+  const retesting = clearEvidenceForRetest(
+    canvasWith({ recallResults: [{ cardId: "r1", conceptId: "k2", grade: "again" }], weakConceptIds: ["k2"] }),
+    ["k2"],
+  );
+  const result = diagnose({
+    ...retesting,
+    questions: [question("q9", "k2")],
+    answers: [{ questionId: "q9", picked: 0, correct: true }],
+  });
+  assert.deepEqual(result.weak, []);
+  assert.deepEqual(result.understood.map((c) => c.id), ["k2"]);
+});
+
+test("a retest leaves evidence about concepts it is not re-assessing alone", () => {
+  const after = clearEvidenceForRetest(
+    canvasWith({ recallResults: [{ cardId: "r1", conceptId: "k3", grade: "again" }] }),
+    ["k2"],
+  );
+  assert.equal(after.recallResults.length, 1);
 });
 
 test("a concept both missed on the test and passed on recall stays weak", () => {

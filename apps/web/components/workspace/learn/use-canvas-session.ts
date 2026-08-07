@@ -22,7 +22,7 @@ import {
   generateTest,
   runCommand,
 } from "@/lib/learn/canvas-api";
-import { blocksForConcepts, diagnose } from "@/lib/learn/canvas-diagnosis";
+import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { buildExcerpts } from "@/lib/learn/canvas-grounding";
 import {
   conceptLabel,
@@ -60,8 +60,9 @@ export interface CanvasSession {
   dismissError: () => void;
   dismissAside: () => void;
   attachFiles: (files: FileList | File[]) => Promise<void>;
-  setTopic: (topic: string) => void;
-  begin: () => void;
+  /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
+   *  material is already attached. */
+  begin: (topic?: string) => void;
   chooseLevel: (level: CanvasLevel) => Promise<void>;
   command: (text: string, selected: readonly CanvasBlock[]) => Promise<void>;
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
@@ -214,19 +215,26 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [requireUid, update],
   );
 
-  const setTopic = useCallback(
-    (topic: string) => update((current) => ({ ...current, title: topic })),
+  /** Start learning. The topic is passed in rather than set first and read back:
+   *
+   *  🔴 `setTopic(t); begin();` looked fine and was a race. `latest.current` is only written
+   *  inside the `setCanvas` updater, and React runs that eagerly only when the fiber has no
+   *  pending work — which the active-time interval routinely creates. So the topic-first entry
+   *  path (§6B, one of the two documented ways in) intermittently read a canvas with no title
+   *  and refused with "Add material, or say what you want to learn." Taking the topic as an
+   *  argument removes the ordering dependency instead of narrowing the window. */
+  const begin = useCallback(
+    (topic?: string) => {
+      const title = topic?.trim() ?? "";
+      const check = canStart({ sources: latest.current.sources, title: title || latest.current.title });
+      if (!check.ok) {
+        setError(check.reason);
+        return;
+      }
+      update((current) => ({ ...current, ...(title ? { title } : {}), state: "orient" }));
+    },
     [update],
   );
-
-  const begin = useCallback(() => {
-    const check = canStart(latest.current);
-    if (!check.ok) {
-      setError(check.reason);
-      return;
-    }
-    go("orient");
-  }, [go]);
 
   // ------------------------------------------------------------------- lesson
 
@@ -378,13 +386,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const card = latest.current.recall.find((candidate) => candidate.id === cardId);
       // The same Postgres function the Study tab grades through, so the scheduling is real.
       void gradeStudyCard(card?.studyCardId, grade);
-      update((current) => ({
-        ...current,
-        recallResults: [
+      update((current) => {
+        const recallResults = [
           ...current.recallResults.filter((result) => result.cardId !== cardId),
           { cardId, conceptId: card?.conceptId ?? null, grade },
-        ],
-      }));
+        ];
+        // The deck is finished the moment the last card is graded — the funnel needs the
+        // "got through recall" number, not just the "started recall" one.
+        if (current.recall.length > 0 && recallResults.length >= current.recall.length) {
+          canvasCapture("canvas_recall_completed", current, {
+            cards: current.recall.length,
+            again: recallResults.filter((result) => result.grade === "again").length,
+          });
+        }
+        return { ...current, recallResults };
+      });
     },
     [update],
   );
@@ -411,7 +427,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
       captureStateChange(latest.current, "test");
-      update((current) => ({ ...current, questions: result.value ?? [], answers: [], state }));
+      update((current) => ({
+        // A retest replaces the evidence about the concepts it re-assesses — including the
+        // recall grades. Without that a single "Again" kept a concept weak forever and the
+        // canvas could never be finished.
+        ...(retest ? clearEvidenceForRetest(current, current.weakConceptIds) : { ...current, answers: [] }),
+        questions: result.value ?? [],
+        state,
+      }));
     },
     [requireUid, update],
   );
@@ -499,7 +522,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setError(result.error);
       return;
     }
-    captureStateChange(latest.current, "targeted_relearn");
+    // Not captureStateChange here: it maps "targeted_relearn" onto the same event name, and
+    // firing both double-counted every relearn in the funnel.
     update((existing) => ({ ...applyOps(existing, result.value ?? []), state: "targeted_relearn" }));
     canvasCapture("canvas_weakspots_relearned", latest.current, {
       concepts: current.weakConceptIds.map((cid) => conceptLabel(current, cid)),
@@ -533,7 +557,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     dismissError: () => setError(null),
     dismissAside: () => setAside(null),
     attachFiles,
-    setTopic,
     begin,
     chooseLevel,
     command,

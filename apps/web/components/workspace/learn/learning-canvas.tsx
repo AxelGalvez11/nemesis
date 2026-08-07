@@ -6,7 +6,7 @@
 // assistant column, and no route change between reading, recalling and being tested — the
 // canvas itself is the interface, and the command bar is the only control.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -38,15 +38,46 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     [canvas.blocks, selectedIds],
   );
 
-  const onSelect = useCallback((ids: string[]) => {
-    setSelectedIds(ids);
-    canvasCapture("canvas_text_selected", { id: "", state: "learn" }, { blocks: ids.length });
-  }, []);
+  // 🔴 `selectionchange` fires continuously while a drag is in progress, so recording an event
+  // per call produced dozens of canvas_text_selected rows for one highlight — and the canvas it
+  // was given was a fabricated `{id:"", state:"learn"}`, so `canvas_id` was blank and nothing
+  // could be joined to it. One event per distinct selection, carrying the real canvas.
+  const lastSelection = useRef<string>("");
+  const onSelect = useCallback(
+    (ids: string[]) => {
+      setSelectedIds(ids);
+      const key = ids.join(",");
+      if (key === lastSelection.current) return;
+      lastSelection.current = key;
+      canvasCapture("canvas_text_selected", canvas, { blocks: ids.length });
+    },
+    [canvas],
+  );
 
   const clearSelection = useCallback(() => {
     setSelectedIds([]);
+    lastSelection.current = "";
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  // Leaving a canvas that was started but never finished is the number the pilot is being
+  // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the
+  // state at the moment of leaving rather than the one captured when the effect was set up.
+  const leaving = useRef(canvas);
+  leaving.current = canvas;
+  useEffect(
+    () => () => {
+      const last = leaving.current;
+      if (last.state !== "complete" && last.state !== "empty") {
+        canvasCapture("canvas_abandoned", last, {
+          blocks: last.blocks.length,
+          answered: last.answers.length,
+          activeMs: last.activeMs,
+        });
+      }
+    },
+    [],
+  );
 
   const submit = useCallback(
     async (text: string) => {
@@ -103,10 +134,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           <CanvasEmpty
             busy={busy.kind === "source"}
             onFiles={(files) => void session.attachFiles(files)}
-            onTopic={(topic) => {
-              session.setTopic(topic);
-              session.begin();
-            }}
+            onTopic={(topic) => session.begin(topic)}
           />
         )}
 
@@ -212,7 +240,9 @@ function SourcesAttached({ session }: { session: ReturnType<typeof useCanvasSess
         <button
           className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
           disabled={session.busy.kind !== null}
-          onClick={session.begin}
+          // Wrapped, not passed by reference: `begin` now takes an optional topic, and handing
+          // it straight to onClick would pass the click event in as the title.
+          onClick={() => session.begin()}
           type="button"
         >
           Help me learn this
