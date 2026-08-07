@@ -159,3 +159,48 @@ if (wordLoss.length) {
   console.log(`    tables split across chunks ${splitTables}  ${splitTables === 0 ? "✅" : "🔴"}`);
   console.log(`    documents that lost text   ${lossy}  ${lossy === 0 ? "✅ chunking is loss-free" : "🔴"}`);
 }
+
+// ── Phase 6: what do real documents actually yield? ─────────────────────────
+// The unit tests prove the shapes on two invented documents from unrelated
+// fields. This runs the same extractors over 124 real ones, where the shapes are
+// messier and nobody wrote them to be found.
+{
+  const { extractFacts } = await import("../../../packages/shared/src/document-facts.ts");
+  const kinds: Record<string, number> = {};
+  let withProvenance = 0, total = 0, filesWithFacts = 0, badLocator = 0;
+  const weightingSections = new Set<string>();
+  for (const file of files) {
+    try {
+      const zip = unzipSync(new Uint8Array(readFileSync(file)));
+      const part = zip["word/document.xml"];
+      if (!part) continue;
+      const numbering = zip["word/numbering.xml"] ? strFromU8(zip["word/numbering.xml"]) : null;
+      const doc = docxToModel(readDocxStructure(strFromU8(part), numbering), null);
+      const ids = new Set(doc.blocks.map((b) => b.id));
+      const facts = extractFacts(doc);
+      if (facts.length) filesWithFacts += 1;
+      for (const f of facts) {
+        total += 1;
+        kinds[f.kind] = (kinds[f.kind] ?? 0) + 1;
+        if (f.blockIds.length > 0 && f.blockIds.every((id) => ids.has(id))) withProvenance += 1;
+        // 🔴 A .docx fact must never carry a page. Checked on every fact of
+        // every real file, not on a fixture.
+        if (f.locator.unitKind !== "body") badLocator += 1;
+        if (f.kind === "weighting" && f.headingPath.length) {
+          weightingSections.add(f.headingPath[f.headingPath.length - 1]!);
+        }
+      }
+    } catch { /* counted above */ }
+  }
+  console.log(`\n  PHASE 6 facts over real documents (${filesWithFacts} files produced any):`);
+  for (const [kind, n] of Object.entries(kinds).sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${kind.padEnd(12)} ${n}`);
+  }
+  console.log(`    ---`);
+  console.log(`    facts with valid provenance ${withProvenance}/${total}  ${withProvenance === total ? "✅" : "🔴"}`);
+  console.log(`    facts claiming a page       ${badLocator}  ${badLocator === 0 ? "✅" : "🔴 RULE VIOLATED"}`);
+  if (weightingSections.size) {
+    console.log(`    weighting schemes found under sections the DOCUMENTS named:`);
+    console.log(`      ${[...weightingSections].slice(0, 8).map((s) => JSON.stringify(s.slice(0, 40))).join(", ")}`);
+  }
+}

@@ -234,3 +234,8 @@ export * from "./document-chunks.ts";
 // right often enough to look reliable, wrong often enough to matter, and the same
 // shape either way. Nothing here trusts a claimed location.
 export * from "./document-citations.ts";
+// Facts pulled out by SHAPE, never by subject vocabulary — a table of shares that
+// sums to a whole is a weighting scheme whether it divides a moot court score or
+// a weld inspection, and the heading path carries whatever the document called
+// it. A keyword list here would be a hidden claim about who the student is.
+export * from "./document-facts.ts";
