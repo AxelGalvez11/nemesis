@@ -44,6 +44,8 @@ export interface DocxBlock {
   depth?: number;
   /** table only: rows of cells, kept as a grid rather than flattened. */
   rows?: string[][];
+  /** table only: leading rows Word MARKED as headers. 0 when it marked none. */
+  headerRows?: number;
   /** The enclosing headings, outermost first. Empty at the top level. */
   headingPath: string[];
 }
@@ -213,12 +215,13 @@ export function readDocxStructure(documentXml: string, numberingXml: string | nu
   for (const node of topLevelNodes(documentXml)) {
     const index = blocks.length;
     if (node.tag === "tbl") {
-      const rows = readTable(node.xml);
+      const { headerRows, rows } = readTable(node.xml);
       const cells = rows.reduce((t, r) => t + r.length, 0);
       if (!cells) continue;
       counts.tables += 1;
       counts.tableCells += cells;
       blocks.push({
+        headerRows,
         headingPath: [...headingPath],
         index,
         kind: "table",
@@ -329,9 +332,21 @@ function topLevelNodes(documentXml: string): { tag: string; xml: string }[] {
   return childrenOf(body, ["p", "tbl"]);
 }
 
-/** A table's cells, as rows. Nested tables contribute their text to their cell. PURE. */
-function readTable(tableXml: string): string[][] {
+/**
+ * A table's cells, as rows, plus how many leading rows Word marked as headers.
+ *
+ * 🔴 THE HEADER COUNT IS READ, NEVER ASSUMED. Word states it: a header row
+ * carries `<w:tblHeader/>` in its `<w:trPr>`, which is what makes it repeat
+ * across a page break. Assuming "row 0 is the header" instead would label every
+ * value in a table that opens with data — a rubric whose first line is a real
+ * criterion becomes a column name, and every answer drawn from it inherits the
+ * mistake. Tables with no marked header honestly report zero.
+ *
+ * Nested tables contribute their text to their cell. PURE.
+ */
+function readTable(tableXml: string): { headerRows: number; rows: string[][] } {
   const rows: string[][] = [];
+  let headerRows = 0;
   // Only this table's OWN rows and cells. A nested table's `<w:tr>` sits inside a
   // `<w:tc>` of ours, and a non-greedy match would end the outer cell at the
   // inner `</w:tc>` — truncating it and swallowing the cell beside it, so a
@@ -346,9 +361,15 @@ function readTable(tableXml: string): string[][] {
       const paragraphs = [...tc.xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map((p) => paragraphText(p[0]));
       cells.push(paragraphs.filter(Boolean).join(" ").trim());
     }
-    if (cells.length) rows.push(cells);
+    if (!cells.length) continue;
+    // Only a LEADING run counts. Word allows the property anywhere, but a header
+    // that does not start the table cannot be a header for the rows above it,
+    // and treating a mid-table repeat as one would mislabel everything before.
+    const rowProps = tr.xml.match(/<w:trPr>([\s\S]*?)<\/w:trPr>/)?.[1] ?? "";
+    if (/<w:tblHeader\b/.test(rowProps) && headerRows === rows.length) headerRows += 1;
+    rows.push(cells);
   }
-  return rows;
+  return { headerRows, rows };
 }
 
 /**

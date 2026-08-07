@@ -218,3 +218,9 @@ export * from "./upload-limits.ts";
 // column, the web client and the phone — and because a partial read presented as
 // a complete one is the same defect on every one of those surfaces.
 export * from "./extraction-coverage.ts";
+// The canonical shape every parsed document takes: units → blocks. Shared because
+// the same document is chunked for retrieval, cited in an answer, reopened in the
+// reader and turned into study material — and those four had been reading four
+// different flattenings of it. Its rule travels with it: a locator is only ever
+// as specific as the format can honestly support.
+export * from "./document-model.ts";

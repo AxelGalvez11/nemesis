@@ -17,6 +17,8 @@
 import { strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 
+import { documentToText, type DocumentModel } from "@nemesis/shared";
+
 /**
  * Most a .docx/.pptx may weigh once unpacked.
  *
@@ -134,7 +136,8 @@ import {
   type MediaFact,
   type SlideMediaPlan,
 } from "./slide-media";
-import { readDocxStructure, renderDocx, type DocxDocument } from "./docx-structure";
+import { docxToModel } from "./docx-model";
+import { readDocxStructure, type DocxDocument } from "./docx-structure";
 import { tiffImage } from "./tiff-image";
 
 /**
@@ -154,20 +157,33 @@ import { tiffImage } from "./tiff-image";
  * Throws on a non-zip / a file missing word/document.xml.
  */
 export function extractDocxText(bytes: Uint8Array): OfficeExtract {
-  const files = unzipBounded(bytes);
-  const doc = files["word/document.xml"];
-  if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
-  const numbering = files["word/numbering.xml"];
-  const structure = readDocxStructure(strFromU8(doc), numbering ? strFromU8(numbering) : null);
-  const text = renderDocx(structure);
+  const model = extractDocxModel(bytes);
+  // 🔴 DERIVED FROM THE MODEL, NOT ALONGSIDE IT. Rendering the structure a
+  // second time here is how the string and the blocks would drift, and a model
+  // reading one while a citation pointed into the other is a class of bug that
+  // reads as hallucination.
+  const text = documentToText(model);
+  return { title: model.title, text };
+}
+
+/**
+ * The same read, as the canonical model.
+ *
+ * 🔴 THIS IS NOW THE PRIMARY PATH. `extractDocxText` is the flattening of it,
+ * kept because the chat handoff and the current index still take a string.
+ * Previously it was the other way round and the structure was discarded.
+ */
+export function extractDocxModel(bytes: Uint8Array): DocumentModel {
+  const structure = extractDocxStructure(bytes);
   // The title is the first HEADING when the document has one — a real document
   // outline beats guessing at the first line, which on a form or a cover page is
   // whatever happened to be typed at the top.
   const heading = structure.blocks.find((b) => b.kind === "heading")?.text;
-  return { title: heading ?? firstLine(text), text };
+  const model = docxToModel(structure, heading ?? null);
+  return model.title ? model : { ...model, title: firstLine(documentToText(model)) };
 }
 
-/** The same read, with the structure kept rather than rendered away. */
+/** The format-specific structure, before it becomes the canonical model. */
 export function extractDocxStructure(bytes: Uint8Array): DocxDocument {
   const files = unzipBounded(bytes);
   const doc = files["word/document.xml"];
