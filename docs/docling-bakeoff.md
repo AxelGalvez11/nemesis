@@ -236,6 +236,28 @@ Read that table carefully — it does not have a winner.
   A picture-only assignment brief currently reads as an empty document with no
   coverage entry saying so.
 
+#### 🔴 Equations: ours are not merely unformatted, they are WRONG
+
+Docling produced 19 formula items across the DOCX set where we produce 0. That
+count understates it. The same file, both parsers:
+
+| | output |
+|---|---|
+| **Nemesis** | `zero order t1/2 = Co2k` |
+| **Docling** | `zero order t_{1/2}` + `= \frac{C_{o}}{2k}` |
+
+The real equation is **C₀ / (2k)**. Our `paragraph` join concatenates numerator
+and denominator with nothing between them, so it reads as **C₀ × 2k** — the
+inverse relationship. Same again for `ER= Cin- CoutCin`, which is (Cᵢₙ−Cₒᵤₜ)/Cᵢₙ.
+
+A student revising from that would learn the formula backwards, and **nothing
+marks it as an equation** — all 7 blocks come out as `paragraph`, so no consumer
+can even flag the risk. This is not a pharmacy problem: any discipline with
+fractions — engineering, physics, economics — hits it identically.
+
+Only 3 files in this corpus carry equations, so the frequency is low and the
+severity is high.
+
 **Text fidelity is a wash** (604k vs 602k characters). The adapter's apparent
 96k-character shortfall was checked and is **not a loss**: cell text moves into
 `DocTable.rows` rather than staying loose prose. Blocks + grids recover **111% of
@@ -355,13 +377,16 @@ does not resolve; the service needs 3.12.
 read a scanned page. Docling finds both and reads scans out of the box. This is
 the change that matters.
 
-**DOCX → keep ours, and take two specific things from Docling.** Our Word reader
-is genuinely better where it counts most — it gets the numbering right on every
-single list item, which Docling manages on two-thirds. But it misses two things
-badly: it never notices pictures (196 of them across your files, currently
-invisible *and* undisclosed), and it almost never spots which row of a table is
-the header, which makes a grading rubric read like data. Fix those two in our own
-code rather than switching owner.
+**DOCX → keep ours, and take three specific things from Docling.** Our Word
+reader is genuinely better where it counts most — it gets the numbering right on
+every single list item, which Docling manages on two-thirds. But it misses three
+things badly. It never notices pictures (196 of them across your files, currently
+invisible *and* not reported as missing). It almost never spots which row of a
+table is the header, which makes a grading rubric read like data. And **it gets
+equations actively wrong** — a formula that means "C₀ divided by 2k" comes out as
+"Co2k", which reads as "C₀ times 2k". Fix those three in our own code rather than
+switching owner; the equation one is the urgent one, because a wrong formula is
+worse than a missing one.
 
 **PPTX → keep ours.** It is the only one that reliably pulls out the lecturer's
 speaker notes, the text inside charts, and SmartArt diagrams — and it is smart
