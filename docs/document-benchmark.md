@@ -209,12 +209,26 @@ its content**: Word stores equations as OMML in a different namespace, so the ch
 bioavailability identities were all disappearing while the surrounding paragraphs reported as read.
 Fixed, and equations are now counted.
 
-**🔴 OPEN, UNEXPLAINED.** Seven of the 124 documents still render 82–97% of the old extractor's
-alphanumeric content. The two largest gaps were traced and are *gains*, not losses — the tag strip
-swept Word field codes into the student's text (`FORMCHECKBOX` thirteen times in one form; bookmark
-ids fused onto words as `477519233174Formulae`) and the new reader correctly omits them; the
-comparison now excludes that class. The remaining 3–18% is **not accounted for** and must be
-explained before Phase 3 can be called done. It is recorded here rather than rounded away.
+**🟢 RESOLVED — every remaining gap traced, and all of them are gains.** Seven of the 124 documents
+render 82–97% of the old extractor's alphanumeric content. Each was diagnosed rather than rounded
+away, and in every case the new reader is the correct one:
+
+| Cause | Example | What the tag strip emitted |
+|---|---|---|
+| Form field codes | `Medication Error Reporting Form.docx` | `FORMCHECKBOX`, thirteen times |
+| Bookmark / TOC ids | `IPT and PKPD Review Session.docx` | `477519233174Formulae` |
+| Image field codes | `MTM Case Worksheet 1–3.docx` | `INCLUDEPICTURE`, a raw image URL, `MERGEFORMATINET` |
+| Shape/textbox attributes | `Claude-by-Anthropic-for-Word.docx` | `rightcenterClaude`, `469963556851200748665287823Home` |
+
+The last row is also a **measurement artifact, not a loss**: the tag strip fuses shape positioning
+data onto the adjacent word, so the token `00Claude` never matches the correctly-separated `Claude`
+the new reader produces. A token-set comparison scores that as missing when the content is present.
+
+None of these is document content. The old extractor was putting field instructions, image URLs and
+shape geometry into text a student reads and a model answers from.
+
+**What remains before Phase 3 can be DONE:** the reader is not yet wired into the extract path, and
+PPTX must be shown not to regress.
 
 ### Everything else
 
