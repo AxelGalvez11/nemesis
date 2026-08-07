@@ -99,7 +99,14 @@ export function chunkDocument(
       // section that heading names, because the heading is inside it.
       headingPath: pathForChunk(current[0]!),
       index: chunks.length,
-      oversized: current.length === 1 && parts[0]!.length > target,
+      // 🔴 ANY BLOCK OVER THE TARGET, NOT ONLY A LONE ONE. The earlier rule was
+      // `current.length === 1`, so a 20,000-character paragraph that happened to
+      // be preceded by its own heading — the ordinary case, since a heading
+      // opens a chunk and never closes one — was carried whole and reported as
+      // an ordinary chunk. The text was never at risk; the DISCLOSURE was. A
+      // chunk that will not retrieve well has to say so, or it is discovered
+      // later as "search is bad on this file".
+      oversized: parts.some((part) => part.length > target),
       text: parts.join("\n\n"),
       unitEnd: Math.max(...units),
       unitKind: doc.units[current[0]!.unit]?.kind ?? "body",
