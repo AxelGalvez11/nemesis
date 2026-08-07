@@ -300,7 +300,26 @@ can even flag the risk. This is not a pharmacy problem: any discipline with
 fractions — engineering, physics, economics — hits it identically.
 
 Only 3 files in this corpus carry equations, so the frequency is low and the
-severity is high.
+severity is high — but see "What this corpus does not test": that 3 is a
+property of the corpus, not of the defect.
+
+**🔴 This advantage is DOCX-only. Docling does not transcribe PDF equations.**
+Reconciling the two equation counters (they disagreed, and the disagreement was
+real rather than a reporting bug):
+
+| | Docling detects | …carrying text | adapter emits |
+|---|---:|---:|---:|
+| DOCX | 19 | 19 | **19** |
+| PDF | 30 | ~3 | **3** |
+
+In Word, Docling reads OMML straight out of the XML and gets LaTeX. In PDF it
+runs a layout model that *locates* an equation and leaves it **empty** —
+transcription needs a separate formula model that is off by default. On one
+lecture: 9 formula nodes, text lengths `[0, 35, 0, 0, 0, 0, 0, 0, 110]`. The
+adapter emitting 3 is correct behaviour, not loss; it drops empty blocks.
+
+So a PDF-heavy discipline gets **no** equation help from this migration, and
+switching the formula model on would add cost to the slowest lane we have.
 
 **Text fidelity is a wash** (604k vs 602k characters). The adapter's apparent
 96k-character shortfall was checked and is **not a loss**: cell text moves into
@@ -366,7 +385,7 @@ that is the price of the structure above, not a defect.
 
 | | Nemesis | Docling | ratio |
 |---|---:|---:|---:|
-| PDF, 163 files / ~1,440 pages | 88.4s | 4,925s | **~56×** |
+| PDF, 164 files / 1,474 pages | 88.4s | 5,199s | **~59×** |
 | DOCX, 158 files | 0.6s | 198.8s | ~316× |
 | PPTX, 23 decks | 9.7s | 10.9s | **1.1×** |
 | peak RSS | 456 MB | 2,086 MB | 4.6× |
@@ -377,17 +396,17 @@ cost is specifically the PDF vision models (RT-DETR layout + TableFormer), which
 is also why the slowest PDFs are the table-dense ones.
 
 **Distribution matters more than the mean.** Per PDF: median **12.8s**, p90 65s,
-p95 99s, p99 145s. There is **no pathological tail** — with one unresolved
-exception noted below, the slowest legitimate document is 297s (17 pages,
-15 tables).
+p95 99s, p99 145s, slowest **297s** (17 pages, 15 tables). There is **no
+pathological tail** — the worst case is 23× the median, not 300×.
 
 🔴 **One timing in the raw data is 3,555s and it is not real.** The laptop was
 closed for an hour mid-run. Wall-clock counts straight through a suspend, so the
 single file in flight absorbs the entire nap and every other file is unaffected.
-Re-measured awake, that file is still genuinely slow (>7 minutes, exceeding the
-measurement window) — so it is a real outlier of unknown size, and the headline
-"one file = 49% of all runtime" was an artefact. **Never size a timeout from a
-number measured on an unattended laptop.**
+**Re-measured awake, that same file takes 274s** — an ordinary slow document,
+below the 297s worst case and comfortably inside the 600s cap. So there is no
+outlier at all, and the headline "one file = 49% of all runtime" was pure
+artefact. **Never size a timeout from a number measured on an unattended
+laptop**, and re-measure the in-flight file rather than reasoning about it.
 
 **Failure behaviour.** Nemesis: 0 refusals across 345 files. Docling: 53
 exceptions across 398, and **all 53 are the `~$` Office lock stubs** — 162-byte
@@ -478,6 +497,59 @@ Two risks worth naming: releases are **commit-triggered, not calendar-based**
 (8 releases in 27 days), so both `docling` and `docling-core` must be pinned —
 the schema types live in the separately-versioned `docling-core`. And Python 3.14
 does not resolve; the service needs 3.12.
+
+---
+
+## Retrieval and citations — MEASURED
+
+The dimension that decides whether structure is worth anything: a chunk that
+spans two pages cannot cite one page.
+
+| | Nemesis | Docling → adapter |
+|---|---:|---:|
+| chunks | 481 | 679 |
+| …spanning more than one unit | 42 | 46 |
+| **rate** | **8.7%** | **6.8%** |
+
+Docling produces ~40% more chunks and a **lower** cross-page rate, so the extra
+structure does not come at the cost of citation precision — it slightly improves
+it. Worth stating plainly because the first file I looked at said the opposite
+(3/55 ours vs 11/62 Docling) and I nearly reported that single file as the
+finding. Across 15 files it reverses.
+
+Chunk geometry is effectively universal on both sides (65/65 and 90/90 on the
+sample file), so region-level highlighting is available either way.
+
+---
+
+## Gate before the flag
+
+🔴 **These are not "nice to have before GA". Each one makes Nemesis assert
+something untrue, and the flag must stay off per format until they are closed.**
+
+1. **A production caller must build coverage.** `doclingCoverage()` now exists
+   and is tested, but until something on the parse path calls it, a
+   Docling-parsed document arrives with **no coverage record** and renders as
+   fully read. Measured proof it would lie: Docling returns SUCCESS on **8 files
+   where it declared more units than it filled** (`BIOL415_Lecture2_2025.pptx`,
+   2 of 26 slides empty). This is the third time in this project that structure
+   was computed and then dropped at a boundary; grep for consumers before
+   calling a producer done.
+2. **The native/OCR split is not available.** Docling's JSON does not say which
+   pages RapidOCR read, so `doclingCoverage` reports read pages as `unitsNative`,
+   which is wrong for exactly the 7 scanned PDFs the migration is meant to
+   rescue. The state is still right; the *reason* is not. Fix by having the
+   sidecar return per-page OCR flags.
+3. **The adapter's own losses are measured but undisclosed.** Crossing into our
+   model preserves 99.9% of headings and 99.1% of tables but **96.9% of pictures
+   and 98.2% of list items**. Small, real, and currently reported to nobody.
+
+**What is already satisfied, checked rather than assumed:** source hashes and
+identity are untouched by any of this. `contentHashOf` is sha256 over the
+original uploaded bytes and takes no parser input; the identity chain is
+`file -> content_hash -> parse -> placement`, the parser appears only as
+`parsed_documents.parser_version`, and placement (folder, title, course) is a
+separate row. Swapping the parser cannot move a hash, a source, or a course.
 
 ---
 

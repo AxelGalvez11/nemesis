@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { adaptDoclingDocument } from "./docling-adapter.ts";
+import { adaptDoclingDocument, doclingCoverage } from "./docling-adapter.ts";
+import type { DoclingObservations } from "./docling-adapter.ts";
 
 /** Minimal DoclingDocument, shaped exactly like the real export. */
 function doclingDoc(parts: {
@@ -316,4 +317,92 @@ test("the model never carries a Docling status as a verdict", () => {
   const { model, observations } = adaptDoclingDocument(raw, { format: "pdf", status: "SUCCESS" });
   assert.equal(observations.status, "SUCCESS");
   assert.ok(!("status" in model), "coverage is the caller's judgement, not the parser's claim");
+});
+
+/** Observations as the adapter would report them, overridable per case. */
+function obs(over: Partial<DoclingObservations> = {}): DoclingObservations {
+  return {
+    status: "ConversionStatus.SUCCESS",
+    unmappedLabels: {},
+    danglingRefs: 0,
+    droppedFurniture: 0,
+    pictures: 0,
+    picturesWithRect: 0,
+    declaredUnits: 1,
+    unitsWithContent: 1,
+    ...over,
+  };
+}
+
+test("a Docling SUCCESS with unfilled units is NOT complete", () => {
+  // The measured case: BIOL415_Lecture2_2025.pptx, 2 of 26 slides empty, and
+  // Docling reports SUCCESS for the file. If this ever returns "complete" the
+  // student is told a deck was fully read when two slides produced nothing.
+  const coverage = doclingCoverage(obs({ declaredUnits: 26, unitsWithContent: 24 }), {
+    format: "pptx",
+    unitsInModel: 26,
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitKind, "slide");
+  assert.equal(coverage.units, 26);
+  assert.equal(coverage.unitsUnread, 2);
+  assert.equal(coverage.state, "partial");
+  // Docling's own verdict is carried, but only as provenance — never as the state.
+  assert.match(coverage.parserVersion, /SUCCESS/);
+  assert.notEqual(coverage.state, "complete");
+});
+
+test("detected-but-unexamined figures are disclosed, not counted as read", () => {
+  const coverage = doclingCoverage(obs({ pictures: 61 }), { format: "pdf", unitsInModel: 1 });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.figures.found, 61);
+  assert.equal(coverage.figures.described, 0);
+  assert.equal(coverage.figures.skipped, 61);
+  assert.equal(coverage.figures.reasons["not-examined"], 61);
+  // Calling them decorative would read as complete and would be a lie: Docling's
+  // labels do not tell us whether a picture is a diagram or a divider.
+  assert.equal(coverage.figures.reasons.decorative, undefined);
+  assert.equal(coverage.state, "partial");
+});
+
+test("a fully read page with no pictures is allowed to be complete", () => {
+  // The guard must not be so blunt that nothing can ever pass it.
+  const coverage = doclingCoverage(obs({ declaredUnits: 3, unitsWithContent: 3 }), {
+    format: "pdf",
+    unitsInModel: 3,
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.state, "complete");
+  assert.equal(coverage.unitKind, "page");
+});
+
+test("a flowing document has one unit, never a page count", () => {
+  const coverage = doclingCoverage(obs({ declaredUnits: 0, unitsWithContent: 1 }), {
+    format: "docx",
+    unitsInModel: 1,
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.unitKind, "document");
+  assert.equal(coverage.units, 1);
+  assert.equal(coverage.unitsUnread, 0);
+});
+
+test("units the model holds are never lost to a smaller declared count", () => {
+  // Docling's page table is the file's claim; the model is what we actually got.
+  // Trusting the smaller of the two would silently hide real pages.
+  const coverage = doclingCoverage(obs({ declaredUnits: 2, unitsWithContent: 5 }), {
+    format: "pdf",
+    unitsInModel: 5,
+  });
+  assert.ok(typeof coverage !== "string", coverage as string);
+  assert.equal(coverage.units, 5);
+  assert.equal(coverage.unitsUnread, 0);
+});
+
+test("nonsensical observations are refused, not rounded into a cheerful record", () => {
+  const coverage = doclingCoverage(obs({ declaredUnits: 4, unitsWithContent: -1 }), {
+    format: "pdf",
+    unitsInModel: 4,
+  });
+  assert.equal(typeof coverage, "string");
 });

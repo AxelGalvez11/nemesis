@@ -16,6 +16,17 @@
  * coverage from those. This function never returns a coverage verdict itself,
  * because the one thing a parser must not do is grade its own homework.
  *
+ * 🔴 THAT SEPARATION IS ONLY HONEST IF A CALLER ACTUALLY BUILDS THE RECORD.
+ * It did not. For most of this branch's life `observations` was read by exactly
+ * one thing — the bake-off harness — which meant a document parsed by Docling
+ * would have reached the app with NO coverage record at all and would have
+ * rendered as fully read. That is the precise failure this comment claims to
+ * prevent, and measurement found it: Docling returns SUCCESS on 8 files where it
+ * declared more units than it filled (`BIOL415_Lecture2_2025.pptx`: 2 of 26
+ * slides empty). `doclingCoverage` below exists so the caller has something to
+ * call. **The flag must not be enabled for any format until a production caller
+ * invokes it** — see `docs/docling-bakeoff.md`, "Gate before the flag".
+ *
  * Three details in Docling's format are load-bearing and easy to get wrong:
  *
  *   1. READING ORDER IS THE TREE, NOT THE ARRAYS. `texts`, `tables` and
@@ -42,6 +53,8 @@ import type {
   DocUnitKind,
   DocumentModel,
 } from "./document-model.ts";
+import { buildCoverage } from "./extraction-coverage.ts";
+import type { CoverageUnitKind, ExtractionCoverage } from "./extraction-coverage.ts";
 
 /** Docling label -> our block kind. Unmapped labels are reported, not guessed. */
 const LABEL_TO_KIND: Record<string, DocBlockKind> = {
@@ -447,4 +460,58 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
   };
 
   return { model, observations };
+}
+
+/**
+ * Turn the adapter's observations into a coverage record.
+ *
+ * This is the caller-side half of "a third-party success is not our complete".
+ * It is deliberately a separate function from `adaptDoclingDocument` — the
+ * parser reports what it saw, something else decides what that means — but it
+ * lives here so there is exactly one correct way to do it rather than a
+ * hand-rolled one per call site.
+ *
+ * 🔴 EVERY PICTURE COUNTS AS `not-examined`, WHICH MAKES A CLEAN DOCLING PARSE
+ * `partial`. That is the intended answer, not a bug to tune away. Docling
+ * *detects* figures; it does not describe them. Across the corpus that is 1,220
+ * pictures in PDFs and 470 in decks that nothing has ever looked at. Marking
+ * them `decorative` would be free, would read as `complete`, and would be a lie
+ * — `decorative` means "we know it is a bullet or a rule". We do not know that
+ * here, because Docling's labels do not tell us. If a vision pass later runs
+ * over these, it moves them to `described` and the state rises on its own.
+ *
+ * 🔴 THE NATIVE/OCR SPLIT IS NOT AVAILABLE ON THIS PATH. Docling's JSON does not
+ * say which pages RapidOCR read, so a scan that OCR rescued is indistinguishable
+ * here from a page with a real text layer. Read units are therefore reported as
+ * `unitsNative`, which is WRONG for the 7 scanned PDFs in the corpus. It does
+ * not change the state — read is read — but it does mean the vision column is
+ * not trustworthy on this path, and that is a gate before the flag goes on, not
+ * a detail. Fix it by having the sidecar return per-page OCR flags.
+ */
+export function doclingCoverage(
+  observations: DoclingObservations,
+  options: { format: DocFormat; unitsInModel: number },
+): ExtractionCoverage | string {
+  const unitKind: CoverageUnitKind =
+    options.format === "pptx" ? "slide" : options.format === "pdf" ? "page" : "document";
+
+  // A flowing format has one unit by construction; a paginated one should trust
+  // the file's own page table, but never below what the model actually holds.
+  const declared = Math.max(observations.declaredUnits, options.unitsInModel);
+  const units = options.format === "docx" ? Math.max(1, options.unitsInModel) : declared;
+  const read = Math.min(observations.unitsWithContent, units);
+
+  return buildCoverage({
+    unitKind,
+    units,
+    unitsNative: read,
+    unitsUnread: units - read,
+    figures: {
+      found: observations.pictures,
+      described: 0,
+      skipped: observations.pictures,
+      reasons: observations.pictures > 0 ? { "not-examined": observations.pictures } : {},
+    },
+    parserVersion: `docling+adapter/${observations.status}`,
+  });
 }
