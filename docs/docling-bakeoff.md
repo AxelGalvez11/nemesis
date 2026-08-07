@@ -228,9 +228,19 @@ Read that table carefully — it does not have a winner.
   marker, because `docx-structure.ts` reads `numbering.xml` through both
   indirections (`w:num` → `w:abstractNum` → `w:lvl`) and keeps per-level running
   counters. Docling produces a marker for 68%.
-- **Docling's header rows are better by two orders of magnitude** — 1,038 marked
-  header cells against our 13. A rubric whose header row is unmarked reads as
-  data, which is the "confidently wrong" failure the canonical model warns about.
+- **Header rows: 1,038 against our 13 — but this is a POLICY difference, not a
+  capability gap, and calling it a defect would be wrong.** `DocTable.headerRows`
+  explicitly forbids guessing ("0 IS THE HONEST DEFAULT… guessing 'row 0 is
+  always a header' would attach the wrong label to every value in every table
+  that starts with data"). We read `<w:tblHeader/>`, which Word writes only when
+  an author ticks "repeat header row across pages" — and most never do. Docling
+  **infers** the header from layout.
+
+  On a real grading rubric the inference is right: Docling marks
+  `Excellent / Good / Average / Poor` as the header row, which is exactly what it
+  is, and we report 0. So the inference is genuinely valuable here — but adopting
+  it means accepting inferred headers, which can be wrong on a table that begins
+  with data. That is a decision to take deliberately, not a number to chase.
 - **Docling recovers 196 figures where we recover none.** Our DOCX lane never
   unzips `word/media/*` at all, and — worse — **does not disclose the omission**.
   A picture-only assignment brief currently reads as an empty document with no
@@ -381,8 +391,10 @@ the change that matters.
 reader is genuinely better where it counts most — it gets the numbering right on
 every single list item, which Docling manages on two-thirds. But it misses three
 things badly. It never notices pictures (196 of them across your files, currently
-invisible *and* not reported as missing). It almost never spots which row of a
-table is the header, which makes a grading rubric read like data. And **it gets
+invisible *and* not reported as missing). It rarely knows which row of a table is
+the header — though that one is a deliberate choice on our side, not a bug: we
+only believe a header when Word says so, and Word usually doesn't, so a grading
+rubric's "Excellent / Good / Average / Poor" row reads as ordinary data. And **it gets
 equations actively wrong** — a formula that means "C₀ divided by 2k" comes out as
 "Co2k", which reads as "C₀ times 2k". Fix those three in our own code rather than
 switching owner; the equation one is the urgent one, because a wrong formula is
