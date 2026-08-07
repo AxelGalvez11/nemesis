@@ -32,23 +32,19 @@
 // upload into a billed API call on our account. That is why the gate below is a real lookup.
 import { NextResponse } from "next/server";
 
-import { withTruncation, type ExtractionCoverage } from "@nemesis/shared";
+import { type ExtractionCoverage } from "@nemesis/shared";
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
-import {
-  extractCut,
-  pdfCoverage,
-  pdfWholeCoverage,
-  pptxCoverage,
-  singleUnitCoverage,
-} from "@/lib/notebooks/extract-coverage";
+// 🔴 THE PARSING IMPORTS ARE GONE ON PURPOSE. This route used to import the
+// PDF, Word, PowerPoint and vision readers directly and re-derive coverage from
+// them, which made it a second copy of decisions that also live in
+// `parse-document.ts`. It now imports one function. A route that cannot see the
+// extractors cannot quietly disagree with the worker about what a page is.
+import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
+import { parseDocument } from "@/lib/notebooks/parse-document";
 import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
-import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "@/lib/notebooks/office";
-import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
-import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
-import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
-import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
+import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
 export const runtime = "nodejs";
 /** A picture-heavy lecture now costs several transcription calls in waves of
@@ -240,159 +236,36 @@ export async function POST(req: Request): Promise<Response> {
   }));
 
   try {
-    let result: { title: string | null; text: string };
-    let readBy: string | undefined;
-    let skippedFigures = 0;
+    // 🔴 ONE PARSER, CALLED HERE AND BY THE WORKER. This block used to be a
+    // ~150-line copy of the same decisions — which file kinds route to vision,
+    // when a page counts as thin, what becomes coverage — and the file it was
+    // copied from says exactly why that is not survivable: the same document
+    // would get two different coverage records depending on which lane reached
+    // it, and `parsed_documents` would keep whichever wrote last.
+    //
+    // The shared parser also returns the canonical model, which is what carries
+    // Word's structure and a PDF's figures past this request.
+    const outcome = await parseDocument(original, sourceName, sourceType);
+    if (!outcome.ok && outcome.reason === "too-large-image") {
+      return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
+    }
+    if (!outcome.ok && outcome.reason === "vision-unavailable") {
+      return NextResponse.json({ error: "Reading photos isn't switched on for this app yet." }, { status: 503 });
+    }
+    if (!outcome.ok && outcome.reason === "unsupported") {
+      return NextResponse.json({ error: "That file type isn't supported yet." }, { status: 415 });
+    }
+    const parsed = outcome.ok ? outcome.document : null;
+    const result = { text: parsed?.text ?? "", title: parsed?.title ?? null };
+    const readBy = parsed?.readBy;
+    const skippedFigures = parsed?.skippedFigures ?? 0;
     // 🔴 ALWAYS SET, for every format and every outcome. It used to be optional
     // and per-format, so "no coverage field" meant both "read completely" and
     // "nobody computed it" — and the caller could not tell which. A record that
     // is absent cannot be checked; a record that is always present can.
-    let coverage: ExtractionCoverage;
-    if (kind === "image") {
-      const seen = await readWithVision(original, visionMime(sourceName, sourceType) ?? "image/jpeg", {
-        prompt: PHOTO_PROMPT,
-      });
-      result = { text: seen?.text ?? "", title: seen ? guessTitle(seen.text) : null };
-      readBy = seen?.model;
-      coverage = singleUnitCoverage({ read: Boolean(seen?.text.trim()), method: "vision" });
-    } else if (kind === "pdf") {
-      const r = await extractPdfText(original);
-      result = { title: r.meta.title, text: r.text };
-      // Pages whose content is a picture. The old fallback below only fires when the
-      // WHOLE file comes back empty, so a lecture with a readable contents page and
-      // forty pictures of slides counted as fully read. Measured on the owner's real
-      // course: 308 such pages across 83 files that all "read" fine before.
-      const plan = planPdfRead(r.pageTexts);
-      // The uncapped length, so a cut can be reported as an amount rather than a
-      // boolean. `pageTexts` is what `extractPdfText` capped to produce `text`,
-      // and it keeps every page — so this is the only place the original size is
-      // still knowable.
-      const wholeTextLength = r.pageTexts.join("\n").trim().length;
-      // Which pages vision actually returned text for. Carried rather than
-      // recomputed: "we asked for these pages" and "these pages came back" are
-      // different facts, and counting the request as the result is how a failed
-      // batch would disappear.
-      let readByVision = new Set<number>();
-      let pdfRecord: ExtractionCoverage | undefined;
-      // Every page is a picture: readPdfWithVision reads the whole document in one
-      // request, with no per-document page cap. Slicing is the fallback for that
-      // shape, never the upgrade.
-      if (plan.kind === "whole") {
-        const whole = await readPdfWithVision(original);
-        if (whole?.text.trim()) {
-          const raw = whole.text.trim();
-          const { text: capped } = capText(raw, TEXT_CAP);
-          result = { title: result.title ?? guessTitle(capped), text: capped };
-          readBy = whole.model;
-          pdfRecord = pdfWholeCoverage(r.meta.pages, extractCut(TEXT_CAP, capped.length, raw.length));
-        }
-      }
-      if (plan.kind !== "text" && !readBy) {
-        const thin = thinPages(r.pageTexts);
-        // A "whole" document that vision could not take (over the inline limit, or
-        // the request failed) still gets its pages read one slice at a time.
-        const needed = plan.kind === "pages" ? plan.needed : unreadPages(r.pageTexts);
-        const seen = await readPdfPagesWithVision(original, needed);
-        const read = finishPdfPages(r.pageTexts, seen, thin, TEXT_CAP);
-        if (seen.size > 0) {
-          result = { ...result, text: read.text };
-          readBy = "pages";
-          readByVision = new Set(seen.keys());
-        }
-        pdfRecord = pdfCoverage({
-          pageTexts: r.pageTexts,
-          readByVision,
-          truncation: extractCut(TEXT_CAP, result.text.length, Math.max(wholeTextLength, result.text.length)),
-        });
-      }
-      if (plan.kind === "text") {
-        // Nothing to read as a picture. The tail may still have been dropped at
-        // TEXT_CAP, which used to be computed and thrown away.
-        pdfRecord = pdfCoverage({
-          pageTexts: r.pageTexts,
-          readByVision,
-          truncation: extractCut(TEXT_CAP, r.text.length, wholeTextLength),
-        });
-      }
-      // A "whole" plan whose vision call produced nothing: neither branch above
-      // set a record, and the pages genuinely were not read.
-      coverage = pdfRecord ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision });
-    } else if (kind === "docx") {
-      result = extractDocxText(bytes);
-      // 🔴 ONE "document", NOT ONE PAGE. Word paginates at layout time and this
-      // extraction is a tag strip — it cannot see page boundaries, so claiming
-      // "page 1 of 1" for a 40-page dissertation would invent a locator that
-      // every later citation would point at falsely. Replacing this with real
-      // units is Phase 3's job, and the honest unit until then is the file.
-      coverage = singleUnitCoverage({ read: result.text.trim().length > 0, method: "native" });
-    } else {
-      // A lecture deck's content is often a picture — a pathway, a curve, a labelled
-      // figure — and the text extractor cannot see any of it. Read the figures the
-      // slide-media plan judges to be content, then fold their descriptions in under
-      // the slides they came from. When vision is unconfigured or fails,
-      // describeFiguresWithVision returns an empty map and this is exactly the old
-      // text-only extraction. readPptxSlides also brings the deck's speaker notes,
-      // SmartArt and chart labels, which live outside ppt/slides/ entirely.
-      const deck = readPptxSlides(bytes);
-      const figures = deck.media.images.length
-        ? await describeFiguresWithVision(
-            deck.media.images.flatMap((image) => {
-              const data = deck.imageBytes.get(image.name);
-              return data ? [{ bytes: data, mime: image.mime, name: image.name }] : [];
-            }),
-          )
-        : new Map<string, string>();
-      result = pptxTextWithFigures(deck, figures);
-      if (figures.size > 0) readBy = "figures";
-      // Reading only some of a deck is allowed; presenting it as a full read is not.
-      // The whole tally travels with the text: how many slides, notes pages, charts
-      // and diagrams were read, how many pictures were found, and for each picture
-      // that was NOT described, which reason applied.
-      if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
-      coverage = pptxCoverage({
-        counts: deck.coverage,
-        // What vision RETURNED, not what was planned. A figure that was queued
-        // and whose description failed is a figure the student did not get.
-        described: figures.size,
-        visionAvailable: visionConfigured(),
-      });
-    }
-
-    let text = result.text.trim();
-    // Word and PowerPoint were never capped, only PDF was. A deck now carries slide
-    // headings and bullet markers on top of its words, so the ceiling matters more
-    // than it did — and an uncapped 300-slide deck would otherwise ride the whole
-    // way into a database row and a prompt. Cap to the same TEXT_CAP the PDF lane
-    // uses, and REPORT it: a partial read presented as a complete one is the one
-    // outcome this route is built to avoid.
-    if (kind !== "pdf") {
-      const capped = capText(text, TEXT_CAP);
-      // withTruncation re-derives the state: a deck that was complete when its
-      // slides were counted stops being complete once its text is clipped, and
-      // appending the cut without re-deriving would leave the old answer.
-      coverage = withTruncation(coverage, extractCut(TEXT_CAP, capped.text.length, text.length));
-      text = capped.text;
-    }
-    // A scanned or photographed PDF has no text LAYER to extract — the words are
-    // pixels. That used to be the end of the road (the 422 below). When vision is
-    // configured we read the pages instead; when it is not, or the file is too
-    // big, or the provider fails, readPdfWithVision returns null and the original
-    // 422 stands unchanged. See lib/pdf/vision.ts.
-    if (!text && kind === "pdf") {
-      const seen = await readPdfWithVision(original);
-      if (seen) {
-        text = seen.text.trim();
-        readBy = seen.model;
-        // extractPdfText derives its title from the text layer, so a scanned PDF
-        // always arrived here with title null. Now that there IS text, guess from
-        // it — but ONLY on this path, so Word/PowerPoint titles are untouched.
-        result = { ...result, title: result.title ?? guessTitle(text) };
-        // The record built above counted every page unread, which was true a
-        // moment ago and is not any more. Replace it rather than leaving the
-        // pessimistic one: an honest record is one that keeps up.
-        coverage = pdfWholeCoverage(coverage.units || 1);
-      }
-    }
+    const coverage: ExtractionCoverage =
+      parsed?.coverage ?? singleUnitCoverage({ read: false, method: "native" });
+    const text = result.text;
 
     if (!text) {
       console.warn(JSON.stringify({
@@ -437,6 +310,13 @@ export async function POST(req: Request): Promise<Response> {
         text,
         title: result.title,
         userId: check.userId,
+        // 🔴 THE STRUCTURE HAS TO SURVIVE THE REQUEST. Everything downstream —
+        // chat, retrieval, study generation, the reader — loads from
+        // `parsed_documents`, so a model computed here and not written is a
+        // model that dies with the upload. That is the same defect Phase 3 had
+        // one layer down, where Word's structure was rendered to a string and
+        // thrown away at the function boundary.
+        ...(parsed?.model ? { model: parsed.model } : {}),
       });
       if (saved.ok) parsedDocumentId = saved.parsedDocumentId;
     }

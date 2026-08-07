@@ -231,16 +231,24 @@ export function withVisionText(doc: DocumentModel, byUnit: ReadonlyMap<number, s
   const added: Omit<DocBlock, "id">[] = [];
   const out: Omit<DocBlock, "id">[] = [];
   let previousUnit: number | null = null;
+  // 🔴 THE NOTE INHERITS THE SECTION IT WAS READ INSIDE, DELIBERATELY.
+  // An empty heading path would be an accident rather than a decision: anything
+  // that selects or extracts by section — retrieval, and every Phase 6 extractor
+  // — would silently skip every word vision recovered, which is exactly the
+  // content the native pass could not get. The page's own section is a true fact
+  // about where that text sat.
+  let path: string[] = [];
 
   const flush = () => {
     if (previousUnit === null) return;
     const text = byUnit.get(previousUnit)?.trim();
-    if (text) out.push({ headingPath: [], kind: "note", text, unit: previousUnit });
+    if (text) out.push({ headingPath: [...path], kind: "note", text, unit: previousUnit });
   };
 
   for (const block of doc.blocks) {
     if (previousUnit !== null && block.unit !== previousUnit) flush();
     previousUnit = block.unit;
+    path = block.kind === "heading" ? [...block.headingPath, block.text] : block.headingPath;
     out.push(block);
   }
   flush();

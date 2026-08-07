@@ -30,7 +30,12 @@
 
 import { createHash } from "node:crypto";
 
-import { PARSER_VERSION, unitsRead, type ExtractionCoverage } from "@nemesis/shared";
+import {
+  PARSER_VERSION,
+  unitsRead,
+  type DocumentModel,
+  type ExtractionCoverage,
+} from "@nemesis/shared";
 
 import { adminClient } from "@/lib/server";
 
@@ -57,29 +62,119 @@ export function pipelineStateFor(coverage: ExtractionCoverage): "parsed" | "part
   return coverage.state === "partial" ? "partially_parsed" : "parsed";
 }
 
-/** The envelope written into `parsed_documents.structure`. */
-export interface StructureEnvelope {
-  /**
-   * 🔴 THE VERSION IS THE POINT. Phase 2 will put a real unit/block model in
-   * this column. A row written today must be distinguishable from one written
-   * then WITHOUT inspecting its shape and guessing, or every later reader ends
-   * up sniffing keys and getting it wrong on some edge.
-   */
-  v: 1;
-  /**
-   * What kind of parse produced it. `text-only` says exactly what this is: the
-   * flat string the current extractor returns, with no units, no blocks and no
-   * locators. Naming it is what keeps a later reader from mistaking an absence
-   * of structure for a document that had none.
-   */
-  shape: "text-only";
+/**
+ * The envelope written into `parsed_documents.structure`.
+ *
+ * 🔴 THE VERSION IS THE POINT, AND PHASE 2 IS WHY IT EXISTED. A row written by
+ * the flat extractor must be distinguishable from one written by the structural
+ * reader WITHOUT inspecting its shape and guessing, or every later reader ends
+ * up sniffing keys and getting it wrong on some edge.
+ *
+ * 🔴 AND `text-only` IS NOT THE SAME CLAIM AS "THIS DOCUMENT HAD NO STRUCTURE".
+ * It says only that the parse which produced this row could not see any. That
+ * distinction is what tells a later pass which rows are worth reparsing.
+ */
+export type StructureEnvelope =
+  | {
+      v: 1;
+      /** The flat string the older extractor returns: no units, no blocks, no locators. */
+      shape: "text-only";
+      title: string | null;
+      text: string;
+    }
+  | {
+      v: 2;
+      /** Units and blocks, with geometry and truthful locators where the format supports them. */
+      shape: "units-blocks";
+      title: string | null;
+      /** Kept alongside the model so a reader that only wants text does not have
+       *  to reimplement `documentToText` and risk rendering it differently. */
+      text: string;
+      model: DocumentModel;
+    };
+
+export function structureEnvelope(input: {
   title: string | null;
   text: string;
-}
-
-export function structureEnvelope(input: { title: string | null; text: string }): StructureEnvelope {
+  model?: DocumentModel;
+}): StructureEnvelope {
+  if (input.model) {
+    return { model: input.model, shape: "units-blocks", text: input.text, title: input.title, v: 2 };
+  }
   return { shape: "text-only", text: input.text, title: input.title, v: 1 };
 }
+
+/**
+ * Read an envelope back off a row, or null when it is not one.
+ *
+ * 🔴 CHECKED, NOT ASSERTED — for the same reason `readCoverage` is. These rows
+ * outlive the parser that wrote them, JSON is not a type system, and a `structure`
+ * column that was written by an older version, hand-edited, or restored from a
+ * backup must fail to parse rather than arrive as a half-typed object whose
+ * missing blocks look like a document with no content.
+ */
+export function readStructureEnvelope(value: unknown): StructureEnvelope | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  const title = typeof raw.title === "string" ? raw.title : null;
+  const text = typeof raw.text === "string" ? raw.text : null;
+  if (text === null) return null;
+  if (raw.v === 1 && raw.shape === "text-only") return { shape: "text-only", text, title, v: 1 };
+  if (raw.v !== 2 || raw.shape !== "units-blocks") return null;
+  const model = readDocumentModel(raw.model);
+  if (!model) return null;
+  return { model, shape: "units-blocks", text, title, v: 2 };
+}
+
+/** A stored model, validated field by field. Null when anything is off. */
+function readDocumentModel(value: unknown): DocumentModel | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (!FORMATS.has(raw.format as string)) return null;
+  if (!Array.isArray(raw.units) || !Array.isArray(raw.blocks)) return null;
+
+  const units: DocumentModel["units"] = [];
+  for (const entry of raw.units) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const u = entry as Record<string, unknown>;
+    if (typeof u.index !== "number" || !UNIT_KINDS.has(u.kind as string)) return null;
+    units.push({ index: u.index, kind: u.kind as DocumentModel["units"][number]["kind"] });
+  }
+
+  const blocks: DocumentModel["blocks"] = [];
+  for (const entry of raw.blocks) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const b = entry as Record<string, unknown>;
+    if (typeof b.id !== "string" || typeof b.text !== "string") return null;
+    if (!BLOCK_KINDS.has(b.kind as string)) return null;
+    // 🔴 A BLOCK POINTING AT A UNIT THAT IS NOT THERE IS A BROKEN LOCATOR, and a
+    // broken locator is worse than a missing one — every later check of it
+    // passes while it points at nothing.
+    if (typeof b.unit !== "number" || b.unit < 0 || b.unit >= units.length) return null;
+    if (!Array.isArray(b.headingPath) || b.headingPath.some((p) => typeof p !== "string")) return null;
+    blocks.push(entry as DocumentModel["blocks"][number]);
+  }
+
+  return {
+    blocks,
+    format: raw.format as DocumentModel["format"],
+    title: typeof raw.title === "string" ? raw.title : null,
+    units,
+  };
+}
+
+const FORMATS = new Set(["pdf", "docx", "pptx", "image"]);
+const UNIT_KINDS = new Set(["page", "slide", "sheet", "body", "image"]);
+const BLOCK_KINDS = new Set([
+  "heading",
+  "paragraph",
+  "listItem",
+  "table",
+  "figure",
+  "caption",
+  "equation",
+  "note",
+]);
 
 /** sha256 of the original bytes, lowercase hex — the file's physical identity. */
 export function contentHashOf(bytes: Uint8Array): string {
@@ -97,6 +192,17 @@ export interface PersistParseInput {
   coverage: ExtractionCoverage;
   title: string | null;
   text: string;
+  /**
+   * The structural read, when one was produced.
+   *
+   * 🔴 THIS IS THE COLUMN THAT DECIDES WHETHER PHASE 2 SURVIVES THE REQUEST.
+   * Everything downstream — chat, retrieval, study generation, the reader —
+   * loads from `parsed_documents`, so a model computed and not written here is a
+   * model that dies with the upload. That is precisely the defect Phase 3 had one
+   * layer down, where the Word reader's structure was rendered to a string and
+   * discarded at the function boundary.
+   */
+  model?: DocumentModel;
 }
 
 export type PersistParseResult =
@@ -136,7 +242,11 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
       p_doc_kind: input.docKind,
       p_error: null,
       p_parser_version: PARSER_VERSION,
-      p_structure: structureEnvelope({ text: input.text, title: input.title }) as unknown as Record<string, unknown>,
+      p_structure: structureEnvelope({
+        text: input.text,
+        title: input.title,
+        ...(input.model ? { model: input.model } : {}),
+      }) as unknown as Record<string, unknown>,
       p_unit_count: input.coverage.units,
       // What was actually described, not what was found — the number a reader
       // should trust is the one that says how much made it through.
