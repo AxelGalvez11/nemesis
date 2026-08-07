@@ -19,8 +19,22 @@
  * happens to be configured.
  */
 
-/** Nothing may occupy the service longer than this. */
-const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Nothing may occupy the service longer than this.
+ *
+ * Measured on 154 real course PDFs (1,474 pages): median 12.8s, p90 65s, p95
+ * 99s, p99 145s, slowest 297s — a 17-page report carrying 15 tables, where
+ * TableFormer is the whole cost. So the cap has to clear ~300s to avoid killing
+ * legitimate table-dense work, and 600s gives that headroom while still bounding
+ * a runaway. An earlier 120_000 would have cut off the slowest real file here.
+ *
+ * It is a guard against the unseen pathological document, NOT against anything
+ * this corpus produced. The one 3,555s reading in the benchmark was the laptop
+ * asleep for an hour — wall-clock keeps counting through a suspend, and the file
+ * in flight absorbs all of it. Do not size this from a number measured on an
+ * unattended laptop.
+ */
+const REQUEST_TIMEOUT_MS = 600_000;
 /**
  * Bytes we will hand over. Above this the document goes to our own parser, which
  * streams rather than buffering a base64 body.

@@ -58,6 +58,18 @@ test("client limits do not depend on how the service is configured", () => {
   // all. These are ours and they apply whatever the server believes.
   const cfg = doclingConfig({ DOCLING_SERVE_URL: "http://x:5001" });
   assert.ok(cfg);
-  assert.ok(cfg.timeoutMs > 0 && cfg.timeoutMs <= 300_000, "a bounded timeout");
+
+  // The timeout is squeezed from both sides by measurement, not by taste.
+  //
+  // Floor: the slowest legitimate document in the 154-PDF corpus took 297s (17
+  // pages, 15 tables). A cap at or below that kills real work — and the first
+  // version of this test asserted <= 300_000, which sat right on top of it.
+  //
+  // Ceiling: it must stay obviously bounded against the server's 7-day default,
+  // which is what this test exists to prevent us from inheriting.
+  const SLOWEST_REAL_DOCUMENT_MS = 297_000;
+  const SERVER_DEFAULT_MS = 604_800_000;
+  assert.ok(cfg.timeoutMs > SLOWEST_REAL_DOCUMENT_MS, "clears the slowest measured document");
+  assert.ok(cfg.timeoutMs <= SERVER_DEFAULT_MS / 500, "still tightly bounded");
   assert.ok(cfg.maxBytes > 0 && cfg.maxBytes <= 64 * 1024 * 1024, "a bounded upload");
 });
