@@ -87,9 +87,22 @@ test("the note pass runs once per recording, over the whole transcript", () => {
   assert.match(source, new RegExp(`RECORDING_NOTE_TRANSCRIPT_CHARS = ${RECORDING_NOTE_TRANSCRIPT_CHARS / 1000}_000`));
 });
 
-test("the study material clip matches the generator", () => {
+test("🔴 the study material clip cannot drift, because there is only one of it", () => {
+  // This used to string-match the generator's source for the literal `9_000`,
+  // which is a drift ALARM, not a single source of truth — either copy could be
+  // edited and the pricing model and the generator would disagree about how much
+  // of a lecture is actually read, while every dollar figure here kept quoting
+  // the other number.
+  //
+  // The generator now imports the constant. So the thing to assert is the
+  // absence of a second definition, not the agreement of two.
   const source = repoFile("apps/web/lib/workspace/study-artifact-content.ts");
-  assert.match(source, new RegExp(`MATERIAL_CHAR_LIMIT = ${MATERIAL_CHAR_LIMIT / 1000}_000`));
+  assert.match(source, /import \{ MATERIAL_CHAR_LIMIT \} from "@\/lib\/workload-cost"/,
+    "the generator must import the cap, not redeclare it");
+  assert.doesNotMatch(source, /const MATERIAL_CHAR_LIMIT\s*=/,
+    "a second definition is exactly what this test exists to prevent");
+  // And the one real definition is still where the cost model can see it.
+  assert.equal(typeof MATERIAL_CHAR_LIMIT, "number");
 });
 
 // The lane the whole model turns on. If the web recorder ever moves off the batch

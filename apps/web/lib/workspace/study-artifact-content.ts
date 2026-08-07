@@ -5,6 +5,7 @@
 // Pure and dependency-free: LLM-reply parsing, jsonb validation, prompt
 // builders, mermaid conversion, and attempt scoring all live here for tests.
 
+import { MATERIAL_CHAR_LIMIT } from "@/lib/workload-cost";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 import { balanceAnswerPositions } from "@/lib/workspace/test-answer-balance";
@@ -41,7 +42,18 @@ export interface MindmapContent {
 const MAX_QUESTIONS = 25;
 const MAX_OPTIONS = 6;
 const MAX_TEXT = 500;
-const MATERIAL_CHAR_LIMIT = 9_000;
+// 🔴 The material clip is IMPORTED (see the import block above), not redeclared
+// here. It used to be declared a second time in this file, 9,000 characters
+// spelled out again beside the one in lib/workload-cost.ts, kept honest by a test
+// that string-matched this file's SOURCE for the literal. That is a drift alarm,
+// not a single source of truth:
+// either copy could be edited, and the pricing model and the generator would then
+// disagree about how much of a lecture is actually read — while every dollar
+// figure downstream kept quoting the other number.
+//
+// The cap belongs to the cost model, because that is what has to be re-priced
+// when it moves. Removing silent dependence on it is Phase 4 work
+// (docs/document-intelligence.md §6.4); deduplicating it is the precondition.
 
 function cleanText(value: unknown, maxLength = MAX_TEXT): string | null {
   if (typeof value !== "string") return null;
