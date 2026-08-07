@@ -87,9 +87,17 @@ export function chunkDocument(
     const units = current.map((b) => b.unit);
     chunks.push({
       blockIds: current.map((b) => b.id),
-      // The path of the FIRST block: the section the chunk opens in. Taking the
-      // last block's would file a chunk under a heading most of it precedes.
-      headingPath: [...(current[0]?.headingPath ?? [])],
+      // Where the chunk SITS. The first block's path, because taking the last
+      // block's would file a chunk under a heading most of it precedes.
+      //
+      // 🔴 EXCEPT WHEN THE CHUNK OPENS WITH A HEADING, WHICH IS THE COMMON CASE.
+      // A heading's own `headingPath` is the trail ABOVE it, so a chunk that
+      // opens "Commerce power" and holds that whole section was being recorded
+      // as sitting nowhere — an empty trail. Every retrieval result for a
+      // well-formed section had no idea what section it was. Appending the
+      // heading's own text is not a guess: the chunk demonstrably covers the
+      // section that heading names, because the heading is inside it.
+      headingPath: pathForChunk(current[0]!),
       index: chunks.length,
       oversized: current.length === 1 && parts[0]!.length > target,
       text: parts.join("\n\n"),
@@ -123,6 +131,14 @@ export function chunkDocument(
   }
   flush();
   return chunks;
+}
+
+/** Where a chunk sits, given the block it opens with. */
+function pathForChunk(first: DocBlock): string[] {
+  const above = [...(first.headingPath ?? [])];
+  if (first.kind !== "heading") return above;
+  const own = first.text.trim();
+  return own ? [...above, own] : above;
 }
 
 /**

@@ -229,6 +229,7 @@ export * from "./document-model.ts";
 // chunk that split a table row is a set of values under the wrong column names —
 // which retrieves confidently and answers wrongly.
 export * from "./document-chunks.ts";
+export * from "./document-envelope.ts";
 // Citations that are found rather than believed. Shared because a model asked to
 // cite will produce a page number, and that number is a guess dressed as a fact —
 // right often enough to look reliable, wrong often enough to matter, and the same
