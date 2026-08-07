@@ -224,3 +224,8 @@ export * from "./extraction-coverage.ts";
 // different flattenings of it. Its rule travels with it: a locator is only ever
 // as specific as the format can honestly support.
 export * from "./document-model.ts";
+// Cutting a document along its own seams instead of every N characters. Shared
+// because the pieces retrieval returns are the pieces an answer cites, and a
+// chunk that split a table row is a set of values under the wrong column names —
+// which retrieves confidently and answers wrongly.
+export * from "./document-chunks.ts";

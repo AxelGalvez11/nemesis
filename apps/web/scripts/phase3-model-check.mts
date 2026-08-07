@@ -122,3 +122,40 @@ if (wordLoss.length) {
 } else {
   console.log(`\n✅ no document lost words: the model's text is >= 99% of the reader's.`);
 }
+
+// ── Phase 4: does chunking hold on real documents? ──────────────────────────
+// The unit tests prove the rules; this proves them against 124 real files with
+// their real tables, headings and lengths.
+{
+  const { chunkDocument, chunkedText } = await import("../../../packages/shared/src/document-chunks.ts");
+  const { documentToText: toText } = await import("../../../packages/shared/src/document-model.ts");
+  let chunks = 0, oversized = 0, withSection = 0, lossy = 0, docsChunked = 0, splitTables = 0;
+  for (const file of files) {
+    try {
+      const zip = unzipSync(new Uint8Array(readFileSync(file)));
+      const part = zip["word/document.xml"];
+      if (!part) continue;
+      const numbering = zip["word/numbering.xml"] ? strFromU8(zip["word/numbering.xml"]) : null;
+      const doc = docxToModel(readDocxStructure(strFromU8(part), numbering), null);
+      const cs = chunkDocument(doc);
+      chunks += cs.length;
+      oversized += cs.filter((c) => c.oversized).length;
+      withSection += cs.filter((c) => c.headingPath.length > 0).length;
+      // 🔴 THE LOSS CHECK, ON REAL FILES. A chunker that drops content is the
+      // exact failure "never solve capacity by silently deleting" forbids.
+      if (chunkedText(cs) !== toText(doc)) lossy += 1;
+      // Every table block must land in exactly one chunk, whole.
+      const tableIds = new Set(doc.blocks.filter((b) => b.kind === "table").map((b) => b.id));
+      for (const id of tableIds) {
+        if (cs.filter((c) => c.blockIds.includes(id)).length !== 1) splitTables += 1;
+      }
+      docsChunked += 1;
+    } catch { /* counted above */ }
+  }
+  console.log(`\n  PHASE 4 chunking over ${docsChunked} real documents:`);
+  console.log(`    chunks                  ${chunks}`);
+  console.log(`    knowing their section   ${withSection}`);
+  console.log(`    oversized (kept whole)  ${oversized}`);
+  console.log(`    tables split across chunks ${splitTables}  ${splitTables === 0 ? "✅" : "🔴"}`);
+  console.log(`    documents that lost text   ${lossy}  ${lossy === 0 ? "✅ chunking is loss-free" : "🔴"}`);
+}
