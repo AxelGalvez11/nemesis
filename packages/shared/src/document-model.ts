@@ -210,6 +210,57 @@ export function buildDocument(input: {
   };
 }
 
+/**
+ * Fold text a vision model read off a unit back into the document.
+ *
+ * 🔴 THE MERGED RESULT IS ONE REPRESENTATION, NOT TWO. The alternative — keep
+ * the blocks and separately build a flat string that also holds the vision text
+ * — leaves a document whose text says one thing and whose citations point into
+ * another. That divergence reads downstream exactly like a hallucination and is
+ * far harder to trace than a missing paragraph.
+ *
+ * The added block is a plain paragraph carrying the unit's heading path, placed
+ * after that unit's own blocks so reading order survives. Ids are reassigned,
+ * because ids are positional and an appended block would otherwise collide.
+ *
+ * 🔴 IT DOES NOT REPLACE ANYTHING. Native and visual evidence are merged, never
+ * alternatives: a page with three paragraphs and a diagram keeps both.
+ */
+export function withVisionText(doc: DocumentModel, byUnit: ReadonlyMap<number, string>): DocumentModel {
+  if (byUnit.size === 0) return doc;
+  const added: Omit<DocBlock, "id">[] = [];
+  const out: Omit<DocBlock, "id">[] = [];
+  let previousUnit: number | null = null;
+
+  const flush = () => {
+    if (previousUnit === null) return;
+    const text = byUnit.get(previousUnit)?.trim();
+    if (text) out.push({ headingPath: [], kind: "note", text, unit: previousUnit });
+  };
+
+  for (const block of doc.blocks) {
+    if (previousUnit !== null && block.unit !== previousUnit) flush();
+    previousUnit = block.unit;
+    out.push(block);
+  }
+  flush();
+
+  // A unit with no blocks of its own — a page that is entirely a picture — has
+  // nowhere to be appended to above, so it is added here in unit order.
+  const covered = new Set(doc.blocks.map((b) => b.unit));
+  for (const [unit, text] of [...byUnit.entries()].sort((a, b) => a[0] - b[0])) {
+    if (covered.has(unit) || !text.trim()) continue;
+    added.push({ headingPath: [], kind: "note", text: text.trim(), unit });
+  }
+
+  return buildDocument({
+    blocks: [...out, ...added].sort((a, b) => a.unit - b.unit),
+    format: doc.format,
+    title: doc.title,
+    units: doc.units,
+  });
+}
+
 /** The locator for a block. Carries a rect only when the block had one. */
 export function locate(doc: DocumentModel, block: DocBlock): DocLocator {
   const unit = doc.units[block.unit];
@@ -298,6 +349,24 @@ export function documentToText(doc: DocumentModel): string {
     .map(blockToText)
     .filter((line) => line.trim().length > 0)
     .join("\n\n");
+}
+
+/**
+ * One string per unit, in unit order, including units that produced nothing.
+ *
+ * 🔴 THE EMPTY ENTRIES ARE THE POINT. A document that is 90% photographs of
+ * pages joins into a perfectly plausible string, and only the per-unit view
+ * shows the holes — which is what decides where vision is spent and what
+ * coverage reports as unread. An array that skipped empty units would lose the
+ * one fact it exists to carry.
+ */
+export function unitTexts(doc: DocumentModel): string[] {
+  const out = doc.units.map(() => [] as string[]);
+  for (const block of doc.blocks) {
+    const text = blockToText(block).trim();
+    if (text) out[block.unit]?.push(text);
+  }
+  return out.map((parts) => parts.join("\n"));
 }
 
 // ── Counting, for coverage ─────────────────────────────────────────────────

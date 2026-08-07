@@ -21,7 +21,15 @@
  *     whether it still needs the original bytes afterwards
  */
 
-import { withTruncation, type ExtractionCoverage } from "@nemesis/shared";
+import {
+  documentToText,
+  figureCoverageOf,
+  unitTexts,
+  withTruncation,
+  withVisionText,
+  type DocumentModel,
+  type ExtractionCoverage,
+} from "@nemesis/shared";
 
 import {
   extractCut,
@@ -30,8 +38,9 @@ import {
   pptxCoverage,
   singleUnitCoverage,
 } from "./extract-coverage";
-import { extractDocxText, pptxTextWithFigures, readPptxSlides } from "./office";
+import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
+import { readPdfStructure } from "@/lib/pdf/structure";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
@@ -80,6 +89,18 @@ export interface ParsedDocument {
   readBy?: string;
   /** Figures a deck had beyond the per-deck ceiling. */
   skippedFigures: number;
+  /**
+   * The structural read: units, blocks, geometry, figures, truthful locators.
+   *
+   * 🔴 ABSENT MEANS NO STRUCTURE WAS PRODUCED, WHICH IS NOT THE SAME AS A FLAT
+   * DOCUMENT. PPTX and images still come through the older lanes, and a PDF the
+   * structural reader could not open falls back to `unpdf`. A consumer that
+   * treated a missing model as "this file has no structure" would file a
+   * two-column paper as prose; one that treats it as "unknown" asks for a
+   * reparse. `text` is always present and is derived from the model when there
+   * is one, so nothing has to choose between them.
+   */
+  model?: DocumentModel;
 }
 
 export type ParseOutcome =
@@ -117,6 +138,7 @@ export async function parseDocument(
   let readBy: string | undefined;
   let skippedFigures = 0;
   let coverage: ExtractionCoverage;
+  let model: DocumentModel | undefined;
 
   if (kind === "image") {
     const seen = await readWithVision(bytes, visionMime(fileName, mimeType) ?? "image/jpeg", {
@@ -128,16 +150,16 @@ export async function parseDocument(
     coverage = singleUnitCoverage({ read: Boolean(seen?.text.trim()), method: "vision" });
   } else if (kind === "pdf") {
     const parsed = await parsePdf(bytes);
-    ({ coverage, readBy, text, title } = parsed);
+    ({ coverage, model, readBy, text, title } = parsed);
   } else if (kind === "docx") {
-    const out = extractDocxText(bytes);
-    text = out.text;
-    title = out.title;
-    // 🔴 ONE "document", NOT ONE PAGE. Word paginates at layout time and this
-    // extraction is a tag strip — it cannot see page boundaries, so claiming
-    // "page 1 of 1" for a 40-page dissertation would invent a locator every
-    // later citation would point at falsely. Real units are Phase 3's job.
-    coverage = singleUnitCoverage({ read: out.text.trim().length > 0, method: "native" });
+    model = extractDocxModel(bytes);
+    text = documentToText(model);
+    title = model.title;
+    // 🔴 ONE "document", NOT ONE PAGE. Word paginates at layout time, so
+    // claiming "page 1 of 1" for a 40-page dissertation would invent a locator
+    // every later citation would point at falsely. The model says the same
+    // thing structurally: one unit, of kind `body`, which renders no number.
+    coverage = singleUnitCoverage({ read: text.trim().length > 0, method: "native" });
   } else {
     const deck = readPptxSlides(bytes);
     const figures = deck.media.images.length
@@ -175,19 +197,63 @@ export async function parseDocument(
 
   if (!text) return { ok: false, kind, reason: "empty" };
   return {
-    document: { coverage, kind, skippedFigures, text, title, ...(readBy ? { readBy } : {}) },
+    document: {
+      coverage,
+      kind,
+      skippedFigures,
+      text,
+      title,
+      ...(readBy ? { readBy } : {}),
+      ...(model ? { model } : {}),
+    },
     ok: true,
   };
 }
 
-/** The PDF lane: native text, then vision for the pages that are pictures. */
+/**
+ * The PDF lane: structure and figures natively, then vision for what is left.
+ *
+ * 🔴 THE NATIVE PASS IS THE STRUCTURAL READER, NOT `unpdf`, AND THAT IS THE
+ * WHOLE OF PHASE 2's INGEST CHANGE. `unpdf` exposes no image operators, so the
+ * lane it fed could not tell a figure existed — measured over 120 real course
+ * PDFs, that is 1,963 figures, 1,089 of them real content nobody looked at, on
+ * pages coverage reported as fully read.
+ *
+ * `extractPdfText` stays as the fallback for a file the structural reader cannot
+ * open, because a worse parse is better than no parse — but it never REPLACES a
+ * structural one, per "a worse retry never replaces a better parse".
+ */
 async function parsePdf(bytes: Uint8Array): Promise<{
   coverage: ExtractionCoverage;
+  model: DocumentModel | undefined;
   readBy: string | undefined;
   text: string;
   title: string | null;
 }> {
-  const r = await extractPdfText(bytes);
+  // 🔴 A COPY. pdf.js detaches the buffer it is handed, and the vision pass
+  // below slices the ORIGINAL bytes per page. Handing it `bytes` directly makes
+  // every later read see zeroes — which does not throw, it silently reports an
+  // empty document.
+  let model: DocumentModel | undefined;
+  try {
+    model = await readPdfStructure(new Uint8Array(bytes));
+  } catch {
+    // Recorded as absent structure, not as a failed parse: the fallback below
+    // still produces real text, and calling the document unreadable because the
+    // richer reader refused would lose content we can still get.
+    model = undefined;
+  }
+
+  const r = model
+    ? {
+        meta: { pages: model.units.length, title: model.title, truncated: false },
+        pageTexts: unitTexts(model),
+        text: capText(documentToText(model), TEXT_CAP).text,
+      }
+    : await extractPdfText(bytes);
+  // Figures are only KNOWN when the structural reader ran. Omitted means
+  // unknown, and unknown must not be recorded as "this document has none".
+  const figures = model ? figureCoverageOf(model) : undefined;
   let text = r.text;
   let title = r.meta.title;
   let readBy: string | undefined;
@@ -220,14 +286,26 @@ async function parsePdf(bytes: Uint8Array): Promise<{
     const seen = await readPdfPagesWithVision(bytes, needed);
     const read = finishPdfPages(r.pageTexts, seen, thin, TEXT_CAP);
     if (seen.size > 0) {
-      text = read.text;
       readBy = "pages";
       readByVision = new Set(seen.keys());
+      // 🔴 THE VISION TEXT GOES INTO THE MODEL, NOT BESIDE IT. Keeping the
+      // blocks while separately building a flat string that also holds the
+      // vision text leaves a document whose text says one thing and whose
+      // citations point into another — which reads downstream as a
+      // hallucination and is much harder to trace than a missing paragraph.
+      // `seen` is keyed by 1-based page; units are 0-based.
+      if (model) {
+        model = withVisionText(model, new Map([...seen].map(([page, value]) => [page - 1, value])));
+        text = capText(documentToText(model), TEXT_CAP).text;
+      } else {
+        text = read.text;
+      }
     }
     record = pdfCoverage({
       pageTexts: r.pageTexts,
       readByVision,
       truncation: extractCut(TEXT_CAP, text.length, Math.max(wholeTextLength, text.length)),
+      ...(figures ? { figures } : {}),
     });
   }
   if (plan.kind === "text") {
@@ -235,6 +313,7 @@ async function parsePdf(bytes: Uint8Array): Promise<{
       pageTexts: r.pageTexts,
       readByVision,
       truncation: extractCut(TEXT_CAP, r.text.length, wholeTextLength),
+      ...(figures ? { figures } : {}),
     });
   }
 
@@ -254,7 +333,8 @@ async function parsePdf(bytes: Uint8Array): Promise<{
   }
 
   return {
-    coverage: record ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision }),
+    coverage: record ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision, ...(figures ? { figures } : {}) }),
+    model,
     readBy,
     text,
     title,
