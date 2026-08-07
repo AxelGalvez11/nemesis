@@ -34,6 +34,14 @@ a real unmet criterion and it stays recorded rather than quietly dropped.
 
 ---
 
+> **Update, later the same day.** §3's canonical model was built, and with it the DOCX discard
+> (§2) and the PDF figure blindness (§4) are fixed, wired into `parseDocument` **and** the upload
+> route, and persisted as a `v2 units-blocks` envelope in `parsed_documents.structure`. §2's "the
+> structure is thrown away" is no longer true, and §3's "owned by none of them" is resolved.
+> Everything in §6 is still queued: nothing is deployed, and the SOLO benchmark still records no
+> value. Measured results are in `docs/document-benchmark.md`; the headline is **1,089 real figures
+> nobody has examined**, a number this system could not previously state at all.
+
 ## 2. Phase 3 — exactly what remains
 
 **The ledger says IN PROGRESS and the ledger is right. The reader works; its output is thrown away.**

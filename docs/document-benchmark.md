@@ -227,8 +227,74 @@ the new reader produces. A token-set comparison scores that as missing when the 
 None of these is document content. The old extractor was putting field instructions, image URLs and
 shape geometry into text a student reads and a model answers from.
 
-**What remains before Phase 3 can be DONE:** the reader is not yet wired into the extract path, and
-PPTX must be shown not to regress.
+**What remains before Phase 3 can be DONE:** PPTX must produce the canonical model without
+regressing, and nothing here is deployed or SOLO-tested.
+
+## Run: canonical model, 124 real Word documents (2026-08-06)
+
+`apps/web/scripts/phase3-model-check.mts`. The reader's recovery was already measured; this measures
+whether it survives the step that used to throw it away.
+
+| Measure | Reader | Model | |
+|---|---|---|---|
+| headings | 111 | 111 | ✅ |
+| list items | 2,116 | 2,116 | ✅ |
+| tables | 197 | 197 | ✅ |
+| table cells | 8,345 | 8,345 | ✅ |
+
+5,227 blocks produced, 524 knowing their section, **0 fabricated unit locators** across every block
+of every file, and no document lost words.
+
+🔴 **Only 3 of 197 tables mark a header row.** The old renderer drew a header separator on all 197,
+which promoted a data row to a column name in **98% of real tables** — a rubric whose first line is
+a real criterion became a heading, and every answer drawn from it inherited that. Fixtures could not
+have found this; almost every hand-written test table has a header.
+
+## Run: PDF structural read, 120 real course PDFs / 952 pages (2026-08-06)
+
+`apps/web/scripts/phase2-structure-check.mts`, against the same corpus as the Phase 2 baseline.
+
+| Measure | Value |
+|---|---|
+| blocks | 9,587 (1,410 headings, 6,214 paragraphs, 1,963 figures) |
+| files carrying figures | 89 of 120 |
+| figures found | **1,963** — production's extractor exposes no image operators and sees 0 |
+| …running art (repeats on ≥50% of pages) | 239 |
+| …furniture (under 1% of the page) | 635 |
+| **…genuinely unexamined** | **1,089** |
+| pages whose paragraphs fall in two disjoint columns | 10 of 952 |
+| fabricated unit locators | 0 |
+| rects outside 0..1 | 0 |
+| documents losing words against `unpdf` | **0** |
+
+**1,089 is the number this system could not previously state at all.** It is now a countable,
+disclosable gap: coverage gained a `not-examined` figure reason that counts as lost, so a page whose
+text was fully read but whose diagram nobody looked at reports `partial`.
+
+### Two column rules that only real geometry could correct
+
+1. **Grouping lines on a shared baseline alone fuses a two-column page.** The left column's first
+   line and the right column's first line sit on the same baseline, so every row came out as
+   `L0 R0` and there was nothing left for the column rule to split. Line grouping now also requires
+   horizontal adjacency, in ems so it holds at any type size.
+2. **A gutter test alone calls a term-and-definition list two columns.** Such a list has a clean
+   empty gutter and balanced sides, and reading it in column order returns every term first and
+   every definition afterwards — permanently unpaired, and worse than the interleaving the rule
+   exists to fix. The discriminator is that a typeset gutter is narrow beside its columns while a
+   tab stop leaves a trough wider than the entries beside it.
+
+### Open gaps in this phase, recorded rather than left implicit
+
+- **Table detection from PDF geometry is not built**, deliberately. A grid asserted over ordinary
+  prose relabels every value in it, and a wrong table is worse than no table.
+- **`standardFontDataUrl` is not supplied** to the server-side pdf.js build; it warns on files using
+  standard-14 fonts. Text loss against `unpdf` measured **zero**, so it is not blocking, but glyph
+  mapping for those fonts is unverified.
+- **Adaptive vision on the 1,089 unexamined figures, query-time high-resolution reinspection, and
+  the render cache are unbuilt.** Only the honesty half of Phase 2 is done.
+- **`library-block-drag.test.ts` failed once in a full-suite run and passes in isolation**, first
+  observed after a lazy pdf.js import entered the suite's module graph. Two subsequent full runs
+  passed. Recorded as an unexplained flake rather than dismissed.
 
 ### Everything else
 
