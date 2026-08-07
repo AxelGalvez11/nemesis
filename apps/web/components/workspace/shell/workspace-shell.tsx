@@ -39,7 +39,7 @@ const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set([
 // /learn is the Learning Canvas pilot: the canvas has to dominate the screen, and it carries
 // its own back control in its header. Matched by exact pathname, which is why a canvas is
 // addressed as /learn?c=<id> rather than /learn/<id>.
-const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides", "/learn"]);
+const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides", "/learn", "/dev-preview/learn"]);
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
   ["--titlebar-height" as string]: "0px",

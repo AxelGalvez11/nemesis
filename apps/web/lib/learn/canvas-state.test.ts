@@ -78,11 +78,42 @@ test("canStart accepts a topic-first canvas with a title but no sources", () => 
   assert.equal(canStart(canvasIn("sources_attached", { title: "Anticoagulation" })).ok, true);
 });
 
+const CARD = { id: "r1", front: "f", back: "b", conceptId: "k1" };
+const QUESTION = { id: "q1", q: "?", options: ["a", "b"], answer: 0, why: "", conceptId: "k1" };
+
 test("nextAction names the move the learner should make in each state", () => {
   assert.equal(nextAction(canvasIn("learn", { blocks: [{ id: "b1", type: "paragraph", content: "x" }] }))?.to, "recall");
-  assert.equal(nextAction(canvasIn("recall"))?.to, "test");
-  assert.equal(nextAction(canvasIn("test"))?.to, "diagnose");
+  assert.equal(
+    nextAction(canvasIn("recall", { recall: [CARD], recallResults: [{ cardId: "r1", conceptId: "k1", grade: "good" }] }))?.to,
+    "test",
+  );
+  assert.equal(
+    nextAction(canvasIn("test", { questions: [QUESTION], answers: [{ questionId: "q1", picked: 0, correct: true }] }))?.to,
+    "diagnose",
+  );
   assert.equal(nextAction(canvasIn("complete")), null);
+});
+
+test("a test still in progress offers no way forward", () => {
+  // Otherwise one stray click on the header ends the paper and diagnoses from one answer,
+  // marking every unasked concept weak.
+  assert.equal(nextAction(canvasIn("test", { questions: [QUESTION, { ...QUESTION, id: "q2" }], answers: [] })), null);
+  assert.equal(
+    nextAction(canvasIn("test", { questions: [QUESTION, { ...QUESTION, id: "q2" }], answers: [{ questionId: "q1", picked: 0, correct: true }] })),
+    null,
+  );
+});
+
+test("a recall deck still in progress offers no way forward", () => {
+  assert.equal(nextAction(canvasIn("recall", { recall: [CARD, { ...CARD, id: "r2" }], recallResults: [] })), null);
+});
+
+test("a finished retest goes to a fresh diagnosis, not straight to done", () => {
+  assert.equal(
+    nextAction(canvasIn("retest", { questions: [QUESTION], answers: [{ questionId: "q1", picked: 0, correct: true }] }))?.to,
+    "diagnose",
+  );
+  assert.equal(nextAction(canvasIn("retest", { questions: [QUESTION], answers: [] })), null);
 });
 
 test("the move out of diagnosis is targeted relearning only when something is actually weak", () => {

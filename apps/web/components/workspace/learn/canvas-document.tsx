@@ -41,21 +41,30 @@ export function CanvasDocument({
 
   // A browser selection spanning several blocks selects all of them. Read on selectionchange
   // rather than on click, so dragging across two paragraphs behaves the way it looks.
+  //
+  // 🔴 `Selection.containsNode(el, true)` is the wrong test here and silently selects nothing.
+  // It asks whether the ELEMENT sits inside the selection, so highlighting a sentence within a
+  // paragraph never matches that paragraph's own block element — only a selection that swallowed
+  // the whole block would. `Range.intersectsNode` asks whether the two overlap at all, in either
+  // direction, which is the actual question. Caught in the browser; every selection-scoped
+  // command was a no-op before this.
   const readSelection = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !root.current) return;
     const anchor = selection.anchorNode;
-    const focus = selection.focusNode;
-    if (!anchor || !focus || !root.current.contains(anchor)) return;
+    if (!anchor || !root.current.contains(anchor)) return;
 
-    const ids = new Set<string>();
+    const ranges: Range[] = [];
+    for (let i = 0; i < selection.rangeCount; i += 1) ranges.push(selection.getRangeAt(i));
+
+    const ids: string[] = [];
+    // Document order, because the ids become the model's edit scope and a jumbled order would
+    // make an insert land in a place the learner did not point at.
     for (const element of root.current.querySelectorAll<HTMLElement>("[data-block-id]")) {
-      if (selection.containsNode(element, true)) {
-        const id = element.dataset.blockId;
-        if (id) ids.add(id);
-      }
+      const id = element.dataset.blockId;
+      if (id && ranges.some((range) => range.intersectsNode(element))) ids.push(id);
     }
-    if (ids.size > 0) onSelect([...ids]);
+    if (ids.length > 0) onSelect(ids);
   }, [onSelect]);
 
   useEffect(() => {
@@ -158,16 +167,20 @@ function BlockView({
         </p>
       )}
 
-      {concepts.length > 0 && !block.collapsed && (
-        <p className="mt-1.5 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
-          {concepts.join(" · ")}
-        </p>
-      )}
+      {/* Concept labels are NOT printed under every block. They were, and consecutive blocks
+          on the same idea repeated the same line — clutter on a page whose whole argument is
+          that the content is the interface. Concepts are what the diagnosis speaks in; they
+          surface there, and on hover here. */}
 
       {/* Controls stay hidden until the block is hovered or selected. The content is the
           interface; the affordances are not. */}
       {!block.collapsed && (
-        <div className="pointer-events-none absolute -top-1 right-2 flex gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="pointer-events-none absolute -top-1 right-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          {concepts.length > 0 && (
+            <span className="mr-1 max-w-[16rem] truncate text-[0.6875rem] text-(--ui-text-quaternary)">
+              {concepts.join(" · ")}
+            </span>
+          )}
           {(block.sourceRefs?.length ?? 0) > 0 && (
             <BlockControl icon="link" label="Where this came from" onClick={onToggleSource} />
           )}

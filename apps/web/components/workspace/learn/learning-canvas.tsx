@@ -64,7 +64,10 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     [canvas, clearSelection, selected, session],
   );
 
-  const next = nextAction(canvas);
+  // The diagnosis and the completion state print their own primary action in the page, where
+  // it belongs — offering the same words twice on one screen is noise, not reassurance.
+  const OWN_ACTION: readonly string[] = ["diagnose", "complete"];
+  const next = OWN_ACTION.includes(canvas.state) ? null : nextAction(canvas);
   const advance = useCallback(() => {
     if (!next) return;
     if (next.to === "recall") void session.startRecall();

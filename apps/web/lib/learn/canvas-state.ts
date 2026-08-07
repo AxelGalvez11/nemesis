@@ -62,19 +62,30 @@ export interface NextAction {
   label: string;
 }
 
-/** The single move the canvas offers next, or null when there is nothing to offer. Kept here
- *  rather than in the component so the progression is testable without a browser. */
+/** The single move the canvas offers next, or null when there is nothing to offer.
+ *
+ *  🔴 An unfinished stage offers NOTHING. This used to hand out "See where I stand" while the
+ *  learner was still on question one, so a single stray click ended the test and produced a
+ *  diagnosis from one answer — which would then name weak concepts for everything that had
+ *  simply not been asked yet. A move forward has to mean the stage is actually done. */
 export function nextAction(
-  canvas: Pick<LearningCanvas, "state" | "blocks" | "weakConceptIds">,
+  canvas: Pick<
+    LearningCanvas,
+    "state" | "blocks" | "weakConceptIds" | "recall" | "recallResults" | "questions" | "answers"
+  >,
 ): NextAction | null {
   switch (canvas.state) {
     case "learn":
       // Nothing to have read yet means nothing to move on from.
       return canvas.blocks.length > 0 ? { to: "recall", label: "I've read this" } : null;
     case "recall":
-      return { to: "test", label: "Test me" };
+      return canvas.recall.length > 0 && canvas.recallResults.length >= canvas.recall.length
+        ? { to: "test", label: "Test me" }
+        : null;
     case "test":
-      return { to: "diagnose", label: "See where I stand" };
+      return canvas.questions.length > 0 && canvas.answers.length >= canvas.questions.length
+        ? { to: "diagnose", label: "See where I stand" }
+        : null;
     case "diagnose":
       return canvas.weakConceptIds.length > 0
         ? { to: "targeted_relearn", label: "Fix my weak spots" }
@@ -82,7 +93,10 @@ export function nextAction(
     case "targeted_relearn":
       return { to: "retest", label: "Retest me" };
     case "retest":
-      return { to: "complete", label: "Finish" };
+      // A retest ends on the same rule as a test: every question answered, then a verdict.
+      return canvas.questions.length > 0 && canvas.answers.length >= canvas.questions.length
+        ? { to: "diagnose", label: "See where I stand" }
+        : null;
     default:
       return null;
   }

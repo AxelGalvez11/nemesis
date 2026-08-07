@@ -67,8 +67,11 @@ export function CanvasComposer({
           dimmed && "opacity-45 focus-within:opacity-100 hover:opacity-100",
         )}
       >
+        {/* The chip needs its own surface. It sits inside the composer's fade, where the
+            gradient is nearly transparent, so without a background it was printed straight
+            over the paragraph behind it and neither could be read. */}
         {selected.length > 0 && (
-          <div className="mb-1.5 flex items-center gap-2 px-1">
+          <div className="mb-1.5 flex w-fit max-w-full items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) py-1 pl-2.5 pr-2 shadow-sm">
             <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">
               {selected.length === 1
                 ? `“${selected[0]?.content.slice(0, 60) ?? ""}${(selected[0]?.content.length ?? 0) > 60 ? "…" : ""}”`
@@ -76,7 +79,7 @@ export function CanvasComposer({
             </span>
             <button
               aria-label="Clear selection"
-              className="text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              className="shrink-0 text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
               onClick={onClearSelection}
               type="button"
             >
