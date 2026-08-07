@@ -436,8 +436,90 @@ export function weightingFacts(doc: DocumentModel): DocFact[] {
       break; // one scheme per table; the first column that sums is the one
     }
   }
+  out.push(...weightingLines(doc));
   return out;
 }
+
+/**
+ * A weighting scheme written as a RUN OF LINES rather than as a table.
+ *
+ * 🔴 WITHOUT THIS, THE EXTRACTOR IS UNREACHABLE ON THE DOCUMENTS THAT NEED IT.
+ * Measured over 200 real files: **zero grading schemes found**. Not because the
+ * shape test is wrong — it is the right test — but because its only input was a
+ * `table` block, and PDF table detection is deliberately not built (a grid
+ * asserted over prose relabels every value in it). Syllabi are overwhelmingly
+ * PDFs, so the one extractor most obviously aimed at a syllabus could never see
+ * one. A rule with no reachable input is not a conservative rule; it is a rule
+ * that does nothing.
+ *
+ * The shape is the same claim in a different typography: consecutive sibling
+ * lines under one heading, each ending in a percentage, together summing to a
+ * whole. "Brief 40%" and "Bead appearance 40%" are the same structure, and this
+ * knows what neither of them means.
+ */
+function weightingLines(doc: DocumentModel): DocFact[] {
+  const out: DocFact[] = [];
+  let run: { block: DocBlock; label: string; percent: number }[] = [];
+
+  const flush = () => {
+    if (run.length >= MIN_WEIGHTING_LINES) {
+      const total = run.reduce((sum, entry) => sum + entry.percent, 0);
+      if (Math.abs(total - 100) <= WEIGHTING_TOLERANCE) {
+        const weights = run.map((entry) => ({ label: entry.label, percent: entry.percent }));
+        out.push(
+          // The FIRST block carries the locator, and every block in the run is
+          // recorded — a scheme spread over five lines has five sources, and a
+          // citation that named only one would be checkable but incomplete.
+          fact(doc, run[0]!.block, {
+            blockIds: run.map((entry) => entry.block.id),
+            kind: "weighting",
+            text: weights.map((w) => `${w.label}: ${w.percent}%`).join(", "),
+            total,
+            weights,
+          }),
+        );
+      }
+    }
+    run = [];
+  };
+
+  for (const block of doc.blocks) {
+    // A heading ends a run: a scheme does not span two sections, and letting it
+    // would merge a course's marks with a resit's.
+    if (block.kind === "heading" || block.kind === "table" || block.kind === "figure") {
+      flush();
+      continue;
+    }
+    if (block.kind !== "paragraph" && block.kind !== "listItem") {
+      flush();
+      continue;
+    }
+
+    const line = block.text.trim();
+    const match = TRAILING_PERCENT.exec(line);
+    const percent = match ? Number(match[1]) : null;
+    const label = match ? line.slice(0, match.index).replace(/[\s.:—–-]+$/, "").trim() : "";
+    if (percent === null || !Number.isFinite(percent) || percent < 0 || percent > 100 || !label) {
+      flush();
+      continue;
+    }
+    run.push({ block, label, percent });
+  }
+  flush();
+  return out;
+}
+
+/**
+ * A run this short is a sentence with a number in it, not a scheme.
+ *
+ * Two lines summing to 100 happens by coincidence — "60% of students … 40% of
+ * the cohort" — and a coincidence presented as a grading scheme is worse than
+ * nothing.
+ */
+const MIN_WEIGHTING_LINES = 3;
+
+/** A percentage at the END of a line: "Final examination — 40%". */
+const TRAILING_PERCENT = /(\d{1,3}(?:\.\d+)?)\s*%\s*$/;
 
 /** A percentage in a cell, or null. `%` is required — a bare 40 is not a share. */
 function percentIn(cell: string): number | null {

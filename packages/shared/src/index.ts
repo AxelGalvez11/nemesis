@@ -230,6 +230,7 @@ export * from "./document-model.ts";
 // which retrieves confidently and answers wrongly.
 export * from "./document-chunks.ts";
 export * from "./document-envelope.ts";
+export * from "./document-artifacts.ts";
 // Citations that are found rather than believed. Shared because a model asked to
 // cite will produce a page number, and that number is a guess dressed as a fact —
 // right often enough to look reliable, wrong often enough to matter, and the same
