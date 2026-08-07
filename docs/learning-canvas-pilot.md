@@ -155,3 +155,45 @@ feels better, and this is the shortest path to knowing that.
 - **`/learn` ships its code to anyone who guesses the URL.** There is no way to hide a route at
   the edge in this app — no middleware exists. Keeping it out of the sidebar is the same
   protection `/slides` and `/notebooks` already rely on.
+
+---
+
+## 7. What happened when we actually ran it (2026-08-06)
+
+The whole path in §5 was run signed in, against the live models and the live database. Plain
+English: **it works, and the two claims the pilot rests on both held up.**
+
+**The page really does shrink to your weak spots.** A 32-section, 1,602-word lesson became a
+6-section, 480-word one covering *only* the three ideas that had gone wrong — nothing else.
+
+**The diagnosis really does name the right things.** We deliberately failed exactly three of
+eleven ideas (one on a flashcard, two on the test). The page named those three, called the
+other eight understood, and never showed a percentage.
+
+**It cites your material honestly.** Given a real document split into 45 passages, the AI
+referred to passages **45 times without inventing a single one**, and every reference opened
+to the actual sentences from the file. Asking "where did this come from?" returns the
+filename, the section heading, and the real text — never a made-up page number.
+
+**Fixing one paragraph changes one paragraph.** Highlighting a sentence and asking for it
+simpler rewrote that block and left the other 28 untouched.
+
+**Flashcards land in the Study page you already have.** The canvas created one new deck of 11
+cards and graded them through the existing scheduler, which returned a real next-review date.
+No second flashcard system.
+
+Two things we could **not** test on a laptop, and one correction:
+
+- **Reading an uploaded file failed locally** — the upload endpoint checks the device against
+  the database using a server-only key that isn't in the local config, so it answered "can't
+  check this device right now". That is the laptop's setup, not the feature; the same endpoint
+  serves chat attachments and Library import in production today.
+- **Saving a canvas to the cloud is still off**, because the new table hasn't been created yet.
+  Every save fell back to the browser's own storage, which is why the session still worked
+  end to end. This is the one decision waiting on you.
+- **Correction:** an earlier note said canvas usage is metered like chat. It travels the same
+  path as chat, but this account has no chat/AI meter at all — it's the unlimited owner
+  account — so this run could not show metering working either way.
+
+One cosmetic bug found: on the diagnosis screen, the "Fix my weak spots" button sits under the
+command bar's fade and looks greyed-out. It still works; it just looks disabled.
