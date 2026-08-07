@@ -162,11 +162,23 @@ Twenty of our twenty-nine "figures" are one repeated icon. **Our number is
 inflated by decoration.** Docling's 5 is closer to what a student would call a
 figure.
 
-This has a cost consequence beyond scoring: figure count drives vision spend, and
-the PPTX lane dedupes images by SHA-1 while the PDF lane appears not to. On this
-file that is 20 vision calls to describe one icon — on the one primitive the
-2026-08-06 audit found has no entitlement, no counter and no cache. **Worth
-fixing regardless of what happens with Docling.**
+**It does NOT have a cost consequence, and it is worth saying why.** The obvious
+inference — inflated figure count means inflated vision spend — is wrong, and it
+was checked rather than assumed. `planFigureVision` only routes a figure covering
+**≥3% of its page** (`WORTH_LOOKING_AREA`), or any figure on a page with under
+120 characters of text. The repeated icon is 4.4% × 2.1% = **0.09% of the page**,
+and these pages carry ~800 characters. Measured on the same file:
+
+```
+figure BLOCKS detected     : 29
+would be sent to vision    : 0
+blocks below the threshold : 29 of 29
+```
+
+**Zero vision calls.** The routing is smarter than the raw count implies. What is
+wrong is the *count as a comparison metric*, not the spend — the PDF lane has no
+SHA-1 content dedupe the way the PPTX lane does, but the area filter makes that
+academic for decoration. Left as-is.
 
 #### Two-column reading order — DIFFERENTIAL, N=2 files, and it does not go one way
 
