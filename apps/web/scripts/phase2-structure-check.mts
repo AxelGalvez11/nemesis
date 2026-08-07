@@ -57,7 +57,7 @@ for (const file of files) {
     const started = process.hrtime.bigint();
     // 🔴 A COPY EACH. pdf.js detaches the buffer it is handed, so the second
     // reader would otherwise be measured against zeroes and report a total loss.
-    const model = await readPdfStructure(new Uint8Array(bytes));
+    const { model } = await readPdfStructure(new Uint8Array(bytes));
     const ms = Number(process.hrtime.bigint() - started) / 1e6;
     const legacy = await extractPdfText(new Uint8Array(bytes));
 

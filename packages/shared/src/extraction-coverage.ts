@@ -276,8 +276,11 @@ export function describeCoverage(coverage: ExtractionCoverage): string | null {
   const parts: string[] = [];
   if (coverage.unitsUnread > 0) {
     const read = unitsRead(coverage);
+    // 🔴 GROUPED, LIKE THE TRUNCATION SENTENCE BESIDE IT. "5000 of 100000
+    // pages" is what a capped read of an adversarially large file produces, and
+    // an ungrouped six-digit number is read wrong at a glance by everyone.
     parts.push(
-      `${read} of ${coverage.units} ${unitWord(coverage.unitKind, coverage.units)} could be read`,
+      `${read.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} could be read`,
     );
   }
   const lost = lostFigures(coverage.figures);
@@ -309,7 +312,7 @@ export function coverageNoticeForModel(coverage: ExtractionCoverage): string | n
   const facts: string[] = [];
   if (coverage.unitsUnread > 0) {
     facts.push(
-      `${coverage.unitsUnread} of ${coverage.units} ${unitWord(coverage.unitKind, coverage.units)} could NOT be read and are not below`,
+      `${coverage.unitsUnread.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} could NOT be read and are not below`,
     );
   }
   const lost = lostFigures(coverage.figures);

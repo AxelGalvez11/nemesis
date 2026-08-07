@@ -31,6 +31,8 @@
 
 import { buildDocument, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
+import { MAX_UNITS_PER_PARSE } from "@/lib/notebooks/parse-worker";
+
 import {
   groupLines,
   groupParagraphs,
@@ -41,6 +43,18 @@ import {
   type Box,
   type TextItem,
 } from "./geometry";
+
+export interface PdfStructureResult {
+  model: DocumentModel;
+  /**
+   * Units the FILE declares, which may exceed what was read.
+   *
+   * Kept apart from `model.units.length` on purpose: one is what exists, the
+   * other is what we looked at, and coverage needs both to say "5,000 of
+   * 100,000 pages could be read" instead of quietly renaming the document.
+   */
+  declaredUnits: number;
+}
 
 /** A figure found on a page, before it is judged. */
 interface RawFigure {
@@ -93,13 +107,23 @@ async function loadPdfjs() {
  * theoretical hazard: an image scan that ran after extraction once reported zero
  * images in 83 files that hold 2,949 of them, because the buffer had been zeroed.
  */
-export async function readPdfStructure(bytes: Uint8Array): Promise<DocumentModel> {
+export async function readPdfStructure(
+  bytes: Uint8Array,
+  options: { maxUnits?: number } = {},
+): Promise<PdfStructureResult> {
+  const maxUnits = options.maxUnits ?? MAX_UNITS_PER_PARSE;
   const pdfjs = await loadPdfjs();
   const loading = pdfjs.getDocument({ data: bytes, disableFontFace: true });
   const doc = await loading.promise;
   try {
+    // 🔴 THE CAP IS ON UNITS, NOT BYTES, BECAUSE COST TRACKS UNITS.
+    // A 33.5 MB deck parses in 50 ms; a 13 MB PDF of 2,116 pages takes 12.3 s.
+    // A few hundred kilobytes of generated PDF can declare a hundred thousand
+    // pages, so the byte ceiling upstream does not bound this at all.
+    const declaredUnits = doc.numPages;
+    const readable = Math.min(declaredUnits, maxUnits);
     const pages: RawPage[] = [];
-    for (let n = 1; n <= doc.numPages; n += 1) {
+    for (let n = 1; n <= readable; n += 1) {
       const page = await doc.getPage(n);
       try {
         pages.push(await readPage(pdfjs, page));
@@ -107,7 +131,13 @@ export async function readPdfStructure(bytes: Uint8Array): Promise<DocumentModel
         page.cleanup();
       }
     }
-    return assemble(pages);
+    // 🔴 THE PAGES PAST THE CAP ARE UNREAD, NOT ABSENT, AND THE DIFFERENCE HAS
+    // TO SURVIVE THIS RETURN. `declaredUnits` is what the file says it holds;
+    // the model describes only what was actually read. A caller that had just
+    // the model would report a 100,000-page document as a 5,000-page one that
+    // was read completely — which is the exact shape of "solving capacity by
+    // silently deleting content".
+    return { declaredUnits, model: assemble(pages) };
   } finally {
     // 🔴 THE LOADING TASK OWNS THE WORKER, NOT THE DOCUMENT. pdf.js 6 removed
     // `PDFDocumentProxy.destroy`; destroying the task is what actually releases

@@ -235,8 +235,12 @@ async function parsePdf(bytes: Uint8Array): Promise<{
   // every later read see zeroes — which does not throw, it silently reports an
   // empty document.
   let model: DocumentModel | undefined;
+  // Units the FILE declares. Beyond the cap they are unread, never absent.
+  let unreadBeyondCap = 0;
   try {
-    model = await readPdfStructure(new Uint8Array(bytes));
+    const structural = await readPdfStructure(new Uint8Array(bytes));
+    model = structural.model;
+    unreadBeyondCap = Math.max(structural.declaredUnits - structural.model.units.length, 0);
   } catch {
     // Recorded as absent structure, not as a failed parse: the fallback below
     // still produces real text, and calling the document unreadable because the
@@ -244,13 +248,23 @@ async function parsePdf(bytes: Uint8Array): Promise<{
     model = undefined;
   }
 
+  // 🔴 BOTH READERS FAILING IS A VERDICT ABOUT THE FILE, NOT AN EXCEPTION.
+  // A PDF that will not open — truncated, encrypted, or twelve bytes of noise
+  // with a %PDF header — used to throw straight out of the parser and take the
+  // whole upload request with it. The student then saw a server error for a
+  // problem with their file. An empty read reaches the caller as `empty`, which
+  // it already knows how to explain.
   const r = model
     ? {
         meta: { pages: model.units.length, title: model.title, truncated: false },
         pageTexts: unitTexts(model),
         text: capText(documentToText(model), TEXT_CAP).text,
       }
-    : await extractPdfText(bytes);
+    : await extractPdfText(bytes).catch(() => ({
+        meta: { pages: 0, title: null, truncated: false },
+        pageTexts: [] as string[],
+        text: "",
+      }));
   // Figures are only KNOWN when the structural reader ran. Omitted means
   // unknown, and unknown must not be recorded as "this document has none".
   const figures = model ? figureCoverageOf(model) : undefined;
@@ -305,6 +319,7 @@ async function parsePdf(bytes: Uint8Array): Promise<{
       pageTexts: r.pageTexts,
       readByVision,
       truncation: extractCut(TEXT_CAP, text.length, Math.max(wholeTextLength, text.length)),
+      unreadBeyondCap,
       ...(figures ? { figures } : {}),
     });
   }
@@ -313,6 +328,7 @@ async function parsePdf(bytes: Uint8Array): Promise<{
       pageTexts: r.pageTexts,
       readByVision,
       truncation: extractCut(TEXT_CAP, r.text.length, wholeTextLength),
+      unreadBeyondCap,
       ...(figures ? { figures } : {}),
     });
   }
@@ -333,7 +349,8 @@ async function parsePdf(bytes: Uint8Array): Promise<{
   }
 
   return {
-    coverage: record ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision, ...(figures ? { figures } : {}) }),
+    coverage:
+      record ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision, unreadBeyondCap, ...(figures ? { figures } : {}) }),
     model,
     readBy,
     text,

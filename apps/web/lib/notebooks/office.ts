@@ -74,28 +74,55 @@ export const UNZIP_MAX_ENTRIES = 20_000;
  * error, and "this file is too big once unpacked" is true and actionable, while
  * a crashed instance tells them nothing at all.
  */
+/**
+ * A refusal WE decided on, as opposed to a container that would not parse.
+ *
+ * 🔴 THE DISTINCTION MATTERS AT THE CATCH BELOW. Our refusals already say
+ * something true and readable about the file; fflate's do not. Without a way to
+ * tell them apart, wrapping the parse failure would also swallow "that file has
+ * too many parts to open safely" and replace it with something vaguer.
+ */
+class ArchiveRefusal extends Error {}
+
 export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   let total = 0;
   let entries = 0;
-  const files = unzipSync(bytes, {
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipEntries();
+  } catch (cause) {
+    if (cause instanceof ArchiveRefusal) throw cause;
+    // 🔴 `invalid zip data` IS NOT A SENTENCE FOR A STUDENT. fflate's message
+    // reached the upload response verbatim whenever a file was truncated, was
+    // not really an Office file, or had been renamed from something else — and
+    // it reads as an application fault rather than as a fact about their file.
+    throw new Error("That file couldn't be opened. It may be damaged, or not really a Word, PowerPoint or Excel file.");
+  }
+  return files;
+
+  function unzipEntries(): Record<string, Uint8Array> {
+  return unzipSync(bytes, {
     filter(file) {
       entries += 1;
       if (entries > UNZIP_MAX_ENTRIES) {
-        throw new Error("That file has too many parts to open safely.");
+        throw new ArchiveRefusal("That file has too many parts to open safely.");
       }
       // `originalSize` is the header's claim, which a crafted zip can lie about.
       // It is still worth checking: an honest bomb is refused before a single
       // byte is inflated. The post-inflation sum below is what catches a liar.
       total += file.originalSize ?? 0;
       if (total > UNZIP_MAX_TOTAL_BYTES) {
-        throw new Error("That file is too large once unpacked. Try exporting it again, or split it up.");
+        throw new ArchiveRefusal("That file is too large once unpacked. Try exporting it again, or split it up.");
       }
       return true;
     },
   });
+  }
+}
 
-  // 🔴 THE POST-INFLATION SUM THAT USED TO LIVE HERE HAS BEEN DELETED, AND
-  // NOTHING SHOULD PUT IT BACK.
+// 🔴 THE POST-INFLATION SUM THAT USED TO LIVE IN `unzipBounded` HAS BEEN
+// DELETED, AND NOTHING SHOULD PUT IT BACK.
+/*
   //
   // It walked `Object.keys(files)` adding up `byteLength` and threw if the total
   // crossed the same ceiling — after `unzipSync` had already returned, which is
@@ -110,8 +137,7 @@ export function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   // source ceiling, because a zip cannot inflate what it does not contain and
   // the object was capped at MAX_SOURCE_BYTES before it ever got here. Closing
   // that gap properly needs streaming inflation, not another sum.
-  return files;
-}
+*/
 
 import { emfEmbeddedImage } from "./emf-bitmap";
 import { imageSize } from "./image-dimensions";
