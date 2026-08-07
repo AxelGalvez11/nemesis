@@ -33,6 +33,8 @@ import { buildDocument, type DocBlock, type DocumentModel } from "@nemesis/share
 
 import { MAX_UNITS_PER_PARSE } from "@/lib/notebooks/parse-worker";
 
+import { figureToPng } from "./figure-image";
+import { MAX_FIGURES_PER_DOC, THIN_UNIT_CHARS, WORTH_LOOKING_AREA } from "./figure-routing";
 import {
   groupLines,
   groupParagraphs,
@@ -46,6 +48,14 @@ import {
 
 export interface PdfStructureResult {
   model: DocumentModel;
+  /**
+   * Figure pixels, keyed `unit:ref`, for the figures that were captured.
+   *
+   * Empty unless `captureFigures` was asked for. Kept OUT of the model on
+   * purpose: the model is persisted as JSON and a megabyte of base64 per figure
+   * would make `parsed_documents.structure` unreadable and unusable.
+   */
+  figureImages: Map<string, CapturedFigure>;
   /**
    * Units the FILE declares, which may exceed what was read.
    *
@@ -61,6 +71,21 @@ interface RawFigure {
   /** pdf.js's own name for the image object. Repeats identify running art. */
   ref: string;
   box: Box;
+  /**
+   * The figure's own pixels, if they were captured.
+   *
+   * 🔴 CAPTURED HERE OR NOT AT ALL. `page.cleanup()` releases `page.objs`, so
+   * the bytes are gone the moment this page is finished with — and re-fetching
+   * the page later re-parses its whole operator list. Everything that might
+   * want to look at a figure has to say so before this loop moves on.
+   */
+  image?: CapturedFigure;
+}
+
+export interface CapturedFigure {
+  png: Uint8Array;
+  width: number;
+  height: number;
 }
 
 interface RawPage {
@@ -109,9 +134,14 @@ async function loadPdfjs() {
  */
 export async function readPdfStructure(
   bytes: Uint8Array,
-  options: { maxUnits?: number } = {},
+  options: { maxUnits?: number; captureFigures?: boolean; maxCaptured?: number } = {},
 ): Promise<PdfStructureResult> {
   const maxUnits = options.maxUnits ?? MAX_UNITS_PER_PARSE;
+  // Headroom over the vision budget: running art is a DOCUMENT-level fact, only
+  // known once every page has been seen, so some of what is captured here will
+  // turn out to be a masthead and be discarded. Capturing exactly the budget
+  // would mean the mastheads crowded out real figures.
+  const maxCaptured = options.maxCaptured ?? MAX_FIGURES_PER_DOC * 2;
   const pdfjs = await loadPdfjs();
   const loading = pdfjs.getDocument({ data: bytes, disableFontFace: true });
   const doc = await loading.promise;
@@ -123,21 +153,33 @@ export async function readPdfStructure(
     const declaredUnits = doc.numPages;
     const readable = Math.min(declaredUnits, maxUnits);
     const pages: RawPage[] = [];
+    let captured = 0;
     for (let n = 1; n <= readable; n += 1) {
       const page = await doc.getPage(n);
       try {
-        pages.push(await readPage(pdfjs, page));
+        const read = await readPage(pdfjs, page, {
+          capture: options.captureFigures === true && captured < maxCaptured,
+        });
+        captured += read.figures.filter((figure) => figure.image).length;
+        pages.push(read);
       } finally {
         page.cleanup();
       }
     }
+
+    const figureImages = new Map<string, CapturedFigure>();
+    pages.forEach((page, unit) => {
+      for (const figure of page.figures) {
+        if (figure.image) figureImages.set(`${unit}:${figure.ref}`, figure.image);
+      }
+    });
     // 🔴 THE PAGES PAST THE CAP ARE UNREAD, NOT ABSENT, AND THE DIFFERENCE HAS
     // TO SURVIVE THIS RETURN. `declaredUnits` is what the file says it holds;
     // the model describes only what was actually read. A caller that had just
     // the model would report a 100,000-page document as a 5,000-page one that
     // was read completely — which is the exact shape of "solving capacity by
     // silently deleting content".
-    return { declaredUnits, model: assemble(pages) };
+    return { declaredUnits, figureImages, model: assemble(pages) };
   } finally {
     // 🔴 THE LOADING TASK OWNS THE WORKER, NOT THE DOCUMENT. pdf.js 6 removed
     // `PDFDocumentProxy.destroy`; destroying the task is what actually releases
@@ -153,7 +195,11 @@ export async function readPdfStructure(
 
 type Pdfjs = Awaited<ReturnType<typeof loadPdfjs>>;
 
-async function readPage(pdfjs: Pdfjs, page: Awaited<ReturnType<Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>["getPage"]>>): Promise<RawPage> {
+async function readPage(
+  pdfjs: Pdfjs,
+  page: Awaited<ReturnType<Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>["getPage"]>>,
+  options: { capture: boolean } = { capture: false },
+): Promise<RawPage> {
   // scale 1 and the page's own rotation, so every coordinate below is already in
   // the space a reader would render — no second convention anywhere downstream.
   const viewport = page.getViewport({ scale: 1 });
@@ -177,7 +223,66 @@ async function readPage(pdfjs: Pdfjs, page: Awaited<ReturnType<Awaited<ReturnTyp
     });
   }
 
-  return { figures: await readFigures(pdfjs, page, viewport), height: viewport.height, items, width: viewport.width };
+  const figures = await readFigures(pdfjs, page, viewport);
+  if (options.capture) {
+    const pageArea = viewport.width * viewport.height;
+    for (const figure of figures) {
+      // The same two-signal test the router applies, run here because this is
+      // the only moment the bytes exist. Deliberately NOT text sparsity alone:
+      // a large figure is captured on a page dense with text, which is the
+      // 326-page population production can never see.
+      const share = pageArea > 0 ? (figure.box.width * figure.box.height) / pageArea : 0;
+      const thin = items.reduce((sum, item) => sum + item.text.length, 0) < THIN_UNIT_CHARS;
+      if (share < WORTH_LOOKING_AREA && !thin) continue;
+      const converted = figureToPng(await readImageObject(page, figure.ref));
+      if (converted.ok) figure.image = { height: converted.height, png: converted.png, width: converted.width };
+    }
+  }
+  return { figures, height: viewport.height, items, width: viewport.width };
+}
+
+/**
+ * The decoded image behind a paint operator, or null.
+ *
+ * 🔴 `page.objs.has()` RETURNS FALSE FOR IMAGES THAT ARE AVAILABLE, AND THAT
+ * COST 75% OF THIS PHASE'S FIGURES. Measured on the real corpus: gating on
+ * `has()` captured pixels for **78 of 305** routed figures. pdf.js resolves
+ * image objects asynchronously *after* `getOperatorList()` returns, so a
+ * synchronous check is a race the reader loses most of the time — and it loses
+ * it silently, as "this figure had no pixels" rather than as an error.
+ *
+ * The callback form waits. A bounded wait, because an object that never resolves
+ * would otherwise hold a page open for the length of the parse: a figure we
+ * waited for and did not get is `undecoded`, which is a stated reason.
+ */
+const IMAGE_WAIT_MS = 3_000;
+
+function readImageObject(
+  page: { objs: { get: (name: string, callback: (value: unknown) => void) => void } },
+  ref: string,
+): Promise<Parameters<typeof figureToPng>[0]> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (value: Parameters<typeof figureToPng>[0]) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    // 🔴 NOT `unref`ed. An unreferenced timer does not hold the event loop open,
+    // so when the only thing outstanding is an image object that never resolves,
+    // Node empties the loop and the await NEVER SETTLES — the parse simply stops
+    // mid-document with no error. Observed exactly once, on the real corpus.
+    const timer = setTimeout(() => done(null), IMAGE_WAIT_MS);
+    try {
+      page.objs.get(ref, (value) => {
+        clearTimeout(timer);
+        done(value as Parameters<typeof figureToPng>[0]);
+      });
+    } catch {
+      clearTimeout(timer);
+      done(null);
+    }
+  });
 }
 
 /**

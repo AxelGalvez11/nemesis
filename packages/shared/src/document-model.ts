@@ -133,7 +133,22 @@ export interface DocFigure {
   /** What vision saw. ABSENT means nobody looked, not "nothing there". */
   description?: string;
   /** Why it was not examined, when that was a decision rather than an omission. */
-  skipped?: "decorative" | "too-small" | "over-cap" | "unsupported";
+  skipped?:
+    | "decorative"
+    | "too-small"
+    | "over-cap"
+    | "unsupported"
+    /** Vision was not configured, or the provider failed for this figure. */
+    | "vision-unavailable"
+    /**
+     * Something looked and came back with nothing to say.
+     *
+     * 🔴 DISTINCT FROM NO REASON AT ALL, which is what "nobody looked" is. The
+     * content is missing either way — `lostFigures` counts both — but only one
+     * of them is a gap in the pipeline, and collapsing them would make a vision
+     * pass that silently returned nothing look like a vision pass that ran.
+     */
+    | "examined-empty";
 }
 
 /** One structural element. Blocks are ordered; order is reading order. */
@@ -448,7 +463,11 @@ export function figureCoverageOf(doc: DocumentModel): FigureCoverage {
     found += 1;
     if (block.figure?.description) { described += 1; continue; }
     const reason: FigureSkipReason =
-      block.figure?.skipped === "decorative" || block.figure?.skipped === "too-small"
+      block.figure?.skipped === "examined-empty"
+        ? "examined-empty"
+        : block.figure?.skipped === "vision-unavailable"
+        ? "vision-unavailable"
+        : block.figure?.skipped === "decorative" || block.figure?.skipped === "too-small"
         ? "decorative"
         : block.figure?.skipped === "unsupported"
           ? "unreadable-format"

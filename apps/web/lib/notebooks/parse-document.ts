@@ -41,6 +41,7 @@ import {
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { readPdfStructure } from "@/lib/pdf/structure";
+import { lookAtFigures } from "@/lib/pdf/figure-look";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
@@ -238,9 +239,20 @@ async function parsePdf(bytes: Uint8Array): Promise<{
   // Units the FILE declares. Beyond the cap they are unread, never absent.
   let unreadBeyondCap = 0;
   try {
-    const structural = await readPdfStructure(new Uint8Array(bytes));
+    // 🔴 CAPTURE THE FIGURES ON THE WAY PAST, BECAUSE THERE IS NO WAY BACK.
+    // `page.cleanup()` releases the decoded image data, so a later pass would
+    // have to re-parse every page's operator list to see a diagram again.
+    const structural = await readPdfStructure(new Uint8Array(bytes), { captureFigures: true });
     model = structural.model;
     unreadBeyondCap = Math.max(structural.declaredUnits - structural.model.units.length, 0);
+
+    // 🔴 THE VISUAL HALF. Production decides what to look at from text sparsity
+    // alone, which guarantees that 326 of 952 real pages — holding 1,807
+    // figures — are never examined, because they have plenty of words AND a
+    // load-bearing diagram. `planFigureVision` routes on an unexamined figure
+    // large enough to hold something OR thin text, and either is sufficient.
+    const looked = await lookAtFigures(model, structural.figureImages);
+    model = looked.model;
   } catch {
     // Recorded as absent structure, not as a failed parse: the fallback below
     // still produces real text, and calling the document unreadable because the

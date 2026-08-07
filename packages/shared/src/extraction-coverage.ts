@@ -70,6 +70,16 @@ export type FigureSkipReason =
   /** Vision is not configured or the provider failed. */
   | "vision-unavailable"
   /**
+   * Something looked at it and had nothing to report.
+   *
+   * Still LOST — the figure's content did not reach the document — but it is a
+   * disclosed decision rather than a hole. Kept apart from `not-examined` so a
+   * vision pass that ran and returned nothing cannot be mistaken for one that
+   * never ran, which is the difference between a provider problem and a
+   * routing problem.
+   */
+  | "examined-empty"
+  /**
    * Nobody looked, and nobody decided not to.
    *
    * 🔴 THE LARGEST CATEGORY, AND IT WAS INVISIBLE UNTIL 2026-08-06. PDF figures
@@ -243,7 +253,8 @@ export function lostFigures(figures: FigureCoverage): number {
     (reasons["unreadable-format"] ?? 0) +
     (reasons["over-cap"] ?? 0) +
     (reasons["vision-unavailable"] ?? 0) +
-    (reasons["not-examined"] ?? 0)
+    (reasons["not-examined"] ?? 0) +
+    (reasons["examined-empty"] ?? 0)
   );
 }
 
