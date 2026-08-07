@@ -45,6 +45,28 @@ PowerPoint deck, and a set of legal/administrative PDFs that are the corpus's
 only non-pharmacy discipline — used as the "would this work for a law student"
 check on the adapter, per the standing field-agnostic rule.
 
+### What this corpus does not test
+
+The corpus is one student's `~/Downloads` read recursively, not a curated set.
+By filename, ~240 of 398 are unambiguously coursework and most of the remainder
+also is; roughly 25 are personal or administrative documents that happened to be
+in the folder. That mix is harmless for the comparison — a parser sees document
+*shape*, not subject — and shape is well covered here: two-column articles,
+lecture decks, syllabi, rubrics, tables, scans, one very long PDF, one very
+large one.
+
+**The gap is mathematics, and it lands exactly on our worst finding.** Only 3
+files in 345 contain real equations. That is why the inverted-fraction defect
+(§ DOCX) reads as "low frequency, high severity" — but the frequency number is a
+property of *this* corpus, not of the defect. A mechanical-engineering or physics
+student's problem sets would hit it on nearly every page. Treat it as **high
+severity, frequency unmeasured**, and do not use the "3 files" figure to
+deprioritise it.
+
+Secondary gaps, stated so they are not mistaken for passes: no CJK or
+right-to-left script, no handwriting, no multi-column legal reporters, and no
+spreadsheet-heavy documents. None of these were scored either way.
+
 ---
 
 ## Three columns, not two
