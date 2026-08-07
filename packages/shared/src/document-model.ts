@@ -84,6 +84,16 @@ export interface DocUnit {
    * absent for Word. Its only job is to let a relative rect become a crop.
    */
   size?: { width: number; height: number };
+  /**
+   * What the DOCUMENT calls this unit — a slide's title placeholder, a
+   * spreadsheet's sheet name.
+   *
+   * 🔴 NEVER GENERATED. "Slide 12" is a locator and is derived from `index`;
+   * this is the author's own name for the unit, and it is absent when they did
+   * not give one. A label invented from a heading would be indistinguishable
+   * from one the author wrote, and citations would quote it as the deck's words.
+   */
+  label?: string;
 }
 
 export type DocBlockKind =

@@ -39,6 +39,7 @@ import {
   singleUnitCoverage,
 } from "./extract-coverage";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
+import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { readPdfStructure } from "@/lib/pdf/structure";
 import { lookAtFigures } from "@/lib/pdf/figure-look";
@@ -174,6 +175,22 @@ export async function parseDocument(
     const out = pptxTextWithFigures(deck, figures);
     text = out.text;
     title = out.title;
+    // 🔴 THE DECK BECOMES A MODEL TOO, AND THE STRING STAYS EXACTLY AS IT WAS.
+    // PPTX is the strong lane — notes, SmartArt, charts, tables, EMF/TIFF — and
+    // a re-extraction would risk all of it. `pptxToModel` re-SHAPES the same
+    // merged text into slide-numbered blocks, which is what lets a chunk carry
+    // a locator and a citation say "slide 12" instead of "somewhere in this
+    // file". `scripts/phase3-pptx-check.mts` asserts against real decks that
+    // not one character was lost doing it.
+    model = pptxToModel(
+      {
+        deckTitle: deck.deckTitle,
+        images: deck.media.images,
+        slides: deck.slides,
+        slideTitles: deck.slideTitles,
+      },
+      figures,
+    );
     if (figures.size > 0) readBy = "figures";
     if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
     coverage = pptxCoverage({
