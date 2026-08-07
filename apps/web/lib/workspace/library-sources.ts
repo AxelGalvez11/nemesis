@@ -17,6 +17,11 @@
 // The preview fixtures below carry the design for the signed-out demo.
 
 import { readCoverage, type ExtractionCoverage } from "@nemesis/shared";
+import {
+  describeDocument,
+  type DocumentStatus,
+  type ParsedDocumentRow,
+} from "@/lib/notebooks/document-status";
 
 import { supabase } from "@/lib/supabase";
 
@@ -43,6 +48,15 @@ export interface LibrarySource {
    * recreate the exact defect the record was built to close.
    */
   coverage: ExtractionCoverage | null;
+  /**
+   * Where this file is in the read pipeline, resolved by `describeDocument`.
+   *
+   * Distinct from `coverage`, which describes only a parse that already
+   * happened. `not_queued` — stored, readable, and scheduled for nothing — is
+   * the state 16 of 17 real sources are in, and it is the one a spinner would
+   * misreport forever.
+   */
+  status: DocumentStatus;
 }
 
 const KIND_META: Record<LibrarySourceKind, { label: string; icon: string }> = {
@@ -106,6 +120,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     // for these fixtures (see librarySourceUrl).
     storagePath: "/reader-sample.pdf",
     coverage: null,
+    // read completely — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { kind: "parsed" },
   },
   {
     id: "preview-src-diagram",
@@ -117,6 +134,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     // public/reader-sample-diagram.png — see the note on the PDF fixture above.
     storagePath: "/reader-sample-diagram.png",
     coverage: null,
+    // the state 16 of 17 real sources are in — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { kind: "not_queued" },
   },
   {
     id: "preview-src-conlaw-recording",
@@ -127,6 +147,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     createdAt: "2026-07-29T18:40:00.000Z",
     storagePath: null,
     coverage: null,
+    // in flight — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { attempts: 1, kind: "parsing" },
   },
   {
     id: "preview-src-brief",
@@ -145,6 +168,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     createdAt: "2026-07-31T09:05:00.000Z",
     storagePath: "/reader-sample.docx",
     coverage: null,
+    // terminal — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { attempts: 5, kind: "failed", message: "That file could not be opened.", stage: "parse" },
   },
   {
     id: "preview-src-deck",
@@ -155,6 +181,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     createdAt: "2026-08-01T14:30:00.000Z",
     storagePath: "/reader-sample.pptx",
     coverage: null,
+    // read, with gaps — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { kind: "partially_parsed", units: 57, unitsUnread: 2 },
   },
   {
     id: "preview-src-mech-ch6",
@@ -165,6 +194,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     createdAt: "2026-07-25T09:12:00.000Z",
     storagePath: null,
     coverage: null,
+    // queued — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { attempts: 0, kind: "pending" },
   },
 ];
 
@@ -183,7 +215,26 @@ interface SourceRow {
   // 🔴 AN ARRAY, even though it is a to-one relation. PostgREST embeds return a
   // list and supabase-js types them that way; reading it as an object gives
   // `undefined` at runtime and a coverage that is silently always null.
-  parsed_documents?: { coverage: unknown }[] | { coverage: unknown } | null;
+  parsed_documents?: ParsedEmbed[] | ParsedEmbed | null;
+  // The queue half. Read alongside the parse half because a status derived from
+  // either one alone is wrong in a specific, familiar way: coverage without the
+  // queue cannot tell "never scheduled" from "waiting", and the queue without
+  // coverage cannot tell "read" from "read with pages missing".
+  parsed_document_id?: string | null;
+  parse_enqueued_at?: string | null;
+  parse_attempts?: number | null;
+  parse_error?: string | null;
+  parse_failed_at?: string | null;
+  parse_leased_until?: string | null;
+  parse_next_attempt_at?: string | null;
+}
+
+interface ParsedEmbed {
+  coverage: unknown;
+  state?: string | null;
+  complete?: boolean | null;
+  failed_stage?: string | null;
+  error?: string | null;
 }
 
 function rowToLibrarySource(row: SourceRow): LibrarySource {
@@ -199,9 +250,43 @@ function rowToLibrarySource(row: SourceRow): LibrarySource {
     // and back; a row written by an older parser, or by nothing at all, must
     // become `null` rather than a half-built record that later reads as a claim
     // about the document.
-    coverage: readCoverage(
-      Array.isArray(row.parsed_documents) ? row.parsed_documents[0]?.coverage : row.parsed_documents?.coverage,
-    ) ?? null,
+    coverage: readCoverage(embeddedParse(row)?.coverage) ?? null,
+    // 🔴 THE SAME RESOLVER THE SERVER AND THE WORKER USE. A status computed in a
+    // component from whichever columns were handy is how a finished lecture came
+    // to be reported as lost once already; there is one function, and this is a
+    // call to it.
+    status: describeDocument(
+      {
+        parseAttempts: row.parse_attempts ?? 0,
+        parsedDocumentId: row.parsed_document_id ?? null,
+        parseEnqueuedAt: row.parse_enqueued_at ?? null,
+        parseError: row.parse_error ?? null,
+        parseFailedAt: row.parse_failed_at ?? null,
+        parseLeasedUntil: row.parse_leased_until ?? null,
+        parseNextAttemptAt: row.parse_next_attempt_at ?? null,
+      },
+      parsedRowFor(row),
+    ),
+  };
+}
+
+/** PostgREST embeds a to-one relation as a LIST. Reading it as an object gives
+ *  `undefined` at runtime while typechecking cleanly. */
+function embeddedParse(row: SourceRow): ParsedEmbed | undefined {
+  const embed = row.parsed_documents;
+  if (!embed) return undefined;
+  return Array.isArray(embed) ? embed[0] : embed;
+}
+
+function parsedRowFor(row: SourceRow): ParsedDocumentRow | null {
+  const embed = embeddedParse(row);
+  if (!embed) return null;
+  return {
+    complete: embed.complete === true,
+    coverage: (embed.coverage ?? null) as ParsedDocumentRow["coverage"],
+    error: embed.error ?? null,
+    failedStage: embed.failed_stage ?? null,
+    state: embed.state ?? "pending",
   };
 }
 
@@ -220,7 +305,9 @@ export async function loadLibrarySources(uid: string | null, options?: { preview
   try {
     const { data, error } = await supabase
       .from("library_sources")
-      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_documents(coverage,state)")
+      .select(
+        "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id,parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at,parsed_documents(coverage,state,complete,failed_stage,error)",
+      )
       .eq("user_id", uid)
       .eq("deleted", false)
       .order("created_at", { ascending: false })
@@ -277,7 +364,9 @@ export async function uploadLibrarySource(uid: string, file: File, folderPath: s
         storage_path: key,
         user_id: uid,
       })
-      .select("id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_documents(coverage,state)")
+      .select(
+        "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id,parse_enqueued_at,parse_attempts,parse_error,parse_failed_at,parse_leased_until,parse_next_attempt_at,parsed_documents(coverage,state,complete,failed_stage,error)",
+      )
       .single();
     if (error || !data) {
       await supabase.storage.from("library-sources").remove([key]);
