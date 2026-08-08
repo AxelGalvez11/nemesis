@@ -17,7 +17,14 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".expo/**", ".next/**", "!.next/cache/**"]
+      "outputs": [
+        "dist/**",
+        ".expo/**",
+        ".next/**",
+        "!.next/cache/**",
+        "workers/**",
+        "public/pdf/**"
+      ]
     },
     "lint": {},
     "typecheck": {
