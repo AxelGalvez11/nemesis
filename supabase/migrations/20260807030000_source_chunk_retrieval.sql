@@ -37,6 +37,14 @@ drop function if exists public.replace_source_chunks(uuid, uuid, text, text, tex
 -- signature and behaviour: it is called by a shipped client, and a deployed app
 -- that is one deploy behind must not start receiving rows in a shape it does not
 -- understand. Callers move over deliberately.
+-- 🔴 PLPGSQL, NOT SQL, AND set_config() NOT A DECLARATIVE SET CLAUSE.
+-- Supabase's managed `postgres` role cannot SET the extension-defined
+-- hnsw.ef_search / hnsw.iterative_scan parameters in a function's own SET
+-- clause at CREATE FUNCTION time ("permission denied to set parameter",
+-- confirmed applying this migration). set_config(..., true) sets them for the
+-- current transaction at RUNTIME instead, under the CALLER's privileges
+-- (security invoker), which is not subject to the same declaration-time check.
+-- The query itself is unchanged from the SQL-language version this replaced.
 create or replace function public.match_document_chunks(
   query_embedding vector,
   match_count int default 8,
@@ -60,13 +68,15 @@ returns table (
   heading_path text[],
   similarity float
 )
-language sql
+language plpgsql
 stable
 security invoker
 set search_path = public, extensions
-set hnsw.ef_search = '100'
-set hnsw.iterative_scan = 'strict_order'
 as $$
+begin
+  perform set_config('hnsw.ef_search', '100', true);
+  perform set_config('hnsw.iterative_scan', 'strict_order', true);
+  return query
   select
     c.id,
     c.origin_type,
@@ -104,10 +114,11 @@ as $$
     (1 - (c.embedding <=> query_embedding))
       + case when c.origin_type = 'source' then 0.05 else 0 end desc
   limit match_count;
+end;
 $$;
 
 comment on function public.match_document_chunks is
-  'Semantic search across BOTH original documents and notes. RLS on library_chunks is the tenancy boundary (security invoker). Sources outrank notes at equal similarity: the original is the evidence, a note is a restatement of it.';
+  'Semantic search across BOTH original documents and notes. RLS on library_chunks is the tenancy boundary (security invoker). Sources outrank notes at equal similarity: the original is the evidence, a note is a restatement of it. hnsw params set via set_config() at runtime, not a function SET clause -- see the migration header for why.';
 
 revoke execute on function public.match_document_chunks(vector, int, float, text) from public, anon;
 grant execute on function public.match_document_chunks(vector, int, float, text) to authenticated, service_role;

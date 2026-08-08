@@ -136,7 +136,9 @@ create index if not exists library_sources_parse_due_idx
 -- rather than in the worker because the claim predicate has to agree with it,
 -- and two copies of a limit is one copy too many.
 create or replace function public.document_parse_max_attempts()
-returns int language sql immutable as $$ select 5 $$;
+returns int language sql immutable
+set search_path = public
+as $$ select 5 $$;
 
 /**
  * Claim up to p_limit sources for parsing and return ONLY the rows this call

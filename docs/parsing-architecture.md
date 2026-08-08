@@ -146,22 +146,49 @@ is what makes the routing decision reversible rather than a data migration.
 
 ## 7. Status
 
-**Implemented and locally tested**, flag off:
-the async client, the worker integration with resume, the unit/text/timeout bounds, the
-coverage builder and its consumer, the native/OCR split, the figure-pixel matcher, and the
-optional migration.
+**🔴 TWO DIFFERENT THINGS ARE "DONE" HERE, AND THEY SHIP UNDER DIFFERENT RULES.**
+
+**The Docling PDF lane is implemented and locally tested, flag OFF:** the async client, the
+worker integration with resume, the unit/text/timeout bounds, the coverage builder and its
+consumer, the native/OCR split, and the figure-pixel matcher plus the vision pass it feeds
+(§2, job 3) — wired end to end and covered by a test that proves the wiring fires. All of it
+is dormant until a format is added to `DOCLING_FORMATS` and `DOCLING_SERVE_URL` is set. A
+deploy with this code merged changes nothing for a PDF upload.
+
+**The DOCX and PPTX fidelity fixes are NOT behind a flag, and merging this branch makes them
+live immediately** — OMML equations rendered as structure, DOCX pictures no longer silently
+absent from coverage, DOCX table headers read from `<w:tblHeader>`, PPTX table grids read as
+real `DocTable` rows, PPTX shape/table/picture geometry. These are direct fixes to our own
+parsers (P4 and P5, priorities the owner asked for by name), not an alternate lane behind a
+switch. The reversibility promise in §8 is about the Docling lane specifically; it was never
+meant to gate our own parser's bug fixes behind a flag.
+
+**Locally proven for P6, on real course files, without a model call:** 29 hand-verified
+questions across 16 files (7 archetypes — coverage, equation, objectives, table, steps,
+list, weighting), scored by `bakeoff-answers.mts` for whether each answer's evidence
+survives intact in one retrievable chunk and whether that chunk's citation is correct. 22 of
+29 survive intact; of the other 7, four are correctly-recognised true absences and three are
+equation-phrasing mismatches in the ground truth itself, not in the parser (verified by hand
+against the source OOXML). Baseline and Docling-routed produce IDENTICAL results on every
+question, including the four routed through Docling — no regression, on real questions,
+despite materially different chunk structure. The blind LLM-answering pass (real "answer
+correctness", not just evidence survival) did not run — see below.
 
 **Not done, and not claimed:**
 
 * Nothing has run against a real `docling-serve` container. Every test uses a stubbed
   HTTP layer or saved JSON exports. The wire format is taken from the project's published
   API documentation, not from a live handshake.
-* The end-to-end answer-quality benchmark (parse → chunks → index → retrieval → answer →
-  citation) has not been run. Extraction counts are not answer quality, and this document
-  claims nothing about the latter.
-* Nothing is merged and nothing is deployed. `main` itself still carries Phases 1–7 with
-  two unapplied migrations, so "current production behaviour" is not what this branch
-  compares against — a local baseline is not a production baseline.
+* The blind LLM-answering pass — a model actually reading the retrieved context and being
+  scored on the words it writes — did not run. One reason is budget (a background run of
+  this benchmark exhausted a weekly usage limit mid-task). The other is a finding from
+  building the offline pass: one ground-truth file's extracted text carries the document
+  owner's own name and university email at the top of an otherwise-blank worksheet template,
+  which is not something to hand to a model without deliberately excluding it first. Neither
+  reason changes the evidence-survival and citation numbers above, which needed no model call.
+* Nothing is merged and nothing is deployed as of this writing. `main` itself still carries
+  Phases 1–7 with two unapplied migrations, so "current production behaviour" is not what
+  this branch compares against — a local baseline is not a production baseline.
 
 ## 8. What would change the decision
 
