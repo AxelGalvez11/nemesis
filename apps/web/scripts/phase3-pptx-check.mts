@@ -65,6 +65,7 @@ for (const file of files) {
       images: deck.media.images,
       slides: deck.slides,
       slideTitles: deck.slideTitles,
+      structure: deck.structure,
     });
     read += 1;
 

@@ -6,6 +6,8 @@ import {
   headingLevel,
   markerFor,
   paragraphText,
+  pictureRefs,
+  readDocumentRels,
   readDocxStructure,
   readNumbering,
   renderDocx,
@@ -14,6 +16,8 @@ import {
 
 const p = (inner: string, props = "") => `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ""}<w:r><w:t>${inner}</w:t></w:r></w:p>`;
 const body = (inner: string) => `<w:document><w:body>${inner}</w:body></w:document>`;
+const mathRun = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
+const fraction = (num: string, den: string) => `<m:f><m:num>${num}</m:num><m:den>${den}</m:den></m:f>`;
 
 // ── Headings: the hierarchy the tag strip deleted ──────────────────────────
 
@@ -188,4 +192,205 @@ test("the rendered document reads as markdown with its structure intact", () => 
   const text = renderDocx(doc);
   assert.match(text, /^# Syllabus/);
   assert.match(text, /Read chapter 3\./);
+});
+
+// ── Equations: kind `equation`, and the formula the right way up ──────────
+
+test("🔴 a formula is spliced in where it was written, not appended", () => {
+  // The equation sat in the middle of the sentence. Collecting `<m:t>` after the
+  // `<w:t>` runs would move it to the end and change what the sentence says.
+  const para =
+    `<w:p><w:r><w:t>Half-life is </w:t></w:r>` +
+    `<m:oMath>${fraction(mathRun("0.693"), mathRun("k"))}</m:oMath>` +
+    `<w:r><w:t> for a first-order drug.</w:t></w:r></w:p>`;
+  assert.equal(paragraphText(para), "Half-life is 0.693/k for a first-order drug.");
+});
+
+test("🔴 the glued form is gone: the fraction's bar survives", () => {
+  // Measured on a real file. `Equations.docx` wrote zero-order half-life as
+  // C₀ over 2k; the old reader emitted "Co2k", which reads as C₀ × 2k — the
+  // formula INVERTED, with every character present and nothing to signal it.
+  const para =
+    `<w:p><w:r><w:t>zero order t</w:t></w:r>` +
+    `<m:oMath><m:sSub><m:e>${mathRun("")}</m:e><m:sub>${fraction(mathRun("1"), mathRun("2"))}</m:sub></m:sSub>` +
+    `${mathRun(" = ")}${fraction(`<m:sSub><m:e>${mathRun("C")}</m:e><m:sub>${mathRun("o")}</m:sub></m:sSub>`, mathRun("2k"))}</m:oMath></w:p>`;
+  const text = paragraphText(para);
+  assert.match(text, /C_o\/\(2k\)/, "the denominator must be bracketed");
+  assert.doesNotMatch(text, /Co2k/, "the glued reading must not survive");
+});
+
+test("🔴 a paragraph holding math is kind `equation`, so a consumer can tell", () => {
+  // Every block used to be `paragraph`. A formula and a sentence about a formula
+  // were indistinguishable, so nothing downstream could weight one differently
+  // or refuse to paraphrase it.
+  const doc = readDocxStructure(body(
+    `<w:p><w:r><w:t>Clearance: </w:t></w:r><m:oMath>${fraction(mathRun("Dose"), mathRun("AUC"))}</m:oMath></w:p>` +
+    p("Ordinary prose."),
+  ));
+  assert.equal(doc.blocks[0]?.kind, "equation");
+  // The brackets are deliberate even where a human would not need them: nothing
+  // here can tell the single symbol `AUC` from the product `2k`, and guessing
+  // wrong in the other direction turns a division into a multiplication.
+  assert.equal(doc.blocks[0]?.text, "Clearance: Dose/(AUC)");
+  assert.equal(doc.blocks[1]?.kind, "paragraph");
+  assert.equal(doc.counts.equations, 1);
+  assert.equal(doc.counts.paragraphs, 1);
+});
+
+test("🔴 a NUMBERED STEP containing a formula stays a list item", () => {
+  // Precedence is heading > listItem > equation > paragraph, and this rung is
+  // load-bearing: promoting the step to `equation` would drop its marker, and
+  // the marker is the only reason "what is step 4?" can be answered. 2,497
+  // markers across the real corpus depend on it.
+  const numbering = `<w:numbering>
+    <w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>
+    <w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`;
+  const step =
+    `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` +
+    `<w:r><w:t>Compute </w:t></w:r><m:oMath>${fraction(mathRun("D"), mathRun("V"))}</m:oMath></w:p>`;
+  const doc = readDocxStructure(body(step), numbering);
+  assert.equal(doc.blocks[0]?.kind, "listItem");
+  assert.equal(doc.blocks[0]?.marker, "1.");
+  assert.match(doc.blocks[0]?.text ?? "", /D\/V/);
+});
+
+test("a heading containing math is still a heading", () => {
+  const heading =
+    `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Deriving </w:t></w:r>` +
+    `<m:oMath>${fraction(mathRun("a"), mathRun("b"))}</m:oMath></w:p>`;
+  const doc = readDocxStructure(body(heading + p("Body.")));
+  assert.equal(doc.blocks[0]?.kind, "heading");
+  assert.equal(doc.blocks[1]?.headingPath[0], "Deriving a/b");
+});
+
+// ── Pictures: 207 placements across 46 of 158 real files, all invisible ───
+
+test("relationship ids resolve to the zip part the picture lives in", () => {
+  const rels = readDocumentRels(
+    `<Relationships><Relationship Id="rId7" Target="media/image3.png"/>` +
+    `<Relationship Id="rId9" Target="../media/image9.emf"/>` +
+    `<Relationship Id="rId4" Target="https://example.edu/x.png" TargetMode="External"/></Relationships>`,
+  );
+  assert.equal(rels.get("rId7"), "word/media/image3.png");
+  assert.equal(rels.get("rId9"), "word/media/image9.emf");
+  // An external picture is a reference to a file that is not in the archive.
+  assert.equal(rels.get("rId4"), "https://example.edu/x.png");
+});
+
+test("🔴 a <w:drawing> is NOT a picture", () => {
+  // Over 158 real course files there are 300 `<w:drawing>` elements and 140
+  // embedded pictures. Keying detection on the drawing inflates the count by
+  // more than half with charts, SmartArt and text boxes that hold no image.
+  const rels = new Map([["rId7", "word/media/image3.png"]]);
+  const chart = `<w:drawing><wp:inline><a:graphic><c:chart r:id="rId2"/></a:graphic></wp:inline></w:drawing>`;
+  assert.deepEqual(pictureRefs(chart, rels), []);
+  const picture = `<w:drawing><wp:inline><a:graphic><pic:pic><pic:blipFill><a:blip r:embed="rId7"/></pic:blipFill></pic:pic></a:graphic></wp:inline></w:drawing>`;
+  assert.deepEqual(pictureRefs(picture, rels), ["word/media/image3.png"]);
+});
+
+test("🔴 the older VML picture form counts too", () => {
+  // 67 of this corpus's pictures are `<v:imagedata>`, concentrated in 5 files
+  // that a reader ignoring VML would report as having no figures whatsoever.
+  const rels = new Map([["rId5", "word/media/image1.jpeg"]]);
+  const vml = `<w:pict><v:shape><v:imagedata r:id="rId5" o:title="scan"/></v:shape></w:pict>`;
+  assert.deepEqual(pictureRefs(vml, rels), ["word/media/image1.jpeg"]);
+});
+
+test("🔴 an image-only paragraph becomes a figure instead of disappearing", () => {
+  // The old reader dropped any paragraph whose text was empty, which is exactly
+  // the shape of a paragraph that holds nothing but a diagram.
+  const rels = `<Relationships><Relationship Id="rId7" Target="media/image3.png"/></Relationships>`;
+  const doc = readDocxStructure(
+    body(`<w:p><w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:r></w:p>` + p("Caption-ish line.")),
+    null,
+    rels,
+  );
+  assert.equal(doc.blocks[0]?.kind, "figure");
+  assert.equal(doc.blocks[0]?.ref, "word/media/image3.png");
+  assert.equal(doc.counts.figures, 1);
+  // …and the ordinary paragraph after it is untouched.
+  assert.equal(doc.blocks[1]?.kind, "paragraph");
+});
+
+test("a figure sits after the paragraph it was anchored in, keeping reading order", () => {
+  const rels = `<Relationships><Relationship Id="rId7" Target="media/image3.png"/></Relationships>`;
+  const doc = readDocxStructure(
+    body(`<w:p><w:r><w:t>See below.</w:t></w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:p>`),
+    null,
+    rels,
+  );
+  assert.deepEqual(doc.blocks.map((b) => b.kind), ["paragraph", "figure"]);
+});
+
+test("🔴 a picture inside a table cell is kept, after the grid", () => {
+  // 30 of the corpus's 207 placements sit inside a table, and the canonical
+  // model's table is a grid of strings with nowhere to put one. Emitting it
+  // after the table loses which cell it was in; dropping it loses the picture.
+  const rels = `<Relationships><Relationship Id="rId7" Target="media/image3.png"/></Relationships>`;
+  const cell = `<w:tc><w:p><w:r><w:t>x</w:t></w:r><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:p></w:tc>`;
+  const doc = readDocxStructure(body(`<w:tbl><w:tr>${cell}</w:tr></w:tbl>`), null, rels);
+  assert.deepEqual(doc.blocks.map((b) => b.kind), ["table", "figure"]);
+});
+
+test("a picture with no relationships part keeps its id rather than being dropped", () => {
+  const doc = readDocxStructure(body(`<w:p><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:p>`), null, null);
+  assert.equal(doc.blocks[0]?.kind, "figure");
+  assert.equal(doc.blocks[0]?.ref, "rId7");
+});
+
+test("the same picture placed twice is two placements pointing at one part", () => {
+  // A real template in the corpus places one icon five times. Both facts have to
+  // survive: five positions in the document, one thing to describe.
+  const rels = `<Relationships><Relationship Id="rId7" Target="media/image3.png"/></Relationships>`;
+  const shot = `<w:p><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:p>`;
+  const doc = readDocxStructure(body(shot + shot), null, rels);
+  assert.equal(doc.counts.figures, 2);
+  assert.equal(new Set(doc.blocks.map((b) => b.ref)).size, 1);
+});
+
+test("a figure is announced in the rendered text, never silently skipped", () => {
+  const rels = `<Relationships><Relationship Id="rId7" Target="media/image3.png"/></Relationships>`;
+  const doc = readDocxStructure(body(`<w:p><w:drawing><a:blip r:embed="rId7"/></w:drawing></w:p>`), null, rels);
+  assert.match(renderDocx(doc), /\[Figure — not examined\]/);
+});
+
+// ── Table headers: what Word states, and only that ────────────────────────
+
+test("🔴 a row that says it is NOT a header is not one", () => {
+  // `<w:tblHeader w:val="false"/>` is a row switching the property off — a bare
+  // `<w:tblHeader` test reads that as the opposite of what the file says, and
+  // then every value in row 0 is renamed to a column title.
+  const cell = (t: string) => `<w:tc><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const off = `<w:tr><w:trPr><w:tblHeader w:val="false"/></w:trPr>${cell("Criterion")}${cell("Points")}</w:tr>`;
+  const doc = readDocxStructure(body(`<w:tbl>${off}${`<w:tr>${cell("Accuracy")}${cell("10")}</w:tr>`}</w:tbl>`));
+  assert.equal(doc.blocks[0]?.headerRows, 0);
+
+  const on = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${cell("Criterion")}${cell("Points")}</w:tr>`;
+  const marked = readDocxStructure(body(`<w:tbl>${on}</w:tbl>`));
+  assert.equal(marked.blocks[0]?.headerRows, 1);
+});
+
+test("🔴 a NESTED table's header does not promote the row that contains it", () => {
+  // The row properties searched must be the row's OWN. Scanning the whole
+  // `<w:tr>` finds the inner table's `<w:trPr>` when the outer row declares
+  // none, and an inner header then renames the outer row's data.
+  const cell = (t: string) => `<w:tc><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const inner = `<w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr>${cell("inner header")}</w:tr></w:tbl>`;
+  const outer = `<w:tbl><w:tr><w:tc>${inner}</w:tc>${cell("data")}</w:tr></w:tbl>`;
+  const doc = readDocxStructure(body(outer));
+  assert.equal(doc.blocks[0]?.headerRows, 0, "the outer row declared nothing");
+});
+
+test("🔴 nothing infers a header from the first row", () => {
+  // Measured over 158 real course files: 232 tables, and `<w:tblHeader/>` on
+  // FOUR rows. `<w:tblLook w:firstRow="1">` is on 189 of them — because Word
+  // writes it on every table it inserts. Honouring it would be the forbidden
+  // guess in a different costume, and it would rename the first criterion of
+  // every rubric that opens with data.
+  const cell = (t: string) => `<w:tc><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const look = `<w:tblPr><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0"/></w:tblPr>`;
+  const doc = readDocxStructure(body(
+    `<w:tbl>${look}<w:tr>${cell("Take 2 tablets")}${cell("daily")}</w:tr><w:tr>${cell("Take 1")}${cell("nightly")}</w:tr></w:tbl>`,
+  ));
+  assert.equal(doc.blocks[0]?.headerRows, 0);
 });

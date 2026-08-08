@@ -293,7 +293,40 @@ export function mergeImageDescriptions(
   descriptions: ReadonlyMap<string, string>,
   images: readonly SlideImage[],
 ): string[] {
-  const bySlide = new Map<number, string[]>();
+  const bySlide = figureNotesBySlide(descriptions, images);
+
+  return slideTexts.map((text, index) => {
+    const found = bySlide.get(index + 1);
+    if (!found || found.length === 0) return text;
+    const block = found.map((note) => note.line).join("\n");
+    return text.trim() ? `${text.trimEnd()}\n${block}` : block;
+  });
+}
+
+/** One appended figure line, and which picture it is about. */
+export interface FigureNote {
+  /** Zip entry name of the picture — the key everything else uses. */
+  name: string;
+  /** The exact line `mergeImageDescriptions` appends. */
+  line: string;
+}
+
+/**
+ * The figure lines each slide gets, in order, with the picture each one names.
+ *
+ * 🔴 EXTRACTED SO THERE IS ONE RULE, NOT TWO. The canonical model has to know
+ * which picture a `[Figure: …]` line is about — that is the only way the line
+ * can carry the picture's box — and the obvious shortcut is to re-derive the
+ * ordering there from the same inputs. Two copies of "which slides, in what
+ * order, labelled how" would agree today and diverge the first time either
+ * moved, and the symptom would be a highlight on the wrong figure rather than
+ * anything that looks like a bug. PURE.
+ */
+export function figureNotesBySlide(
+  descriptions: ReadonlyMap<string, string>,
+  images: readonly SlideImage[],
+): Map<number, FigureNote[]> {
+  const bySlide = new Map<number, FigureNote[]>();
   for (const image of images) {
     const description = descriptions.get(image.name)?.trim();
     if (!description) continue;
@@ -301,15 +334,9 @@ export function mergeImageDescriptions(
     const slides = image.recurring ? image.slides.slice(0, 1) : image.slides;
     for (const slide of slides) {
       const list = bySlide.get(slide) ?? [];
-      list.push(`[${label}: ${description}]`);
+      list.push({ line: `[${label}: ${description}]`, name: image.name });
       bySlide.set(slide, list);
     }
   }
-
-  return slideTexts.map((text, index) => {
-    const found = bySlide.get(index + 1);
-    if (!found || found.length === 0) return text;
-    const block = found.join("\n");
-    return text.trim() ? `${text.trimEnd()}\n${block}` : block;
-  });
+  return bySlide;
 }

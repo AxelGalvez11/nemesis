@@ -32,6 +32,7 @@ import {
 } from "@nemesis/shared";
 
 import {
+  docxCoverage,
   extractCut,
   pdfCoverage,
   pdfWholeCoverage,
@@ -179,7 +180,11 @@ export async function parseDocument(
     // claiming "page 1 of 1" for a 40-page dissertation would invent a locator
     // every later citation would point at falsely. The model says the same
     // thing structurally: one unit, of kind `body`, which renders no number.
-    coverage = singleUnitCoverage({ read: text.trim().length > 0, method: "native" });
+    //
+    // 🔴 AND NOW IT CARRIES ITS FIGURES. Until the reader could see a picture,
+    // a Word document had no figure record at all, so one full of diagrams read
+    // as `complete` — the exact silence coverage exists to end.
+    coverage = docxCoverage({ figures: figureCoverageOf(model), read: text.trim().length > 0 });
   } else {
     const deck = readPptxSlides(bytes);
     const figures = deck.media.images.length
@@ -206,6 +211,9 @@ export async function parseDocument(
         images: deck.media.images,
         slides: deck.slides,
         slideTitles: deck.slideTitles,
+        // The grids and boxes read alongside the same text, so a table is a
+        // table and a citation can name the box it came from.
+        structure: deck.structure,
       },
       figures,
     );
