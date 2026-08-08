@@ -349,7 +349,7 @@ async function main() {
         const t0 = Date.now();
         try {
           const probe = await probePdfNativeText(new Uint8Array(bytes));
-          const outcome = buildDoclingParse({
+          const outcome = await buildDoclingParse({
             document: raw,
             kind: "pdf",
             status: "success",
@@ -404,7 +404,16 @@ async function main() {
       const b = routedSame ? a : locate(q.evidence_quote, routedChunks);
       const cited = (l: typeof a) => {
         if (!q.locator || l.unitStart === null) return null;
-        if (q.locator.unit_kind !== l.unitKind) return false;
+        // 🔴 "document" AND "body" NAME THE SAME UNIT. The ground-truth locator
+        // is written against `CoverageUnitKind` (docxCoverage emits `"document"`),
+        // and `l.unitKind` comes off the MODEL's own unit, where a flowing file's
+        // one unit is `kind: "body"` (`DocUnitKind`). Comparing them literally
+        // marked every DOCX question's citation wrong regardless of whether the
+        // located chunk was right — a benchmark bug, not a citation defect.
+        const kindMatches =
+          q.locator.unit_kind === l.unitKind ||
+          (q.locator.unit_kind === "document" && l.unitKind === "body");
+        if (!kindMatches) return false;
         // 1-based in the question (a page as printed), 0-based in the model.
         const want = q.locator.unit_kind === "document" ? 0 : q.locator.unit - 1;
         return want >= l.unitStart && want <= l.unitEnd!;
