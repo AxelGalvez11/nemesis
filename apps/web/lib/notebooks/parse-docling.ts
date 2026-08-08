@@ -33,6 +33,7 @@ import {
   adaptDoclingDocument,
   doclingCoverage,
   documentToText,
+  figureCoverageOf,
   withTruncation,
   type DocBlock,
   type DoclingObservations,
@@ -43,6 +44,9 @@ import { extractCut } from "./extract-coverage";
 import { MAX_UNITS_PER_PARSE } from "./parse-worker";
 import type { DocumentKind, ParseOutcome } from "./parse-document";
 import { capText, TEXT_CAP } from "@/lib/pdf/extract";
+import { lookAtFigures } from "@/lib/pdf/figure-look";
+import { matchFigureImages } from "@/lib/pdf/figure-match";
+import type { CapturedFigure } from "@/lib/pdf/structure";
 
 /** Formats the sidecar may own. `image` is never routed there — see the router. */
 export type DoclingKind = Exclude<DocumentKind, "image">;
@@ -72,6 +76,18 @@ export interface DoclingParseInput {
    * but to answer the one question Docling cannot. Supply it for every PDF.
    */
   nativeText?: ReadonlyMap<number, boolean>;
+  /**
+   * Our own PDF.js read of the SAME file, kept ONLY for its decoded pixels.
+   *
+   * 🔴 THIS IS NOT A SECOND STRUCTURE ENGINE. `pdfFigures.model` is never read
+   * for blocks, text or reading order — only `matchFigureImages` touches it, to
+   * pair Docling's figure rectangles with the images PDF.js already decoded.
+   * Docling detects 1,220 pictures across the corpus and describes none of
+   * them; without this, every one sits at `not-examined` forever and a Docling
+   * PDF can never leave `partial`. Omitted means no match is attempted, and
+   * every figure stays `not-examined` — never a reason to fail the parse.
+   */
+  pdfFigures?: { model: DocumentModel; images: ReadonlyMap<string, CapturedFigure> };
   /** Units the cap allows. Injected only so a test need not build 5,000 pages. */
   maxUnits?: number;
 }
@@ -95,7 +111,7 @@ export type DoclingParseOutcome =
  * Returns the same `ParseOutcome` shape the built-in parser returns, so the
  * worker's success and refusal paths are literally the same code.
  */
-export function buildDoclingParse(input: DoclingParseInput): DoclingParseOutcome {
+export async function buildDoclingParse(input: DoclingParseInput): Promise<DoclingParseOutcome> {
   const cap = Math.max(1, input.maxUnits ?? MAX_UNITS_PER_PARSE);
   const adapted = adaptDoclingDocument(input.document, {
     format: input.kind,
@@ -116,15 +132,31 @@ export function buildDoclingParse(input: DoclingParseInput): DoclingParseOutcome
 
   const { model, observations } = boundUnits(adapted.model, adapted.observations, cap);
 
-  const whole = documentToText(model).trim();
+  // 🔴 GIVING DOCLING'S FIGURES THEIR PIXELS, THEN LOOKING AT THEM. Without this,
+  // `doclingCoverage` marks every picture `not-examined` and a Docling PDF sits
+  // at `partial` forever — see `figure-match.ts`. `matchFigureImages` pairs each
+  // figure block with the image PDF.js already decoded for the SAME file;
+  // `lookAtFigures` is the exact vision pass the native lane runs, applied here
+  // to a Docling-built model. A figure with no match, or no vision configured,
+  // keeps its honest `not-examined` state — never a reason to fail the parse.
+  let finalModel = model;
+  if (input.kind === "pdf" && input.pdfFigures) {
+    const matched = matchFigureImages(model, input.pdfFigures.model, input.pdfFigures.images);
+    const looked = await lookAtFigures(model, matched.images);
+    finalModel = looked.model;
+  }
+  const figures = input.pdfFigures ? figureCoverageOf(finalModel) : undefined;
+
+  const whole = documentToText(finalModel).trim();
   const { text } = capText(whole, TEXT_CAP);
 
   const built = doclingCoverage(observations, {
     format: input.kind,
-    unitsInModel: model.units.length,
+    unitsInModel: finalModel.units.length,
     // A flowing document has no pages, and `doclingCoverage` refuses a page map
     // for one rather than quietly ignoring it. Only paginated formats send it.
     ...(input.nativeText && input.kind !== "docx" ? { nativeText: input.nativeText } : {}),
+    ...(figures ? { figures } : {}),
   });
   if (typeof built === "string") {
     // 🔴 THE FALLBACK MUST NOT BE CHEERFUL — and it must not be a second, looser
@@ -143,10 +175,10 @@ export function buildDoclingParse(input: DoclingParseInput): DoclingParseOutcome
     document: {
       coverage,
       kind: input.kind,
-      model,
+      model: finalModel,
       skippedFigures: 0,
       text,
-      title: model.title,
+      title: finalModel.title,
       // Named so a parse record says which program produced it. The version and
       // Docling's own status ride along in `coverage.parserVersion`.
       readBy: "docling",

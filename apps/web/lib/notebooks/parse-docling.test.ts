@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { DocBlock, DocRect, DocumentModel } from "@nemesis/shared";
+
 import { buildDoclingParse } from "./parse-docling.ts";
+import type { CapturedFigure } from "@/lib/pdf/structure";
 
 /**
  * A minimal but REAL DoclingDocument: reading order in `body.children`, text and
@@ -45,13 +48,13 @@ function doclingDoc(options: {
 
 const nativeMap = (entries: [number, boolean][]) => new Map<number, boolean>(entries);
 
-test("a PDF with no native-text map is REFUSED, not graded generously", () => {
+test("a PDF with no native-text map is REFUSED, not graded generously", async () => {
   // 🔴 THIS IS THE BLOCKER, AS A TEST. Docling's export carries no OCR signal —
   // a key sweep over all 322 corpus exports found none — so grading a PDF
   // without PDF.js's answer means reporting a page rescued from pixels as though
   // it had real embedded text. Refusing sends the document to our own parser,
   // which can still produce a split it has evidence for.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 2, filled: [1, 2] }),
     kind: "pdf",
     status: "success",
@@ -60,11 +63,11 @@ test("a PDF with no native-text map is REFUSED, not graded generously", () => {
   assert.equal(outcome.ok === false && outcome.reason, "unreconciled");
 });
 
-test("a scanned PDF is recorded as read from PIXELS, not as native text", () => {
+test("a scanned PDF is recorded as read from PIXELS, not as native text", async () => {
   // The 7 scanned PDFs in the corpus are exactly why the map exists. Docling +
   // RapidOCR reads them; without this split the record would claim they had a
   // text layer all along.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 3, filled: [1, 2, 3] }),
     kind: "pdf",
     status: "success",
@@ -82,11 +85,11 @@ test("a scanned PDF is recorded as read from PIXELS, not as native text", () => 
   assert.equal(coverage.unitsNative, 0, "and none of them had their own text");
 });
 
-test("an ordinary PDF is native, and a page docling filled nothing for is UNREAD", () => {
+test("an ordinary PDF is native, and a page docling filled nothing for is UNREAD", async () => {
   // Docling returns SUCCESS on documents it understood partially — measured, on
   // 8 corpus files it declared more units than it filled. A page with no blocks
   // is unread whatever its text layer says: nothing reached the student from it.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 4, filled: [1, 2, 4] }),
     kind: "pdf",
     status: "success",
@@ -106,11 +109,11 @@ test("an ordinary PDF is native, and a page docling filled nothing for is UNREAD
   assert.equal(coverage.state, "partial", "and that cannot read as complete");
 });
 
-test("a picture nobody looked at keeps the document out of 'complete'", () => {
+test("a picture nobody looked at keeps the document out of 'complete'", async () => {
   // Docling DETECTS figures; it never describes them. Marking them decorative
   // would be free and would read as complete, and it would be a lie —
   // `decorative` means "we know it is a bullet or a rule", which we do not.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 1, filled: [1], pictures: [1] }),
     kind: "pdf",
     status: "success",
@@ -128,10 +131,68 @@ test("a picture nobody looked at keeps the document out of 'complete'", () => {
   assert.equal(coverage.state, "partial");
 });
 
-test("a Word file is one document, never a page, and needs no page map", () => {
+test("🔴 a figure matched to our own pixels is no longer 'not-examined' — SOMETHING looked", async () => {
+  // This is the wiring P3 exists for: without `pdfFigures`, the test above shows
+  // Docling's figure sits at `not-examined` forever. Supplying a match must move
+  // it to SOME OTHER reason — `described` if a vision key happens to be
+  // configured in whatever environment runs this test, `vision-unavailable`
+  // otherwise — because either one proves `lookAtFigures` actually ran, which is
+  // the fact this test protects. Only `not-examined` would mean the wiring is a
+  // no-op.
+  const baseline = await buildDoclingParse({
+    document: doclingDoc({ pages: 1, filled: [1], pictures: [1] }),
+    kind: "pdf",
+    status: "success",
+    nativeText: nativeMap([[0, true]]),
+  });
+  assert.equal(baseline.ok, true);
+  if (!baseline.ok) return;
+  const target = baseline.document.model!.blocks.find((b) => b.kind === "figure") as DocBlock | undefined;
+  const targetRect = target?.rect as DocRect | undefined;
+  assert.ok(targetRect, "the adapter must have placed the picture somewhere for this test to mean anything");
+
+  // A source model whose own figure sits at EXACTLY the Docling figure's rect —
+  // containment is then 1.0, so the match is not what this test is checking.
+  const sourceFigure: DocBlock = {
+    figure: { ref: target!.figure!.ref },
+    headingPath: [],
+    id: "src-0",
+    kind: "figure",
+    rect: targetRect,
+    text: "",
+    unit: 0,
+  } as DocBlock;
+  const sourceModel: DocumentModel = {
+    blocks: [sourceFigure],
+    format: "pdf",
+    units: [{ index: 0, kind: "page" }],
+  } as DocumentModel;
+  const image: CapturedFigure = { height: 10, png: new Uint8Array([1, 2, 3]), width: 10 };
+  const images = new Map<string, CapturedFigure>([[`0:${target!.figure!.ref}`, image]]);
+
+  const outcome = await buildDoclingParse({
+    document: doclingDoc({ pages: 1, filled: [1], pictures: [1] }),
+    kind: "pdf",
+    status: "success",
+    nativeText: nativeMap([[0, true]]),
+    pdfFigures: { images, model: sourceModel },
+  });
+  assert.equal(outcome.ok, true);
+  if (!outcome.ok) return;
+  const coverage = outcome.document.coverage as unknown as {
+    figures?: { found: number; described: number; reasons: Record<string, number> };
+  };
+  assert.equal(coverage.figures?.found, 1);
+  assert.ok(
+    !coverage.figures?.reasons["not-examined"],
+    `expected the match to move the figure off 'not-examined', got reasons=${JSON.stringify(coverage.figures?.reasons)}`,
+  );
+});
+
+test("a Word file is one document, never a page, and needs no page map", async () => {
   // Word paginates at layout time. Claiming "page 1 of 1" for a 40-page
   // dissertation invents a locator every later citation would point at falsely.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 1, filled: [1] }),
     kind: "docx",
     status: "success",
@@ -144,13 +205,13 @@ test("a Word file is one document, never a page, and needs no page map", () => {
   assert.equal(outcome.document.model?.units[0]?.kind, "body");
 });
 
-test("a page map offered for a flowing format is dropped here, not passed down", () => {
+test("a page map offered for a flowing format is dropped here, not passed down", async () => {
   // `doclingCoverage` REFUSES a page map for a document with no pages, rather
   // than ignoring it — refusing is right, because a caller that thought it had
   // recorded a split must not be told it succeeded. This lane strips it instead,
   // so a caller that probes every file uniformly does not turn every Word
   // document into a fallback.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 1, filled: [1] }),
     kind: "docx",
     status: "success",
@@ -162,11 +223,11 @@ test("a page map offered for a flowing format is dropped here, not passed down",
   assert.equal(coverage.unitKind, "document");
 });
 
-test("the unit cap TRUNCATES and DISCLOSES, it does not quietly shorten the file", () => {
+test("the unit cap TRUNCATES and DISCLOSES, it does not quietly shorten the file", async () => {
   // Cost tracks unit count, not bytes: a few hundred KB of generated PDF can
   // declare a hundred thousand pages. Reading the first N and reporting that as
   // the whole document renames the file to its own prefix.
-  const outcome = buildDoclingParse({
+  const outcome = await buildDoclingParse({
     document: doclingDoc({ pages: 6, filled: [1, 2, 3, 4, 5, 6] }),
     kind: "pdf",
     status: "success",
@@ -190,8 +251,8 @@ test("the unit cap TRUNCATES and DISCLOSES, it does not quietly shorten the file
   assert.equal(coverage.state, "partial");
 });
 
-test("a document that produced no text at all is a verdict about the file", () => {
-  const outcome = buildDoclingParse({
+test("a document that produced no text at all is a verdict about the file", async () => {
+  const outcome = await buildDoclingParse({
     document: { body: { children: [] }, texts: [], pages: {} },
     kind: "pdf",
     status: "success",
@@ -201,11 +262,11 @@ test("a document that produced no text at all is a verdict about the file", () =
   assert.equal(outcome.ok === false && outcome.reason, "empty");
 });
 
-test("garbage from the sidecar does not throw — it falls back", () => {
+test("garbage from the sidecar does not throw — it falls back", async () => {
   // The input crossed a process boundary from a language with different failure
   // modes. A parser that throws on hostile input takes the worker down with it.
   for (const junk of [null, "a string", 42, { body: null }, { body: { children: [{}] } }]) {
-    const outcome = buildDoclingParse({ document: junk, kind: "pdf", status: "success", nativeText: nativeMap([]) });
+    const outcome = await buildDoclingParse({ document: junk, kind: "pdf", status: "success", nativeText: nativeMap([]) });
     assert.equal(outcome.ok, false, `${JSON.stringify(junk)} must be refused, not thrown on`);
   }
 });

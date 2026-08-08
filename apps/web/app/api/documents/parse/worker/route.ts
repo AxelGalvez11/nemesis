@@ -49,7 +49,9 @@ import {
 } from "@/lib/notebooks/docling-client";
 import { buildDoclingParse, doclingFallback, type DoclingKind } from "@/lib/notebooks/parse-docling";
 import { nativeTextMap, probePdfNativeText } from "@/lib/pdf/native-probe";
-import { PARSER_VERSION } from "@nemesis/shared";
+import { readPdfStructure } from "@/lib/pdf/structure";
+import type { CapturedFigure } from "@/lib/pdf/structure";
+import { PARSER_VERSION, type DocumentModel } from "@nemesis/shared";
 
 export const runtime = "nodejs";
 /** 300 s is the platform maximum; `DEADLINE_ABORT_MS` keeps us 60 s inside it. */
@@ -485,12 +487,29 @@ async function runDoclingLane(input: {
     }
   }
 
-  const outcome = buildDoclingParse({
+  // 🔴 PDF.JS'S THIRD AND LAST JOB ON THIS LANE: DECODED PIXELS, NOT STRUCTURE.
+  // Docling detects a picture and never looks at one. `structural.model` is
+  // handed to `buildDoclingParse` ONLY so `matchFigureImages` can pair its
+  // rectangles with `figureImages` by geometry — nothing here reads its blocks,
+  // text or reading order. A failure is a missing description, not a failed
+  // parse: every figure just keeps its honest `not-examined` state.
+  let pdfFigures: { model: DocumentModel; images: ReadonlyMap<string, CapturedFigure> } | undefined;
+  if (input.kind === "pdf") {
+    try {
+      const structural = await readPdfStructure(new Uint8Array(input.bytes), { captureFigures: true });
+      pdfFigures = { model: structural.model, images: structural.figureImages };
+    } catch (caught) {
+      console.warn(JSON.stringify({ event: "docling_figure_capture_failed", detail: sanitizeError(caught) }));
+    }
+  }
+
+  const outcome = await buildDoclingParse({
     document: waited.document,
     kind: input.kind,
     status: waited.status,
     title: job.title,
     ...(nativeText ? { nativeText } : {}),
+    ...(pdfFigures ? { pdfFigures } : {}),
   });
   if (!outcome.ok) {
     const detail = outcome.reason === "unreconciled" ? outcome.detail : outcome.reason;

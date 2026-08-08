@@ -54,7 +54,7 @@ import type {
   DocumentModel,
 } from "./document-model.ts";
 import { buildCoverage } from "./extraction-coverage.ts";
-import type { CoverageUnitKind, ExtractionCoverage } from "./extraction-coverage.ts";
+import type { CoverageUnitKind, ExtractionCoverage, FigureCoverage } from "./extraction-coverage.ts";
 
 /** Docling label -> our block kind. Unmapped labels are reported, not guessed. */
 const LABEL_TO_KIND: Record<string, DocBlockKind> = {
@@ -831,6 +831,15 @@ export function doclingCoverage(
      * exists to remove.
      */
     nativeText?: ReadonlyMap<number, boolean>;
+    /**
+     * The real figure verdict, when something has looked. Omitted means every
+     * picture Docling detected is `not-examined` — the honest default, not a
+     * placeholder. Supply this once a vision pass has run over Docling's
+     * figures (matched to pixels by `figure-match.ts`) so a described diagram
+     * can move the document out of `partial`, the same way `docxCoverage` and
+     * `pdfCoverage` already let a described figure move theirs.
+     */
+    figures?: FigureCoverage;
   },
 ): ExtractionCoverage | string {
   const unitKind: CoverageUnitKind =
@@ -848,7 +857,7 @@ export function doclingCoverage(
   const base = {
     unitKind,
     units,
-    figures: {
+    figures: options.figures ?? {
       found: observations.pictures,
       described: 0,
       skipped: observations.pictures,
