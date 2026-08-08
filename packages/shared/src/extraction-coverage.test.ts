@@ -217,3 +217,61 @@ test("deriveState is a pure function of the numbers", () => {
   assert.equal(deriveState({ ...base, unitsNative: 9, unitsUnread: 1 }), "partial");
   assert.equal(deriveState({ ...base, unitsNative: 0, unitsUnread: 10 }), "failed");
 });
+
+test("a region the parser saw and could not read is its own gap, not a picture", () => {
+  // 🔴 MEASURED ON THE DOCLING PATH: 27 of 49 detected formulas across 5 real
+  // course PDFs arrive with a bounding box and an EMPTY string. Filing them
+  // under `figures` would make the sentence say "27 pictures couldn't be read"
+  // about a document missing no pictures — a different false statement, not a
+  // softer one.
+  const coverage = built({ unitKind: "page", units: 4, unitsNative: 4, unreadableRegions: 27 });
+  assert.equal(coverage.unreadableRegions, 27);
+  assert.equal(coverage.figures.found, 0);
+  assert.equal(coverage.state, "partial", "every page read, and still not complete");
+  const sentence = describeCoverage(coverage);
+  assert.ok(sentence && sentence.includes("27"), sentence ?? "no sentence");
+  assert.ok(sentence && !sentence.includes("picture"), `must not call a formula a picture: ${sentence}`);
+});
+
+test("no unreadable regions leaves the record exactly as it was", () => {
+  // The field must be invisible when it is zero, so an old row and a clean new
+  // one are the same bytes on the wire and in jsonb.
+  const coverage = built({ unitKind: "page", units: 1, unitsNative: 1 });
+  assert.equal("unreadableRegions" in coverage, false);
+  assert.equal(coverage.state, "complete");
+});
+
+test("a stored record keeps its figure reasons AND its unreadable regions", () => {
+  // 🔴 THIS FAILED BEFORE THE FIX, AND IT FAILED SILENTLY. `readCoverage` knew
+  // only four of the six skip reasons, so a row recording 12 pictures nobody had
+  // examined -- the largest category there is -- came back with `reasons: {}`,
+  // `lostFigures` 0 and `describeCoverage` NULL. The badge still said "partial"
+  // because `state` is stored, which is exactly why nobody noticed: the warning
+  // was right and the explanation was gone.
+  const original = built({
+    unitKind: "page",
+    units: 3,
+    unitsNative: 3,
+    figures: { found: 12, described: 0, skipped: 12, reasons: { "not-examined": 12 } },
+    unreadableRegions: 2,
+  });
+  const stored = JSON.parse(JSON.stringify(original)) as unknown;
+  const parsed = readCoverage(stored);
+  assert.ok(parsed, "a record we just wrote must survive its own round trip");
+  assert.equal(parsed.figures.reasons["not-examined"], 12);
+  assert.equal(lostFigures(parsed.figures), 12);
+  assert.equal(parsed.unreadableRegions, 2);
+  assert.equal(describeCoverage(parsed), describeCoverage(original), "what the student is told cannot change on the way out of storage");
+});
+
+test("examined-empty also survives storage", () => {
+  const original = built({
+    unitKind: "slide",
+    units: 2,
+    unitsNative: 2,
+    figures: { found: 3, described: 1, skipped: 2, reasons: { "examined-empty": 2 } },
+  });
+  const parsed = readCoverage(JSON.parse(JSON.stringify(original)) as unknown);
+  assert.equal(parsed?.figures.reasons["examined-empty"], 2);
+  assert.equal(lostFigures(parsed!.figures), 2);
+});

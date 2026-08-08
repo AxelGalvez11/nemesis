@@ -195,15 +195,52 @@ export function pptxCoverage(input: {
 }
 
 /**
- * A file with no unit structure this parser can see — a Word document, or a
- * photograph.
+ * A Word document's coverage.
+ *
+ * 🔴 THIS EXISTS BECAUSE `singleUnitCoverage` COULD NOT SAY "AND THERE ARE
+ * PICTURES IN IT". Word was the one format with no figure record at all, so a
+ * .docx whose diagrams nobody had looked at reported `complete` — measured over
+ * 158 real course files, 207 placed pictures in 46 of them, every one silently
+ * absent from both the text and the coverage. The unit story is unchanged and
+ * still honest: ONE unit of kind `document`, because Word paginates at layout
+ * time and this parser cannot see a page.
+ *
+ * `figures` comes from the model (`figureCoverageOf`), where a picture with no
+ * description and no stated reason lands in `not-examined` — which is what makes
+ * such a document `partial` rather than complete. Omitting the argument means
+ * UNKNOWN, not none: a caller that has no model must not assert the file has no
+ * pictures.
+ */
+export function docxCoverage(input: {
+  read: boolean;
+  figures?: FigureCoverage;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  const read = input.read ? 1 : 0;
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "document",
+      units: 1,
+      unitsNative: read,
+      unitsUnread: 1 - read,
+      truncation: input.truncation,
+      ...(input.figures ? { figures: input.figures } : {}),
+    }),
+    "document",
+    1,
+  );
+}
+
+/**
+ * A file with no unit structure this parser can see — a photograph, or any
+ * format whose reader cannot yet describe what is inside it.
  *
  * 🔴 `units: 1, unitKind: "document"` IS A CLAIM ABOUT THE PARSER, NOT THE FILE.
- * A .docx has pages when Word lays it out; our extraction is a tag strip that
- * cannot see them. Reporting one "document" says exactly that and leaves the
- * page count to whichever parser earns the right to claim one. Inventing "page
- * 1 of 1" for a 40-page dissertation would be a fabricated locator, and every
- * citation built on it would point at nothing.
+ * A .docx has pages when Word lays it out; our extraction cannot see them.
+ * Reporting one "document" says exactly that and leaves the page count to
+ * whichever parser earns the right to claim one. Inventing "page 1 of 1" for a
+ * 40-page dissertation would be a fabricated locator, and every citation built
+ * on it would point at nothing.
  */
 export function singleUnitCoverage(input: {
   read: boolean;

@@ -45,7 +45,7 @@ test("🔴 the TypeScript attempt limit matches the one the SQL claim predicate 
     new URL("../../../../supabase/migrations/20260806210000_document_parse_jobs.sql", import.meta.url),
     "utf8",
   );
-  const match = sql.match(/document_parse_max_attempts\(\)\s*\n?returns int language sql immutable as \$\$ select (\d+) \$\$/);
+  const match = sql.match(/document_parse_max_attempts\(\)\s*\nreturns int language sql immutable\s*(?:\nset search_path = public\s*)?\nas \$\$ select (\d+) \$\$/);
   assert.ok(match, "could not find document_parse_max_attempts() in the migration");
   assert.equal(Number(match[1]), MAX_ATTEMPTS);
 });

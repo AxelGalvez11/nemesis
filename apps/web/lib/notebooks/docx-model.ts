@@ -56,6 +56,24 @@ export function docxToModel(doc: DocxDocument, title: string | null): DocumentMo
     if (block.kind === "heading") {
       return { ...base, kind: "heading" as const, level: block.level ?? 1 };
     }
+    if (block.kind === "figure") {
+      return {
+        ...base,
+        // 🔴 NO `skipped` REASON, DELIBERATELY. `figureCoverageOf` maps a figure
+        // with neither a description nor a stated reason to `not-examined`, which
+        // is what makes a document full of diagrams read as PARTIAL instead of
+        // complete. Writing `decorative` here would mean "we know it is a bullet
+        // or a rule" — we do not know that, and the lie would be free of charge
+        // to us and expensive to the student.
+        figure: block.ref ? { ref: block.ref } : {},
+        kind: "figure" as const,
+        // A figure's text is its caption. Word attaches none.
+        text: "",
+      };
+    }
+    if (block.kind === "equation") {
+      return { ...base, kind: "equation" as const };
+    }
     if (block.kind === "listItem") {
       return {
         ...base,

@@ -17,7 +17,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 
-import { documentToText, type DocumentModel } from "@nemesis/shared";
+import { documentToText, type DocRect, type DocumentModel } from "@nemesis/shared";
 
 /**
  * Most a .docx/.pptx may weigh once unpacked.
@@ -152,8 +152,21 @@ import {
   pptxNotesXmlToText,
   pptxSlideXmlToMarkdown,
   slideBoldIsUniform,
+  type DeckStructure,
   type OfficeExtract,
+  type SlideBodyLine,
 } from "./office-text";
+import {
+  EMU_PER_POINT,
+  NO_PLACEHOLDERS,
+  frameRectsByRelId,
+  pictureRects,
+  readGroups,
+  readPlaceholderBoxes,
+  readSlideSize,
+  type PlaceholderBoxes,
+  type SlideGeometry,
+} from "./pptx-shapes";
 import {
   imageMime,
   mergeImageDescriptions,
@@ -209,13 +222,33 @@ export function extractDocxModel(bytes: Uint8Array): DocumentModel {
   return model.title ? model : { ...model, title: firstLine(documentToText(model)) };
 }
 
-/** The format-specific structure, before it becomes the canonical model. */
+/**
+ * The format-specific structure, before it becomes the canonical model.
+ *
+ * 🔴 THE RELATIONSHIPS PART IS OPENED TOO, AND THAT IS THE WHOLE PICTURE FIX.
+ * `word/document.xml` names a picture only by relationship id (`rId7`); the
+ * mapping from that id to `word/media/image3.png` lives in a separate part that
+ * this reader never opened. Without it there was no figure detection at all, and
+ * a .docx full of diagrams reported itself fully covered — measured: 207 placed
+ * pictures across 46 of 158 real course files, every one of them invisible.
+ *
+ * Images in headers, footers and footnotes are deliberately NOT collected: they
+ * have no position in the body's reading order, so a figure block for one would
+ * have to be placed somewhere it never was. In this corpus they are page
+ * furniture — a school crest on every page — and the honest place to add them is
+ * a per-part record, not a fabricated position in the text.
+ */
 export function extractDocxStructure(bytes: Uint8Array): DocxDocument {
   const files = unzipBounded(bytes);
   const doc = files["word/document.xml"];
   if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
   const numbering = files["word/numbering.xml"];
-  return readDocxStructure(strFromU8(doc), numbering ? strFromU8(numbering) : null);
+  const rels = files["word/_rels/document.xml.rels"];
+  return readDocxStructure(
+    strFromU8(doc),
+    numbering ? strFromU8(numbering) : null,
+    rels ? strFromU8(rels) : null,
+  );
 }
 
 /** Extract text from .pptx bytes (every slide, in order, with its notes, charts and SmartArt). */
@@ -264,12 +297,51 @@ export interface PptxContents {
    *  bitmap, these are the UNWRAPPED PNG bytes, not the original file. */
   imageBytes: Map<string, Uint8Array>;
   coverage: PptxCoverage;
+  /** The same slides as grids and boxes, aligned line-for-line with `slides`.
+   *  Additive: the strings above are exactly what they were without it. */
+  structure: DeckStructure;
 }
 
 /** Identity of a picture's content, so the same crest stored under six entry names is
  *  described once. Cheap next to the vision call it saves. */
 function contentKey(bytes: Uint8Array): string {
   return createHash("sha1").update(bytes).digest("hex");
+}
+
+/**
+ * Line facts, guaranteed to describe the lines they are indexed by.
+ *
+ * 🔴 A MISALIGNED FACT ARRAY IS WORSE THAN NO FACTS. It does not fail; it hands
+ * every block the rect of the shape above it, so a reader highlights the wrong
+ * box and a citation looks perfectly well-formed while pointing somewhere else.
+ * The counts agree by construction, and this is the assertion that says so —
+ * when it ever does not hold, the honest answer is that this slide has no
+ * geometry.
+ */
+function sameLength(text: string, facts: SlideBodyLine[]): SlideBodyLine[] {
+  const lines = text.length ? text.split("\n") : [];
+  return lines.length === facts.length ? facts : lines.map(() => ({}));
+}
+
+/**
+ * Picture boxes keyed by ZIP ENTRY rather than by relationship id.
+ *
+ * The rest of the pipeline — the media plan, the dedupe, the descriptions — is
+ * keyed by entry name, because that is the identity of the picture rather than
+ * of one slide's reference to it. Translating here keeps that single namespace.
+ */
+function mediaRects(byRelId: Map<string, DocRect>, relsXml: string | null): Map<string, DocRect> {
+  const out = new Map<string, DocRect>();
+  if (!relsXml) return out;
+  const targets = parseSlideRels(relsXml);
+  for (const [relId, rect] of byRelId) {
+    const entry = targets.get(relId);
+    // The same picture placed twice under two entry names is still one picture
+    // to everything downstream; the first placement wins and the second is
+    // dropped rather than overwriting it with a different box.
+    if (entry && !out.has(entry)) out.set(entry, rect);
+  }
+  return out;
 }
 
 /**
@@ -306,6 +378,37 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
   let charts = 0;
   let diagrams = 0;
 
+  // The slide box, once. Everything geometric is relative to it, so when the
+  // presentation part is missing or malformed nothing below claims a position.
+  const slideSize = readSlideSize(read("ppt/presentation.xml") ?? "");
+  // Layouts and masters are shared across slides — a 200-slide deck usually has
+  // a dozen — so their placeholder boxes are read once each.
+  const placeholderCache = new Map<string, PlaceholderBoxes>();
+  const boxesOf = (part: string | null): PlaceholderBoxes => {
+    if (!part) return NO_PLACEHOLDERS;
+    const cached = placeholderCache.get(part);
+    if (cached) return cached;
+    const boxes = readPlaceholderBoxes(read(part) ?? "");
+    placeholderCache.set(part, boxes);
+    return boxes;
+  };
+  const relatedPart = (relsPath: string, kind: string): string | null => {
+    const xml = read(relsPath);
+    if (!xml) return null;
+    for (const [, target] of parseSlideRels(xml)) if (target.includes(kind)) return target;
+    return null;
+  };
+
+  const structure: DeckStructure = {
+    lines: [],
+    pictures: [],
+    slideSize: slideSize
+      ? { height: slideSize.cy / EMU_PER_POINT, width: slideSize.cx / EMU_PER_POINT }
+      : null,
+    tables: [],
+    titleRects: [],
+  };
+
   for (const name of slideNames) {
     const xml = read(name);
     if (xml === null) continue;
@@ -314,31 +417,54 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
     const relsName = `ppt/slides/_rels/${name.split("/").pop()}.rels`;
     const rels = read(relsName);
     if (rels) relsXml.set(relsName, rels);
-    const targets = rels ? [...parseSlideRels(rels).values()] : [];
+    const targets = rels ? [...parseSlideRels(rels).entries()] : [];
+
+    // Where this slide's shapes may inherit a position from: its own layout
+    // first, then that layout's master — the chain PowerPoint itself walks.
+    const layoutPart = relatedPart(relsName, "slideLayout");
+    const masterPart = layoutPart
+      ? relatedPart(`ppt/slideLayouts/_rels/${layoutPart.split("/").pop()}.rels`, "slideMaster")
+      : null;
+    const geometry: SlideGeometry | null = slideSize
+      ? { layout: boxesOf(layoutPart), master: boxesOf(masterPart), size: slideSize }
+      : null;
+    const groups = geometry ? readGroups(xml) : [];
 
     // The slide's own words, with the lecturer's emphasis intact. Bold marking is
     // switched off for a slide that is bold throughout, where bold is the body font
     // rather than a signal about what matters.
-    const md = pptxSlideXmlToMarkdown(xml, !slideBoldIsUniform(xml));
+    const md = pptxSlideXmlToMarkdown(xml, !slideBoldIsUniform(xml), geometry);
     if (deckTitle === null && md.title) deckTitle = md.title;
     slideTitles.push(md.title);
 
     // Everything this slide points at, gathered under the slide that uses it.
-    const blocks: string[] = [md.body];
-    for (const target of targets) {
+    // 🔴 THE TEXT AND ITS LINE FACTS ARE BUILT IN ONE PASS. Two loops that each
+    // "knew" the layout would drift the first time one of them changed, and a
+    // fact array off by a line is worse than none: every rect would name the
+    // shape above it, and nothing downstream could tell.
+    const frames = frameRectsByRelId(xml, groups, geometry);
+    const blocks: { text: string; facts: SlideBodyLine[] }[] = [{ facts: md.lines, text: md.body }];
+    const single = (text: string, relId: string) => ({
+      facts: [frames.get(relId) ? { rect: frames.get(relId)! } : {}],
+      text,
+    });
+    for (const [relId, target] of targets) {
       if (/^ppt\/charts\/chart\d+\.xml$/.test(target)) {
         const text = chartXmlToText(read(target) ?? "");
         charts += 1;
-        if (text) blocks.push(`[Chart: ${text}]`);
+        if (text) blocks.push(single(`[Chart: ${text}]`, relId));
       } else if (/^ppt\/diagrams\/data\d+\.xml$/.test(target)) {
         const text = diagramXmlToText(read(target) ?? "");
         diagrams += 1;
-        if (text) blocks.push(`[Diagram: ${text.replace(/\n+/g, " · ")}]`);
+        if (text) blocks.push(single(`[Diagram: ${text.replace(/\n+/g, " · ")}]`, relId));
       } else if (/^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(target)) {
         const text = pptxNotesXmlToText(read(target) ?? "");
         if (text) {
           notesPages += 1;
-          blocks.push(`[Speaker notes: ${text}]`);
+          // Notes live on their own page and have no position on the SLIDE.
+          // A rect here would point at whatever happens to be behind them.
+          const block = `[Speaker notes: ${text}]`;
+          blocks.push({ facts: block.split("\n").map(() => ({})), text: block });
         }
       }
     }
@@ -351,9 +477,23 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
     // list, and one newline after a list item is a CONTINUATION of that item — on a
     // real deck the speaker notes rendered as part of the last bullet on the phone
     // instead of standing on their own.
-    const content = blocks.filter((block) => block.trim().length > 0).join("\n\n");
+    const kept = blocks.filter((block) => block.text.trim().length > 0);
+    const content = kept.map((block) => block.text).join("\n\n");
     const heading = md.title ? `## Slide ${slides.length + 1}: ${md.title}` : `## Slide ${slides.length + 1}`;
-    slides.push(content ? `${heading}\n${content}` : "");
+    const text = content ? `${heading}\n${content}` : "";
+    slides.push(text);
+
+    // The heading is a marker this module writes, not a shape, so it carries no
+    // rect; the blank line `join("\n\n")` puts between blocks carries none either.
+    const facts: SlideBodyLine[] = content ? [{}] : [];
+    kept.forEach((block, at) => {
+      if (at > 0) facts.push({});
+      facts.push(...block.facts);
+    });
+    structure.lines.push(sameLength(text, facts));
+    structure.pictures.push(mediaRects(pictureRects(xml, groups, geometry), rels));
+    structure.tables.push(md.tables);
+    structure.titleRects.push(md.titleRect);
   }
 
   // What the pictures are, before deciding which to read. A metafile is opened here
@@ -411,6 +551,7 @@ export function readPptxSlides(bytes: Uint8Array): PptxContents {
     media: plan,
     slideTitles,
     slides,
+    structure,
   };
 }
 

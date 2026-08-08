@@ -1,6 +1,15 @@
 // Pure text helpers for the Word/PowerPoint (OOXML) extractors. A .docx / .pptx file is a zip of
 // XML; the zip is opened in ./office.ts (fflate I/O), but pulling readable text out of the XML is
-// pure string work and lives here so it can be unit-tested without any binary fixtures. No imports.
+// pure string work and lives here so it can be unit-tested without any binary fixtures.
+//
+// The only imports are the canonical model's own types and its ONE table renderer, plus the pure
+// geometry in ./pptx-shapes. Both are as pure as this file; what they are not is a second copy of a
+// rule that already exists — a slide table rendered here and a slide table rendered in the model
+// would be two spellings of one grid, and which one a reader saw would depend on which field it
+// happened to read.
+import { tableToMarkdown, type DocRect, type DocTable } from "@nemesis/shared";
+
+import { rectForShape, readGroups, type GroupSpan, type SlideGeometry } from "./pptx-shapes";
 
 export interface OfficeExtract {
   title: string | null;
@@ -134,16 +143,55 @@ export function diagramXmlToText(diagramXml: string): string {
  * "**know this mechanism**" arrived identical to the acknowledgements slide.
  *
  * Deliberately NOT handled: `<a:highlight>` appeared on 1 of 316 slides, so it
- * buys nothing; tables (6%) keep their cell text through the run walk but are not
- * reconstructed as grids.
+ * buys nothing.
+ *
+ * 🔴 A TABLE IS NOW A GRID, NOT A RUN OF BULLETS. Its cell text always survived
+ * the run walk, and that was the problem: a dosing table or a grading rubric
+ * arrived as a column of orphan lines, so a value sat under whatever line
+ * happened to precede it and a chunk boundary could split a row down the middle.
+ * That reads as prose and gets answered confidently and wrongly. The cells are
+ * the same characters either way; what changes is that the column each one
+ * belongs to survives. Measured over 23 real course decks: 65 tables, 951 cells.
+ *
+ * `geometry` is optional and additive. With it, each rendered line remembers the
+ * box its shape occupied, which is what lets a citation say "this table on slide
+ * 12" instead of only "slide 12". Without it every line simply has no rect.
  *
  * `markBold: false` suppresses bold marking — see `slideBoldIsUniform`. PURE.
  */
-export function pptxSlideXmlToMarkdown(slideXml: string, markBold = true): SlideMarkdown {
+export function pptxSlideXmlToMarkdown(
+  slideXml: string,
+  markBold = true,
+  geometry: SlideGeometry | null = null,
+): SlideMarkdown {
   let title: string | null = null;
+  let titleRect: DocRect | undefined;
   const lines: string[] = [];
+  const facts: SlideBodyLine[] = [];
+  const tables: DocTable[] = [];
+  const groups: GroupSpan[] = geometry ? readGroups(slideXml) : [];
 
-  for (const shape of slideXml.match(SHAPE_RE) ?? []) {
+  for (const match of slideXml.matchAll(SHAPE_RE)) {
+    const shape = match[0];
+    const rect = rectForShape(shape, match.index, groups, geometry);
+
+    // A frame only reaches this walk when it holds a table (see SHAPE_RE), so
+    // this is the whole of the table path.
+    if (shape.startsWith("<p:graphicFrame")) {
+      const table = readSlideTable(shape, markBold);
+      // An entirely empty grid contributed no lines before and contributes none
+      // now: a table used purely for layout is furniture, not content.
+      if (!table || table.rows.every((row) => row.every((cell) => !cell))) continue;
+      const grid = tableToMarkdown(table);
+      if (!grid) continue;
+      const index = tables.push(table) - 1;
+      grid.split("\n").forEach((line, at) => {
+        lines.push(line);
+        facts.push({ rect, table: index, tableStart: at === 0 });
+      });
+      continue;
+    }
+
     const isTitle = TITLE_PH_RE.test(shape);
     const paragraphs = paragraphsOf(shape, markBold);
     if (!paragraphs.length) continue;
@@ -151,11 +199,66 @@ export function pptxSlideXmlToMarkdown(slideXml: string, markBold = true): Slide
       // The title placeholder is the slide's own heading; keep it unbulleted and
       // strip emphasis, since a heading that is entirely bold reads as noise.
       title = paragraphs.map((p) => p.text).join(" ").replace(/\*\*|(?<!\w)\*(?!\w)|<\/?u>/g, "").trim() || null;
+      if (title) titleRect = rect;
       continue;
     }
-    for (const p of paragraphs) lines.push(`${"  ".repeat(Math.min(p.level, 6))}- ${p.text}`);
+    for (const p of paragraphs) {
+      lines.push(`${"  ".repeat(Math.min(p.level, 6))}- ${p.text}`);
+      facts.push({ rect });
+    }
   }
-  return { title, body: collapseBlankLines(lines.join("\n")) };
+
+  const body = collapseBlankLines(lines.join("\n"));
+  // 🔴 THE FACTS ARE INDEXED BY LINE, SO THEY MUST BE THE SAME LINES.
+  // `collapseBlankLines` right-trims and drops blank runs; nothing pushed above
+  // is blank or trailing, so the counts agree — and if some future change makes
+  // them disagree, the honest answer is NO geometry rather than every rect
+  // shifted by one, which would point every highlight at the shape above.
+  const bodyLines = body.length ? body.split("\n") : [];
+  return {
+    body,
+    lines: bodyLines.length === facts.length ? facts : bodyLines.map(() => ({})),
+    tables,
+    title,
+    ...(titleRect ? { titleRect } : {}),
+  };
+}
+
+/**
+ * A slide table as a grid.
+ *
+ * 🔴 EVERY `<a:tc>` IS KEPT, INCLUDING THE ONES A MERGE COVERS. DrawingML writes
+ * a cell for every grid position: the origin of a merge carries `gridSpan` /
+ * `rowSpan` and the positions it swallows are written as empty `hMerge` /
+ * `vMerge` cells. Dropping those would make rows different lengths and slide
+ * every later value one column left — the exact mis-association the grid exists
+ * to prevent. Keeping them makes every row exactly as wide as the table's
+ * `<a:gridCol>` count. All 65 tables in the corpus are rectangular this way.
+ *
+ * 🔴 `headerRows` COMES ONLY FROM THE FILE. `<a:tblPr firstRow="1">` is
+ * PowerPoint's own statement that the first band is headers — 63 of the 65
+ * corpus tables state it. A table that does not say so reports 0, because
+ * assuming "row 0 is a header" turns the first real data row into column names
+ * and every answer drawn from the table inherits that mistake. `firstCol` is a
+ * COLUMN band and has no field in `DocTable`; it is ignored rather than
+ * mistranslated into a row count.
+ */
+export function readSlideTable(frameXml: string, markBold = true): DocTable | null {
+  const table = /<a:tbl>[\s\S]*?<\/a:tbl>/.exec(frameXml)?.[0];
+  if (!table) return null;
+  const properties = /<a:tblPr\b[^>]*>/.exec(table)?.[0] ?? "";
+  const rows: string[][] = [];
+  for (const row of table.matchAll(/<a:tr\b[^>]*>([\s\S]*?)<\/a:tr>/g)) {
+    const cells: string[] = [];
+    for (const cell of (row[1] ?? "").matchAll(CELL_RE)) {
+      // A cell's paragraphs are one value, not several: the grid's job is to
+      // keep a value with its column, and a two-line cell is still one value.
+      cells.push(paragraphsOf(cell[1] ?? "", markBold).map((p) => p.text).join(" ").trim());
+    }
+    if (cells.length) rows.push(cells);
+  }
+  if (!rows.length) return null;
+  return { headerRows: /\bfirstRow="(?:1|true)"/.test(properties) ? 1 : 0, rows };
 }
 
 /**
@@ -176,9 +279,51 @@ export function pptxSlideTitle(slideXml: string): string | null {
   return pptxSlideXmlToMarkdown(slideXml, false).title;
 }
 
+/** What one rendered body line remembers about where it came from. */
+export interface SlideBodyLine {
+  /** The box its shape occupied, unit-relative. Absent when the file did not
+   *  state one and none could be inherited — never guessed. */
+  rect?: DocRect;
+  /** Index into `SlideMarkdown.tables` when this line is part of a grid. */
+  table?: number;
+  /** True on the first line of that grid — the line that becomes one block. */
+  tableStart?: boolean;
+}
+
+/**
+ * A deck's structure, aligned line-for-line with the deck's own slide text.
+ *
+ * 🔴 ALIGNED BY POSITION, ON PURPOSE. The alternative — hand the model the flat
+ * text and have it match lines back to shapes — is how structure gets computed
+ * and then lost at a boundary, and a cursor that slips has no failure signal: it
+ * simply attaches the rect of the shape above. Here `lines[s][n]` describes line
+ * `n` of slide `s` because they were built in the same pass, and the consumer
+ * re-checks the line it is about to trust.
+ */
+export interface DeckStructure {
+  /** The slide box in POINTS, matching the PDF lane's units, so a relative rect
+   *  becomes a crop the same way for both. Null when the file states no size —
+   *  in which case nothing here carries a rect either. */
+  slideSize: { width: number; height: number } | null;
+  /** Per slide, one entry per line of that slide's text. */
+  lines: SlideBodyLine[][];
+  /** Per slide, the grids that slide's lines index. */
+  tables: DocTable[][];
+  /** Per slide, the title placeholder's own box. */
+  titleRects: (DocRect | undefined)[];
+  /** Per slide, media entry name → its box, when that picture is placed once. */
+  pictures: Map<string, DocRect>[];
+}
+
 export interface SlideMarkdown {
   title: string | null;
   body: string;
+  /** One entry per line of `body`, in the same order and of the same length. */
+  lines: SlideBodyLine[];
+  /** The grids rendered into `body`, in order. `SlideBodyLine.table` indexes it. */
+  tables: DocTable[];
+  /** The title placeholder's own box, when it has or inherits one. */
+  titleRect?: DocRect;
 }
 
 interface SlideParagraph {
@@ -203,6 +348,9 @@ const TITLE_PH_RE = /<p:ph\b[^>]*type="(?:ctrT|t)itle"/;
 // Auto-fields that are chrome, not content: a slide number or date on every slide
 // would otherwise add a junk bullet per slide. Other field types keep their text.
 const CHROME_FIELD_RE = /<a:fld\b[^>]*type="(?:slidenum|datetime[^"]*)"[\s\S]*?<\/a:fld>/g;
+// A grid position. The self-closing form is a real cell too — an empty one — and
+// dropping it would shorten the row and shift every value after it.
+const CELL_RE = /<a:tc\b[^>]*?\/>|<a:tc\b[^>]*>([\s\S]*?)<\/a:tc>/g;
 
 function paragraphsOf(shapeXml: string, markBold: boolean): SlideParagraph[] {
   const cleaned = shapeXml.replace(CHROME_FIELD_RE, "");

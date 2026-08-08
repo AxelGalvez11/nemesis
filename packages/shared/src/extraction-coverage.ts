@@ -149,6 +149,31 @@ export interface ExtractionCoverage {
   figures: FigureCoverage;
   /** Empty when nothing was cut. */
   truncation: TruncationRecord[];
+  /**
+   * Regions the parser SAW and could not turn into anything — not pictures.
+   *
+   * 🔴 THIS EXISTS BECAUSE THE ONLY OTHER LOSSY CHANNEL WOULD HAVE LIED. A
+   * parser can detect a region, locate it precisely, and still produce no
+   * content for it: measured on the Docling path, 27 of 49 detected formulas
+   * across 5 real course PDFs arrive with a bounding box and an EMPTY string,
+   * because the formula model found an equation it could not transcribe. Those
+   * 27 were dropped by a silent `if (text)` gate and counted nowhere, so a
+   * lecture whose derivations were all unreadable still reported `complete`.
+   *
+   * They are not figures. Filing them under `figures.reasons` would make
+   * `describeCoverage` say "27 pictures couldn't be read" about a document with
+   * no missing pictures — a different false sentence, not a softer one, in the
+   * one module that exists to stop those. So this is a separate optional field,
+   * which is what the header note above means by "add optional fields".
+   *
+   * Deliberately NOT named for equations: the next parser will hit this with a
+   * different node label (a chart with no data, an unreadable stamp), and a
+   * field named for one label would be renamed or repurposed, which is the one
+   * thing this contract forbids.
+   *
+   * Absent on every record written before 2026-08-07, which reads the same as 0.
+   */
+  unreadableRegions?: number;
   state: ExtractionState;
 }
 
@@ -171,6 +196,8 @@ export function buildCoverage(input: {
   unitsUnread?: number;
   figures?: FigureCoverage;
   truncation?: readonly TruncationRecord[];
+  /** Regions seen but not readable. See `ExtractionCoverage.unreadableRegions`. */
+  unreadableRegions?: number;
   parserVersion?: string;
 }): ExtractionCoverage | string {
   const unitsVision = input.unitsVision ?? 0;
@@ -188,6 +215,11 @@ export function buildCoverage(input: {
   }
   const truncation = [...(input.truncation ?? [])].filter((cut) => cut.dropped > 0);
 
+  const unreadableRegions = input.unreadableRegions ?? 0;
+  if (!Number.isInteger(unreadableRegions) || unreadableRegions < 0) {
+    return "unreadableRegions must be a non-negative integer";
+  }
+
   const coverage: ExtractionCoverage = {
     version: EXTRACTION_COVERAGE_VERSION,
     parserVersion: input.parserVersion ?? PARSER_VERSION,
@@ -199,6 +231,9 @@ export function buildCoverage(input: {
     unitsUnread,
     figures,
     truncation,
+    // Omitted entirely when zero, so an old record and a clean new one look the
+    // same on the wire and in jsonb.
+    ...(unreadableRegions > 0 ? { unreadableRegions } : {}),
     state: "complete",
   };
   return { ...coverage, state: deriveState(coverage) };
@@ -218,6 +253,7 @@ export function deriveState(coverage: Omit<ExtractionCoverage, "state">): Extrac
   if (coverage.units > 0 && read === 0) return "failed";
   if (coverage.unitsUnread > 0) return "partial";
   if (lostFigures(coverage.figures) > 0) return "partial";
+  if ((coverage.unreadableRegions ?? 0) > 0) return "partial";
   if (coverage.truncation.some((cut) => cut.stage === "extract")) return "partial";
   return "complete";
 }
@@ -296,6 +332,12 @@ export function describeCoverage(coverage: ExtractionCoverage): string | null {
   }
   const lost = lostFigures(coverage.figures);
   if (lost > 0) parts.push(`${lost} ${lost === 1 ? "picture" : "pictures"} couldn't be read`);
+  const unreadable = coverage.unreadableRegions ?? 0;
+  // Its own clause, never merged into the picture count: the fix is different
+  // (a better formula/region reader, not a vision pass) and so is the sentence.
+  if (unreadable > 0) {
+    parts.push(`${unreadable} ${unreadable === 1 ? "part of the page" : "parts of the page"} couldn't be turned into text`);
+  }
   const cut = coverage.truncation.find((entry) => entry.stage === "extract");
   if (cut) {
     parts.push(`the text was cut at ${cut.limit.toLocaleString()} characters (${cut.dropped.toLocaleString()} more were not kept)`);
@@ -328,6 +370,10 @@ export function coverageNoticeForModel(coverage: ExtractionCoverage): string | n
   }
   const lost = lostFigures(coverage.figures);
   if (lost > 0) facts.push(`${lost} ${lost === 1 ? "picture was" : "pictures were"} not read`);
+  const unreadable = coverage.unreadableRegions ?? 0;
+  if (unreadable > 0) {
+    facts.push(`${unreadable} ${unreadable === 1 ? "region" : "regions"} (such as a formula) could not be turned into text`);
+  }
   const cut = coverage.truncation.find((entry) => entry.stage === "extract");
   if (cut) facts.push(`${cut.dropped.toLocaleString()} characters were dropped when the file was read`);
   if (facts.length === 0) return null;
@@ -356,7 +402,25 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
   const figureNum = (key: string): number => (typeof figuresRaw[key] === "number" && Number.isFinite(figuresRaw[key]) ? (figuresRaw[key] as number) : 0);
   const reasonsRaw = (typeof figuresRaw["reasons"] === "object" && figuresRaw["reasons"] !== null ? figuresRaw["reasons"] : {}) as Record<string, unknown>;
   const reasons: Partial<Record<FigureSkipReason, number>> = {};
-  for (const reason of ["decorative", "unreadable-format", "over-cap", "vision-unavailable"] as const) {
+  // 🔴 ALL SIX, AND THE TWO THAT WERE MISSING WERE THE TWO THAT MATTER MOST.
+  // `not-examined` and `examined-empty` were absent from this list, so a stored
+  // record saying "12 pictures nobody looked at" read back with `reasons: {}` —
+  // `lostFigures` returned 0 and `describeCoverage` returned NULL, i.e. the
+  // student's warning sentence vanished the moment the record came out of the
+  // database, on the single largest category of missing content. The `state`
+  // column still said `partial`, which is what made it invisible: the badge was
+  // right and the explanation was gone. Reproduced before fixing.
+  //
+  // Anything added to `FigureSkipReason` must be added here too, or it dies at
+  // this boundary rather than at the one that wrote it.
+  for (const reason of [
+    "decorative",
+    "unreadable-format",
+    "over-cap",
+    "vision-unavailable",
+    "not-examined",
+    "examined-empty",
+  ] as const) {
     const count = reasonsRaw[reason];
     if (typeof count === "number" && Number.isFinite(count) && count > 0) reasons[reason] = count;
   }
@@ -386,6 +450,11 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     unitsUnread,
     figures: { found: figureNum("found"), described: figureNum("described"), skipped: figureNum("skipped"), reasons },
     truncation,
+    // Same rule as the reasons above: a field this reader does not know about is
+    // a field that dies between the database and the screen.
+    ...(typeof raw["unreadableRegions"] === "number" && raw["unreadableRegions"] > 0
+      ? { unreadableRegions: raw["unreadableRegions"] }
+      : {}),
     state,
   };
 }
