@@ -103,6 +103,15 @@ async function main(): Promise<void> {
       rec.obs_unmapped_labels = observations.unmappedLabels;
       rec.obs_dangling_refs = observations.danglingRefs;
       rec.obs_dropped_furniture = observations.droppedFurniture;
+      // Where the nodes that did not become blocks went. A retention percentage
+      // is only honest next to the receipts for the remainder.
+      rec.obs_pictures_dropped_furniture = observations.picturesDroppedAsFurniture;
+      rec.obs_pictures_inside_tables = observations.picturesInsideTables;
+      rec.obs_list_items_inside_tables = observations.listItemsInsideTables;
+      rec.obs_table_captions = observations.tableCaptions;
+      rec.obs_table_footnotes = observations.tableFootnotes;
+      rec.obs_equations_unreadable = observations.equationsUnreadable;
+      rec.obs_dropped_empty_text = observations.droppedEmptyText;
       rec.obs_declared_units = observations.declaredUnits;
       rec.obs_units_with_content = observations.unitsWithContent;
       adapted += 1;

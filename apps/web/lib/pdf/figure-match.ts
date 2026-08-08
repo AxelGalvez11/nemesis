@@ -37,11 +37,27 @@ import type { CapturedFigure } from "./structure";
  * draw operation alone. Punishing that difference with an IoU denominator would
  * reject correct matches for a picture with a two-line caption.
  *
- * 🔴 THIS NUMBER IS MEASURED, NOT CHOSEN — see `scripts/bakeoff-figure-match.mts`
- * and the distribution it prints over the corpus. Changing it without re-running
- * that is how a threshold quietly starts sending the wrong pixels to a vision
- * model, and a wrong description is worse than a missing one because nothing
- * downstream can tell it is wrong.
+ * 🔴 THE VALUE IS ARBITRARY WITHIN A WIDE EMPTY BAND, AND SAYING SO IS THE
+ * POINT. Measured by `scripts/bakeoff-figure-match.mts` over 160 real course
+ * PDFs — 1,024 Docling figures, 337 of them large enough to reach vision at all:
+ * the agreement scores are bimodal. Of those 337, **255 score >=0.9 and 77 score
+ * exactly 0**; the whole range from 0.05 to 0.6 contains **zero figures**. Any
+ * threshold in that gap produces identical pairings (240 matches at 0.25, 0.4,
+ * 0.5 and 0.6 alike). Raising it to 0.9 costs 3 pairings; lowering it gains
+ * none. 0.5 sits in the middle of the gap, so re-tuning it is not where a
+ * mistake here would come from.
+ *
+ * 🔴 SO THIS NUMBER IS NOT WHAT KEEPS THE WRONG PIXELS OUT. When one Docling
+ * picture box wraps a cluster of separate drawn images, every one of them is
+ * FULLY inside it and every one scores 1.00 — `containment` divides by the
+ * smaller rectangle and is therefore blind to a 12x size difference. On one
+ * measured page a box covering 75% of the sheet had five captured images inside
+ * it, four tied at 1.00, and the pick among them is arbitrary. 16 of the 176
+ * routable figures that get pixels (9.1%) are decided that way. What actually
+ * limits the damage is the capture gate in `readPage` (`structure.ts`), which
+ * only decodes an image that is itself >=3% of its page or on a text-thin one —
+ * a filter in another module, written for another reason. An area-agreement
+ * guard here is the real fix; it does not exist yet.
  */
 export const MIN_CONTAINMENT = 0.5;
 
@@ -98,11 +114,23 @@ function placedFigures(model: DocumentModel): Placed[] {
 /**
  * Pair the target model's figures with the source model's captured pixels.
  *
- * Greedy best-first over every candidate pair, so a page with two overlapping
- * pictures cannot give both of them the same image: each source figure is
- * consumed once. Sorting by overlap first means the clearest pairing wins before
- * a weaker one can steal its partner — the alternative, matching in document
- * order, hands the first Docling figure whatever it happens to overlap.
+ * Greedy best-first over every candidate pair. Sorting by overlap first means
+ * the clearest pairing wins before a weaker one can steal its partner — the
+ * alternative, matching in document order, hands the first Docling figure
+ * whatever it happens to overlap.
+ *
+ * Each source BLOCK is consumed once, which is not the same as each IMAGE being
+ * consumed once, and the difference is real rather than theoretical: an image
+ * drawn twice on one page is two blocks sharing one `unit:ref` key, so two
+ * Docling figures can be handed the same `CapturedFigure`. Measured on a real
+ * slide deck whose page repeats one graphic in a 2x2 grid — and there it is the
+ * correct answer, because both regions do hold that image. Deduplicating by key
+ * instead would leave the second region unexamined for no reason.
+ *
+ * 🔴 WHAT THIS FUNCTION CANNOT DO IS NOTICE THAT IT PICKED THE WRONG ONE. When
+ * several of our images sit inside one Docling box they all score 1.00, the
+ * ordering among them is whatever `sort` did, and the loser's pixels are simply
+ * dropped. See `MIN_CONTAINMENT` above for the measurement and the missing guard.
  */
 export function matchFigureImages(
   target: DocumentModel,
