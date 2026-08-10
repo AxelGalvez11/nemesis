@@ -1,10 +1,12 @@
 // Where a canvas lives.
 //
-// Supabase when `learning_canvases` exists, the browser when it does not. That fallback is
-// deliberate rather than defensive: the migration is written but unapplied (applying anything
-// to the live database is the owner's call), and the pilot has to be usable and judgeable
-// today. The moment the table is applied, the same code starts persisting properly with no
-// change here — and a canvas already sitting in the browser is migrated up on next save.
+// Supabase when `learning_canvases` exists, the browser when it does not.
+//
+// The table is now applied in production (verified 2026-08-10), so the cloud path is the live
+// one and canvases survive a refresh. The browser fallback stays: it is what carried the pilot
+// before the migration landed, it still covers a signed-out or offline session, and it holds
+// the OLDEST documents we have — which is why `normaliseCanvas` runs on both read paths and not
+// just on rows.
 
 import { supabase } from "@/lib/supabase";
 
@@ -12,11 +14,14 @@ import {
   CANVAS_LEVELS,
   CANVAS_STATES,
   emptyCanvas,
+  normaliseQuestion,
   type CanvasLevel,
+  type CanvasResponse,
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
 } from "./canvas-model";
+import { validateEvaluation } from "./canvas-judge";
 import { stateAfterSourceAttached } from "./canvas-state";
 
 const TABLE = "learning_canvases";
@@ -40,6 +45,38 @@ function list<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+/** Bring a stored canvas up to the shape the code expects.
+ *
+ *  🔴 A CANVAS SAVED BEFORE FREE RESPONSE HAS NO `responses` ARRAY AT ALL, and the test stage
+ *  calls `.find` on it. Adding a required field to a persisted shape is not free: every row
+ *  already written predates it, and the browser-storage path in particular used to cast straight
+ *  to the type without looking. So the default lives here, on the way in, where both readers
+ *  pass — not at each use site, where the next reader would have to remember.
+ *
+ *  Judgements are re-checked rather than trusted. They were validated when written, but a
+ *  document also round-trips through localStorage, and a stored verdict outside the closed set
+ *  would otherwise reach `diagnose` and decide what the learner is told they do not understand. */
+export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): LearningCanvas {
+  const canvas = raw as LearningCanvas;
+  const conceptIds = list<{ id?: string }>((canvas as { concepts?: unknown }).concepts)
+    .map((concept) => concept?.id)
+    .filter((id): id is string => typeof id === "string");
+
+  return {
+    ...canvas,
+    questions: list<Record<string, unknown>>((canvas as { questions?: unknown }).questions).map(normaliseQuestion),
+    answers: list((canvas as { answers?: unknown }).answers),
+    responses: list<CanvasResponse>((canvas as { responses?: unknown }).responses).map((response) => {
+      if (!response?.evaluation) return response;
+      const { evaluation } = validateEvaluation(response.evaluation, { conceptIds });
+      // A judgement that no longer holds up is dropped, not downgraded: an unjudged response
+      // carries no evidence either way, which is the honest state for one we cannot verify.
+      return evaluation ? { ...response, evaluation } : { ...response, evaluation: undefined };
+    }),
+    recallResults: list((canvas as { recallResults?: unknown }).recallResults),
+  };
+}
+
 export function canvasFromRow(row: CanvasRow): LearningCanvas {
   // A jsonb column can hold anything; treating a non-object as an empty document keeps one
   // corrupted row from taking the whole surface down.
@@ -51,7 +88,7 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
   const level =
     row.level && (CANVAS_LEVELS as readonly string[]).includes(row.level) ? (row.level as CanvasLevel) : null;
 
-  return {
+  return normaliseCanvas({
     id: row.id,
     title: row.title ?? "",
     state,
@@ -63,13 +100,14 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
     recallResults: list(document.recallResults),
     questions: list(document.questions),
     answers: list(document.answers),
+    responses: list(document.responses),
     weakConceptIds: list(document.weakConceptIds),
     correctedConceptIds: list(document.correctedConceptIds),
     ...(typeof document.studyDeckId === "string" ? { studyDeckId: document.studyDeckId } : {}),
     activeMs: row.active_ms ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  });
 }
 
 /** Title, state, level and time go in real columns so the list query and any later analysis
@@ -94,6 +132,11 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       recallResults: canvas.recallResults,
       questions: canvas.questions,
       answers: canvas.answers,
+      // 🔴 Every field on the canvas needs a line here or it is silently not persisted. This
+      // list is written by hand rather than spread, so a new field is saved only when someone
+      // remembers — and free responses are the learner's own words, which is the worst thing
+      // on the canvas to lose.
+      responses: canvas.responses,
       weakConceptIds: canvas.weakConceptIds,
       correctedConceptIds: canvas.correctedConceptIds,
       ...(canvas.studyDeckId ? { studyDeckId: canvas.studyDeckId } : {}),
@@ -117,7 +160,10 @@ export function isMissingTableError(error: { code?: string; message?: string } |
 function localRead(id: string): LearningCanvas | null {
   try {
     const raw = window.localStorage.getItem(LOCAL_PREFIX + id);
-    return raw ? (JSON.parse(raw) as LearningCanvas) : null;
+    // Through the same normaliser as the database path. This was a bare cast, which is exactly
+    // how a canvas stored before free response reaches the test stage with no `responses` array
+    // and crashes it — the browser holds the oldest documents we have.
+    return raw ? normaliseCanvas(JSON.parse(raw) as LearningCanvas) : null;
   } catch {
     return null;
   }

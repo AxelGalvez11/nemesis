@@ -23,6 +23,11 @@ export type CanvasEvent =
   | "canvas_recall_completed"
   | "canvas_test_started"
   | "canvas_test_completed"
+  // Free response: the verdict distribution is how we find out whether the judge is calibrated
+  // or is quietly saying "partial" to everything, and the failure rate is how we find out
+  // whether the model can hold the JSON shape under real answers.
+  | "canvas_response_judged"
+  | "canvas_judge_failed"
   | "canvas_diagnosis_viewed"
   | "canvas_weakspots_relearned"
   | "canvas_retest_completed"

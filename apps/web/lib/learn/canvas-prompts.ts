@@ -13,11 +13,17 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
 import {
+  ERROR_TYPES,
   LEVEL_INSTRUCTIONS,
   type CanvasBlock,
   type CanvasConcept,
   type CanvasLevel,
   type CanvasSource,
+  type ExpectedEvidence,
+  type LearnerResponse,
+  type RetrievalFormat,
+  type RetrievalTask,
+  type SourceRef,
 } from "./canvas-model";
 
 /** Field-agnostic by construction. Nemesis serves law, engineering, nursing, history and the
@@ -150,17 +156,59 @@ export function recallMessages(input: {
 
 // ---------------------------------------------------------------------- test
 
+/** The free-response formats, described by what they ask the learner to DO.
+ *
+ *  🔴 Structural, never subject-matter. Every line below has to read sensibly for a nursing
+ *  student, a first-year law student and someone learning to weld — that is the test, and it is
+ *  why there is no format here for naming a thing from a list of things. */
+const FREE_KIND_RULES =
+  '- "define": ask what a term means, in the learner\'s own words.\n' +
+  '- "explain": ask WHY something is the case, not whether it is.\n' +
+  '- "mechanism": ask them to walk through how something happens, step by step, in order.\n' +
+  '- "compare": ask how two things differ, and require both sides.\n' +
+  '- "apply": give a short concrete situation and ask what follows and why.\n' +
+  '- "recall": ask them to reproduce something from memory without prompting.';
+
 export function testMessages(input: {
   canvasTitle: string;
   blocks: readonly CanvasBlock[];
   concepts: readonly CanvasConcept[];
   count: number;
+  /** Free response unless something specifically needs recognition (§18). */
+  format: RetrievalFormat;
   /** When set, the test is the retest and covers only these concepts. */
   onlyConceptIds?: readonly string[];
 }): WireMsg[] {
   const focus = input.onlyConceptIds?.length
     ? input.concepts.filter((concept) => input.onlyConceptIds?.includes(concept.id))
     : input.concepts;
+
+  const scope = input.onlyConceptIds?.length
+    ? "This is a RETEST. Ask only about the concepts listed below — the ones the learner got wrong. Do not test anything else.\n\n"
+    : "Spread the questions across the concepts below.\n\n";
+  const conceptList = `Concepts to test: ${focus.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n`;
+
+  if (input.format === "free") {
+    return [
+      { content: CANVAS_SYSTEM, role: "system" },
+      {
+        content:
+          `Write ${input.count} retrieval prompts on "${input.canvasTitle}" that the learner answers IN THEIR OWN WORDS.\n\n` +
+          "These are not multiple choice and must not be answerable with yes/no or a single word. Each one asks the " +
+          "learner to say something back: an explanation, a comparison, a sequence, or an application. Ask about one " +
+          "thing at a time — a prompt with three questions in it produces an answer that cannot be judged.\n\n" +
+          `Choose a kind for each prompt:\n${FREE_KIND_RULES}\n\n` +
+          `${scope}${conceptList}` +
+          'Return JSON: {"questions":[{"kind":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"k1","sourceRefs":[…]}]}\n\n' +
+          "`expected` is the list of points a complete answer has to make — 2 to 4 short, checkable statements, each " +
+          "one thing. These are what a judge will check the learner's answer against, so write them as claims, not as " +
+          "topics: \"says the pressure drops before the valve opens\", not \"pressure\". `why` is the full model answer, " +
+          "shown only after they have committed to their own. `conceptId` MUST be one of the ids above.\n\n" +
+          `Document:\n${documentText(input.blocks)}`,
+        role: "user",
+      },
+    ];
+  }
 
   return [
     { content: CANVAS_SYSTEM, role: "system" },
@@ -170,10 +218,7 @@ export function testMessages(input: {
         // Shared with the Study tab's generator and the chat test-craft skill, so improving
         // the craft improves all three at once (see item-writing.ts).
         `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +
-        (input.onlyConceptIds?.length
-          ? "This is a RETEST. Ask only about the concepts listed below — the ones the learner got wrong. Do not test anything else.\n\n"
-          : "Spread the questions across the concepts below.\n\n") +
-        `Concepts to test: ${focus.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n` +
+        `${scope}${conceptList}` +
         'Return JSON: {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…","conceptId":"k1","sourceRefs":[…]}]} — ' +
         "4 options each, answer is the 0-based index of the correct option, why explains what makes the wrong options wrong, " +
         "and conceptId MUST be one of the ids above. A question with no concept is useless here.\n\n" +
@@ -183,7 +228,150 @@ export function testMessages(input: {
   ];
 }
 
+// ------------------------------------------------------------------- judging
+
+/** Everything one evaluation needs, in the shape the whole product can use.
+ *
+ *  🔴 DELIBERATELY NOT front/back. A flashcard is one narrow case of "here is a task, here is
+ *  what a good performance contains" — an existing card converts by putting its back into
+ *  `referenceAnswer` and nothing else changes. Shaping the evaluator around cards instead would
+ *  have made every later caller — a derivation with required steps, a comparison needing both
+ *  sides, a spoken answer in a second language, a diagram reconstructed from memory — either
+ *  pretend to be a card or need a second evaluator. */
+export interface EvaluationInput {
+  prompt: string;
+  task: RetrievalTask;
+  objective: { conceptId: string | null; label: string };
+  expectedEvidence: ExpectedEvidence;
+  response: LearnerResponse;
+  concepts: readonly CanvasConcept[];
+  context?: {
+    sourceRefs?: readonly SourceRef[];
+    hintsUsed?: number;
+    priorAttempts?: number;
+  };
+}
+
+/** What each task is actually asking the learner to do, told to the judge so it checks the right
+ *  thing: a "solve" answer is judged on the working, a "name" answer on the term produced. */
+const TASK_INTENT: Record<RetrievalTask, string> = {
+  name: "produce the correct term",
+  define: "give the meaning in their own words",
+  explain: "say why something is the case",
+  mechanism: "walk through how something happens, in order",
+  reconstruct: "rebuild the structure from memory",
+  compare: "set two things against each other, covering both",
+  predict: "say what follows, and why",
+  apply: "use the idea on a concrete situation",
+  solve: "work it through and show the reasoning",
+};
+
+/** Read one performance for what it MEANS (§21).
+ *
+ *  Two instructions here are load-bearing and easy to lose in a later edit:
+ *
+ *  1. **Judge meaning, not wording.** "It blocks the thing that makes vessels tighten" and the
+ *     textbook sentence are the same answer. A judge that rewards vocabulary turns the canvas
+ *     back into a recognition test wearing a text box.
+ *  2. **Do not punish speech.** A spoken answer arrives with false starts, filler and repair
+ *     ("it, uh, it goes up — no, down"). §7 wants speaking to be first-class precisely because it
+ *     exposes the mental model; marking someone down for sounding like a person would defeat
+ *     the point and quietly push everyone back to typing. */
+export function evaluationMessages(input: EvaluationInput): WireMsg[] {
+  const expected = input.expectedEvidence;
+  const standard = [
+    expected.acceptableClaims?.length
+      ? `A complete performance makes these points:\n${expected.acceptableClaims.map((c) => `- ${c}`).join("\n")}`
+      : "",
+    expected.requiredSteps?.length
+      ? `It has to include these steps, in order:\n${expected.requiredSteps.map((s) => `- ${s}`).join("\n")}`
+      : "",
+    expected.requiredConcepts?.length
+      ? `It has to show a grasp of: ${expected.requiredConcepts.join(", ")}`
+      : "",
+    expected.commonMisconceptions?.length
+      ? `Watch for these specific wrong beliefs:\n${expected.commonMisconceptions.map((m) => `- ${m}`).join("\n")}`
+      : "",
+    expected.referenceAnswer
+      ? `A reference answer, for your judgement only — do NOT require its wording or its level of detail:\n${expected.referenceAnswer}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    {
+      content:
+        "You are Nemesis, judging what a learner's own explanation shows about their understanding. " +
+        "Your entire output is the JSON payload requested — no greeting, no commentary. " +
+        "You are not marking an exam. You are working out what this person does and does not yet understand, " +
+        "so the page can teach the right next thing.",
+      role: "system",
+    },
+    {
+      content:
+        `The task they were set (${TASK_INTENT[input.task]}):\n"${input.prompt}"\n\n` +
+        (standard ? `${standard}\n\n` : "") +
+        `It is about the concept "${input.objective.label}".\n\n` +
+        `They ${input.response.via === "spoken" ? "said out loud" : "wrote"}:\n"${input.response.text}"\n\n` +
+        (input.response.via === "spoken"
+          ? "This was dictated, so it arrives as speech: filler words, false starts, self-corrections and missing " +
+            "punctuation are normal and mean nothing about their understanding. Judge what they were getting at. " +
+            "Where they corrected themselves, judge the correction, not the first attempt.\n\n"
+          : "") +
+        ((input.context?.hintsUsed ?? 0) > 0
+          ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
+          : "") +
+        "Judge MEANING, not vocabulary. If they express the right idea in everyday language, that is a correct " +
+        "answer — do not require the term the material used. Do not reward a confident answer that says nothing.\n\n" +
+        "Choose one verdict:\n" +
+        '- "strong": everything expected is there, and expressed with room to spare — they could clearly go further.\n' +
+        '- "understood": everything expected is there, in substance.\n' +
+        '- "partial": going the right way, but something expected is missing or vague.\n' +
+        '- "incorrect": does not get there, or is mostly off the point.\n' +
+        '- "misconception": reveals a specific, nameable false belief — not merely a gap. Use this only when you can ' +
+        "state the wrong belief in one sentence.\n\n" +
+        `If the performance fell short, say WHY with errorType, one of: ${ERROR_TYPES.join(", ")}. ` +
+        "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
+        "they need opposite teaching.\n\n" +
+        `Concepts on this page: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n` +
+        'Return JSON: {"verdict":"partial","confidence":0.7,"demonstrated":["…"],"missing":["…"],' +
+        '"misconceptions":["…"],"errorType":"conceptual","feedback":"…","alsoWeakConceptIds":["k3"]}\n\n' +
+        "`confidence` is 0 to 1: how much this performance actually settled. A short answer to a broad task can be " +
+        "right and still tell you little — say so with a low number rather than a confident verdict. " +
+        "`demonstrated` and `missing` are for the teaching engine, not for the learner to read. " +
+        "`misconceptions` is a list, empty unless a specific false belief is visible. " +
+        "`feedback` is the ONE thing the page shows them: at most two sentences, addressed to them as \"you\", " +
+        "supplying exactly what was missing and nothing else. Do not restate their answer back to them, do not list " +
+        "what they got right, and do not re-teach the topic. " +
+        "`alsoWeakConceptIds` is for OTHER concepts on the page this performance showed to be shaky; use ids from " +
+        "the list above and no others, and leave it out if there are none.",
+      role: "user",
+    },
+  ];
+}
+
 // --------------------------------------------------------- targeted relearn
+
+/** One thing that did not land, in enough detail for the rewrite to aim at it.
+ *
+ *  A free-response miss carries far more than a choice miss can: "they wrote X, and what was
+ *  missing was Y" tells the rewrite what to say, where "they picked B" only tells it what to
+ *  avoid. This is the payoff for asking people to explain rather than to recognise. */
+export type RelearnMiss =
+  | { kind: "choice"; question: string; picked: string; correct: string; why: string }
+  | { kind: "free"; question: string; said: string; missing: string[]; misconception?: string };
+
+function describeMiss(miss: RelearnMiss): string {
+  if (miss.kind === "choice") {
+    return `- Asked: ${miss.question}\n  They chose: ${miss.picked}\n  Correct: ${miss.correct}\n  Why: ${miss.why}`;
+  }
+  return (
+    `- Asked: ${miss.question}\n  They answered: ${miss.said}\n` +
+    (miss.missing.length ? `  What was missing: ${miss.missing.join("; ")}\n` : "") +
+    (miss.misconception ? `  The belief behind it: ${miss.misconception}\n` : "")
+  ).trimEnd();
+}
 
 /** §14's core hypothesis, as a prompt: 2,200 words becomes 400 because we only send the
  *  blocks that cover what went wrong, and say so out loud. */
@@ -195,7 +383,7 @@ export function relearnMessages(input: {
   level: CanvasLevel | null;
   /** What the learner actually got wrong, so the rewrite addresses the misunderstanding
    *  rather than repeating the original explanation more loudly. */
-  misses: readonly { question: string; picked: string; correct: string; why: string }[];
+  misses: readonly RelearnMiss[];
 }): WireMsg[] {
   return [
     { content: CANVAS_SYSTEM, role: "system" },
@@ -204,9 +392,7 @@ export function relearnMessages(input: {
         `The learner has been tested on "${input.canvasTitle}" and these ideas did not land:\n` +
         `${input.weak.map((c) => `- ${c.id}: ${c.label}`).join("\n")}\n\n` +
         (input.misses.length
-          ? `What they actually got wrong:\n${input.misses
-              .map((m) => `- Asked: ${m.question}\n  They chose: ${m.picked}\n  Correct: ${m.correct}\n  Why: ${m.why}`)
-              .join("\n")}\n\n`
+          ? `What they actually got wrong:\n${input.misses.map(describeMiss).join("\n")}\n\n`
           : "") +
         "Rewrite the document so it teaches ONLY these ideas. This is a short, targeted correction — aim for a fifth of " +
         "the original length. Do not re-explain anything they already understood. Address the specific misunderstanding " +

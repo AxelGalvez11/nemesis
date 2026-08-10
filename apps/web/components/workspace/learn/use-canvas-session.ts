@@ -20,10 +20,15 @@ import {
   generateRelearn,
   generateRecall,
   generateTest,
+  cardAsTask,
+  evaluateLearningResponse,
+  questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { buildExcerpts } from "@/lib/learn/canvas-grounding";
+import { verdictIsPass } from "@/lib/learn/canvas-judge";
+import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
 import {
   conceptLabel,
   type CanvasBlock,
@@ -31,7 +36,10 @@ import {
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
+  type ResponseEvaluation,
+  type RetrievalFormat,
 } from "@/lib/learn/canvas-model";
+import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps } from "@/lib/learn/canvas-ops";
 import { canStart } from "@/lib/learn/canvas-state";
 import { loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
@@ -56,6 +64,8 @@ export interface CanvasSession {
   error: string | null;
   /** A transient answer to a question that did not change the page (§4). */
   aside: { text: string; blockId: string | null } | null;
+  /** The id of the prompt whose answer is being read, or null. */
+  judging: string | null;
   ready: boolean;
   dismissError: () => void;
   dismissAside: () => void;
@@ -69,9 +79,26 @@ export interface CanvasSession {
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
   startRecall: () => Promise<void>;
-  gradeRecall: (cardId: string, grade: "again" | "hard" | "good" | "easy") => Promise<void>;
+  gradeRecall: (
+    cardId: string,
+    grade: "again" | "hard" | "good" | "easy",
+    evidence?: {
+      said?: string;
+      via?: "typed" | "spoken";
+      revealed?: boolean;
+      evaluation?: ResponseEvaluation;
+    },
+  ) => Promise<void>;
+  /** Retrieval by producing something rather than self-grading (§31). */
+  attemptRecall: (cardId: string, text: string, via: "typed" | "spoken") => Promise<void>;
+  /** They asked to see the answer: recorded as a retrieval we did not obtain. */
+  revealRecall: (cardId: string) => Promise<void>;
   startTest: () => Promise<void>;
+  /** Multiple choice on request only — exam simulation, not the default (§18). */
+  startChoiceTest: () => Promise<void>;
   answer: (questionId: string, picked: number) => void;
+  /** Records the learner's own words and asks the judge what they show. */
+  respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
   finishTest: () => void;
   relearn: () => Promise<void>;
   startRetest: () => Promise<void>;
@@ -87,6 +114,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [busy, setBusy] = useState<BusyState>({ kind: null });
   const [error, setError] = useState<string | null>(null);
   const [aside, setAside] = useState<{ text: string; blockId: string | null } | null>(null);
+  /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
+   *  flag, so judging one answer does not freeze the rest of the page. */
+  const [judging, setJudging] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   // Saving is debounced against a ref so a burst of edits writes once, and so the save always
@@ -382,14 +412,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   }, [requireUid, update]);
 
   const gradeRecall = useCallback(
-    async (cardId: string, grade: "again" | "hard" | "good" | "easy") => {
+    async (
+      cardId: string,
+      grade: "again" | "hard" | "good" | "easy",
+      evidence?: {
+      said?: string;
+      via?: "typed" | "spoken";
+      revealed?: boolean;
+      evaluation?: ResponseEvaluation;
+    },
+    ) => {
       const card = latest.current.recall.find((candidate) => candidate.id === cardId);
       // The same Postgres function the Study tab grades through, so the scheduling is real.
       void gradeStudyCard(card?.studyCardId, grade);
       update((current) => {
         const recallResults = [
           ...current.recallResults.filter((result) => result.cardId !== cardId),
-          { cardId, conceptId: card?.conceptId ?? null, grade },
+          {
+            cardId,
+            conceptId: card?.conceptId ?? null,
+            at: new Date().toISOString(),
+            grade,
+            ...(evidence ?? {}),
+          },
         ];
         // The deck is finished the moment the last card is graded — the funnel needs the
         // "got through recall" number, not just the "started recall" one.
@@ -405,10 +450,91 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [update],
   );
 
+  /** Retrieval by producing something, rather than by revealing and marking yourself (§31).
+   *
+   *  🔴 THE ORDER HERE IS THE ARCHITECTURE. The performance is evaluated first, that evidence is
+   *  what gets stored, and only then is a review grade derived from it. Deriving the grade first
+   *  and keeping only that would leave a spaced-repetition app with a text box on it — the
+   *  evaluation is the thing Nemesis is actually for. */
+  const attemptRecall = useCallback(
+    async (cardId: string, text: string, via: "typed" | "spoken") => {
+      const said = text.trim();
+      if (!said) return;
+      const card = latest.current.recall.find((candidate) => candidate.id === cardId);
+      if (!card) return;
+
+      const id = requireUid();
+      if (!id) {
+        await gradeRecall(cardId, deriveSchedulingSignal({ evaluation: null }).grade, { said, via });
+        return;
+      }
+
+      setJudging(cardId);
+      const result = await evaluateLearningResponse(
+        id,
+        latest.current,
+        cardAsTask(latest.current, card, { text: said, via }),
+      );
+      setJudging(null);
+
+      const evaluation = result.value;
+      if (!evaluation) canvasCapture("canvas_judge_failed", latest.current, { cardId });
+      else {
+        canvasCapture("canvas_response_judged", latest.current, {
+          verdict: evaluation.verdict,
+          errorType: evaluation.errorType ?? null,
+          confidence: evaluation.confidence,
+          via,
+          conceptId: card.conceptId,
+          stage: "recall",
+        });
+      }
+
+      // Earlier successful retrievals of this same idea, from previous rounds on this canvas.
+      // This is what separates "right just now" from "right again", and without it the
+      // scheduler could never award Easy — the rule would exist only in its tests.
+      //
+      // `timeSinceLastExposureMs` is deliberately NOT passed: nothing on a RecallResult records
+      // when it happened, and inventing a gap from the canvas's own timestamps would be a
+      // guess dressed as a measurement. Repeat success is the honest half of the same test.
+      const priorSuccesses = card.conceptId
+        ? latest.current.recallResults.filter(
+            (entry) =>
+              entry.cardId !== cardId &&
+              entry.conceptId === card.conceptId &&
+              entry.evaluation &&
+              verdictIsPass(entry.evaluation.verdict),
+          ).length
+        : 0;
+
+      const signal = deriveSchedulingSignal({ evaluation, hintsUsed: 0, priorSuccesses });
+      await gradeRecall(cardId, signal.grade, {
+        said,
+        via,
+        ...(evaluation ? { evaluation } : {}),
+      });
+    },
+    [gradeRecall, requireUid],
+  );
+
+  /** They asked to see the answer instead of attempting it.
+   *
+   *  §7: that is itself evidence — we did not obtain a retrieval — and it is recorded as such.
+   *  The learner is deliberately NOT asked how well they knew it afterwards: someone who has
+   *  just read the answer is the worst available judge of whether they could have produced it,
+   *  and asking puts the metacognitive work back on them for a worse signal than we already have. */
+  const revealRecall = useCallback(
+    async (cardId: string) => {
+      const signal = deriveSchedulingSignal({ evaluation: null, revealed: true });
+      await gradeRecall(cardId, signal.grade, { revealed: true });
+    },
+    [gradeRecall],
+  );
+
   // --------------------------------------------------------------------- test
 
   const runTest = useCallback(
-    async (state: "test" | "retest") => {
+    async (state: "test" | "retest", format: RetrievalFormat = "free") => {
       const id = requireUid();
       if (!id) return;
       setError(null);
@@ -418,12 +544,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         id,
         latest.current,
         retest ? RETEST_QUESTIONS : TEST_QUESTIONS,
+        format,
         retest ? latest.current.weakConceptIds : undefined,
       );
       setBusy({ kind: null });
       if (!result.value) {
         setError(result.error);
-        canvasCapture("canvas_generation_failed", latest.current, { stage: state });
+        canvasCapture("canvas_generation_failed", latest.current, { stage: state, format });
         return;
       }
       captureStateChange(latest.current, "test");
@@ -431,7 +558,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // A retest replaces the evidence about the concepts it re-assesses — including the
         // recall grades. Without that a single "Again" kept a concept weak forever and the
         // canvas could never be finished.
-        ...(retest ? clearEvidenceForRetest(current, current.weakConceptIds) : { ...current, answers: [] }),
+        //
+        // The plain-test branch clears responses alongside answers for the same reason: a new
+        // set of questions makes the old ones' evidence stale, and evidence that outlives its
+        // round is what made this state unreachable the first time.
+        ...(retest
+          ? clearEvidenceForRetest(current, current.weakConceptIds)
+          : { ...current, answers: [], responses: [] }),
         questions: result.value ?? [],
         state,
       }));
@@ -439,14 +572,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [requireUid, update],
   );
 
+  // Free response is the default everywhere, including at the exam level: §35-36 are explicit
+  // that even under time pressure the canvas prefers explaining to recognising. Multiple choice
+  // stays reachable as a deliberate request ("test me the way the exam will"), never as the
+  // thing that happens when nobody chose.
   const startTest = useCallback(() => runTest("test"), [runTest]);
   const startRetest = useCallback(() => runTest("retest"), [runTest]);
+  const startChoiceTest = useCallback(() => runTest("test", "choice"), [runTest]);
 
   const answer = useCallback(
     (questionId: string, picked: number) => {
       update((current) => {
         const question = current.questions.find((candidate) => candidate.id === questionId);
-        if (!question) return current;
+        // Only a choice question has an option to have picked. A stray call against a free
+        // prompt is a bug upstream, and scoring it against `undefined` would silently mark it
+        // wrong rather than showing that bug.
+        if (!question || question.format !== "choice") return current;
         return {
           ...current,
           answers: [
@@ -457,6 +598,72 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       });
     },
     [update],
+  );
+
+  /** Record what the learner said, then ask the judge what it showed.
+   *
+   *  The answer is stored BEFORE the model is called and is never removed if the call fails.
+   *  Someone who just explained something at length must not lose their words because a judge
+   *  timed out — an unjudged response simply carries no evidence (see diagnose). */
+  const respond = useCallback(
+    async (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => {
+      const said = text.trim();
+      if (!said) return;
+
+      const question = latest.current.questions.find((candidate) => candidate.id === questionId);
+      if (!question || question.format !== "free") return;
+
+      update((current) => ({
+        ...current,
+        responses: [
+          ...current.responses.filter((entry) => entry.questionId !== questionId),
+          {
+            questionId,
+            // Captured here, not derived later: the question this came from is replaced on the
+            // next round, and by then nothing can say what this answer was evidence about.
+            ...(question.conceptId ? { objectiveIds: [question.conceptId] } : {}),
+            at: new Date().toISOString(),
+            text: said,
+            via,
+            ...(tookMs !== undefined ? { tookMs } : {}),
+          },
+        ],
+      }));
+
+      const id = requireUid();
+      if (!id) return;
+      setJudging(questionId);
+      const result = await evaluateLearningResponse(
+        id,
+        latest.current,
+        questionAsTask(latest.current, question, { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) }),
+      );
+      setJudging(null);
+
+      if (!result.value) {
+        // Deliberately not surfaced as a page error: the learner did their part, and "we could
+        // not read that" is a fact about us, not a verdict about them.
+        canvasCapture("canvas_judge_failed", latest.current, { questionId });
+        return;
+      }
+
+      const evaluation = result.value;
+      canvasCapture("canvas_response_judged", latest.current, {
+        verdict: evaluation.verdict,
+        errorType: evaluation.errorType ?? null,
+        confidence: evaluation.confidence,
+        via,
+        conceptId: question.conceptId,
+        stage: "test",
+      });
+      update((current) => ({
+        ...current,
+        responses: current.responses.map((entry) =>
+          entry.questionId === questionId ? { ...entry, evaluation } : entry,
+        ),
+      }));
+    },
+    [requireUid, update],
   );
 
   const finishTest = useCallback(() => {
@@ -497,19 +704,42 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     const relevant = blocksForConcepts(current.blocks, current.weakConceptIds);
     // What they actually got wrong, in words — so the rewrite addresses the misunderstanding
     // instead of repeating the original explanation more loudly.
-    const misses = current.answers
+    const choiceMisses: RelearnMiss[] = current.answers
       .filter((entry) => !entry.correct)
       .map((entry) => {
         const question = current.questions.find((candidate) => candidate.id === entry.questionId);
-        if (!question) return null;
+        if (!question || question.format !== "choice") return null;
         return {
+          kind: "choice" as const,
           question: question.q,
           picked: question.options[entry.picked] ?? "",
           correct: question.options[question.answer] ?? "",
           why: question.why,
         };
       })
-      .filter((miss): miss is NonNullable<typeof miss> => miss !== null);
+      .filter((miss): miss is Extract<RelearnMiss, { kind: "choice" }> => miss !== null);
+
+    // The free-response misses are the richer half: the rewrite is told what the learner
+    // actually said and precisely which point was absent, so it can address the gap instead of
+    // restating the original explanation more loudly.
+    const freeMisses: RelearnMiss[] = current.responses
+      .filter((entry) => entry.evaluation && !verdictIsPass(entry.evaluation.verdict))
+      .map((entry) => {
+        const question = current.questions.find((candidate) => candidate.id === entry.questionId);
+        if (!question || question.format !== "free") return null;
+        return {
+          kind: "free" as const,
+          question: question.q,
+          said: entry.text,
+          missing: entry.evaluation?.missing ?? [],
+          ...(entry.evaluation?.misconceptions?.length
+            ? { misconception: entry.evaluation.misconceptions.join("; ") }
+            : {}),
+        };
+      })
+      .filter((miss): miss is Extract<RelearnMiss, { kind: "free" }> => miss !== null);
+
+    const misses = [...freeMisses, ...choiceMisses];
 
     const result = await generateRelearn(
       id,
@@ -553,6 +783,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    judging,
     ready,
     dismissError: () => setError(null),
     dismissAside: () => setAside(null),
@@ -565,8 +796,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     toggleCollapsed,
     startRecall,
     gradeRecall,
+    attemptRecall,
+    revealRecall,
     startTest,
+    startChoiceTest,
     answer,
+    respond,
     finishTest,
     relearn,
     startRetest,

@@ -144,3 +144,139 @@ test("attaching never mutates the canvas it was given", () => {
   mergeSourceIntoCanvas(before, SOURCE);
   assert.equal(JSON.stringify(before), snapshot);
 });
+
+// ------------------------------------------- shape changes and stored canvases
+
+test("a canvas saved before free response existed still loads", () => {
+  // 🔴 The regression this guards: `responses` did not exist when these documents were written,
+  // and the test stage calls .find on it. Without a default here the page throws on a canvas
+  // the learner made last week.
+  const canvas = canvasFromRow({
+    id: "c1",
+    title: "Old canvas",
+    state: "test",
+    level: "basics_known",
+    document: {
+      questions: [{ id: "q1", q: "?", options: ["a", "b"], answer: 0, why: "", conceptId: "k1" }],
+      answers: [{ questionId: "q1", picked: 0, correct: true }],
+    },
+    active_ms: 0,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+  });
+  assert.deepEqual(canvas.responses, []);
+  assert.equal(canvas.questions[0]?.format, "choice", "a question with no format was multiple choice");
+});
+
+test("free responses survive a round trip to the row and back", () => {
+  // canvasToRow lists the document's fields by hand, so a new field is persisted only if
+  // someone added a line for it. This is the test that notices when nobody did.
+  const canvas: LearningCanvas = {
+    ...emptyCanvas("c1", "2026-08-10T00:00:00.000Z"),
+    concepts: [{ id: "k1", label: "A concept" }],
+    responses: [
+      {
+        questionId: "q1",
+        text: "what the learner actually said",
+        via: "spoken",
+        evaluation: {
+          verdict: "partial",
+          confidence: 0.6,
+          demonstrated: ["a"],
+          missing: ["b"],
+          misconceptions: [],
+          feedback: "Add b.",
+        },
+      },
+    ],
+  };
+  const row = canvasToRow(canvas, "user-1") as { document: Record<string, unknown> };
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: row.document,
+    active_ms: 0,
+    created_at: "2026-08-10T00:00:00.000Z",
+    updated_at: "2026-08-10T00:00:00.000Z",
+  });
+  assert.equal(back.responses[0]?.text, "what the learner actually said");
+  assert.equal(back.responses[0]?.evaluation?.verdict, "partial");
+});
+
+test("a stored judgement that no longer holds up is dropped on read", () => {
+  // It was checked when written, but a document also round-trips through localStorage, which
+  // anyone can edit. An unverifiable verdict must not reach the diagnosis.
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: {
+      concepts: [{ id: "k1", label: "A concept" }],
+      responses: [
+        { questionId: "q1", text: "…", via: "typed", evaluation: { verdict: "brilliant", feedback: "x" } },
+      ],
+    },
+    active_ms: 0,
+    created_at: "2026-08-10T00:00:00.000Z",
+    updated_at: "2026-08-10T00:00:00.000Z",
+  });
+  assert.equal(back.responses[0]?.evaluation, undefined);
+  assert.equal(back.responses[0]?.text, "…", "the learner's own words are kept either way");
+});
+
+test("evidence carries its own objective and time, so it survives the question that produced it", () => {
+  // 🔴 The migration hazard this guards. `responses` is keyed by questionId, and questions are
+  // replaced wholesale on every new round — so an evidence record that can only name its
+  // objective by joining to `questions` becomes a dangling id the moment the round turns over.
+  // Both fields are captured at write time because neither can be reconstructed afterwards at
+  // any price, and the eventual LearningEvent/Evidence shape needs exactly these two.
+  const canvas: LearningCanvas = {
+    ...emptyCanvas("c1", "2026-08-10T00:00:00.000Z"),
+    concepts: [{ id: "k1", label: "A concept" }],
+    // Note: no `questions` at all. The evidence still knows what it is about.
+    responses: [
+      {
+        questionId: "q_gone",
+        objectiveIds: ["k1"],
+        at: "2026-08-10T09:30:00.000Z",
+        text: "what they said",
+        via: "spoken",
+      },
+    ],
+    recallResults: [
+      { cardId: "r_gone", conceptId: "k1", at: "2026-08-10T09:31:00.000Z", grade: "good" },
+    ],
+  };
+  const row = canvasToRow(canvas, "user-1") as { document: Record<string, unknown> };
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: row.document,
+    active_ms: 0,
+    created_at: "2026-08-10T00:00:00.000Z",
+    updated_at: "2026-08-10T00:00:00.000Z",
+  });
+  assert.deepEqual(back.responses[0]?.objectiveIds, ["k1"]);
+  assert.equal(back.responses[0]?.at, "2026-08-10T09:30:00.000Z");
+  assert.equal(back.recallResults[0]?.at, "2026-08-10T09:31:00.000Z");
+});
+
+test("evidence written before we captured time is honestly undated, not backfilled", () => {
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: { responses: [{ questionId: "q1", text: "…", via: "typed" }] },
+    active_ms: 0,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(back.responses[0]?.at, undefined);
+  assert.equal(back.responses[0]?.objectiveIds, undefined);
+});

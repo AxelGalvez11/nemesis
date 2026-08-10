@@ -9,9 +9,24 @@
 // canvas assumes nothing about discipline — the same seed shape would hold for a case, a
 // proof, or a statute.
 
-import { emptyCanvas, type CanvasSource, type LearningCanvas } from "./canvas-model";
+import {
+  emptyCanvas,
+  type CanvasFreeQuestion,
+  type CanvasResponse,
+  type CanvasSource,
+  type LearningCanvas,
+} from "./canvas-model";
 
-export type PreviewSeed = "empty" | "lesson" | "recall" | "test" | "diagnose" | "complete" | "retest";
+export type PreviewSeed =
+  | "empty"
+  | "lesson"
+  | "recall"
+  | "test"
+  | "judged"
+  | "choicetest"
+  | "diagnose"
+  | "complete"
+  | "retest";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 
@@ -156,6 +171,7 @@ const RECALL = [
 const QUESTIONS = [
   {
     id: "q1",
+    format: "choice" as const,
     q: "A ventricular myocyte is exposed to a drug that blocks fast sodium channels. What happens to phase 0?",
     options: [
       "The upstroke becomes markedly slower",
@@ -170,6 +186,7 @@ const QUESTIONS = [
   },
   {
     id: "q2",
+    format: "choice" as const,
     q: "A sinus node cell is studied in isolation and fires rhythmically with no input. Which current explains this?",
     options: [
       "The funny current during phase 4",
@@ -184,6 +201,7 @@ const QUESTIONS = [
   },
   {
     id: "q3",
+    format: "choice" as const,
     q: "A stimulus twice the usual threshold is delivered shortly after a ventricular beat and produces nothing. What best explains it?",
     options: [
       "The fast sodium channels have not recovered from inactivation",
@@ -217,6 +235,80 @@ export function diagnoseSeed(): LearningCanvas {
   };
 }
 
+/** The default retrieval format (§18), so the answer box, the microphone and the judged reply
+ *  can be looked at without an account or a model call.
+ *
+ *  Kept field-agnostic on purpose: the surrounding fixture is a physiology lecture, so these
+ *  prompts stay in the same material, but every `kind` here is structural and the same shapes
+ *  would carry a contract-law canvas or a statics canvas without a word of this file changing. */
+const FREE_QUESTIONS: CanvasFreeQuestion[] = [
+  {
+    id: "f1",
+    format: "free",
+    task: "mechanism",
+    q: "Walk through what happens during phase 0 of a ventricular action potential.",
+    expectedEvidence: {
+      acceptableClaims: [
+        "fast sodium channels open",
+        "sodium enters down its gradient",
+        "the membrane potential rises sharply",
+      ],
+    },
+    why: "Fast sodium channels open, sodium rushes in down its electrochemical gradient, and the membrane depolarises rapidly — the upstroke.",
+    conceptId: "k1",
+    sourceRefs: [{ sourceId: "s1", excerptId: "s1:e1" }],
+  },
+  {
+    id: "f2",
+    format: "free",
+    task: "explain",
+    q: "Why can a nodal cell fire without any input reaching it?",
+    expectedEvidence: {
+      acceptableClaims: [
+        "it depolarises on its own during phase 4",
+        "the funny current carries it to threshold",
+      ],
+    },
+    why: "Nodal cells drift upward during phase 4 under the funny current until they reach threshold, so they reach it unaided.",
+    conceptId: "k4",
+  },
+];
+
+/** One answered-and-judged prompt, so the reply the learner actually sees — what they got right,
+ *  the belief behind the error, the targeted correction — can be checked without a model. */
+const JUDGED_RESPONSES: CanvasResponse[] = [
+  {
+    questionId: "f1",
+    text: "the sodium channels open and sodium goes in really fast so the voltage shoots up",
+    via: "spoken",
+    tookMs: 14_200,
+    evaluation: {
+      verdict: "partial",
+      confidence: 0.8,
+      demonstrated: ["names the channels", "has the shape of the upstroke"],
+      missing: ["Did not say why sodium moves inward"],
+      misconceptions: [],
+      errorType: "conceptual",
+      feedback:
+        "You have the sequence. The piece to add is the reason sodium moves: it follows its own electrochemical gradient, which is why the channels opening is enough on its own.",
+    },
+  },
+  {
+    questionId: "f2",
+    text: "because it drifts up on its own in phase 4 until it hits threshold, the funny current does it",
+    via: "typed",
+    tookMs: 9_800,
+    evaluation: {
+      verdict: "understood",
+      confidence: 0.9,
+      demonstrated: ["spontaneous phase 4 drift", "the funny current reaching threshold"],
+      missing: [],
+      misconceptions: [],
+      feedback: "That's the whole mechanism, including the part most people leave out.",
+    },
+  },
+];
+
 /** "retest" is served by canvas-preview-fixture-retest.ts, which has to run the real
  *  clear-evidence function and so cannot live in this literal. */
 export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>> = {
@@ -225,7 +317,17 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
   empty: () => emptyCanvas("preview-canvas-empty", NOW),
   lesson: lessonSeed,
   recall: () => ({ ...lessonSeed(), state: "recall", recall: RECALL }),
-  test: () => ({ ...lessonSeed(), state: "test", questions: QUESTIONS, answers: [] }),
+  // Multiple choice is still reachable, because it still exists for exam simulation — but it is
+  // no longer what "test" means.
+  test: () => ({ ...lessonSeed(), state: "test", questions: FREE_QUESTIONS, answers: [], responses: [] }),
+  judged: () => ({
+    ...lessonSeed(),
+    state: "test",
+    questions: FREE_QUESTIONS,
+    answers: [],
+    responses: JUDGED_RESPONSES,
+  }),
+  choicetest: () => ({ ...lessonSeed(), state: "test", questions: QUESTIONS, answers: [], responses: [] }),
   diagnose: diagnoseSeed,
   complete: () => ({
     ...diagnoseSeed(),

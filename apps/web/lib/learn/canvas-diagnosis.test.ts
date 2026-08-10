@@ -21,7 +21,7 @@ function canvasWith(patch: Partial<LearningCanvas>): LearningCanvas {
 }
 
 function question(id: string, conceptId: string | null) {
-  return { id, q: "?", options: ["a", "b"], answer: 0, why: "", conceptId };
+  return { id, format: "choice" as const, q: "?", options: ["a", "b"], answer: 0, why: "", conceptId };
 }
 
 test("a concept whose questions were all right is understood", () => {
@@ -242,4 +242,106 @@ test("the completion summary counts understood concepts and corrected weak areas
 
 test("under a minute of work still reads as one minute, never zero", () => {
   assert.equal(summariseCompletion(canvasWith({ activeMs: 4_000 })).activeMinutes, 1);
+});
+
+// ------------------------------------------------- free response as evidence
+
+function freeQuestion(id: string, conceptId: string) {
+  return {
+    id,
+    format: "free" as const,
+    task: "explain" as const,
+    q: "Why?",
+    expectedEvidence: { acceptableClaims: ["the point"] },
+    why: "",
+    conceptId,
+  };
+}
+
+function judged(verdict: "strong" | "understood" | "partial" | "incorrect" | "misconception", extra = {}) {
+  return { verdict, confidence: 0.8, demonstrated: [], missing: [], misconceptions: [], feedback: "…", ...extra };
+}
+
+test("an explanation judged understood makes its concept understood", () => {
+  const result = diagnose(
+    canvasWith({
+      questions: [freeQuestion("q1", "k1")],
+      responses: [{ questionId: "q1", text: "…", via: "typed", evaluation: judged("understood") }],
+    }),
+  );
+  assert.deepEqual(result.understood.map((c) => c.id), ["k1"]);
+  assert.equal(result.weak.length, 0);
+});
+
+test("a partial explanation leaves the concept weak, not understood", () => {
+  // The whole reason free response is worth having: "nearly" is a real state, and treating it
+  // as a pass would retire a concept the learner only half has.
+  const result = diagnose(
+    canvasWith({
+      questions: [freeQuestion("q1", "k1")],
+      responses: [{ questionId: "q1", text: "…", via: "spoken", evaluation: judged("partial") }],
+    }),
+  );
+  assert.deepEqual(result.weak.map((c) => c.id), ["k1"]);
+});
+
+test("an unjudged answer is not evidence in either direction", () => {
+  // A judge that timed out must not mark the learner wrong, and must not mark them right.
+  const result = diagnose(
+    canvasWith({
+      questions: [freeQuestion("q1", "k1")],
+      responses: [{ questionId: "q1", text: "a real answer", via: "typed" }],
+    }),
+  );
+  assert.equal(result.weak.length, 0);
+  assert.equal(result.understood.length, 0);
+  assert.deepEqual(result.untested.map((c) => c.id), ["k1", "k2", "k3"]);
+  assert.equal(result.score.total, 0, "an unjudged answer must not count toward the total");
+});
+
+test("a misconception can name a second concept as weak", () => {
+  const result = diagnose(
+    canvasWith({
+      questions: [freeQuestion("q1", "k1")],
+      responses: [
+        {
+          questionId: "q1",
+          text: "…",
+          via: "typed",
+          evaluation: judged("misconception", { misconceptions: ["believes X"], alsoWeakConceptIds: ["k3"] }),
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(result.weak.map((c) => c.id).sort(), ["k1", "k3"]);
+});
+
+test("a neighbouring concept named weak is never retired by a pass elsewhere", () => {
+  // alsoWeak only ever ADDS weakness. The judge is inferring there, not assessing, and an
+  // inference must not be able to outrank a concept's own assessment in the other direction.
+  const result = diagnose(
+    canvasWith({
+      questions: [freeQuestion("q1", "k1"), freeQuestion("q2", "k2")],
+      responses: [
+        { questionId: "q1", text: "…", via: "typed", evaluation: judged("understood", { alsoWeakConceptIds: ["k2"] }) },
+        { questionId: "q2", text: "…", via: "typed", evaluation: judged("understood") },
+      ],
+    }),
+  );
+  assert.deepEqual(result.weak.map((c) => c.id), ["k2"]);
+  assert.deepEqual(result.understood.map((c) => c.id), ["k1"]);
+});
+
+test("a retest clears free responses along with answers", () => {
+  // 🔴 The regression this file already documents, in its new form. A response judged weak in
+  // the previous round would otherwise outlive the round, keep its concept permanently weak,
+  // and make "Finish" unreachable all over again.
+  const before = canvasWith({
+    questions: [freeQuestion("q1", "k2")],
+    responses: [{ questionId: "q1", text: "…", via: "typed", evaluation: judged("incorrect") }],
+    recallResults: [{ cardId: "c1", conceptId: "k2", grade: "again" as const }],
+  });
+  const after = clearEvidenceForRetest(before, ["k2"]);
+  assert.deepEqual(after.responses, []);
+  assert.deepEqual(after.answers, []);
 });

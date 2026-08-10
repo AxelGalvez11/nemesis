@@ -153,17 +153,106 @@ export interface RecallCard {
   typed?: boolean;
 }
 
-/** Matches the existing TestQuestion shape in study-artifact-content.ts (q/options/answer/why)
- *  so the existing generator prompt, answer-position balancer and scorer all apply — plus the
- *  one field that shape is missing: what the question is ABOUT. */
-export interface CanvasQuestion {
+/** How a retrieval prompt asks for its answer.
+ *
+ *  Free response is the default and the entire point. "Explain it in your own words" is the
+ *  most repeated instruction in the brief (§2, §7, §17, §18, §20, §21, §31-33, §35, §36, §48),
+ *  because a learner who explains produces evidence a radio button cannot carry: you cannot
+ *  detect a misconception from which of four options someone clicked. Multiple choice survives
+ *  only where the brief keeps it — exam simulation, and telling near-identical options apart. */
+export type RetrievalFormat = "free" | "choice";
+
+/** What the learner is asked to DO.
+ *
+ *  Retrieval is generation, and generation has many shapes — naming, defining, explaining,
+ *  reconstructing, predicting, solving. "Explain it in your own words" is one of them, not the
+ *  category. Asking someone to explain the quadratic formula is usually worse than asking them
+ *  to solve an equation with it, and vocabulary needs the word produced rather than the concept
+ *  discussed. The teaching policy picks the shape; this is the vocabulary it picks from.
+ *
+ *  🔴 STRUCTURAL, never subject-matter. Every entry has to read sensibly for a nursing student,
+ *  a first-year law student and someone learning to weld. §18 lists one field-specific format —
+ *  "identify a drug" — and it is deliberately absent: a retrieval task only one discipline can
+ *  use is exactly what the field-agnostic rule forbids. */
+export type RetrievalTask =
+  | "name"
+  | "define"
+  | "explain"
+  | "mechanism"
+  | "reconstruct"
+  | "compare"
+  | "predict"
+  | "apply"
+  | "solve";
+
+export const RETRIEVAL_TASKS: readonly RetrievalTask[] = [
+  "name",
+  "define",
+  "explain",
+  "mechanism",
+  "reconstruct",
+  "compare",
+  "predict",
+  "apply",
+  "solve",
+];
+
+/** What a good performance would contain.
+ *
+ *  Every field is optional because different tasks are checked against different things: a
+ *  derivation has required steps, a comparison has claims that must appear on both sides, a
+ *  vocabulary prompt has one acceptable production. A flashcard has only a reference answer,
+ *  which is why an existing card converts into this without inventing anything — the reference
+ *  answer is a kind of expected evidence, not a different concept. */
+export interface ExpectedEvidence {
+  requiredConcepts?: string[];
+  acceptableClaims?: string[];
+  requiredSteps?: string[];
+  commonMisconceptions?: string[];
+  referenceAnswer?: string;
+}
+
+/** One performance by the learner, in whatever modality they used. */
+export interface LearnerResponse {
+  text: string;
+  via: "typed" | "spoken";
+  /** Milliseconds from the task appearing to it being submitted. A signal, never a score (§23). */
+  tookMs?: number;
+}
+
+interface QuestionBase {
   id: string;
   q: string;
-  options: string[];
-  answer: number;
+  /** The model answer, shown only after the learner has committed to their own. */
   why: string;
   conceptId: string | null;
   sourceRefs?: SourceRef[];
+}
+
+/** Matches the existing TestQuestion shape in study-artifact-content.ts (q/options/answer/why)
+ *  so the existing generator prompt, answer-position balancer and scorer all still apply. */
+export interface CanvasChoiceQuestion extends QuestionBase {
+  format: "choice";
+  options: string[];
+  answer: number;
+}
+
+export interface CanvasFreeQuestion extends QuestionBase {
+  format: "free";
+  task: RetrievalTask;
+  /** What a complete performance would contain. Never shown before answering. */
+  expectedEvidence: ExpectedEvidence;
+}
+
+export type CanvasQuestion = CanvasChoiceQuestion | CanvasFreeQuestion;
+
+/** Canvases saved before free response existed carry questions with no `format`. They were all
+ *  multiple choice, so that is what its absence means. Applied when a canvas is read and never
+ *  when it is written, so no stored row has to be migrated. */
+export function normaliseQuestion(raw: CanvasQuestion | Record<string, unknown>): CanvasQuestion {
+  const format = (raw as { format?: unknown }).format;
+  if (format === "free" || format === "choice") return raw as CanvasQuestion;
+  return { ...(raw as Omit<CanvasChoiceQuestion, "format">), format: "choice" };
 }
 
 export interface CanvasAnswer {
@@ -172,11 +261,115 @@ export interface CanvasAnswer {
   correct: boolean;
 }
 
+/** What one performance showed.
+ *
+ *  Deliberately NOT correct/incorrect (§5, §20, §21). `misconception` is the state the old data
+ *  model made unreachable: an answer records which wrong option was picked, never the belief
+ *  behind it, so "you think the 3 only multiplies the first term" was not expressible even in
+ *  principle. */
+export type Verdict = "strong" | "understood" | "partial" | "incorrect" | "misconception";
+
+export const VERDICTS: readonly Verdict[] = [
+  "strong",
+  "understood",
+  "partial",
+  "incorrect",
+  "misconception",
+];
+
+/** WHY a performance fell short. Two answers can both be wrong and need opposite teaching: a
+ *  forgotten term wants a cue and another attempt, a backwards causal model wants the model
+ *  replaced before retrieval is worth asking for again. The scheduler cannot tell these apart —
+ *  it receives the same grade for both — so the distinction has to live here. */
+export type ErrorType =
+  | "recall_failure"
+  | "conceptual"
+  | "procedural"
+  | "vocabulary"
+  | "careless"
+  | "missing_prerequisite";
+
+export const ERROR_TYPES: readonly ErrorType[] = [
+  "recall_failure",
+  "conceptual",
+  "procedural",
+  "vocabulary",
+  "careless",
+  "missing_prerequisite",
+];
+
+/** 🔴 THIS IS THE LEARNER EVIDENCE. A scheduling grade is derived from it and is not a
+ *  substitute for it — storing only the grade would throw away everything Nemesis actually
+ *  cares about and leave a spaced-repetition app wearing a canvas. */
+export interface ResponseEvaluation {
+  verdict: Verdict;
+  /** 0-1: how much the response actually settled. A one-line answer to a broad task can be
+   *  right and still be weak evidence, and the difference matters downstream. */
+  confidence: number;
+  /** What the performance showed they hold. */
+  demonstrated: string[];
+  /** What was absent or wrong. */
+  missing: string[];
+  /** Specific false beliefs the performance revealed, stated so they can be taught against. */
+  misconceptions: string[];
+  errorType?: ErrorType;
+  /** The one concise thing the learner is shown. Everything above is for the engine — §9: the
+   *  rich output is not for dumping onto the reader. */
+  feedback: string;
+  /** Other concepts on THIS canvas the performance showed to be shaky. Ids are checked against
+   *  the canvas's own concept list; a judge naming a concept we never declared invented it. */
+  alsoWeakConceptIds?: string[];
+}
+
+/** What the learner actually said, and what it showed.
+ *
+ *  `via` is kept because §23 treats time as a signal and speaking and writing run at very
+ *  different speeds — twenty seconds of talking and twenty seconds of typing are not the same
+ *  evidence, and a model that forgets which one happened will read hesitation into a fast typist. */
+export interface CanvasResponse {
+  questionId: string;
+  /** Which objectives this performance is evidence FOR.
+   *
+   *  🔴 STORED, NOT DERIVED, and that is the whole point. Today the objective is recoverable by
+   *  joining to `questions` — but `questions` is replaced wholesale on every new round, and an
+   *  evidence record that can only name its objective through a table that no longer exists is
+   *  not evidence, it is a dangling id. Recording it at capture costs nothing and cannot be
+   *  reconstructed afterwards at any price.
+   *
+   *  Named `objectiveIds` rather than `conceptId` because evidence is the durable idea here and
+   *  one performance can speak to more than one objective. `RecallResult.conceptId` is the same
+   *  thing under an older, narrower name. */
+  objectiveIds?: string[];
+  /** When it happened, ISO. Absent on records written before we captured it — honestly unknown
+   *  rather than backfilled with a plausible lie. */
+  at?: string;
+  text: string;
+  via: "typed" | "spoken";
+  tookMs?: number;
+  /** True when the learner asked to see the answer instead of attempting it. That is itself
+   *  evidence — we did not obtain a retrieval — and it is recorded rather than inferred. */
+  revealed?: boolean;
+  evaluation?: ResponseEvaluation;
+}
+
 export interface RecallResult {
   cardId: string;
+  /** The objective this is evidence for. Already stored rather than joined, which is why recall
+   *  evidence survives its card being regenerated and free-response evidence did not. */
   conceptId: string | null;
-  /** The four-way self-grade, mapped straight onto the existing scheduler's vocabulary. */
+  /** When it happened, ISO. Absent on records written before we captured it. */
+  at?: string;
+  /** 🔴 THE SCHEDULER'S GRADE, AND NOTHING MORE. It answers one narrow question — when might
+   *  this need retrieving again — and it is derived from `evaluation` below. It is not the
+   *  learner state, it does not decide what the canvas does next, and it must never be the only
+   *  thing kept: a grade is a summary of the evidence, and a summary is not a substitute. */
   grade: "again" | "hard" | "good" | "easy";
+  /** What they produced, and what it showed. This is the evidence. */
+  said?: string;
+  via?: "typed" | "spoken";
+  /** The learner asked to see the answer rather than attempting it. */
+  revealed?: boolean;
+  evaluation?: ResponseEvaluation;
 }
 
 export interface LearningCanvas {
@@ -190,7 +383,11 @@ export interface LearningCanvas {
   recall: RecallCard[];
   recallResults: RecallResult[];
   questions: CanvasQuestion[];
+  /** Answers to multiple-choice questions. Kept alongside `responses` rather than merged: the
+   *  two carry genuinely different evidence, and flattening them would throw away the part that
+   *  makes free response worth having. */
   answers: CanvasAnswer[];
+  responses: CanvasResponse[];
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -217,6 +414,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     recallResults: [],
     questions: [],
     answers: [],
+    responses: [],
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

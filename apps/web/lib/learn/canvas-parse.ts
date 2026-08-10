@@ -17,7 +17,11 @@ import {
   type CanvasBlock,
   type CanvasBlockType,
   type CanvasConcept,
+  RETRIEVAL_TASKS,
+  type CanvasChoiceQuestion,
+  type CanvasFreeQuestion,
   type CanvasQuestion,
+  type RetrievalTask,
   type CanvasSource,
   type RecallCard,
   type SourceRef,
@@ -36,8 +40,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Same recovery ladder the ops parser uses: fenced block, then whole text, then the widest
- *  balanced object. Never throws; an unparseable reply yields null and the caller says so. */
-function extractJson(raw: string): Record<string, unknown> | null {
+ *  balanced object. Never throws; an unparseable reply yields null and the caller says so.
+ *
+ *  Exported for the judge, which faces the same problem — a third copy of this ladder would be
+ *  a third place for the recovery behaviour to drift. */
+export function extractJson(raw: string): Record<string, unknown> | null {
   const candidates: string[] = [];
   for (const match of raw.matchAll(/```(?:json)?\s*\n?([\s\S]*?)```/g)) {
     const body = match[1]?.trim();
@@ -188,13 +195,15 @@ export function parseTestQuestions(
   raw: string,
   conceptIds: readonly string[],
   sources: readonly CanvasSource[],
-): CanvasQuestion[] {
+): CanvasChoiceQuestion[] {
   const payload = extractJson(raw);
   const list = payload && Array.isArray(payload.questions) ? payload.questions : null;
   if (!list) return [];
 
   const known = new Set(conceptIds);
-  const staged: { question: CanvasQuestion; correctText: string }[] = [];
+  // Narrowed to the choice shape on purpose: the answer-position balancer below only makes
+  // sense for questions that HAVE positions, so the type says so rather than a cast saying it.
+  const staged: { question: CanvasChoiceQuestion; correctText: string }[] = [];
 
   for (const entry of list) {
     if (!isRecord(entry)) continue;
@@ -216,6 +225,7 @@ export function parseTestQuestions(
       correctText: options[answer] ?? "",
       question: {
         id: `q_${staged.length + 1}_${Math.random().toString(36).slice(2, 8)}`,
+        format: "choice",
         q,
         options,
         answer,
@@ -246,6 +256,56 @@ export function parseTestQuestions(
       answer: found >= 0 ? found : shuffled.answer,
     };
   });
+}
+
+// ----------------------------------------------------------- free-response test
+
+/** Free-response prompts. The same discipline as the choice parser — a prompt whose concept we
+ *  never issued is dropped, because a miss nobody can attribute is the defect this canvas exists
+ *  to fix — plus one of its own: a prompt with nothing expected of it is unjudgeable, so it goes
+ *  too rather than reaching a learner who would answer it for no benefit. */
+export function parseFreeQuestions(
+  raw: string,
+  conceptIds: readonly string[],
+  sources: readonly CanvasSource[],
+): CanvasFreeQuestion[] {
+  const payload = extractJson(raw);
+  const list = payload && Array.isArray(payload.questions) ? payload.questions : null;
+  if (!list) return [];
+
+  const known = new Set(conceptIds);
+  const out: CanvasFreeQuestion[] = [];
+
+  for (const entry of list) {
+    if (!isRecord(entry)) continue;
+    const q = text(entry.q);
+    if (!q) continue;
+
+    const conceptId = text(entry.conceptId);
+    if (!conceptId || !known.has(conceptId)) continue;
+
+    const claims = Array.isArray(entry.expected) ? entry.expected.map(text).filter(Boolean) : [];
+    if (claims.length === 0) continue;
+
+    // An unrecognised kind is not fatal — it only decides how the prompt is introduced on screen.
+    // "explain" is the honest default because it is the least specific of the six.
+    const rawTask = text(entry.kind || entry.task) as RetrievalTask;
+    const task = (RETRIEVAL_TASKS as readonly string[]).includes(rawTask) ? rawTask : "explain";
+
+    const refs = usableRefs(entry.sourceRefs, sources);
+    out.push({
+      id: `q_${out.length + 1}_${Math.random().toString(36).slice(2, 8)}`,
+      format: "free",
+      task,
+      q,
+      expectedEvidence: { acceptableClaims: claims },
+      why: text(entry.why),
+      conceptId,
+      ...(refs.length ? { sourceRefs: refs } : {}),
+    });
+  }
+
+  return out;
 }
 
 // -------------------------------------------------------------- short answer
