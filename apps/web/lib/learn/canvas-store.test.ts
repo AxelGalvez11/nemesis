@@ -226,3 +226,57 @@ test("a stored judgement that no longer holds up is dropped on read", () => {
   assert.equal(back.responses[0]?.evaluation, undefined);
   assert.equal(back.responses[0]?.text, "…", "the learner's own words are kept either way");
 });
+
+test("evidence carries its own objective and time, so it survives the question that produced it", () => {
+  // 🔴 The migration hazard this guards. `responses` is keyed by questionId, and questions are
+  // replaced wholesale on every new round — so an evidence record that can only name its
+  // objective by joining to `questions` becomes a dangling id the moment the round turns over.
+  // Both fields are captured at write time because neither can be reconstructed afterwards at
+  // any price, and the eventual LearningEvent/Evidence shape needs exactly these two.
+  const canvas: LearningCanvas = {
+    ...emptyCanvas("c1", "2026-08-10T00:00:00.000Z"),
+    concepts: [{ id: "k1", label: "A concept" }],
+    // Note: no `questions` at all. The evidence still knows what it is about.
+    responses: [
+      {
+        questionId: "q_gone",
+        objectiveIds: ["k1"],
+        at: "2026-08-10T09:30:00.000Z",
+        text: "what they said",
+        via: "spoken",
+      },
+    ],
+    recallResults: [
+      { cardId: "r_gone", conceptId: "k1", at: "2026-08-10T09:31:00.000Z", grade: "good" },
+    ],
+  };
+  const row = canvasToRow(canvas, "user-1") as { document: Record<string, unknown> };
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: row.document,
+    active_ms: 0,
+    created_at: "2026-08-10T00:00:00.000Z",
+    updated_at: "2026-08-10T00:00:00.000Z",
+  });
+  assert.deepEqual(back.responses[0]?.objectiveIds, ["k1"]);
+  assert.equal(back.responses[0]?.at, "2026-08-10T09:30:00.000Z");
+  assert.equal(back.recallResults[0]?.at, "2026-08-10T09:31:00.000Z");
+});
+
+test("evidence written before we captured time is honestly undated, not backfilled", () => {
+  const back = canvasFromRow({
+    id: "c1",
+    title: "",
+    state: "test",
+    level: null,
+    document: { responses: [{ questionId: "q1", text: "…", via: "typed" }] },
+    active_ms: 0,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(back.responses[0]?.at, undefined);
+  assert.equal(back.responses[0]?.objectiveIds, undefined);
+});

@@ -328,6 +328,21 @@ export interface ResponseEvaluation {
  *  evidence, and a model that forgets which one happened will read hesitation into a fast typist. */
 export interface CanvasResponse {
   questionId: string;
+  /** Which objectives this performance is evidence FOR.
+   *
+   *  🔴 STORED, NOT DERIVED, and that is the whole point. Today the objective is recoverable by
+   *  joining to `questions` — but `questions` is replaced wholesale on every new round, and an
+   *  evidence record that can only name its objective through a table that no longer exists is
+   *  not evidence, it is a dangling id. Recording it at capture costs nothing and cannot be
+   *  reconstructed afterwards at any price.
+   *
+   *  Named `objectiveIds` rather than `conceptId` because evidence is the durable idea here and
+   *  one performance can speak to more than one objective. `RecallResult.conceptId` is the same
+   *  thing under an older, narrower name. */
+  objectiveIds?: string[];
+  /** When it happened, ISO. Absent on records written before we captured it — honestly unknown
+   *  rather than backfilled with a plausible lie. */
+  at?: string;
   text: string;
   via: "typed" | "spoken";
   tookMs?: number;
@@ -339,7 +354,11 @@ export interface CanvasResponse {
 
 export interface RecallResult {
   cardId: string;
+  /** The objective this is evidence for. Already stored rather than joined, which is why recall
+   *  evidence survives its card being regenerated and free-response evidence did not. */
   conceptId: string | null;
+  /** When it happened, ISO. Absent on records written before we captured it. */
+  at?: string;
   /** 🔴 THE SCHEDULER'S GRADE, AND NOTHING MORE. It answers one narrow question — when might
    *  this need retrieving again — and it is derived from `evaluation` below. It is not the
    *  learner state, it does not decide what the canvas does next, and it must never be the only

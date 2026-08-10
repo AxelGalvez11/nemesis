@@ -428,7 +428,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       update((current) => {
         const recallResults = [
           ...current.recallResults.filter((result) => result.cardId !== cardId),
-          { cardId, conceptId: card?.conceptId ?? null, grade, ...(evidence ?? {}) },
+          {
+            cardId,
+            conceptId: card?.conceptId ?? null,
+            at: new Date().toISOString(),
+            grade,
+            ...(evidence ?? {}),
+          },
         ];
         // The deck is finished the moment the last card is graded — the funnel needs the
         // "got through recall" number, not just the "started recall" one.
@@ -611,7 +617,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         ...current,
         responses: [
           ...current.responses.filter((entry) => entry.questionId !== questionId),
-          { questionId, text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) },
+          {
+            questionId,
+            // Captured here, not derived later: the question this came from is replaced on the
+            // next round, and by then nothing can say what this answer was evidence about.
+            ...(question.conceptId ? { objectiveIds: [question.conceptId] } : {}),
+            at: new Date().toISOString(),
+            text: said,
+            via,
+            ...(tookMs !== undefined ? { tookMs } : {}),
+          },
         ],
       }));
 
