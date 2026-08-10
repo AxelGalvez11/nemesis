@@ -103,14 +103,38 @@ A ratio materially above ~1.35 means double emission. The paragraph collapse
   `structure.ts`. Taking them without removing the existing producer would emit
   the same content twice under two block kinds. `list_item` (42 on one page of
   the drug chart) is the obvious next one and is deliberately a separate change.
-* **Unruled tables are not handled.** Columns implied by whitespace yield no
-  grid and are refused. Whether that matters is a corpus question —
-  `scripts/pdf-table-coverage.mts` answers it, and separates "no rulings at
-  all" (needs TableFormer or vision) from "rules present, grid rejected" (a
-  threshold to tune), because conflating those two could buy a 213 MB model to
-  fix a constant.
+* **Unruled tables are mostly handled, and TableFormer is not needed.**
+  Measured — see §7.
 * **Table blocks are emitted after a page's prose, not interleaved.** On
   reference charts that are essentially all table this costs nothing, and each
   table's rect still carries its true position. Ordering by vertical position is
   the correct fix and was kept out of the change that made tables exist at all.
 * **Nothing has run in production.** Every number here is local.
+
+## 7. Corpus measurement — do we need TableFormer?
+
+**No.** `scripts/pdf-table-coverage.mts` over **164 real course PDFs**, 23 min:
+
+| outcome | regions | share | meaning |
+|---|---:|---:|---|
+| **recovered as a real table** | **255** | **79.2%** | 4,607 cells, median 4 rows |
+| rules present, grid rejected | 39 | 12.1% | threshold tuning |
+| grid found but no text in it | 17 | 5.3% | decorative boxes, correctly refused |
+| **no rulings at all** | **11** | **3.4%** | the only category geometry can never reach |
+
+322 detected table regions across 76 files that contain any.
+
+**The 3.4% is the number that decides it.** That is the whole population a
+second 213 MB model (TableFormer) or a per-page vision call would exist to
+serve. And of the 67 total failures, **16 are on scanned pages** — where no
+vector geometry can exist by definition, so the answer there is OCR, not a
+table model.
+
+This is also why the split in the measurement mattered more than the headline.
+Before column inference existed the sample read ~19% recovered with "rules
+present, grid rejected" outnumbering "no rulings at all" more than **ten to
+one**. Reporting only "19% recovered" would have looked like a capability gap
+and justified buying the model. It was a missing fallback worth ~60 points.
+
+The remaining 12.1% is worth revisiting when there is a reason to; it is a
+constant, not a purchase.
