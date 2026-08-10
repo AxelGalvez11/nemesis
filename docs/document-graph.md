@@ -29,6 +29,31 @@ This is the fourth occurrence of a pattern already recorded three times in this 
 boundary**, and it is the most expensive of the four because the consumer on the far side
 is Canvas.
 
+### 0. Source retrieval was dead, and it took three independent breaks to kill it
+
+Checked against production 2026-08-10, while deploying the fix. Any one of these alone
+would have produced exactly the same silence, which is why finding one and stopping would
+have been wrong:
+
+1. **The `source-index` function had never been deployed.** It went live at **version 1**
+   that day. Everything below it was theory until then.
+2. **The Vault secrets `source_index_url` and `source_index_service_role_key` had never
+   been created**, so `run_source_indexing()` took its "secrets unset" branch and returned
+   `0` without ever dispatching a request. **812 cron runs all recorded `succeeded`** —
+   pg_cron records whether the *statement* ran, not whether anything happened.
+3. **The code bug**: `readDocumentModel(parse.structure)` was handed an envelope, not a
+   model, so it would have skipped every document even once 1 and 2 were fixed.
+
+> 🔴 **THREE LAYERS OF "SUCCESS" REPORTING, NONE OF THEM ABOUT THE WORK.** The cron said
+> succeeded, the scheduler returned a number that also means "nothing to do", and the
+> function's skip reason read as "old data". A pipeline is only observably alive if
+> something asserts the *outcome* — rows written — rather than each step's own exit.
+
+After deploying and wiring: **HTTP 200, correct per-document verdicts.** It indexes nothing
+yet, and that is now honest — all three stored parses are v1 `text-only` envelopes with no
+model at all, so there is genuinely nothing with structure to index. The first upload that
+produces a v2 envelope is the real end-to-end test.
+
 ### 1. What can remain unchanged
 
 Most of it. This is not a rewrite.

@@ -108,18 +108,25 @@ async function indexOne(parse: UnchunkedParse) {
     // from a backup, or hand-edited must fail to read rather than arrive as a
     // half-typed object whose missing blocks look like a document with no
     // content — which would then be written as a complete, empty index.
-    // 🔴 `storedDocumentModel`, NOT `readDocumentModel` — AND THE DIFFERENCE WAS
-    // A TOTAL, SILENT OUTAGE OF SOURCE RETRIEVAL. `parsed_documents.structure`
+    // 🔴 `storedDocumentModel`, NOT `readDocumentModel`. `parsed_documents.structure`
     // holds an ENVELOPE (`{ v, shape, title, text, model }`), never a bare model.
-    // `readDocumentModel` validates a model, so it looked for `format` at the top
-    // of an envelope, never found it, and returned null for EVERY row — meaning
-    // no uploaded document was ever chunked, embedded or indexed.
+    // `readDocumentModel` validates a MODEL, so it looked for `format` at the top of
+    // an envelope, never found it, and would have returned null for every row —
+    // skipping every document forever.
     //
-    // What made it survive is the line below: null was reported as "predates the
-    // canonical model", so a hard bug rendered as an expected backlog of old
-    // parses, `indexed: 0` looked like the healthy answer this function
-    // documents, and nothing ever alerted. Proven by round-tripping a real
-    // envelope through both readers before changing this.
+    // 🔴 THREE INDEPENDENT BREAKS STOPPED SOURCE RETRIEVAL, AND THIS WAS ONLY THE
+    // THIRD. Checked against production 2026-08-10: this function had NEVER been
+    // deployed (it went live at version 1 that day), and the Vault secrets
+    // `source_index_url` / `source_index_service_role_key` had never been created,
+    // so `run_source_indexing` hit its "secrets unset" branch and returned 0
+    // without ever dispatching. 812 cron runs all recorded `succeeded`, because
+    // pg_cron records whether the STATEMENT ran, not whether anything happened.
+    // Any one of the three alone would have produced the same silence.
+    //
+    // What would have hidden this one is the line below: null is reported as
+    // "predates the canonical model", so a hard bug renders as an expected backlog
+    // of old parses and `indexed: 0` looks like the healthy answer this function
+    // documents. Proven by round-tripping a real envelope through both readers.
     const model = storedDocumentModel(parse.structure)
     if (!model) {
       // Now genuinely what it says: a v1 `text-only` envelope, written before the
