@@ -348,3 +348,33 @@ export function parseShortAnswer(raw: string): string | null {
   const trimmed = raw.trim();
   return trimmed || null;
 }
+
+// ----------------------------------------------------------------- selection
+
+export interface SelectionAnswer {
+  text: string;
+  /** The source title the model claims this came from. NOT trusted here — the caller checks it
+   *  against the canvas's real sources, because a plausible-looking citation to material that
+   *  says no such thing is worse than no citation at all. */
+  fromSource: string;
+}
+
+export function parseSelectionAnswer(raw: string): SelectionAnswer | null {
+  const payload = extractJson(raw);
+  if (payload) {
+    const answer = text(payload.answer);
+    if (answer) return { text: answer, fromSource: text(payload.fromSource) };
+  }
+  // A model that returned plain prose still answered the question; refusing it would make the
+  // learner press the button again for a formatting reason they cannot see.
+  const trimmed = raw.trim();
+  return trimmed ? { text: trimmed, fromSource: "" } : null;
+}
+
+/** The rewritten passage for "Simpler". Returns null rather than the raw reply: this one becomes
+ *  a `replace_block`, so a stray sentence of commentary would be written into the document. */
+export function parseSimplifiedContent(raw: string): string | null {
+  const payload = extractJson(raw);
+  const content = payload ? text(payload.content) || text(payload.answer) : "";
+  return content || null;
+}

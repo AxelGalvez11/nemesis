@@ -17,6 +17,8 @@ import { nextAction } from "@/lib/learn/canvas-state";
 import { CanvasComposer } from "./canvas-composer";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
+import { useCanvasSelection } from "./use-canvas-selection";
 import {
   CanvasComplete,
   CanvasDiagnosis,
@@ -59,6 +61,36 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     lastSelection.current = "";
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  // ── Point at the exact words, not the paragraph ─────────────────────────
+  //
+  // The block-level selection above still feeds the composer's scoped commands. This is the
+  // finer layer on top: the precise character range, and the toolbar that turns it into an
+  // answer without the learner having to describe where they were looking.
+  const text = useCanvasSelection(true);
+  const [answer, setAnswer] = useState<SelectionAnswer | null>(null);
+
+  const dismissSelection = useCallback(() => {
+    setAnswer(null);
+    session.clearSelectionAnswer();
+    text.clear();
+  }, [session, text]);
+
+  const act = useCallback(
+    async (action: Parameters<typeof session.askAboutSelection>[1]) => {
+      const picked = text.selection?.selection;
+      if (!picked) return;
+      // 🔴 Captured BEFORE the call. "Simpler" replaces the block the offsets index, so reading
+      // the selection again afterwards would measure against text that no longer exists.
+      const result = await session.askAboutSelection(picked, action);
+      if (action === "simpler") {
+        dismissSelection();
+        return;
+      }
+      if (result) setAnswer(result);
+    },
+    [dismissSelection, session, text.selection],
+  );
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
   // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the
@@ -245,6 +277,18 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
             </button>
           </div>
         </div>
+      )}
+
+      {text.selection && (
+        <CanvasSelectionMenu
+          answer={answer}
+          busy={session.selectionBusy}
+          error={session.selectionError}
+          onAct={(action) => void act(action)}
+          onDismiss={dismissSelection}
+          rect={text.selection.rect}
+          selection={text.selection.selection}
+        />
       )}
 
       {showComposer && (

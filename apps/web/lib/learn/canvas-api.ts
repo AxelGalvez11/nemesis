@@ -29,7 +29,9 @@ import {
   parseLesson,
   parseTeachingReply,
   parseRecallCards,
+  parseSelectionAnswer,
   parseShortAnswer,
+  parseSimplifiedContent,
   parseTestQuestions,
   type ParsedLesson,
 } from "./canvas-parse";
@@ -40,11 +42,14 @@ import {
   lessonMessages,
   recallMessages,
   relearnMessages,
+  selectionMessages,
+  simplifyMessages,
   teachingMessages,
   testMessages,
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
+import type { CanvasSelection, SelectionAction } from "./canvas-selection";
 import type {
   CanvasBlock,
   CanvasQuestion,
@@ -397,4 +402,108 @@ export async function generateRelearn(
   return useful.length
     ? { value: useful, error: null }
     : { value: null, error: "Nemesis couldn't focus the lesson on your weak spots. Nothing was changed." };
+}
+
+// ----------------------------------------------------------------- selection
+
+export interface SelectionExplanation {
+  term: string;
+  text: string;
+  /** Only set when the learner's own material actually defines this. */
+  sourceLabel?: string;
+}
+
+/** Define / Explain / Example / Why for an exact highlighted range.
+ *
+ *  Returns text for a popover. It deliberately does NOT touch the page: looking up one word must
+ *  not disturb the paragraph being read, and a definition that rewrote the passage underneath
+ *  the learner would move the thing they were looking at while they looked at it. */
+export async function explainSelection(
+  uid: string,
+  canvas: LearningCanvas,
+  selection: CanvasSelection,
+  action: SelectionAction,
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<SelectionExplanation>> {
+  const block = selection.blockId
+    ? canvas.blocks.find((candidate) => candidate.id === selection.blockId)
+    : undefined;
+  const objective = selection.conceptIds?.[0] ? conceptLabel(canvas, selection.conceptIds[0]) : "";
+
+  const { text, error } = await ask(
+    uid,
+    selectionMessages({
+      action,
+      selectedText: selection.selectedText,
+      surroundingText: selection.surroundingText,
+      ...(block ? { passage: block.content } : {}),
+      canvasTitle: canvas.title,
+      ...(objective ? { objective } : {}),
+      sources: canvas.sources,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const answer = text ? parseSelectionAnswer(text) : null;
+  if (!answer) return { value: null, error: "Nemesis had nothing useful to add about that." };
+
+  // A source title the canvas does not actually have is decoration, and decoration that looks
+  // like provenance is worse than none — so it is checked against the real source list rather
+  // than trusted from the reply.
+  const named = answer.fromSource
+    ? canvas.sources.find((source) => source.title.toLowerCase() === answer.fromSource.toLowerCase())
+    : undefined;
+
+  return {
+    value: {
+      term: selection.selectedText,
+      text: answer.text,
+      ...(named ? { sourceLabel: named.title } : {}),
+    },
+    error: null,
+  };
+}
+
+/** "Simpler" — the one selection action that edits the page, and it edits ONE block.
+ *
+ *  Scoped through the same validator the teaching loop uses, which is what keeps
+ *  `replace_canvas` and `rewrite_section` out of reach. Unscoped, a request to simplify one
+ *  sentence comes back as a regenerated page. */
+export async function simplifySelection(
+  uid: string,
+  canvas: LearningCanvas,
+  selection: CanvasSelection,
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<{ ops: CanvasOp[]; before: string; blockId: string }>> {
+  const block = selection.blockId
+    ? canvas.blocks.find((candidate) => candidate.id === selection.blockId)
+    : undefined;
+  if (!block) return { value: null, error: "That text isn't part of the document, so there's nothing to rewrite." };
+
+  const { text, error } = await ask(
+    uid,
+    simplifyMessages({
+      selectedText: selection.selectedText,
+      block,
+      canvasTitle: canvas.title,
+      sources: canvas.sources,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const content = text ? parseSimplifiedContent(text) : null;
+  if (!content) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+
+  const { ops } = validateOps(
+    canvas,
+    [{ operation: "replace_block", blockId: block.id, content }],
+    { scopeBlockIds: [block.id] },
+  );
+  if (ops.length === 0) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+
+  // `before` is captured HERE, at the moment of the write. Once the ops are applied the original
+  // wording is gone and no later step can reconstruct it.
+  return { value: { ops, before: block.content, blockId: block.id }, error: null };
 }

@@ -21,6 +21,8 @@ import {
 } from "@/lib/learn/canvas-model";
 import { cn } from "@/lib/utils";
 
+import { selectableRegion } from "./use-canvas-selection";
+
 // --------------------------------------------------------------------- empty
 
 export function CanvasEmpty({
@@ -190,7 +192,16 @@ export function CanvasRecall({
           Recall · {index + 1} of {cards.length}
         </p>
 
-        <p className="text-center text-[1.25rem] leading-relaxed text-(--ui-text-primary)">{card.front}</p>
+        {/* §27: text interaction is a canvas PRIMITIVE, not a reading-stage feature. A learner
+            stuck on a word inside the question is exactly as stuck as one inside the lesson.
+            Not rewritable — a question is not a document block, and "Simpler" would have
+            nowhere to write. */}
+        <p
+          className="text-center text-[1.25rem] leading-relaxed text-(--ui-text-primary)"
+          {...selectableRegion(`recall:${card.id}`)}
+        >
+          {card.front}
+        </p>
 
         {/* 🔴 NO ANSWER BOX HERE. The question is the canvas state; the persistent composer at
             the bottom of the page is where it gets answered, in every state, by typing or by
@@ -281,7 +292,10 @@ function RecallOutcome({
           >
             {VERDICT_HEADLINE[result.evaluation.verdict]}
           </p>
-          <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
+          <p
+            className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+            {...selectableRegion(`feedback:${result.cardId}`)}
+          >
             {result.evaluation.feedback}
           </p>
         </div>
@@ -349,7 +363,12 @@ export function CanvasTest({
           {canvas.state === "retest" ? "Retest" : "Test"} · {index + 1} of {canvas.questions.length}
         </p>
 
-        <p className="text-[1.0625rem] leading-relaxed text-(--ui-text-primary)">{question.q}</p>
+        <p
+          className="text-[1.0625rem] leading-relaxed text-(--ui-text-primary)"
+          {...selectableRegion(`question:${question.id}`)}
+        >
+          {question.q}
+        </p>
 
         {/* Multiple choice keeps its options: picking one IS the answer, and there is nothing
             for a text composer to do. Free response has no box here at all — the composer is
@@ -493,7 +512,12 @@ function Judged({
             {VERDICT_HEADLINE[evaluation.verdict]}
           </p>
 
-          <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{evaluation.feedback}</p>
+          <p
+            className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+            {...selectableRegion(`feedback:${response.questionId}`)}
+          >
+            {evaluation.feedback}
+          </p>
 
           {/* What the canvas taught in response to THIS answer. It also went into the document,
               but it belongs here too: the correction is about what they just said, and sending
@@ -502,7 +526,10 @@ function Judged({
               demotes it to a widget — the correction reads as something the app produced rather
               than something being explained. Whitespace and weight carry it. */}
           {response.taught && (
-            <p className="mt-4 whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
+            <p
+              className="mt-4 whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+              {...selectableRegion(`taught:${response.questionId}`)}
+            >
               {response.taught}
             </p>
           )}

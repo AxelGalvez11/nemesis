@@ -14,6 +14,8 @@ import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
 
+import { selectableRegion } from "./use-canvas-selection";
+
 interface CanvasDocumentProps {
   canvas: LearningCanvas;
   selectedIds: string[];
@@ -160,9 +162,10 @@ function BlockView({
     <section
       className={cn(
         "group relative -mx-4 rounded-lg px-4 py-1.5 transition-colors",
-        // Selection is a quiet tint, not a highlighter — the page has to stay readable while
-        // the learner is deciding what to ask about.
-        selected && "bg-(--ui-bg-tertiary)",
+        // 🔴 No block-wide tint any more. It existed when the block WAS the selection, but the
+        // browser's own highlight now shows the exact words — and painting the whole paragraph
+        // grey underneath a toolbar that says "these two words" tells the learner two different
+        // things about what they just selected. The composer's chip still names the wider scope.
         busy && "animate-pulse",
       )}
       data-block-id={block.id}
@@ -248,19 +251,35 @@ function BlockControl({ icon, label, onClick }: { icon: string; label: string; o
 }
 
 /** Deliberately plain typography. Headings are the only scale change; emphasis is weight, not
- *  colour. A study document that looks like a dashboard is harder to read, not easier. */
+ *  colour. A study document that looks like a dashboard is harder to read, not easier.
+ *
+ *  🔴 THE SELECTABLE MARKER GOES ON THE ELEMENT THAT HOLDS `block.content` AND NOTHING ELSE.
+ *  The `<section>` around it also contains the block's note, its hover concept labels, the
+ *  source panel and any aside — measuring character offsets from there would silently count all
+ *  of that, and every offset would be plausible and wrong. */
 function BlockBody({ block }: { block: CanvasBlock }) {
+  const mark = selectableRegion(block.id, {
+    blockId: block.id,
+    rewritable: true,
+    ...(block.conceptIds?.length ? { conceptIds: block.conceptIds } : {}),
+  });
+
   switch (block.type) {
     case "heading":
       return (
-        <h2 className="mt-10 text-[1.375rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0">
+        <h2
+          className="mt-10 text-[1.375rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
+          {...mark}
+        >
           {block.content}
         </h2>
       );
     case "concept":
       return (
         <div className="my-3 border-l-2 border-(--ui-accent) py-1 pl-4">
-          <p className="text-[1.0625rem] font-medium leading-relaxed text-(--ui-text-primary)">{block.content}</p>
+          <p className="text-[1.0625rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
+            {block.content}
+          </p>
         </div>
       );
     case "callout":
@@ -268,20 +287,28 @@ function BlockBody({ block }: { block: CanvasBlock }) {
       // as a dashboard; the point of this surface is that it reads as something written.
       return (
         <div className="my-3 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
-          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{block.content}</p>
+          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+            {block.content}
+          </p>
         </div>
       );
     case "example":
       return (
-        <p className="my-2.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{block.content}</p>
+        <p className="my-2.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+          {block.content}
+        </p>
       );
     case "citation":
       return (
-        <p className="my-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">{block.content}</p>
+        <p className="my-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
+          {block.content}
+        </p>
       );
     default:
       return (
-        <p className="my-2.5 text-[1rem] leading-[1.7] text-(--ui-text-primary)">{block.content}</p>
+        <p className="my-2.5 text-[1rem] leading-[1.7] text-(--ui-text-primary)" {...mark}>
+          {block.content}
+        </p>
       );
   }
 }

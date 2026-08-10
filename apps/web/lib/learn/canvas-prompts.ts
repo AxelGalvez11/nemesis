@@ -518,6 +518,96 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
 
 /** "Where did this come from?" and friends are answered from data we already hold, not by
  *  asking the model — which would let it invent a source. This is the one-block explainer. */
+// ----------------------------------------------------------------- selection
+
+/** What each selection action is actually asking for.
+ *
+ *  🔴 A definition must be SHORTER AND SIMPLER than the sentence that caused the confusion.
+ *  "Homeostasis is the dynamic self-regulatory process by which biological systems maintain
+ *  internal physicochemical equilibrium" replaces one hard sentence with another, and the
+ *  learner is no further forward.
+ *
+ *  🔴 And it must not simplify the terminology away. If a term is part of what is being learned,
+ *  the learner eventually needs the term itself, not a paraphrase of it — so the formal word is
+ *  kept and glossed, never replaced. */
+const SELECTION_INTENT: Record<string, string> = {
+  define:
+    "Say what this term means HERE, in this context, in one or two short sentences. " +
+    "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
+    "not a replacement for it — and explain it rather than swapping it out.",
+  explain:
+    "Explain what this means in this context, in at most three short sentences. " +
+    "Explain the idea, not the wording. Assume they have read the surrounding passage.",
+  simpler:
+    "Rewrite the passage below so it is easier to follow, keeping every technical term that the learner needs " +
+    "and every claim the original made. Same meaning, plainer construction. Do not add new information and do not remove content.",
+  example:
+    "Give one concrete example that makes this clear, in at most three short sentences. " +
+    "A specific case, not a restatement of the definition.",
+  why: "Explain WHY this is so — the reason or mechanism behind it — in at most three short sentences.",
+};
+
+/** A definition, an explanation, an example or a reason, about an exact selected range. */
+export function selectionMessages(input: {
+  action: string;
+  selectedText: string;
+  /** The sentence it sits in. Without this a word gets a dictionary answer, and "power" means
+   *  four different things depending on the field and the paragraph. */
+  surroundingText: string;
+  /** The wider block, where the selection came from one. */
+  passage?: string;
+  canvasTitle: string;
+  objective?: string;
+  sources: readonly CanvasSource[];
+}): WireMsg[] {
+  const intent = SELECTION_INTENT[input.action] ?? SELECTION_INTENT.explain;
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is studying "${input.canvasTitle}"` +
+        (input.objective ? ` and is currently working on: ${input.objective}` : "") +
+        ".\n\n" +
+        `They highlighted this exact text: "${input.selectedText}"\n\n` +
+        `It appears in this sentence: "${input.surroundingText}"\n\n` +
+        (input.passage ? `Which sits in this passage:\n${input.passage}\n\n` : "") +
+        `${intent}\n\n` +
+        "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
+        "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
+        "own material said something it did not.\n\n" +
+        'Return JSON: {"answer":"…","fromSource":"…"}\n\n' +
+        materialSection(input.sources, input.canvasTitle),
+      role: "user",
+    },
+  ];
+}
+
+/** "Simpler" — the one selection action that edits the page. Scoped to a single block. */
+export function simplifyMessages(input: {
+  selectedText: string;
+  block: CanvasBlock;
+  canvasTitle: string;
+  sources: readonly CanvasSource[];
+}): WireMsg[] {
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is reading "${input.canvasTitle}" and highlighted: "${input.selectedText}"\n\n` +
+        `They asked for it to be put more simply. Rewrite THIS ONE passage:\n${input.block.content}\n\n` +
+        `${SELECTION_INTENT.simpler}\n\n` +
+        // Scope stated twice on purpose: the model reaches for a full-page rewrite whenever the
+        // instruction is ambiguous, and a rewrite of everything would silently undo the
+        // teaching loop's earlier local corrections.
+        "You are rewriting one passage and nothing else. Do not write a heading. Do not add a second paragraph. " +
+        "Do not comment on the change.\n\n" +
+        'Return JSON: {"content":"…"}\n\n' +
+        materialSection(input.sources, input.canvasTitle),
+      role: "user",
+    },
+  ];
+}
+
 export function explainBlockMessages(input: {
   block: CanvasBlock;
   canvasTitle: string;

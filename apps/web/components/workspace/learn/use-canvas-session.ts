@@ -23,6 +23,8 @@ import {
   applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
+  explainSelection,
+  simplifySelection,
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
@@ -43,6 +45,7 @@ import {
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps } from "@/lib/learn/canvas-ops";
+import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
@@ -132,6 +135,15 @@ export interface CanvasSession {
   /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
    *  shortcut that only tells us they looked. */
   admitUnknown: () => Promise<void>;
+  /** Answer a question about an exact highlighted range. Returns text for a popover; for
+   *  "simpler" it rewrites the one block instead and returns null. */
+  askAboutSelection: (
+    selection: CanvasSelection,
+    action: SelectionAction,
+  ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
+  selectionBusy: boolean;
+  selectionError: string | null;
+  clearSelectionAnswer: () => void;
   relearn: () => Promise<void>;
   startRetest: () => Promise<void>;
   finish: () => void;
@@ -157,6 +169,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  the persistent composer is a sibling of the stage and had no way of knowing what was being
    *  asked. One cursor in the session is what lets one composer answer everything. */
   const [cursor, setCursor] = useState(0);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   // Saving is debounced against a ref so a burst of edits writes once, and so the save always
   // sees the newest canvas rather than the one captured when the timer was set.
@@ -967,6 +981,40 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     else await respond(task.id, "I don't know.", "typed");
   }, [respond, revealRecall]);
 
+  /** The fast path from "I don't understand this bit" to an answer, without leaving the page.
+   *
+   *  🔴 Only "simpler" is allowed to touch the document, and only the one block the selection
+   *  came from. Everything else answers in a popover: looking up a word must not move the
+   *  paragraph the learner is looking at. */
+  const askAboutSelection = useCallback(
+    async (selection: CanvasSelection, action: SelectionAction) => {
+      const id = requireUid();
+      if (!id) return null;
+      setSelectionError(null);
+      setSelectionBusy(true);
+
+      if (action === "simpler") {
+        const result = await simplifySelection(id, latest.current, selection);
+        setSelectionBusy(false);
+        if (!result.value) {
+          setSelectionError(result.error);
+          return null;
+        }
+        update((current) => applyOps(current, result.value!.ops));
+        return null;
+      }
+
+      const result = await explainSelection(id, latest.current, selection, action);
+      setSelectionBusy(false);
+      if (!result.value) {
+        setSelectionError(result.error);
+        return null;
+      }
+      return result.value;
+    },
+    [requireUid, update],
+  );
+
   return {
     canvas,
     busy,
@@ -996,6 +1044,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     advanceTask,
     answerActiveTask,
     admitUnknown,
+    askAboutSelection,
+    selectionBusy,
+    selectionError,
+    clearSelectionAnswer: () => setSelectionError(null),
     relearn,
     startRetest,
     finish,

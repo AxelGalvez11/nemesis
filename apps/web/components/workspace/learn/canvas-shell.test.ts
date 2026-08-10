@@ -76,6 +76,38 @@ test("there is exactly one answer surface on the canvas", () => {
   assert.match(composer, /if \(answering\) onAnswer\(/);
 });
 
+test("selectable regions opt back in to text selection", () => {
+  const hook = read("use-canvas-selection.ts");
+  // 🔴 The whole selection layer is inert without this. The workspace sets `user-select: none`
+  // under `[data-workspace]`, and `desktop-chrome.css` re-enables text only for elements
+  // carrying `data-selectable-text`. Without it a Range still constructs and reads back
+  // correctly in code — so every internal check passes — while the browser refuses to make a
+  // selection at all and no drag does anything.
+  assert.match(hook, /"data-selectable-text": "true"/);
+});
+
+test("the selection marker sits on the element holding only the block's text", () => {
+  const document_ = read("canvas-document.tsx");
+  // The <section> also contains the note, the hover concept labels, the source panel and the
+  // aside, so offsets measured from there would count all of it and come out plausible and
+  // wrong. The marker belongs on the element inside BlockBody.
+  const body = document_.slice(document_.indexOf("function BlockBody"));
+  assert.match(body, /selectableRegion\(block\.id/);
+  const section = document_.slice(document_.indexOf("<section"), document_.indexOf("</section>"));
+  assert.ok(!/data-selectable-id/.test(section.slice(0, section.indexOf("<BlockBody"))),
+    "the section itself must not be the measured region");
+});
+
+test("question and feedback text are selectable but not rewritable", () => {
+  const stages = read("canvas-stages.tsx");
+  // §27: text interaction is a canvas primitive, not a reading-stage feature.
+  for (const region of ["recall:", "question:", "feedback:", "taught:"]) {
+    assert.ok(stages.includes(`selectableRegion(\`${region}`), `${region} text should be selectable`);
+  }
+  // None of them pass `rewritable` — "Simpler" would have nowhere to write.
+  assert.ok(!/selectableRegion\(`[^`]+`, \{[^}]*rewritable/.test(stages));
+});
+
 test("nothing offers a one-key reveal of the answer", () => {
   const stages = read("canvas-stages.tsx");
   // §22: a reveal shortcut makes the cheapest path through a retrieval prompt the one that
