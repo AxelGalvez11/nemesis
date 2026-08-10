@@ -79,7 +79,15 @@ test("canStart accepts a topic-first canvas with a title but no sources", () => 
 });
 
 const CARD = { id: "r1", front: "f", back: "b", conceptId: "k1" };
-const QUESTION = { id: "q1", q: "?", options: ["a", "b"], answer: 0, why: "", conceptId: "k1" };
+const QUESTION = {
+  id: "q1",
+  format: "choice" as const,
+  q: "?",
+  options: ["a", "b"],
+  answer: 0,
+  why: "",
+  conceptId: "k1",
+};
 
 test("nextAction names the move the learner should make in each state", () => {
   assert.equal(nextAction(canvasIn("learn", { blocks: [{ id: "b1", type: "paragraph", content: "x" }] }))?.to, "recall");

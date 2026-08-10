@@ -12,6 +12,7 @@ import {
   CANVAS_LEVELS,
   CANVAS_STATES,
   emptyCanvas,
+  normaliseQuestion,
   type CanvasLevel,
   type CanvasSource,
   type CanvasState,
@@ -61,8 +62,11 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
     concepts: list(document.concepts),
     recall: list(document.recall),
     recallResults: list(document.recallResults),
-    questions: list(document.questions),
+    // Questions saved before free response existed carry no `format`; normalising on the way in
+    // means no stored row has to be rewritten and no reader has to remember the old shape.
+    questions: list<Record<string, unknown>>(document.questions).map(normaliseQuestion),
     answers: list(document.answers),
+    responses: list(document.responses),
     weakConceptIds: list(document.weakConceptIds),
     correctedConceptIds: list(document.correctedConceptIds),
     ...(typeof document.studyDeckId === "string" ? { studyDeckId: document.studyDeckId } : {}),

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseLesson, parseRecallCards, parseShortAnswer, parseTestQuestions } from "./canvas-parse";
+import {
+  parseFreeQuestions,
+  parseLesson,
+  parseRecallCards,
+  parseShortAnswer,
+  parseTestQuestions,
+} from "./canvas-parse";
 import type { CanvasSource } from "./canvas-model";
 
 const SOURCES: CanvasSource[] = [
@@ -220,4 +226,53 @@ test("a model that forgot the envelope still gives us its prose rather than noth
 
 test("an empty reply yields null", () => {
   assert.equal(parseShortAnswer("   "), null);
+});
+
+// ------------------------------------------------------------- free response
+
+const FREE_SOURCES = [
+  { id: "s1", title: "Lecture.pdf", kind: "pdf", excerpts: [{ id: "s1:e1", label: null, text: "…" }] },
+];
+
+test("a free-response prompt is parsed with its expected points", () => {
+  const raw = JSON.stringify({
+    questions: [
+      {
+        kind: "mechanism",
+        q: "Walk through what happens after the valve opens.",
+        expected: ["pressure equalises first", "flow follows the gradient"],
+        why: "The full answer.",
+        conceptId: "k1",
+        sourceRefs: [{ sourceId: "s1", excerptId: "s1:e1" }],
+      },
+    ],
+  });
+  const [question] = parseFreeQuestions(raw, ["k1"], FREE_SOURCES);
+  assert.equal(question?.format, "free");
+  assert.equal(question?.kind, "mechanism");
+  assert.equal(question?.expected.length, 2);
+  assert.equal(question?.sourceRefs?.length, 1);
+});
+
+test("a prompt with nothing expected of it is dropped as unjudgeable", () => {
+  // Without expected points the judge has nothing to check against, so the learner would answer
+  // at length for no benefit.
+  const raw = JSON.stringify({ questions: [{ q: "Explain.", expected: [], why: "", conceptId: "k1" }] });
+  assert.deepEqual(parseFreeQuestions(raw, ["k1"], FREE_SOURCES), []);
+});
+
+test("a free prompt naming a concept the canvas never declared is dropped", () => {
+  const raw = JSON.stringify({
+    questions: [{ q: "Explain.", expected: ["a point"], why: "", conceptId: "ghost" }],
+  });
+  assert.deepEqual(parseFreeQuestions(raw, ["k1"], FREE_SOURCES), []);
+});
+
+test("an unrecognised kind falls back to explain rather than dropping the prompt", () => {
+  // The kind only decides the one-line hint above the box, so a strange value is not worth
+  // losing a usable prompt over.
+  const raw = JSON.stringify({
+    questions: [{ kind: "interpretive-dance", q: "Explain.", expected: ["a point"], why: "", conceptId: "k1" }],
+  });
+  assert.equal(parseFreeQuestions(raw, ["k1"], FREE_SOURCES)[0]?.kind, "explain");
 });

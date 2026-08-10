@@ -12,8 +12,11 @@
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
+import { parseJudgement } from "./canvas-judge";
+import { conceptLabel, type CanvasFreeQuestion, type ResponseJudgement, type RetrievalFormat } from "./canvas-model";
 import { parseCanvasOps, validateOps, type CanvasOp } from "./canvas-ops";
 import {
+  parseFreeQuestions,
   parseLesson,
   parseRecallCards,
   parseShortAnswer,
@@ -23,10 +26,12 @@ import {
 import {
   commandMessages,
   explainBlockMessages,
+  judgeMessages,
   lessonMessages,
   recallMessages,
   relearnMessages,
   testMessages,
+  type RelearnMiss,
 } from "./canvas-prompts";
 import type {
   CanvasBlock,
@@ -179,6 +184,7 @@ export async function generateTest(
   uid: string,
   canvas: LearningCanvas,
   count: number,
+  format: RetrievalFormat,
   onlyConceptIds?: readonly string[],
   signal?: AbortSignal,
 ): Promise<CanvasCallResult<CanvasQuestion[]>> {
@@ -189,17 +195,58 @@ export async function generateTest(
       blocks: canvas.blocks,
       concepts: canvas.concepts,
       count,
+      format,
       ...(onlyConceptIds?.length ? { onlyConceptIds } : {}),
     }),
     signal,
   );
   if (error) return { value: null, error };
-  const questions = text
-    ? parseTestQuestions(text, canvas.concepts.map((concept) => concept.id), canvas.sources)
+  const conceptIds = canvas.concepts.map((concept) => concept.id);
+  const questions: CanvasQuestion[] = text
+    ? format === "free"
+      ? parseFreeQuestions(text, conceptIds, canvas.sources)
+      : parseTestQuestions(text, conceptIds, canvas.sources)
     : [];
   return questions.length
     ? { value: questions, error: null }
     : { value: null, error: "Nemesis couldn't write questions for this. Try generating the lesson again." };
+}
+
+// ------------------------------------------------------------------- judging
+
+/** Read one free-text answer.
+ *
+ *  A refused judgement is NOT an error the learner sees. It means we did not manage to assess
+ *  that answer — the page moves on, the diagnosis simply has one less piece of evidence, and
+ *  nobody is told they were wrong on the strength of a malformed reply. */
+export async function judgeResponse(
+  uid: string,
+  canvas: LearningCanvas,
+  question: CanvasFreeQuestion,
+  answer: string,
+  via: "typed" | "spoken",
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<ResponseJudgement>> {
+  const { text, error } = await ask(
+    uid,
+    judgeMessages({
+      question,
+      conceptLabel: conceptLabel(canvas, question.conceptId),
+      answer,
+      via,
+      concepts: canvas.concepts,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const { judgement, rejected } = parseJudgement(text ?? "", {
+    conceptIds: canvas.concepts.map((concept) => concept.id),
+  });
+  if (rejected.length > 0) console.warn("canvas judge: refused parts of a judgement", rejected);
+  return judgement
+    ? { value: judgement, error: null }
+    : { value: null, error: "Nemesis couldn't read that answer. Your response was saved." };
 }
 
 // --------------------------------------------------------- targeted relearn
@@ -208,7 +255,7 @@ export async function generateRelearn(
   uid: string,
   canvas: LearningCanvas,
   relevantBlocks: readonly CanvasBlock[],
-  misses: readonly { question: string; picked: string; correct: string; why: string }[],
+  misses: readonly RelearnMiss[],
   signal?: AbortSignal,
 ): Promise<CanvasCallResult<CanvasOp[]>> {
   const weak = canvas.concepts.filter((concept) => canvas.weakConceptIds.includes(concept.id));

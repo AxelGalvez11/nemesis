@@ -153,23 +153,119 @@ export interface RecallCard {
   typed?: boolean;
 }
 
-/** Matches the existing TestQuestion shape in study-artifact-content.ts (q/options/answer/why)
- *  so the existing generator prompt, answer-position balancer and scorer all apply — plus the
- *  one field that shape is missing: what the question is ABOUT. */
-export interface CanvasQuestion {
+/** How a retrieval prompt asks for its answer.
+ *
+ *  Free response is the default and the entire point. "Explain it in your own words" is the
+ *  most repeated instruction in the brief (§2, §7, §17, §18, §20, §21, §31-33, §35, §36, §48),
+ *  because a learner who explains produces evidence a radio button cannot carry: you cannot
+ *  detect a misconception from which of four options someone clicked. Multiple choice survives
+ *  only where the brief keeps it — exam simulation, and telling near-identical options apart. */
+export type RetrievalFormat = "free" | "choice";
+
+/** The shape of a free-response prompt.
+ *
+ *  🔴 STRUCTURAL, never subject-matter. "Walk through the mechanism" is the same request whether
+ *  the mechanism is a signalling pathway, a statute applying to facts, or a load path through a
+ *  truss. §18 lists one field-specific format — "identify a drug" — and it is deliberately absent
+ *  here: a retrieval format only one discipline can use is exactly what the field-agnostic rule
+ *  forbids, and it would silently make the canvas worse for a law or engineering student. */
+export type FreePromptKind =
+  | "define"
+  | "explain"
+  | "mechanism"
+  | "compare"
+  | "apply"
+  | "recall";
+
+export const FREE_PROMPT_KINDS: readonly FreePromptKind[] = [
+  "define",
+  "explain",
+  "mechanism",
+  "compare",
+  "apply",
+  "recall",
+];
+
+interface QuestionBase {
   id: string;
   q: string;
-  options: string[];
-  answer: number;
+  /** The model answer, shown only after the learner has committed to their own. */
   why: string;
   conceptId: string | null;
   sourceRefs?: SourceRef[];
+}
+
+/** Matches the existing TestQuestion shape in study-artifact-content.ts (q/options/answer/why)
+ *  so the existing generator prompt, answer-position balancer and scorer all still apply. */
+export interface CanvasChoiceQuestion extends QuestionBase {
+  format: "choice";
+  options: string[];
+  answer: number;
+}
+
+export interface CanvasFreeQuestion extends QuestionBase {
+  format: "free";
+  kind: FreePromptKind;
+  /** The points a complete answer has to make. Never shown before answering — this is what the
+   *  judge checks against, and where "what you missed" comes from. */
+  expected: string[];
+}
+
+export type CanvasQuestion = CanvasChoiceQuestion | CanvasFreeQuestion;
+
+/** Canvases saved before free response existed carry questions with no `format`. They were all
+ *  multiple choice, so that is what its absence means. Applied when a canvas is read and never
+ *  when it is written, so no stored row has to be migrated. */
+export function normaliseQuestion(raw: CanvasQuestion | Record<string, unknown>): CanvasQuestion {
+  const format = (raw as { format?: unknown }).format;
+  if (format === "free" || format === "choice") return raw as CanvasQuestion;
+  return { ...(raw as Omit<CanvasChoiceQuestion, "format">), format: "choice" };
 }
 
 export interface CanvasAnswer {
   questionId: string;
   picked: number;
   correct: boolean;
+}
+
+/** What one free-text answer showed.
+ *
+ *  Deliberately NOT correct/incorrect (§5, §20, §21). `misconception` is the state the old data
+ *  model made unreachable: an answer records which wrong option was picked, never the belief
+ *  behind it, so "you think the 3 only multiplies the first term" was not expressible even in
+ *  principle. */
+export type Verdict = "understood" | "partial" | "incorrect" | "misconception";
+
+export const VERDICTS: readonly Verdict[] = ["understood", "partial", "incorrect", "misconception"];
+
+export interface ResponseJudgement {
+  verdict: Verdict;
+  /** What the answer got right, so the reply can name it back instead of only correcting (§4). */
+  got: string[];
+  /** The specific points missing or wrong — not a score. */
+  missing: string[];
+  /** Only meaningful on a `misconception` verdict: the belief the answer reveals. */
+  misconception?: string;
+  /** The short targeted correction shown in place of "Incorrect. The answer is B." (§20) */
+  refinement: string;
+  /** Other concepts on THIS canvas the answer showed to be shaky (§4 reads a partial grasp of a
+   *  neighbouring idea out of one explanation). Ids are checked against the canvas's own concept
+   *  list; a judge that names a concept we never declared has invented it, and is refused. */
+  alsoWeakConceptIds?: string[];
+}
+
+/** What the learner actually said, in their own words.
+ *
+ *  `via` is kept because §23 treats time as a signal and speaking and writing run at very
+ *  different speeds — twenty seconds of talking and twenty seconds of typing are not the same
+ *  evidence, and a model that forgets which one happened will read hesitation into a fast typist. */
+export interface CanvasResponse {
+  questionId: string;
+  text: string;
+  via: "typed" | "spoken";
+  /** Milliseconds from the prompt appearing to the answer being submitted. */
+  tookMs?: number;
+  judgement?: ResponseJudgement;
 }
 
 export interface RecallResult {
@@ -190,7 +286,11 @@ export interface LearningCanvas {
   recall: RecallCard[];
   recallResults: RecallResult[];
   questions: CanvasQuestion[];
+  /** Answers to multiple-choice questions. Kept alongside `responses` rather than merged: the
+   *  two carry genuinely different evidence, and flattening them would throw away the part that
+   *  makes free response worth having. */
   answers: CanvasAnswer[];
+  responses: CanvasResponse[];
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -217,6 +317,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     recallResults: [],
     questions: [],
     answers: [],
+    responses: [],
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

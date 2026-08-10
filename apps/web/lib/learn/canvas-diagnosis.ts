@@ -12,6 +12,7 @@
 // recall cards name a concept, and this file rolls the evidence up. No global mastery model,
 // no new algorithm — just enough for §13's output to be true rather than decorative.
 
+import { verdictIsPass } from "./canvas-judge";
 import type { CanvasBlock, CanvasConcept, LearningCanvas } from "./canvas-model";
 
 export interface Diagnosis {
@@ -24,7 +25,7 @@ export interface Diagnosis {
 }
 
 export function diagnose(
-  canvas: Pick<LearningCanvas, "concepts" | "questions" | "answers" | "recallResults">,
+  canvas: Pick<LearningCanvas, "concepts" | "questions" | "answers" | "responses" | "recallResults">,
 ): Diagnosis {
   const byQuestion = new Map(canvas.questions.map((question) => [question.id, question]));
 
@@ -44,6 +45,24 @@ export function diagnose(
     if (answer.correct) correct += 1;
     if (!question.conceptId) continue;
     (answer.correct ? passed : failed).add(question.conceptId);
+  }
+
+  for (const response of canvas.responses ?? []) {
+    const question = byQuestion.get(response.questionId);
+    if (!question) continue;
+    // An answer we could not judge is not evidence in either direction. Counting it as a failure
+    // would punish the learner for a model that returned malformed JSON; counting it as a pass
+    // would retire a concept nobody assessed. It simply does not appear.
+    if (!response.judgement) continue;
+    total += 1;
+    const understood = verdictIsPass(response.judgement.verdict);
+    if (understood) correct += 1;
+    if (question.conceptId) (understood ? passed : failed).add(question.conceptId);
+    // §4: one explanation can show that a NEIGHBOURING idea is shaky — "they have the mechanism
+    // but their grasp of the underlying pathway is rough". Only ever adds weakness, never
+    // removes it: the judge is inferring here rather than assessing, and inference is not
+    // strong enough evidence to retire a concept.
+    for (const id of response.judgement.alsoWeakConceptIds ?? []) failed.add(id);
   }
 
   for (const result of canvas.recallResults) {
@@ -78,7 +97,7 @@ export function diagnose(
  *  A retest is newer evidence about exactly these concepts, so the older evidence about them
  *  goes. Evidence about everything else is untouched. */
 export function clearEvidenceForRetest<
-  T extends Pick<LearningCanvas, "recallResults" | "answers">,
+  T extends Pick<LearningCanvas, "recallResults" | "answers" | "responses">,
 >(canvas: T, conceptIds: readonly string[]): T {
   const retested = new Set(conceptIds);
   return {
@@ -87,6 +106,11 @@ export function clearEvidenceForRetest<
       (result) => !result.conceptId || !retested.has(result.conceptId),
     ),
     answers: [],
+    // Free responses go with the answers, and for the same reason. They belong to questions the
+    // retest is about to replace, so keeping them would let a judged-weak explanation from the
+    // last round outlive the round that produced it — the precise failure described above,
+    // which made "Finish" unreachable. A new kind of evidence needs a new line here.
+    responses: [],
   };
 }
 
@@ -114,7 +138,10 @@ export interface CompletionSummary {
 }
 
 export function summariseCompletion(
-  canvas: Pick<LearningCanvas, "concepts" | "questions" | "answers" | "recallResults" | "correctedConceptIds" | "activeMs">,
+  canvas: Pick<
+    LearningCanvas,
+    "concepts" | "questions" | "answers" | "responses" | "recallResults" | "correctedConceptIds" | "activeMs"
+  >,
 ): CompletionSummary {
   return {
     conceptsUnderstood: diagnose(canvas).understood.length,

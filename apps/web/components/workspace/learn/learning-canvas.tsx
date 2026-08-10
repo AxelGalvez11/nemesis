@@ -168,7 +168,13 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         )}
 
         {["test", "retest"].includes(canvas.state) && (
-          <CanvasTest canvas={canvas} onAnswer={session.answer} onFinish={session.finishTest} />
+          <CanvasTest
+            canvas={canvas}
+            judging={session.judging}
+            onAnswer={session.answer}
+            onFinish={session.finishTest}
+            onRespond={(questionId, text, via, tookMs) => void session.respond(questionId, text, via, tookMs)}
+          />
         )}
 
         {canvas.state === "diagnose" && (
@@ -218,7 +224,14 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           onClearSelection={clearSelection}
           onSubmit={(text) => void submit(text)}
           placeholder={
-            dimComposer ? "Ask about this card…" : "Ask Nemesis or change how you're learning…"
+            // During a test the answer box is the thing being typed into, so this bar has to
+            // say what it is FOR — otherwise "Ask about this card…" reads as the place to put
+            // the answer, and the answer goes to the wrong box.
+            ["test", "retest"].includes(canvas.state)
+              ? "Ask about this question…"
+              : dimComposer
+                ? "Ask about this card…"
+                : "Ask Nemesis or change how you're learning…"
           }
           selected={selected}
         />
