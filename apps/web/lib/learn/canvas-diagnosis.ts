@@ -97,7 +97,7 @@ export function diagnose(
  *  A retest is newer evidence about exactly these concepts, so the older evidence about them
  *  goes. Evidence about everything else is untouched. */
 export function clearEvidenceForRetest<
-  T extends Pick<LearningCanvas, "recallResults" | "answers" | "responses">,
+  T extends Pick<LearningCanvas, "recallResults" | "answers" | "responses" | "correctiveAttempts">,
 >(canvas: T, conceptIds: readonly string[]): T {
   const retested = new Set(conceptIds);
   return {
@@ -111,6 +111,10 @@ export function clearEvidenceForRetest<
     // last round outlive the round that produced it — the precise failure described above,
     // which made "Finish" unreachable. A new kind of evidence needs a new line here.
     responses: [],
+    // The grind counter is per-sitting, not per-lifetime. A retest is a fresh attempt at these
+    // ideas with new material, so it gets the full corrective budget again — otherwise a learner
+    // who used it up in round one would be advanced past everything for the rest of the canvas.
+    correctiveAttempts: {},
   };
 }
 

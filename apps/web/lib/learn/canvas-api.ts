@@ -12,7 +12,9 @@
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
+import { blocksForConcepts } from "./canvas-diagnosis";
 import { parseEvaluation } from "./canvas-judge";
+import type { CognitiveAction } from "./canvas-policy";
 import {
   conceptLabel,
   type CanvasFreeQuestion,
@@ -25,8 +27,11 @@ import { parseCanvasOps, validateOps, type CanvasOp } from "./canvas-ops";
 import {
   parseFreeQuestions,
   parseLesson,
+  parseTeachingReply,
   parseRecallCards,
+  parseSelectionAnswer,
   parseShortAnswer,
+  parseSimplifiedContent,
   parseTestQuestions,
   type ParsedLesson,
 } from "./canvas-parse";
@@ -37,10 +42,14 @@ import {
   lessonMessages,
   recallMessages,
   relearnMessages,
+  selectionMessages,
+  simplifyMessages,
+  teachingMessages,
   testMessages,
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
+import type { CanvasSelection, SelectionAction } from "./canvas-selection";
 import type {
   CanvasBlock,
   CanvasQuestion,
@@ -295,6 +304,73 @@ export function cardAsTask(
   };
 }
 
+// ------------------------------------------------------------ teaching loop
+
+export interface TeachingChange {
+  ops: CanvasOp[];
+  followUp: CanvasFreeQuestion | null;
+}
+
+/** Turn a chosen teaching action into a validated, SCOPED change to the page.
+ *
+ *  🔴 The scope is not advisory. `validateOps` is given the ids of the blocks that teach this
+ *  objective and refuses every other block — and because `replace_canvas` and `rewrite_section`
+ *  are whole-canvas operations, scoping also puts them out of reach. Without it the model
+ *  regenerates the page on almost every turn, which would silently undo the one behaviour this
+ *  surface is judged on: fixing one paragraph fixes one paragraph. */
+export async function applyTeachingAction(
+  uid: string,
+  canvas: LearningCanvas,
+  input: {
+    action: CognitiveAction;
+    objectiveId: string;
+    prompt: string;
+    said: string;
+    demonstrated: readonly string[];
+  },
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<TeachingChange>> {
+  const scope = blocksForConcepts(canvas.blocks, [input.objectiveId]);
+
+  const { text, error } = await ask(
+    uid,
+    teachingMessages({
+      action: input.action,
+      canvasTitle: canvas.title,
+      objectiveLabel: conceptLabel(canvas, input.objectiveId),
+      objectiveId: input.objectiveId,
+      prompt: input.prompt,
+      said: input.said,
+      demonstrated: input.demonstrated,
+      scope,
+      sources: canvas.sources,
+      level: canvas.level,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const proposed = parseCanvasOps(text ?? "");
+  // An empty scope means the page has no block for this idea yet, so there is nothing to
+  // rewrite — but new blocks still have to land somewhere, so the insert targets fall back to
+  // the whole document rather than being refused outright.
+  const { ops } = validateOps(canvas, proposed, {
+    ...(scope.length ? { scopeBlockIds: scope.map((block) => block.id) } : {}),
+  });
+  const { followUp } = parseTeachingReply(
+    text ?? "",
+    canvas.concepts.map((concept) => concept.id),
+    canvas.sources,
+  );
+
+  // A change that neither rewrote anything nor asked anything is not worth applying, and
+  // reporting success for it would leave the learner staring at an unchanged page.
+  if (ops.length === 0 && !followUp) {
+    return { value: null, error: "Nemesis couldn't work out what to change. Nothing was altered." };
+  }
+  return { value: { ops, followUp }, error: null };
+}
+
 // --------------------------------------------------------- targeted relearn
 
 export async function generateRelearn(
@@ -326,4 +402,108 @@ export async function generateRelearn(
   return useful.length
     ? { value: useful, error: null }
     : { value: null, error: "Nemesis couldn't focus the lesson on your weak spots. Nothing was changed." };
+}
+
+// ----------------------------------------------------------------- selection
+
+export interface SelectionExplanation {
+  term: string;
+  text: string;
+  /** Only set when the learner's own material actually defines this. */
+  sourceLabel?: string;
+}
+
+/** Define / Explain / Example / Why for an exact highlighted range.
+ *
+ *  Returns text for a popover. It deliberately does NOT touch the page: looking up one word must
+ *  not disturb the paragraph being read, and a definition that rewrote the passage underneath
+ *  the learner would move the thing they were looking at while they looked at it. */
+export async function explainSelection(
+  uid: string,
+  canvas: LearningCanvas,
+  selection: CanvasSelection,
+  action: SelectionAction,
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<SelectionExplanation>> {
+  const block = selection.blockId
+    ? canvas.blocks.find((candidate) => candidate.id === selection.blockId)
+    : undefined;
+  const objective = selection.conceptIds?.[0] ? conceptLabel(canvas, selection.conceptIds[0]) : "";
+
+  const { text, error } = await ask(
+    uid,
+    selectionMessages({
+      action,
+      selectedText: selection.selectedText,
+      surroundingText: selection.surroundingText,
+      ...(block ? { passage: block.content } : {}),
+      canvasTitle: canvas.title,
+      ...(objective ? { objective } : {}),
+      sources: canvas.sources,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const answer = text ? parseSelectionAnswer(text) : null;
+  if (!answer) return { value: null, error: "Nemesis had nothing useful to add about that." };
+
+  // A source title the canvas does not actually have is decoration, and decoration that looks
+  // like provenance is worse than none — so it is checked against the real source list rather
+  // than trusted from the reply.
+  const named = answer.fromSource
+    ? canvas.sources.find((source) => source.title.toLowerCase() === answer.fromSource.toLowerCase())
+    : undefined;
+
+  return {
+    value: {
+      term: selection.selectedText,
+      text: answer.text,
+      ...(named ? { sourceLabel: named.title } : {}),
+    },
+    error: null,
+  };
+}
+
+/** "Simpler" — the one selection action that edits the page, and it edits ONE block.
+ *
+ *  Scoped through the same validator the teaching loop uses, which is what keeps
+ *  `replace_canvas` and `rewrite_section` out of reach. Unscoped, a request to simplify one
+ *  sentence comes back as a regenerated page. */
+export async function simplifySelection(
+  uid: string,
+  canvas: LearningCanvas,
+  selection: CanvasSelection,
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<{ ops: CanvasOp[]; before: string; blockId: string }>> {
+  const block = selection.blockId
+    ? canvas.blocks.find((candidate) => candidate.id === selection.blockId)
+    : undefined;
+  if (!block) return { value: null, error: "That text isn't part of the document, so there's nothing to rewrite." };
+
+  const { text, error } = await ask(
+    uid,
+    simplifyMessages({
+      selectedText: selection.selectedText,
+      block,
+      canvasTitle: canvas.title,
+      sources: canvas.sources,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const content = text ? parseSimplifiedContent(text) : null;
+  if (!content) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+
+  const { ops } = validateOps(
+    canvas,
+    [{ operation: "replace_block", blockId: block.id, content }],
+    { scopeBlockIds: [block.id] },
+  );
+  if (ops.length === 0) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+
+  // `before` is captured HERE, at the moment of the write. Once the ops are applied the original
+  // wording is gone and no later step can reconstruct it.
+  return { value: { ops, before: block.content, blockId: block.id }, error: null };
 }

@@ -1,8 +1,11 @@
 -- Learning Canvas pilot (/learn) — one row per thing a student is trying to understand.
 --
--- 🔴 NOT YET APPLIED. Additive and reversible, but applying anything to the live database is
--- the owner's call. Until it is applied the surface keeps canvases in the browser instead
--- (see apps/web/lib/learn/canvas-store.ts), so the pilot is usable and judgeable without it.
+-- APPLIED 2026-08-08. The table is live. This header used to say "not yet applied", which was
+-- true when it was written and badly misleading afterwards — anyone reading it would conclude
+-- canvases live only in the browser and plan around a constraint that no longer exists.
+--
+-- The browser fallback in apps/web/lib/learn/canvas-store.ts is still there and still correct:
+-- it is what a signed-out learner gets, not a stand-in for this table.
 --
 -- WHY A NEW TABLE RATHER THAN REUSING study_artifacts.
 -- study_artifacts is the obvious neighbour, but its `kind` is CHECK-constrained to

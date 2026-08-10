@@ -12,6 +12,7 @@ import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
+import type { CognitiveAction } from "./canvas-policy";
 import {
   ERROR_TYPES,
   LEVEL_INSTRUCTIONS,
@@ -42,9 +43,28 @@ const CITATION_RULE =
   "Never invent an id, a page number, a slide number, or a timestamp. A block written from your own general knowledge " +
   "rather than the material must have an empty sourceRefs list.";
 
+/** Naming the vocabulary a block introduces.
+ *
+ *  🔴 Asks for CANDIDATES and says so. The application picks at most two of these to show, by
+ *  rules the model cannot see (what the learner has already demonstrated, what they have
+ *  already looked up, how long the block is) — so over-naming here is cheap and under-naming
+ *  is not recoverable. What it must not do is name ordinary words, which is the one instruction
+ *  that keeps the annotation layer from becoming noise.
+ *
+ *  Written without a single subject-matter example on purpose. "Terms like myocardial or
+ *  hypertension" would quietly teach the model that this feature is about medicine, and the
+ *  same prompt has to work for a statute, a stress-strain curve and a verb paradigm. */
+const TERMS_RULE =
+  '"terms" names the vocabulary THIS block introduces that a learner at this level probably has not met yet: ' +
+  'each entry is {"term":"…","conceptId":"k1"}. Name at most 3 per block, fewest first, and leave the list empty ' +
+  "when the block introduces no new vocabulary — most blocks should. Each term MUST appear in that block's content " +
+  "spelled exactly as you write it here. Name a term only if a learner who did not know it would be unable to follow " +
+  "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
+  "are merely long.";
+
 const BLOCK_SHAPE =
-  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…]}. ' +
-  "Do not include an id — ids are assigned by the application.";
+  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…]}. ' +
+  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}`;
 
 function materialSection(sources: readonly CanvasSource[], topic: string): string {
   const grounding = groundingBlock(sources);
@@ -351,6 +371,101 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
   ];
 }
 
+// ------------------------------------------------------------ teaching loop
+
+/** How the page should change in response to one performance.
+ *
+ *  🔴 THE SCOPE IS THE FEATURE. The caller passes the ids of the blocks that teach this
+ *  objective and `validateOps` refuses anything else, so a clarification cannot quietly become a
+ *  page rewrite. That protection has to hold here more than anywhere: given a free hand the model
+ *  reaches for `replace_canvas` on every turn, which would undo the two behaviours the canvas is
+ *  actually judged on — fixing one paragraph fixes one paragraph, and the page is never
+ *  regenerated wholesale.
+ *
+ *  🔴 AND IT MUST NOT RE-TEACH WHAT THEY ALREADY SHOWED. Someone who demonstrated A and B and
+ *  missed C should not be handed A + B + C again. That is the difference between a canvas that
+ *  adapts and a canvas that repeats itself more loudly. */
+export function teachingMessages(input: {
+  action: CognitiveAction;
+  canvasTitle: string;
+  objectiveLabel: string;
+  objectiveId: string;
+  /** What they were asked, and what they said — so the correction is about THEIR answer. */
+  prompt: string;
+  said: string;
+  demonstrated: readonly string[];
+  /** The blocks that currently teach this objective. The only ones that may change. */
+  scope: readonly CanvasBlock[];
+  sources: readonly CanvasSource[];
+  level: CanvasLevel | null;
+}): WireMsg[] {
+  const scopeText = input.scope
+    .map((block) => `${block.id} [${block.type}] ${block.content}`)
+    .join("\n\n");
+
+  const instruction = (() => {
+    switch (input.action.type) {
+      case "clarify_missing":
+        return (
+          `They already demonstrated: ${input.demonstrated.join("; ") || "part of this"}.\n` +
+          `What was missing: ${input.action.missing.join("; ")}\n\n` +
+          "Teach ONLY the missing piece. Do not restate what they already showed — they have it, and " +
+          "repeating it back is how a page stops feeling adaptive. Write one short block that supplies the " +
+          "gap and connects it to what they already had, and put it next to the block that covers this idea. " +
+          "Then ask them to explain how the missing piece relates to the part they got right."
+        );
+      case "correct":
+        return (
+          `What went wrong: ${input.action.missing.join("; ")}\n\n` +
+          "Write the smallest correction that fixes this specific thing — two or three sentences, not a " +
+          "re-teach of the topic. Replace the block that misled them if there is one, otherwise insert the " +
+          "correction beside it. Then ask them the same idea again, in a different way than it was asked " +
+          "the first time."
+        );
+      case "repair_misconception":
+        return (
+          `They hold a specific false belief: ${input.action.misconceptions.join("; ")}\n\n` +
+          "🔴 This is not a gap, it is a wrong model, so filling in more detail will not help — the belief " +
+          "itself has to be replaced. Rewrite the block that teaches this idea so it names the false " +
+          "relationship explicitly, says plainly that it does not hold, and puts the correct relationship " +
+          "in its place. Be concrete about what causes what. Then ask them to reconstruct the corrected " +
+          "relationship in their own words, because saying it back is what replaces the old model."
+        );
+      case "retry":
+      default:
+        return (
+          "Their answer did not get there, and the reading is not precise enough to correct a specific point. " +
+          "Re-teach this idea slightly more completely than the page does now — a different angle, or a " +
+          "concrete example, rather than the same sentences again. Then ask for it once more."
+        );
+    }
+  })();
+
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is working on "${input.objectiveLabel}" in "${input.canvasTitle}".\n\n` +
+        `They were asked:\n"${input.prompt}"\n\n` +
+        `They answered:\n"${input.said}"\n\n` +
+        `${instruction}\n\n` +
+        (input.level ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n` : "") +
+        `You may ONLY change these blocks: ${input.scope.map((b) => b.id).join(", ") || "(none — insert only)"}. ` +
+        "Permitted operations: replace_block, insert_before, insert_after, annotate_block. " +
+        "Any operation naming another block, or attempting to rewrite the whole page, will be discarded.\n\n" +
+        `${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
+        'Return JSON: {"operations":[…],"followUp":{"task":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"' +
+        `${input.objectiveId}"}}\n\n` +
+        "`followUp` is the next thing you ask them, and it must be answerable in their own words. `expected` " +
+        "is 2-3 short checkable claims a complete answer makes — this is what the answer will be judged " +
+        `against, so write claims and not topics. conceptId MUST be "${input.objectiveId}".\n\n` +
+        `The blocks that currently teach this idea:\n${scopeText || "(none — the page has no block for it yet)"}\n\n` +
+        materialSection(input.sources, input.canvasTitle),
+      role: "user",
+    },
+  ];
+}
+
 // --------------------------------------------------------- targeted relearn
 
 /** One thing that did not land, in enough detail for the rewrite to aim at it.
@@ -422,6 +537,96 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
 
 /** "Where did this come from?" and friends are answered from data we already hold, not by
  *  asking the model — which would let it invent a source. This is the one-block explainer. */
+// ----------------------------------------------------------------- selection
+
+/** What each selection action is actually asking for.
+ *
+ *  🔴 A definition must be SHORTER AND SIMPLER than the sentence that caused the confusion.
+ *  "Homeostasis is the dynamic self-regulatory process by which biological systems maintain
+ *  internal physicochemical equilibrium" replaces one hard sentence with another, and the
+ *  learner is no further forward.
+ *
+ *  🔴 And it must not simplify the terminology away. If a term is part of what is being learned,
+ *  the learner eventually needs the term itself, not a paraphrase of it — so the formal word is
+ *  kept and glossed, never replaced. */
+const SELECTION_INTENT: Record<string, string> = {
+  define:
+    "Say what this term means HERE, in this context, in one or two short sentences. " +
+    "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
+    "not a replacement for it — and explain it rather than swapping it out.",
+  explain:
+    "Explain what this means in this context, in at most three short sentences. " +
+    "Explain the idea, not the wording. Assume they have read the surrounding passage.",
+  simpler:
+    "Rewrite the passage below so it is easier to follow, keeping every technical term that the learner needs " +
+    "and every claim the original made. Same meaning, plainer construction. Do not add new information and do not remove content.",
+  example:
+    "Give one concrete example that makes this clear, in at most three short sentences. " +
+    "A specific case, not a restatement of the definition.",
+  why: "Explain WHY this is so — the reason or mechanism behind it — in at most three short sentences.",
+};
+
+/** A definition, an explanation, an example or a reason, about an exact selected range. */
+export function selectionMessages(input: {
+  action: string;
+  selectedText: string;
+  /** The sentence it sits in. Without this a word gets a dictionary answer, and "power" means
+   *  four different things depending on the field and the paragraph. */
+  surroundingText: string;
+  /** The wider block, where the selection came from one. */
+  passage?: string;
+  canvasTitle: string;
+  objective?: string;
+  sources: readonly CanvasSource[];
+}): WireMsg[] {
+  const intent = SELECTION_INTENT[input.action] ?? SELECTION_INTENT.explain;
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is studying "${input.canvasTitle}"` +
+        (input.objective ? ` and is currently working on: ${input.objective}` : "") +
+        ".\n\n" +
+        `They highlighted this exact text: "${input.selectedText}"\n\n` +
+        `It appears in this sentence: "${input.surroundingText}"\n\n` +
+        (input.passage ? `Which sits in this passage:\n${input.passage}\n\n` : "") +
+        `${intent}\n\n` +
+        "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
+        "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
+        "own material said something it did not.\n\n" +
+        'Return JSON: {"answer":"…","fromSource":"…"}\n\n' +
+        materialSection(input.sources, input.canvasTitle),
+      role: "user",
+    },
+  ];
+}
+
+/** "Simpler" — the one selection action that edits the page. Scoped to a single block. */
+export function simplifyMessages(input: {
+  selectedText: string;
+  block: CanvasBlock;
+  canvasTitle: string;
+  sources: readonly CanvasSource[];
+}): WireMsg[] {
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is reading "${input.canvasTitle}" and highlighted: "${input.selectedText}"\n\n` +
+        `They asked for it to be put more simply. Rewrite THIS ONE passage:\n${input.block.content}\n\n` +
+        `${SELECTION_INTENT.simpler}\n\n` +
+        // Scope stated twice on purpose: the model reaches for a full-page rewrite whenever the
+        // instruction is ambiguous, and a rewrite of everything would silently undo the
+        // teaching loop's earlier local corrections.
+        "You are rewriting one passage and nothing else. Do not write a heading. Do not add a second paragraph. " +
+        "Do not comment on the change.\n\n" +
+        'Return JSON: {"content":"…"}\n\n' +
+        materialSection(input.sources, input.canvasTitle),
+      role: "user",
+    },
+  ];
+}
+
 export function explainBlockMessages(input: {
   block: CanvasBlock;
   canvasTitle: string;

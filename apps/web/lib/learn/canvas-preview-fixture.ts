@@ -23,6 +23,7 @@ export type PreviewSeed =
   | "recall"
   | "test"
   | "judged"
+  | "taught"
   | "choicetest"
   | "diagnose"
   | "complete"
@@ -95,6 +96,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "At rest a ventricular myocyte sits near -90 mV. The sodium-potassium pump keeps the gradients loaded and a high resting potassium conductance keeps the membrane near the potassium equilibrium potential.",
         conceptIds: ["k1"],
+        terms: [{ term: "myocyte", conceptId: "k1" }, { term: "potassium equilibrium potential", conceptId: "k1" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e1" }],
       },
       { id: "b4", type: "heading", content: "Ventricular cells" },
@@ -104,6 +106,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "Phase 0 is the upstroke. Fast voltage-gated sodium channels open, sodium rushes in down its electrochemical gradient, and the cell depolarises within about a millisecond. The speed is the point: it is what lets the ventricle contract as a unit.",
         conceptIds: ["k2"],
+        terms: [{ term: "electrochemical gradient", conceptId: "k2" }, { term: "depolarises", conceptId: "k2" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e2" }],
       },
       {
@@ -129,6 +132,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "Phase 4 in a nodal cell is not flat. The funny current, carried by HCN channels and switched on by hyperpolarisation, drifts the membrane upward until it reaches threshold. Nothing has to tell the cell to fire — that drift is the heartbeat's own clock.",
         conceptIds: ["k4"],
+        terms: [{ term: "hyperpolarisation", conceptId: "k4" }, { term: "HCN channels", conceptId: "k4" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e4" }],
       },
       { id: "b10", type: "heading", content: "Why this matters" },
@@ -274,6 +278,24 @@ const FREE_QUESTIONS: CanvasFreeQuestion[] = [
   },
 ];
 
+/** The prompt the teaching loop asks AFTER it has taught the missing piece. Same shape as any
+ *  generated question, because it goes through the same parser — a follow-up the judge cannot
+ *  read would make the loop degrade to unanswerable questions after one turn. */
+const FOLLOW_UP: CanvasFreeQuestion = {
+  id: "f1b",
+  format: "free",
+  task: "explain",
+  q: "So why is the channel opening enough on its own — what makes the sodium actually move?",
+  expectedEvidence: {
+    acceptableClaims: [
+      "sodium follows its electrochemical gradient",
+      "the gradient is already loaded before the channel opens",
+    ],
+  },
+  why: "The gradient is maintained by the pump beforehand, so opening the channel is all that is needed for sodium to move inward.",
+  conceptId: "k1",
+};
+
 /** One answered-and-judged prompt, so the reply the learner actually sees — what they got right,
  *  the belief behind the error, the targeted correction — can be checked without a model. */
 const JUDGED_RESPONSES: CanvasResponse[] = [
@@ -292,6 +314,10 @@ const JUDGED_RESPONSES: CanvasResponse[] = [
       feedback:
         "You have the sequence. The piece to add is the reason sodium moves: it follows its own electrochemical gradient, which is why the channels opening is enough on its own.",
     },
+    action: "clarify_missing",
+    taught:
+      "The part you did not say is why sodium moves at all. The sodium-potassium pump has already loaded the gradient before anything opens, so sodium is sitting at a much higher concentration outside than in. Opening the channel does not push it — it simply stops holding it back.",
+    followUpQuestionId: "f1b",
   },
   {
     questionId: "f2",
@@ -326,6 +352,15 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
     questions: FREE_QUESTIONS,
     answers: [],
     responses: JUDGED_RESPONSES,
+  }),
+  // What the teaching loop leaves behind: the gap taught, and a follow-up inserted right after
+  // the prompt it follows up.
+  taught: () => ({
+    ...lessonSeed(),
+    state: "test",
+    questions: [FREE_QUESTIONS[0] as CanvasFreeQuestion, FOLLOW_UP, FREE_QUESTIONS[1] as CanvasFreeQuestion],
+    answers: [],
+    responses: [JUDGED_RESPONSES[0] as CanvasResponse],
   }),
   choicetest: () => ({ ...lessonSeed(), state: "test", questions: QUESTIONS, answers: [], responses: [] }),
   diagnose: diagnoseSeed,

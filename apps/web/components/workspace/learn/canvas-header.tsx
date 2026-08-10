@@ -1,101 +1,72 @@
 "use client";
 
-// Title on the left, sources on the right, and the one move the canvas offers next. Nothing
-// else — the chrome must not compete with the document (§22).
-
-import { useState } from "react";
+// The canvas's top controls.
+//
+// 🔴 THIS IS NOT A HEADER BAR, and it must never become one again. It is a transparent layer
+// of controls floating ON the canvas: no container, no background of its own, no border-bottom,
+// no shadow beneath it, no backdrop-filter. The whole surface is one uninterrupted sheet from
+// the top of the viewport to the composer, and the title is navigational context sitting on
+// that sheet — not the top edge of a page component.
+//
+// The regression this replaced was measurable: a full-width `border-b` painted a 1px line
+// across every one of the viewport's pixels at y≈54, which is exactly what makes a workspace
+// read as "an app page with a header" instead of a document. `canvas-shell.test.ts` asserts the
+// class list still carries no border/background utility, and the browser check in the PR walks
+// every element in the top 120px looking for a full-width painted edge.
+//
+// The layer is also deliberately `pointer-events-none` with only its children re-enabled, so
+// the invisible strip cannot swallow clicks on the content underneath it.
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import type { NextAction } from "@/lib/learn/canvas-state";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
+
+import { ObjectivesControl, SessionControl, SourcesControl } from "./canvas-controls";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
-  next: NextAction | null;
-  onAdvance: () => void;
   onFiles: (files: FileList | File[]) => void;
   onExit: () => void;
-  busy: boolean;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+  /** The card or question being answered right now, so the objectives panel can say which one
+   *  the canvas is actually working on rather than guessing from state alone. */
+  activeTaskId?: string | null;
 }
 
-export function CanvasHeader({ canvas, next, onAdvance, onFiles, onExit, busy }: CanvasHeaderProps) {
-  const [showSources, setShowSources] = useState(false);
-
+export function CanvasHeader({
+  canvas,
+  onFiles,
+  onExit,
+  onRename,
+  onDelete,
+  activeTaskId,
+}: CanvasHeaderProps) {
   return (
-    <header className="relative z-30 flex h-12 shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-4">
+    <header className="pointer-events-none absolute inset-x-[16px] top-[16px] z-30 flex h-[36px] items-center gap-2">
       <button
         aria-label="Leave the canvas"
-        className="rounded-md p-1 text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+        className="pointer-events-auto flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
         onClick={onExit}
         title="Leave the canvas"
         type="button"
       >
-        <Codicon name="arrow-left" size="0.875rem" />
+        <Codicon name="arrow-left" size="0.9375rem" />
       </button>
 
-      <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-(--ui-text-secondary)">
+      {/* Navigational context, not the page's heading — the lesson supplies its own hierarchy
+          and a second large title on the same screen competes with it.
+          🔴 Stays `pointer-events-none` (inherited). It is `flex-1`, so making it clickable
+          turned a full-width strip of dead label into a click trap: the document scrolls
+          underneath it, and selecting the top line of text hit the title instead. */}
+      <span className="min-w-0 flex-1 truncate text-[0.875rem] text-(--ui-text-secondary)">
         {canvas.title || "New canvas"}
       </span>
 
-      {next && (
-        <button
-          className="rounded-lg bg-(--ui-text-primary) px-3 py-1 text-[0.75rem] font-medium text-(--ui-bg-editor) disabled:opacity-40"
-          disabled={busy}
-          onClick={onAdvance}
-          type="button"
-        >
-          {next.label}
-        </button>
-      )}
-
-      <div className="relative">
-        <button
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.75rem] text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-          onClick={() => setShowSources((current) => !current)}
-          type="button"
-        >
-          Sources
-          <span className="text-(--ui-text-quaternary)">· {canvas.sources.length}</span>
-        </button>
-
-        {showSources && (
-          <div className="absolute right-0 top-full z-40 mt-1 w-[22rem] rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-2 shadow-xl">
-            {canvas.sources.length === 0 ? (
-              <p className="px-2 py-3 text-[0.8125rem] text-(--ui-text-quaternary)">Nothing attached yet.</p>
-            ) : (
-              canvas.sources.map((source) => (
-                <div className="px-2 py-1.5" key={source.id}>
-                  <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">{source.title}</p>
-                  <p className="text-[0.6875rem] text-(--ui-text-quaternary)">
-                    {source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
-                  </p>
-                  {/* A source Nemesis could only half read says so here, not silently. */}
-                  {source.coverageNote && (
-                    <p className="mt-1 text-[0.6875rem] leading-relaxed text-amber-500">
-                      {source.coverageNote.replace(/^\[|\]$/g, "")}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-[0.8125rem] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)">
-              <Codicon name="add" size="0.75rem" />
-              Add material
-              <input
-                accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
-                className="hidden"
-                multiple
-                onChange={(event) => {
-                  if (event.target.files) onFiles(event.target.files);
-                  setShowSources(false);
-                }}
-                type="file"
-              />
-            </label>
-          </div>
-        )}
-      </div>
+      {/* §1: three compact controls, floating. Not a toolbar — see the note at the top of
+          canvas-controls.tsx for what that costs when it slips. */}
+      <SourcesControl canvas={canvas} onFiles={onFiles} />
+      <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+      <SessionControl canvas={canvas} onDelete={onDelete} onRename={onRename} />
     </header>
   );
 }
