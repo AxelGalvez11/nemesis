@@ -174,3 +174,39 @@ test("a photograph nothing could be read from is FAILED", () => {
   const coverage = singleUnitCoverage({ read: false, method: "vision" });
   assert.equal(coverage.state, "failed");
 });
+
+// ── regions smaller than a page ─────────────────────────────────────────────
+
+test("🔴 a text-full page holding an unreadable table is NOT complete", () => {
+  // The exact hole this closes. Every page has plenty of native text, so all
+  // three land in `unitsNative`, every unit reconciles, and the old record read
+  // `complete` — while the densest thing in the document, the part a student
+  // actually came for, never reached them. The unit buckets cannot express it,
+  // because the failure is smaller than a page.
+  const honest = pdfCoverage({
+    pageTexts: [full, full, full],
+    readByVision: new Set(),
+    unreadableRegions: 1,
+  });
+  assert.equal(honest.state, "partial");
+  assert.equal(honest.unreadableRegions, 1);
+  assert.equal(honest.unitsNative, 3, "the pages really were read; only a region was not");
+  assert.equal(honest.unitsUnread, 0);
+
+  // Same pages, nothing unreadable: still complete. The guard must not make
+  // every PDF partial, or it says nothing at all.
+  const clean = pdfCoverage({ pageTexts: [full, full, full], readByVision: new Set() });
+  assert.equal(clean.state, "complete");
+  assert.equal(clean.unreadableRegions, undefined, "absent rather than a zero nobody asked about");
+});
+
+test("unreadable regions and unread pages are different facts and both survive", () => {
+  const coverage = pdfCoverage({
+    pageTexts: [full, blank],
+    readByVision: new Set(),
+    unreadableRegions: 2,
+  });
+  assert.equal(coverage.unitsUnread, 1, "the blank page");
+  assert.equal(coverage.unreadableRegions, 2, "and two regions we could not rebuild");
+  assert.equal(coverage.state, "partial");
+});

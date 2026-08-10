@@ -17,6 +17,23 @@
 // are resolved from `node_modules` at runtime — which is why the tracing entry
 // in `next.config.ts` names the bundle, and why that config comment points back
 // at this one.
+//
+// 🔴 NATIVE ADDONS MUST BE EXTERNAL HERE TOO, AND FORGETTING IT BREAKS THE
+// DEPLOY WHILE PASSING LOCALLY. `onnxruntime-node` and `@napi-rs/canvas` ship
+// `.node` binaries, and esbuild has no loader for those:
+//
+//     node_modules/onnxruntime-node/dist/binding.js:11:8: ERROR:
+//     No loader is configured for ".node" files
+//
+// It is easy to miss because `build` is only `next build` — the bundling
+// happens in `prebuild`, so running `next build` by hand proves nothing about
+// this file. Only `pnpm run build` exercises it, which is what Vercel runs and
+// what caught this.
+//
+// Being external is also correct rather than merely expedient: the binary is
+// platform-specific, resolved at runtime from
+// `bin/napi-v6/${platform}/${arch}/`, and inlining it would freeze one
+// platform's binary into a bundle that runs on another.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -31,7 +48,7 @@ await mkdir(new URL("workers/", webRoot), { recursive: true });
 const result = await esbuild.build({
   bundle: true,
   entryPoints: [fileURLToPath(new URL("lib/notebooks/parse-thread.ts", webRoot))],
-  external: ["pdfjs-dist", "unpdf", "fflate", "node:*"],
+  external: ["pdfjs-dist", "unpdf", "fflate", "node:*", "onnxruntime-node", "@napi-rs/canvas"],
   format: "esm",
   // The Vercel Node runtime. Matches `engines` and the runtime the route
   // declares; a lower target would down-level `await` at the top level.

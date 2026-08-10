@@ -92,6 +92,18 @@ export function pdfCoverage(input: {
    * a different hat.
    */
   unreadBeyondCap?: number;
+  /**
+   * Regions a reader located and could not deliver — today, table regions the
+   * layout model found and the grid builder could not reconstruct.
+   *
+   * 🔴 WITHOUT THIS, AN UNREADABLE TABLE ON A TEXT-FULL PAGE READS AS COMPLETE.
+   * The page has plenty of native text, so it lands in `unitsNative` and every
+   * unit reconciles — while the densest thing on it, the part a student
+   * actually wants, never reached them. The unit buckets cannot express that,
+   * because the failure is smaller than a page. `deriveState` already forces
+   * `partial` on any non-zero count, so plumbing it here is the whole fix.
+   */
+  unreadableRegions?: number;
 }): ExtractionCoverage {
   let native = 0;
   let vision = 0;
@@ -117,6 +129,7 @@ export function pdfCoverage(input: {
       unitsUnread: unread + beyond,
       truncation: input.truncation,
       ...(input.figures ? { figures: input.figures } : {}),
+      ...(input.unreadableRegions ? { unreadableRegions: input.unreadableRegions } : {}),
     }),
     "page",
     units,
