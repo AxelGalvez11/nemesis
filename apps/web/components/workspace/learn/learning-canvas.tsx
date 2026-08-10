@@ -118,10 +118,13 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     return <main className="flex h-full items-center justify-center bg-(--ui-bg-editor)" />;
   }
 
-  // Reading and testing get a quiet command bar; the empty and orientation states have their
-  // own inputs and would be muddled by a second one.
+  // The empty and orientation states have their own inputs and would be muddled by a second
+  // one. Everywhere else the composer is present and FULL STRENGTH.
+  //
+  // 🔴 It used to fade to 45% opacity during recall and the test, from a time when those states
+  // had their own answer boxes and this bar was a distraction beneath them. Those boxes are
+  // gone: this IS the answer field now, and a half-faded primary input reads as disabled.
   const showComposer = !["empty", "orient", "complete"].includes(canvas.state);
-  const dimComposer = ["recall", "test", "retest"].includes(canvas.state);
 
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
@@ -185,20 +188,23 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           <CanvasRecall
             canvas={canvas}
             cards={canvas.recall}
+            index={session.activeTask?.index ?? 0}
             judging={session.judging}
-            onAttempt={(cardId, text, via) => void session.attemptRecall(cardId, text, via)}
             onDone={() => void session.startTest()}
-            onReveal={(cardId) => void session.revealRecall(cardId)}
+            onNext={session.advanceTask}
+            onUnknown={() => void session.admitUnknown()}
           />
         )}
 
         {["test", "retest"].includes(canvas.state) && (
           <CanvasTest
             canvas={canvas}
+            index={session.activeTask?.index ?? 0}
             judging={session.judging}
             onAnswer={session.answer}
             onFinish={session.finishTest}
-            onRespond={(questionId, text, via, tookMs) => void session.respond(questionId, text, via, tookMs)}
+            onNext={session.advanceTask}
+            onUnknown={() => void session.admitUnknown()}
           />
         )}
 
@@ -245,21 +251,12 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         <CanvasComposer
           busy={busy.kind === "command"}
           busyLabel={busy.label}
-          dimmed={dimComposer}
+          onAnswer={(text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)}
+          onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
-          onSubmit={(text) => void submit(text)}
-          placeholder={
-            // During a test the answer box is the thing being typed into, so this bar has to
-            // say what it is FOR — otherwise "Ask about this card…" reads as the place to put
-            // the answer, and the answer goes to the wrong box.
-            ["test", "retest"].includes(canvas.state)
-              ? "Ask about this question…"
-              : dimComposer
-                ? "Ask about this card…"
-                : "Ask Nemesis or change how you're learning…"
-          }
           selected={selected}
+          task={session.activeTask}
         />
       )}
     </main>

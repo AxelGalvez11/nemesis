@@ -55,8 +55,35 @@ test("the shell reserves clearance with padding rather than a header element", (
   const shell = read("learning-canvas.tsx");
   // Padding on the scroller, not a sized box above it.
   assert.match(shell, /overflow-y-auto pt-\[72px\]/);
-  // One measure for every part of the surface.
+  // Two measurements of two different things, both taken off the references: the reading
+  // column is 680, the composer pill is 770. Neither is a rounding of the other.
   assert.match(shell, /"--canvas-column" as string\]: "680px"/);
+  assert.match(read("canvas-composer.tsx"), /max-w-\[770px\]/);
+  assert.match(read("canvas-composer.tsx"), /min-h-\[54px\][^"]*rounded-\[27px\]/);
+});
+
+test("there is exactly one answer surface on the canvas", () => {
+  const stages = read("canvas-stages.tsx");
+  // 🔴 The recall and test stages each used to grow their own textarea, microphone and submit
+  // button, which put two composers on one screen and made the learner work out which was for
+  // them. The persistent composer answers everything now.
+  assert.ok(!/<textarea/.test(stages), "no stage may contain a text input — the composer is the answer surface");
+  assert.ok(!/useCanvasDictation/.test(stages), "no stage may own a second microphone");
+
+  const composer = read("canvas-composer.tsx");
+  assert.match(composer, /<textarea/, "the composer is where answering happens");
+  // It routes by what is being asked rather than by having two of itself.
+  assert.match(composer, /if \(answering\) onAnswer\(/);
+});
+
+test("nothing offers a one-key reveal of the answer", () => {
+  const stages = read("canvas-stages.tsx");
+  // §22: a reveal shortcut makes the cheapest path through a retrieval prompt the one that
+  // produces no retrieval. "I don't know" replaces it — same lack of evidence, but stated by
+  // the learner rather than reached by pressing space.
+  assert.ok(!/Show me the answer/.test(stages), "the reveal control must not come back");
+  assert.ok(!/event\.code === "Space"|event\.key === " "/.test(stages), "no space-to-reveal binding");
+  assert.match(stages, /I don&rsquo;t know/);
 });
 
 test("the top scrim fades to nothing, so it draws no edge", () => {

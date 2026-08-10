@@ -44,12 +44,32 @@ import {
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps } from "@/lib/learn/canvas-ops";
 import { canStart } from "@/lib/learn/canvas-state";
+import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 const RECALL_CARDS = 8;
 const TEST_QUESTIONS = 6;
 const RETEST_QUESTIONS = 4;
+
+/** What the canvas is asking for right now, if anything.
+ *
+ *  The persistent composer reads this to decide what it is FOR: what to call itself, and where
+ *  a submission should go. There is exactly one answer surface on the canvas, and this is how
+ *  it knows which prompt it is answering. */
+export interface ActiveTask {
+  kind: "recall" | "question";
+  id: string;
+  /** What is being asked, so the composer can label itself against the real prompt. */
+  prompt: string;
+  /** The placeholder the composer shows — derived from the retrieval task, because
+   *  "Explain it in your own words" is wrong for a prompt whose answer is one noun. */
+  placeholder: string;
+  index: number;
+  total: number;
+  /** Once answered, the composer goes back to being a place to ask about the feedback. */
+  answered: boolean;
+}
 
 /** Which part of the page is working. Local rather than global so §21 holds: simplifying one
  *  paragraph must light up that paragraph, not blank the document. */
@@ -102,6 +122,16 @@ export interface CanvasSession {
   /** Records the learner's own words and asks the judge what they show. */
   respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
   finishTest: () => void;
+  /** What the canvas is asking for right now — null while reading. */
+  activeTask: ActiveTask | null;
+  /** Move to the next prompt of the round, or off the end of it. */
+  advanceTask: () => void;
+  /** The ONE way a learner answers anything. Routes to the recall or the test path by what is
+   *  currently being asked, so there is never a second answer field. */
+  answerActiveTask: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
+   *  shortcut that only tells us they looked. */
+  admitUnknown: () => Promise<void>;
   relearn: () => Promise<void>;
   startRetest: () => Promise<void>;
   finish: () => void;
@@ -120,6 +150,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  /** Which prompt of the current round the learner is on.
+   *
+   *  🔴 THIS LIVES HERE, NOT IN THE STAGE. It used to be `useState(0)` inside CanvasRecall and
+   *  again inside CanvasTest, which is exactly why each of them had to grow its own answer box:
+   *  the persistent composer is a sibling of the stage and had no way of knowing what was being
+   *  asked. One cursor in the session is what lets one composer answer everything. */
+  const [cursor, setCursor] = useState(0);
 
   // Saving is debounced against a ref so a burst of edits writes once, and so the save always
   // sees the newest canvas rather than the one captured when the timer was set.
@@ -404,6 +441,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
     setBusy({ kind: null });
     captureStateChange(latest.current, "recall");
+    setCursor(0);
     update((current) => ({
       ...current,
       recall: cards,
@@ -556,6 +594,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
       captureStateChange(latest.current, "test");
+      setCursor(0);
       update((current) => ({
         // A retest replaces the evidence about the concepts it re-assesses — including the
         // recall grades. Without that a single "Again" kept a concept weak forever and the
@@ -858,6 +897,76 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     canvasCapture("canvas_created", fresh);
   }, []);
 
+  // ── The one thing being asked, and the one way to answer it ─────────────
+  //
+  // Derived rather than stored: the prompts themselves live on the canvas, the cursor says
+  // which one, and everything else follows. Storing a duplicate of the current prompt would be
+  // one more thing to keep in step with a document the teaching loop rewrites mid-round.
+  const activeTask: ActiveTask | null = (() => {
+    if (canvas.state === "recall") {
+      const card = canvas.recall[cursor];
+      if (!card) return null;
+      return {
+        kind: "recall",
+        id: card.id,
+        prompt: card.front,
+        placeholder: RECALL_PLACEHOLDER,
+        index: cursor,
+        total: canvas.recall.length,
+        answered: canvas.recallResults.some((entry) => entry.cardId === card.id),
+      };
+    }
+    if (canvas.state === "test" || canvas.state === "retest") {
+      const question = canvas.questions[cursor];
+      if (!question) return null;
+      return {
+        kind: "question",
+        id: question.id,
+        prompt: question.q,
+        // A multiple-choice prompt is answered by picking, not by typing, so the composer stays
+        // a place to ask about it rather than pretending to be the answer field.
+        placeholder: question.format === "free" ? RESPONSE_PLACEHOLDER[question.task] : "",
+        index: cursor,
+        total: canvas.questions.length,
+        answered:
+          question.format === "choice"
+            ? canvas.answers.some((entry) => entry.questionId === question.id)
+            : canvas.responses.some((entry) => entry.questionId === question.id),
+      };
+    }
+    return null;
+  })();
+
+  // Read through a ref for the same reason `latest` exists: these handlers are called from
+  // async paths and from event listeners, where a value captured at render time can already be
+  // a round out of date.
+  const activeTaskRef = useRef(activeTask);
+  activeTaskRef.current = activeTask;
+
+  const advanceTask = useCallback(() => setCursor((current) => current + 1), []);
+
+  const answerActiveTask = useCallback(
+    async (text: string, via: "typed" | "spoken", tookMs?: number) => {
+      const task = activeTaskRef.current;
+      if (!task || task.answered) return;
+      if (task.kind === "recall") await attemptRecall(task.id, text, via);
+      else await respond(task.id, text, via, tookMs);
+    },
+    [attemptRecall, respond],
+  );
+
+  /** §24: not the same thing as showing the answer. "I don't know" is the learner reporting
+   *  their state, which is evidence; a reveal shortcut only records that they read something.
+   *  Either way no retrieval was obtained, so the scheduler hears the same thing — but this
+   *  path is chosen deliberately rather than reached by pressing space. */
+  const admitUnknown = useCallback(async () => {
+    const task = activeTaskRef.current;
+    if (!task || task.answered) return;
+    canvasCapture("canvas_unknown_admitted", latest.current, { kind: task.kind, id: task.id });
+    if (task.kind === "recall") await revealRecall(task.id);
+    else await respond(task.id, "I don't know.", "typed");
+  }, [respond, revealRecall]);
+
   return {
     canvas,
     busy,
@@ -883,6 +992,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     answer,
     respond,
     finishTest,
+    activeTask,
+    advanceTask,
+    answerActiveTask,
+    admitUnknown,
     relearn,
     startRetest,
     finish,
