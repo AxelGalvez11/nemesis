@@ -104,13 +104,16 @@ export function CanvasComposer({
         >
           <label
             aria-label="Add material"
-            className="mb-0.5 flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            className="mb-0.5 flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:text-(--ui-text-primary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)"
             title="Add material"
           >
             <Codicon name="add" size="0.875rem" />
+            {/* 🔴 `sr-only`, NOT `hidden`. A hidden input is out of the tab order and out of the
+                accessibility tree, so the label around it becomes unreachable by keyboard and
+                adding material has no non-pointer path at all. */}
             <input
               accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
-              className="hidden"
+              className="sr-only"
               multiple
               onChange={(event) => {
                 if (event.target.files?.length) onFiles(event.target.files);

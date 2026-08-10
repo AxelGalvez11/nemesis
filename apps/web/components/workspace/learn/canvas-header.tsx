@@ -104,12 +104,13 @@ export function CanvasHeader({ canvas, onFiles, onExit }: CanvasHeaderProps) {
               ))
             )}
 
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)">
+            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
               <Codicon name="add" size="0.75rem" />
               Add material
+              {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
               <input
                 accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
-                className="hidden"
+                className="sr-only"
                 multiple
                 onChange={(event) => {
                   if (event.target.files) onFiles(event.target.files);
