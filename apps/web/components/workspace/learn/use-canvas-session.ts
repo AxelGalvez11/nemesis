@@ -26,7 +26,7 @@ import {
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
-import { buildExcerpts } from "@/lib/learn/canvas-grounding";
+import { buildExcerpts, buildExcerptsFromModel } from "@/lib/learn/canvas-grounding";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
 import {
@@ -226,7 +226,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             id: sourceId,
             title: extracted.title ?? file.name,
             kind: extracted.kind ?? "text",
-            excerpts: buildExcerpts(sourceId, extracted.text),
+            // 🔴 STRUCTURE WHEN WE HAVE IT, TEXT WHEN WE DO NOT — AND A MISSING
+            // MODEL IS "UNKNOWN", NOT "FLAT". The model path keeps a table whole
+            // instead of letting it arrive as a paragraph of pipe characters, and
+            // takes each excerpt's label from the heading path the parser actually
+            // recorded rather than scraping markdown back out of the text. Images
+            // have no structural pass at all and a PDF the structural reader could
+            // not open falls back to `unpdf`, so the string builder stays as the
+            // answer for both — it is a fallback, not dead code.
+            excerpts: extracted.model
+              ? buildExcerptsFromModel(sourceId, extracted.model)
+              : buildExcerpts(sourceId, extracted.text),
             ...(note ? { coverageNote: note } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));

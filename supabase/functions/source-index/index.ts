@@ -33,7 +33,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // chunking rules that agree only until one of them is edited — and the whole
 // point of `chunker_version` is that a chunk's boundaries are knowable.
 import { chunkDocument } from '../../../packages/shared/src/document-chunks.ts'
-import { readDocumentModel } from '../../../packages/shared/src/document-envelope.ts'
+import { storedDocumentModel } from '../../../packages/shared/src/document-envelope.ts'
 import { embedCoreTexts } from '../core-source-sync/embeddings.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -108,10 +108,22 @@ async function indexOne(parse: UnchunkedParse) {
     // from a backup, or hand-edited must fail to read rather than arrive as a
     // half-typed object whose missing blocks look like a document with no
     // content — which would then be written as a complete, empty index.
-    const model = readDocumentModel(parse.structure)
+    // 🔴 `storedDocumentModel`, NOT `readDocumentModel` — AND THE DIFFERENCE WAS
+    // A TOTAL, SILENT OUTAGE OF SOURCE RETRIEVAL. `parsed_documents.structure`
+    // holds an ENVELOPE (`{ v, shape, title, text, model }`), never a bare model.
+    // `readDocumentModel` validates a model, so it looked for `format` at the top
+    // of an envelope, never found it, and returned null for EVERY row — meaning
+    // no uploaded document was ever chunked, embedded or indexed.
+    //
+    // What made it survive is the line below: null was reported as "predates the
+    // canonical model", so a hard bug rendered as an expected backlog of old
+    // parses, `indexed: 0` looked like the healthy answer this function
+    // documents, and nothing ever alerted. Proven by round-tripping a real
+    // envelope through both readers before changing this.
+    const model = storedDocumentModel(parse.structure)
     if (!model) {
-      // Not an error, and deliberately not retried in a tight loop: this parse
-      // predates the canonical model. Re-parsing it is Phase 1's job.
+      // Now genuinely what it says: a v1 `text-only` envelope, written before the
+      // canonical model existed. Re-parsing it is Phase 1's job.
       return { ok: false, parsedDocumentId: id, reason: 'no-model' }
     }
 
