@@ -281,15 +281,28 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
   let model: DocumentModel | undefined;
   // Units the FILE declares. Beyond the cap they are unread, never absent.
   let unreadBeyondCap = 0;
+  // Content located and not delivered, smaller than a page: today, table regions
+  // with no recoverable grid. Any non-zero value makes the document `partial`.
+  let unreadableRegions = 0;
   try {
     // 🔴 CAPTURE THE FIGURES ON THE WAY PAST, BECAUSE THERE IS NO WAY BACK.
     // `page.cleanup()` releases the decoded image data, so a later pass would
     // have to re-parse every page's operator list to see a diagram again.
     const structural = await readPdfStructure(new Uint8Array(bytes), {
       captureFigures: options.lookAtFigures === true,
+      // 🔴 THE ENV VAR IS THE SWITCH, NOT A SECOND FLAG BESIDE IT. Asking for
+      // tables unconditionally is safe because `layoutModelPath()` returns null
+      // when `DOCLING_LAYOUT_ONNX` is unset, and no weights means no tables —
+      // never an error. A separate boolean would be a second thing to keep in
+      // step with the first, and the pair would eventually disagree.
+      detectTables: true,
     });
     model = structural.model;
     unreadBeyondCap = Math.max(structural.declaredUnits - structural.model.units.length, 0);
+    // A table region the layout model found and the grid builder could not
+    // reconstruct. Carried to coverage so a text-full page holding an
+    // unreadable table cannot report itself complete.
+    unreadableRegions = structural.tableRegionsUnread;
 
     // 🔴 THE VISUAL HALF. Production decides what to look at from text sparsity
     // alone, which guarantees that 326 of 952 real pages — holding 1,807
@@ -380,6 +393,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       truncation: extractCut(TEXT_CAP, text.length, Math.max(wholeTextLength, text.length)),
       unreadBeyondCap,
       ...(figures ? { figures } : {}),
+      ...(unreadableRegions ? { unreadableRegions } : {}),
     });
   }
   if (plan.kind === "text") {
@@ -389,6 +403,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       truncation: extractCut(TEXT_CAP, r.text.length, wholeTextLength),
       unreadBeyondCap,
       ...(figures ? { figures } : {}),
+      ...(unreadableRegions ? { unreadableRegions } : {}),
     });
   }
 
@@ -409,7 +424,14 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
 
   return {
     coverage:
-      record ?? pdfCoverage({ pageTexts: r.pageTexts, readByVision, unreadBeyondCap, ...(figures ? { figures } : {}) }),
+      record ??
+      pdfCoverage({
+        pageTexts: r.pageTexts,
+        readByVision,
+        unreadBeyondCap,
+        ...(figures ? { figures } : {}),
+        ...(unreadableRegions ? { unreadableRegions } : {}),
+      }),
     model,
     readBy,
     text,

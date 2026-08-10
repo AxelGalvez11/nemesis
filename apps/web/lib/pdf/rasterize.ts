@@ -21,7 +21,35 @@
  * actually got rather than what it asked for.
  */
 
-import { createCanvas } from "@napi-rs/canvas";
+/**
+ * 🔴 LOADED DYNAMICALLY, AND THE BUILD IS THE REASON — NOT TASTE.
+ *
+ * `@napi-rs/canvas` is a native addon, and a top-level `import` of it puts a
+ * `.node` binary into the route's static module graph. Turbopack then fails the
+ * whole production build outright:
+ *
+ *     ./node_modules/@napi-rs/canvas/js-binding.js
+ *     non-ecmascript placeable asset — not placeable in ESM chunks
+ *       rasterize.ts -> structure.ts -> app/api/documents/parse/worker/route.ts
+ *
+ * A dynamic import keeps it out of the graph and turns "the deploy is broken"
+ * into "this one lane is unavailable", which is what a disabled feature should
+ * cost. `layout-onnx.ts` loads `onnxruntime-node` the same way for the same
+ * reason. Both are also named in `serverExternalPackages` so Next leaves them
+ * as runtime requires instead of trying to bundle them at all.
+ */
+type CanvasModule = typeof import("@napi-rs/canvas");
+let canvasPromise: Promise<CanvasModule> | null = null;
+
+async function canvasLib(): Promise<CanvasModule> {
+  canvasPromise ??= import("@napi-rs/canvas").catch((cause) => {
+    // Never cache a failed load: one transient fault would otherwise disable
+    // rasterization for the life of the process.
+    canvasPromise = null;
+    throw cause;
+  });
+  return canvasPromise;
+}
 
 /**
  * What the layout model wants. It resizes to 640x640 internally, so rendering
@@ -94,6 +122,7 @@ export async function rasterizePage(
   const base = page.getViewport({ scale: 1 });
   const { scale, downscaled } = scaleForPage(base.width, base.height, dpi, maxPixels);
 
+  const { createCanvas } = await canvasLib();
   const viewport = page.getViewport({ scale });
   const width = Math.max(1, Math.round(viewport.width));
   const height = Math.max(1, Math.round(viewport.height));
@@ -129,6 +158,7 @@ export async function pageToModelRgb(
 ): Promise<{ rgb: Uint8Array; width: number; height: number }> {
   const size = options.size ?? 640;
   const dpi = options.dpi ?? LAYOUT_DPI;
+  const { createCanvas } = await canvasLib();
   const base = page.getViewport({ scale: 1 });
   const { scale } = scaleForPage(base.width, base.height, dpi, options.maxPixels ?? MAX_PAGE_PIXELS);
   const viewport = page.getViewport({ scale });
