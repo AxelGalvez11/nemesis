@@ -49,7 +49,7 @@ import { applyOps } from "@/lib/learn/canvas-ops";
 import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
-import { loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
+import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 const RECALL_CARDS = 8;
@@ -138,6 +138,10 @@ export interface CanvasSession {
   admitUnknown: () => Promise<void>;
   /** Answer a question about an exact highlighted range. Returns text for a popover; for
    *  "simpler" it rewrites the one block instead and returns null. */
+  /** Session management (§10). Kept away from the teaching API above on purpose — these change
+   *  what the session IS, not what the learner is doing inside it. */
+  rename: (title: string) => void;
+  remove: () => Promise<void>;
   askAboutSelection: (
     selection: CanvasSelection,
     action: SelectionAction,
@@ -1094,6 +1098,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     advanceTask,
     answerActiveTask,
     admitUnknown,
+    rename: (title: string) => update((current) => ({ ...current, title: title.slice(0, 300) })),
+    remove: async () => {
+      // Written through before navigating away. The debounced autosave would otherwise fire
+      // after the row is already flagged deleted and quietly resurrect it.
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      await deleteCanvas(uid, latest.current.id);
+    },
     askAboutSelection,
     recordEvent,
     selectionBusy,

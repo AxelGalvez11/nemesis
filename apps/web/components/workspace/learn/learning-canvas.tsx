@@ -235,9 +235,14 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[88px] bg-gradient-to-b from-(--ui-bg-editor) via-(--ui-bg-editor)/90 to-transparent" />
 
       <CanvasHeader
+        activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
+        onDelete={() => {
+          void session.remove().then(() => router.push("/sessions"));
+        }}
         onExit={() => router.push("/sessions")}
         onFiles={(files) => void session.attachFiles(files)}
+        onRename={session.rename}
       />
 
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a

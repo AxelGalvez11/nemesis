@@ -17,39 +17,30 @@
 // The layer is also deliberately `pointer-events-none` with only its children re-enabled, so
 // the invisible strip cannot swallow clicks on the content underneath it.
 
-import { useEffect, useRef, useState } from "react";
-
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
+
+import { ObjectivesControl, SessionControl, SourcesControl } from "./canvas-controls";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
   onFiles: (files: FileList | File[]) => void;
   onExit: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+  /** The card or question being answered right now, so the objectives panel can say which one
+   *  the canvas is actually working on rather than guessing from state alone. */
+  activeTaskId?: string | null;
 }
 
-export function CanvasHeader({ canvas, onFiles, onExit }: CanvasHeaderProps) {
-  const [showSources, setShowSources] = useState(false);
-  const sources = useRef<HTMLDivElement>(null);
-
-  // The drawer floats over the canvas rather than hanging off a bar, so it needs to close the
-  // way an overlay does — clicking the page behind it, or Escape.
-  useEffect(() => {
-    if (!showSources) return;
-    const onDown = (event: MouseEvent) => {
-      if (!sources.current?.contains(event.target as Node)) setShowSources(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShowSources(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [showSources]);
-
+export function CanvasHeader({
+  canvas,
+  onFiles,
+  onExit,
+  onRename,
+  onDelete,
+  activeTaskId,
+}: CanvasHeaderProps) {
   return (
     <header className="pointer-events-none absolute inset-x-[16px] top-[16px] z-30 flex h-[36px] items-center gap-2">
       <button
@@ -71,57 +62,11 @@ export function CanvasHeader({ canvas, onFiles, onExit }: CanvasHeaderProps) {
         {canvas.title || "New canvas"}
       </span>
 
-      <div className="pointer-events-auto relative shrink-0" ref={sources}>
-        <button
-          aria-expanded={showSources}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8125rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-          onClick={() => setShowSources((current) => !current)}
-          type="button"
-        >
-          Sources
-          <span className="text-(--ui-text-quaternary)">· {canvas.sources.length}</span>
-        </button>
-
-        {/* A panel attached to the canvas, not a dropdown belonging to a bar. */}
-        {showSources && (
-          <div className="absolute right-0 top-full z-40 mt-2 max-h-[70vh] w-[17rem] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) p-2 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)">
-            {canvas.sources.length === 0 ? (
-              <p className="px-2 py-3 text-[0.8125rem] text-(--ui-text-quaternary)">Nothing attached yet.</p>
-            ) : (
-              canvas.sources.map((source) => (
-                <div className="px-2 py-1.5" key={source.id}>
-                  <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">{source.title}</p>
-                  <p className="text-[0.6875rem] text-(--ui-text-quaternary)">
-                    {source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
-                  </p>
-                  {/* A source Nemesis could only half read says so here, not silently. */}
-                  {source.coverageNote && (
-                    <p className="mt-1 text-[0.6875rem] leading-relaxed text-amber-500">
-                      {source.coverageNote.replace(/^\[|\]$/g, "")}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-
-            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
-              <Codicon name="add" size="0.75rem" />
-              Add material
-              {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
-              <input
-                accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
-                className="sr-only"
-                multiple
-                onChange={(event) => {
-                  if (event.target.files) onFiles(event.target.files);
-                  setShowSources(false);
-                }}
-                type="file"
-              />
-            </label>
-          </div>
-        )}
-      </div>
+      {/* §1: three compact controls, floating. Not a toolbar — see the note at the top of
+          canvas-controls.tsx for what that costs when it slips. */}
+      <SourcesControl canvas={canvas} onFiles={onFiles} />
+      <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+      <SessionControl canvas={canvas} onDelete={onDelete} onRename={onRename} />
     </header>
   );
 }

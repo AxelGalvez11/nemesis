@@ -404,6 +404,26 @@ export interface RecallResult {
   evaluation?: ResponseEvaluation;
 }
 
+/** Something Nemesis MADE for the learner, at their request — a summary, slides, a document.
+ *
+ *  🔴 NOT A SOURCE, and the distinction is the reason this exists while the list is still always
+ *  empty (§4). A source is material Nemesis grounds its teaching ON; an output is an artifact it
+ *  produced. They live in the same session and are opposite ends of it, and a single "files"
+ *  list that flattened the two would be very cheap to write now and very expensive to unpick
+ *  once anything depends on it.
+ *
+ *  `assetId` is where this is going: §6 wants the durable object stored once and REFERENCED, so
+ *  attaching one recording to three canvases does not store the audio three times. There is no
+ *  assets table yet, so the field is optional and nothing populates it. */
+export interface CanvasOutput {
+  id: string;
+  title: string;
+  /** "document" | "slides" | "diagram" | "export" — whatever produced it said it was. */
+  kind: string;
+  createdAt: string;
+  assetId?: string;
+}
+
 export interface LearningCanvas {
   id: string;
   title: string;
@@ -436,6 +456,10 @@ export interface LearningCanvas {
    *  change a diagnosis. Capped and lossy: this is telemetry for INTERPRETING evidence, not the
    *  append-only evidence history, which is still to come. See canvas-events.ts. */
   events: LearningEvent[];
+  /** Artifacts made from this canvas. Always empty today — nothing generates one yet — and
+   *  carried anyway so the input/output distinction is in the model rather than in a comment.
+   *  🔴 Needs its own line in `canvasToRow`, which enumerates by hand. */
+  outputs: CanvasOutput[];
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -465,6 +489,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     responses: [],
     correctiveAttempts: {},
     events: [],
+    outputs: [],
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

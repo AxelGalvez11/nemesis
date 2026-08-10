@@ -26,6 +26,37 @@ test("a canvas survives a round trip through the row shape unchanged", () => {
   assert.deepEqual(canvasFromRow(row as never), before);
 });
 
+test("🔴 every populated field reaches the row — the by-hand list is the trap", () => {
+  // `canvasToRow` enumerates the document's fields by hand rather than spreading, so a new field
+  // is persisted only when someone remembers to add a line. The round-trip test above uses an
+  // EMPTY canvas, which passes whether or not the line exists — both sides produce []. This one
+  // populates the fields that were added late, which is the only version that can fail.
+  const before: LearningCanvas = {
+    ...sample(),
+    blocks: [
+      {
+        id: "b1",
+        type: "paragraph",
+        content: "Charge moves down its electrochemical gradient.",
+        conceptIds: ["k1"],
+        terms: [{ term: "electrochemical gradient", conceptId: "k1" }],
+      },
+    ],
+    outputs: [{ id: "o1", title: "Summary.docx", kind: "document", createdAt: NOW }],
+    events: [{ id: "e1", type: "definition_opened", at: NOW, selectedText: "gradient", activeElapsedMs: 90_000 }],
+  };
+
+  const row = { ...(canvasToRow(before, "u1") as Record<string, unknown>), updated_at: NOW };
+  const after = canvasFromRow(row as never);
+
+  assert.deepEqual(after.outputs, before.outputs, "outputs must survive the write");
+  assert.deepEqual(after.events, before.events, "events must survive the write");
+  // Blocks are serialised whole, so `terms` rides along — asserted so that a future hand-rebuilt
+  // block object (which is how `{content, title}` dropped new fields once already) fails here.
+  assert.deepEqual(after.blocks[0]?.terms, before.blocks[0]?.terms, "block terms must survive the write");
+  assert.deepEqual(after, before);
+});
+
 test("the row carries the canvas's real birthday, so one started offline keeps it", () => {
   assert.equal((canvasToRow(sample(), "u1") as Record<string, unknown>).created_at, NOW);
 });
