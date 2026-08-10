@@ -70,6 +70,24 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
   const text = useCanvasSelection(true);
   const [answer, setAnswer] = useState<SelectionAnswer | null>(null);
 
+  // The weakest signal in the log, and recorded anyway: a selection nobody asked a question
+  // about still says where attention snagged. One row per settled selection, not per
+  // `selectionchange` — the hook already debounces, or a single drag would write dozens.
+  const loggedSelection = useRef<string>("");
+  useEffect(() => {
+    const picked = text.selection?.selection;
+    if (!picked) return;
+    const key = `${picked.regionId}:${picked.startOffset}:${picked.endOffset}`;
+    if (key === loggedSelection.current) return;
+    loggedSelection.current = key;
+    session.recordEvent({
+      type: "selection_created",
+      ...(picked.blockId ? { blockId: picked.blockId } : {}),
+      ...(picked.conceptIds ? { conceptIds: picked.conceptIds } : {}),
+      selectedText: picked.selectedText,
+    });
+  }, [session, text.selection]);
+
   const dismissSelection = useCallback(() => {
     setAnswer(null);
     session.clearSelectionAnswer();

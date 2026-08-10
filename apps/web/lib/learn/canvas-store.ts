@@ -77,6 +77,8 @@ export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): 
     // Absent on every canvas written before the teaching loop existed.
     correctiveAttempts:
       (canvas as { correctiveAttempts?: Record<string, number> }).correctiveAttempts ?? {},
+    // Absent on every canvas written before interaction telemetry existed.
+    events: list((canvas as { events?: unknown }).events),
   };
 }
 
@@ -142,6 +144,7 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       // on the canvas to lose.
       responses: canvas.responses,
       correctiveAttempts: canvas.correctiveAttempts,
+      events: canvas.events,
       weakConceptIds: canvas.weakConceptIds,
       correctedConceptIds: canvas.correctedConceptIds,
       ...(canvas.studyDeckId ? { studyDeckId: canvas.studyDeckId } : {}),

@@ -10,6 +10,8 @@
 
 /** Where the canvas is in the learning arc. The UI demonstrates this progression; the model
  *  never picks it — only an explicit user action or a validated transition op moves it. */
+import type { LearningEvent } from "./canvas-events";
+
 export type CanvasState =
   | "empty"
   | "sources_attached"
@@ -406,6 +408,13 @@ export interface LearningCanvas {
    *  Reset when a round turns over: the cap is about grinding on one idea in one sitting, not a
    *  lifetime budget for a concept. */
   correctiveAttempts: Record<string, number>;
+  /** Interaction telemetry: what the learner DID, as distinct from what they demonstrated.
+   *
+   *  🔴 NOT EVIDENCE. Nothing may turn a row of this into a verdict on its own — `diagnose()`
+   *  does not read it, and `canvas-events.test.ts` asserts that appending fifty events cannot
+   *  change a diagnosis. Capped and lossy: this is telemetry for INTERPRETING evidence, not the
+   *  append-only evidence history, which is still to come. See canvas-events.ts. */
+  events: LearningEvent[];
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -434,6 +443,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     answers: [],
     responses: [],
     correctiveAttempts: {},
+    events: [],
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

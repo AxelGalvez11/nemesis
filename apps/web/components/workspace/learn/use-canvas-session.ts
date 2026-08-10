@@ -29,6 +29,7 @@ import {
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
+import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts } from "@/lib/learn/canvas-grounding";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -141,6 +142,8 @@ export interface CanvasSession {
     selection: CanvasSelection,
     action: SelectionAction,
   ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
+  /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
+  recordEvent: (event: NewLearningEvent) => void;
   selectionBusy: boolean;
   selectionError: string | null;
   clearSelectionAnswer: () => void;
@@ -196,6 +199,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       persist();
     },
     [persist],
+  );
+
+  /** 🔴 Records an interaction and NOTHING ELSE. It must never touch `weakConceptIds`, an
+   *  evaluation, or a scheduling grade — those come from performance, and a tooltip is not a
+   *  performance. `canvas-events.test.ts` holds the line behaviourally. */
+  const recordEvent = useCallback(
+    (event: NewLearningEvent) => {
+      update((current) =>
+        appendEvent(current, event, new Date().toISOString(), `e${current.events.length}-${Date.now()}`),
+      );
+    },
+    [update],
   );
 
   const go = useCallback(
@@ -523,6 +538,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
 
+      recordEvent({
+        type: "response_submitted",
+        ...(card.conceptId ? { conceptIds: [card.conceptId] } : {}),
+        payload: { via, stage: "recall" },
+      });
+
       setJudging(cardId);
       const result = await evaluateLearningResponse(
         id,
@@ -568,7 +589,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         ...(evaluation ? { evaluation } : {}),
       });
     },
-    [gradeRecall, requireUid],
+    [gradeRecall, recordEvent, requireUid],
   );
 
   /** They asked to see the answer instead of attempting it.
@@ -685,6 +706,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         ],
       }));
 
+      recordEvent({
+        type: "response_submitted",
+        ...(question.conceptId ? { conceptIds: [question.conceptId] } : {}),
+        payload: { via, stage: "test", ...(tookMs !== undefined ? { tookMs } : {}) },
+      });
+
       const id = requireUid();
       if (!id) return;
       setJudging(questionId);
@@ -796,7 +823,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         };
       });
     },
-    [requireUid, update],
+    [recordEvent, requireUid, update],
   );
 
   const finishTest = useCallback(() => {
@@ -977,9 +1004,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     const task = activeTaskRef.current;
     if (!task || task.answered) return;
     canvasCapture("canvas_unknown_admitted", latest.current, { kind: task.kind, id: task.id });
+    recordEvent({ type: "unknown_admitted", payload: { kind: task.kind, id: task.id } });
     if (task.kind === "recall") await revealRecall(task.id);
     else await respond(task.id, "I don't know.", "typed");
-  }, [respond, revealRecall]);
+  }, [recordEvent, respond, revealRecall]);
 
   /** The fast path from "I don't understand this bit" to an answer, without leaving the page.
    *
@@ -992,6 +1020,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return null;
       setSelectionError(null);
       setSelectionBusy(true);
+
+      recordEvent({
+        type:
+          action === "define"
+            ? "definition_opened"
+            : action === "simpler"
+              ? "simplification_requested"
+              : action === "example"
+                ? "example_requested"
+                : action === "why"
+                  ? "why_requested"
+                  : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
 
       if (action === "simpler") {
         const result = await simplifySelection(id, latest.current, selection);
@@ -1012,7 +1056,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       return result.value;
     },
-    [requireUid, update],
+    [recordEvent, requireUid, update],
   );
 
   return {
@@ -1045,6 +1089,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     answerActiveTask,
     admitUnknown,
     askAboutSelection,
+    recordEvent,
     selectionBusy,
     selectionError,
     clearSelectionAnswer: () => setSelectionError(null),
