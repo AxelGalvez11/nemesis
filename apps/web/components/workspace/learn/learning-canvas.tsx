@@ -162,8 +162,10 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           <CanvasRecall
             canvas={canvas}
             cards={canvas.recall}
+            judging={session.judging}
+            onAttempt={(cardId, text, via) => void session.attemptRecall(cardId, text, via)}
             onDone={() => void session.startTest()}
-            onGrade={(cardId, grade) => void session.gradeRecall(cardId, grade)}
+            onReveal={(cardId) => void session.revealRecall(cardId)}
           />
         )}
 

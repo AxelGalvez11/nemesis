@@ -53,16 +53,16 @@ export function diagnose(
     // An answer we could not judge is not evidence in either direction. Counting it as a failure
     // would punish the learner for a model that returned malformed JSON; counting it as a pass
     // would retire a concept nobody assessed. It simply does not appear.
-    if (!response.judgement) continue;
+    if (!response.evaluation) continue;
     total += 1;
-    const understood = verdictIsPass(response.judgement.verdict);
+    const understood = verdictIsPass(response.evaluation.verdict);
     if (understood) correct += 1;
     if (question.conceptId) (understood ? passed : failed).add(question.conceptId);
     // §4: one explanation can show that a NEIGHBOURING idea is shaky — "they have the mechanism
     // but their grasp of the underlying pathway is rough". Only ever adds weakness, never
     // removes it: the judge is inferring here rather than assessing, and inference is not
     // strong enough evidence to retire a concept.
-    for (const id of response.judgement.alsoWeakConceptIds ?? []) failed.add(id);
+    for (const id of response.evaluation.alsoWeakConceptIds ?? []) failed.add(id);
   }
 
   for (const result of canvas.recallResults) {

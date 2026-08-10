@@ -17,11 +17,11 @@ import {
   type CanvasBlock,
   type CanvasBlockType,
   type CanvasConcept,
-  FREE_PROMPT_KINDS,
+  RETRIEVAL_TASKS,
   type CanvasChoiceQuestion,
   type CanvasFreeQuestion,
   type CanvasQuestion,
-  type FreePromptKind,
+  type RetrievalTask,
   type CanvasSource,
   type RecallCard,
   type SourceRef,
@@ -284,21 +284,21 @@ export function parseFreeQuestions(
     const conceptId = text(entry.conceptId);
     if (!conceptId || !known.has(conceptId)) continue;
 
-    const expected = Array.isArray(entry.expected) ? entry.expected.map(text).filter(Boolean) : [];
-    if (expected.length === 0) continue;
+    const claims = Array.isArray(entry.expected) ? entry.expected.map(text).filter(Boolean) : [];
+    if (claims.length === 0) continue;
 
     // An unrecognised kind is not fatal — it only decides how the prompt is introduced on screen.
     // "explain" is the honest default because it is the least specific of the six.
-    const rawKind = text(entry.kind) as FreePromptKind;
-    const kind = (FREE_PROMPT_KINDS as readonly string[]).includes(rawKind) ? rawKind : "explain";
+    const rawTask = text(entry.kind || entry.task) as RetrievalTask;
+    const task = (RETRIEVAL_TASKS as readonly string[]).includes(rawTask) ? rawTask : "explain";
 
     const refs = usableRefs(entry.sourceRefs, sources);
     out.push({
       id: `q_${out.length + 1}_${Math.random().toString(36).slice(2, 8)}`,
       format: "free",
-      kind,
+      task,
       q,
-      expected,
+      expectedEvidence: { acceptableClaims: claims },
       why: text(entry.why),
       conceptId,
       ...(refs.length ? { sourceRefs: refs } : {}),

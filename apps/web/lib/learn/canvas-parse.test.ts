@@ -249,8 +249,8 @@ test("a free-response prompt is parsed with its expected points", () => {
   });
   const [question] = parseFreeQuestions(raw, ["k1"], FREE_SOURCES);
   assert.equal(question?.format, "free");
-  assert.equal(question?.kind, "mechanism");
-  assert.equal(question?.expected.length, 2);
+  assert.equal(question?.task, "mechanism");
+  assert.equal(question?.expectedEvidence.acceptableClaims?.length, 2);
   assert.equal(question?.sourceRefs?.length, 1);
 });
 
@@ -274,5 +274,5 @@ test("an unrecognised kind falls back to explain rather than dropping the prompt
   const raw = JSON.stringify({
     questions: [{ kind: "interpretive-dance", q: "Explain.", expected: ["a point"], why: "", conceptId: "k1" }],
   });
-  assert.equal(parseFreeQuestions(raw, ["k1"], FREE_SOURCES)[0]?.kind, "explain");
+  assert.equal(parseFreeQuestions(raw, ["k1"], FREE_SOURCES)[0]?.task, "explain");
 });

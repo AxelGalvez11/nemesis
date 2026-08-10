@@ -250,23 +250,23 @@ function freeQuestion(id: string, conceptId: string) {
   return {
     id,
     format: "free" as const,
-    kind: "explain" as const,
+    task: "explain" as const,
     q: "Why?",
-    expected: ["the point"],
+    expectedEvidence: { acceptableClaims: ["the point"] },
     why: "",
     conceptId,
   };
 }
 
-function judged(verdict: "understood" | "partial" | "incorrect" | "misconception", extra = {}) {
-  return { verdict, got: [], missing: [], refinement: "…", ...extra };
+function judged(verdict: "strong" | "understood" | "partial" | "incorrect" | "misconception", extra = {}) {
+  return { verdict, confidence: 0.8, demonstrated: [], missing: [], misconceptions: [], feedback: "…", ...extra };
 }
 
 test("an explanation judged understood makes its concept understood", () => {
   const result = diagnose(
     canvasWith({
       questions: [freeQuestion("q1", "k1")],
-      responses: [{ questionId: "q1", text: "…", via: "typed", judgement: judged("understood") }],
+      responses: [{ questionId: "q1", text: "…", via: "typed", evaluation: judged("understood") }],
     }),
   );
   assert.deepEqual(result.understood.map((c) => c.id), ["k1"]);
@@ -279,7 +279,7 @@ test("a partial explanation leaves the concept weak, not understood", () => {
   const result = diagnose(
     canvasWith({
       questions: [freeQuestion("q1", "k1")],
-      responses: [{ questionId: "q1", text: "…", via: "spoken", judgement: judged("partial") }],
+      responses: [{ questionId: "q1", text: "…", via: "spoken", evaluation: judged("partial") }],
     }),
   );
   assert.deepEqual(result.weak.map((c) => c.id), ["k1"]);
@@ -308,7 +308,7 @@ test("a misconception can name a second concept as weak", () => {
           questionId: "q1",
           text: "…",
           via: "typed",
-          judgement: judged("misconception", { misconception: "believes X", alsoWeakConceptIds: ["k3"] }),
+          evaluation: judged("misconception", { misconceptions: ["believes X"], alsoWeakConceptIds: ["k3"] }),
         },
       ],
     }),
@@ -323,8 +323,8 @@ test("a neighbouring concept named weak is never retired by a pass elsewhere", (
     canvasWith({
       questions: [freeQuestion("q1", "k1"), freeQuestion("q2", "k2")],
       responses: [
-        { questionId: "q1", text: "…", via: "typed", judgement: judged("understood", { alsoWeakConceptIds: ["k2"] }) },
-        { questionId: "q2", text: "…", via: "typed", judgement: judged("understood") },
+        { questionId: "q1", text: "…", via: "typed", evaluation: judged("understood", { alsoWeakConceptIds: ["k2"] }) },
+        { questionId: "q2", text: "…", via: "typed", evaluation: judged("understood") },
       ],
     }),
   );
@@ -338,7 +338,7 @@ test("a retest clears free responses along with answers", () => {
   // and make "Finish" unreachable all over again.
   const before = canvasWith({
     questions: [freeQuestion("q1", "k2")],
-    responses: [{ questionId: "q1", text: "…", via: "typed", judgement: judged("incorrect") }],
+    responses: [{ questionId: "q1", text: "…", via: "typed", evaluation: judged("incorrect") }],
     recallResults: [{ cardId: "c1", conceptId: "k2", grade: "again" as const }],
   });
   const after = clearEvidenceForRetest(before, ["k2"]);

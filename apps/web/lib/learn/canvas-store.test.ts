@@ -179,7 +179,14 @@ test("free responses survive a round trip to the row and back", () => {
         questionId: "q1",
         text: "what the learner actually said",
         via: "spoken",
-        judgement: { verdict: "partial", got: ["a"], missing: ["b"], refinement: "Add b." },
+        evaluation: {
+          verdict: "partial",
+          confidence: 0.6,
+          demonstrated: ["a"],
+          missing: ["b"],
+          misconceptions: [],
+          feedback: "Add b.",
+        },
       },
     ],
   };
@@ -195,7 +202,7 @@ test("free responses survive a round trip to the row and back", () => {
     updated_at: "2026-08-10T00:00:00.000Z",
   });
   assert.equal(back.responses[0]?.text, "what the learner actually said");
-  assert.equal(back.responses[0]?.judgement?.verdict, "partial");
+  assert.equal(back.responses[0]?.evaluation?.verdict, "partial");
 });
 
 test("a stored judgement that no longer holds up is dropped on read", () => {
@@ -209,13 +216,13 @@ test("a stored judgement that no longer holds up is dropped on read", () => {
     document: {
       concepts: [{ id: "k1", label: "A concept" }],
       responses: [
-        { questionId: "q1", text: "…", via: "typed", judgement: { verdict: "brilliant", refinement: "x" } },
+        { questionId: "q1", text: "…", via: "typed", evaluation: { verdict: "brilliant", feedback: "x" } },
       ],
     },
     active_ms: 0,
     created_at: "2026-08-10T00:00:00.000Z",
     updated_at: "2026-08-10T00:00:00.000Z",
   });
-  assert.equal(back.responses[0]?.judgement, undefined);
+  assert.equal(back.responses[0]?.evaluation, undefined);
   assert.equal(back.responses[0]?.text, "…", "the learner's own words are kept either way");
 });

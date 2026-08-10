@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { diagnose, summariseCompletion } from "@/lib/learn/canvas-diagnosis";
-import { VERDICT_HEADLINE } from "@/lib/learn/canvas-judge";
+import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import {
   CANVAS_LEVELS,
   LEVEL_LABELS,
@@ -15,9 +15,10 @@ import {
   type CanvasFreeQuestion,
   type CanvasLevel,
   type CanvasResponse,
-  type FreePromptKind,
+  type RetrievalTask,
   type LearningCanvas,
   type RecallCard,
+  type RecallResult,
 } from "@/lib/learn/canvas-model";
 import { cn } from "@/lib/utils";
 
@@ -142,37 +143,38 @@ export function CanvasOrient({
 
 // -------------------------------------------------------------------- recall
 
-const GRADES = [
-  { grade: "again", label: "Again", hint: "1" },
-  { grade: "hard", label: "Hard", hint: "2" },
-  { grade: "good", label: "Good", hint: "3" },
-  { grade: "easy", label: "Easy", hint: "4" },
-] as const;
-
-/** Reveal, then self-grade. Keyboard first (§11): Space reveals then grades Good, 1-4 grade.
- *  Identical to the Study tab's review session on purpose — a learner must not have to hold
- *  two sets of shortcuts in their head. */
+/** Retrieval by producing something, and being read for what you meant (§31).
+ *
+ *  This used to be reveal-then-self-grade. Two things changed and both matter:
+ *
+ *  The grade now comes from what the learner actually produced, not from what they claim they
+ *  knew after seeing the answer — self-assessment straight after reading the answer is the
+ *  weakest signal in the loop.
+ *
+ *  🔴 And revealing no longer asks for a grade at all. Needing the answer shown IS the evidence:
+ *  we did not obtain a retrieval, which is a fact, and asking "how well did you know that?"
+ *  immediately afterwards would replace that fact with a guess. The four grade buttons are gone
+ *  from this surface entirely. */
 export function CanvasRecall({
   cards,
   canvas,
-  onGrade,
+  judging,
+  onAttempt,
+  onReveal,
   onDone,
 }: {
   cards: readonly RecallCard[];
   canvas: LearningCanvas;
-  onGrade: (cardId: string, grade: "again" | "hard" | "good" | "easy") => void;
+  judging: string | null;
+  onAttempt: (cardId: string, text: string, via: "typed" | "spoken") => void;
+  onReveal: (cardId: string) => void;
   onDone: () => void;
 }) {
   const [index, setIndex] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const [showSource, setShowSource] = useState(false);
   const card = cards[index] ?? null;
+  const result = canvas.recallResults.find((entry) => entry.cardId === card?.id);
 
-  const grade = (value: "again" | "hard" | "good" | "easy") => {
-    if (!card) return;
-    onGrade(card.id, value);
-    setRevealed(false);
-    setShowSource(false);
+  const next = () => {
     if (index + 1 >= cards.length) onDone();
     else setIndex(index + 1);
   };
@@ -183,15 +185,10 @@ export function CanvasRecall({
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (event.key === " " || event.code === "Space" || event.key === "Enter") {
         event.preventDefault();
-        if (revealed) grade("good");
-        else setRevealed(true);
-        return;
-      }
-      const digit = event.code.startsWith("Digit") ? event.code.slice(5) : event.key;
-      const match = GRADES.find((entry, position) => digit === String(position + 1));
-      if (match && revealed) {
-        event.preventDefault();
-        grade(match.grade);
+        // Once there is a result the card is settled, so Space moves on rather than recording
+        // a second, worse piece of evidence over the top of a real one.
+        if (result) next();
+        else if (card) onReveal(card.id);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -214,54 +211,194 @@ export function CanvasRecall({
 
         <p className="text-center text-[1.25rem] leading-relaxed text-(--ui-text-primary)">{card.front}</p>
 
-        {revealed ? (
-          <div className="mt-8 border-t border-(--ui-stroke-tertiary) pt-8">
-            <p className="text-center text-[1.0625rem] leading-relaxed text-(--ui-text-primary)">{card.back}</p>
+        <RecallExplain
+          answer={card.back}
+          judging={judging === card.id}
+          key={card.id}
+          onAttempt={(text, via) => onAttempt(card.id, text, via)}
+          onNext={next}
+          result={result ?? null}
+        />
 
-            {source && (
-              <div className="mt-4 text-center">
-                <button
-                  className="text-[0.6875rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-                  onClick={() => setShowSource((current) => !current)}
-                  type="button"
-                >
-                  {showSource ? "Hide source" : "Source"}
-                </button>
-                {showSource && (
-                  <p className="mx-auto mt-2 max-w-[30rem] border-l-2 border-(--ui-stroke-primary) pl-3 text-left text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">
-                    {source.text.slice(0, 400)}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="mt-8 grid grid-cols-4 gap-2">
-              {GRADES.map((entry) => (
-                <button
-                  className="rounded-lg border border-(--ui-stroke-secondary) py-2.5 text-[0.8125rem] text-(--ui-text-primary) transition-colors hover:border-(--ui-accent) hover:bg-(--ui-bg-tertiary)"
-                  key={entry.grade}
-                  onClick={() => grade(entry.grade)}
-                  type="button"
-                >
-                  {entry.label}
-                  <span className="ml-1.5 text-(--ui-text-quaternary)">{entry.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mt-10 text-center">
+        {/* The escape hatch, not the route: quiet text rather than a button, and gone once
+            there is evidence either way. */}
+        {!result && (
+          <div className="mt-6 text-center">
             <button
-              className="rounded-lg border border-(--ui-stroke-secondary) px-5 py-2.5 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-              onClick={() => setRevealed(true)}
+              className="text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              onClick={() => onReveal(card.id)}
               type="button"
             >
-              Reveal answer
-              <span className="ml-2 text-(--ui-text-quaternary)">Space</span>
+              Show me the answer
+              <span className="ml-1.5">Space</span>
             </button>
           </div>
         )}
+
+        {result && source && (
+          <div className="mt-6 text-center">
+            <details>
+              <summary className="cursor-pointer text-[0.6875rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)">
+                Where this came from
+              </summary>
+              <p className="mx-auto mt-2 max-w-[30rem] border-l-2 border-(--ui-stroke-primary) pl-3 text-left text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">
+                {source.text.slice(0, 400)}
+              </p>
+            </details>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** The recall answer box: the same explain-then-be-read loop as the test, at card scale. */
+function RecallExplain({
+  result,
+  answer,
+  judging,
+  onAttempt,
+  onNext,
+}: {
+  result: RecallResult | null;
+  /** The reference answer, shown only when the learner asked to see it. */
+  answer: string;
+  judging: boolean;
+  onAttempt: (text: string, via: "typed" | "spoken") => void;
+  onNext: () => void;
+}) {
+  const [text, setText] = useState("");
+  const dictation = useCanvasDictation();
+  const spoke = useRef(false);
+  const typedBefore = useRef("");
+
+  useEffect(() => {
+    if (!dictation.listening && !dictation.transcript) return;
+    spoke.current = true;
+    setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
+  }, [dictation.listening, dictation.transcript]);
+
+  if (result) {
+    return (
+      <div className="mt-6">
+        {result.said && (
+          <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/50 px-4 py-3">
+            <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+              {result.via === "spoken" ? "You said" : "You wrote"}
+            </p>
+            <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{result.said}</p>
+          </div>
+        )}
+
+        {judging && <p className="mt-4 text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>}
+
+        {!judging && result.evaluation && (
+          <div className="mt-4">
+            <p
+              className={cn(
+                "text-[0.9375rem] font-medium",
+                verdictIsPass(result.evaluation.verdict) ? "text-emerald-500" : "text-(--ui-text-primary)",
+              )}
+            >
+              {VERDICT_HEADLINE[result.evaluation.verdict]}
+            </p>
+            <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
+              {result.evaluation.feedback}
+            </p>
+          </div>
+        )}
+
+        {/* The answer, shown because they asked for it. No self-grade follows: needing it shown
+            is already the evidence, and asking "how well did you know that?" straight after
+            reading it would replace a fact with a guess. */}
+        {result.revealed && (
+          <div className="mt-2">
+            <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{answer}</p>
+            <p className="mt-2 text-[0.75rem] text-(--ui-text-quaternary)">
+              Noted — Nemesis will bring this one back.
+            </p>
+          </div>
+        )}
+
+        {!judging && (
+          <button
+            className="mt-6 rounded-lg border border-(--ui-stroke-secondary) px-4 py-2 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+            onClick={onNext}
+            type="button"
+          >
+            Next
+            <span className="ml-2 text-(--ui-text-quaternary)">Space</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const submit = () => {
+    const said = text.trim();
+    if (!said) return;
+    dictation.stop();
+    onAttempt(said, spoke.current ? "spoken" : "typed");
+  };
+
+  return (
+    <div className="mt-6">
+      <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
+        <textarea
+          autoFocus
+          className="max-h-48 min-h-[4.5rem] w-full resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+          onChange={(event) => {
+            setText(event.target.value);
+            if (!dictation.listening) typedBefore.current = event.target.value;
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={dictation.listening ? "Listening…" : "Say it back in your own words…"}
+          value={text}
+        />
+        <div className="mt-1 flex items-center justify-between gap-3">
+          {dictation.supported ? (
+            <button
+              aria-label={dictation.listening ? "Stop dictation" : "Answer out loud"}
+              aria-pressed={dictation.listening}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2 py-1 text-[0.75rem] transition-colors",
+                dictation.listening
+                  ? "bg-(--ui-accent)/12 text-(--ui-accent)"
+                  : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+              )}
+              onClick={() => {
+                if (dictation.listening) {
+                  dictation.stop();
+                  return;
+                }
+                typedBefore.current = text;
+                dictation.reset();
+                dictation.start();
+              }}
+              type="button"
+            >
+              <Codicon name={dictation.listening ? "circle-filled" : "mic"} size="0.75rem" />
+              {dictation.listening ? "Listening" : "Say it"}
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            className="rounded-lg bg-(--ui-accent) px-3.5 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
+            disabled={!text.trim()}
+            onClick={submit}
+            type="button"
+          >
+            Check
+          </button>
+        </div>
+      </div>
+      {dictation.error && <p className="mt-2 text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>}
     </div>
   );
 }
@@ -374,13 +511,16 @@ function ChoiceAnswer({
 
 /** What the prompt is asking for, said in one line above the box. Structural, so it reads the
  *  same for a statute, a signalling pathway or a weld. */
-const KIND_HINT: Record<FreePromptKind, string> = {
+const TASK_HINT: Record<RetrievalTask, string> = {
+  name: "Name it",
   define: "In your own words",
   explain: "Explain why",
   mechanism: "Walk through it, step by step",
+  reconstruct: "Rebuild it from memory",
   compare: "Cover both sides",
-  apply: "Say what follows, and why",
-  recall: "From memory",
+  predict: "Say what happens, and why",
+  apply: "Use it on this case",
+  solve: "Work it through, showing your steps",
 };
 
 function FreeAnswer({
@@ -425,7 +565,7 @@ function FreeAnswer({
 
   return (
     <div className="mt-5">
-      <p className="mb-2 text-[0.75rem] text-(--ui-text-quaternary)">{KIND_HINT[question.kind]}</p>
+      <p className="mb-2 text-[0.75rem] text-(--ui-text-quaternary)">{TASK_HINT[question.task]}</p>
       <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
         <textarea
           autoFocus
@@ -507,7 +647,7 @@ function Judged({
   response: CanvasResponse;
   judging: boolean;
 }) {
-  const judgement = response.judgement ?? null;
+  const evaluation = response.evaluation ?? null;
 
   return (
     <div className="mt-5 space-y-4">
@@ -520,7 +660,7 @@ function Judged({
 
       {judging && <p className="text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>}
 
-      {!judging && !judgement && (
+      {!judging && !evaluation && (
         // Not framed as the learner's failure: they answered, we could not read it. The answer
         // is kept, and the diagnosis simply has one less piece of evidence.
         <p className="text-[0.875rem] leading-relaxed text-(--ui-text-tertiary)">
@@ -529,42 +669,28 @@ function Judged({
         </p>
       )}
 
-      {judgement && (
+      {evaluation && (
         <div>
+          {/* §9: the rich reading is for the engine. The learner gets the frame and the one
+              concrete thing they were missing — `demonstrated`, `missing`, `confidence` and
+              `errorType` are what the teaching policy reads, not what the page prints. */}
           <p
             className={cn(
               "text-[0.9375rem] font-medium",
-              judgement.verdict === "understood" ? "text-emerald-500" : "text-(--ui-text-primary)",
+              verdictIsPass(evaluation.verdict) ? "text-emerald-500" : "text-(--ui-text-primary)",
             )}
           >
-            {VERDICT_HEADLINE[judgement.verdict]}
+            {VERDICT_HEADLINE[evaluation.verdict]}
           </p>
 
-          {judgement.got.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {judgement.got.map((point) => (
-                <li className="flex gap-2 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" key={point}>
-                  <Codicon className="mt-1 shrink-0 text-emerald-500" name="check" size="0.6875rem" />
-                  {point}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {judgement.misconception && (
-            <p className="mt-3 border-l-2 border-amber-500/60 py-0.5 pl-3 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
-              {judgement.misconception}
-            </p>
-          )}
-
-          <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{judgement.refinement}</p>
+          <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{evaluation.feedback}</p>
 
           {/* The full answer, but only where the refinement cannot stand alone. On a partial
               answer the refinement supplies exactly the missing piece, which is better than the
               whole model answer — it is about what THEY said. On an answer that did not get
               there, a correction with no complete version to compare against leaves the learner
               knowing they were wrong and not what right looks like. */}
-          {(judgement.verdict === "incorrect" || judgement.verdict === "misconception") && question.why && (
+          {!verdictIsPass(evaluation.verdict) && evaluation.verdict !== "partial" && question.why && (
             <details className="mt-3">
               <summary className="cursor-pointer text-[0.8125rem] text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)">
                 See the full answer

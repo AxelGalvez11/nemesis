@@ -12,8 +12,15 @@
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
-import { parseJudgement } from "./canvas-judge";
-import { conceptLabel, type CanvasFreeQuestion, type ResponseJudgement, type RetrievalFormat } from "./canvas-model";
+import { parseEvaluation } from "./canvas-judge";
+import {
+  conceptLabel,
+  type CanvasFreeQuestion,
+  type LearnerResponse,
+  type ResponseEvaluation,
+  type RetrievalFormat,
+  type RetrievalTask,
+} from "./canvas-model";
 import { parseCanvasOps, validateOps, type CanvasOp } from "./canvas-ops";
 import {
   parseFreeQuestions,
@@ -26,11 +33,12 @@ import {
 import {
   commandMessages,
   explainBlockMessages,
-  judgeMessages,
+  evaluationMessages,
   lessonMessages,
   recallMessages,
   relearnMessages,
   testMessages,
+  type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
 import type {
@@ -219,34 +227,72 @@ export async function generateTest(
  *  A refused judgement is NOT an error the learner sees. It means we did not manage to assess
  *  that answer — the page moves on, the diagnosis simply has one less piece of evidence, and
  *  nobody is told they were wrong on the strength of a malformed reply. */
-export async function judgeResponse(
+/** 🔴 THE ONE EVIDENCE BOUNDARY. Named for what it does — evaluate a learning response — and not
+ *  for the surface that happens to call it first. Recall cards, test prompts, and later a
+ *  worked derivation, a spoken answer in a second language or a diagram rebuilt from memory all
+ *  arrive here in the same shape, and all produce the same kind of evidence.
+ *
+ *  Nothing about scheduling happens here. See canvas-scheduling.ts. */
+export async function evaluateLearningResponse(
   uid: string,
   canvas: LearningCanvas,
-  question: CanvasFreeQuestion,
-  answer: string,
-  via: "typed" | "spoken",
+  input: Omit<EvaluationInput, "concepts">,
   signal?: AbortSignal,
-): Promise<CanvasCallResult<ResponseJudgement>> {
+): Promise<CanvasCallResult<ResponseEvaluation>> {
   const { text, error } = await ask(
     uid,
-    judgeMessages({
-      question,
-      conceptLabel: conceptLabel(canvas, question.conceptId),
-      answer,
-      via,
-      concepts: canvas.concepts,
-    }),
+    evaluationMessages({ ...input, concepts: canvas.concepts }),
     signal,
   );
   if (error) return { value: null, error };
 
-  const { judgement, rejected } = parseJudgement(text ?? "", {
+  const { evaluation, rejected } = parseEvaluation(text ?? "", {
     conceptIds: canvas.concepts.map((concept) => concept.id),
   });
-  if (rejected.length > 0) console.warn("canvas judge: refused parts of a judgement", rejected);
-  return judgement
-    ? { value: judgement, error: null }
+  if (rejected.length > 0) console.warn("canvas evaluation: refused parts of a reading", rejected);
+  return evaluation
+    ? { value: evaluation, error: null }
     : { value: null, error: "Nemesis couldn't read that answer. Your response was saved." };
+}
+
+/** A free-response test prompt as an evaluation task. */
+export function questionAsTask(
+  canvas: LearningCanvas,
+  question: CanvasFreeQuestion,
+  response: LearnerResponse,
+): Omit<EvaluationInput, "concepts"> {
+  return {
+    prompt: question.q,
+    task: question.task,
+    objective: { conceptId: question.conceptId, label: conceptLabel(canvas, question.conceptId) },
+    expectedEvidence: {
+      ...question.expectedEvidence,
+      ...(question.why ? { referenceAnswer: question.why } : {}),
+    },
+    response,
+    ...(question.sourceRefs?.length ? { context: { sourceRefs: question.sourceRefs } } : {}),
+  };
+}
+
+/** An existing flashcard as an evaluation task.
+ *
+ *  This is the whole migration story for the old card format: the back becomes a reference
+ *  answer, which is one kind of expected evidence among several. Nothing about the card has to
+ *  change, and nothing downstream has to know a card was involved. */
+export function cardAsTask(
+  canvas: LearningCanvas,
+  card: RecallCard,
+  response: LearnerResponse,
+  task: RetrievalTask = "explain",
+): Omit<EvaluationInput, "concepts"> {
+  return {
+    prompt: card.front,
+    task,
+    objective: { conceptId: card.conceptId, label: conceptLabel(canvas, card.conceptId) },
+    expectedEvidence: { referenceAnswer: card.back },
+    response,
+    ...(card.sourceRefs?.length ? { context: { sourceRefs: card.sourceRefs } } : {}),
+  };
 }
 
 // --------------------------------------------------------- targeted relearn

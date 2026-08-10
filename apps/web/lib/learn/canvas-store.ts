@@ -21,7 +21,7 @@ import {
   type CanvasState,
   type LearningCanvas,
 } from "./canvas-model";
-import { validateJudgement } from "./canvas-judge";
+import { validateEvaluation } from "./canvas-judge";
 import { stateAfterSourceAttached } from "./canvas-state";
 
 const TABLE = "learning_canvases";
@@ -67,11 +67,11 @@ export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): 
     questions: list<Record<string, unknown>>((canvas as { questions?: unknown }).questions).map(normaliseQuestion),
     answers: list((canvas as { answers?: unknown }).answers),
     responses: list<CanvasResponse>((canvas as { responses?: unknown }).responses).map((response) => {
-      if (!response?.judgement) return response;
-      const { judgement } = validateJudgement(response.judgement, { conceptIds });
+      if (!response?.evaluation) return response;
+      const { evaluation } = validateEvaluation(response.evaluation, { conceptIds });
       // A judgement that no longer holds up is dropped, not downgraded: an unjudged response
       // carries no evidence either way, which is the honest state for one we cannot verify.
-      return judgement ? { ...response, judgement } : { ...response, judgement: undefined };
+      return evaluation ? { ...response, evaluation } : { ...response, evaluation: undefined };
     }),
     recallResults: list((canvas as { recallResults?: unknown }).recallResults),
   };

@@ -245,13 +245,15 @@ const FREE_QUESTIONS: CanvasFreeQuestion[] = [
   {
     id: "f1",
     format: "free",
-    kind: "mechanism",
+    task: "mechanism",
     q: "Walk through what happens during phase 0 of a ventricular action potential.",
-    expected: [
-      "fast sodium channels open",
-      "sodium enters down its gradient",
-      "the membrane potential rises sharply",
-    ],
+    expectedEvidence: {
+      acceptableClaims: [
+        "fast sodium channels open",
+        "sodium enters down its gradient",
+        "the membrane potential rises sharply",
+      ],
+    },
     why: "Fast sodium channels open, sodium rushes in down its electrochemical gradient, and the membrane depolarises rapidly — the upstroke.",
     conceptId: "k1",
     sourceRefs: [{ sourceId: "s1", excerptId: "s1:e1" }],
@@ -259,9 +261,14 @@ const FREE_QUESTIONS: CanvasFreeQuestion[] = [
   {
     id: "f2",
     format: "free",
-    kind: "explain",
+    task: "explain",
     q: "Why can a nodal cell fire without any input reaching it?",
-    expected: ["it depolarises on its own during phase 4", "the funny current carries it to threshold"],
+    expectedEvidence: {
+      acceptableClaims: [
+        "it depolarises on its own during phase 4",
+        "the funny current carries it to threshold",
+      ],
+    },
     why: "Nodal cells drift upward during phase 4 under the funny current until they reach threshold, so they reach it unaided.",
     conceptId: "k4",
   },
@@ -275,11 +282,14 @@ const JUDGED_RESPONSES: CanvasResponse[] = [
     text: "the sodium channels open and sodium goes in really fast so the voltage shoots up",
     via: "spoken",
     tookMs: 14_200,
-    judgement: {
+    evaluation: {
       verdict: "partial",
-      got: ["Right that fast sodium channels open", "Right that the upstroke is sharp"],
+      confidence: 0.8,
+      demonstrated: ["names the channels", "has the shape of the upstroke"],
       missing: ["Did not say why sodium moves inward"],
-      refinement:
+      misconceptions: [],
+      errorType: "conceptual",
+      feedback:
         "You have the sequence. The piece to add is the reason sodium moves: it follows its own electrochemical gradient, which is why the channels opening is enough on its own.",
     },
   },
@@ -288,11 +298,13 @@ const JUDGED_RESPONSES: CanvasResponse[] = [
     text: "because it drifts up on its own in phase 4 until it hits threshold, the funny current does it",
     via: "typed",
     tookMs: 9_800,
-    judgement: {
+    evaluation: {
       verdict: "understood",
-      got: ["Right that phase 4 drifts upward on its own", "Right that the funny current carries it to threshold"],
+      confidence: 0.9,
+      demonstrated: ["spontaneous phase 4 drift", "the funny current reaching threshold"],
       missing: [],
-      refinement: "That's the whole mechanism, including the part most people leave out.",
+      misconceptions: [],
+      feedback: "That's the whole mechanism, including the part most people leave out.",
     },
   },
 ];

@@ -13,13 +13,17 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
 import {
+  ERROR_TYPES,
   LEVEL_INSTRUCTIONS,
   type CanvasBlock,
   type CanvasConcept,
-  type CanvasFreeQuestion,
   type CanvasLevel,
   type CanvasSource,
+  type ExpectedEvidence,
+  type LearnerResponse,
   type RetrievalFormat,
+  type RetrievalTask,
+  type SourceRef,
 } from "./canvas-model";
 
 /** Field-agnostic by construction. Nemesis serves law, engineering, nursing, history and the
@@ -226,7 +230,43 @@ export function testMessages(input: {
 
 // ------------------------------------------------------------------- judging
 
-/** Read one free-text answer for what it MEANS (§21).
+/** Everything one evaluation needs, in the shape the whole product can use.
+ *
+ *  🔴 DELIBERATELY NOT front/back. A flashcard is one narrow case of "here is a task, here is
+ *  what a good performance contains" — an existing card converts by putting its back into
+ *  `referenceAnswer` and nothing else changes. Shaping the evaluator around cards instead would
+ *  have made every later caller — a derivation with required steps, a comparison needing both
+ *  sides, a spoken answer in a second language, a diagram reconstructed from memory — either
+ *  pretend to be a card or need a second evaluator. */
+export interface EvaluationInput {
+  prompt: string;
+  task: RetrievalTask;
+  objective: { conceptId: string | null; label: string };
+  expectedEvidence: ExpectedEvidence;
+  response: LearnerResponse;
+  concepts: readonly CanvasConcept[];
+  context?: {
+    sourceRefs?: readonly SourceRef[];
+    hintsUsed?: number;
+    priorAttempts?: number;
+  };
+}
+
+/** What each task is actually asking the learner to do, told to the judge so it checks the right
+ *  thing: a "solve" answer is judged on the working, a "name" answer on the term produced. */
+const TASK_INTENT: Record<RetrievalTask, string> = {
+  name: "produce the correct term",
+  define: "give the meaning in their own words",
+  explain: "say why something is the case",
+  mechanism: "walk through how something happens, in order",
+  reconstruct: "rebuild the structure from memory",
+  compare: "set two things against each other, covering both",
+  predict: "say what follows, and why",
+  apply: "use the idea on a concrete situation",
+  solve: "work it through and show the reasoning",
+};
+
+/** Read one performance for what it MEANS (§21).
  *
  *  Two instructions here are load-bearing and easy to lose in a later edit:
  *
@@ -237,13 +277,28 @@ export function testMessages(input: {
  *     ("it, uh, it goes up — no, down"). §7 wants speaking to be first-class precisely because it
  *     exposes the mental model; marking someone down for sounding like a person would defeat
  *     the point and quietly push everyone back to typing. */
-export function judgeMessages(input: {
-  question: CanvasFreeQuestion;
-  conceptLabel: string;
-  answer: string;
-  via: "typed" | "spoken";
-  concepts: readonly CanvasConcept[];
-}): WireMsg[] {
+export function evaluationMessages(input: EvaluationInput): WireMsg[] {
+  const expected = input.expectedEvidence;
+  const standard = [
+    expected.acceptableClaims?.length
+      ? `A complete performance makes these points:\n${expected.acceptableClaims.map((c) => `- ${c}`).join("\n")}`
+      : "",
+    expected.requiredSteps?.length
+      ? `It has to include these steps, in order:\n${expected.requiredSteps.map((s) => `- ${s}`).join("\n")}`
+      : "",
+    expected.requiredConcepts?.length
+      ? `It has to show a grasp of: ${expected.requiredConcepts.join(", ")}`
+      : "",
+    expected.commonMisconceptions?.length
+      ? `Watch for these specific wrong beliefs:\n${expected.commonMisconceptions.map((m) => `- ${m}`).join("\n")}`
+      : "",
+    expected.referenceAnswer
+      ? `A reference answer, for your judgement only — do NOT require its wording or its level of detail:\n${expected.referenceAnswer}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   return [
     {
       content:
@@ -255,32 +310,42 @@ export function judgeMessages(input: {
     },
     {
       content:
-        `They were asked:\n"${input.question.q}"\n\n` +
-        `A complete answer makes these points:\n${input.question.expected.map((point) => `- ${point}`).join("\n")}\n\n` +
-        `The full model answer, for your reference only:\n${input.question.why}\n\n` +
-        `This prompt is about the concept "${input.conceptLabel}".\n\n` +
-        `They ${input.via === "spoken" ? "said out loud" : "wrote"}:\n"${input.answer}"\n\n` +
-        (input.via === "spoken"
+        `The task they were set (${TASK_INTENT[input.task]}):\n"${input.prompt}"\n\n` +
+        (standard ? `${standard}\n\n` : "") +
+        `It is about the concept "${input.objective.label}".\n\n` +
+        `They ${input.response.via === "spoken" ? "said out loud" : "wrote"}:\n"${input.response.text}"\n\n` +
+        (input.response.via === "spoken"
           ? "This was dictated, so it arrives as speech: filler words, false starts, self-corrections and missing " +
             "punctuation are normal and mean nothing about their understanding. Judge what they were getting at. " +
             "Where they corrected themselves, judge the correction, not the first attempt.\n\n"
           : "") +
+        ((input.context?.hintsUsed ?? 0) > 0
+          ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
+          : "") +
         "Judge MEANING, not vocabulary. If they express the right idea in everyday language, that is a correct " +
         "answer — do not require the term the material used. Do not reward a confident answer that says nothing.\n\n" +
         "Choose one verdict:\n" +
-        '- "understood": every expected point is there, in substance.\n' +
-        '- "partial": the reasoning is going the right way but something expected is missing or vague.\n' +
-        '- "incorrect": the answer does not get there, or is mostly off the point.\n' +
-        '- "misconception": the answer reveals a specific, nameable false belief — not merely a gap. Use this only ' +
-        "when you can state the wrong belief in one sentence.\n\n" +
+        '- "strong": everything expected is there, and expressed with room to spare — they could clearly go further.\n' +
+        '- "understood": everything expected is there, in substance.\n' +
+        '- "partial": going the right way, but something expected is missing or vague.\n' +
+        '- "incorrect": does not get there, or is mostly off the point.\n' +
+        '- "misconception": reveals a specific, nameable false belief — not merely a gap. Use this only when you can ' +
+        "state the wrong belief in one sentence.\n\n" +
+        `If the performance fell short, say WHY with errorType, one of: ${ERROR_TYPES.join(", ")}. ` +
+        "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
+        "they need opposite teaching.\n\n" +
         `Concepts on this page: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n` +
-        'Return JSON: {"verdict":"partial","got":["…"],"missing":["…"],"misconception":"…","refinement":"…","alsoWeakConceptIds":["k3"]}\n\n' +
-        "`got` names what they had right, in your words, so it can be said back to them — do not leave it empty for a " +
-        "partial answer. `missing` names only what was actually absent or wrong. `misconception` is present ONLY on a " +
-        "misconception verdict. `refinement` is what the page will show them instead of a mark: two or three sentences, " +
-        "addressed to them as \"you\", that supply exactly the missing piece and nothing else — not a re-teach of the " +
-        "whole topic. `alsoWeakConceptIds` is for OTHER concepts on the page this answer showed to be shaky; use ids " +
-        "from the list above and no others, and leave it out if there are none.",
+        'Return JSON: {"verdict":"partial","confidence":0.7,"demonstrated":["…"],"missing":["…"],' +
+        '"misconceptions":["…"],"errorType":"conceptual","feedback":"…","alsoWeakConceptIds":["k3"]}\n\n' +
+        "`confidence` is 0 to 1: how much this performance actually settled. A short answer to a broad task can be " +
+        "right and still tell you little — say so with a low number rather than a confident verdict. " +
+        "`demonstrated` and `missing` are for the teaching engine, not for the learner to read. " +
+        "`misconceptions` is a list, empty unless a specific false belief is visible. " +
+        "`feedback` is the ONE thing the page shows them: at most two sentences, addressed to them as \"you\", " +
+        "supplying exactly what was missing and nothing else. Do not restate their answer back to them, do not list " +
+        "what they got right, and do not re-teach the topic. " +
+        "`alsoWeakConceptIds` is for OTHER concepts on the page this performance showed to be shaky; use ids from " +
+        "the list above and no others, and leave it out if there are none.",
       role: "user",
     },
   ];
