@@ -14,6 +14,9 @@ interface CanvasComposerProps {
   selected: readonly CanvasBlock[];
   onClearSelection: () => void;
   onSubmit: (text: string) => void;
+  /** Adding material belongs here as well as in the sources panel: it is the one control the
+   *  learner reaches for mid-lesson, and hunting for it inside a drawer is friction. */
+  onFiles: (files: FileList | File[]) => void;
   busy: boolean;
   busyLabel?: string;
   placeholder?: string;
@@ -25,6 +28,7 @@ export function CanvasComposer({
   selected,
   onClearSelection,
   onSubmit,
+  onFiles,
   busy,
   busyLabel,
   placeholder,
@@ -55,6 +59,9 @@ export function CanvasComposer({
   };
 
   return (
+    // The bar FLOATS: no footer container, no top border, canvas visible all around it. The
+    // gradient is a scrim so text scrolling underneath does not collide with the input — page
+    // colour fading to nothing, which draws no edge of its own.
     <div
       className={cn(
         "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-6",
@@ -63,7 +70,7 @@ export function CanvasComposer({
     >
       <div
         className={cn(
-          "pointer-events-auto w-full max-w-[42rem] transition-opacity duration-300",
+          "pointer-events-auto w-full max-w-(--canvas-column) transition-opacity duration-300",
           dimmed && "opacity-45 focus-within:opacity-100 hover:opacity-100",
         )}
       >
@@ -71,7 +78,7 @@ export function CanvasComposer({
             gradient is nearly transparent, so without a background it was printed straight
             over the paragraph behind it and neither could be read. */}
         {selected.length > 0 && (
-          <div className="mb-1.5 flex w-fit max-w-full items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) py-1 pl-2.5 pr-2 shadow-sm">
+          <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
             <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">
               {selected.length === 1
                 ? `“${selected[0]?.content.slice(0, 60) ?? ""}${(selected[0]?.content.length ?? 0) > 60 ? "…" : ""}”`
@@ -90,12 +97,31 @@ export function CanvasComposer({
 
         <div
           className={cn(
-            "flex items-end gap-2 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2 shadow-lg",
-            selected.length > 0 && "border-(--ui-accent)/50",
+            "flex min-h-[52px] items-end gap-1 rounded-[26px] bg-(--ui-bg-elevated) p-2",
+            "shadow-[0_2px_18px_rgba(0,0,0,0.07)] ring-1 ring-(--ui-stroke-tertiary)",
+            selected.length > 0 && "ring-(--ui-accent)/50",
           )}
         >
+          <label
+            aria-label="Add material"
+            className="mb-0.5 flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            title="Add material"
+          >
+            <Codicon name="add" size="0.875rem" />
+            <input
+              accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+              className="hidden"
+              multiple
+              onChange={(event) => {
+                if (event.target.files?.length) onFiles(event.target.files);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+
           <textarea
-            className="max-h-40 min-h-[1.5rem] flex-1 resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+            className="max-h-40 min-h-[1.75rem] flex-1 resize-none self-center bg-transparent py-1 text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
             disabled={busy}
             onChange={(event) => {
               setText(event.target.value);
@@ -123,7 +149,7 @@ export function CanvasComposer({
           />
           <button
             aria-label="Send"
-            className="mb-0.5 rounded-lg p-1.5 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
+            className="mb-0.5 flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
             disabled={busy || !text.trim()}
             onClick={submit}
             type="button"

@@ -95,10 +95,15 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     [canvas, clearSelection, selected, session],
   );
 
-  // The diagnosis and the completion state print their own primary action in the page, where
-  // it belongs — offering the same words twice on one screen is noise, not reassurance.
-  const OWN_ACTION: readonly string[] = ["diagnose", "complete"];
-  const next = OWN_ACTION.includes(canvas.state) ? null : nextAction(canvas);
+  // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
+  //
+  // They used to: a filled button sat in the header, which is why "See where I stand" appeared
+  // twice on one screen during a test — once at the end of the last question, once in the bar.
+  // The move forward belongs where the thing being finished is. Reading is the only state whose
+  // content has no natural end control, so the document prints it after the last block; recall
+  // and the test advance themselves off their last card, and the diagnosis and completion
+  // screens already own theirs.
+  const next = nextAction(canvas);
   const advance = useCallback(() => {
     if (!next) return;
     if (next.to === "recall") void session.startRecall();
@@ -119,17 +124,32 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
   const dimComposer = ["recall", "test", "retest"].includes(canvas.state);
 
   return (
-    <main className="relative flex h-full min-h-0 flex-col bg-(--ui-bg-editor)">
+    // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
+    // `--canvas-column` is the single measure every part of the surface is set to — document,
+    // question, diagnosis and composer — so the page reads as one column rather than four
+    // things that happen to be centred.
+    <main
+      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      style={{ ["--canvas-column" as string]: "680px" }}
+    >
+      {/* A scrim, NOT a header. Without it, scrolled paragraphs print straight through the
+          floating title and neither is readable. It is the page's own colour fading to nothing
+          over 88px — the same device the composer already uses at the bottom — so it draws no
+          line, no rectangle and no edge: there is no row where the colour steps. The acceptance
+          check measures exactly that (the largest colour change between adjacent rows), because
+          "is there a divider" is a question about steps, not about whether anything is painted. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[88px] bg-gradient-to-b from-(--ui-bg-editor) via-(--ui-bg-editor)/90 to-transparent" />
+
       <CanvasHeader
-        busy={busy.kind !== null}
         canvas={canvas}
-        next={next}
-        onAdvance={advance}
         onExit={() => router.push("/sessions")}
         onFiles={(files) => void session.attachFiles(files)}
       />
 
-      <div className="relative min-h-0 flex-1 overflow-y-auto">
+      {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
+          header height — nothing is reserved, painted or bounded up there; the page simply
+          starts below where the controls sit (16px inset + 32px control + 24px breathing room). */}
+      <div className="relative h-full overflow-y-auto pt-[72px]">
         {canvas.state === "empty" && (
           <CanvasEmpty
             busy={busy.kind === "source"}
@@ -147,8 +167,11 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         {["learn", "targeted_relearn"].includes(canvas.state) && (
           <CanvasDocument
             aside={session.aside}
+            busy={busy.kind !== null}
             busyBlockIds={busy.blockIds ?? []}
             canvas={canvas}
+            next={next}
+            onAdvance={advance}
             onAskSource={(block: CanvasBlock) => void session.askAbout(block, "Where in my material did this come from?")}
             onDismissAside={session.dismissAside}
             onMarkKnown={session.markKnown}
@@ -224,6 +247,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           busyLabel={busy.label}
           dimmed={dimComposer}
           onClearSelection={clearSelection}
+          onFiles={(files) => void session.attachFiles(files)}
           onSubmit={(text) => void submit(text)}
           placeholder={
             // During a test the answer box is the thing being typed into, so this bar has to
@@ -246,7 +270,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
  *  already said what they want by dropping the file. */
 function SourcesAttached({ session }: { session: ReturnType<typeof useCanvasSession> }) {
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[30rem] text-center">
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
           {session.canvas.sources.length} source{session.canvas.sources.length === 1 ? "" : "s"} attached

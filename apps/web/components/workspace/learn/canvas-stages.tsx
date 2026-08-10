@@ -40,7 +40,7 @@ export function CanvasEmpty({
 
   return (
     <div
-      className="flex h-full items-center justify-center px-6"
+      className="flex min-h-full items-center justify-center px-6"
       onDragLeave={() => setOver(false)}
       onDragOver={(event) => {
         event.preventDefault();
@@ -114,7 +114,7 @@ export function CanvasOrient({
   busy: boolean;
 }) {
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[30rem]">
         {canvas.title && (
           <p className="mb-2 text-center text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
@@ -203,9 +203,10 @@ export function CanvasRecall({
     : null;
 
   return (
-    // See the note in CanvasTest: the composer floats over the bottom of this stage.
-    <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-6 py-10 pb-40">
-      <div className="w-full max-w-[36rem]">
+    // See the note in CanvasTest: the composer floats over the bottom of the page, so this
+    // stage reserves the space rather than centring its controls into the fade.
+    <div className="flex min-h-full flex-col items-center justify-center px-6 pb-40 pt-4">
+      <div className="w-full max-w-(--canvas-column)">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           Recall · {index + 1} of {cards.length}
         </p>
@@ -283,7 +284,7 @@ function RecallExplain({
     return (
       <div className="mt-6">
         {result.said && (
-          <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/50 px-4 py-3">
+          <div className="rounded-[18px] bg-(--ui-bg-tertiary)/40 px-4 py-3">
             <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
               {result.via === "spoken" ? "You said" : "You wrote"}
             </p>
@@ -323,7 +324,7 @@ function RecallExplain({
 
         {!judging && (
           <button
-            className="mt-6 rounded-lg border border-(--ui-stroke-secondary) px-4 py-2 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+            className="mt-6 rounded-full px-4 py-2 text-[0.875rem] text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)"
             onClick={onNext}
             type="button"
           >
@@ -344,7 +345,7 @@ function RecallExplain({
 
   return (
     <div className="mt-6">
-      <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
+      <div className="rounded-[20px] bg-(--ui-bg-elevated) px-3.5 py-3 ring-1 ring-(--ui-stroke-tertiary)">
         <textarea
           autoFocus
           className="max-h-48 min-h-[4.5rem] w-full resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
@@ -390,7 +391,7 @@ function RecallExplain({
             <span />
           )}
           <button
-            className="rounded-lg bg-(--ui-accent) px-3.5 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
+            className="rounded-full bg-(--ui-accent) px-4 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
             disabled={!text.trim()}
             onClick={submit}
             type="button"
@@ -430,13 +431,13 @@ export function CanvasTest({
   const last = index + 1 >= canvas.questions.length;
 
   return (
-    // 🔴 `pb-40` is not decoration. The composer is absolutely positioned over the bottom of this
-    // stage behind a tall gradient, so a vertically centred column pushes its own primary action
-    // under that fade the moment the content grows — and the teaching loop grows it every time.
-    // Overflow is scrollable for the same reason: a long correction must not push the button off
-    // the stage entirely.
-    <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-6 py-10 pb-40">
-      <div className="w-full max-w-[38rem]">
+    // 🔴 `pb-40` is not decoration, and removing it has broken this surface twice. The composer
+    // floats over the bottom of the page behind a tall gradient, so a vertically centred column
+    // pushes its own primary action under that fade the moment the content grows — and the
+    // teaching loop grows it every single turn. `min-h-full` rather than `h-full` for the same
+    // reason: past a viewport of content the stage must grow and scroll the page, not clip.
+    <div className="flex min-h-full flex-col items-center justify-center px-6 pb-40 pt-4">
+      <div className="w-full max-w-(--canvas-column)">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           {canvas.state === "retest" ? "Retest" : "Test"} · {index + 1} of {canvas.questions.length}
         </p>
@@ -464,7 +465,7 @@ export function CanvasTest({
               <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{question.why}</p>
             )}
             <button
-              className="mt-5 rounded-lg border border-(--ui-stroke-secondary) px-4 py-2 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+              className="mt-5 rounded-full px-4 py-2 text-[0.875rem] text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)"
               onClick={() => (last ? onFinish() : setIndex(index + 1))}
               type="button"
             >
@@ -574,7 +575,7 @@ function FreeAnswer({
   return (
     <div className="mt-5">
       <p className="mb-2 text-[0.75rem] text-(--ui-text-quaternary)">{TASK_HINT[question.task]}</p>
-      <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
+      <div className="rounded-[20px] bg-(--ui-bg-elevated) px-3.5 py-3 ring-1 ring-(--ui-stroke-tertiary)">
         <textarea
           autoFocus
           className="max-h-64 min-h-[6rem] w-full resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
@@ -625,7 +626,7 @@ function FreeAnswer({
             <span />
           )}
           <button
-            className="rounded-lg bg-(--ui-accent) px-3.5 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
+            className="rounded-full bg-(--ui-accent) px-4 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
             disabled={!text.trim()}
             onClick={submit}
             type="button"
@@ -659,7 +660,10 @@ function Judged({
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/50 px-4 py-3">
+      {/* The learner's own words DO keep a container — a message bubble is a meaningful object,
+          not decoration around prose. No border though: the fill alone is enough, and an
+          outline on top of it is the "study app" weight the surface is moving away from. */}
+      <div className="rounded-[18px] bg-(--ui-bg-tertiary)/40 px-4 py-3">
         <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           {response.via === "spoken" ? "You said" : "You wrote"}
         </p>
@@ -695,13 +699,14 @@ function Judged({
 
           {/* What the canvas taught in response to THIS answer. It also went into the document,
               but it belongs here too: the correction is about what they just said, and sending
-              them off to find it in the page would break the moment it exists for. */}
+              them off to find it in the page would break the moment it exists for.
+              🔴 NOT A CARD. Teaching is the most important prose on the screen, and boxing it
+              demotes it to a widget — the correction reads as something the app produced rather
+              than something being explained. Whitespace and weight carry it. */}
           {response.taught && (
-            <div className="mt-4 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3">
-              <p className="whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
-                {response.taught}
-              </p>
-            </div>
+            <p className="mt-4 whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
+              {response.taught}
+            </p>
           )}
 
           {/* The full answer, but only where the refinement cannot stand alone. On a partial
@@ -740,7 +745,7 @@ export function CanvasDiagnosis({
   const result = diagnose(canvas);
 
   return (
-    <div className="mx-auto w-full max-w-[36rem] px-6 pb-40 pt-16">
+    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40 pt-6">
       {result.understood.length > 0 && (
         <>
           <h2 className="text-[0.75rem] uppercase tracking-wide text-(--ui-text-quaternary)">What you understand</h2>
@@ -780,7 +785,7 @@ export function CanvasDiagnosis({
       <div className="mt-12">
         {result.weak.length > 0 ? (
           <button
-            className="rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
+            className="rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
             disabled={busy}
             onClick={onRelearn}
             type="button"
@@ -789,7 +794,7 @@ export function CanvasDiagnosis({
           </button>
         ) : (
           <button
-            className="rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
+            className="rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
             onClick={onFinish}
             type="button"
           >
@@ -807,7 +812,7 @@ export function CanvasComplete({ canvas, onReset }: { canvas: LearningCanvas; on
   const summary = summariseCompletion(canvas);
 
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[26rem]">
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
         <h2 className="mt-1 text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Mastered</h2>

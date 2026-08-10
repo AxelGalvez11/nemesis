@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { conceptLabel, type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
+import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
 
 interface CanvasDocumentProps {
@@ -23,6 +24,11 @@ interface CanvasDocumentProps {
   onMarkKnown: (blockId: string, known: boolean) => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
   onAskSource: (block: CanvasBlock) => void;
+  /** Reading is the one state whose content has no natural end control, so the move forward is
+   *  printed after the last block rather than floating in the chrome. */
+  next: NextAction | null;
+  onAdvance: () => void;
+  busy: boolean;
 }
 
 export function CanvasDocument({
@@ -35,6 +41,9 @@ export function CanvasDocument({
   onMarkKnown,
   onToggleCollapsed,
   onAskSource,
+  next,
+  onAdvance,
+  busy,
 }: CanvasDocumentProps) {
   const root = useRef<HTMLDivElement>(null);
   const [openSource, setOpenSource] = useState<string | null>(null);
@@ -75,7 +84,7 @@ export function CanvasDocument({
   const visible = canvas.blocks.filter((block) => !block.known);
 
   return (
-    <div className="mx-auto w-full max-w-[46rem] px-6 pb-40 pt-10" ref={root}>
+    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40" ref={root}>
       {visible.map((block) => (
         <BlockView
           aside={aside?.blockId === block.id ? aside.text : null}
@@ -95,12 +104,23 @@ export function CanvasDocument({
 
       {canvas.blocks.some((block) => block.known) && (
         <button
-          className="mt-8 text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+          className="mt-8 block text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
           onClick={() => canvas.blocks.filter((b) => b.known).forEach((b) => onMarkKnown(b.id, false))}
           type="button"
         >
           {canvas.blocks.filter((block) => block.known).length} section
           {canvas.blocks.filter((block) => block.known).length === 1 ? "" : "s"} hidden as already known — show again
+        </button>
+      )}
+
+      {next && (
+        <button
+          className="mt-14 rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-40"
+          disabled={busy}
+          onClick={onAdvance}
+          type="button"
+        >
+          {next.label}
         </button>
       )}
     </div>
@@ -194,8 +214,11 @@ function BlockView({
 
       {sourceOpen && <SourcePanel block={block} canvas={canvas} />}
 
+      {/* An answer about this block is ordinary explanation, so it is not boxed. A quiet rule
+          and the indent say "this is about the paragraph above" — a card would say "this is a
+          component", which is the thing the surface is trying not to look like. */}
       {aside && (
-        <div className="mt-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
+        <div className="mt-3 border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
           {aside}
           <button
             className="mt-2 block text-[0.6875rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
@@ -241,8 +264,10 @@ function BlockBody({ block }: { block: CanvasBlock }) {
         </div>
       );
     case "callout":
+      // Emphasis by rule and indent, not by filling a rectangle. A page of tinted panels reads
+      // as a dashboard; the point of this surface is that it reads as something written.
       return (
-        <div className="my-3 rounded-lg bg-(--ui-bg-tertiary) px-4 py-3">
+        <div className="my-3 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
           <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{block.content}</p>
         </div>
       );
@@ -269,7 +294,7 @@ function SourcePanel({ block, canvas }: { block: CanvasBlock; canvas: LearningCa
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   return (
-    <div className="mt-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3">
+    <div className="mt-3 pl-1">
       {found.length === 0 ? (
         <p className="text-[0.8125rem] text-(--ui-text-tertiary)">
           This part wasn&rsquo;t taken from your material — Nemesis wrote it from general knowledge.
