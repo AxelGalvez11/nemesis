@@ -97,3 +97,13 @@ test("every signal explains itself", () => {
     assert.ok(deriveSchedulingSignal(input).because.length > 0);
   }
 });
+
+test("priorSuccesses is the half of the easy rule that production can actually supply", () => {
+  // Guards a dead-branch bug: the adapter accepts three inputs and the session passes only this
+  // one, so if it ever stops being wired the easy path silently becomes unreachable and the
+  // rule survives only here, in its own test.
+  const first = deriveSchedulingSignal({ evaluation: evidence("strong"), hintsUsed: 0, priorSuccesses: 0 });
+  const again = deriveSchedulingSignal({ evaluation: evidence("strong"), hintsUsed: 0, priorSuccesses: 1 });
+  assert.equal(first.grade, "good");
+  assert.equal(again.grade, "easy");
+});

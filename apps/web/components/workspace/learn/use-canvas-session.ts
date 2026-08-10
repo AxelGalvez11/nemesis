@@ -484,7 +484,24 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         });
       }
 
-      const signal = deriveSchedulingSignal({ evaluation });
+      // Earlier successful retrievals of this same idea, from previous rounds on this canvas.
+      // This is what separates "right just now" from "right again", and without it the
+      // scheduler could never award Easy — the rule would exist only in its tests.
+      //
+      // `timeSinceLastExposureMs` is deliberately NOT passed: nothing on a RecallResult records
+      // when it happened, and inventing a gap from the canvas's own timestamps would be a
+      // guess dressed as a measurement. Repeat success is the honest half of the same test.
+      const priorSuccesses = card.conceptId
+        ? latest.current.recallResults.filter(
+            (entry) =>
+              entry.cardId !== cardId &&
+              entry.conceptId === card.conceptId &&
+              entry.evaluation &&
+              verdictIsPass(entry.evaluation.verdict),
+          ).length
+        : 0;
+
+      const signal = deriveSchedulingSignal({ evaluation, hintsUsed: 0, priorSuccesses });
       await gradeRecall(cardId, signal.grade, {
         said,
         via,
