@@ -558,6 +558,20 @@ function Judged({
           )}
 
           <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{judgement.refinement}</p>
+
+          {/* The full answer, but only where the refinement cannot stand alone. On a partial
+              answer the refinement supplies exactly the missing piece, which is better than the
+              whole model answer — it is about what THEY said. On an answer that did not get
+              there, a correction with no complete version to compare against leaves the learner
+              knowing they were wrong and not what right looks like. */}
+          {(judgement.verdict === "incorrect" || judgement.verdict === "misconception") && question.why && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-[0.8125rem] text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)">
+                See the full answer
+              </summary>
+              <p className="mt-2 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{question.why}</p>
+            </details>
+          )}
         </div>
       )}
     </div>
