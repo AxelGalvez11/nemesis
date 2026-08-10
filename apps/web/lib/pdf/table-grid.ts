@@ -212,7 +212,66 @@ function crossingLines(
 }
 
 /**
- * The grid inside a region, from the rules that actually cross it.
+ * A gutter narrower than this is the space between words, not between columns.
+ *
+ * In points, so it does not drift with page size. Roughly three spaces at 11pt.
+ */
+const MIN_GUTTER = 7;
+
+/**
+ * Column boundaries inferred from the whitespace running down a region.
+ *
+ * 🔴 MOST RULED TABLES DO NOT RULE THEIR COLUMNS, AND WITHOUT THIS THEY ARE ALL
+ * REFUSED. Measured on the corpus: a syllabus grading table came back with
+ * SEVEN horizontal lines at 99% coverage and ZERO vertical ones. That is the
+ * ordinary academic table — rows separated by rules, columns separated by
+ * space — and requiring drawn verticals rejects every one of them. Across the
+ * sample, "rules present but no grid" outnumbered "no rules at all" by more
+ * than ten to one, so this is the difference between needing a second 213 MB
+ * model and not needing one.
+ *
+ * A gutter counts only when it is clear down the WHOLE region. That is the
+ * strong form of the signal on purpose: a gap that exists on some rows and not
+ * others is a short cell, not a column boundary, and splitting on it would slice
+ * a sentence in half and file the pieces under different headers.
+ *
+ * PURE.
+ */
+export function inferColumns(items: readonly PlacedText[], region: Box): number[] {
+  const inside = items.filter((i) => {
+    const cx = i.x + i.width / 2;
+    const cy = i.y + i.height / 2;
+    return i.text.trim() && cx >= region.x0 && cx <= region.x1 && cy >= region.y0 && cy <= region.y1;
+  });
+  if (inside.length < 4) return [];
+
+  // Every x-interval covered by text, merged. The gaps between them are the
+  // candidate gutters.
+  const spans = inside
+    .map((i) => [Math.max(i.x, region.x0), Math.min(i.x + i.width, region.x1)] as [number, number])
+    .filter(([a, b]) => b > a)
+    .sort((a, b) => a[0] - b[0]);
+  if (spans.length === 0) return [];
+
+  const merged: [number, number][] = [spans[0]!];
+  for (const [s, e] of spans.slice(1)) {
+    const last = merged[merged.length - 1]!;
+    if (s <= last[1]) { if (e > last[1]) last[1] = e; continue; }
+    merged.push([s, e]);
+  }
+
+  const cuts: number[] = [];
+  for (let i = 1; i < merged.length; i += 1) {
+    const gap = merged[i]![0] - merged[i - 1]![1];
+    if (gap >= MIN_GUTTER) cuts.push((merged[i - 1]![1] + merged[i]![0]) / 2);
+  }
+  if (cuts.length === 0) return [];
+  return [region.x0, ...cuts, region.x1];
+}
+
+/**
+ * The grid inside a region, from the rules that actually cross it — falling
+ * back to inferred columns when the table rules its rows but not its columns.
  *
  * A line counts only if its segments together span a real share of the region;
  * otherwise every underline inside a cell becomes a row boundary and the table
@@ -220,13 +279,25 @@ function crossingLines(
  *
  * PURE.
  */
-export function gridWithin(rulings: readonly Ruling[], region: Box, coverage = 0.6): Grid | null {
+export function gridWithin(
+  rulings: readonly Ruling[],
+  region: Box,
+  coverage = 0.6,
+  items: readonly PlacedText[] = [],
+): Grid | null {
   const width = region.x1 - region.x0;
   const height = region.y1 - region.y0;
   if (!(width > 0) || !(height > 0)) return null;
 
   const rows = crossingLines(rulings, true, region.y0, region.y1, region.x0, region.x1, coverage);
-  const cols = crossingLines(rulings, false, region.x0, region.x1, region.y0, region.y1, coverage);
+  let cols = crossingLines(rulings, false, region.x0, region.x1, region.y0, region.y1, coverage);
+
+  // 🔴 DRAWN COLUMNS WIN WHENEVER THEY EXIST. Inference is the fallback, never
+  // an override: a stated boundary is evidence and a deduced one is a reading,
+  // and preferring the reading would let a wide gap inside a cell outvote the
+  // line the author actually drew.
+  if (cols.length < 2 && items.length > 0) cols = inferColumns(items, region);
+
   // A grid needs at least one row and one column to be a grid at all.
   if (rows.length < 2 || cols.length < 2) return null;
   return { cols, rows };
@@ -307,7 +378,7 @@ export function tableFromRegion(
   rulings: readonly Ruling[],
   items: readonly PlacedText[],
 ): DocTable | null {
-  const grid = gridWithin(rulings, region);
+  const grid = gridWithin(rulings, region, 0.6, items);
   if (!grid) return null;
   const rows = fillGrid(grid, items);
   // A grid every one of whose cells is empty is a border, not a table.

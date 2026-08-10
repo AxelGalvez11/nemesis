@@ -15,6 +15,7 @@ import {
   fillGrid,
   gridWithin,
   headerRowsOf,
+  inferColumns,
   tableFromRegion,
   unionLength,
   type PlacedText,
@@ -146,6 +147,63 @@ test("a ruled region becomes a DocTable with its header marked", () => {
   assert.ok(table);
   assert.equal(table.headerRows, 1);
   assert.deepEqual(table.rows, [["Drug", "Dose"], ["Carvedilol", "3.125mg"]]);
+});
+
+// ── inferred columns ───────────────────────────────────────────────────────
+
+/** One text run, sized so `x + width` is honest. */
+function run(text: string, x: number, y: number, width: number): PlacedText {
+  return { height: 10, text, width, x, y };
+}
+
+test("🔴 a table that rules its ROWS but not its COLUMNS still becomes a table", () => {
+  // Measured on the corpus: a real syllabus grading table has SEVEN horizontal
+  // lines at 99% coverage and ZERO vertical ones. Requiring drawn verticals
+  // refuses every ordinary academic table, and "rules present, no grid"
+  // outnumbered "no rules at all" by more than ten to one — the difference
+  // between needing a second 213 MB model and not needing one.
+  const rulings: Ruling[] = [
+    ...segmented(0, true, 0, 800, 6),
+    ...segmented(200, true, 0, 800, 6),
+    ...segmented(400, true, 0, 800, 6),
+  ];
+  const items = [
+    run("Score Range", 10, 10, 90), run("Letter Grade", 410, 10, 100),
+    run("93 - 100", 10, 250, 70), run("A", 410, 250, 20),
+  ];
+  const table = tableFromRegion(REGION, rulings, items);
+  assert.ok(table, "rows ruled + columns implied by space is still a table");
+  assert.deepEqual(table.rows, [["Score Range", "Letter Grade"], ["93 - 100", "A"]]);
+});
+
+test("a gap the width of a space is not a column boundary", () => {
+  // Prose inside one wide cell. Splitting on inter-word gaps would slice a
+  // sentence and file the halves under different headers.
+  const items = [run("the", 10, 10, 25), run("quick", 38, 10, 40), run("brown", 81, 10, 45)];
+  assert.deepEqual(inferColumns(items, REGION), [], "no gutter wide enough to be a column");
+});
+
+test("🔴 a drawn column boundary beats an inferred one", () => {
+  // A stated boundary is evidence; a deduced one is a reading. If a wide gap
+  // inside a cell could outvote the line the author drew, the author's own
+  // structure would lose to a coincidence of spacing.
+  const rulings: Ruling[] = [
+    ...segmented(0, true, 0, 800, 4),
+    ...segmented(200, true, 0, 800, 4),
+    ...segmented(400, true, 0, 800, 4),
+    ...segmented(0, false, 0, 400, 4),
+    ...segmented(600, false, 0, 400, 4),   // the author's column, at 600
+    ...segmented(800, false, 0, 400, 4),
+  ];
+  // …but the text has its widest gutter at 400, which inference would pick.
+  const items = [run("left", 10, 10, 60), run("right", 620, 10, 60)];
+  const grid = gridWithin(rulings, REGION, 0.6, items);
+  assert.ok(grid);
+  assert.deepEqual(grid.cols.map(Math.round), [0, 600, 800], "the drawn boundary wins");
+});
+
+test("inference needs enough text to be more than a coincidence", () => {
+  assert.deepEqual(inferColumns([run("a", 10, 10, 10), run("b", 700, 10, 10)], REGION), []);
 });
 
 test("🔴 a grid with no text in it is a border, not a table", () => {
