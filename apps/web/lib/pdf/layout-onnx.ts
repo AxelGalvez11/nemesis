@@ -77,7 +77,14 @@ export async function layoutSession(path: string): Promise<OnnxSessionLike> {
   sessionPromise ??= (async () => {
     const ort = await import("onnxruntime-node");
     return (await ort.InferenceSession.create(path)) as unknown as OnnxSessionLike;
-  })();
+  })().catch((cause) => {
+    // 🔴 A FAILED LOAD MUST NOT BE CACHED. Without this the rejected promise is
+    // held for the life of the process, so one bad path or one transient read
+    // error turns into "every page of every document fails with the same stale
+    // message" — a permanent outage produced by a temporary fault.
+    sessionPromise = null;
+    throw cause;
+  });
   return sessionPromise;
 }
 

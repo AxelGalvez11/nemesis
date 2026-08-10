@@ -19,22 +19,35 @@
  * file fixes first — before any vision spend, a figure nobody examined becomes a
  * countable, disclosable gap instead of an invisible one.
  *
- * 🔴 WHAT THIS DELIBERATELY DOES NOT DO: claim to have found tables.
- * Detecting a table from glyph positions is a real problem and a wrong answer is
- * worse than none — a grid asserted over ordinary prose relabels every value in
- * it. Ruling-line and column-alignment detection is recorded as an open gap in
- * the benchmark rather than approximated here.
+ * 🔴 TABLES: THIS USED TO REFUSE, AND NOW IT DOES NOT — THE REASON CHANGED.
+ * The refusal was correct while the only option was inferring a grid from glyph
+ * positions: a grid asserted over ordinary prose relabels every value in it, and
+ * a wrong answer is worse than none. Two things removed that objection.
+ *   1. `layout-onnx.ts` — Docling's trained layout model, run in-process, says
+ *      WHERE a table is instead of us guessing from spacing.
+ *   2. `table-grid.ts` — the cell boundaries come from the ruling lines the PDF
+ *      itself draws, and the cell CONTENTS are the same exact `TextItem`s this
+ *      file already extracted.
+ * So no grid is ever asserted over prose, and no character is ever re-read by a
+ * model. A region with no recoverable grid produces NO table and is counted as
+ * unread, which is the same refusal as before, now scoped to the cases that
+ * still deserve it.
+ *
+ * It stays off unless `DOCLING_LAYOUT_ONNX` points at the weights.
  *
  * pdf.js is imported lazily so ~1 MB of parser never lands in a bundle that only
  * ever renders notes. Geometry rules live in `./geometry` and are pure.
  */
 
-import { buildDocument, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { buildDocument, type DocBlock, type DocRect, type DocTable, type DocumentModel } from "@nemesis/shared";
 
 import { MAX_UNITS_PER_PARSE } from "@/lib/notebooks/parse-worker";
 
 import { figureToPng } from "./figure-image";
 import { MAX_FIGURES_PER_DOC, THIN_UNIT_CHARS, WORTH_LOOKING_AREA } from "./figure-routing";
+import { boxToRect, detectLayout, layoutModelPath, layoutSession, type OnnxSessionLike } from "./layout-onnx";
+import { pageToModelRgb } from "./rasterize";
+import { readRulings, tableFromRegion, type PlacedText } from "./table-grid";
 import {
   groupLines,
   groupParagraphs,
@@ -64,6 +77,15 @@ export interface PdfStructureResult {
    * 100,000 pages could be read" instead of quietly renaming the document.
    */
   declaredUnits: number;
+  /**
+   * Table regions the layout model found but that yielded no recoverable grid.
+   *
+   * 🔴 THIS IS A COVERAGE FACT, NOT A STATISTIC. A page whose table could not
+   * be reconstructed holds content that did not reach the student, and a page
+   * with plenty of native text around such a region would otherwise report
+   * `complete`. Carried out so the coverage record can say so.
+   */
+  tableRegionsUnread: number;
 }
 
 /** A figure found on a page, before it is judged. */
@@ -93,6 +115,10 @@ interface RawPage {
   height: number;
   items: TextItem[];
   figures: RawFigure[];
+  /** Reconstructed tables, if the layout lane ran. */
+  tables: { rect: DocRect; table: DocTable }[];
+  /** Table regions with no recoverable grid — content we could not deliver. */
+  tablesUnread: number;
 }
 
 /**
@@ -134,7 +160,17 @@ async function loadPdfjs() {
  */
 export async function readPdfStructure(
   bytes: Uint8Array,
-  options: { maxUnits?: number; captureFigures?: boolean; maxCaptured?: number } = {},
+  options: {
+    maxUnits?: number;
+    captureFigures?: boolean;
+    maxCaptured?: number;
+    /**
+     * Run the layout model to recover tables. Off unless asked AND the weights
+     * are configured — a missing model is "no tables", never an error, so a
+     * deployment without them parses exactly as it did before.
+     */
+    detectTables?: boolean;
+  } = {},
 ): Promise<PdfStructureResult> {
   const maxUnits = options.maxUnits ?? MAX_UNITS_PER_PARSE;
   // Headroom over the vision budget: running art is a DOCUMENT-level fact, only
@@ -152,6 +188,22 @@ export async function readPdfStructure(
     // pages, so the byte ceiling upstream does not bound this at all.
     const declaredUnits = doc.numPages;
     const readable = Math.min(declaredUnits, maxUnits);
+
+    // Loaded once for the whole document, not per page: the load costs ~470 ms
+    // and ~370 MB, so paying it per page would dominate the parse and multiply
+    // the memory by the page count.
+    let layout: OnnxSessionLike | null = null;
+    const modelPath = options.detectTables ? layoutModelPath() : null;
+    if (modelPath) {
+      try {
+        layout = await layoutSession(modelPath);
+      } catch (cause) {
+        // Weights that will not load mean no tables, exactly as if the lane were
+        // switched off. It must not cost the document its parse.
+        console.warn(JSON.stringify({ event: "pdf_layout_unavailable", detail: String(cause).slice(0, 160) }));
+      }
+    }
+
     const pages: RawPage[] = [];
     let captured = 0;
     for (let n = 1; n <= readable; n += 1) {
@@ -159,6 +211,7 @@ export async function readPdfStructure(
       try {
         const read = await readPage(pdfjs, page, {
           capture: options.captureFigures === true && captured < maxCaptured,
+          layout,
         });
         captured += read.figures.filter((figure) => figure.image).length;
         pages.push(read);
@@ -166,6 +219,7 @@ export async function readPdfStructure(
         page.cleanup();
       }
     }
+    const tableRegionsUnread = pages.reduce((sum, page) => sum + page.tablesUnread, 0);
 
     const figureImages = new Map<string, CapturedFigure>();
     pages.forEach((page, unit) => {
@@ -179,7 +233,7 @@ export async function readPdfStructure(
     // the model would report a 100,000-page document as a 5,000-page one that
     // was read completely — which is the exact shape of "solving capacity by
     // silently deleting content".
-    return { declaredUnits, figureImages, model: assemble(pages) };
+    return { declaredUnits, figureImages, model: assemble(pages), tableRegionsUnread };
   } finally {
     // 🔴 THE LOADING TASK OWNS THE WORKER, NOT THE DOCUMENT. pdf.js 6 removed
     // `PDFDocumentProxy.destroy`; destroying the task is what actually releases
@@ -198,7 +252,7 @@ type Pdfjs = Awaited<ReturnType<typeof loadPdfjs>>;
 async function readPage(
   pdfjs: Pdfjs,
   page: Awaited<ReturnType<Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>["getPage"]>>,
-  options: { capture: boolean } = { capture: false },
+  options: { capture: boolean; layout?: OnnxSessionLike | null } = { capture: false },
 ): Promise<RawPage> {
   // scale 1 and the page's own rotation, so every coordinate below is already in
   // the space a reader would render — no second convention anywhere downstream.
@@ -223,6 +277,60 @@ async function readPage(
     });
   }
 
+  // ── Tables ───────────────────────────────────────────────────────────────
+  //
+  // 🔴 ONLY `table` REGIONS ARE CONSUMED, DELIBERATELY. The layout model also
+  // reports `picture`, `list_item`, `formula` and more, and every one of those
+  // already has an owner here — `readFigures` finds the pictures, the paragraph
+  // grouper finds the lists. Taking them too would emit the same content twice
+  // under two different block kinds, which is worse than not having them: a
+  // duplicate is indistinguishable from a second, real occurrence.
+  const tables: { rect: DocRect; table: DocTable }[] = [];
+  let tablesUnread = 0;
+  if (options.layout) {
+    try {
+      const { rgb, width, height } = await pageToModelRgb(page as never);
+      const { regions } = await detectLayout(options.layout, rgb, width, height);
+      const wanted = regions.filter((r) => r.label === "table");
+      if (wanted.length > 0) {
+        const rulings = await readRulings(pdfjs as never, page, viewport);
+        const placed: PlacedText[] = items;
+        const consumed = new Set<TextItem>();
+        for (const region of wanted) {
+          const [x0, y0, x1, y1] = region.box;
+          const table = tableFromRegion({ x0, x1, y0, y1 }, rulings, placed);
+          if (!table) { tablesUnread += 1; continue; }
+          // 🔴 `width`/`height` HERE ARE POINTS, NOT RASTER PIXELS. `pageToModelRgb`
+          // returns the page's true size at scale 1 precisely so this rect lands
+          // in the same space every other rect in the model uses. Passing the
+          // raster's dimensions instead would shrink every table rect by the
+          // render scale and put every table citation in the wrong place.
+          const rect = boxToRect(region.box, width, height);
+          if (rect) tables.push({ rect, table });
+          for (const item of items) {
+            const cx = item.x + item.width / 2;
+            const cy = item.y + item.height / 2;
+            if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) consumed.add(item);
+          }
+        }
+        // 🔴 THE TEXT A TABLE ATE MUST LEAVE THE PARAGRAPH FLOW. Without this the
+        // page emits BOTH a correct 8-column table AND the same cells flattened
+        // into unreadable prose — and because a table is atomic to the chunker,
+        // the flattened copy lands in its own chunk that retrieval can still
+        // find. The document would get bigger and worse at the same time.
+        if (consumed.size > 0) {
+          const kept = items.filter((item) => !consumed.has(item));
+          items.length = 0;
+          items.push(...kept);
+        }
+      }
+    } catch (cause) {
+      // The layout lane is an enhancement. A page it cannot read is a page that
+      // parses exactly as it did before this existed — never a failed document.
+      console.warn(JSON.stringify({ event: "pdf_layout_failed", detail: String(cause).slice(0, 160) }));
+    }
+  }
+
   const figures = await readFigures(pdfjs, page, viewport);
   if (options.capture) {
     const pageArea = viewport.width * viewport.height;
@@ -238,7 +346,7 @@ async function readPage(
       if (converted.ok) figure.image = { height: converted.height, png: converted.png, width: converted.width };
     }
   }
-  return { figures, height: viewport.height, items, width: viewport.width };
+  return { figures, height: viewport.height, items, tables, tablesUnread, width: viewport.width };
 }
 
 /**
@@ -399,6 +507,26 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
       }
       blocks.push({ headingPath: [...headingPath], kind: "paragraph", rect, text, unit });
     });
+
+    // 🔴 AFTER THE PAGE'S PROSE, NOT INTERLEAVED WITH IT — A STATED LIMITATION.
+    // The text a table consumed has already been removed from `page.items`, so
+    // nothing is duplicated; but a page with a paragraph BELOW its table will
+    // order the table first. On the documents this exists for — reference charts
+    // that are essentially all table — that costs nothing, and a table's own
+    // rect still carries its true position for citations. Interleaving by
+    // vertical position is the right fix and is deliberately not smuggled in
+    // here alongside the change that makes tables exist at all.
+    for (const { rect, table } of page.tables) {
+      blocks.push({
+        headingPath: [...headingPath],
+        kind: "table",
+        rect,
+        table,
+        // A table's text is its grid; `documentToText` renders it from `table`.
+        text: "",
+        unit,
+      });
+    }
 
     const pageArea = page.width * page.height;
     for (const figure of page.figures) {

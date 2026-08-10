@@ -1,87 +1,80 @@
 /**
- * TEMPORARY — end-to-end: does the ONNX layout lane produce REAL tables?
+ * Does the table lane help, and does it double-emit?
  *
- * raster -> layout model -> ruled grid -> pdf.js text -> DocTable, on a real
- * file, printed as a grid so the cells can be read against the page.
+ * Runs `readPdfStructure` twice on the same file — lane off, lane on — through
+ * the REAL parse path, and compares. The load-bearing check is the character
+ * count: the text a table consumes is removed from the paragraph flow, so the
+ * total should stay in the same neighbourhood. A materially larger document is
+ * the signature of the same cells being emitted twice, once as a grid and once
+ * as the flattened prose it replaced — and because a table is atomic to the
+ * chunker, that duplicate would land in its own chunk that retrieval can still
+ * find. Bigger AND worse, silently.
+ *
+ * Run from apps/web:
+ *   DOCLING_LAYOUT_ONNX=/path/model.onnx npx tsx scripts/pdf-tables-check.mts <file.pdf> [page]
  */
 import { readFileSync } from "node:fs";
 
-import { detectLayout, layoutSession } from "../lib/pdf/layout-onnx.ts";
-import { pageToModelRgb } from "../lib/pdf/rasterize.ts";
-import { readRulings, tableFromRegion, type PlacedText } from "../lib/pdf/table-grid.ts";
+// The workspace alias resolves to built types, which tsx does not run from —
+// scripts here import the source directly, as `bakeoff-answers.mts` does.
+import { documentToText } from "../../../packages/shared/src/document-model.ts";
 
-const pdfPath = process.argv[2]!;
-const modelPath = process.argv[3]!;
-const showPage = Number(process.argv[4] ?? "2");
+import { readPdfStructure } from "../lib/pdf/structure.ts";
 
-const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-const bytes = new Uint8Array(readFileSync(pdfPath));
-const doc = await pdfjs.getDocument({ data: bytes, disableFontFace: true }).promise;
+const file = process.argv[2]!;
+const showPage = Number(process.argv[3] ?? "2");
+const bytes = readFileSync(file);
 
-const t0 = Date.now();
-const session = await layoutSession(modelPath);
-console.log(`model load: ${Date.now() - t0} ms`);
+const rssMb = () => Math.round(process.memoryUsage.rss() / 1048576);
 
-const rss = () => Math.round(process.memoryUsage.rss() / 1048576);
-let peak = rss();
-let tables = 0, cells = 0, gridless = 0, detectMs = 0, rasterMs = 0;
-const wall = Date.now();
-
-for (let n = 1; n <= doc.numPages; n += 1) {
-  const page = await doc.getPage(n);
-  try {
-    const viewport = page.getViewport({ scale: 1 });
-    const r0 = Date.now();
-    const { rgb, width, height } = await pageToModelRgb(page as never);
-    rasterMs += Date.now() - r0;
-
-    const { regions, ms } = await detectLayout(session, rgb, width, height);
-    detectMs += ms;
-
-    const content = await page.getTextContent();
-    const items: PlacedText[] = [];
-    for (const item of content.items) {
-      if (!("str" in item) || !item.str) continue;
-      const t = pdfjs.Util.transform(viewport.transform, item.transform);
-      const h = Math.hypot(t[2], t[3]) || item.height || 0;
-      items.push({ height: h, text: item.str, width: item.width || 0, x: t[4], y: t[5] - h });
-    }
-    const rulings = await readRulings(pdfjs as never, page as never, viewport);
-
-    const pageTables = [];
-    for (const region of regions.filter((x) => x.label === "table")) {
-      const [x0, y0, x1, y1] = region.box;
-      const table = tableFromRegion({ x0, x1, y0, y1 }, rulings, items);
-      if (!table) { gridless += 1; continue; }
-      pageTables.push(table);
-      tables += 1;
-      cells += table.rows.reduce((s, row) => s + row.filter((c) => c).length, 0);
-    }
-    peak = Math.max(peak, rss());
-
-    const labels: Record<string, number> = {};
-    for (const x of regions) labels[x.label] = (labels[x.label] ?? 0) + 1;
-    console.log(
-      `  p${String(n).padStart(2)}  ${String(ms).padStart(4)}ms  ${JSON.stringify(labels)}  ` +
-      `tables=${pageTables.length}${pageTables.map((t) => ` ${t.rows.length}x${t.rows[0]?.length ?? 0}`).join("")}`,
-    );
-
-    if (n === showPage && pageTables[0]) {
-      const t = pageTables[0];
-      console.log(`\n--- page ${n}: ${t.rows.length} rows x ${t.rows[0]?.length} cols, headerRows=${t.headerRows} ---`);
-      t.rows.forEach((row, ri) => {
-        console.log(` row ${ri}:`);
-        row.forEach((cell, ci) => {
-          if (cell) console.log(`   c${ci}: ${JSON.stringify(cell.slice(0, 110))}`);
-        });
-      });
-      console.log("---\n");
-    }
-  } finally {
-    page.cleanup();
-  }
+async function run(detectTables: boolean) {
+  const t0 = Date.now();
+  // A fresh copy each time: pdf.js takes ownership of the buffer it is handed.
+  const out = await readPdfStructure(new Uint8Array(bytes), { detectTables });
+  const ms = Date.now() - t0;
+  const kinds: Record<string, number> = {};
+  for (const b of out.model.blocks) kinds[b.kind] = (kinds[b.kind] ?? 0) + 1;
+  const text = documentToText(out.model);
+  const cells = out.model.blocks
+    .filter((b) => b.kind === "table")
+    .reduce((n, b) => n + (b.table?.rows.flat().filter((c) => c.trim()).length ?? 0), 0);
+  return { cells, kinds, model: out.model, ms, rss: rssMb(), tableRegionsUnread: out.tableRegionsUnread, text };
 }
 
-console.log(`\n=== ${doc.numPages} pages ===`);
-console.log(`tables: ${tables}   filled cells: ${cells}   regions with no recoverable grid: ${gridless}`);
-console.log(`raster ${rasterMs}ms  detect ${detectMs}ms  wall ${Date.now() - wall}ms  peak RSS ${peak} MB`);
+const off = await run(false);
+const on = await run(true);
+
+const row = (label: string, a: string | number, b: string | number) =>
+  console.log(`  ${label.padEnd(24)} ${String(a).padStart(12)}   ${String(b).padStart(12)}`);
+
+console.log(`\n${file.split("/").pop()}\n`);
+console.log(`  ${"".padEnd(24)} ${"lane OFF".padStart(12)}   ${"lane ON".padStart(12)}`);
+row("blocks", off.model.blocks.length, on.model.blocks.length);
+row("tables", off.kinds.table ?? 0, on.kinds.table ?? 0);
+row("filled cells", off.cells, on.cells);
+row("paragraphs", off.kinds.paragraph ?? 0, on.kinds.paragraph ?? 0);
+row("headings", off.kinds.heading ?? 0, on.kinds.heading ?? 0);
+row("characters", off.text.length, on.text.length);
+row("regions unread", off.tableRegionsUnread, on.tableRegionsUnread);
+row("parse ms", off.ms, on.ms);
+row("RSS MB after", off.rss, on.rss);
+
+const growth = off.text.length > 0 ? on.text.length / off.text.length : 0;
+console.log(
+  `\n  character ratio on/off: ${growth.toFixed(3)}  ` +
+  (growth > 1.35 ? "🔴 INFLATED — text is very likely emitted twice" : "OK — no sign of double emission"),
+);
+
+const table = on.model.blocks.find((b) => b.kind === "table" && b.unit === showPage - 1);
+if (table?.rect) {
+  const r = table.rect;
+  console.log(
+    `\n  page ${showPage} first table rect: ` +
+    `x=${r.x.toFixed(3)} y=${r.y.toFixed(3)} w=${r.width.toFixed(3)} h=${r.height.toFixed(3)}`,
+  );
+  // 🔴 A RECT BUILT FROM RASTER PIXELS INSTEAD OF POINTS SHRINKS BY THE RENDER
+  // SCALE — at 200 DPI that is 2.78x, so a full-width table would report a
+  // width near 0.32 and every citation would point at a sliver of the page.
+  const ok = r.width > 0.5 && r.x + r.width <= 1.001 && r.y + r.height <= 1.001;
+  console.log(`  ${ok ? "OK" : "🔴 SUSPECT"} — a full-width table should read w>0.5 and stay inside the page`);
+}
