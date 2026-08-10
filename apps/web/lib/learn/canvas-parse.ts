@@ -260,10 +260,49 @@ export function parseTestQuestions(
 
 // ----------------------------------------------------------- free-response test
 
-/** Free-response prompts. The same discipline as the choice parser — a prompt whose concept we
- *  never issued is dropped, because a miss nobody can attribute is the defect this canvas exists
- *  to fix — plus one of its own: a prompt with nothing expected of it is unjudgeable, so it goes
- *  too rather than reaching a learner who would answer it for no benefit. */
+/** One free-response prompt, checked.
+ *
+ *  Extracted so the teaching loop's follow-up questions go through exactly the same discipline as
+ *  a generated test. A follow-up minted inline with a looser shape would be unjudgeable, and the
+ *  loop would degrade into asking questions nobody can read the answers to after one turn. */
+export function toFreeQuestion(
+  entry: unknown,
+  known: ReadonlySet<string>,
+  sources: readonly CanvasSource[],
+  index = 0,
+): CanvasFreeQuestion | null {
+  if (!isRecord(entry)) return null;
+  const q = text(entry.q);
+  if (!q) return null;
+
+  const conceptId = text(entry.conceptId);
+  // 🔴 A prompt with no concept is dropped: a miss nobody can attribute is the defect this
+  // canvas exists to fix.
+  if (!conceptId || !known.has(conceptId)) return null;
+
+  const claims = Array.isArray(entry.expected) ? entry.expected.map(text).filter(Boolean) : [];
+  // Nothing expected of it means nothing to judge it against, so the learner would answer at
+  // length for no benefit.
+  if (claims.length === 0) return null;
+
+  // An unrecognised task is not fatal — it only decides how the prompt is introduced on screen.
+  // "explain" is the honest default because it is the least specific of the nine.
+  const rawTask = text(entry.kind || entry.task) as RetrievalTask;
+  const task = (RETRIEVAL_TASKS as readonly string[]).includes(rawTask) ? rawTask : "explain";
+
+  const refs = usableRefs(entry.sourceRefs, sources);
+  return {
+    id: `q_${index + 1}_${Math.random().toString(36).slice(2, 8)}`,
+    format: "free",
+    task,
+    q,
+    expectedEvidence: { acceptableClaims: claims },
+    why: text(entry.why),
+    conceptId,
+    ...(refs.length ? { sourceRefs: refs } : {}),
+  };
+}
+
 export function parseFreeQuestions(
   raw: string,
   conceptIds: readonly string[],
@@ -275,37 +314,27 @@ export function parseFreeQuestions(
 
   const known = new Set(conceptIds);
   const out: CanvasFreeQuestion[] = [];
-
   for (const entry of list) {
-    if (!isRecord(entry)) continue;
-    const q = text(entry.q);
-    if (!q) continue;
-
-    const conceptId = text(entry.conceptId);
-    if (!conceptId || !known.has(conceptId)) continue;
-
-    const claims = Array.isArray(entry.expected) ? entry.expected.map(text).filter(Boolean) : [];
-    if (claims.length === 0) continue;
-
-    // An unrecognised kind is not fatal — it only decides how the prompt is introduced on screen.
-    // "explain" is the honest default because it is the least specific of the six.
-    const rawTask = text(entry.kind || entry.task) as RetrievalTask;
-    const task = (RETRIEVAL_TASKS as readonly string[]).includes(rawTask) ? rawTask : "explain";
-
-    const refs = usableRefs(entry.sourceRefs, sources);
-    out.push({
-      id: `q_${out.length + 1}_${Math.random().toString(36).slice(2, 8)}`,
-      format: "free",
-      task,
-      q,
-      expectedEvidence: { acceptableClaims: claims },
-      why: text(entry.why),
-      conceptId,
-      ...(refs.length ? { sourceRefs: refs } : {}),
-    });
+    const question = toFreeQuestion(entry, known, sources, out.length);
+    if (question) out.push(question);
   }
-
   return out;
+}
+
+/** The teaching loop's reply: how the page should change, and what to ask next.
+ *
+ *  Both halves are validated by their existing owners — operations by `validateOps` in the
+ *  caller (which is where the block scope lives), the follow-up by `toFreeQuestion`. A missing
+ *  or unusable follow-up is not fatal: the page still gets its correction, and the learner is
+ *  simply not asked again about it. */
+export function parseTeachingReply(
+  raw: string,
+  conceptIds: readonly string[],
+  sources: readonly CanvasSource[],
+): { followUp: CanvasFreeQuestion | null } {
+  const payload = extractJson(raw);
+  if (!payload) return { followUp: null };
+  return { followUp: toFreeQuestion(payload.followUp, new Set(conceptIds), sources) };
 }
 
 // -------------------------------------------------------------- short answer

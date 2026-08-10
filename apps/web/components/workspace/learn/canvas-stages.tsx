@@ -203,7 +203,8 @@ export function CanvasRecall({
     : null;
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6">
+    // See the note in CanvasTest: the composer floats over the bottom of this stage.
+    <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-6 py-10 pb-40">
       <div className="w-full max-w-[36rem]">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           Recall · {index + 1} of {cards.length}
@@ -429,7 +430,12 @@ export function CanvasTest({
   const last = index + 1 >= canvas.questions.length;
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6">
+    // 🔴 `pb-40` is not decoration. The composer is absolutely positioned over the bottom of this
+    // stage behind a tall gradient, so a vertically centred column pushes its own primary action
+    // under that fade the moment the content grows — and the teaching loop grows it every time.
+    // Overflow is scrollable for the same reason: a long correction must not push the button off
+    // the stage entirely.
+    <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-6 py-10 pb-40">
       <div className="w-full max-w-[38rem]">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           {canvas.state === "retest" ? "Retest" : "Test"} · {index + 1} of {canvas.questions.length}
@@ -462,7 +468,9 @@ export function CanvasTest({
               onClick={() => (last ? onFinish() : setIndex(index + 1))}
               type="button"
             >
-              {last ? "See where I stand" : "Next"}
+              {/* When the canvas taught something and asked again, "Next" undersells it — the
+                  next prompt is the point of the correction, not the thing after it. */}
+              {responded?.followUpQuestionId ? "Try it now" : last ? "See where I stand" : "Next"}
             </button>
           </div>
         )}
@@ -684,6 +692,17 @@ function Judged({
           </p>
 
           <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{evaluation.feedback}</p>
+
+          {/* What the canvas taught in response to THIS answer. It also went into the document,
+              but it belongs here too: the correction is about what they just said, and sending
+              them off to find it in the page would break the moment it exists for. */}
+          {response.taught && (
+            <div className="mt-4 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3">
+              <p className="whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
+                {response.taught}
+              </p>
+            </div>
+          )}
 
           {/* The full answer, but only where the refinement cannot stand alone. On a partial
               answer the refinement supplies exactly the missing piece, which is better than the

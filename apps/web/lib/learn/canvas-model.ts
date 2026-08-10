@@ -350,6 +350,15 @@ export interface CanvasResponse {
    *  evidence — we did not obtain a retrieval — and it is recorded rather than inferred. */
   revealed?: boolean;
   evaluation?: ResponseEvaluation;
+  /** What the canvas decided to do about this performance, and what it taught in response.
+   *
+   *  The teaching text is kept on the evidence and not only inserted into the document, because
+   *  the correction is ABOUT this answer — it belongs beside what they said. The document block
+   *  the same change updated is a different thing serving a different moment. */
+  action?: string;
+  taught?: string;
+  /** The prompt the canvas asked next, once it had taught the missing piece. */
+  followUpQuestionId?: string;
 }
 
 export interface RecallResult {
@@ -388,6 +397,15 @@ export interface LearningCanvas {
    *  makes free response worth having. */
   answers: CanvasAnswer[];
   responses: CanvasResponse[];
+  /** Corrective rounds already spent on each objective, keyed by concept id.
+   *
+   *  🔴 This is what stops the teaching loop grinding forever, so it has to be STORED rather
+   *  than counted from the evidence. Responses are keyed by question and are replaced in place
+   *  on a retry, so `responses.length` is not the number of attempts and never will be.
+   *
+   *  Reset when a round turns over: the cap is about grinding on one idea in one sitting, not a
+   *  lifetime budget for a concept. */
+  correctiveAttempts: Record<string, number>;
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -415,6 +433,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     questions: [],
     answers: [],
     responses: [],
+    correctiveAttempts: {},
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

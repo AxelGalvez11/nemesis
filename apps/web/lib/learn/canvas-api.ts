@@ -12,7 +12,9 @@
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
+import { blocksForConcepts } from "./canvas-diagnosis";
 import { parseEvaluation } from "./canvas-judge";
+import type { CognitiveAction } from "./canvas-policy";
 import {
   conceptLabel,
   type CanvasFreeQuestion,
@@ -25,6 +27,7 @@ import { parseCanvasOps, validateOps, type CanvasOp } from "./canvas-ops";
 import {
   parseFreeQuestions,
   parseLesson,
+  parseTeachingReply,
   parseRecallCards,
   parseShortAnswer,
   parseTestQuestions,
@@ -37,6 +40,7 @@ import {
   lessonMessages,
   recallMessages,
   relearnMessages,
+  teachingMessages,
   testMessages,
   type EvaluationInput,
   type RelearnMiss,
@@ -293,6 +297,73 @@ export function cardAsTask(
     response,
     ...(card.sourceRefs?.length ? { context: { sourceRefs: card.sourceRefs } } : {}),
   };
+}
+
+// ------------------------------------------------------------ teaching loop
+
+export interface TeachingChange {
+  ops: CanvasOp[];
+  followUp: CanvasFreeQuestion | null;
+}
+
+/** Turn a chosen teaching action into a validated, SCOPED change to the page.
+ *
+ *  🔴 The scope is not advisory. `validateOps` is given the ids of the blocks that teach this
+ *  objective and refuses every other block — and because `replace_canvas` and `rewrite_section`
+ *  are whole-canvas operations, scoping also puts them out of reach. Without it the model
+ *  regenerates the page on almost every turn, which would silently undo the one behaviour this
+ *  surface is judged on: fixing one paragraph fixes one paragraph. */
+export async function applyTeachingAction(
+  uid: string,
+  canvas: LearningCanvas,
+  input: {
+    action: CognitiveAction;
+    objectiveId: string;
+    prompt: string;
+    said: string;
+    demonstrated: readonly string[];
+  },
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<TeachingChange>> {
+  const scope = blocksForConcepts(canvas.blocks, [input.objectiveId]);
+
+  const { text, error } = await ask(
+    uid,
+    teachingMessages({
+      action: input.action,
+      canvasTitle: canvas.title,
+      objectiveLabel: conceptLabel(canvas, input.objectiveId),
+      objectiveId: input.objectiveId,
+      prompt: input.prompt,
+      said: input.said,
+      demonstrated: input.demonstrated,
+      scope,
+      sources: canvas.sources,
+      level: canvas.level,
+    }),
+    signal,
+  );
+  if (error) return { value: null, error };
+
+  const proposed = parseCanvasOps(text ?? "");
+  // An empty scope means the page has no block for this idea yet, so there is nothing to
+  // rewrite — but new blocks still have to land somewhere, so the insert targets fall back to
+  // the whole document rather than being refused outright.
+  const { ops } = validateOps(canvas, proposed, {
+    ...(scope.length ? { scopeBlockIds: scope.map((block) => block.id) } : {}),
+  });
+  const { followUp } = parseTeachingReply(
+    text ?? "",
+    canvas.concepts.map((concept) => concept.id),
+    canvas.sources,
+  );
+
+  // A change that neither rewrote anything nor asked anything is not worth applying, and
+  // reporting success for it would leave the learner staring at an unchanged page.
+  if (ops.length === 0 && !followUp) {
+    return { value: null, error: "Nemesis couldn't work out what to change. Nothing was altered." };
+  }
+  return { value: { ops, followUp }, error: null };
 }
 
 // --------------------------------------------------------- targeted relearn

@@ -20,6 +20,7 @@ import {
   generateRelearn,
   generateRecall,
   generateTest,
+  applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
   questionAsTask,
@@ -28,6 +29,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { buildExcerpts } from "@/lib/learn/canvas-grounding";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
+import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
 import {
   conceptLabel,
@@ -662,6 +664,84 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           entry.questionId === questionId ? { ...entry, evaluation } : entry,
         ),
       }));
+
+      // ── The teaching loop ────────────────────────────────────────────────
+      //
+      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz. The
+      // decision is deterministic — the evaluation already says what was demonstrated, what was
+      // missing and which false belief appeared, so no second model call is spent working out
+      // what to do. A model is used only to WRITE the correction, once the action is chosen.
+      const objectiveId = question.conceptId;
+      const action = determineNextCognitiveAction({
+        evaluation,
+        attempts: latest.current.correctiveAttempts[objectiveId ?? ""] ?? 0,
+      });
+      canvasCapture("canvas_action_chosen", latest.current, {
+        action: action.type,
+        because: action.because,
+        verdict: evaluation.verdict,
+        conceptId: objectiveId,
+      });
+      if (!actionMutatesCanvas(action) || !objectiveId) return;
+
+      setBusy({ kind: "relearn", label: "Working through that with you" });
+      const change = await applyTeachingAction(id, latest.current, {
+        action,
+        objectiveId,
+        prompt: question.q,
+        said,
+        demonstrated: evaluation.demonstrated,
+      });
+      setBusy({ kind: null });
+      if (!change.value) return;
+
+      const { ops, followUp } = change.value;
+      // What the correction actually said, so it can sit beside their answer as well as in the
+      // document. Taken from the ops we just validated rather than asked for separately.
+      const taught = ops
+        .map((op) =>
+          op.operation === "replace_block"
+            ? op.content
+            : op.operation === "insert_before" || op.operation === "insert_after"
+              ? op.block.content
+              : op.operation === "annotate_block"
+                ? op.note
+                : "",
+        )
+        .filter(Boolean)
+        .join("\n\n");
+
+      update((current) => {
+        const mutated = applyOps(current, ops);
+        // The follow-up goes immediately after the prompt it follows up, so "Next" lands on it
+        // rather than on whatever the generator happened to put there.
+        const at = current.questions.findIndex((entry) => entry.id === questionId);
+        const questions = followUp
+          ? [
+              ...current.questions.slice(0, at + 1),
+              followUp,
+              ...current.questions.slice(at + 1),
+            ]
+          : current.questions;
+        return {
+          ...mutated,
+          questions,
+          correctiveAttempts: {
+            ...current.correctiveAttempts,
+            [objectiveId]: (current.correctiveAttempts[objectiveId] ?? 0) + 1,
+          },
+          responses: current.responses.map((entry) =>
+            entry.questionId === questionId
+              ? {
+                  ...entry,
+                  action: action.type,
+                  ...(taught ? { taught } : {}),
+                  ...(followUp ? { followUpQuestionId: followUp.id } : {}),
+                }
+              : entry,
+          ),
+        };
+      });
     },
     [requireUid, update],
   );

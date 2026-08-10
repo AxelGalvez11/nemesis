@@ -12,6 +12,7 @@ import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
+import type { CognitiveAction } from "./canvas-policy";
 import {
   ERROR_TYPES,
   LEVEL_INSTRUCTIONS,
@@ -346,6 +347,101 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         "what they got right, and do not re-teach the topic. " +
         "`alsoWeakConceptIds` is for OTHER concepts on the page this performance showed to be shaky; use ids from " +
         "the list above and no others, and leave it out if there are none.",
+      role: "user",
+    },
+  ];
+}
+
+// ------------------------------------------------------------ teaching loop
+
+/** How the page should change in response to one performance.
+ *
+ *  🔴 THE SCOPE IS THE FEATURE. The caller passes the ids of the blocks that teach this
+ *  objective and `validateOps` refuses anything else, so a clarification cannot quietly become a
+ *  page rewrite. That protection has to hold here more than anywhere: given a free hand the model
+ *  reaches for `replace_canvas` on every turn, which would undo the two behaviours the canvas is
+ *  actually judged on — fixing one paragraph fixes one paragraph, and the page is never
+ *  regenerated wholesale.
+ *
+ *  🔴 AND IT MUST NOT RE-TEACH WHAT THEY ALREADY SHOWED. Someone who demonstrated A and B and
+ *  missed C should not be handed A + B + C again. That is the difference between a canvas that
+ *  adapts and a canvas that repeats itself more loudly. */
+export function teachingMessages(input: {
+  action: CognitiveAction;
+  canvasTitle: string;
+  objectiveLabel: string;
+  objectiveId: string;
+  /** What they were asked, and what they said — so the correction is about THEIR answer. */
+  prompt: string;
+  said: string;
+  demonstrated: readonly string[];
+  /** The blocks that currently teach this objective. The only ones that may change. */
+  scope: readonly CanvasBlock[];
+  sources: readonly CanvasSource[];
+  level: CanvasLevel | null;
+}): WireMsg[] {
+  const scopeText = input.scope
+    .map((block) => `${block.id} [${block.type}] ${block.content}`)
+    .join("\n\n");
+
+  const instruction = (() => {
+    switch (input.action.type) {
+      case "clarify_missing":
+        return (
+          `They already demonstrated: ${input.demonstrated.join("; ") || "part of this"}.\n` +
+          `What was missing: ${input.action.missing.join("; ")}\n\n` +
+          "Teach ONLY the missing piece. Do not restate what they already showed — they have it, and " +
+          "repeating it back is how a page stops feeling adaptive. Write one short block that supplies the " +
+          "gap and connects it to what they already had, and put it next to the block that covers this idea. " +
+          "Then ask them to explain how the missing piece relates to the part they got right."
+        );
+      case "correct":
+        return (
+          `What went wrong: ${input.action.missing.join("; ")}\n\n` +
+          "Write the smallest correction that fixes this specific thing — two or three sentences, not a " +
+          "re-teach of the topic. Replace the block that misled them if there is one, otherwise insert the " +
+          "correction beside it. Then ask them the same idea again, in a different way than it was asked " +
+          "the first time."
+        );
+      case "repair_misconception":
+        return (
+          `They hold a specific false belief: ${input.action.misconceptions.join("; ")}\n\n` +
+          "🔴 This is not a gap, it is a wrong model, so filling in more detail will not help — the belief " +
+          "itself has to be replaced. Rewrite the block that teaches this idea so it names the false " +
+          "relationship explicitly, says plainly that it does not hold, and puts the correct relationship " +
+          "in its place. Be concrete about what causes what. Then ask them to reconstruct the corrected " +
+          "relationship in their own words, because saying it back is what replaces the old model."
+        );
+      case "retry":
+      default:
+        return (
+          "Their answer did not get there, and the reading is not precise enough to correct a specific point. " +
+          "Re-teach this idea slightly more completely than the page does now — a different angle, or a " +
+          "concrete example, rather than the same sentences again. Then ask for it once more."
+        );
+    }
+  })();
+
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `The learner is working on "${input.objectiveLabel}" in "${input.canvasTitle}".\n\n` +
+        `They were asked:\n"${input.prompt}"\n\n` +
+        `They answered:\n"${input.said}"\n\n` +
+        `${instruction}\n\n` +
+        (input.level ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n` : "") +
+        `You may ONLY change these blocks: ${input.scope.map((b) => b.id).join(", ") || "(none — insert only)"}. ` +
+        "Permitted operations: replace_block, insert_before, insert_after, annotate_block. " +
+        "Any operation naming another block, or attempting to rewrite the whole page, will be discarded.\n\n" +
+        `${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
+        'Return JSON: {"operations":[…],"followUp":{"task":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"' +
+        `${input.objectiveId}"}}\n\n` +
+        "`followUp` is the next thing you ask them, and it must be answerable in their own words. `expected` " +
+        "is 2-3 short checkable claims a complete answer makes — this is what the answer will be judged " +
+        `against, so write claims and not topics. conceptId MUST be "${input.objectiveId}".\n\n` +
+        `The blocks that currently teach this idea:\n${scopeText || "(none — the page has no block for it yet)"}\n\n` +
+        materialSection(input.sources, input.canvasTitle),
       role: "user",
     },
   ];

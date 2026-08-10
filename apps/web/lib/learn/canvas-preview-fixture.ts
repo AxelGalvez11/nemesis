@@ -23,6 +23,7 @@ export type PreviewSeed =
   | "recall"
   | "test"
   | "judged"
+  | "taught"
   | "choicetest"
   | "diagnose"
   | "complete"
@@ -274,6 +275,24 @@ const FREE_QUESTIONS: CanvasFreeQuestion[] = [
   },
 ];
 
+/** The prompt the teaching loop asks AFTER it has taught the missing piece. Same shape as any
+ *  generated question, because it goes through the same parser — a follow-up the judge cannot
+ *  read would make the loop degrade to unanswerable questions after one turn. */
+const FOLLOW_UP: CanvasFreeQuestion = {
+  id: "f1b",
+  format: "free",
+  task: "explain",
+  q: "So why is the channel opening enough on its own — what makes the sodium actually move?",
+  expectedEvidence: {
+    acceptableClaims: [
+      "sodium follows its electrochemical gradient",
+      "the gradient is already loaded before the channel opens",
+    ],
+  },
+  why: "The gradient is maintained by the pump beforehand, so opening the channel is all that is needed for sodium to move inward.",
+  conceptId: "k1",
+};
+
 /** One answered-and-judged prompt, so the reply the learner actually sees — what they got right,
  *  the belief behind the error, the targeted correction — can be checked without a model. */
 const JUDGED_RESPONSES: CanvasResponse[] = [
@@ -292,6 +311,10 @@ const JUDGED_RESPONSES: CanvasResponse[] = [
       feedback:
         "You have the sequence. The piece to add is the reason sodium moves: it follows its own electrochemical gradient, which is why the channels opening is enough on its own.",
     },
+    action: "clarify_missing",
+    taught:
+      "The part you did not say is why sodium moves at all. The sodium-potassium pump has already loaded the gradient before anything opens, so sodium is sitting at a much higher concentration outside than in. Opening the channel does not push it — it simply stops holding it back.",
+    followUpQuestionId: "f1b",
   },
   {
     questionId: "f2",
@@ -326,6 +349,15 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
     questions: FREE_QUESTIONS,
     answers: [],
     responses: JUDGED_RESPONSES,
+  }),
+  // What the teaching loop leaves behind: the gap taught, and a follow-up inserted right after
+  // the prompt it follows up.
+  taught: () => ({
+    ...lessonSeed(),
+    state: "test",
+    questions: [FREE_QUESTIONS[0] as CanvasFreeQuestion, FOLLOW_UP, FREE_QUESTIONS[1] as CanvasFreeQuestion],
+    answers: [],
+    responses: [JUDGED_RESPONSES[0] as CanvasResponse],
   }),
   choicetest: () => ({ ...lessonSeed(), state: "test", questions: QUESTIONS, answers: [], responses: [] }),
   diagnose: diagnoseSeed,

@@ -74,6 +74,9 @@ export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): 
       return evaluation ? { ...response, evaluation } : { ...response, evaluation: undefined };
     }),
     recallResults: list((canvas as { recallResults?: unknown }).recallResults),
+    // Absent on every canvas written before the teaching loop existed.
+    correctiveAttempts:
+      (canvas as { correctiveAttempts?: Record<string, number> }).correctiveAttempts ?? {},
   };
 }
 
@@ -101,6 +104,7 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
     questions: list(document.questions),
     answers: list(document.answers),
     responses: list(document.responses),
+    correctiveAttempts: (document.correctiveAttempts ?? {}) as Record<string, number>,
     weakConceptIds: list(document.weakConceptIds),
     correctedConceptIds: list(document.correctedConceptIds),
     ...(typeof document.studyDeckId === "string" ? { studyDeckId: document.studyDeckId } : {}),
@@ -137,6 +141,7 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       // remembers — and free responses are the learner's own words, which is the worst thing
       // on the canvas to lose.
       responses: canvas.responses,
+      correctiveAttempts: canvas.correctiveAttempts,
       weakConceptIds: canvas.weakConceptIds,
       correctedConceptIds: canvas.correctedConceptIds,
       ...(canvas.studyDeckId ? { studyDeckId: canvas.studyDeckId } : {}),

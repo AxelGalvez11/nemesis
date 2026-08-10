@@ -28,6 +28,9 @@ export type CanvasEvent =
   // whether the model can hold the JSON shape under real answers.
   | "canvas_response_judged"
   | "canvas_judge_failed"
+  // Which teaching action the policy chose, and why. The distribution is how we find out
+  // whether the loop is actually adapting or quietly advancing past everything.
+  | "canvas_action_chosen"
   | "canvas_diagnosis_viewed"
   | "canvas_weakspots_relearned"
   | "canvas_retest_completed"
