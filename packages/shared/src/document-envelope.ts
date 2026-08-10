@@ -80,10 +80,16 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
     // `kind` alone, so every other field died here. `label` is the author's own name
     // for the unit — a slide's title placeholder, a sheet's name — and the Deno
     // indexer reads exactly that field to fill `library_chunks.unit_label`
-    // (`source-index/index.ts`). It read `undefined` every time, so every indexed
-    // slide was stored with a NULL label and no retrieval result could say which
-    // slide it came from. `size` is what turns a unit-relative rect into a crop, so
-    // losing it silently disables every citation that wanted to point at a region.
+    // (`source-index/index.ts`), where it would have read `undefined` every time.
+    //
+    // 🔴 LATENT, NOT ACTIVE, AND THE DIFFERENCE MATTERS WHEN YOU GO LOOKING. No row
+    // with a NULL label exists to find, because the envelope bug below meant nothing
+    // was ever indexed at all. This defect was MASKED by that one and would have
+    // surfaced the moment it was fixed — which is the argument for fixing both in one
+    // change rather than discovering the second in production afterwards.
+    //
+    // `size` is what turns a unit-relative rect into a crop, so losing it silently
+    // disables every citation that wanted to point at a region.
     //
     // This is the same failure `readCoverage` documents one file over: a field this
     // reader does not know about is a field that dies between the database and the
@@ -107,6 +113,13 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
     // passes while it points at nothing.
     if (typeof b.unit !== "number" || b.unit < 0 || b.unit >= units.length) return null;
     if (!Array.isArray(b.headingPath) || b.headingPath.some((p) => typeof p !== "string")) return null;
+    // 🔴 THE WHOLE ENTRY, AND THE ASYMMETRY WITH `units` ABOVE IS DELIBERATE — DO NOT
+    // "TIDY" THIS BRANCH TO MATCH THAT ONE. A block is checked and then kept intact, so
+    // `table`, `figure`, `rect`, `level`, `marker` and `depth` all survive. The unit
+    // branch rebuilds from named fields, which is exactly why `label` and `size` used to
+    // die there. Making the two consistent in the wrong direction — rebuilding blocks
+    // from a field list — would silently drop every table grid and every rectangle the
+    // moment someone added a field and forgot this function.
     blocks.push(entry as DocumentModel["blocks"][number]);
   }
 

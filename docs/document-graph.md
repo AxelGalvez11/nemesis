@@ -211,10 +211,15 @@ What makes it safe:
   shape for free-response answers; reuse that pattern rather than inventing a second one.
 - Response size roughly doubles when a model is present, because blocks carry the same text
   as `text`. At `TEXT_CAP = 200,000` that is a ~400 KB worst case on a *response* (the
-  4.5 MB Vercel limit is on request bodies). If it ever bites, `parsedDocumentId` is already
-  in the response and the persisted envelope is already readable — `readStructureEnvelope`
-  has a working consumer in the cite route — so fetch-by-reference is a drop-in escape
-  hatch, not a redesign.
+  4.5 MB Vercel limit is on request bodies).
+
+  > **The fetch-by-reference escape hatch is only half there, and it is the wrong half.**
+  > `parsedDocumentId` is in the response and the persisted envelope is readable
+  > (`readStructureEnvelope` has a working consumer in the cite route) — but that id is
+  > **absent on the multipart lane**, which is every file under 4 MB with no `sourceId`,
+  > i.e. the common Canvas path. So references exist precisely for the large uploads that
+  > least need them and are missing for the small ones. If response size ever bites, the
+  > fix is to persist on the multipart lane too, not a client change.
 
 ---
 

@@ -54,9 +54,36 @@ test("storedDocumentModel recovers the blocks from a v2 envelope", () => {
 test("a unit's own label survives validation", () => {
   // 🔴 It did not. The validator rebuilt each unit from `index` and `kind` alone, so
   // `library_chunks.unit_label` — which `source-index` fills from exactly this field —
-  // was NULL for every slide, and no retrieval result could name the slide it came from.
+  // would have been NULL for every slide, and no retrieval result could name the slide
+  // it came from. LATENT rather than active: the envelope bug above meant nothing was
+  // ever indexed, so no such row exists to go looking for. It would have surfaced the
+  // moment that was fixed, which is why both are fixed together.
   const model = storedDocumentModel(storedColumn());
   assert.equal(model?.units[0]?.label, "Clearance");
+});
+
+test("a block keeps its grid and its rectangle — checked, then kept whole", () => {
+  // 🔴 The counterpart to the unit branch, and the asymmetry is deliberate. Rebuilding
+  // blocks from a field list the way units are rebuilt is what would drop `table` and
+  // `rect`, which is the bug the unit branch actually had.
+  const model = buildDocument({
+    format: "pdf",
+    title: null,
+    units: [{ index: 0, kind: "page" }],
+    blocks: [
+      {
+        headingPath: [],
+        kind: "table",
+        rect: { x: 0.1, y: 0.2, width: 0.5, height: 0.25 },
+        table: { headerRows: 1, rows: [["Drug", "Dose"], ["Carvedilol", "3.125 mg"]] },
+        text: "",
+        unit: 0,
+      },
+    ],
+  });
+  const read = storedDocumentModel(JSON.parse(JSON.stringify(model)));
+  assert.deepEqual(read?.blocks[0]?.table?.rows[1], ["Carvedilol", "3.125 mg"]);
+  assert.deepEqual(read?.blocks[0]?.rect, { x: 0.1, y: 0.2, width: 0.5, height: 0.25 });
 });
 
 test("a unit's size survives validation, because a rect without it cannot become a crop", () => {
