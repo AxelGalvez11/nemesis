@@ -91,6 +91,19 @@ export interface SourceRef {
   excerptId: string;
 }
 
+/** A term the lesson introduces that the learner probably has not met yet.
+ *
+ *  Carries NO definition on purpose. A gloss written at generation time is written before we
+ *  know who is reading it, costs tokens for every term nobody clicks, and answers "what does
+ *  this word mean in general" — the one question that is reliably useless, because "power"
+ *  means four different things and the sentence decides which. The definition is fetched on
+ *  demand with the sentence, the block and the objective attached. */
+export interface BlockTerm {
+  term: string;
+  /** The objective this term belongs to, when the model tied it to one. */
+  conceptId?: string;
+}
+
 export interface CanvasBlock {
   id: string;
   type: CanvasBlockType;
@@ -109,6 +122,14 @@ export interface CanvasBlock {
   collapsed?: boolean;
   /** Marked known by the learner. Excluded from recall and test generation. */
   known?: boolean;
+  /** Terms this block introduces that the learner probably has not met yet, named by the model
+   *  that wrote the block.
+   *
+   *  🔴 CANDIDATES, NOT MARKS. Only a couple of these are ever shown, and which ones depends on
+   *  the learner — see canvas-vocabulary.ts, which owns that gate. Emitted at generation time
+   *  for the same reason `sourceRefs` is: the model knows what it just introduced, and asking
+   *  it afterwards would only invite it to invent something plausible. */
+  terms?: BlockTerm[];
 }
 
 /** A concept is the unit the diagnosis speaks in. Nemesis has no global concept entity (we

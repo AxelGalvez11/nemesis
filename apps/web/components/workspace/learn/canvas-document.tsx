@@ -6,13 +6,15 @@
 // the command bar what the next instruction is about. That is the whole editing philosophy
 // (§16) — the learner directs Nemesis, they do not typeset.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { conceptLabel, type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
+
+import { markedTerms, splitByTerms, type MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { selectableRegion } from "./use-canvas-selection";
 
@@ -26,6 +28,10 @@ interface CanvasDocumentProps {
   onMarkKnown: (blockId: string, known: boolean) => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
   onAskSource: (block: CanvasBlock) => void;
+  /** A marked vocabulary term was clicked. Handled above rather than here because the answer
+   *  belongs in the same popover a highlighted word already uses — one definition surface, not
+   *  two that happen to look alike. */
+  onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
   /** Reading is the one state whose content has no natural end control, so the move forward is
    *  printed after the last block rather than floating in the chrome. */
   next: NextAction | null;
@@ -43,6 +49,7 @@ export function CanvasDocument({
   onMarkKnown,
   onToggleCollapsed,
   onAskSource,
+  onTerm,
   next,
   onAdvance,
   busy,
@@ -98,6 +105,7 @@ export function CanvasDocument({
           onDismissAside={onDismissAside}
           onMarkKnown={() => onMarkKnown(block.id, true)}
           onToggleCollapsed={() => onToggleCollapsed(block.id, !block.collapsed)}
+          onTerm={onTerm}
           onToggleSource={() => setOpenSource((current) => (current === block.id ? null : block.id))}
           selected={selectedIds.includes(block.id)}
           sourceOpen={openSource === block.id}
@@ -141,6 +149,7 @@ interface BlockViewProps {
   onToggleCollapsed: () => void;
   onToggleSource: () => void;
   onAskSource: () => void;
+  onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
 }
 
 function BlockView({
@@ -155,6 +164,7 @@ function BlockView({
   onToggleCollapsed,
   onToggleSource,
   onAskSource,
+  onTerm,
 }: BlockViewProps) {
   const concepts = (block.conceptIds ?? []).map((id) => conceptLabel(canvas, id)).filter(Boolean);
 
@@ -181,7 +191,7 @@ function BlockView({
           {block.content.slice(0, 90)}…
         </button>
       ) : (
-        <BlockBody block={block} />
+        <BlockBody block={block} canvas={canvas} onTerm={onTerm} />
       )}
 
       {block.note && !block.collapsed && (
@@ -257,12 +267,22 @@ function BlockControl({ icon, label, onClick }: { icon: string; label: string; o
  *  The `<section>` around it also contains the block's note, its hover concept labels, the
  *  source panel and any aside — measuring character offsets from there would silently count all
  *  of that, and every offset would be plausible and wrong. */
-function BlockBody({ block }: { block: CanvasBlock }) {
+function BlockBody({
+  block,
+  canvas,
+  onTerm,
+}: {
+  block: CanvasBlock;
+  canvas: LearningCanvas;
+  onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
+}) {
   const mark = selectableRegion(block.id, {
     blockId: block.id,
     rewritable: true,
     ...(block.conceptIds?.length ? { conceptIds: block.conceptIds } : {}),
   });
+
+  const body = <BlockText block={block} canvas={canvas} onTerm={onTerm} />;
 
   switch (block.type) {
     case "heading":
@@ -271,14 +291,14 @@ function BlockBody({ block }: { block: CanvasBlock }) {
           className="mt-10 text-[1.375rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
           {...mark}
         >
-          {block.content}
+          {body}
         </h2>
       );
     case "concept":
       return (
         <div className="my-3 border-l-2 border-(--ui-accent) py-1 pl-4">
           <p className="text-[1.0625rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
-            {block.content}
+            {body}
           </p>
         </div>
       );
@@ -288,29 +308,81 @@ function BlockBody({ block }: { block: CanvasBlock }) {
       return (
         <div className="my-3 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
           <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
-            {block.content}
+            {body}
           </p>
         </div>
       );
     case "example":
       return (
         <p className="my-2.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
-          {block.content}
+          {body}
         </p>
       );
     case "citation":
       return (
         <p className="my-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
-          {block.content}
+          {body}
         </p>
       );
     default:
       return (
         <p className="my-2.5 text-[1rem] leading-[1.7] text-(--ui-text-primary)" {...mark}>
-          {block.content}
+          {body}
         </p>
       );
   }
+}
+
+/** The block's text, with at most a couple of words quietly marked as "there is more here".
+ *
+ *  🔴 THE MARKS ARE A RENDERING, NOT A REWRITE. `block.content` is never altered to hold them:
+ *  the ranges are computed fresh on every render from the text as it currently stands, so a
+ *  block that "Simpler" rewrote simply loses the marks whose words are gone. Nothing is stored,
+ *  so nothing can go stale, and a copy-paste of the paragraph carries the learner's material and
+ *  not our annotations.
+ *
+ *  A dotted rule rather than a colour: colour competes with the prose for the same channel the
+ *  writing already uses for emphasis, and this is meant to be findable rather than noticeable. */
+function BlockText({
+  block,
+  canvas,
+  onTerm,
+}: {
+  block: CanvasBlock;
+  canvas: LearningCanvas;
+  onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
+}) {
+  const marks = markedTerms(block, canvas);
+  // The overwhelmingly common case, and worth keeping as a plain string: wrapping every
+  // paragraph in fragments to render nothing would put React nodes between the learner and
+  // their own text for no reason.
+  if (marks.length === 0) return <>{block.content}</>;
+
+  return (
+    <>
+      {splitByTerms(block.content, marks).map((run, index) =>
+        run.mark ? (
+          <button
+            className="cursor-help border-b border-dotted border-(--ui-text-quaternary) bg-transparent p-0 text-left font-[inherit] text-[length:inherit] leading-[inherit] text-[color:inherit] hover:border-(--ui-text-secondary)"
+            key={`${run.mark.start}-${index}`}
+            onClick={(event) => {
+              // 🔴 A click that ENDS a drag is not a click on the word. Without this, selecting
+              // a phrase that happens to finish inside a marked term fires the definition
+              // popover on mouse-up and replaces the toolbar the learner was reaching for.
+              if (!window.getSelection()?.isCollapsed) return;
+              onTerm(block, run.mark!, event.currentTarget.getBoundingClientRect());
+            }}
+            title={`What does "${run.text}" mean here?`}
+            type="button"
+          >
+            {run.text}
+          </button>
+        ) : (
+          <Fragment key={`t-${index}`}>{run.text}</Fragment>
+        ),
+      )}
+    </>
+  );
 }
 
 /** "Where did this come from?" — answered from the excerpt ids the block was generated with,

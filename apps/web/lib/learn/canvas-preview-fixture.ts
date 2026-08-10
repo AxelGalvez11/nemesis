@@ -96,6 +96,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "At rest a ventricular myocyte sits near -90 mV. The sodium-potassium pump keeps the gradients loaded and a high resting potassium conductance keeps the membrane near the potassium equilibrium potential.",
         conceptIds: ["k1"],
+        terms: [{ term: "myocyte", conceptId: "k1" }, { term: "potassium equilibrium potential", conceptId: "k1" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e1" }],
       },
       { id: "b4", type: "heading", content: "Ventricular cells" },
@@ -105,6 +106,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "Phase 0 is the upstroke. Fast voltage-gated sodium channels open, sodium rushes in down its electrochemical gradient, and the cell depolarises within about a millisecond. The speed is the point: it is what lets the ventricle contract as a unit.",
         conceptIds: ["k2"],
+        terms: [{ term: "electrochemical gradient", conceptId: "k2" }, { term: "depolarises", conceptId: "k2" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e2" }],
       },
       {
@@ -130,6 +132,7 @@ export function lessonSeed(): LearningCanvas {
         content:
           "Phase 4 in a nodal cell is not flat. The funny current, carried by HCN channels and switched on by hyperpolarisation, drifts the membrane upward until it reaches threshold. Nothing has to tell the cell to fire — that drift is the heartbeat's own clock.",
         conceptIds: ["k4"],
+        terms: [{ term: "hyperpolarisation", conceptId: "k4" }, { term: "HCN channels", conceptId: "k4" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e4" }],
       },
       { id: "b10", type: "heading", content: "Why this matters" },

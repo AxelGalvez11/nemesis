@@ -43,9 +43,28 @@ const CITATION_RULE =
   "Never invent an id, a page number, a slide number, or a timestamp. A block written from your own general knowledge " +
   "rather than the material must have an empty sourceRefs list.";
 
+/** Naming the vocabulary a block introduces.
+ *
+ *  🔴 Asks for CANDIDATES and says so. The application picks at most two of these to show, by
+ *  rules the model cannot see (what the learner has already demonstrated, what they have
+ *  already looked up, how long the block is) — so over-naming here is cheap and under-naming
+ *  is not recoverable. What it must not do is name ordinary words, which is the one instruction
+ *  that keeps the annotation layer from becoming noise.
+ *
+ *  Written without a single subject-matter example on purpose. "Terms like myocardial or
+ *  hypertension" would quietly teach the model that this feature is about medicine, and the
+ *  same prompt has to work for a statute, a stress-strain curve and a verb paradigm. */
+const TERMS_RULE =
+  '"terms" names the vocabulary THIS block introduces that a learner at this level probably has not met yet: ' +
+  'each entry is {"term":"…","conceptId":"k1"}. Name at most 3 per block, fewest first, and leave the list empty ' +
+  "when the block introduces no new vocabulary — most blocks should. Each term MUST appear in that block's content " +
+  "spelled exactly as you write it here. Name a term only if a learner who did not know it would be unable to follow " +
+  "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
+  "are merely long.";
+
 const BLOCK_SHAPE =
-  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…]}. ' +
-  "Do not include an id — ids are assigned by the application.";
+  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…]}. ' +
+  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}`;
 
 function materialSection(sources: readonly CanvasSource[], topic: string): string {
   const grounding = groundingBlock(sources);

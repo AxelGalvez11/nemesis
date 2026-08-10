@@ -12,7 +12,9 @@ import { useRouter } from "next/navigation";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
+import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import { nextAction } from "@/lib/learn/canvas-state";
+import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { CanvasComposer } from "./canvas-composer";
 import { CanvasDocument } from "./canvas-document";
@@ -70,6 +72,12 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
   const text = useCanvasSelection(true);
   const [answer, setAnswer] = useState<SelectionAnswer | null>(null);
 
+  // A clicked vocabulary mark. Held separately from the browser's selection because nothing was
+  // selected — but it produces the SAME shape, so it feeds the same popover by the same path.
+  // Two definition surfaces that merely resembled each other would drift apart within a month.
+  const [term, setTerm] = useState<{ selection: CanvasSelection; rect: DOMRect } | null>(null);
+  const pointed = text.selection ?? term;
+
   // The weakest signal in the log, and recorded anyway: a selection nobody asked a question
   // about still says where attention snagged. One row per settled selection, not per
   // `selectionchange` — the hook already debounces, or a single drag would write dozens.
@@ -77,6 +85,10 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
   useEffect(() => {
     const picked = text.selection?.selection;
     if (!picked) return;
+    // A real highlight supersedes an open term popover. Without this the term stays in state
+    // behind the selection and reappears, positioned at a word the learner has moved on from,
+    // the moment the selection clears.
+    setTerm(null);
     const key = `${picked.regionId}:${picked.startOffset}:${picked.endOffset}`;
     if (key === loggedSelection.current) return;
     loggedSelection.current = key;
@@ -90,13 +102,42 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
 
   const dismissSelection = useCallback(() => {
     setAnswer(null);
+    setTerm(null);
     session.clearSelectionAnswer();
     text.clear();
   }, [session, text]);
 
+  // Clicking a marked term is exactly "select this word, press Define" — so it builds the same
+  // selection a drag would have produced and takes the same route, which is what keeps the event
+  // log, the sentence context and the provenance check identical between the two.
+  const lookUpTerm = useCallback(
+    async (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => {
+      const selection: CanvasSelection = {
+        regionId: block.id,
+        blockId: block.id,
+        selectedText: mark.term,
+        startOffset: mark.start,
+        endOffset: mark.end,
+        surroundingText: surroundingSentence(block.content, mark.start, mark.end),
+        anchor: buildAnchor(block.content, mark.start, mark.end),
+        rewritable: true,
+        ...(mark.conceptId
+          ? { conceptIds: [mark.conceptId] }
+          : block.conceptIds?.length
+            ? { conceptIds: block.conceptIds }
+            : {}),
+      };
+      setAnswer(null);
+      setTerm({ selection, rect });
+      const result = await session.askAboutSelection(selection, "define");
+      if (result) setAnswer(result);
+    },
+    [session],
+  );
+
   const act = useCallback(
     async (action: Parameters<typeof session.askAboutSelection>[1]) => {
-      const picked = text.selection?.selection;
+      const picked = pointed?.selection;
       if (!picked) return;
       // 🔴 Captured BEFORE the call. "Simpler" replaces the block the offsets index, so reading
       // the selection again afterwards would measure against text that no longer exists.
@@ -107,7 +148,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
       }
       if (result) setAnswer(result);
     },
-    [dismissSelection, session, text.selection],
+    [dismissSelection, pointed, session],
   );
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
@@ -229,6 +270,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
             onDismissAside={session.dismissAside}
             onMarkKnown={session.markKnown}
             onSelect={onSelect}
+            onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
             selectedIds={selectedIds}
           />
@@ -297,15 +339,16 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         </div>
       )}
 
-      {text.selection && (
+      {pointed && (
         <CanvasSelectionMenu
           answer={answer}
           busy={session.selectionBusy}
           error={session.selectionError}
+          forceOpen={!text.selection && Boolean(term)}
           onAct={(action) => void act(action)}
           onDismiss={dismissSelection}
-          rect={text.selection.rect}
-          selection={text.selection.selection}
+          rect={pointed.rect}
+          selection={pointed.selection}
         />
       )}
 

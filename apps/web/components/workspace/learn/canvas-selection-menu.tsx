@@ -44,6 +44,12 @@ interface CanvasSelectionMenuProps {
   answer: SelectionAnswer | null;
   busy: boolean;
   error: string | null;
+  /** The learner clicked a marked vocabulary word rather than highlighting text.
+   *
+   *  🔴 That click already chose its action, so the toolbar must never appear for it. Falling
+   *  back to Explain/Simpler/Example when the lookup has not produced anything yet reads as a
+   *  broken button: they asked what a word means and got a menu asking what they want. */
+  forceOpen?: boolean;
   onAct: (action: SelectionAction) => void;
   onDismiss: () => void;
 }
@@ -54,10 +60,11 @@ export function CanvasSelectionMenu({
   answer,
   busy,
   error,
+  forceOpen = false,
   onAct,
   onDismiss,
 }: CanvasSelectionMenuProps) {
-  const open = Boolean(answer || busy || error);
+  const open = Boolean(answer || busy || error || forceOpen);
   const shape = selectionShape(selection.selectedText);
   const actions = selectionActions(shape, selection.rewritable);
 

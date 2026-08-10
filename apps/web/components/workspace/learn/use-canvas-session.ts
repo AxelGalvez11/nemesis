@@ -1017,7 +1017,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const askAboutSelection = useCallback(
     async (selection: CanvasSelection, action: SelectionAction) => {
       const id = requireUid();
-      if (!id) return null;
+      if (!id) {
+        // 🔴 Also reported in the popover, not only in the page-level error strip. The learner
+        // asked about one word and is looking at that word; an explanation that appears at the
+        // bottom of the screen is an explanation they will not connect to what they just did.
+        setSelectionError("Sign in to use the canvas.");
+        return null;
+      }
       setSelectionError(null);
       setSelectionBusy(true);
 

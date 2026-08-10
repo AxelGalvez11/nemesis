@@ -13,6 +13,7 @@ import { balanceAnswerPositions } from "@/lib/workspace/test-answer-balance";
 
 import { mintBlockId } from "./canvas-ops";
 import {
+  type BlockTerm,
   CANVAS_BLOCK_TYPES,
   type CanvasBlock,
   type CanvasBlockType,
@@ -93,6 +94,32 @@ function usableConcepts(value: unknown, known: ReadonlySet<string>): string[] {
   return value.filter((id): id is string => typeof id === "string" && known.has(id));
 }
 
+/** Keep only vocabulary claims that hold up against the block the model attached them to.
+ *
+ *  🔴 A term that does not appear in the content is DISCARDED, not corrected. The model
+ *  occasionally names the idea rather than the words on the page ("depolarisation" for a block
+ *  that says "the inside becomes positive"), and there is nothing sensible to underline for
+ *  those. Keeping them would mean storing candidates that can never be located, which is the
+ *  quiet way a list turns into landfill.
+ *
+ *  Capped at 3 to match what the prompt asks for: a model that ignores the limit and returns
+ *  fifteen does not get to fill the document with them. */
+function usableTerms(value: unknown, content: string, known: ReadonlySet<string>): BlockTerm[] {
+  if (!Array.isArray(value)) return [];
+  const haystack = content.toLowerCase();
+  const out: BlockTerm[] = [];
+  for (const entry of value) {
+    if (out.length >= 3) break;
+    if (!isRecord(entry)) continue;
+    const term = text(entry.term);
+    if (!term || !haystack.includes(term.toLowerCase())) continue;
+    if (out.some((existing) => existing.term.toLowerCase() === term.toLowerCase())) continue;
+    const conceptId = text(entry.conceptId);
+    out.push({ term, ...(conceptId && known.has(conceptId) ? { conceptId } : {}) });
+  }
+  return out;
+}
+
 function blockType(value: unknown): CanvasBlockType {
   // An unrecognised type is a formatting slip, not a reason to throw away the writing.
   return typeof value === "string" && (CANVAS_BLOCK_TYPES as readonly string[]).includes(value)
@@ -106,12 +133,14 @@ function toBlock(raw: unknown, known: ReadonlySet<string>, sources: readonly Can
   if (!content) return null;
   const refs = usableRefs(raw.sourceRefs, sources);
   const conceptIds = usableConcepts(raw.conceptIds, known);
+  const terms = usableTerms(raw.terms, content, known);
   return {
     id: mintBlockId(),
     type: blockType(raw.type),
     content,
     ...(refs.length ? { sourceRefs: refs } : {}),
     ...(conceptIds.length ? { conceptIds } : {}),
+    ...(terms.length ? { terms } : {}),
   };
 }
 

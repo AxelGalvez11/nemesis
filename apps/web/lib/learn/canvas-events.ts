@@ -92,7 +92,7 @@ export function appendEvent(
  *
  *  §12: one lookup is noise, repetition is the signal. Exposed as a COUNT rather than as a
  *  judgement, because what it means depends on evidence this module does not have. */
-export function frictionCount(canvas: LearningCanvas, term: string): number {
+export function frictionCount(canvas: Pick<LearningCanvas, "events">, term: string): number {
   const needle = term.trim().toLowerCase();
   if (!needle) return 0;
   return canvas.events.filter(
