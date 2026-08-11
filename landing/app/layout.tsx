@@ -1,14 +1,27 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk } from "next/font/google";
+import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
-// Type system: Hanken Grotesk only (variable, full wght axis: the heavy 800 display
-// weight, body text, and tracked uppercase labels). Self-hosted by next/font and
-// exposed as a CSS variable that globals.css maps into --sans.
+// Type system: two faces, with a strict division of labour.
+//
+// Hanken Grotesk (variable, full wght axis) is the page's voice — the lowercase
+// editorial headlines, body copy, everything a visitor actually reads.
+//
+// IBM Plex Mono is its READ-OUT: state labels, the tenet numerals, the learner-model
+// table, the loop stage names. It was drawn for technical instrumentation, which is
+// exactly the register those fragments occupy, and keeping it off the prose is what
+// stops the page reading as a terminal emulator. Two weights, latin only.
 const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-hanken",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
   display: "swap",
 });
 
@@ -32,16 +45,26 @@ const revealScript =
   "(function(){try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;" +
   "document.documentElement.classList.add('js-reveal');}catch(e){}})();";
 
+// SEO. The old title was "Nemesis: your AI study agent" and the description listed
+// notes, flashcards and practice tests — the exact "generator of study material"
+// positioning the product moved away from. What a search result has to say now is
+// the category, because the category is the thing nobody has heard of yet.
+//
+// The title stays sentence-case rather than lowercase: a browser tab and a search
+// result are chrome someone scans, not the page's own voice, and lowercase there
+// costs recognition for nothing.
+const TITLE = "Nemesis: a cognitive accelerator";
+const DESCRIPTION =
+  "Nemesis turns lectures, textbooks and course material into an adaptive path through knowledge. It asks you to retrieve, reads what your answer shows, and changes what comes next. The machine prepares. You learn.";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.enternemesis.com"),
-  title: "Nemesis: your AI study agent",
-  description:
-    "Nemesis turns your course files into notes, flashcards, and practice tests. It builds its knowledge from your library and gets better the more you use it. It never submits work for you.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Nemesis: your AI study agent",
-    description:
-      "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
+    title: TITLE,
+    description: DESCRIPTION,
     type: "website",
     url: "/",
     siteName: "Nemesis",
@@ -49,9 +72,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nemesis: your AI study agent",
-    description:
-      "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
+    title: TITLE,
+    description: DESCRIPTION,
     images: ["/nemesis/og.jpg"],
   },
   robots: { index: true, follow: true },
@@ -65,7 +87,11 @@ export default function RootLayout({
     // React hydrates, so the client tag legitimately differs from the server's and
     // React logs a mismatch it then refuses to patch. The app's own layout.tsx
     // suppresses the same warning for the same reason (its theme script).
-    <html lang="en" className={hanken.variable} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${hanken.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: revealScript }} />
       </head>

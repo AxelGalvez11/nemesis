@@ -67,8 +67,22 @@ export function initPosthog(): void {
   });
 }
 
-/** Where a sign-up call to action lives, so we can tell which placement actually earns clicks. */
-export type CtaLocation = "nav" | "hero" | "showcase" | "ios" | "closer" | "footer" | "pricing";
+/** Where a sign-up call to action lives, so we can tell which placement actually earns clicks.
+ *
+ *  Members are only ever ADDED. An old value that no longer appears on the site still has to
+ *  stay in the union, because historical events carry it and a chart that breaks down by
+ *  placement has to be able to name what it is showing. "showcase" and "ios" are two such:
+ *  neither placement exists on the page any more. */
+export type CtaLocation =
+  | "nav"
+  | "hero"
+  | "showcase"
+  | "ios"
+  | "closer"
+  | "footer"
+  | "pricing"
+  | "canvas"
+  | "tenets";
 
 /**
  * One event for every "start using Nemesis" click, with the placement as a property.

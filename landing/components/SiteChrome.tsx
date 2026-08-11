@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { NemesisMark } from "@/components/NemesisMark";
 import { captureCtaClick } from "@/lib/posthog";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
@@ -52,7 +52,8 @@ export function SiteChrome({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    const mq = window.matchMedia("(min-width: 721px)");
+    // Must stay one pixel above the nav's collapse breakpoint in globals.css.
+    const mq = window.matchMedia("(min-width: 901px)");
     const onWide = () => { if (mq.matches) setOpen(false); };
     window.addEventListener("keydown", onKey);
     mq.addEventListener("change", onWide);
@@ -68,27 +69,33 @@ export function SiteChrome({ children }: { children: ReactNode }) {
       <ScrollReveal />
       <nav className="nav">
         <div className="wrap nav-in">
+          {/* The mark is drawn, not an image file. The old logo.png was a dark glyph
+              that vanished on the black page, so the CSS inverted it with a filter —
+              a trick that works only while the mark has no material of its own. */}
           <Link className="brand" href="/" aria-label="Nemesis home" onClick={close}>
-            <Image src="/nemesis/logo.png" alt="" width={26} height={26} />
-            <b>Nemesis</b>
+            <NemesisMark state="static" size={24} />
+            <b>nemesis</b>
           </Link>
           <span className="spacer" />
 
-          {/* Wide screens: the links sit in the bar. */}
+          {/* Wide screens: the links sit in the bar. Ordered product first, then
+              philosophy, then commerce — which is the order someone forms an opinion
+              in, not the order the pages were built in. */}
           <div className="nav-links">
+            <Link className="ghost" href="/#canvas">How it works</Link>
+            <Link className="ghost" href="/#tenets">Tenets</Link>
             <Link className="ghost" href="/pricing">Pricing</Link>
-            <Link className="ghost" href="/about">About</Link>
             <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
             <a
               className="btn btn-primary"
               href={APP_SIGN_UP}
-              onClick={() => captureCtaClick("nav", "Sign up")}
+              onClick={() => captureCtaClick("nav", "Start learning")}
             >
-              Sign up
+              Start learning
             </a>
           </div>
 
-          {/* Narrow screens: one button. Four items plus a brand do not fit a
+          {/* Narrow screens: one button. Five items plus a brand do not fit a
               375px bar without shrinking the tap targets below usable size. */}
           <button
             type="button"
@@ -110,6 +117,8 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             stable; visibility is the `is-open` class, not a mount. */}
         <div id="nav-menu" className={open ? "nav-menu is-open" : "nav-menu"} hidden={!open}>
           <div className="wrap nav-menu-in">
+            <Link href="/#canvas" onClick={close}>How it works</Link>
+            <Link href="/#tenets" onClick={close}>Tenets</Link>
             <Link href="/pricing" onClick={close}>Pricing</Link>
             <Link href="/about" onClick={close}>About</Link>
             <a href={APP_SIGN_IN} onClick={close}>Sign in</a>
@@ -117,11 +126,11 @@ export function SiteChrome({ children }: { children: ReactNode }) {
               className="btn btn-primary"
               href={APP_SIGN_UP}
               onClick={() => {
-                captureCtaClick("nav", "Sign up");
+                captureCtaClick("nav", "Start learning");
                 close();
               }}
             >
-              Sign up
+              Start learning
             </a>
           </div>
         </div>
@@ -136,17 +145,19 @@ export function SiteChrome({ children }: { children: ReactNode }) {
         <div className="wrap">
           <div className="foot-grid">
             <div className="foot-brand">
-              <Link className="brand" href="/" aria-label="Nemesis home">
-                <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
-                <b style={{ fontSize: "11px" }}>Nemesis</b>
+              <Link className="brand brand-foot" href="/" aria-label="Nemesis home">
+                <NemesisMark state="static" size={19} />
+                <b>nemesis</b>
               </Link>
-              <p className="foot-tag">A study agent that gets better the more you use it.</p>
+              <p className="foot-tag">learn. diagnose. iterate.</p>
             </div>
             <nav className="foot-col" aria-label="Product">
               <span className="foot-k">Product</span>
+              <Link href="/#canvas">How it works</Link>
+              <Link href="/#tenets">Tenets</Link>
               <Link href="/pricing">Pricing</Link>
-              <a href={APP_SIGN_UP} onClick={() => captureCtaClick("footer", "Get started free")}>
-                Get started free
+              <a href={APP_SIGN_UP} onClick={() => captureCtaClick("footer", "Start learning")}>
+                Start learning
               </a>
               <a href={APP_SIGN_IN}>Sign in</a>
             </nav>
