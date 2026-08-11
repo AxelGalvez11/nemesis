@@ -385,6 +385,19 @@ verify_jwt = false
 [functions.library-brain]
 verify_jwt = false
 
+# The source indexer, called only by pg_cron. Its own header has always said to
+# deploy it with --no-verify-jwt, and the first real deploy went out WITHOUT the
+# flag because nothing recorded it here — exactly the "someone forgets on the
+# next deploy" failure the nemesis-transcribe note above predicted.
+#
+# It happened to work: the cron sends the service-role key, which the gateway
+# accepts. That is a property of the current key format, not of this function.
+# The real gate is the function's own check that the bearer equals the
+# service-role key, which runs whatever the gateway does — so the gateway check
+# adds a dependency without adding safety.
+[functions.source-index]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

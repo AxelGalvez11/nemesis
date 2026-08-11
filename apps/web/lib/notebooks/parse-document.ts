@@ -313,10 +313,29 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       const looked = await lookAtFigures(model, structural.figureImages);
       model = looked.model;
     }
-  } catch {
+  } catch (cause) {
     // Recorded as absent structure, not as a failed parse: the fallback below
     // still produces real text, and calling the document unreadable because the
     // richer reader refused would lose content we can still get.
+    //
+    // 🔴 BUT IT MUST SAY WHY, AND FOR MONTHS IT DID NOT. This was a bare
+    // `catch {}`. Degrading silently means the difference between "this PDF is
+    // genuinely unstructured" and "the structural reader is broken on every
+    // document in production" is invisible — and the second one is true right
+    // now: every parse in production is stored as flat text with no model, so
+    // no table, heading or locator survives, source indexing has nothing to
+    // consume, and the request still logs `state: "complete"`.
+    //
+    // Found by uploading one document and asking what the database actually
+    // held, because nothing in a log, a status or a metric would ever have said
+    // it. A fallback that hides its own reason is not a fallback, it is a leak.
+    console.warn(JSON.stringify({
+      event: "pdf_structure_unavailable",
+      detail: cause instanceof Error ? cause.message.slice(0, 300) : String(cause).slice(0, 300),
+      name: cause instanceof Error ? cause.name : typeof cause,
+      // The frame that actually threw is the whole point of logging this.
+      stack: cause instanceof Error ? (cause.stack ?? "").split("\n").slice(0, 4).join(" | ").slice(0, 500) : undefined,
+    }));
     model = undefined;
   }
 

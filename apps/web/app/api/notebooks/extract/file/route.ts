@@ -355,6 +355,18 @@ export async function POST(req: Request): Promise<Response> {
       // ambiguous between "complete" and "nobody computed it", and every client
       // resolved that ambiguity the flattering way.
       coverage,
+      // 🔴 THE STRUCTURE HAS TO REACH THE CLIENT, NOT ONLY THE DATABASE. Until
+      // now this model was computed here, written to `parsed_documents`, and
+      // left out of the response — so chat, Canvas and every import received
+      // `text` and re-derived the structure from it with a regular expression.
+      // That is the same defect as the persistence one a few lines above, one
+      // boundary further out: a table came back as a paragraph of pipes and a
+      // heading was a guess.
+      //
+      // Absent when a format produces no structure (an image) or the structural
+      // reader could not open the file, which a consumer must read as UNKNOWN —
+      // falling back to the text path — never as "this document is flat".
+      ...(parsed?.model ? { model: parsed.model } : {}),
       // The durable record's id, when one was written. Absent on the multipart
       // lane (nothing to attach to) and when the write failed — and absent is
       // read as "no record", never as "the record says it was fine".

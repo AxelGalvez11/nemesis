@@ -75,7 +75,31 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
     if (typeof entry !== "object" || entry === null) return null;
     const u = entry as Record<string, unknown>;
     if (typeof u.index !== "number" || !UNIT_KINDS.has(u.kind as string)) return null;
-    units.push({ index: u.index, kind: u.kind as DocumentModel["units"][number]["kind"] });
+    // 🔴 `label` AND `size` ARE REBUILT, NOT DROPPED — AND DROPPING THEM WAS A LIVE
+    // DEFECT, NOT A TIDY OMISSION. This validator rebuilt each unit from `index` and
+    // `kind` alone, so every other field died here. `label` is the author's own name
+    // for the unit — a slide's title placeholder, a sheet's name — and the Deno
+    // indexer reads exactly that field to fill `library_chunks.unit_label`
+    // (`source-index/index.ts`), where it would have read `undefined` every time.
+    //
+    // 🔴 LATENT, NOT ACTIVE, AND THE DIFFERENCE MATTERS WHEN YOU GO LOOKING. No row
+    // with a NULL label exists to find, because the envelope bug below meant nothing
+    // was ever indexed at all. This defect was MASKED by that one and would have
+    // surfaced the moment it was fixed — which is the argument for fixing both in one
+    // change rather than discovering the second in production afterwards.
+    //
+    // `size` is what turns a unit-relative rect into a crop, so losing it silently
+    // disables every citation that wanted to point at a region.
+    //
+    // This is the same failure `readCoverage` documents one file over: a field this
+    // reader does not know about is a field that dies between the database and the
+    // screen. Anything added to `DocUnit` must be added here too.
+    units.push({
+      index: u.index,
+      kind: u.kind as DocumentModel["units"][number]["kind"],
+      ...(typeof u.label === "string" ? { label: u.label } : {}),
+      ...(isSize(u.size) ? { size: u.size } : {}),
+    });
   }
 
   const blocks: DocumentModel["blocks"] = [];
@@ -89,6 +113,13 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
     // passes while it points at nothing.
     if (typeof b.unit !== "number" || b.unit < 0 || b.unit >= units.length) return null;
     if (!Array.isArray(b.headingPath) || b.headingPath.some((p) => typeof p !== "string")) return null;
+    // 🔴 THE WHOLE ENTRY, AND THE ASYMMETRY WITH `units` ABOVE IS DELIBERATE — DO NOT
+    // "TIDY" THIS BRANCH TO MATCH THAT ONE. A block is checked and then kept intact, so
+    // `table`, `figure`, `rect`, `level`, `marker` and `depth` all survive. The unit
+    // branch rebuilds from named fields, which is exactly why `label` and `size` used to
+    // die there. Making the two consistent in the wrong direction — rebuilding blocks
+    // from a field list — would silently drop every table grid and every rectangle the
+    // moment someone added a field and forgot this function.
     blocks.push(entry as DocumentModel["blocks"][number]);
   }
 
@@ -98,6 +129,37 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
     title: typeof raw.title === "string" ? raw.title : null,
     units,
   };
+}
+
+function isSize(value: unknown): value is { width: number; height: number } {
+  if (typeof value !== "object" || value === null) return false;
+  const size = value as Record<string, unknown>;
+  return typeof size.width === "number" && typeof size.height === "number";
+}
+
+/**
+ * The model inside a stored `parsed_documents.structure`, whatever shape it is in.
+ *
+ * 🔴 THE FUNCTION THIS EXISTS TO STOP CALLERS GETTING WRONG. `structure` holds an
+ * ENVELOPE — `{ v, shape, title, text, model }` — not a bare model. `readDocumentModel`
+ * validates a MODEL, so handing it a whole envelope makes it look for `format` at the top
+ * level, fail to find it, and return null. Null then reads as "this parse predates the
+ * canonical model", which is a sentence about old data rather than about a bug, so the
+ * mistake reports itself as a healthy backlog and nothing ever alerts.
+ *
+ * That is not hypothetical: `supabase/functions/source-index` called
+ * `readDocumentModel(parse.structure)` on exactly this column and therefore skipped EVERY
+ * document it was given, so no uploaded source was ever indexed for retrieval.
+ *
+ * A v1 `text-only` envelope genuinely has no model, and null is the right answer there —
+ * that parse really does predate the model. The two cases are indistinguishable at the
+ * call site, which is why the check belongs here rather than in each caller.
+ */
+export function storedDocumentModel(value: unknown): DocumentModel | null {
+  const envelope = readStructureEnvelope(value);
+  if (envelope) return envelope.shape === "units-blocks" ? envelope.model : null;
+  // A bare model, for a caller that already unwrapped the envelope.
+  return readDocumentModel(value);
 }
 
 const FORMATS = new Set(["pdf", "docx", "pptx", "image"]);
