@@ -185,9 +185,17 @@ function pairsFromTable(
   // is data: promoting row 0 to a header on a hunch would silently delete a real pair from every
   // grid that starts with one.
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
-  // What the grid called its own columns, when it named them. Part of every key below, so two
+  // What the grid called its own columns, when anything knows. Part of every key below, so two
   // sources that agree on the relationship converge and two that do not stay apart.
-  const relationKind = table.headerRows > 0 ? relationKindFromHeader(table.rows[0]) : null;
+  //
+  // 🔴 `columns` FIRST, AND IT IS NOT THE SAME AS THE HEADER ROW. A table split across pages prints
+  // its header once; every continuation fragment has `headerRows: 0` and would otherwise be
+  // `unstated` — unable to converge with the fragment that did print the names, even though they
+  // are one table. `columns` carries the names onto those fragments, so reading it first is what
+  // makes a long glossary converge with itself.
+  const relationKind =
+    relationKindFromHeader(content.columns) ??
+    (table.headerRows > 0 ? relationKindFromHeader(table.rows[0]) : null);
   const objects: KnowledgeObject[] = [];
 
   for (const [index, row] of dataRows.entries()) {

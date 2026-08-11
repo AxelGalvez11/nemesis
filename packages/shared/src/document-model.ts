@@ -114,8 +114,59 @@ export type DocBlockKind =
  * arrives looking like prose and gets answered confidently and wrongly. Measured
  * over 124 real Word files, 8,355 cells were reaching the model this way.
  */
+/**
+ * One cell, which may cover more than one position in the grid.
+ *
+ * 🔴 A MERGED CELL IS A STATEMENT ABOUT SCOPE, AND LOSING IT LOSES THE VALUE
+ * EVERYWHERE BUT ONE PLACE. Text is seated by its centre, so a name spanning
+ * three schedule rows lands in the first and the other two come back empty —
+ * indistinguishable from a document that genuinely left them blank. Measured
+ * over the 164-document corpus: 607 vertical and 280 horizontal merge pairs
+ * across the 270 tables the parser accepts, leaving 221 cells blank purely
+ * because something covers them.
+ *
+ * `row`/`column` are the cell's ORIGIN — the top-left position it occupies.
+ * Spans are omitted when 1, so an ordinary cell costs two extra numbers rather
+ * than four.
+ */
+export interface DocCell {
+  text: string;
+  /** 0-based grid row of the cell's top-left position. */
+  row: number;
+  /** 0-based grid column of the cell's top-left position. */
+  column: number;
+  /** Rows covered, counting its own. Omitted when 1. */
+  rowSpan?: number;
+  /** Columns covered, counting its own. Omitted when 1. */
+  colSpan?: number;
+}
+
 export interface DocTable {
+  /**
+   * The grid as a plain array of rows.
+   *
+   * 🔴 DERIVED FROM `cells` WHENEVER `cells` IS PRESENT, NEVER MAINTAINED BESIDE
+   * IT. Two representations of one table are two things that can disagree, and
+   * the disagreement is invisible until a consumer picks the wrong one. This is
+   * the projection `projectCells` computes, and `document-model.test.ts` asserts
+   * the equality on every table a producer emits — the same arrangement the
+   * stored envelope already uses for `text` alongside `model`.
+   *
+   * 🔴 A COVERED POSITION IS EMPTY HERE, AND THAT IS DELIBERATE. Repeating a
+   * spanning value into the positions it covers would put text in the stored
+   * grid that the document printed once, and nothing downstream could tell the
+   * copy from the original. `resolveCell` answers "what governs this position"
+   * for consumers that need it, from the span, without writing the answer down.
+   */
   rows: string[][];
+  /**
+   * The cells, when the producer could tell one from another.
+   *
+   * Absent for a producer that only knows a rectangular grid, which is a
+   * truthful "no merge information" rather than "no merges" — the same
+   * distinction `figure.description` makes between unexamined and empty.
+   */
+  cells?: DocCell[];
   /**
    * How many leading rows are headers.
    *
@@ -363,16 +414,85 @@ function unitNoun(kind: DocUnitKind): string {
 // ── Reading ────────────────────────────────────────────────────────────────
 
 /**
+ * Cells → the flat grid, with a covered position left empty.
+ *
+ * The one definition of what `rows` means, so a producer cannot invent a second.
+ * Sized from the cells themselves rather than from a caller's expectation: a
+ * span reaching past the last origin still has to fit.
+ */
+export function projectCells(cells: readonly DocCell[]): string[][] {
+  let height = 0;
+  let width = 0;
+  for (const c of cells) {
+    height = Math.max(height, c.row + (c.rowSpan ?? 1));
+    width = Math.max(width, c.column + (c.colSpan ?? 1));
+  }
+  const grid = Array.from({ length: height }, () => Array.from({ length: width }, () => ""));
+  for (const c of cells) {
+    const row = grid[c.row];
+    if (row && c.column < width) row[c.column] = c.text;
+  }
+  return grid;
+}
+
+/**
+ * The cell governing a position, following spans.
+ *
+ * 🔴 THE FUNCTION THAT MAKES A MERGE MEAN SOMETHING. Reading `rows[r][c]`
+ * directly gives "" for every position a span covers, so a consumer asking which
+ * instructor teaches the third session of a block gets silence where the
+ * document is perfectly clear. Returns null only where nothing covers the
+ * position at all.
+ */
+export function resolveCell(table: DocTable, row: number, column: number): DocCell | null {
+  if (!table.cells) {
+    const text = table.rows[row]?.[column];
+    return text === undefined ? null : { column, row, text };
+  }
+  for (const c of table.cells) {
+    if (row < c.row || row >= c.row + (c.rowSpan ?? 1)) continue;
+    if (column < c.column || column >= c.column + (c.colSpan ?? 1)) continue;
+    return c;
+  }
+  return null;
+}
+
+/**
+ * The text governing a position, or "" where nothing does.
+ *
+ * 🔴 STRICTLY ADDITIVE, AND THAT IS A DELIBERATE DEFENCE RATHER THAN A
+ * CONVENIENCE. A position that already carries text keeps it, and only an EMPTY
+ * position can gain a value from a span. So the worst a disagreement between
+ * `rows` and `cells` can do — a row stored by a different build, hand-edited, or
+ * restored from a backup — is fail to resolve a merge. It can never blank a cell
+ * that has text in it, which is the failure mode that would be invisible.
+ */
+export function cellText(table: DocTable, row: number, column: number): string {
+  const own = table.rows[row]?.[column] ?? "";
+  if (own.trim()) return own;
+  return resolveCell(table, row, column)?.text ?? own;
+}
+
+/**
  * Render a table as markdown.
  *
  * Shared rather than per-producer because a table's text form is what reaches a
  * model, and two renderers would mean a Word table and a PDF table describing the
  * same grid differently — which is a retrieval bug that looks like a model bug.
+ *
+ * 🔴 A SPAN IS RESOLVED HERE AND NOWHERE EARLIER. Markdown has no syntax for a
+ * merged cell, so the choice is between printing the governing value in each
+ * position it covers and printing nothing. Printing nothing is what happens
+ * today, and it reads to a model as "this document does not say" — the strongest
+ * possible claim, made about the one case where the document is explicit. The
+ * value is written into the RENDERING, which is derived and thrown away, and
+ * never into `rows`, which is stored: nothing persisted gains a copy, so no
+ * later reader can mistake the copy for a second printing.
  */
 export function tableToMarkdown(table: DocTable): string {
   if (table.rows.length === 0) return "";
   const cell = (value: string) => value.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
-  const lines = table.rows.map((row) => `| ${row.map(cell).join(" | ")} |`);
+  const lines = table.rows.map((row, r) => `| ${row.map((_, c) => cell(cellText(table, r, c))).join(" | ")} |`);
   // A separator is only drawn where a header genuinely exists. Drawing one after
   // row 0 regardless is how a table of data acquires a fake header.
   if (table.headerRows > 0 && table.headerRows <= table.rows.length) {

@@ -37,9 +37,31 @@ export const CANVAS_STATES: readonly CanvasState[] = [
   "complete",
 ];
 
-/** The starting level the student picks once, in the orient step. Stored on the canvas so a
- *  later regeneration keeps the same pitch, and so this can eventually be inferred instead
- *  of asked (§7) without changing anything downstream. */
+/**
+ * A level the learner EXPRESSED, about THIS canvas. Almost always absent.
+ *
+ * 🔴 THE GOVERNING RULE, AND IT OUTLIVES THIS TYPE:
+ *
+ *     UNKNOWN STAYS UNKNOWN.  SELF-REPORT IS A PRIOR.  DEMONSTRATED PERFORMANCE IS EVIDENCE.
+ *
+ * Turning the absence of evidence into evidence is the one thing a learner model must never do.
+ * This field is where that was happening: nobody was asked any more, and `generateLesson` filled
+ * the gap with `"basics_known"` — so every learner arrived at the model described as knowing the
+ * basics. An invented claim about a person, applied to everyone, invisible because the prompt
+ * looked perfectly well-formed. Absent now travels as absent, all the way to the prompt, which is
+ * told the level is unknown rather than left to guess a pitch from the subject.
+ *
+ * 🔴 AND IT IS PER-CANVAS, NEVER A PROPERTY OF THE PERSON. There must be no `user.level`. "Advanced"
+ * is meaningless on its own — someone can be advanced at calculus and a novice at organic
+ * chemistry, strong at algebraic manipulation and weak at proofs. A coarse label attached to a
+ * human being would leak into unrelated sessions and misteach them, which is precisely the
+ * "global mode" this architecture is being built to remove.
+ *
+ * Its long-term fate is to disappear. Once objective-level evidence exists, an expressed level is
+ * at most a weak opening prior that the first demonstrated performance overrides. The same rule
+ * applies there: "no learner state" must never be resolved to "beginner" any more than it was
+ * resolved to "basics_known". No state means Nemesis needs evidence.
+ */
 export type CanvasLevel = "fundamentals" | "basics_known" | "advanced" | "exam";
 
 export const CANVAS_LEVELS: readonly CanvasLevel[] = ["fundamentals", "basics_known", "advanced", "exam"];

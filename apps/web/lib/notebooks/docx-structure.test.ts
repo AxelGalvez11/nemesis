@@ -394,3 +394,111 @@ test("🔴 nothing infers a header from the first row", () => {
   ));
   assert.equal(doc.blocks[0]?.headerRows, 0);
 });
+
+// ── Merged cells: the spans Word states outright ───────────────────────────
+
+const tc = (text: string, props = "") =>
+  `<w:tc>${props ? `<w:tcPr>${props}</w:tcPr>` : ""}<w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`;
+
+test("🔴 a horizontally merged header spans its columns instead of shortening the row", () => {
+  // THE DEFECT, MEASURED: `gridSpan` was ignored, so a header covering three of
+  // three columns produced a ONE-cell row beside three-cell rows. 56 of 231
+  // tables across 158 real Word documents came out ragged that way, and a
+  // ragged table is one where no column index means the same thing twice.
+  const doc = readDocxStructure(body(
+    `<w:tbl>` +
+    `<w:tr>${tc("Assessment", '<w:gridSpan w:val="3"/>')}</w:tr>` +
+    `<w:tr>${tc("Midterm")}${tc("30%")}${tc("Week 6")}</w:tr>` +
+    `</w:tbl>`,
+  ));
+  const table = doc.blocks.find((b) => b.kind === "table")!;
+  assert.deepEqual(table.rows, [["Assessment", "", ""], ["Midterm", "30%", "Week 6"]]);
+  assert.equal(table.cells![0]!.colSpan, 3);
+  assert.equal(table.rows![0]!.length, table.rows![1]!.length, "every row is the same width");
+});
+
+test("🔴 a vertically merged cell governs the rows beneath it, which are not blank", () => {
+  // Word writes the text once and leaves each continuation row an empty `w:tc`.
+  // Read as rows alone, sessions two and three report no instructor — which
+  // downstream means "the document does not say", about the one thing it states.
+  const doc = readDocxStructure(body(
+    `<w:tbl>` +
+    `<w:tr>${tc("Dr. Farrar", '<w:vMerge w:val="restart"/>')}${tc("Session A")}</w:tr>` +
+    `<w:tr>${tc("", "<w:vMerge/>")}${tc("Session B")}</w:tr>` +
+    `<w:tr>${tc("", '<w:vMerge w:val="continue"/>')}${tc("Session C")}</w:tr>` +
+    `</w:tbl>`,
+  ));
+  const table = doc.blocks.find((b) => b.kind === "table")!;
+  const owner = table.cells!.find((c) => c.text === "Dr. Farrar")!;
+  assert.equal(owner.rowSpan, 3, "one cell covering three rows, as the file says");
+  assert.deepEqual(table.rows, [["Dr. Farrar", "Session A"], ["", "Session B"], ["", "Session C"]]);
+});
+
+test("a bare <w:vMerge/> means continue — the default, and the common case", () => {
+  const doc = readDocxStructure(body(
+    `<w:tbl><w:tr>${tc("x", '<w:vMerge w:val="restart"/>')}${tc("a")}</w:tr>` +
+    `<w:tr>${tc("", "<w:vMerge/>")}${tc("b")}</w:tr></w:tbl>`,
+  ));
+  assert.equal(doc.blocks.find((b) => b.kind === "table")!.cells!.find((c) => c.text === "x")!.rowSpan, 2);
+});
+
+test("🔴 a nested table's own gridSpan is not read as the outer cell's", () => {
+  // `tcPr` must be read from this cell's properties, not from its whole XML: a
+  // nested table's cells carry their own, and a grandchild's span applied to the
+  // parent would silently widen the outer grid.
+  const inner = `<w:tbl><w:tr>${tc("inner", '<w:gridSpan w:val="4"/>')}</w:tr></w:tbl>`;
+  const doc = readDocxStructure(body(
+    `<w:tbl><w:tr><w:tc>${inner}</w:tc>${tc("beside")}</w:tr></w:tbl>`,
+  ));
+  const table = doc.blocks.find((b) => b.kind === "table")!;
+  assert.equal(table.rows![0]!.length, 2, "the outer row still has two columns");
+});
+
+test("an ordinary table is unchanged and carries a cell per position", () => {
+  const doc = readDocxStructure(body(
+    `<w:tbl><w:tr>${tc("A")}${tc("B")}</w:tr><w:tr>${tc("1")}${tc("2")}</w:tr></w:tbl>`,
+  ));
+  const table = doc.blocks.find((b) => b.kind === "table")!;
+  assert.deepEqual(table.rows, [["A", "B"], ["1", "2"]]);
+  assert.equal(table.cells!.length, 4);
+  assert.ok(table.cells!.every((c) => !c.rowSpan && !c.colSpan), "no spans invented");
+});
+
+// ── Heading paths: the hole that deleted whole documents ───────────────────
+
+test("🔴 a document starting at Heading 2 does not put a hole in every heading path", () => {
+  // THE BUG THAT DELETED THREE DOCUMENTS. `headingPath[level - 1] = text` on a
+  // plain array leaves the skipped slots as array HOLES, which serialise to
+  // `null`. `readDocumentModel` then rejects the block — correctly — and
+  // rejecting one block rejects the model, so a perfectly parsed 217-block
+  // document read back as having no structure at all, silently.
+  const doc = readDocxStructure(body(
+    p("Section", '<w:pStyle w:val="Heading2"/>') + p("Body text."),
+  ));
+  for (const block of doc.blocks) {
+    assert.ok(
+      block.headingPath.every((entry) => typeof entry === "string"),
+      `every heading path entry must be a string, got ${JSON.stringify(block.headingPath)}`,
+    );
+  }
+  assert.deepEqual(doc.blocks.find((b) => b.text === "Body text.")!.headingPath, ["Section"]);
+});
+
+test("skipping a heading level shortens the path rather than padding it", () => {
+  const doc = readDocxStructure(body(
+    p("Top", '<w:pStyle w:val="Heading1"/>') +
+    p("Deep", '<w:pStyle w:val="Heading3"/>') +
+    p("Under deep."),
+  ));
+  // Level 2 was never opened, so it contributes no ancestor. Two real names.
+  assert.deepEqual(doc.blocks.find((b) => b.text === "Under deep.")!.headingPath, ["Top", "Deep"]);
+});
+
+test("a sibling heading replaces its predecessor rather than nesting under it", () => {
+  const doc = readDocxStructure(body(
+    p("One", '<w:pStyle w:val="Heading1"/>') +
+    p("Two", '<w:pStyle w:val="Heading1"/>') +
+    p("Under two."),
+  ));
+  assert.deepEqual(doc.blocks.find((b) => b.text === "Under two.")!.headingPath, ["Two"]);
+});

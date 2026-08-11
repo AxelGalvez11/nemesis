@@ -73,7 +73,11 @@ test("a late slide's inserted heading stays on that slide", () => {
 
 test("a figure description is a description, never quotable slide text", () => {
   const model = pptxToModel(deck, new Map([["ppt/media/image1.png", "A cantilever with two supports."]]));
-  const figure = model.blocks.find((block) => block.kind === "figure");
+  // 🔴 BY REF, NOT "THE FIRST FIGURE". Undescribed pictures are now blocks too —
+  // the deck's recurring crest among them — so "the first figure block" is no
+  // longer the described one. Naming the picture is what makes this test about
+  // the description rather than about block order.
+  const figure = model.blocks.find((block) => block.figure?.ref === "ppt/media/image1.png");
   assert.ok(figure, "expected a figure block");
   assert.equal(figure!.figure?.description, "A cantilever with two supports.");
   // Citations search text. A generated sentence in `text` becomes quotable as
@@ -102,4 +106,36 @@ test("nothing the renderer produced goes missing", () => {
   for (const line of deck.slides.join("\n").split("\n")) {
     assert.ok(text.includes(line.trim()), `lost: ${line}`);
   }
+});
+
+test("🔴 a picture nobody looked at is still a picture", () => {
+  // MEASURED: across 23 real decks, not one produced a figure block, because a
+  // figure existed only if vision had already described it — and vision is off
+  // by default on the upload path, for cost. "No figure block" then reads as
+  // "this deck has no images", which is the strongest possible claim about a
+  // deck full of diagrams.
+  const model = pptxToModel(deck);   // no descriptions at all
+  const figures = model.blocks.filter((b) => b.kind === "figure");
+  assert.ok(figures.length > 0, "the pictures must be countable even unexamined");
+  const cantilever = figures.find((f) => f.figure?.ref === "ppt/media/image1.png");
+  assert.ok(cantilever, "the slide's own picture is present");
+  assert.equal(cantilever!.figure?.description, undefined, "ABSENT means nobody looked");
+  assert.equal(cantilever!.figure?.skipped, undefined, "and no reason was invented for it");
+  assert.equal(cantilever!.unit, 1, "on the slide the reader attributed it to");
+});
+
+test("template furniture is disclosed as decorative, not counted as an unread gap", () => {
+  const model = pptxToModel(deck);
+  const crest = model.blocks.find((b) => b.figure?.ref === "ppt/media/crest.png");
+  assert.ok(crest);
+  assert.equal(crest!.figure?.skipped, "decorative");
+});
+
+test("a described picture is never also emitted as unexamined", () => {
+  // The two paths must stay disjoint, or the same picture appears twice — which
+  // downstream is indistinguishable from the deck containing it twice.
+  const model = pptxToModel(deck, new Map([["ppt/media/image1.png", "A cantilever."]]));
+  const same = model.blocks.filter((b) => b.figure?.ref === "ppt/media/image1.png");
+  assert.equal(same.length, 1);
+  assert.equal(same[0]!.figure?.description, "A cantilever.");
 });

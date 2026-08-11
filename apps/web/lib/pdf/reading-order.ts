@@ -1,0 +1,64 @@
+/**
+ * The reading-order signature of the checked-in sample documents.
+ *
+ * 🔴 A FREEZE, NOT A QUALITY METRIC. There is no ground truth here for what the
+ * "right" order is; there is only the order production produces today, on files
+ * that live in this repository. Pinning it means a change that silently
+ * reshuffles blocks — which is invisible in every text-level check, because the
+ * same words are all still present — fails a test instead of reaching a student
+ * as a document that reads out of sequence.
+ *
+ * Run from apps/web to regenerate after a DELIBERATE change:
+ *   npx tsx scripts/reading-order-print.mts
+ */
+
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+import type { DocumentModel } from "@nemesis/shared";
+
+import { extractDocxModel, readPptxSlides } from "../notebooks/office";
+import { pptxToModel } from "../notebooks/pptx-model";
+import { readPdfStructure } from "./structure";
+
+export function orderOf(model: DocumentModel): string {
+  return model.blocks.map((b) => `${b.unit}:${b.kind}`).join(" ");
+}
+
+/**
+ * Separator for the text hash.
+ *
+ * 🔴 WRITTEN AS AN ESCAPE, NEVER AS A LITERAL. A raw NUL in a source file makes
+ * git and grep treat the whole file as BINARY — no diff, no search, no review —
+ * and this repository has already lost a review to exactly that once. NUL is the
+ * right separator (it cannot occur in extracted text, so two blocks can never
+ * collide by concatenation); it just must not be typed in directly.
+ */
+const SEP = "\u0000";
+
+/** The text, in order. Catches a reshuffle that keeps the kinds identical. */
+export function textHash(model: DocumentModel): string {
+  return createHash("sha256").update(model.blocks.map((b) => b.text).join(SEP)).digest("hex").slice(0, 16);
+}
+
+export async function sampleModels(dir: string): Promise<Record<string, DocumentModel>> {
+  const pdf = await readPdfStructure(new Uint8Array(readFileSync(`${dir}/reader-sample.pdf`)), { detectTables: true });
+  const deck = readPptxSlides(new Uint8Array(readFileSync(`${dir}/reader-sample.pptx`)));
+  return {
+    docx: extractDocxModel(new Uint8Array(readFileSync(`${dir}/reader-sample.docx`))),
+    pdf: pdf.model,
+    pptx: pptxToModel(
+      {
+        deckTitle: deck.deckTitle,
+        images: deck.media.images,
+        slides: deck.slides,
+        slideTitles: deck.slideTitles,
+        structure: deck.structure,
+      },
+      new Map(),
+    ),
+  };
+}
+
+/** Where the checked-in samples live, relative to this file. */
+export const SAMPLE_DIR = `${import.meta.dirname}/../../public`;

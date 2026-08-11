@@ -89,6 +89,27 @@ export interface CanonicalSourceTable {
   rows: string[][];
   /** How many leading rows are headers. 0 means the parse did not know, never "row 0 is data". */
   headerRows: number;
+  /**
+   * What each column is called, when anything knows.
+   *
+   * 🔴 NOT THE SAME AS THE FIRST ROW, AND THAT IS THE WHOLE POINT. A real syllabus prints
+   * `Date | Time | Topic` once and then runs the schedule across ten more pages that repeat none of
+   * it. Those continuation fragments have `headerRows: 0` and anonymous columns, so a consumer
+   * reading only the grid cannot tell which cell held the date — which is the flattening this
+   * boundary exists to prevent, arriving by a different door.
+   *
+   * Absent when no header is known anywhere. NEVER invented: an unnamed column is a missing fact,
+   * and a guessed name would be attached to every value beneath it.
+   */
+  columns?: string[];
+  /**
+   * Whether `columns` was printed on this fragment or carried from the one it continues.
+   *
+   * Carried because the provenance differs: an inherited name is a deduction about the document's
+   * structure, and anything that shows it should be able to say so rather than implying the page
+   * stated it.
+   */
+  headerSource?: "present" | "inherited";
 }
 
 export interface CanonicalSourceUnit {
@@ -136,7 +157,14 @@ export type UnitContent =
   /** Prose, a heading, a list item, an equation, or a legacy whole-source blob. */
   | { kind: "text"; text: string }
   /** A grid. `rendered` is the markdown form for a model to read; `rows` is what to compute on. */
-  | { kind: "table"; rows: string[][]; headerRows: number; rendered: string }
+  | {
+      kind: "table";
+      rows: string[][];
+      headerRows: number;
+      rendered: string;
+      /** Column names, from this fragment's header or inherited from the one it continues. */
+      columns?: string[];
+    }
   /** At least one of caption or description is present — a figure with neither is `empty`. */
   | { kind: "figure"; caption: string | null; description: string | null; rendered: string }
   /** Genuinely nothing to read. 🔴 Distinct from "we did not look": that is what `coverage` says. */
@@ -146,7 +174,13 @@ export function unitContent(unit: CanonicalSourceUnit): UnitContent {
   if (unit.type === "table" && unit.table) {
     const { headerRows, rows } = unit.table;
     if (rows.length === 0) return { kind: "empty" };
-    return { headerRows, kind: "table", rendered: (unit.text ?? "").trim(), rows };
+    return {
+      headerRows,
+      kind: "table",
+      rendered: (unit.text ?? "").trim(),
+      rows,
+      ...(unit.table.columns?.length ? { columns: unit.table.columns } : {}),
+    };
   }
 
   if (unit.type === "figure") {
@@ -306,7 +340,16 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
     type: BLOCK_TO_UNIT[block.kind] ?? "other",
     // Copied field by field rather than spread, so geometry or cell spans added to `DocTable` as
     // the table lane lands cannot silently cross this boundary and start being branched on.
-    ...(block.table ? { table: { headerRows: block.table.headerRows, rows: block.table.rows } } : {}),
+    ...(block.table
+      ? {
+          table: {
+            headerRows: block.table.headerRows,
+            rows: block.table.rows,
+            ...(block.table.columns?.length ? { columns: block.table.columns } : {}),
+            ...(block.table.headerSource ? { headerSource: block.table.headerSource } : {}),
+          },
+        }
+      : {}),
     ...(model.units[block.unit]?.label?.trim() ? { unitLabel: model.units[block.unit]!.label!.trim() } : {}),
     // 🔴 The caption and the description travel SEPARATELY, because one is the document's and the
     // other is an inference about it. `unitText` renders them together for a model to read; a

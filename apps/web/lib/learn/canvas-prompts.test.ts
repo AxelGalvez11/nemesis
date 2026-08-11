@@ -86,3 +86,23 @@ test("🔴 generateLesson does not substitute a level for a learner who never ga
     );
   }
 });
+
+// ── unknown stays unknown, everywhere ───────────────────────────────────────
+
+test("🔴 no level is a global property of the learner", async () => {
+  // "Advanced" is meaningless on its own: advanced at calculus, novice at organic chemistry. A
+  // coarse label attached to a PERSON would leak into unrelated sessions and misteach them — the
+  // "global mode" this architecture exists to remove. The level lives on one canvas or nowhere.
+  const { readFile } = await import("node:fs/promises");
+  // Comments stripped first, the same way the guard above does it: the doc comment on CanvasLevel
+  // NAMES `user.level` in order to forbid it, and a guard that cannot tell code from the note
+  // about the code fails for the wrong reason and gets deleted by whoever hits it next.
+  const model = (await readFile(new URL("./canvas-model.ts", import.meta.url), "utf8"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  for (const forbidden of ["user.level", "userLevel", "learnerLevel", "sessionMode"]) {
+    assert.equal(model.includes(forbidden), false, `${forbidden} makes the level a property of the person`);
+  }
+});

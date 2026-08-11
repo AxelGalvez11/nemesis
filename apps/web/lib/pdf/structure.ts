@@ -39,7 +39,14 @@
  * ever renders notes. Geometry rules live in `./geometry` and are pure.
  */
 
-import { buildDocument, type DocBlock, type DocRect, type DocTable, type DocumentModel } from "@nemesis/shared";
+import {
+  buildDocument,
+  projectCells,
+  type DocBlock,
+  type DocRect,
+  type DocTable,
+  type DocumentModel,
+} from "@nemesis/shared";
 
 import { MAX_UNITS_PER_PARSE } from "@/lib/notebooks/parse-worker";
 
@@ -48,8 +55,9 @@ import { MAX_FIGURES_PER_DOC, THIN_UNIT_CHARS, WORTH_LOOKING_AREA } from "./figu
 import { boxToRect, detectLayout, layoutModelPath, layoutSession, type OnnxSessionLike } from "./layout-onnx";
 import { pageToModelRgb } from "./rasterize";
 import { resolveColumns, type Fragment } from "./table-continuation";
-import { headerRowsOf, readRulings, reconstructRegion, tableFromRegion, type PlacedText } from "./table-grid";
-import { latticeRegions, trimEmptyColumns, type LatticeBox } from "./table-lattice";
+import { headerRowsOf, readRulings, reconstructRegion, type PlacedText } from "./table-grid";
+import { latticeRegions, type LatticeBox } from "./table-lattice";
+import { cellsOf, trimEmptyCellColumns } from "./table-spans";
 import { validateTable, type TableRejection } from "./table-validate";
 import {
   groupLines,
@@ -356,7 +364,14 @@ async function readPage(
     for (const region of latticeRegions(rulings)) {
       const built = reconstructRegion(region, rulings, items);
       if (!built) continue;
-      const trimmed = trimEmptyColumns(built.table.rows);
+      // 🔴 THE CELLS ARE COMPUTED BEFORE THE ROWS, AND THE ROWS COME FROM THEM.
+      // A merged cell is a boundary the page declines to draw, so it is knowable
+      // only here, next to the rulings — and `rows` is then the projection of the
+      // cells rather than a second thing maintained beside them. Trimming is
+      // applied to the cells for the same reason: doing it to the rows alone
+      // would leave every span pointing at column numbers that had moved.
+      const cells = trimEmptyCellColumns(cellsOf(built.grid, built.table.rows, rulings));
+      const trimmed = projectCells(cells);
       // 🔴 PROVISIONALLY ZERO. `headerRowsOf` only asks "is every cell of row 0 filled", which is
       // true of most first RECORDS, and whether this row names the columns cannot be decided from
       // one fragment — one of the two signals is "it is reprinted on the next page". So the claim
@@ -366,7 +381,7 @@ async function readPage(
       // ROWS. A table claiming a header the corroboration later declines to confirm drops its
       // first row from extraction entirely — measured at 14 real data rows across four syllabi,
       // including every first session of a schedule whose header is never printed.
-      const candidate: DocTable = { headerRows: 0, rows: trimmed };
+      const candidate: DocTable = { headerRows: 0, rows: trimmed, ...(cells.length > 0 ? { cells } : {}) };
       const verdict = validateTable({
         grid: built.grid,
         inRegion: built.inRegion,
@@ -430,8 +445,19 @@ async function readPage(
         const consumed = new Set<TextItem>();
         for (const region of wanted) {
           const [x0, y0, x1, y1] = region.box;
-          const table = tableFromRegion({ x0, x1, y0, y1 }, rulings, placed);
-          if (!table) { tablesUnread += 1; continue; }
+          // 🔴 THE SAME CELL RECOVERY THE LATTICE LANE USES. A table must not
+          // mean two different things depending on which lane found it — a merged
+          // cell is a fact about the page's rulings either way, and letting the
+          // flag decide whether it is recorded would make the ONNX lane silently
+          // lossier than the one beside it.
+          const built = reconstructRegion({ x0, x1, y0, y1 }, rulings, placed);
+          if (!built) { tablesUnread += 1; continue; }
+          const modelCells = trimEmptyCellColumns(cellsOf(built.grid, built.table.rows, rulings));
+          const table: DocTable = {
+            ...built.table,
+            rows: projectCells(modelCells),
+            ...(modelCells.length > 0 ? { cells: modelCells } : {}),
+          };
           // 🔴 `width`/`height` HERE ARE POINTS, NOT RASTER PIXELS. `pageToModelRgb`
           // returns the page's true size at scale 1 precisely so this rect lands
           // in the same space every other rect in the model uses. Passing the
