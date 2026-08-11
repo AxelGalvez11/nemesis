@@ -1,5 +1,6 @@
 "use client";
 
+import { RetiredSurfaceGuard } from "@/components/workspace/retired-surface-guard";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -11,7 +12,7 @@ import { parseTestContent } from "@/lib/workspace/study-artifact-content";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import type { AttemptedTest } from "@/lib/workspace/study-stats";
 
-export default function StudyPage() {
+function StudyPageSurface() {
   const [activeTab, setActiveTab] = useState<StudyTabId>("cards");
   // The settings gear is gone from the header (owner 2026-07-22) but the
   // settings themselves are not: they still load from localStorage and still
@@ -53,5 +54,16 @@ export default function StudyPage() {
       {activeTab === "maps" && <GroupedStudyTab kind="mindmaps" />}
       {activeTab === "stats" && <StatsTab onStartReview={() => setActiveTab("cards")} reviews={reviews} tests={attemptedTests} />}
     </div>
+  );
+}
+
+// RETIRED SURFACE. A bare visit goes to the Canvas home; a link carrying parameters is a caller
+// asking for something specific and is still served. See retired-surface-guard.tsx for the list
+// of callers this protects.
+export default function StudyPage() {
+  return (
+    <RetiredSurfaceGuard>
+      <StudyPageSurface />
+    </RetiredSurfaceGuard>
   );
 }
