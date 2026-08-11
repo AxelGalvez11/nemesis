@@ -56,6 +56,67 @@ function labelOf(kind: DocBlock["kind"]): CanonicalLabel {
   return "Text";
 }
 
+const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>]/g, (c) => ESCAPES[c]!);
+}
+
+/**
+ * A table as HTML, built from `cells` — the only representation that can carry
+ * a span.
+ *
+ * 🔴 THE PIPE TABLE THIS REPLACES SILENTLY DISCARDED EVERY MERGE. A markdown
+ * pipe grid has no way to say "this cell covers two rows", so `rowSpan` and
+ * `colSpan` — the structure this codebase just spent a release recovering from
+ * Word's `gridSpan` and from PDF rulings — died at this boundary, in a file
+ * whose entire job is to not lose anything. Measured: 179 tables were detected
+ * and every one scored zero, because the metric reads `<table>` and found pipes.
+ *
+ * That is the same defect class as the six the round-trip rule exists to catch,
+ * and it appeared in the reporting layer rather than the parser. The lesson
+ * generalises: a renderer is a boundary too.
+ *
+ * `cells` is the truth and `rows` is its projection, so this reads `cells`. A
+ * table that somehow has none falls back to the caller's text rather than
+ * emitting an empty grid.
+ */
+function tableToHtml(table: NonNullable<DocBlock["table"]>): string | null {
+  const cells = table.cells;
+  if (!cells || cells.length === 0) return null;
+
+  const lastRow = cells.reduce((max, c) => Math.max(max, c.row + (c.rowSpan ?? 1) - 1), 0);
+  const headerRows = table.headerRows ?? 0;
+  const out: string[] = ["<table>"];
+
+  for (let row = 0; row <= lastRow; row += 1) {
+    const inRow = cells.filter((c) => c.row === row).sort((a, b) => a.column - b.column);
+    // A row can be empty when every cell covering it is anchored higher up —
+    // that is a legitimate consequence of a rowspan, not a hole to paper over.
+    if (inRow.length === 0) continue;
+    const tag = row < headerRows ? "th" : "td";
+    const parts = inRow.map((cell) => {
+      const span = [
+        (cell.colSpan ?? 1) > 1 ? ` colspan="${cell.colSpan}"` : "",
+        (cell.rowSpan ?? 1) > 1 ? ` rowspan="${cell.rowSpan}"` : "",
+      ].join("");
+      return `<${tag}${span}>${escapeHtml(cell.text)}</${tag}>`;
+    });
+    out.push(`<tr>${parts.join("")}</tr>`);
+  }
+  out.push("</table>");
+  return out.join("\n");
+}
+
+/** A block's text, with tables rendered as HTML so their spans survive. */
+function renderBlock(block: DocBlock): string {
+  if (block.kind === "table" && block.table) {
+    const html = tableToHtml(block.table);
+    if (html) return html;
+  }
+  return blockToText(block);
+}
+
 export interface ParseBenchItem {
   type: string;
   md: string;
@@ -103,7 +164,7 @@ export function toParseBench(model: DocumentModel): ParseBenchOutput {
 
   model.units.forEach((unit, index) => {
     const blocks = byUnit.get(index) ?? [];
-    const rendered = blocks.map((b) => blockToText(b)).filter((t) => t.trim().length > 0);
+    const rendered = blocks.map((b) => renderBlock(b)).filter((t) => t.trim().length > 0);
     const md = rendered.join("\n\n");
 
     pages.push({ markdown: md, page_index: index });
@@ -113,7 +174,7 @@ export function toParseBench(model: DocumentModel): ParseBenchOutput {
       // is 0-based. Two fields, two conventions, one document — getting this
       // backwards puts every element on its neighbour's page.
       items: blocks.map((block) => {
-        const text = blockToText(block);
+        const text = renderBlock(block);
         return {
           md: text,
           type: labelOf(block.kind),
