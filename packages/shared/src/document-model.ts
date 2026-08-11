@@ -520,7 +520,24 @@ export function blockToText(block: DocBlock): string {
     if (caption && seen) return `[Figure: ${caption}]\n${seen}`;
     if (caption) return `[Figure: ${caption}]`;
     if (seen) return `[Figure]\n${seen}`;
-    return "[Figure — not examined]";
+    // 🔴 A FIGURE NOBODY READ CONTRIBUTES NO TEXT — IT DOES NOT CONTRIBUTE A
+    // SENTENCE SAYING SO. This used to return "[Figure — not examined]", which
+    // is application metadata wearing the costume of source text: a sentence
+    // that appears nowhere in the document, inserted into the document's own
+    // content and then carried into chunks, embeddings, retrieval, Canvas
+    // evidence and chat context as if the author had written it.
+    //
+    // Measured externally before this changed: 8,135 occurrences across 769 of
+    // 2,036 documents, and the single largest cause of ParseBench scoring
+    // Nemesis as hallucinating text it never read.
+    //
+    // THE COVERAGE GAP IS NOT HIDDEN BY THIS — it is moved to where it belongs.
+    // The block still exists with `kind: "figure"`, `coverage` still counts the
+    // figure as skipped and says why, and `figureFacts` still carries
+    // `examined: false`. What disappears is only the forged prose. A consumer
+    // that wants to tell a learner "there is a figure here" reads the block; it
+    // must not learn that from a sentence pretending to be the document.
+    return "";
   }
   return block.text;
 }

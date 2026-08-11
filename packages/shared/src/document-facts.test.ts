@@ -326,12 +326,14 @@ test("the same date written twice in one block is reported once", () => {
 
 // 🔴 A FIGURE NOBODY READ MUST STILL APPEAR. Omitting it from the facts would
 // undo the disclosure the coverage layer works to produce, one level up.
-test("an unexamined figure is inventoried and says it was not examined", () => {
+test("an unexamined figure is inventoried, and says so in a FIELD not in prose", () => {
   const sample = doc([{ figure: {}, headingPath: [], kind: "figure", text: "", unit: 0 }]);
   const [figure] = inventoryFacts(sample);
-  assert.equal(figure!.kind, "figure");
-  assert.equal(figure!.examined, false);
-  assert.equal(figure!.text, "[Figure — not examined]");
+  assert.equal(figure!.kind, "figure", "the figure is still inventoried — the gap is not hidden");
+  assert.equal(figure!.examined, false, "`examined` is where 'nobody looked' belongs");
+  // `text` used to read "[Figure — not examined]", putting a fact about the
+  // PARSER into a field meaning "what this figure says".
+  assert.equal(figure!.text, "");
 });
 
 test("a described figure says so", () => {
