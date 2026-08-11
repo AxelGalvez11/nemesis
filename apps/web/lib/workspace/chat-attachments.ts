@@ -5,10 +5,12 @@ import {
   coverageNoticeForModel,
   matchCourse,
   readCoverage,
+  readDocumentModel,
   SOURCE_HEADER,
   UNSORTED_FOLDER,
   UNTRUSTED_CONTENT_RULE,
   wrapUntrusted,
+  type DocumentModel,
   type ExtractionCoverage,
 } from "@nemesis/shared";
 
@@ -295,6 +297,29 @@ export interface ExtractedFile {
    * read on the strength of a field that was not there.
    */
   coverage?: ExtractionCoverage;
+  /**
+   * The document's STRUCTURE — units, typed blocks, heading paths, table grids, geometry.
+   *
+   * 🔴 THIS FIELD IS THE FOURTH TIME THIS EXACT MISTAKE HAS BEEN CAUGHT, AND THE PATTERN IS
+   * WORTH NAMING. The parser has produced a `DocumentModel` since Phase 3. It was dropped at
+   * the function boundary (a Word reader whose structure was rendered to a string and
+   * returned), then at the persistence boundary (a model computed and never written), then
+   * at the route boundary (a route holding its own copy of the parser's decisions) — each
+   * found and fixed. This is the client boundary: the route computes the model, hands it to
+   * `persistParse`, and returns a response this type had no field for, so every interactive
+   * consumer — chat, Canvas, Library import, syllabus import — received a flat string and
+   * had to guess the structure back out of it.
+   *
+   * Optional for two independent reasons, and they must not be collapsed:
+   *   * a response from an older deployment will not carry one, and
+   *   * a format may genuinely produce none — an image has no structural pass at all, and a
+   *     PDF the structural reader could not open falls back to `unpdf`.
+   *
+   * 🔴 ABSENT MEANS "UNKNOWN", NEVER "THIS DOCUMENT HAS NO STRUCTURE". A consumer that read
+   * it the second way would file a two-column paper as prose. The rule is the one `coverage`
+   * already follows: when the field is missing, fall back — never conclude.
+   */
+  model?: DocumentModel;
 }
 
 /**
@@ -449,6 +474,7 @@ export async function extractFile(
     kind?: ExtractedFile["kind"];
     bytes?: number;
     coverage?: unknown;
+    model?: unknown;
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
@@ -462,6 +488,10 @@ export async function extractFile(
     // that does not check out must become `undefined` (unknown) rather than a
     // half-built record that later reads as a claim about the document.
     coverage: readCoverage(body.coverage) ?? undefined,
+    // Same rule, same reason. A model that fails validation becomes `undefined`,
+    // which every consumer must read as "structure unknown, use the text" — not
+    // as "this document has no structure".
+    model: readDocumentModel(body.model) ?? undefined,
   };
 }
 

@@ -33,7 +33,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // chunking rules that agree only until one of them is edited — and the whole
 // point of `chunker_version` is that a chunk's boundaries are knowable.
 import { chunkDocument } from '../../../packages/shared/src/document-chunks.ts'
-import { readDocumentModel } from '../../../packages/shared/src/document-envelope.ts'
+import { storedDocumentModel } from '../../../packages/shared/src/document-envelope.ts'
 import { embedCoreTexts } from '../core-source-sync/embeddings.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -108,10 +108,29 @@ async function indexOne(parse: UnchunkedParse) {
     // from a backup, or hand-edited must fail to read rather than arrive as a
     // half-typed object whose missing blocks look like a document with no
     // content — which would then be written as a complete, empty index.
-    const model = readDocumentModel(parse.structure)
+    // 🔴 `storedDocumentModel`, NOT `readDocumentModel`. `parsed_documents.structure`
+    // holds an ENVELOPE (`{ v, shape, title, text, model }`), never a bare model.
+    // `readDocumentModel` validates a MODEL, so it looked for `format` at the top of
+    // an envelope, never found it, and would have returned null for every row —
+    // skipping every document forever.
+    //
+    // 🔴 THREE INDEPENDENT BREAKS STOPPED SOURCE RETRIEVAL, AND THIS WAS ONLY THE
+    // THIRD. Checked against production 2026-08-10: this function had NEVER been
+    // deployed (it went live at version 1 that day), and the Vault secrets
+    // `source_index_url` / `source_index_service_role_key` had never been created,
+    // so `run_source_indexing` hit its "secrets unset" branch and returned 0
+    // without ever dispatching. 812 cron runs all recorded `succeeded`, because
+    // pg_cron records whether the STATEMENT ran, not whether anything happened.
+    // Any one of the three alone would have produced the same silence.
+    //
+    // What would have hidden this one is the line below: null is reported as
+    // "predates the canonical model", so a hard bug renders as an expected backlog
+    // of old parses and `indexed: 0` looks like the healthy answer this function
+    // documents. Proven by round-tripping a real envelope through both readers.
+    const model = storedDocumentModel(parse.structure)
     if (!model) {
-      // Not an error, and deliberately not retried in a tight loop: this parse
-      // predates the canonical model. Re-parsing it is Phase 1's job.
+      // Now genuinely what it says: a v1 `text-only` envelope, written before the
+      // canonical model existed. Re-parsing it is Phase 1's job.
       return { ok: false, parsedDocumentId: id, reason: 'no-model' }
     }
 
