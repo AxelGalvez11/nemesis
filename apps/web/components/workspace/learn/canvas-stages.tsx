@@ -3,7 +3,7 @@
 // The states the canvas becomes that are not the lesson: empty, orientation, recall, test,
 // diagnosis, completion. Same page, different shape — never a different route.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { diagnose, summariseCompletion } from "@/lib/learn/canvas-diagnosis";
@@ -15,14 +15,13 @@ import {
   type CanvasFreeQuestion,
   type CanvasLevel,
   type CanvasResponse,
-  type RetrievalTask,
   type LearningCanvas,
   type RecallCard,
   type RecallResult,
 } from "@/lib/learn/canvas-model";
 import { cn } from "@/lib/utils";
 
-import { useCanvasDictation } from "./use-canvas-dictation";
+import { selectableRegion } from "./use-canvas-selection";
 
 // --------------------------------------------------------------------- empty
 
@@ -40,7 +39,7 @@ export function CanvasEmpty({
 
   return (
     <div
-      className="flex h-full items-center justify-center px-6"
+      className="flex min-h-full items-center justify-center px-6"
       onDragLeave={() => setOver(false)}
       onDragOver={(event) => {
         event.preventDefault();
@@ -114,7 +113,7 @@ export function CanvasOrient({
   busy: boolean;
 }) {
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[30rem]">
         {canvas.title && (
           <p className="mb-2 text-center text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
@@ -158,42 +157,24 @@ export function CanvasOrient({
 export function CanvasRecall({
   cards,
   canvas,
+  index,
   judging,
-  onAttempt,
-  onReveal,
   onDone,
+  onNext,
+  onUnknown,
 }: {
   cards: readonly RecallCard[];
   canvas: LearningCanvas;
+  /** Owned by the session, not by this component — the persistent composer needs to know which
+   *  card is being asked, and it is a sibling of this stage. */
+  index: number;
   judging: string | null;
-  onAttempt: (cardId: string, text: string, via: "typed" | "spoken") => void;
-  onReveal: (cardId: string) => void;
   onDone: () => void;
+  onNext: () => void;
+  onUnknown: () => void;
 }) {
-  const [index, setIndex] = useState(0);
   const card = cards[index] ?? null;
   const result = canvas.recallResults.find((entry) => entry.cardId === card?.id);
-
-  const next = () => {
-    if (index + 1 >= cards.length) onDone();
-    else setIndex(index + 1);
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
-      if (event.key === " " || event.code === "Space" || event.key === "Enter") {
-        event.preventDefault();
-        // Once there is a result the card is settled, so Space moves on rather than recording
-        // a second, worse piece of evidence over the top of a real one.
-        if (result) next();
-        else if (card) onReveal(card.id);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
 
   if (!card) return null;
   const source = card.sourceRefs?.[0]
@@ -203,34 +184,56 @@ export function CanvasRecall({
     : null;
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6">
-      <div className="w-full max-w-[36rem]">
+    // See the note in CanvasTest: the composer floats over the bottom of the page, so this
+    // stage reserves the space rather than centring its controls into the fade.
+    <div className="flex min-h-full flex-col items-center justify-center px-6 pb-40 pt-4">
+      <div className="w-full max-w-(--canvas-column)">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           Recall · {index + 1} of {cards.length}
         </p>
 
-        <p className="text-center text-[1.25rem] leading-relaxed text-(--ui-text-primary)">{card.front}</p>
+        {/* §27: text interaction is a canvas PRIMITIVE, not a reading-stage feature. A learner
+            stuck on a word inside the question is exactly as stuck as one inside the lesson.
+            Not rewritable — a question is not a document block, and "Simpler" would have
+            nowhere to write. */}
+        <p
+          className="text-center text-[1.25rem] leading-relaxed text-(--ui-text-primary)"
+          {...selectableRegion(`recall:${card.id}`)}
+        >
+          {card.front}
+        </p>
 
-        <RecallExplain
+        {/* 🔴 NO ANSWER BOX HERE. The question is the canvas state; the persistent composer at
+            the bottom of the page is where it gets answered, in every state, by typing or by
+            speaking. This stage used to grow its own textarea, its own microphone and its own
+            Check button, which put two composers on one screen. */}
+
+        <RecallOutcome
           answer={card.back}
           judging={judging === card.id}
           key={card.id}
-          onAttempt={(text, via) => onAttempt(card.id, text, via)}
-          onNext={next}
+          onNext={() => (index + 1 >= cards.length ? onDone() : onNext())}
           result={result ?? null}
         />
 
-        {/* The escape hatch, not the route: quiet text rather than a button, and gone once
-            there is evidence either way. */}
-        {!result && (
-          <div className="mt-6 text-center">
+        {/* 🔴 The reveal-the-answer control and its space bar shortcut are GONE from this
+            surface and must not come back in any form. (Deliberately not quoting the old label
+            here — `canvas-shell.test.ts` greps this file for it, and a comment that names it
+            would satisfy the guard while the control itself crept back.)
+            A one-key reveal makes the cheapest path through a retrieval prompt the one that
+            produces no retrieval: think vaguely, press space, read the answer, feel informed.
+            That is the flashcard behaviour the canvas exists to replace.
+            "I don't know" is not the same control. It is the learner reporting their state,
+            which is a fact worth recording — and it is deliberately quiet, because producing
+            something has to stay the obvious move. */}
+        {!result && !judging && (
+          <div className="mt-10 text-center">
             <button
               className="text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-              onClick={() => onReveal(card.id)}
+              onClick={onUnknown}
               type="button"
             >
-              Show me the answer
-              <span className="ml-1.5">Space</span>
+              I don&rsquo;t know
             </button>
           </div>
         )}
@@ -252,153 +255,70 @@ export function CanvasRecall({
   );
 }
 
-/** The recall answer box: the same explain-then-be-read loop as the test, at card scale. */
-function RecallExplain({
+/** What the attempt showed. Feedback only — the answering happens in the composer. */
+function RecallOutcome({
   result,
   answer,
   judging,
-  onAttempt,
   onNext,
 }: {
   result: RecallResult | null;
-  /** The reference answer, shown only when the learner asked to see it. */
+  /** The reference answer, shown only once there is a result. */
   answer: string;
   judging: boolean;
-  onAttempt: (text: string, via: "typed" | "spoken") => void;
   onNext: () => void;
 }) {
-  const [text, setText] = useState("");
-  const dictation = useCanvasDictation();
-  const spoke = useRef(false);
-  const typedBefore = useRef("");
-
-  useEffect(() => {
-    if (!dictation.listening && !dictation.transcript) return;
-    spoke.current = true;
-    setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
-  }, [dictation.listening, dictation.transcript]);
-
-  if (result) {
-    return (
-      <div className="mt-6">
-        {result.said && (
-          <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/50 px-4 py-3">
-            <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
-              {result.via === "spoken" ? "You said" : "You wrote"}
-            </p>
-            <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{result.said}</p>
-          </div>
-        )}
-
-        {judging && <p className="mt-4 text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>}
-
-        {!judging && result.evaluation && (
-          <div className="mt-4">
-            <p
-              className={cn(
-                "text-[0.9375rem] font-medium",
-                verdictIsPass(result.evaluation.verdict) ? "text-emerald-500" : "text-(--ui-text-primary)",
-              )}
-            >
-              {VERDICT_HEADLINE[result.evaluation.verdict]}
-            </p>
-            <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">
-              {result.evaluation.feedback}
-            </p>
-          </div>
-        )}
-
-        {/* The answer, shown because they asked for it. No self-grade follows: needing it shown
-            is already the evidence, and asking "how well did you know that?" straight after
-            reading it would replace a fact with a guess. */}
-        {result.revealed && (
-          <div className="mt-2">
-            <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{answer}</p>
-            <p className="mt-2 text-[0.75rem] text-(--ui-text-quaternary)">
-              Noted — Nemesis will bring this one back.
-            </p>
-          </div>
-        )}
-
-        {!judging && (
-          <button
-            className="mt-6 rounded-lg border border-(--ui-stroke-secondary) px-4 py-2 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-            onClick={onNext}
-            type="button"
-          >
-            Next
-            <span className="ml-2 text-(--ui-text-quaternary)">Space</span>
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  const submit = () => {
-    const said = text.trim();
-    if (!said) return;
-    dictation.stop();
-    onAttempt(said, spoke.current ? "spoken" : "typed");
-  };
+  if (judging) return <p className="mt-6 text-center text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>;
+  if (!result) return null;
 
   return (
-    <div className="mt-6">
-      <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
-        <textarea
-          autoFocus
-          className="max-h-48 min-h-[4.5rem] w-full resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-          onChange={(event) => {
-            setText(event.target.value);
-            if (!dictation.listening) typedBefore.current = event.target.value;
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={dictation.listening ? "Listening…" : "Say it back in your own words…"}
-          value={text}
-        />
-        <div className="mt-1 flex items-center justify-between gap-3">
-          {dictation.supported ? (
-            <button
-              aria-label={dictation.listening ? "Stop dictation" : "Answer out loud"}
-              aria-pressed={dictation.listening}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 text-[0.75rem] transition-colors",
-                dictation.listening
-                  ? "bg-(--ui-accent)/12 text-(--ui-accent)"
-                  : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
-              )}
-              onClick={() => {
-                if (dictation.listening) {
-                  dictation.stop();
-                  return;
-                }
-                typedBefore.current = text;
-                dictation.reset();
-                dictation.start();
-              }}
-              type="button"
-            >
-              <Codicon name={dictation.listening ? "circle-filled" : "mic"} size="0.75rem" />
-              {dictation.listening ? "Listening" : "Say it"}
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            className="rounded-lg bg-(--ui-accent) px-3.5 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
-            disabled={!text.trim()}
-            onClick={submit}
-            type="button"
-          >
-            Check
-          </button>
+    <div className="mt-8">
+      {result.said && (
+        <div className="rounded-[18px] bg-(--ui-bg-tertiary)/40 px-4 py-3">
+          <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+            {result.via === "spoken" ? "You said" : "You wrote"}
+          </p>
+          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{result.said}</p>
         </div>
-      </div>
-      {dictation.error && <p className="mt-2 text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>}
+      )}
+
+      {result.evaluation && (
+        <div className="mt-4">
+          <p
+            className={cn(
+              "text-[0.9375rem] font-medium",
+              verdictIsPass(result.evaluation.verdict) ? "text-emerald-500" : "text-(--ui-text-primary)",
+            )}
+          >
+            {VERDICT_HEADLINE[result.evaluation.verdict]}
+          </p>
+          <p
+            className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+            {...selectableRegion(`feedback:${result.cardId}`)}
+          >
+            {result.evaluation.feedback}
+          </p>
+        </div>
+      )}
+
+      {/* Shown because no retrieval was obtained — they said so. No self-grade follows: someone
+          who has just read the answer is the worst judge of whether they could have produced it. */}
+      {result.revealed && (
+        <div className="mt-4">
+          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{answer}</p>
+          <p className="mt-2 text-[0.75rem] text-(--ui-text-quaternary)">
+            Noted — Nemesis will bring this one back.
+          </p>
+        </div>
+      )}
+
+      <button
+        className="mt-6 rounded-full px-4 py-2 text-[0.875rem] text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)"
+        onClick={onNext}
+        type="button"
+      >
+        Next
+      </button>
     </div>
   );
 }
@@ -407,18 +327,21 @@ function RecallExplain({
 
 export function CanvasTest({
   canvas,
+  index,
   judging,
   onAnswer,
-  onRespond,
+  onNext,
   onFinish,
+  onUnknown,
 }: {
   canvas: LearningCanvas;
+  index: number;
   judging: string | null;
   onAnswer: (questionId: string, picked: number) => void;
-  onRespond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => void;
+  onNext: () => void;
   onFinish: () => void;
+  onUnknown: () => void;
 }) {
-  const [index, setIndex] = useState(0);
   const question = canvas.questions[index] ?? null;
   const answered = canvas.answers.find((entry) => entry.questionId === question?.id);
   const responded = canvas.responses.find((entry) => entry.questionId === question?.id);
@@ -429,24 +352,49 @@ export function CanvasTest({
   const last = index + 1 >= canvas.questions.length;
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6">
-      <div className="w-full max-w-[38rem]">
+    // 🔴 `pb-40` is not decoration, and removing it has broken this surface twice. The composer
+    // floats over the bottom of the page behind a tall gradient, so a vertically centred column
+    // pushes its own primary action under that fade the moment the content grows — and the
+    // teaching loop grows it every single turn. `min-h-full` rather than `h-full` for the same
+    // reason: past a viewport of content the stage must grow and scroll the page, not clip.
+    <div className="flex min-h-full flex-col items-center justify-center px-6 pb-40 pt-4">
+      <div className="w-full max-w-(--canvas-column)">
         <p className="mb-6 text-center text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           {canvas.state === "retest" ? "Retest" : "Test"} · {index + 1} of {canvas.questions.length}
         </p>
 
-        <p className="text-[1.0625rem] leading-relaxed text-(--ui-text-primary)">{question.q}</p>
+        <p
+          className="text-[1.0625rem] leading-relaxed text-(--ui-text-primary)"
+          {...selectableRegion(`question:${question.id}`)}
+        >
+          {question.q}
+        </p>
 
-        {question.format === "choice" ? (
+        {/* Multiple choice keeps its options: picking one IS the answer, and there is nothing
+            for a text composer to do. Free response has no box here at all — the composer is
+            the answer surface. */}
+        {question.format === "choice" && (
           <ChoiceAnswer onAnswer={onAnswer} picked={answered?.picked ?? null} question={question} />
-        ) : (
-          <FreeAnswer
-            judging={judging === question.id}
-            key={question.id}
-            onRespond={onRespond}
-            question={question}
-            response={responded ?? null}
-          />
+        )}
+
+        {question.format === "free" && judging === question.id && (
+          <p className="mt-6 text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>
+        )}
+
+        {question.format === "free" && responded && (
+          <Judged judging={false} question={question} response={responded} />
+        )}
+
+        {question.format === "free" && !responded && judging !== question.id && (
+          <div className="mt-10">
+            <button
+              className="text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              onClick={onUnknown}
+              type="button"
+            >
+              I don&rsquo;t know
+            </button>
+          </div>
         )}
 
         {done && (
@@ -458,11 +406,13 @@ export function CanvasTest({
               <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{question.why}</p>
             )}
             <button
-              className="mt-5 rounded-lg border border-(--ui-stroke-secondary) px-4 py-2 text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-              onClick={() => (last ? onFinish() : setIndex(index + 1))}
+              className="mt-5 rounded-full px-4 py-2 text-[0.875rem] text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) hover:bg-(--ui-bg-tertiary)"
+              onClick={() => (last ? onFinish() : onNext())}
               type="button"
             >
-              {last ? "See where I stand" : "Next"}
+              {/* When the canvas taught something and asked again, "Next" undersells it — the
+                  next prompt is the point of the correction, not the thing after it. */}
+              {responded?.followUpQuestionId ? "Try it now" : last ? "See where I stand" : "Next"}
             </button>
           </div>
         )}
@@ -509,130 +459,6 @@ function ChoiceAnswer({
   );
 }
 
-/** What the prompt is asking for, said in one line above the box. Structural, so it reads the
- *  same for a statute, a signalling pathway or a weld. */
-const TASK_HINT: Record<RetrievalTask, string> = {
-  name: "Name it",
-  define: "In your own words",
-  explain: "Explain why",
-  mechanism: "Walk through it, step by step",
-  reconstruct: "Rebuild it from memory",
-  compare: "Cover both sides",
-  predict: "Say what happens, and why",
-  apply: "Use it on this case",
-  solve: "Work it through, showing your steps",
-};
-
-function FreeAnswer({
-  question,
-  response,
-  judging,
-  onRespond,
-}: {
-  question: CanvasFreeQuestion;
-  response: CanvasResponse | null;
-  judging: boolean;
-  onRespond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => void;
-}) {
-  const [text, setText] = useState("");
-  const dictation = useCanvasDictation();
-  const startedAt = useRef(Date.now());
-  // Which way the words arrived. Set the moment the microphone is used, because §23 reads time
-  // differently for speech and typing and a mislabelled answer would be read against the wrong
-  // baseline.
-  const spoke = useRef(false);
-
-  // Dictation appends to whatever has been typed rather than replacing it, so switching between
-  // talking and the keyboard mid-answer does not throw away either half.
-  const typedBefore = useRef("");
-  useEffect(() => {
-    if (!dictation.listening && !dictation.transcript) return;
-    spoke.current = true;
-    const base = typedBefore.current;
-    setText([base, dictation.transcript].filter(Boolean).join(" ").trimStart());
-  }, [dictation.listening, dictation.transcript]);
-
-  if (response) {
-    return <Judged judging={judging} question={question} response={response} />;
-  }
-
-  const submit = () => {
-    const said = text.trim();
-    if (!said) return;
-    dictation.stop();
-    onRespond(question.id, said, spoke.current ? "spoken" : "typed", Date.now() - startedAt.current);
-  };
-
-  return (
-    <div className="mt-5">
-      <p className="mb-2 text-[0.75rem] text-(--ui-text-quaternary)">{TASK_HINT[question.task]}</p>
-      <div className="rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-2.5">
-        <textarea
-          autoFocus
-          className="max-h-64 min-h-[6rem] w-full resize-none bg-transparent text-[0.9375rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-          onChange={(event) => {
-            setText(event.target.value);
-            if (!dictation.listening) typedBefore.current = event.target.value;
-          }}
-          onKeyDown={(event) => {
-            // Enter submits; the answers here are a few sentences, not an essay. Shift+Enter
-            // still breaks a line for anyone laying out steps.
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={dictation.listening ? "Listening…" : "Answer in your own words…"}
-          value={text}
-        />
-        <div className="mt-1 flex items-center justify-between gap-3">
-          {dictation.supported ? (
-            <button
-              aria-label={dictation.listening ? "Stop dictation" : "Answer out loud"}
-              aria-pressed={dictation.listening}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 text-[0.75rem] transition-colors",
-                dictation.listening
-                  ? "bg-(--ui-accent)/12 text-(--ui-accent)"
-                  : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
-              )}
-              onClick={() => {
-                if (dictation.listening) {
-                  dictation.stop();
-                  return;
-                }
-                // Reset before starting again. The hook keeps everything it heard, so without
-                // this a second burst of talking would re-append the first burst on top of the
-                // text it had already been merged into, and the answer would say itself twice.
-                typedBefore.current = text;
-                dictation.reset();
-                dictation.start();
-              }}
-              type="button"
-            >
-              <Codicon name={dictation.listening ? "circle-filled" : "mic"} size="0.75rem" />
-              {dictation.listening ? "Listening" : "Say it"}
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            className="rounded-lg bg-(--ui-accent) px-3.5 py-1.5 text-[0.8125rem] font-medium text-(--ui-accent-contrast) disabled:opacity-40"
-            disabled={!text.trim()}
-            onClick={submit}
-            type="button"
-          >
-            Answer
-          </button>
-        </div>
-      </div>
-      {dictation.error && (
-        <p className="mt-2 text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>
-      )}
-    </div>
-  );
-}
-
 /** What the learner said, and what it showed.
  *
  *  §20: never "Incorrect. The answer is B." What they got right is named first — including on a
@@ -651,7 +477,10 @@ function Judged({
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/50 px-4 py-3">
+      {/* The learner's own words DO keep a container — a message bubble is a meaningful object,
+          not decoration around prose. No border though: the fill alone is enough, and an
+          outline on top of it is the "study app" weight the surface is moving away from. */}
+      <div className="rounded-[18px] bg-(--ui-bg-tertiary)/40 px-4 py-3">
         <p className="mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
           {response.via === "spoken" ? "You said" : "You wrote"}
         </p>
@@ -683,7 +512,27 @@ function Judged({
             {VERDICT_HEADLINE[evaluation.verdict]}
           </p>
 
-          <p className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)">{evaluation.feedback}</p>
+          <p
+            className="mt-2 text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+            {...selectableRegion(`feedback:${response.questionId}`)}
+          >
+            {evaluation.feedback}
+          </p>
+
+          {/* What the canvas taught in response to THIS answer. It also went into the document,
+              but it belongs here too: the correction is about what they just said, and sending
+              them off to find it in the page would break the moment it exists for.
+              🔴 NOT A CARD. Teaching is the most important prose on the screen, and boxing it
+              demotes it to a widget — the correction reads as something the app produced rather
+              than something being explained. Whitespace and weight carry it. */}
+          {response.taught && (
+            <p
+              className="mt-4 whitespace-pre-line text-[0.9375rem] leading-relaxed text-(--ui-text-primary)"
+              {...selectableRegion(`taught:${response.questionId}`)}
+            >
+              {response.taught}
+            </p>
+          )}
 
           {/* The full answer, but only where the refinement cannot stand alone. On a partial
               answer the refinement supplies exactly the missing piece, which is better than the
@@ -721,7 +570,7 @@ export function CanvasDiagnosis({
   const result = diagnose(canvas);
 
   return (
-    <div className="mx-auto w-full max-w-[36rem] px-6 pb-40 pt-16">
+    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40 pt-6">
       {result.understood.length > 0 && (
         <>
           <h2 className="text-[0.75rem] uppercase tracking-wide text-(--ui-text-quaternary)">What you understand</h2>
@@ -761,7 +610,7 @@ export function CanvasDiagnosis({
       <div className="mt-12">
         {result.weak.length > 0 ? (
           <button
-            className="rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
+            className="rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
             disabled={busy}
             onClick={onRelearn}
             type="button"
@@ -770,7 +619,7 @@ export function CanvasDiagnosis({
           </button>
         ) : (
           <button
-            className="rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
+            className="rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
             onClick={onFinish}
             type="button"
           >
@@ -788,7 +637,7 @@ export function CanvasComplete({ canvas, onReset }: { canvas: LearningCanvas; on
   const summary = summariseCompletion(canvas);
 
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[26rem]">
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
         <h2 className="mt-1 text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Mastered</h2>

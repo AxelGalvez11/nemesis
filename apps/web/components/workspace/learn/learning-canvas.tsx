@@ -12,11 +12,15 @@ import { useRouter } from "next/navigation";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
+import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import { nextAction } from "@/lib/learn/canvas-state";
+import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { CanvasComposer } from "./canvas-composer";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
+import { useCanvasSelection } from "./use-canvas-selection";
 import {
   CanvasComplete,
   CanvasDiagnosis,
@@ -60,6 +64,93 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     window.getSelection()?.removeAllRanges();
   }, []);
 
+  // ── Point at the exact words, not the paragraph ─────────────────────────
+  //
+  // The block-level selection above still feeds the composer's scoped commands. This is the
+  // finer layer on top: the precise character range, and the toolbar that turns it into an
+  // answer without the learner having to describe where they were looking.
+  const text = useCanvasSelection(true);
+  const [answer, setAnswer] = useState<SelectionAnswer | null>(null);
+
+  // A clicked vocabulary mark. Held separately from the browser's selection because nothing was
+  // selected — but it produces the SAME shape, so it feeds the same popover by the same path.
+  // Two definition surfaces that merely resembled each other would drift apart within a month.
+  const [term, setTerm] = useState<{ selection: CanvasSelection; rect: DOMRect } | null>(null);
+  const pointed = text.selection ?? term;
+
+  // The weakest signal in the log, and recorded anyway: a selection nobody asked a question
+  // about still says where attention snagged. One row per settled selection, not per
+  // `selectionchange` — the hook already debounces, or a single drag would write dozens.
+  const loggedSelection = useRef<string>("");
+  useEffect(() => {
+    const picked = text.selection?.selection;
+    if (!picked) return;
+    // A real highlight supersedes an open term popover. Without this the term stays in state
+    // behind the selection and reappears, positioned at a word the learner has moved on from,
+    // the moment the selection clears.
+    setTerm(null);
+    const key = `${picked.regionId}:${picked.startOffset}:${picked.endOffset}`;
+    if (key === loggedSelection.current) return;
+    loggedSelection.current = key;
+    session.recordEvent({
+      type: "selection_created",
+      ...(picked.blockId ? { blockId: picked.blockId } : {}),
+      ...(picked.conceptIds ? { conceptIds: picked.conceptIds } : {}),
+      selectedText: picked.selectedText,
+    });
+  }, [session, text.selection]);
+
+  const dismissSelection = useCallback(() => {
+    setAnswer(null);
+    setTerm(null);
+    session.clearSelectionAnswer();
+    text.clear();
+  }, [session, text]);
+
+  // Clicking a marked term is exactly "select this word, press Define" — so it builds the same
+  // selection a drag would have produced and takes the same route, which is what keeps the event
+  // log, the sentence context and the provenance check identical between the two.
+  const lookUpTerm = useCallback(
+    async (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => {
+      const selection: CanvasSelection = {
+        regionId: block.id,
+        blockId: block.id,
+        selectedText: mark.term,
+        startOffset: mark.start,
+        endOffset: mark.end,
+        surroundingText: surroundingSentence(block.content, mark.start, mark.end),
+        anchor: buildAnchor(block.content, mark.start, mark.end),
+        rewritable: true,
+        ...(mark.conceptId
+          ? { conceptIds: [mark.conceptId] }
+          : block.conceptIds?.length
+            ? { conceptIds: block.conceptIds }
+            : {}),
+      };
+      setAnswer(null);
+      setTerm({ selection, rect });
+      const result = await session.askAboutSelection(selection, "define");
+      if (result) setAnswer(result);
+    },
+    [session],
+  );
+
+  const act = useCallback(
+    async (action: Parameters<typeof session.askAboutSelection>[1]) => {
+      const picked = pointed?.selection;
+      if (!picked) return;
+      // 🔴 Captured BEFORE the call. "Simpler" replaces the block the offsets index, so reading
+      // the selection again afterwards would measure against text that no longer exists.
+      const result = await session.askAboutSelection(picked, action);
+      if (action === "simpler") {
+        dismissSelection();
+        return;
+      }
+      if (result) setAnswer(result);
+    },
+    [dismissSelection, pointed, session],
+  );
+
   // Leaving a canvas that was started but never finished is the number the pilot is being
   // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the
   // state at the moment of leaving rather than the one captured when the effect was set up.
@@ -95,10 +186,15 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     [canvas, clearSelection, selected, session],
   );
 
-  // The diagnosis and the completion state print their own primary action in the page, where
-  // it belongs — offering the same words twice on one screen is noise, not reassurance.
-  const OWN_ACTION: readonly string[] = ["diagnose", "complete"];
-  const next = OWN_ACTION.includes(canvas.state) ? null : nextAction(canvas);
+  // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
+  //
+  // They used to: a filled button sat in the header, which is why "See where I stand" appeared
+  // twice on one screen during a test — once at the end of the last question, once in the bar.
+  // The move forward belongs where the thing being finished is. Reading is the only state whose
+  // content has no natural end control, so the document prints it after the last block; recall
+  // and the test advance themselves off their last card, and the diagnosis and completion
+  // screens already own theirs.
+  const next = nextAction(canvas);
   const advance = useCallback(() => {
     if (!next) return;
     if (next.to === "recall") void session.startRecall();
@@ -113,23 +209,46 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     return <main className="flex h-full items-center justify-center bg-(--ui-bg-editor)" />;
   }
 
-  // Reading and testing get a quiet command bar; the empty and orientation states have their
-  // own inputs and would be muddled by a second one.
+  // The empty and orientation states have their own inputs and would be muddled by a second
+  // one. Everywhere else the composer is present and FULL STRENGTH.
+  //
+  // 🔴 It used to fade to 45% opacity during recall and the test, from a time when those states
+  // had their own answer boxes and this bar was a distraction beneath them. Those boxes are
+  // gone: this IS the answer field now, and a half-faded primary input reads as disabled.
   const showComposer = !["empty", "orient", "complete"].includes(canvas.state);
-  const dimComposer = ["recall", "test", "retest"].includes(canvas.state);
 
   return (
-    <main className="relative flex h-full min-h-0 flex-col bg-(--ui-bg-editor)">
+    // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
+    // `--canvas-column` is the single measure every part of the surface is set to — document,
+    // question, diagnosis and composer — so the page reads as one column rather than four
+    // things that happen to be centred.
+    <main
+      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      style={{ ["--canvas-column" as string]: "680px" }}
+    >
+      {/* A scrim, NOT a header. Without it, scrolled paragraphs print straight through the
+          floating title and neither is readable. It is the page's own colour fading to nothing
+          over 88px — the same device the composer already uses at the bottom — so it draws no
+          line, no rectangle and no edge: there is no row where the colour steps. The acceptance
+          check measures exactly that (the largest colour change between adjacent rows), because
+          "is there a divider" is a question about steps, not about whether anything is painted. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[88px] bg-gradient-to-b from-(--ui-bg-editor) via-(--ui-bg-editor)/90 to-transparent" />
+
       <CanvasHeader
-        busy={busy.kind !== null}
+        activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
-        next={next}
-        onAdvance={advance}
+        onDelete={() => {
+          void session.remove().then(() => router.push("/sessions"));
+        }}
         onExit={() => router.push("/sessions")}
         onFiles={(files) => void session.attachFiles(files)}
+        onRename={session.rename}
       />
 
-      <div className="relative min-h-0 flex-1 overflow-y-auto">
+      {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
+          header height — nothing is reserved, painted or bounded up there; the page simply
+          starts below where the controls sit (16px inset + 32px control + 24px breathing room). */}
+      <div className="relative h-full overflow-y-auto pt-[72px]">
         {canvas.state === "empty" && (
           <CanvasEmpty
             busy={busy.kind === "source"}
@@ -147,12 +266,16 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         {["learn", "targeted_relearn"].includes(canvas.state) && (
           <CanvasDocument
             aside={session.aside}
+            busy={busy.kind !== null}
             busyBlockIds={busy.blockIds ?? []}
             canvas={canvas}
+            next={next}
+            onAdvance={advance}
             onAskSource={(block: CanvasBlock) => void session.askAbout(block, "Where in my material did this come from?")}
             onDismissAside={session.dismissAside}
             onMarkKnown={session.markKnown}
             onSelect={onSelect}
+            onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
             selectedIds={selectedIds}
           />
@@ -162,20 +285,23 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
           <CanvasRecall
             canvas={canvas}
             cards={canvas.recall}
+            index={session.activeTask?.index ?? 0}
             judging={session.judging}
-            onAttempt={(cardId, text, via) => void session.attemptRecall(cardId, text, via)}
             onDone={() => void session.startTest()}
-            onReveal={(cardId) => void session.revealRecall(cardId)}
+            onNext={session.advanceTask}
+            onUnknown={() => void session.admitUnknown()}
           />
         )}
 
         {["test", "retest"].includes(canvas.state) && (
           <CanvasTest
             canvas={canvas}
+            index={session.activeTask?.index ?? 0}
             judging={session.judging}
             onAnswer={session.answer}
             onFinish={session.finishTest}
-            onRespond={(questionId, text, via, tookMs) => void session.respond(questionId, text, via, tookMs)}
+            onNext={session.advanceTask}
+            onUnknown={() => void session.admitUnknown()}
           />
         )}
 
@@ -218,24 +344,29 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
         </div>
       )}
 
+      {pointed && (
+        <CanvasSelectionMenu
+          answer={answer}
+          busy={session.selectionBusy}
+          error={session.selectionError}
+          forceOpen={!text.selection && Boolean(term)}
+          onAct={(action) => void act(action)}
+          onDismiss={dismissSelection}
+          rect={pointed.rect}
+          selection={pointed.selection}
+        />
+      )}
+
       {showComposer && (
         <CanvasComposer
           busy={busy.kind === "command"}
           busyLabel={busy.label}
-          dimmed={dimComposer}
+          onAnswer={(text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)}
+          onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
-          onSubmit={(text) => void submit(text)}
-          placeholder={
-            // During a test the answer box is the thing being typed into, so this bar has to
-            // say what it is FOR — otherwise "Ask about this card…" reads as the place to put
-            // the answer, and the answer goes to the wrong box.
-            ["test", "retest"].includes(canvas.state)
-              ? "Ask about this question…"
-              : dimComposer
-                ? "Ask about this card…"
-                : "Ask Nemesis or change how you're learning…"
-          }
+          onFiles={(files) => void session.attachFiles(files)}
           selected={selected}
+          task={session.activeTask}
         />
       )}
     </main>
@@ -246,7 +377,7 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
  *  already said what they want by dropping the file. */
 function SourcesAttached({ session }: { session: ReturnType<typeof useCanvasSession> }) {
   return (
-    <div className="flex h-full items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[30rem] text-center">
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
           {session.canvas.sources.length} source{session.canvas.sources.length === 1 ? "" : "s"} attached

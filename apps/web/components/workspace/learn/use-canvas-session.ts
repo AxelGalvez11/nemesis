@@ -20,14 +20,19 @@ import {
   generateRelearn,
   generateRecall,
   generateTest,
+  applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
+  explainSelection,
+  simplifySelection,
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
+import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel } from "@/lib/learn/canvas-grounding";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
+import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
 import {
   conceptLabel,
@@ -41,13 +46,34 @@ import {
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps } from "@/lib/learn/canvas-ops";
+import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart } from "@/lib/learn/canvas-state";
-import { loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
+import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 const RECALL_CARDS = 8;
 const TEST_QUESTIONS = 6;
 const RETEST_QUESTIONS = 4;
+
+/** What the canvas is asking for right now, if anything.
+ *
+ *  The persistent composer reads this to decide what it is FOR: what to call itself, and where
+ *  a submission should go. There is exactly one answer surface on the canvas, and this is how
+ *  it knows which prompt it is answering. */
+export interface ActiveTask {
+  kind: "recall" | "question";
+  id: string;
+  /** What is being asked, so the composer can label itself against the real prompt. */
+  prompt: string;
+  /** The placeholder the composer shows — derived from the retrieval task, because
+   *  "Explain it in your own words" is wrong for a prompt whose answer is one noun. */
+  placeholder: string;
+  index: number;
+  total: number;
+  /** Once answered, the composer goes back to being a place to ask about the feedback. */
+  answered: boolean;
+}
 
 /** Which part of the page is working. Local rather than global so §21 holds: simplifying one
  *  paragraph must light up that paragraph, not blank the document. */
@@ -100,6 +126,31 @@ export interface CanvasSession {
   /** Records the learner's own words and asks the judge what they show. */
   respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
   finishTest: () => void;
+  /** What the canvas is asking for right now — null while reading. */
+  activeTask: ActiveTask | null;
+  /** Move to the next prompt of the round, or off the end of it. */
+  advanceTask: () => void;
+  /** The ONE way a learner answers anything. Routes to the recall or the test path by what is
+   *  currently being asked, so there is never a second answer field. */
+  answerActiveTask: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
+   *  shortcut that only tells us they looked. */
+  admitUnknown: () => Promise<void>;
+  /** Answer a question about an exact highlighted range. Returns text for a popover; for
+   *  "simpler" it rewrites the one block instead and returns null. */
+  /** Session management (§10). Kept away from the teaching API above on purpose — these change
+   *  what the session IS, not what the learner is doing inside it. */
+  rename: (title: string) => void;
+  remove: () => Promise<void>;
+  askAboutSelection: (
+    selection: CanvasSelection,
+    action: SelectionAction,
+  ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
+  /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
+  recordEvent: (event: NewLearningEvent) => void;
+  selectionBusy: boolean;
+  selectionError: string | null;
+  clearSelectionAnswer: () => void;
   relearn: () => Promise<void>;
   startRetest: () => Promise<void>;
   finish: () => void;
@@ -118,6 +169,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  /** Which prompt of the current round the learner is on.
+   *
+   *  🔴 THIS LIVES HERE, NOT IN THE STAGE. It used to be `useState(0)` inside CanvasRecall and
+   *  again inside CanvasTest, which is exactly why each of them had to grow its own answer box:
+   *  the persistent composer is a sibling of the stage and had no way of knowing what was being
+   *  asked. One cursor in the session is what lets one composer answer everything. */
+  const [cursor, setCursor] = useState(0);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   // Saving is debounced against a ref so a burst of edits writes once, and so the save always
   // sees the newest canvas rather than the one captured when the timer was set.
@@ -143,6 +203,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       persist();
     },
     [persist],
+  );
+
+  /** 🔴 Records an interaction and NOTHING ELSE. It must never touch `weakConceptIds`, an
+   *  evaluation, or a scheduling grade — those come from performance, and a tooltip is not a
+   *  performance. `canvas-events.test.ts` holds the line behaviourally. */
+  const recordEvent = useCallback(
+    (event: NewLearningEvent) => {
+      update((current) =>
+        appendEvent(current, event, new Date().toISOString(), `e${current.events.length}-${Date.now()}`),
+      );
+    },
+    [update],
   );
 
   const go = useCallback(
@@ -412,6 +484,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
     setBusy({ kind: null });
     captureStateChange(latest.current, "recall");
+    setCursor(0);
     update((current) => ({
       ...current,
       recall: cards,
@@ -479,6 +552,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
 
+      recordEvent({
+        type: "response_submitted",
+        ...(card.conceptId ? { conceptIds: [card.conceptId] } : {}),
+        payload: { via, stage: "recall" },
+      });
+
       setJudging(cardId);
       const result = await evaluateLearningResponse(
         id,
@@ -524,7 +603,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         ...(evaluation ? { evaluation } : {}),
       });
     },
-    [gradeRecall, requireUid],
+    [gradeRecall, recordEvent, requireUid],
   );
 
   /** They asked to see the answer instead of attempting it.
@@ -564,6 +643,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
       captureStateChange(latest.current, "test");
+      setCursor(0);
       update((current) => ({
         // A retest replaces the evidence about the concepts it re-assesses — including the
         // recall grades. Without that a single "Again" kept a concept weak forever and the
@@ -640,6 +720,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         ],
       }));
 
+      recordEvent({
+        type: "response_submitted",
+        ...(question.conceptId ? { conceptIds: [question.conceptId] } : {}),
+        payload: { via, stage: "test", ...(tookMs !== undefined ? { tookMs } : {}) },
+      });
+
       const id = requireUid();
       if (!id) return;
       setJudging(questionId);
@@ -672,8 +758,86 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           entry.questionId === questionId ? { ...entry, evaluation } : entry,
         ),
       }));
+
+      // ── The teaching loop ────────────────────────────────────────────────
+      //
+      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz. The
+      // decision is deterministic — the evaluation already says what was demonstrated, what was
+      // missing and which false belief appeared, so no second model call is spent working out
+      // what to do. A model is used only to WRITE the correction, once the action is chosen.
+      const objectiveId = question.conceptId;
+      const action = determineNextCognitiveAction({
+        evaluation,
+        attempts: latest.current.correctiveAttempts[objectiveId ?? ""] ?? 0,
+      });
+      canvasCapture("canvas_action_chosen", latest.current, {
+        action: action.type,
+        because: action.because,
+        verdict: evaluation.verdict,
+        conceptId: objectiveId,
+      });
+      if (!actionMutatesCanvas(action) || !objectiveId) return;
+
+      setBusy({ kind: "relearn", label: "Working through that with you" });
+      const change = await applyTeachingAction(id, latest.current, {
+        action,
+        objectiveId,
+        prompt: question.q,
+        said,
+        demonstrated: evaluation.demonstrated,
+      });
+      setBusy({ kind: null });
+      if (!change.value) return;
+
+      const { ops, followUp } = change.value;
+      // What the correction actually said, so it can sit beside their answer as well as in the
+      // document. Taken from the ops we just validated rather than asked for separately.
+      const taught = ops
+        .map((op) =>
+          op.operation === "replace_block"
+            ? op.content
+            : op.operation === "insert_before" || op.operation === "insert_after"
+              ? op.block.content
+              : op.operation === "annotate_block"
+                ? op.note
+                : "",
+        )
+        .filter(Boolean)
+        .join("\n\n");
+
+      update((current) => {
+        const mutated = applyOps(current, ops);
+        // The follow-up goes immediately after the prompt it follows up, so "Next" lands on it
+        // rather than on whatever the generator happened to put there.
+        const at = current.questions.findIndex((entry) => entry.id === questionId);
+        const questions = followUp
+          ? [
+              ...current.questions.slice(0, at + 1),
+              followUp,
+              ...current.questions.slice(at + 1),
+            ]
+          : current.questions;
+        return {
+          ...mutated,
+          questions,
+          correctiveAttempts: {
+            ...current.correctiveAttempts,
+            [objectiveId]: (current.correctiveAttempts[objectiveId] ?? 0) + 1,
+          },
+          responses: current.responses.map((entry) =>
+            entry.questionId === questionId
+              ? {
+                  ...entry,
+                  action: action.type,
+                  ...(taught ? { taught } : {}),
+                  ...(followUp ? { followUpQuestionId: followUp.id } : {}),
+                }
+              : entry,
+          ),
+        };
+      });
     },
-    [requireUid, update],
+    [recordEvent, requireUid, update],
   );
 
   const finishTest = useCallback(() => {
@@ -788,6 +952,133 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     canvasCapture("canvas_created", fresh);
   }, []);
 
+  // ── The one thing being asked, and the one way to answer it ─────────────
+  //
+  // Derived rather than stored: the prompts themselves live on the canvas, the cursor says
+  // which one, and everything else follows. Storing a duplicate of the current prompt would be
+  // one more thing to keep in step with a document the teaching loop rewrites mid-round.
+  const activeTask: ActiveTask | null = (() => {
+    if (canvas.state === "recall") {
+      const card = canvas.recall[cursor];
+      if (!card) return null;
+      return {
+        kind: "recall",
+        id: card.id,
+        prompt: card.front,
+        placeholder: RECALL_PLACEHOLDER,
+        index: cursor,
+        total: canvas.recall.length,
+        answered: canvas.recallResults.some((entry) => entry.cardId === card.id),
+      };
+    }
+    if (canvas.state === "test" || canvas.state === "retest") {
+      const question = canvas.questions[cursor];
+      if (!question) return null;
+      return {
+        kind: "question",
+        id: question.id,
+        prompt: question.q,
+        // A multiple-choice prompt is answered by picking, not by typing, so the composer stays
+        // a place to ask about it rather than pretending to be the answer field.
+        placeholder: question.format === "free" ? RESPONSE_PLACEHOLDER[question.task] : "",
+        index: cursor,
+        total: canvas.questions.length,
+        answered:
+          question.format === "choice"
+            ? canvas.answers.some((entry) => entry.questionId === question.id)
+            : canvas.responses.some((entry) => entry.questionId === question.id),
+      };
+    }
+    return null;
+  })();
+
+  // Read through a ref for the same reason `latest` exists: these handlers are called from
+  // async paths and from event listeners, where a value captured at render time can already be
+  // a round out of date.
+  const activeTaskRef = useRef(activeTask);
+  activeTaskRef.current = activeTask;
+
+  const advanceTask = useCallback(() => setCursor((current) => current + 1), []);
+
+  const answerActiveTask = useCallback(
+    async (text: string, via: "typed" | "spoken", tookMs?: number) => {
+      const task = activeTaskRef.current;
+      if (!task || task.answered) return;
+      if (task.kind === "recall") await attemptRecall(task.id, text, via);
+      else await respond(task.id, text, via, tookMs);
+    },
+    [attemptRecall, respond],
+  );
+
+  /** §24: not the same thing as showing the answer. "I don't know" is the learner reporting
+   *  their state, which is evidence; a reveal shortcut only records that they read something.
+   *  Either way no retrieval was obtained, so the scheduler hears the same thing — but this
+   *  path is chosen deliberately rather than reached by pressing space. */
+  const admitUnknown = useCallback(async () => {
+    const task = activeTaskRef.current;
+    if (!task || task.answered) return;
+    canvasCapture("canvas_unknown_admitted", latest.current, { kind: task.kind, id: task.id });
+    recordEvent({ type: "unknown_admitted", payload: { kind: task.kind, id: task.id } });
+    if (task.kind === "recall") await revealRecall(task.id);
+    else await respond(task.id, "I don't know.", "typed");
+  }, [recordEvent, respond, revealRecall]);
+
+  /** The fast path from "I don't understand this bit" to an answer, without leaving the page.
+   *
+   *  🔴 Only "simpler" is allowed to touch the document, and only the one block the selection
+   *  came from. Everything else answers in a popover: looking up a word must not move the
+   *  paragraph the learner is looking at. */
+  const askAboutSelection = useCallback(
+    async (selection: CanvasSelection, action: SelectionAction) => {
+      const id = requireUid();
+      if (!id) {
+        // 🔴 Also reported in the popover, not only in the page-level error strip. The learner
+        // asked about one word and is looking at that word; an explanation that appears at the
+        // bottom of the screen is an explanation they will not connect to what they just did.
+        setSelectionError("Sign in to use the canvas.");
+        return null;
+      }
+      setSelectionError(null);
+      setSelectionBusy(true);
+
+      recordEvent({
+        type:
+          action === "define"
+            ? "definition_opened"
+            : action === "simpler"
+              ? "simplification_requested"
+              : action === "example"
+                ? "example_requested"
+                : action === "why"
+                  ? "why_requested"
+                  : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
+
+      if (action === "simpler") {
+        const result = await simplifySelection(id, latest.current, selection);
+        setSelectionBusy(false);
+        if (!result.value) {
+          setSelectionError(result.error);
+          return null;
+        }
+        update((current) => applyOps(current, result.value!.ops));
+        return null;
+      }
+
+      const result = await explainSelection(id, latest.current, selection, action);
+      setSelectionBusy(false);
+      if (!result.value) {
+        setSelectionError(result.error);
+        return null;
+      }
+      return result.value;
+    },
+    [recordEvent, requireUid, update],
+  );
+
   return {
     canvas,
     busy,
@@ -813,6 +1104,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     answer,
     respond,
     finishTest,
+    activeTask,
+    advanceTask,
+    answerActiveTask,
+    admitUnknown,
+    rename: (title: string) => update((current) => ({ ...current, title: title.slice(0, 300) })),
+    remove: async () => {
+      // Written through before navigating away. The debounced autosave would otherwise fire
+      // after the row is already flagged deleted and quietly resurrect it.
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      await deleteCanvas(uid, latest.current.id);
+    },
+    askAboutSelection,
+    recordEvent,
+    selectionBusy,
+    selectionError,
+    clearSelectionAnswer: () => setSelectionError(null),
     relearn,
     startRetest,
     finish,

@@ -10,6 +10,8 @@
 
 /** Where the canvas is in the learning arc. The UI demonstrates this progression; the model
  *  never picks it — only an explicit user action or a validated transition op moves it. */
+import type { LearningEvent } from "./canvas-events";
+
 export type CanvasState =
   | "empty"
   | "sources_attached"
@@ -89,6 +91,19 @@ export interface SourceRef {
   excerptId: string;
 }
 
+/** A term the lesson introduces that the learner probably has not met yet.
+ *
+ *  Carries NO definition on purpose. A gloss written at generation time is written before we
+ *  know who is reading it, costs tokens for every term nobody clicks, and answers "what does
+ *  this word mean in general" — the one question that is reliably useless, because "power"
+ *  means four different things and the sentence decides which. The definition is fetched on
+ *  demand with the sentence, the block and the objective attached. */
+export interface BlockTerm {
+  term: string;
+  /** The objective this term belongs to, when the model tied it to one. */
+  conceptId?: string;
+}
+
 export interface CanvasBlock {
   id: string;
   type: CanvasBlockType;
@@ -107,6 +122,14 @@ export interface CanvasBlock {
   collapsed?: boolean;
   /** Marked known by the learner. Excluded from recall and test generation. */
   known?: boolean;
+  /** Terms this block introduces that the learner probably has not met yet, named by the model
+   *  that wrote the block.
+   *
+   *  🔴 CANDIDATES, NOT MARKS. Only a couple of these are ever shown, and which ones depends on
+   *  the learner — see canvas-vocabulary.ts, which owns that gate. Emitted at generation time
+   *  for the same reason `sourceRefs` is: the model knows what it just introduced, and asking
+   *  it afterwards would only invite it to invent something plausible. */
+  terms?: BlockTerm[];
 }
 
 /** A concept is the unit the diagnosis speaks in. Nemesis has no global concept entity (we
@@ -350,6 +373,15 @@ export interface CanvasResponse {
    *  evidence — we did not obtain a retrieval — and it is recorded rather than inferred. */
   revealed?: boolean;
   evaluation?: ResponseEvaluation;
+  /** What the canvas decided to do about this performance, and what it taught in response.
+   *
+   *  The teaching text is kept on the evidence and not only inserted into the document, because
+   *  the correction is ABOUT this answer — it belongs beside what they said. The document block
+   *  the same change updated is a different thing serving a different moment. */
+  action?: string;
+  taught?: string;
+  /** The prompt the canvas asked next, once it had taught the missing piece. */
+  followUpQuestionId?: string;
 }
 
 export interface RecallResult {
@@ -372,6 +404,26 @@ export interface RecallResult {
   evaluation?: ResponseEvaluation;
 }
 
+/** Something Nemesis MADE for the learner, at their request — a summary, slides, a document.
+ *
+ *  🔴 NOT A SOURCE, and the distinction is the reason this exists while the list is still always
+ *  empty (§4). A source is material Nemesis grounds its teaching ON; an output is an artifact it
+ *  produced. They live in the same session and are opposite ends of it, and a single "files"
+ *  list that flattened the two would be very cheap to write now and very expensive to unpick
+ *  once anything depends on it.
+ *
+ *  `assetId` is where this is going: §6 wants the durable object stored once and REFERENCED, so
+ *  attaching one recording to three canvases does not store the audio three times. There is no
+ *  assets table yet, so the field is optional and nothing populates it. */
+export interface CanvasOutput {
+  id: string;
+  title: string;
+  /** "document" | "slides" | "diagram" | "export" — whatever produced it said it was. */
+  kind: string;
+  createdAt: string;
+  assetId?: string;
+}
+
 export interface LearningCanvas {
   id: string;
   title: string;
@@ -388,6 +440,26 @@ export interface LearningCanvas {
    *  makes free response worth having. */
   answers: CanvasAnswer[];
   responses: CanvasResponse[];
+  /** Corrective rounds already spent on each objective, keyed by concept id.
+   *
+   *  🔴 This is what stops the teaching loop grinding forever, so it has to be STORED rather
+   *  than counted from the evidence. Responses are keyed by question and are replaced in place
+   *  on a retry, so `responses.length` is not the number of attempts and never will be.
+   *
+   *  Reset when a round turns over: the cap is about grinding on one idea in one sitting, not a
+   *  lifetime budget for a concept. */
+  correctiveAttempts: Record<string, number>;
+  /** Interaction telemetry: what the learner DID, as distinct from what they demonstrated.
+   *
+   *  🔴 NOT EVIDENCE. Nothing may turn a row of this into a verdict on its own — `diagnose()`
+   *  does not read it, and `canvas-events.test.ts` asserts that appending fifty events cannot
+   *  change a diagnosis. Capped and lossy: this is telemetry for INTERPRETING evidence, not the
+   *  append-only evidence history, which is still to come. See canvas-events.ts. */
+  events: LearningEvent[];
+  /** Artifacts made from this canvas. Always empty today — nothing generates one yet — and
+   *  carried anyway so the input/output distinction is in the model rather than in a comment.
+   *  🔴 Needs its own line in `canvasToRow`, which enumerates by hand. */
+  outputs: CanvasOutput[];
   /** Concepts the last diagnosis judged weak. Drives targeted relearning and the retest. */
   weakConceptIds: string[];
   /** Concepts that have since been corrected — kept so the completion state can say how many
@@ -415,6 +487,9 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     questions: [],
     answers: [],
     responses: [],
+    correctiveAttempts: {},
+    events: [],
+    outputs: [],
     weakConceptIds: [],
     correctedConceptIds: [],
     activeMs: 0,

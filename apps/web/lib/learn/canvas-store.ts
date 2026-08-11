@@ -74,6 +74,13 @@ export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): 
       return evaluation ? { ...response, evaluation } : { ...response, evaluation: undefined };
     }),
     recallResults: list((canvas as { recallResults?: unknown }).recallResults),
+    // Absent on every canvas written before the teaching loop existed.
+    correctiveAttempts:
+      (canvas as { correctiveAttempts?: Record<string, number> }).correctiveAttempts ?? {},
+    // Absent on every canvas written before interaction telemetry existed.
+    events: list((canvas as { events?: unknown }).events),
+    // Absent on every canvas written before outputs were distinguished from sources.
+    outputs: list((canvas as { outputs?: unknown }).outputs),
   };
 }
 
@@ -101,6 +108,15 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
     questions: list(document.questions),
     answers: list(document.answers),
     responses: list(document.responses),
+    correctiveAttempts: (document.correctiveAttempts ?? {}) as Record<string, number>,
+    // 🔴 `events` has to be lifted out of the document HERE, not left to `normaliseCanvas`.
+    // The normaliser reads whatever field is on the object handed to it, and this literal is
+    // that object — so omitting the line meant it read `undefined` and returned [] every time.
+    // The result: interaction telemetry was written to the cloud correctly and silently
+    // discarded on every cloud read. It survived in the browser only because the local path
+    // normalises the parsed JSON directly, which still had the field.
+    events: list(document.events),
+    outputs: list(document.outputs),
     weakConceptIds: list(document.weakConceptIds),
     correctedConceptIds: list(document.correctedConceptIds),
     ...(typeof document.studyDeckId === "string" ? { studyDeckId: document.studyDeckId } : {}),
@@ -137,6 +153,9 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       // remembers — and free responses are the learner's own words, which is the worst thing
       // on the canvas to lose.
       responses: canvas.responses,
+      correctiveAttempts: canvas.correctiveAttempts,
+      events: canvas.events,
+      outputs: canvas.outputs,
       weakConceptIds: canvas.weakConceptIds,
       correctedConceptIds: canvas.correctedConceptIds,
       ...(canvas.studyDeckId ? { studyDeckId: canvas.studyDeckId } : {}),
@@ -244,6 +263,31 @@ export async function saveCanvas(userId: string | null, canvas: LearningCanvas):
     // Local copy already succeeded; a cloud failure is worth knowing about but not worth
     // interrupting the learner for.
     console.warn("[learn] canvas save failed", error.message);
+  }
+}
+
+/** Remove a canvas from the learner's list.
+ *
+ *  🔴 SOFT DELETE, and that is not timidity — a canvas holds the learner's own words about what
+ *  they understood and where they were wrong, which is the least recoverable thing in the
+ *  product. The table has a `deleted` flag and every list query already filters on it.
+ *
+ *  🔴 AND IT DOES NOT TOUCH SOURCES. Today each canvas carries its own copy of the extracted
+ *  text inside its document, so there is nothing shared to orphan. That is also why §12's
+ *  reference-aware deletion cannot be written yet: two canvases built on the same PDF each hold
+ *  their own copy, so there are no references to count. When sources become real assets, the
+ *  counting belongs here. */
+export async function deleteCanvas(userId: string | null, id: string): Promise<void> {
+  try {
+    window.localStorage.removeItem(LOCAL_PREFIX + id);
+    window.localStorage.setItem(LOCAL_INDEX, JSON.stringify(localIndex().filter((entry) => entry !== id)));
+  } catch {
+    // A browser that will not let us forget it is not a reason to keep it in the cloud.
+  }
+  if (!userId) return;
+  const { error } = await supabase.from(TABLE).update({ deleted: true }).eq("id", id);
+  if (error && !isMissingTableError(error)) {
+    console.warn("[learn] canvas delete failed", error.message);
   }
 }
 
