@@ -89,6 +89,27 @@ export const CANVAS_BLOCK_TYPES: readonly CanvasBlockType[] = [
 export interface SourceRef {
   sourceId: string;
   excerptId: string;
+  /**
+   * Where in the STORED DOCUMENT this sat, when the source came from a parse that had structure.
+   *
+   * 🔴 WITHOUT THESE, "SHOW ME WHERE THAT CAME FROM" CANNOT BE ANSWERED. `excerptId` is a
+   * canvas-local string (`s1:e3`) that means nothing outside the canvas that minted it, and
+   * `CanvasSource` carries no pointer to the parse it was built from. So a calendar event whose
+   * only provenance is a `SourceRef` can say "from your syllabus" and cannot say "page 14". For a
+   * date — the most consequential thing here — that is the difference between evidence and a
+   * claim.
+   *
+   * All optional, because a source may genuinely have no structure: an image, or a PDF that fell
+   * back to flat text. ABSENT MEANS UNKNOWN, never "page 1" — the same rule the document model
+   * follows about never inventing a locator a format cannot provide.
+   */
+  parsedDocumentId?: string;
+  /** 0-based unit (page/slide/sheet). Rendered +1, and only when `unitKind` allows a number. */
+  unitIndex?: number;
+  /** The document model's own block ids, in reading order. */
+  blockIds?: string[];
+  /** Enclosing headings, outermost first — the address that survives re-pagination. */
+  headingPath?: string[];
 }
 
 /** A term the lesson introduces that the learner probably has not met yet.
