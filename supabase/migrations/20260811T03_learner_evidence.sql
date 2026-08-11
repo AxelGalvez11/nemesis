@@ -1,6 +1,27 @@
 -- What the learner has actually demonstrated. The ground truth the whole teaching policy reads.
 --
--- NOT YET APPLIED as of writing; update this line when it lands.
+-- APPLIED 2026-08-11 to production, and exercised before this line was written.
+--
+-- 🔴 A MISSING POLICY IS SILENT, NOT LOUD — the single most surprising thing here. With no UPDATE
+-- policy, RLS does NOT raise: zero rows qualify, so the statement SUCCEEDS having changed nothing.
+-- The protection is real; the signal is not. The first version of the acceptance test caught the
+-- exception it expected to see, saw none, and concluded the log was writable — when in fact the
+-- update had done nothing at all. Assert on ROWS AFFECTED and on the value actually stored, never
+-- on an error being thrown. Anything that decides "append-only holds" by catching an exception will
+-- decide the opposite of the truth.
+--
+-- Proved under `role authenticated` (never the service role, which bypasses RLS), calibrated first
+-- by confirming a wrong-owner insert is refused and that a reveal cannot carry a verdict:
+--
+--   UPDATE the stored verdict     0 rows affected, value still `understood`
+--   DELETE the row                0 rows affected, row still present
+--   generic -> brand              1 demonstration, verdict `understood`  -> status `correct`
+--   brand   -> generic            NO evidence at all                     -> status `unknown`
+--   another authenticated user    0 evidence rows, 0 on a targeted lookup
+--
+-- That last pair is the point of the whole step: one fact, two directions, and the learner is
+-- demonstrably able to do one and UNKNOWN on the other — not weak, not incorrect. A single
+-- "knows about losartan" verdict could never have said that.
 --
 -- 🔴 APPEND-ONLY, AND THAT IS ENFORCED HERE RATHER THAN INTENDED IN A COMMENT. There are SELECT and
 -- INSERT policies below and deliberately NO UPDATE and NO DELETE. Under RLS, an operation with no
