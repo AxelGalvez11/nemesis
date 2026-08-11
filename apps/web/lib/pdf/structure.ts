@@ -47,7 +47,10 @@ import { figureToPng } from "./figure-image";
 import { MAX_FIGURES_PER_DOC, THIN_UNIT_CHARS, WORTH_LOOKING_AREA } from "./figure-routing";
 import { boxToRect, detectLayout, layoutModelPath, layoutSession, type OnnxSessionLike } from "./layout-onnx";
 import { pageToModelRgb } from "./rasterize";
-import { readRulings, tableFromRegion, type PlacedText } from "./table-grid";
+import { resolveColumns, type Fragment } from "./table-continuation";
+import { headerRowsOf, readRulings, reconstructRegion, tableFromRegion, type PlacedText } from "./table-grid";
+import { latticeRegions, trimEmptyColumns, type LatticeBox } from "./table-lattice";
+import { validateTable, type TableRejection } from "./table-validate";
 import {
   groupLines,
   groupParagraphs,
@@ -86,6 +89,16 @@ export interface PdfStructureResult {
    * `complete`. Carried out so the coverage record can say so.
    */
   tableRegionsUnread: number;
+  /**
+   * Grids the deterministic lane built and then refused to trust, by reason.
+   *
+   * 🔴 A REFUSED TABLE IS NOT THE SAME AS NO TABLE, and collapsing the two is how
+   * a parser reports a clean bill of health over content it could not deliver.
+   * Every reason here names a region where ruled structure exists, was
+   * reconstructed, and failed validation — so the page kept its prose (correct)
+   * and lost its grid (a gap worth surfacing).
+   */
+  tablesRejected: Record<TableRejection, number>;
 }
 
 /** A figure found on a page, before it is judged. */
@@ -115,10 +128,18 @@ interface RawPage {
   height: number;
   items: TextItem[];
   figures: RawFigure[];
-  /** Reconstructed tables, if the layout lane ran. */
-  tables: { rect: DocRect; table: DocTable }[];
+  /** Reconstructed tables. `fragment` is present for the deterministic lane only. */
+  tables: { rect: DocRect; table: DocTable; fragment?: Fragment }[];
   /** Table regions with no recoverable grid — content we could not deliver. */
   tablesUnread: number;
+  /**
+   * Why each proposed table was refused.
+   *
+   * 🔴 A REFUSAL IS A FACT, NOT SILENCE. "There was a grid here and we did not
+   * trust it" and "there was no grid here" are different, and only the first is
+   * a coverage gap worth reporting to a student.
+   */
+  tablesRejected: TableRejection[];
 }
 
 /**
@@ -141,6 +162,20 @@ const SMALL_FIGURE_AREA = 0.01;
  * about what any particular discipline's documents contain.
  */
 const RUNNING_ART_SHARE = 0.5;
+
+/**
+ * Do a claimed lattice region and a model-proposed box cover any of the same page?
+ *
+ * Any overlap at all, not a majority: the two lanes disagreeing about the edges
+ * of one table is the expected case, and emitting both would put the same cells
+ * in the document twice under two blocks. A duplicate is indistinguishable
+ * downstream from the content genuinely occurring twice.
+ *
+ * PURE.
+ */
+function overlaps(region: LatticeBox, box: readonly [number, number, number, number]): boolean {
+  return region.x0 < box[2] && box[0] < region.x1 && region.y0 < box[3] && box[1] < region.y1;
+}
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 
@@ -233,7 +268,11 @@ export async function readPdfStructure(
     // the model would report a 100,000-page document as a 5,000-page one that
     // was read completely — which is the exact shape of "solving capacity by
     // silently deleting content".
-    return { declaredUnits, figureImages, model: assemble(pages), tableRegionsUnread };
+    const tablesRejected = {} as Record<TableRejection, number>;
+    for (const page of pages) {
+      for (const reason of page.tablesRejected) tablesRejected[reason] = (tablesRejected[reason] ?? 0) + 1;
+    }
+    return { declaredUnits, figureImages, model: assemble(pages), tableRegionsUnread, tablesRejected };
   } finally {
     // 🔴 THE LOADING TASK OWNS THE WORKER, NOT THE DOCUMENT. pdf.js 6 removed
     // `PDFDocumentProxy.destroy`; destroying the task is what actually releases
@@ -267,6 +306,7 @@ async function readPage(
     const t = pdfjs.Util.transform(viewport.transform, item.transform);
     const height = Math.hypot(t[2], t[3]) || item.height || 0;
     items.push({
+      ...("fontName" in item && typeof item.fontName === "string" ? { font: item.fontName } : {}),
       // t[5] is the BASELINE. A box drawn from the baseline down would sit under
       // the text; the glyphs occupy roughly one em above it.
       height,
@@ -285,15 +325,87 @@ async function readPage(
   // grouper finds the lists. Taking them too would emit the same content twice
   // under two different block kinds, which is worse than not having them: a
   // duplicate is indistinguishable from a second, real occurrence.
-  const tables: { rect: DocRect; table: DocTable }[] = [];
+  const tables: { rect: DocRect; table: DocTable; fragment?: Fragment }[] = [];
+  const tablesRejected: TableRejection[] = [];
   let tablesUnread = 0;
+
+  // ── The deterministic lane, which needs no model and runs on every page ──
+  //
+  // 🔴 IT RUNS FIRST, AND THAT ORDERING IS LOAD-BEARING. Both lanes remove the
+  // text they claim from the paragraph flow, so if the model ran first it would
+  // consume a region's items and the lattice would then rebuild a grid from text
+  // that is no longer there — or worse, both would emit the same cells under two
+  // blocks, which is indistinguishable downstream from the table genuinely
+  // occurring twice. The lattice claims what it can prove; the model is offered
+  // only what is left.
+  const rulings = await readRulings(pdfjs as never, page, viewport);
+  const claimedRegions: LatticeBox[] = [];
+  {
+    const consumed = new Set<TextItem>();
+    for (const region of latticeRegions(rulings)) {
+      const built = reconstructRegion(region, rulings, items);
+      if (!built) continue;
+      const trimmed = trimEmptyColumns(built.table.rows);
+      const candidate: DocTable = { headerRows: headerRowsOf(trimmed), rows: trimmed };
+      const verdict = validateTable({
+        grid: built.grid,
+        inRegion: built.inRegion,
+        page: { height: viewport.height, width: viewport.width },
+        placed: built.placed,
+        region,
+        rulings,
+        table: candidate,
+      });
+      if (!verdict.ok) {
+        // 🔴 NOTHING HAS BEEN MUTATED AT THIS POINT, DELIBERATELY. The page's
+        // items are untouched until a candidate has passed, so a rejection costs
+        // a missing table and never a damaged page. Validating after suppression
+        // — "claim it, then check, then try to undo" — is the shape of every
+        // silent-data-loss bug this codebase has already paid for.
+        tablesRejected.push(verdict.reason ?? "content-unaccounted");
+        continue;
+      }
+      const rect = boxToRect([region.x0, region.y0, region.x1, region.y1], viewport.width, viewport.height);
+      if (!rect) continue;
+      claimedRegions.push(region);
+      tables.push({
+        fragment: {
+          columnPositions: built.grid.cols,
+          firstRow: candidate.rows[0] ?? [],
+          firstRowComplete: candidate.headerRows > 0,
+          rowFonts: built.rowFonts,
+          unit: -1,               // filled in by `assemble`, which knows the page index
+          unitHeight: viewport.height,
+          y0: region.y0,
+          y1: region.y1,
+        },
+        rect,
+        table: candidate,
+      });
+      // 🔴 ONLY WHAT THE GRID ACTUALLY SEATED. Suppressing by geometry — every
+      // item whose centre falls in the rectangle — would delete any item the grid
+      // failed to place, so a reconstruction that quietly dropped a line would
+      // delete that line from the document too and the page would still report
+      // itself complete.
+      for (const item of built.placed) consumed.add(item as TextItem);
+    }
+    if (consumed.size > 0) {
+      const kept = items.filter((item) => !consumed.has(item));
+      items.length = 0;
+      items.push(...kept);
+    }
+  }
+
   if (options.layout) {
     try {
       const { rgb, width, height } = await pageToModelRgb(page as never);
       const { regions } = await detectLayout(options.layout, rgb, width, height);
-      const wanted = regions.filter((r) => r.label === "table");
+      const wanted = regions
+        .filter((r) => r.label === "table")
+        // The lattice already answered for this area; a second opinion here can
+        // only duplicate it or contradict it, and both are worse than silence.
+        .filter((r) => !claimedRegions.some((c) => overlaps(c, r.box)));
       if (wanted.length > 0) {
-        const rulings = await readRulings(pdfjs as never, page, viewport);
         const placed: PlacedText[] = items;
         const consumed = new Set<TextItem>();
         for (const region of wanted) {
@@ -346,7 +458,7 @@ async function readPage(
       if (converted.ok) figure.image = { height: converted.height, png: converted.png, width: converted.width };
     }
   }
-  return { figures, height: viewport.height, items, tables, tablesUnread, width: viewport.width };
+  return { figures, height: viewport.height, items, tables, tablesRejected, tablesUnread, width: viewport.width };
 }
 
 /**
@@ -470,6 +582,31 @@ async function readFigures(
 
 /** Pages into one model: blocks in reading order, headings, figures, locators. */
 function assemble(pages: readonly RawPage[]): DocumentModel {
+  // 🔴 COLUMN NAMES ARE A DOCUMENT-LEVEL FACT AND CANNOT BE DECIDED PER PAGE.
+  // A schedule prints `Date | Time | Topic | …` once and then runs over eleven
+  // more pages that repeat none of it, so a page looking only at itself sees
+  // anonymous columns and a consumer falls back to reading whole rows as text —
+  // the flattening the grid exists to prevent. Resolved here, once, in document
+  // order, over the fragments every page contributed.
+  const fragments: Fragment[] = [];
+  const owners: { rect: DocRect; table: DocTable; fragment?: Fragment }[] = [];
+  pages.forEach((page, unit) => {
+    for (const entry of page.tables) {
+      if (!entry.fragment) continue;
+      fragments.push({ ...entry.fragment, unit });
+      owners.push(entry);
+    }
+  });
+  resolveColumns(fragments).forEach((resolved, i) => {
+    const owner = owners[i]!;
+    owner.table = {
+      ...owner.table,
+      ...(resolved.columns ? { columns: resolved.columns } : {}),
+      ...(resolved.headerSource ? { headerSource: resolved.headerSource } : {}),
+      ...(resolved.continuesFromUnit !== null ? { continuesFromUnit: resolved.continuesFromUnit } : {}),
+    };
+  });
+
   // Running art is a document-level fact, so it is decided once, over every page,
   // before any page's figures are classified.
   const appearances = new Map<string, number>();

@@ -125,6 +125,35 @@ export interface DocTable {
    * every table that starts with data.
    */
   headerRows: number;
+  /**
+   * What each column is called — even when this fragment did not print them.
+   *
+   * 🔴 A CONTINUATION PAGE USUALLY HAS NO HEADER, AND WITHOUT THIS ITS COLUMNS
+   * ARE ANONYMOUS. A real syllabus prints `Date | Time | Topic | …` once and then
+   * runs the schedule across ten more pages that repeat none of it. A consumer
+   * holding only `rows` cannot tell which cell held the date, so it falls back to
+   * reading the whole row as text — which is exactly the flattening the grid
+   * exists to prevent. Filled from this fragment's own header when it has one,
+   * and otherwise inherited from the fragment it continues.
+   *
+   * Absent when no header is known. NEVER invented: unnamed columns are a
+   * missing fact, and a guessed name would be attached to every value beneath it.
+   */
+  columns?: string[];
+  /**
+   * Whether `columns` was printed here or carried from an earlier fragment.
+   *
+   * Kept because provenance differs: an inherited name is a deduction about
+   * document structure, and a citation that shows it should be able to say so.
+   */
+  headerSource?: "present" | "inherited";
+  /**
+   * The unit holding the fragment this one continues, when it is a continuation.
+   *
+   * Lets a consumer stitch a table split across pages back together without
+   * re-deriving adjacency — which is the parser's job, not theirs.
+   */
+  continuesFromUnit?: number;
 }
 
 /**
