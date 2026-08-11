@@ -15,6 +15,9 @@ import type { CanvasState, LearningCanvas } from "./canvas-model";
 export type CanvasEvent =
   | "canvas_created"
   | "source_attached"
+  // Durable knowledge minted from an attached source. Counts only — never the extracted content,
+  // which is the learner's own material.
+  | "knowledge_extracted"
   | "canvas_lesson_generated"
   | "canvas_text_selected"
   | "canvas_section_rewritten"

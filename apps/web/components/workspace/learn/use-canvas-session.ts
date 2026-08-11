@@ -32,6 +32,8 @@ import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
+import { extractKnowledgeObjects } from "@/lib/learn/knowledge-extraction";
+import { saveKnowledge } from "@/lib/learn/learner-store";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
@@ -342,6 +344,34 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
+
+          // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until now
+          // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
+          // production tables could only ever be filled by hand — which is why nothing could
+          // accumulate across sessions no matter how correct the extractor was.
+          //
+          // Deliberately BEST-EFFORT and after the canvas has already been updated: a learner
+          // whose material is attached and readable must not lose the attachment because the
+          // knowledge layer had a bad day. What fails here costs adaptation, not the lesson.
+          //
+          // Only durable sources qualify. An ephemeral one has no library row, so anchors minted
+          // from it would point at something no later canvas can resolve.
+          if (canonical.ok && extracted.librarySourceId) {
+            void (async () => {
+              const extraction = extractKnowledgeObjects(canonical.context);
+              for (const knowledge of extraction.objects) {
+                await saveKnowledge(uid, knowledge);
+              }
+              if (extraction.objects.length > 0) {
+                canvasCapture("knowledge_extracted", latest.current, {
+                  objects: extraction.objects.length,
+                  outcome: extraction.outcome,
+                  refusals: extraction.refusals.length,
+                });
+              }
+            })();
+          }
+
           canvasCapture("source_attached", latest.current, {
             kind: source.kind,
             excerpts: source.excerpts.length,
