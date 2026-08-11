@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { attachedSourceIds, buildCoverage, UNTRUSTED_CONTENT_RULE, UNTRUSTED_FENCE, type ExtractionCoverage } from "@nemesis/shared";
 
-import { describeTruncation, DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, LEGACY_PER_FILE_CHARS, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
+import { describeTruncation, DOCUMENT_EXTENSIONS, DOCUMENT_MIME, fitAttachmentBlocks, LEGACY_PER_FILE_CHARS, groupChatAttachments, partitionImportables, refileChatSource, splitAttachmentSummary, uploadLane, MAX_ATTACHMENT_CHARS, MAX_TOTAL_CHARS } from "./chat-attachments";
 
 function attachment(name: string, path = ""): File {
   return {
@@ -366,4 +366,33 @@ test("a file with no slide markers falls back to characters and says not to gues
   assert.match(notice, /5,000 of/, "PDFs and Word have no slides to name");
   assert.match(notice, /Do not guess/, "so it must not invent a location");
   assert.ok(!/slide/i.test(notice), "and must not mention slides for a file that has none");
+});
+
+// ── which lane an upload takes ──────────────────────────────────────────────
+
+const SMALL = 1024;
+const HUGE = 200 * 1024 * 1024;
+
+test("an unfiled small file is posted inline, as it always was", () => {
+  assert.equal(uploadLane({ filedSourceId: null, size: SMALL, sourceId: null }), "inline");
+});
+
+test("a file that WAS filed is read from its row", () => {
+  assert.equal(uploadLane({ filedSourceId: "lib-1", size: SMALL, sourceId: null }), "by-reference");
+});
+
+test("🔴 a keep request whose filing was REFUSED still reads the file", () => {
+  // The regression this exists to prevent. `keep` does not appear in the decision — only its
+  // outcome does. The storage bucket has a mime allowlist, and a lecture PDF whose name has lost
+  // its ".pdf" reports no type, so filing it is refused; that file opened before and must keep
+  // opening. What it loses is durability, and `librarySourceId` comes back absent to say so.
+  assert.equal(uploadLane({ filedSourceId: null, size: SMALL, sourceId: null }), "inline");
+});
+
+test("a file too large to post inline has no fallback, and is allowed to fail loudly", () => {
+  assert.equal(uploadLane({ filedSourceId: null, size: HUGE, sourceId: null }), "by-reference");
+});
+
+test("a caller that already had a row never re-uploads", () => {
+  assert.equal(uploadLane({ filedSourceId: null, size: SMALL, sourceId: "lib-existing" }), "by-reference");
 });

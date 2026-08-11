@@ -420,6 +420,38 @@ function extractErrorFor(status: number, fileName: string): string {
  *
  * Throws with a student-readable message.
  */
+/**
+ * Which lane a request takes, decided from what is actually true rather than what was asked for.
+ *
+ * 🔴 FILING IS BEST-EFFORT, AND A FILE THAT COULD NOT BE FILED IS STILL READ. `keep` deliberately
+ * does not appear here — only its OUTCOME does, as `filedSourceId`. A `keep` request whose upload
+ * was refused falls back to the lane that has always worked, because throwing would turn a
+ * document that used to open into one the student simply cannot add.
+ *
+ * And a refusal is not hypothetical: the storage bucket has a mime allowlist, and `fileMime`
+ * returns "" for a file the browser reported no type for whose extension we do not recognise —
+ * which includes a case this codebase deliberately supports, a lecture PDF whose name has lost its
+ * ".pdf" and is identified by sniffing its bytes on the server. That file went inline before and
+ * must keep going inline.
+ *
+ * What is lost in the fallback is durability, and the caller can SEE that it was lost, because
+ * `librarySourceId` comes back absent — which every consumer already reads as "not re-findable",
+ * never as "filed somewhere".
+ */
+export function uploadLane(input: {
+  /** A row the caller already had. */
+  sourceId: string | null;
+  /** The row filing produced, or null when filing was not asked for or did not work. */
+  filedSourceId: string | null;
+  size: number;
+}): "inline" | "by-reference" {
+  // A row exists, so the server can read the bytes from it — always the better lane.
+  if (input.filedSourceId ?? input.sourceId) return "by-reference";
+  // No row and too big to post: by reference is the only way, and it is allowed to fail loudly.
+  if (input.size > MAX_INLINE_UPLOAD_BYTES) return "by-reference";
+  return "inline";
+}
+
 export async function extractFile(
   file: File,
   uid: string | null,
@@ -480,12 +512,19 @@ export async function extractFile(
   // stored for a document the student never asked us to keep.
   const sourceId = opts.sourceId ?? null;
   let filedSourceId: string | null = sourceId;
-  if (!sourceId && !opts.keep && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+
+  // Filing is attempted first when the caller asked for it, so its OUTCOME — not its intention —
+  // is what decides the lane. See `uploadLane`.
+  if (!sourceId && opts.keep) {
+    filedSourceId = await uploadForIngest(payload, uid, opts.folderPath ?? "");
+  }
+
+  if (uploadLane({ filedSourceId, size: payload.size, sourceId }) === "inline") {
     const form = new FormData();
     form.append("file", payload);
     response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
   } else {
-    const id = sourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
+    const id = filedSourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
     if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
     filedSourceId = id;
     response = await fetch("/api/notebooks/extract/file", {
