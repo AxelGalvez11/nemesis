@@ -1,0 +1,171 @@
+// What a learner has actually demonstrated, and the state that is READ OFF that record.
+//
+// 🔴 THE EVIDENCE LOG IS THE TRUTH. Learner state is a projection of it and nothing else. If
+// deleting the projection and rebuilding it from the log produced a different answer, the
+// projection would be a second, disagreeing copy of the truth — and the disagreement would be
+// invisible, because nothing compares them. `canvas-retention.ts` already works this way inside a
+// canvas ("there is no `stability` column"); this is the same rule made global and durable.
+//
+// 🔴 ABSENCE OF EVIDENCE IS NOT NEGATIVE EVIDENCE. A learner with no evidence for an objective is
+// `unknown` — not weak, not beginner, not 0%, not incorrect. This is the same defect as
+// `?? "basics_known"` one layer deeper: the moment "we have not asked" is stored as "they cannot",
+// every later decision is made against a claim about a person that nobody ever observed.
+
+/**
+ * Two INDEPENDENT facts, kept independent.
+ *
+ * 🔴 COLLAPSING THESE INTO ONE `outcome` IS THE MISTAKE THIS SHAPE EXISTS TO PREVENT. "The learner
+ * revealed the answer instead of attempting it" and "the learner answered and was wrong" are not
+ * the same event, and a single column forces the first into the second — which is absence of
+ * evidence recorded as negative evidence, wearing a new name.
+ *
+ * The existing code already knows this. `Verdict` has no value for a reveal, `revealed` sits BESIDE
+ * `evaluation` on a response, and `canvas-scheduling.ts` reads it BEFORE the verdict. So: was a
+ * demonstration obtained at all, and — only if it was — what did it show.
+ */
+export interface LearnerEvidence {
+  /** Stable id. Used to deduplicate, so replaying a log twice cannot change the answer. */
+  id: string;
+  objectiveIdentityKey: string;
+  /** ISO. When the learner did the thing, not when the row was written. */
+  occurredAt: string;
+  /**
+   * Whether any usable demonstration came back.
+   *
+   * False covers revealing the answer, giving up, and a response the evaluator could not read.
+   * All three mean the same thing for learning: an opportunity was given and we still do not know.
+   */
+  demonstrationObtained: boolean;
+  /** What the demonstration showed. 🔴 NULL WHENEVER NONE WAS OBTAINED — never a stand-in verdict. */
+  verdict: EvidenceVerdict | null;
+  /** 0-1, how much the response actually settled. A correct one-liner to a broad task is weak. */
+  confidence?: number;
+  /** Named competing models, when the verdict is `misconception`. Kept so they can be taught against. */
+  misconceptions?: readonly string[];
+  /** Which canvas produced it — provenance only. 🔴 NEVER a filter for reading state back: the
+   *  whole point is that a second canvas sees what the first one established. */
+  canvasId?: string | null;
+  /** Which evaluator made the claim. Evidence from a different evaluator is a different claim, and
+   *  after the fact there is no other way to tell them apart. Not part of any key — nothing keys
+   *  on it — but recorded for the same reason identity keys carry their version. */
+  evaluatorVersion?: string | null;
+}
+
+/** The judged outcomes. Mirrors the existing `Verdict` in canvas-model.ts, which is deliberate:
+ *  this is that same judgement made durable, not a second opinion about what a verdict can be. */
+export type EvidenceVerdict = "strong" | "understood" | "partial" | "incorrect" | "misconception";
+
+/**
+ * What Nemesis believes about one learner and one objective.
+ *
+ * 🔴 `unknown` IS A REAL VALUE AND MUST STAY REPRESENTABLE. It is not a null to be coalesced away,
+ * and it is not the bottom of a scale — it sits outside the ordering entirely. "We have never
+ * asked" and "they got it wrong" call for opposite teaching, and a type that cannot say the first
+ * will quietly say the second.
+ */
+export type LearnerObjectiveStatus =
+  /** No relevant evidence exists. Nemesis does not know. */
+  | "unknown"
+  /** An opportunity was given and no usable demonstration came back — revealed, gave up, or
+   *  unreadable. 🔴 DISTINCT FROM `incorrect`: nothing was shown, so nothing was contradicted. */
+  | "not_demonstrated"
+  /** The learner produced something that contradicts the objective. */
+  | "incorrect"
+  /** Evidence supports a specific competing model, not merely an error — so it can be taught
+   *  against rather than simply retried. */
+  | "misconception"
+  /** Some of what the objective requires was demonstrated. */
+  | "partial"
+  /** The objective was demonstrated. */
+  | "correct";
+
+export interface LearnerObjectiveState {
+  objectiveIdentityKey: string;
+  status: LearnerObjectiveStatus;
+  /** How many distinct pieces of evidence exist. 0 exactly when the status is `unknown`. */
+  evidenceCount: number;
+  /** How many of those obtained an actual demonstration. Lower than `evidenceCount` when the
+   *  learner revealed or gave up, and the gap is itself informative. */
+  demonstrationCount: number;
+  /** ISO of the most recent evidence, or null when there is none. */
+  lastEvidenceAt: string | null;
+  /** The most recent judged verdict, or null if none was ever obtained. Kept because `strong` and
+   *  `understood` both project to `correct`, and a policy may reasonably treat them differently. */
+  latestVerdict: EvidenceVerdict | null;
+}
+
+function statusFor(verdict: EvidenceVerdict): LearnerObjectiveStatus {
+  switch (verdict) {
+    // Both are demonstrations of the objective. The strength difference is preserved on
+    // `latestVerdict` rather than being flattened into a status the policy cannot un-flatten.
+    case "strong":
+    case "understood":
+      return "correct";
+    case "partial":
+      return "partial";
+    case "misconception":
+      return "misconception";
+    case "incorrect":
+      return "incorrect";
+  }
+}
+
+/**
+ * Read the state off the log.
+ *
+ * 🔴 ORDER-INDEPENDENT AND IDEMPOTENT, AND BOTH ARE LOAD-BEARING. "Recomputable from the log" is
+ * only true if the same evidence produces the same state however it arrives and however many times
+ * a row appears — rows come back from a database in whatever order it likes, and a replay or a
+ * retried write can deliver one twice. So: deduplicate by id, then sort by time with the id as the
+ * tiebreak. Sorting on time alone leaves ties resolved by input order, which is exactly the kind of
+ * hidden order-dependence that makes a projection disagree with itself.
+ */
+export function projectLearnerState(
+  objectiveIdentityKey: string,
+  evidence: readonly LearnerEvidence[],
+): LearnerObjectiveState {
+  const distinct = [...new Map(evidence.map((e) => [e.id, e])).values()]
+    .filter((e) => e.objectiveIdentityKey === objectiveIdentityKey)
+    .sort((a, b) => {
+      const byTime = Date.parse(a.occurredAt) - Date.parse(b.occurredAt);
+      return byTime !== 0 ? byTime : a.id.localeCompare(b.id);
+    });
+
+  // 🔴 NO EVIDENCE IS `unknown`, FULL STOP. Not a default, not a floor, not "assume the worst".
+  if (distinct.length === 0) {
+    return {
+      demonstrationCount: 0,
+      evidenceCount: 0,
+      lastEvidenceAt: null,
+      latestVerdict: null,
+      objectiveIdentityKey,
+      status: "unknown",
+    };
+  }
+
+  const latest = distinct[distinct.length - 1]!;
+  const demonstrations = distinct.filter((e) => e.demonstrationObtained && e.verdict);
+  const latestDemonstration = demonstrations[demonstrations.length - 1] ?? null;
+
+  return {
+    demonstrationCount: demonstrations.length,
+    evidenceCount: distinct.length,
+    lastEvidenceAt: latest.occurredAt,
+    latestVerdict: latestDemonstration?.verdict ?? null,
+    objectiveIdentityKey,
+    // The most recent event decides the current status: someone who has just corrected a
+    // misconception is not still holding it, and the history remains in the log either way. When
+    // that event obtained nothing, the honest status is `not_demonstrated` — an opportunity passed
+    // and we still do not know, which is different from having been shown a wrong answer.
+    status: latest.demonstrationObtained && latest.verdict ? statusFor(latest.verdict) : "not_demonstrated",
+  };
+}
+
+/** Project every objective present in a log at once, for a canvas asking "what does this learner
+ *  already hold?" across a whole source. Objectives with no evidence are simply absent — a caller
+ *  that needs them must ask for them by key and receive `unknown`, rather than this function
+ *  inventing rows for objectives it was never told about. */
+export function projectAll(evidence: readonly LearnerEvidence[]): Map<string, LearnerObjectiveState> {
+  const keys = [...new Set(evidence.map((e) => e.objectiveIdentityKey))];
+  return new Map(keys.map((key) => [key, projectLearnerState(key, evidence)]));
+}
