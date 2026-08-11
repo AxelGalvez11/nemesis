@@ -41,15 +41,34 @@ import type { KnowledgeObject } from "./knowledge-types";
  */
 export type ObjectiveCapability = "recall" | "discriminate" | "explain";
 
-/** Which way round a two-sided piece of knowledge is being asked.
+/**
+ * A positional fallback, used ONLY when the source named no columns.
  *
- *  `left`/`right` refer to the knowledge object's own canonical ordering, NOT to the order the
- *  document happened to print — that is exactly what the sorted identity basis normalises away, so
- *  a direction defined against the document would flip depending on which source taught it. */
+ * 🔴 THIS IS THE WEAKER FORM AND SHOULD BE READ AS SUCH. `left`/`right` refer to the knowledge
+ * object's own canonical ordering, never the order a document printed — but "the canonically-first
+ * value" is a fact about sorting, not about what the learner is being asked to do. It exists
+ * because a headerless glossary still teaches something, and refusing to make any objective for it
+ * would be worse. Such objectives already live in their own identity space (their knowledge key
+ * carries `unstated`), so they cannot collide with role-bearing ones.
+ */
 export type ObjectiveDirection = "left_to_right" | "right_to_left";
 
 export interface ObjectiveParameters {
-  /** Set for a directional capability over a two-sided object. Absent when direction is moot. */
+  /**
+   * What the learner is GIVEN, and what they must PRODUCE — named as the source named them.
+   *
+   * 🔴 THE IDENTITY MUST DESCRIBE THE CAPABILITY, NOT A COLUMN POSITION. "Produce the brand, given
+   * the generic" is a thing a person can or cannot do. "Produce the right-hand value" is a fact
+   * about typesetting, and it means opposite things in a `Generic | Brand` glossary and a
+   * `Brand | Generic` revision sheet. Keying on position gives those two files the SAME key for
+   * OPPOSITE capabilities — evidence for one direction silently credited to the other.
+   *
+   * With roles, the two converge correctly: both know that Cozaar is the brand and losartan the
+   * generic, so both produce `input=generic, output=brand` and `input=brand, output=generic`.
+   */
+  inputRole?: string;
+  outputRole?: string;
+  /** Only when no roles are known. Never set alongside them. */
   direction?: ObjectiveDirection;
 }
 
@@ -90,10 +109,11 @@ export function objectiveIdentityBasis(input: {
   capability: ObjectiveCapability;
   parameters: ObjectiveParameters;
 }): string {
-  // Parameters are serialised in a fixed order rather than by iterating the object, so a key can
-  // never depend on the order keys happened to be written in at the call site.
-  const direction = input.parameters.direction ?? "none";
-  return `objective|${input.knowledgeIdentityKey}|${input.capability}|${direction}`;
+  // Serialised in a fixed order rather than by iterating the object, so a key can never depend on
+  // the order the fields happened to be written in at the call site.
+  const { direction, inputRole, outputRole } = input.parameters;
+  const role = inputRole && outputRole ? `in=${inputRole},out=${outputRole}` : "in=-,out=-";
+  return `objective|${input.knowledgeIdentityKey}|${input.capability}|${role}|dir=${direction ?? "-"}`;
 }
 
 /** A 64-bit FNV-1a, as 16 hex characters. Synchronous and dependency-free for the same reason the
@@ -130,29 +150,40 @@ export function objectivesForKnowledge(object: KnowledgeObject): LearningObjecti
   if (object.type !== "association" || !object.pair) return [];
 
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
-  // 🔴 SORTED THE SAME WAY THE KNOWLEDGE BASIS SORTS. `left_to_right` has to mean the same thing
-  // whichever source taught the pair, and a glossary printing "Generic | Brand" beside a quiz sheet
-  // printing the answer first would otherwise define the directions oppositely — producing two
-  // objectives for one capability, which is the duplication this file exists to prevent.
-  const [first, second] = [
-    normalizeForIdentity(object.pair.left),
-    normalizeForIdentity(object.pair.right),
-  ].sort();
-  const cue = (direction: ObjectiveDirection) => (direction === "left_to_right" ? first : second);
-  const answer = (direction: ObjectiveDirection) => (direction === "left_to_right" ? second : first);
+  const left = normalizeForIdentity(object.pair.left);
+  const right = normalizeForIdentity(object.pair.right);
+  const { leftRole, rightRole } = object.pair;
 
-  return (["left_to_right", "right_to_left"] as const).map((direction) => {
-    const parameters: ObjectiveParameters = { direction };
-    return {
-      capability: "recall" as const,
-      identityKey: objectiveIdentityKey({ capability: "recall", knowledgeIdentityKey: knowledge, parameters }),
-      identityVersion: OBJECTIVE_IDENTITY_VERSION,
-      knowledgeIdentityKey: knowledge,
-      // Presentation only. A canvas may word the prompt however it likes without moving identity.
-      label: `Given ${cue(direction)}, produce ${answer(direction)}`,
-      parameters,
-    };
-  });
+  // 🔴 ROLES WHEN THE SOURCE NAMED ITS COLUMNS — the preferred form, because it describes what the
+  // learner must PRODUCE. Both sides are carried with the value that fills them, so a glossary
+  // printing `Generic | Brand` and a revision sheet printing `Brand | Generic` agree that Cozaar is
+  // the brand, and converge instead of contradicting each other under a shared key.
+  const sides: { cue: string; answer: string; parameters: ObjectiveParameters }[] =
+    leftRole && rightRole
+      ? [
+          { answer: right, cue: left, parameters: { inputRole: leftRole, outputRole: rightRole } },
+          { answer: left, cue: right, parameters: { inputRole: rightRole, outputRole: leftRole } },
+        ]
+      : // No column names, so nothing can be said about roles. Fall back to the canonical ordering
+        // — sorted the same way the knowledge basis sorts, so at least the two documents that print
+        // an unnamed pair in opposite orders still agree with each other.
+        (() => {
+          const [first, second] = [left, right].sort();
+          return [
+            { answer: second!, cue: first!, parameters: { direction: "left_to_right" as const } },
+            { answer: first!, cue: second!, parameters: { direction: "right_to_left" as const } },
+          ];
+        })();
+
+  return sides.map(({ answer, cue, parameters }) => ({
+    capability: "recall" as const,
+    identityKey: objectiveIdentityKey({ capability: "recall", knowledgeIdentityKey: knowledge, parameters }),
+    identityVersion: OBJECTIVE_IDENTITY_VERSION,
+    knowledgeIdentityKey: knowledge,
+    // Presentation only. A canvas may word the prompt however it likes without moving identity.
+    label: `Given ${cue}, produce ${answer}`,
+    parameters,
+  }));
 }
 
 /** Whether the knowledge identity a key belongs to was computed under the current rules.

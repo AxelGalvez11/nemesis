@@ -92,9 +92,18 @@ create table if not exists public.learning_objectives (
   -- `type` above: a twelve-value ontology written before a second knowledge type has tested it
   -- would be eleven guesses.
   capability text not null check (char_length(capability) <= 40),
-  -- `{ "direction": "left_to_right" }` for a directional recall. 🔴 The direction is defined
-  -- against the knowledge object's CANONICAL ordering, never the order a document printed — so one
-  -- key always asks the same question whichever source taught it.
+  -- `{ "inputRole": "generic", "outputRole": "brand" }` — what the learner is GIVEN and what they
+  -- must PRODUCE, named as the source named its own columns.
+  --
+  -- 🔴 IDENTITY DESCRIBES THE CAPABILITY, NEVER A COLUMN POSITION. "Produce the brand, given the
+  -- generic" is something a person can or cannot do. "Produce the right-hand value" is a fact about
+  -- typesetting, and it means opposite things in a `Generic | Brand` glossary and a `Brand |
+  -- Generic` revision sheet — one key for two opposite capabilities, with evidence for one
+  -- direction silently credited to the other. With roles, both files converge correctly.
+  --
+  -- `{ "direction": ... }` is the weaker fallback, used ONLY when the source named no columns. Such
+  -- rows already live in a separate identity space (their knowledge key carries `unstated`), so
+  -- they cannot collide with role-bearing ones.
   parameters jsonb not null default '{}'::jsonb,
   -- Human-readable, presentation only, never part of identity.
   label text not null default '' check (char_length(label) <= 500),

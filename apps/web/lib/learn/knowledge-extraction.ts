@@ -34,7 +34,7 @@ import {
   type SourceContext,
 } from "@/lib/sources/source-context";
 
-import { knowledgeIdentityKey, relationKindFromHeader } from "./knowledge-identity";
+import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
 import type { KnowledgeObject } from "./knowledge-types";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
@@ -193,9 +193,14 @@ function pairsFromTable(
   // `unstated` — unable to converge with the fragment that did print the names, even though they
   // are one table. `columns` carries the names onto those fragments, so reading it first is what
   // makes a long glossary converge with itself.
-  const relationKind =
-    relationKindFromHeader(content.columns) ??
-    (table.headerRows > 0 ? relationKindFromHeader(table.rows[0]) : null);
+  // 🔴 THE COLUMN NAMES ARE KEPT SIDE BY SIDE, NOT ONLY SORTED INTO A RELATION KIND. The relation
+  // kind is order-independent on purpose, so `brand|generic` cannot say WHICH value is the brand —
+  // and a capability built on that could only speak positionally, which is a fact about typesetting
+  // rather than about what the learner is asked to produce.
+  const columnNames = content.columns?.length ? content.columns : table.headerRows > 0 ? table.rows[0] : undefined;
+  const leftRole = columnNames?.[0] ? normalizeForIdentity(columnNames[0]) : null;
+  const rightRole = columnNames?.[1] ? normalizeForIdentity(columnNames[1]) : null;
+  const relationKind = relationKindFromHeader(columnNames);
   const objects: KnowledgeObject[] = [];
 
   for (const [index, row] of dataRows.entries()) {
@@ -216,6 +221,7 @@ function pairsFromTable(
         id: pairId,
         left,
         right,
+        ...(leftRole && rightRole ? { leftRole, rightRole } : {}),
         // The section this grid sat in, used ONLY to group items during first encoding — and
         // dropped afterwards, because answering from the heading is not retrieval.
         ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),

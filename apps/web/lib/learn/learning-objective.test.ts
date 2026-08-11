@@ -116,7 +116,8 @@ test("🔴 the two directions are two objectives", () => {
   // for both would credit a learner with a direction they were never asked.
   const [a, b] = objectivesFrom(LECTURE);
   assert.notEqual(a!.identityKey, b!.identityKey);
-  assert.notEqual(a!.parameters.direction, b!.parameters.direction);
+  assert.notEqual(a!.parameters.inputRole, b!.parameters.inputRole);
+  assert.equal(a!.parameters.inputRole, b!.parameters.outputRole);
 });
 
 test("🔴 recall, discriminate and explain over one fact are three objectives", () => {
@@ -158,12 +159,24 @@ test("🔴 the human label does not participate in identity", () => {
 });
 
 test("the basis is inspectable, so a disagreement can be read rather than guessed", () => {
-  const basis = objectiveIdentityBasis({
-    capability: "recall",
-    knowledgeIdentityKey: "association:v2:abc",
-    parameters: { direction: "left_to_right" },
-  });
-  assert.equal(basis, "objective|association:v2:abc|recall|left_to_right");
+  assert.equal(
+    objectiveIdentityBasis({
+      capability: "recall",
+      knowledgeIdentityKey: "association:v2:abc",
+      parameters: { inputRole: "generic", outputRole: "brand" },
+    }),
+    "objective|association:v2:abc|recall|in=generic,out=brand|dir=-",
+  );
+  // The headerless fallback occupies a visibly different shape, so the two can never be confused
+  // by anything reading a stored basis.
+  assert.equal(
+    objectiveIdentityBasis({
+      capability: "recall",
+      knowledgeIdentityKey: "association:v2:abc",
+      parameters: { direction: "left_to_right" },
+    }),
+    "objective|association:v2:abc|recall|in=-,out=-|dir=left_to_right",
+  );
 });
 
 test("a parameterless objective is distinct from a directional one", () => {
@@ -172,6 +185,55 @@ test("a parameterless objective is distinct from a directional one", () => {
     objectiveIdentityKey({ capability: "explain", knowledgeIdentityKey: knowledge, parameters: {} }),
     objectiveIdentityKey({ capability: "explain", knowledgeIdentityKey: knowledge, parameters: { direction: "left_to_right" } }),
   );
+});
+
+// ── identity describes the capability, not the typesetting ──────────────────
+
+test("🔴 the objective says what the learner must PRODUCE, in the source's own words", () => {
+  // The rule this pins: identity describes the capability, never a column position. Both documents
+  // must yield `given the generic, produce the brand` and its reverse — not `given the left one`.
+  const roles = (context: SourceContext) =>
+    objectivesFrom(context)
+      .map((o) => `${o.parameters.inputRole}->${o.parameters.outputRole}`)
+      .sort();
+  assert.deepEqual(roles(LECTURE), ["brand->generic", "generic->brand"]);
+  // 🔴 THE REVISION SHEET PRINTS ITS COLUMNS THE OTHER WAY ROUND and must still agree. Keyed on
+  // position, `left_to_right` would mean "produce the brand" in one file and "produce the generic"
+  // in the other — one key, two opposite capabilities.
+  assert.deepEqual(roles(REVISION), roles(LECTURE));
+});
+
+test("🔴 the same role pair from either document is the same objective", () => {
+  const byRole = (context: SourceContext) =>
+    Object.fromEntries(objectivesFrom(context).map((o) => [`${o.parameters.inputRole}->${o.parameters.outputRole}`, o.identityKey]));
+  const lecture = byRole(LECTURE);
+  const revision = byRole(REVISION);
+  assert.deepEqual(revision, lecture);
+  // And the value each role carries agrees too, which is what makes the merge honest rather than
+  // a coincidence of two hashes landing on the same string.
+  const cueOf = (context: SourceContext, pair: string) =>
+    objectivesFrom(context).find((o) => `${o.parameters.inputRole}->${o.parameters.outputRole}` === pair)!.label;
+  assert.equal(cueOf(REVISION, "generic->brand"), cueOf(LECTURE, "generic->brand"));
+  assert.match(cueOf(LECTURE, "generic->brand"), /Given losartan, produce Cozaar/i);
+});
+
+test("a headerless pair falls back to position, and never collides with a role-bearing one", () => {
+  // 🔴 THE FALLBACK IS THE WEAKER FORM AND MUST STAY VISIBLY SO. It exists because a headerless
+  // glossary still teaches something; refusing to make any objective for it would be worse. Its
+  // knowledge key already carries `unstated`, so it lives in a separate identity space.
+  const headerless = buildSourceContext({
+    sourceId: "lib-NOHEAD",
+    sourceKind: "pdf",
+    structure: stored(sourceWith([{
+      id: "t1", kind: "table", table: { headerRows: 0, rows: [["losartan", "Cozaar"]] },
+    }])),
+  });
+  const fallback = objectivesFrom(headerless);
+  assert.equal(fallback.length, 2);
+  assert.equal(fallback.every((o) => o.parameters.inputRole === undefined), true, "no roles were invented");
+  assert.equal(fallback.every((o) => o.parameters.direction !== undefined), true);
+  const roleBearing = new Set(objectivesFrom(LECTURE).map((o) => o.identityKey));
+  assert.equal(fallback.some((o) => roleBearing.has(o.identityKey)), false);
 });
 
 // ── the version travels inside the key ──────────────────────────────────────

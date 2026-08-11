@@ -103,6 +103,20 @@ export interface AssociationPair {
   /** The side the material leads with. */
   left: string;
   right: string;
+  /**
+   * What the SOURCE called the column each side sat in — `generic`, `brand`, `case`, `holding`.
+   *
+   * 🔴 THIS IS WHAT MAKES AN OBJECTIVE MEAN SOMETHING. Without it, all a later capability can say
+   * is "the left one" and "the right one", which are properties of how a document was typeset. A
+   * glossary printing `Generic | Brand` and a revision sheet printing `Brand | Generic` teach the
+   * identical pair, and a capability defined positionally would mean OPPOSITE things in the two
+   * files while carrying the same name. The learner is not asked to produce "the right-hand
+   * column"; they are asked to produce the brand.
+   *
+   * Absent when the grid named no columns — a real and common case, and one that must stay
+   * distinguishable rather than being filled in with a position. */
+  leftRole?: string;
+  rightRole?: string;
   /** What this pair belongs with, used ONLY to group items during first encoding. Removed once
    *  initial learning happens, because grouping is a scaffold — leaving it in place lets the
    *  learner answer from the heading rather than from memory. */
