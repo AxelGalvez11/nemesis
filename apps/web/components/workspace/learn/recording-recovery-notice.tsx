@@ -27,7 +27,11 @@ import { recoveryOffer, recoveryRequest, type RecoveryOffer } from "@/lib/worksp
  *  as an ordinary session that happens to be missing its beginning. */
 const RECOVERED_TITLE = "Recovered recording";
 
-type Phase = "offering" | "saving" | "saved" | "failed";
+/** The ceiling /api/recordings/jobs enforces, mirrored so a long lecture is clamped rather than
+ *  refused at the last step. */
+const MAX_JOB_SECONDS = 3 * 60 * 60;
+
+type Phase = "offering" | "saving" | "saved" | "failed" | "quota";
 
 interface Props {
   accessToken: string | null;
@@ -86,7 +90,10 @@ export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
       const created = await fetch("/api/recordings/jobs", {
         body: JSON.stringify({
           contextId: sessionsStore.create(RECOVERED_TITLE).id,
-          durationSeconds: Math.max(1, approximateSeconds(manifest)),
+          // Clamped to the pipeline's own ceiling. This estimate is derived from the part
+          // cadence, so a lecture that ran a little past three hours would otherwise be refused
+          // with a 400 — losing the recording to a rounding artefact at the very last step.
+          durationSeconds: Math.min(MAX_JOB_SECONDS, Math.max(1, approximateSeconds(manifest))),
           messageId: crypto.randomUUID(),
           storagePath: body.storagePath,
           surface: "sessions",
@@ -94,6 +101,14 @@ export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         method: "POST",
       });
+      // 🔴 Over the monthly allowance is NOT a failure to rebuild, and saying so would send
+      // someone looking for a network problem that does not exist. The audio IS rebuilt and
+      // safe at this point; what is missing is the entitlement to transcribe it. The manifest
+      // is deliberately still kept, so they can accept it after their allowance resets.
+      if (created.status === 429) {
+        setPhase("quota");
+        return;
+      }
       if (!created.ok) throw new Error("queue failed");
 
       // The local record is dropped only AFTER both calls succeeded. Dropping it earlier would
@@ -142,6 +157,12 @@ export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
         {phase === "failed" && (
           <p className="mt-0.5 text-[0.75rem] text-(--ui-text-tertiary)">
             That did not rebuild. Your audio is still saved — try again in a moment.
+          </p>
+        )}
+        {phase === "quota" && (
+          <p className="mt-0.5 text-[0.75rem] text-(--ui-text-tertiary)">
+            Your audio is saved, but this month&rsquo;s transcription limit is used up. It will be
+            waiting here when the limit resets.
           </p>
         )}
       </div>
