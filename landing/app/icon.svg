@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    The favicon. Replaces icon.png, which was the old wing mark — a different
+    identity entirely, sitting in the browser tab next to a site built around
+    the beads.
+
+    SVG rather than PNG for one reason that matters here: a favicon is drawn
+    against the BROWSER's chrome, not against the page, so it has to invert on
+    its own. The media query below does that. A PNG cannot, which is how the
+    old mark ended up as a black glyph on a dark tab strip.
+
+    Deliberately not the same geometry as NemesisMark. At 16px the page mark's
+    proportions collapse into a smudge, so the beads here are shorter, wider
+    and closer together, and the gloss is one flat highlight rather than three
+    gradients. Same identity, drawn for the size it is actually rendered at.
+  -->
+  <defs>
+    <!-- A soft sheen, not a flat dot. A solid ellipse reads fine at 16px and looks
+         like a grey blob stuck on the bead at 48px, which is the size bookmark bars
+         and installed-app icons actually use. -->
+    <radialGradient id="sheen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.32" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <style>
+    .bead { fill: #090909; }
+    .spec { fill: url(#sheen); opacity: 0.85; }
+    @media (prefers-color-scheme: dark) {
+      .bead { fill: #f5f5f5; }
+      .spec { opacity: 1; }
+    }
+  </style>
+
+  <g transform="rotate(-6 50 20)">
+    <ellipse class="bead" cx="50" cy="20" rx="31" ry="13.5" />
+    <ellipse class="spec" cx="40" cy="15.2" rx="12.5" ry="5" transform="rotate(-14 40 15.2)" />
+  </g>
+  <g transform="rotate(4 50 50)">
+    <ellipse class="bead" cx="50" cy="50" rx="34" ry="14.5" />
+    <ellipse class="spec" cx="39" cy="45" rx="13.5" ry="5.4" transform="rotate(-14 39 45)" />
+  </g>
+  <g transform="rotate(-2 50 80)">
+    <ellipse class="bead" cx="50" cy="80" rx="32" ry="14" />
+    <ellipse class="spec" cx="40" cy="75.2" rx="13" ry="5.2" transform="rotate(-14 40 75.2)" />
+  </g>
+</svg>

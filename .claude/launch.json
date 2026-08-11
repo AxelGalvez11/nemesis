@@ -30,12 +30,6 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/landing && npx next dev -p 3211"],
       "port": 3211
-    },
-    {
-      "name": "web-dev-alt",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/apps/web && npx next dev -p 3251"],
-      "port": 3251
     }
   ]
 }

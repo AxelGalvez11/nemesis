@@ -431,7 +431,14 @@
   font-size: 15px;
   line-height: 1.55;
   color: var(--text-secondary);
-  max-height: 200px;
+  /* 🔴 A MAX-HEIGHT CAP OVER REFLOWING TEXT IS A CLIPPING BUG WAITING FOR A NARROW
+     SCREEN. max-height is the only way to transition a collapse, but it does not
+     grow with the content: at 320px the diagnosis wraps to 140px and the row it
+     appears in wraps to 130px, and the first values here (200 and 90) cut the
+     second one off. These are the measured worst case with real headroom, not
+     eyeballed. If the copy gets longer, re-measure at 320 with
+     `el.scrollHeight > el.clientHeight` — it will not be visible at 1440. */
+  max-height: 460px;
   overflow: hidden;
   transition: max-height 0.7s ease, opacity 0.7s ease, margin 0.7s ease;
 }
@@ -449,7 +456,7 @@
   opacity: 0;
   border-bottom-color: transparent;
 }
-.rrow-appears { max-height: 90px; overflow: hidden; }
+.rrow-appears { max-height: 240px; overflow: hidden; }
 
 /* After arrival: what held recedes, what broke stays in full ink and opens. */
 .js-reveal .restack.is-in .rrow-settled { opacity: 0.34; padding: 11px 0; }
@@ -479,13 +486,14 @@
 
 /* Struck through, because naming what is absent is more convincing than promising
    what is present — and every one of these costs something real to decline. */
+.absent-k { margin: clamp(40px, 5vw, 64px) 0 18px; }
 .absent {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 28px;
   list-style: none;
   padding: 0;
-  margin: clamp(40px, 5vw, 64px) 0 0;
+  margin: 0;
   font-family: var(--mono);
   font-size: 12.5px;
   letter-spacing: 0.12em;

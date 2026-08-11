@@ -66,7 +66,16 @@
      0.6 over black is exactly #999999 — the brief's two secondary greys, reached by
      one alpha rather than two hardcoded hex values. */
   --text-2: rgba(var(--fg), 0.6);
-  --text-3: rgba(var(--fg), 0.42);
+  /* 0.55, not the 0.42 this started at. THE TERTIARY GREY CARRIES THE PAYLOAD of
+     the learner model — "misconception", "weak", "not yet asked" — and 0.42 is
+     #949494 over white, which is 3.0:1 and fails AA at every size. 0.55 gives
+     4.8:1 over white and 6.3:1 over black.
+     It is deliberately close to --text-2 now. The hierarchy between them is
+     carried by size, weight and the mono face, which is what the rest of this
+     file already does; buying a visible step with contrast the text needs is the
+     wrong trade, and --text-2 cannot move because 0.6 is exactly the #666666 /
+     #999999 the brief specifies. */
+  --text-3: rgba(var(--fg), 0.55);
   --line: rgba(var(--fg), var(--line-a));
   --line-2: rgba(var(--fg), 0.26);
   --wash: rgba(var(--fg), 0.03);

@@ -37,13 +37,19 @@ import { Closer } from "@/components/home/Closer";
  * A stale product shot is worse than none — it is a picture of software the visitor
  * will not find after signing up — so they came out rather than being re-cropped.
  *
- * They should come back. When Canvas and Calendar are captured, the machinery is all
- * still here: `landing/scripts/render-devices.py` composites a capture into a real
- * Apple bezel, `public/nemesis/shots/` is where the light/dark pairs live, and the
- * `<picture media>` pattern picks one per colour scheme. Capture at each device's own
- * viewport (1440x900 and 390x844) rather than squeezing a desktop shot into a phone,
- * and set the intrinsic width/height to whatever the script prints — a stale pair
- * moves the whole hero on load.
+ * They should come back. `landing/scripts/render-devices.py` still composites a capture
+ * into a real Apple bezel and takes its input and output directories as arguments, so
+ * nothing about it depends on the folders that were deleted — recreate
+ * `public/nemesis/shots/` with the light/dark pairs and point the script at it. Capture
+ * at each device's own viewport (1440x900 and 390x844) rather than squeezing a desktop
+ * shot into a phone, serve the pair with `<picture media="(prefers-color-scheme: dark)">`,
+ * and set the intrinsic width/height to whatever the script prints — a stale pair moves
+ * the whole hero on load.
+ *
+ * One constraint that is easy to miss: `<picture media>` follows the OS, and the token
+ * layer deliberately ships no theme toggle for exactly that reason. If a toggle is ever
+ * added, these images have to become two <img>s swapped by CSS FIRST, or every
+ * screenshot will serve the wrong mode against an inverted page.
  *
  * Until then, everything shown is either real product behaviour written out in the
  * page's own type, or an illustration that says it is one. Nothing is dressed as a

@@ -34,7 +34,15 @@ export function Progress() {
           ))}
         </div>
 
-        <ul className="absent" data-reveal="soft">
+        {/* THE LABEL IS NOT OPTIONAL HERE. `<s>` is not announced by default, so
+            without it a screen reader reads six crossed-out mechanics as a plain
+            list of features and only meets the correction a sentence later — the
+            section says the exact opposite of what it means. The visible label
+            fixes the same problem in weaker form for everyone else. */}
+        <p className="hkicker absent-k" id="declined-label">
+          what nemesis does not have
+        </p>
+        <ul className="absent" data-reveal="soft" aria-labelledby="declined-label">
           {DECLINED.map((item) => (
             <li key={item}>
               <s>{item}</s>
