@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
 
+/**
+ * pdf.js's worker, which every PDF parse needs and no tracer can find.
+ *
+ * Both spellings are listed because the package layout is a runtime detail we do
+ * not control: pnpm may hoist `pdfjs-dist` to the workspace root or keep it
+ * under `apps/web`, and a tracing entry that names only one of them ships
+ * nothing at all on the other layout — silently, since the failure is a caught
+ * exception rather than a build error.
+ */
+const PDF_WORKER_FILES = [
+  "../../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+];
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@nemesis/shared"],
   /**
@@ -63,7 +77,27 @@ const nextConfig: NextConfig = {
    * would still be traced.
    */
   outputFileTracingIncludes: {
-    "/api/documents/parse/worker": ["./workers/**"],
+    "/api/documents/parse/worker": [
+      "./workers/**",
+      ...PDF_WORKER_FILES,
+    ],
+    /**
+     * 🔴 EXTERNALISING pdfjs-dist WAS NECESSARY AND NOT SUFFICIENT — THE WORKER
+     * FILE STILL HAS TO BE UPLOADED. With `serverExternalPackages` alone the
+     * error only MOVED, from a missing bundled chunk to a missing sibling in
+     * node_modules:
+     *
+     *     Cannot find module '/var/task/node_modules/pdfjs-dist/legacy/build/
+     *     pdf.worker.mjs' imported from .../legacy/build/pdf.mjs
+     *
+     * pdf.js reaches its worker through a dynamic import that no static analysis
+     * can follow, so the tracer ships `pdf.mjs` and leaves `pdf.worker.mjs`
+     * behind. Naming it here is the same mechanism the parse-thread bundle above
+     * already relies on, for the same reason: a path the tracer cannot SEE must
+     * be declared, or it is silently absent in production and perfectly present
+     * on a laptop.
+     */
+    "/api/notebooks/extract/file": PDF_WORKER_FILES,
   },
   // /app was the old pre-Nemesis shell and no longer exists; the workspace at "/"
   // (→ /sessions) replaced it. Redirect instead of 404 so stale links keep working.
