@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { appendPart, newManifest, partPath, type RecordingManifest, type RecordingPart } from "./recording-manifest";
+import { appendPart, newManifest, type RecordingManifest, type RecordingPart } from "./recording-manifest";
+import { recordingPartPath } from "./recording-paths";
 import { recoveryOffer, recoveryOrder, recoveryRequest } from "./recording-recovery";
 
 const START = "2026-08-11T10:00:00.000Z";
@@ -18,7 +19,7 @@ function manifest(): RecordingManifest {
 }
 
 function part(index: number, bytes = 1000): RecordingPart {
-  return { bytes, index, path: partPath("u1", "r1", index, "webm"), uploadedAt: START };
+  return { bytes, index, path: recordingPartPath({ extension: "webm", recordingId: "r1", sequence: index, userId: "u1" }), uploadedAt: START };
 }
 
 function withParts(indices: number[]): RecordingManifest {

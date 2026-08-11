@@ -7,11 +7,9 @@ import {
   approximateSeconds,
   assemblyOrder,
   isContiguous,
-  isOwnedPath,
   looksAbandoned,
   missingParts,
   newManifest,
-  partPath,
   playability,
   recoverable,
   retirable,
@@ -19,6 +17,7 @@ import {
   type RecordingManifest,
   type RecordingPart,
 } from "./recording-manifest";
+import { isOwnedPath, recordingPartPath } from "./recording-paths";
 
 const START = "2026-08-11T10:00:00.000Z";
 
@@ -34,7 +33,7 @@ function manifest(): RecordingManifest {
 }
 
 function part(index: number, bytes = 1000, at = START): RecordingPart {
-  return { index, path: partPath("u1", "r1", index, "webm"), bytes, uploadedAt: at };
+  return { index, path: recordingPartPath({ extension: "webm", recordingId: "r1", sequence: index, userId: "u1" }), bytes, uploadedAt: at };
 }
 
 test("🔴 an uploaded part can never be removed by any operation here", () => {
@@ -72,7 +71,7 @@ test("🔴 order is preserved regardless of arrival order — audio joined wrong
 test("🔴 part paths sort lexically into the correct order", () => {
   // Recovery may list storage rather than trust the manifest. Unpadded names sort part10 before
   // part2, which reassembles the lecture scrambled — and it plays, which is the dangerous part.
-  const paths = [0, 2, 10, 100].map((index) => partPath("u1", "r1", index, "webm"));
+  const paths = [0, 2, 10, 100].map((index) => recordingPartPath({ extension: "webm", recordingId: "r1", sequence: index, userId: "u1" }));
   assert.deepEqual([...paths].sort(), paths);
 });
 
@@ -82,7 +81,7 @@ test("🔴 every part is written under the uploader's own id, or the bucket refu
   // segment is the literal "parts" — so every upload was refused by the database, silently,
   // because the capture loop treats a failed upload as something to retry rather than report.
   // The unit tests all passed against an injected uploader while nothing was being stored.
-  const path = partPath("user-abc", "r1", 7, "webm");
+  const path = recordingPartPath({ extension: "webm", recordingId: "r1", sequence: 7, userId: "user-abc" });
   assert.equal(path.split("/")[0], "user-abc");
   assert.ok(isOwnedPath(path, "user-abc"));
   assert.equal(isOwnedPath(path, "someone-else"), false, "and one account cannot reach another's");

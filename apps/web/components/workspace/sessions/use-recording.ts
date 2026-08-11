@@ -22,6 +22,7 @@ import { formatLiveDuration } from "@/lib/workspace/recording-note";
 import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
 import {
   createDurableCapture,
+  type DurabilityState,
   type DurableCapture,
 } from "@/lib/workspace/recording-durable-capture";
 import {
@@ -140,6 +141,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [level, setLevel] = useState(0);
+  /** Where the captured bytes are right now — see recording-durable-capture.ts. Polled rather
+   *  than pushed: the capture loop must not call into React from inside an upload handler. */
+  const [durability, setDurability] = useState<DurabilityState>("remote");
   const [usage, setUsage] = useState<TranscriptionUsage | null>(null);
 
   const mountedRef = useRef(true);
@@ -638,7 +642,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
       elapsedTimerRef.current = window.setInterval(() => {
         // runningMs, not raw wall clock: the number on screen has to stand still
         // while the recording is paused, or it claims audio that does not exist.
-        if (mountedRef.current) setElapsedSeconds(Math.floor(runningMs() / 1_000));
+        if (!mountedRef.current) return;
+        setElapsedSeconds(Math.floor(runningMs() / 1_000));
+        // Read on the same tick. The capture loop cannot push this — it would mean calling into
+        // React from inside an upload handler — and once a second is far finer than a student
+        // could act on anyway.
+        setDurability(durableRef.current?.durability() ?? "remote");
       }, 1_000);
     } catch (caught) {
       capturingRef.current = false;
@@ -675,6 +684,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
     /** Throw the recording away. The caller confirms with the student first —
      *  the audio cannot be recovered. */
     discard,
+    /** "remote" | "local" | "degraded" — where the captured bytes actually are. Drives the
+     *  status suffix; never blocks or interrupts capture. */
+    durability,
     elapsedLabel: formatLiveDuration(elapsedSeconds),
     elapsedSeconds,
     error,

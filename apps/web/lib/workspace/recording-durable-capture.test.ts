@@ -68,7 +68,7 @@ test("🔴 bytes keep the position they were captured at, even when an upload fa
   // Assembly by index is only correct if an index means the same bytes forever.
   const storage = fakeStorage();
   const durable = capture(storage);
-  storage.failOnce("u1/parts/r1/00000.webm");
+  storage.failOnce("u1/recordings/r1/parts/00000.webm");
 
   // Both parts are claimed before either upload runs — the race, driven deterministically.
   durable.onChunk(chunk("a"));
@@ -94,7 +94,7 @@ test("🔴 a part that keeps failing stays at its own index rather than moving d
   const storage = fakeStorage();
   const durable = capture(storage);
   // Fail part 1 once. Parts 0 and 2 land immediately; 1 must land in its own slot on retry.
-  storage.failOnce("u1/parts/r1/00001.webm");
+  storage.failOnce("u1/recordings/r1/parts/00001.webm");
 
   durable.onChunk(chunk("a"));
   durable.onChunk(chunk("b"));
@@ -104,7 +104,7 @@ test("🔴 a part that keeps failing stays at its own index rather than moving d
   durable.onChunk(chunk("f"));
 
   const manifest = await durable.finish();
-  assert.equal(storage.written.get("u1/parts/r1/00001.webm"), "cd", "the retry went back to slot 1");
+  assert.equal(storage.written.get("u1/recordings/r1/parts/00001.webm"), "cd", "the retry went back to slot 1");
   assert.equal(
     assemblyOrder(manifest).map((path) => storage.written.get(path)).join(""),
     "abcdef",
@@ -114,8 +114,8 @@ test("🔴 a part that keeps failing stays at its own index rather than moving d
 test("🔴 an upload failure never stops the recording", async () => {
   const storage = fakeStorage();
   const durable = capture(storage);
-  storage.failOnce("u1/parts/r1/00000.webm");
-  storage.failOnce("u1/parts/r1/00001.webm");
+  storage.failOnce("u1/recordings/r1/parts/00000.webm");
+  storage.failOnce("u1/recordings/r1/parts/00001.webm");
 
   // The microphone is the irreplaceable part. Handing over chunks must not throw whatever the
   // network is doing.
@@ -177,4 +177,87 @@ test("discarding forgets the recording so it is never offered back", async () =>
 
   durable.discard();
   assert.deepEqual(storedManifests(), [], "a cancel that leaves a recoverable recording is not a cancel");
+});
+
+// ── durability state (§3) ────────────────────────────────────────────────────
+// "The microphone is still running" and "your audio is safe" are DIFFERENT CLAIMS, and the
+// first version of this file conflated them: it swallowed every upload failure and exposed
+// nothing, so the UI kept implying durability while nothing was being stored.
+
+test("🔴 durability says where the bytes are, and never calls memory-only capture safe", async () => {
+  const storage = fakeStorage();
+  // A connection that is simply gone, which is the case the state exists to name.
+  let offline = true;
+  const durable = createDurableCapture({
+    chunkMs: 1_000, extension: "webm", mimeType: "audio/webm", partSeconds: 2,
+    sessionId: "r1", targetPath: "u1/r1.webm", userId: "u1",
+    upload: async (path, blob) => {
+      if (offline) { await blob.text(); throw new Error("offline"); }
+      await storage.upload(path, blob);
+    },
+  });
+  assert.equal(durable.durability(), "remote", "nothing captured yet is trivially safe");
+
+  durable.onChunk(chunk("a"));
+  durable.onChunk(chunk("b"));
+  await durable.settled();
+  assert.equal(durable.durability(), "local", "one failure is a blip, and it is still queued");
+
+  durable.onChunk(chunk("c"));
+  durable.onChunk(chunk("d"));
+  await durable.settled();
+  assert.equal(durable.durability(), "degraded", "a part that failed twice means the network is gone");
+
+  // And it clears itself when the connection comes back — no timer, no manual reset.
+  offline = false;
+  durable.onChunk(chunk("e"));
+  durable.onChunk(chunk("f"));
+  await durable.settled();
+  assert.equal(durable.durability(), "remote", "everything landed, so it is safe again");
+});
+
+test("🔴 one part stuck while the rest land is degraded, not healthy", async () => {
+  // THE CASE THAT SEPARATES THIS RULE FROM THE ONE IT REPLACED. The first version counted
+  // CONSECUTIVE failures globally, and any success reset it — so a single part that can never
+  // upload, surrounded by parts that upload fine, never reached the threshold. The queue holds a
+  // permanent hole and the state reads healthy.
+  //
+  // It also matters more than it sounds: the part most likely to be stuck is one whose bytes are
+  // already in the manifest's gap list, and if that is part 0 the whole recording is unplayable.
+  const storage = fakeStorage();
+  const durable = createDurableCapture({
+    chunkMs: 1_000, extension: "webm", mimeType: "audio/webm", partSeconds: 2,
+    sessionId: "r1", targetPath: "u1/r1.webm", userId: "u1",
+    upload: async (path, blob) => {
+      await blob.text();
+      if (path.endsWith("00000.webm")) throw new Error("this one never lands");
+      await storage.upload(path, blob);
+    },
+  });
+  for (const text of ["a", "b", "c", "d", "e", "f"]) durable.onChunk(chunk(text));
+  await durable.settled();
+  await durable.settled();
+  assert.equal(durable.durability(), "degraded", "a part that cannot upload is not a healthy recording");
+});
+
+test("a recording whose parts are all stored reports remote", async () => {
+  const storage = fakeStorage();
+  const durable = capture(storage);
+  durable.onChunk(chunk("a"));
+  durable.onChunk(chunk("b"));
+  await durable.settled();
+  assert.equal(durable.durability(), "remote");
+});
+
+test("🔴 a capture cannot be created without an owner to store it for", () => {
+  // Loud at construction rather than inside the retry loop: `drain()`'s catch is "leave it
+  // pending and try again", so a throw in there would be an invisible forever-retry — the same
+  // silent-degradation shape this file was rewritten to remove.
+  assert.throws(
+    () => createDurableCapture({
+      chunkMs: 1_000, extension: "webm", mimeType: "audio/webm",
+      sessionId: "r1", targetPath: "u1/r1.webm", upload: async () => undefined, userId: "",
+    }),
+    /user/i,
+  );
 });

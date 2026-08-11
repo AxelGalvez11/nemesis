@@ -71,31 +71,9 @@ export const ABANDONED_AFTER_MS = 5 * 60_000;
  *  without saying out loud how many seconds of someone's lecture that buys. */
 export const PART_SECONDS = 20;
 
-/** Where one part lives in the `recordings` bucket.
- *
- *  🔴 THE `${userId}/` PREFIX IS NOT COSMETIC AND ITS ABSENCE IS NOT A STYLE BUG. The bucket's
- *  RLS policies are all of the form
- *
- *      bucket_id = 'recordings' AND (storage.foldername(name))[1] = auth.uid()::text
- *
- *  so the FIRST path segment must be the caller's own id. The first version of this function
- *  returned `parts/<session>/…`, whose first segment is the literal "parts" — which means every
- *  part upload was refused by the database, and refused SILENTLY, because the capture loop
- *  treats an upload failure as something to retry rather than something to report. The feature
- *  looked complete, passed its unit tests against an injected uploader, and stored nothing.
- *
- *  Zero-padded so a lexical listing is also the correct order — recovery may read storage
- *  directly, and a listing that sorts part10 before part2 reassembles the lecture scrambled,
- *  which still plays. */
-export function partPath(userId: string, sessionId: string, index: number, extension: string): string {
-  return `${userId}/parts/${sessionId}/${String(index).padStart(5, "0")}.${extension}`;
-}
-
-/** The single rule every storage path in this bucket has to satisfy. Exported so the paths can
- *  be checked against the policy in a test instead of in production. */
-export function isOwnedPath(path: string, userId: string): boolean {
-  return path.split("/")[0] === userId && userId.length > 0;
-}
+// 🔴 PATHS ARE NOT BUILT HERE. Every recording path comes from `recording-paths.ts`, which is
+// the single place the bucket's RLS contract is written down. This module used to build them
+// too, which is how one of the two copies came to be wrong.
 
 /** Record that a part is safely stored.
  *

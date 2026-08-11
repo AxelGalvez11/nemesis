@@ -20,7 +20,7 @@ import { NextRequest } from "next/server";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { supabaseUrl, serviceRoleKey } from "@/lib/env";
 import { RECORDING_MAX_BYTES } from "@/lib/workspace/recording-capture";
-import { isOwnedPath } from "@/lib/workspace/recording-manifest";
+import { isOwnedPath } from "@/lib/workspace/recording-paths";
 
 export const runtime = "nodejs";
 

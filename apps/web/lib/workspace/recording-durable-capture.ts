@@ -29,19 +29,39 @@ import { supabase } from "@/lib/supabase";
 import {
   appendPart,
   newManifest,
-  partPath,
   PART_SECONDS,
   playability,
   type RecordingManifest,
 } from "./recording-manifest";
+import { recordingPartPath } from "./recording-paths";
 
 const BUCKET = "recordings";
 const MANIFEST_PREFIX = "nemesis.recording.manifest.v1.";
 const MANIFEST_INDEX = "nemesis.recording.manifests.v1";
 
+/** Where the bytes captured so far actually are.
+ *
+ *  🔴 THE POINT IS THAT "THE MICROPHONE IS STILL RUNNING" AND "YOUR AUDIO IS SAFE" ARE DIFFERENT
+ *  CLAIMS, and this feature's first version conflated them. Not interrupting capture when the
+ *  network fails is right; quietly continuing to imply durability while nothing is being stored
+ *  is not. Nemesis must always know which of these is true, and must never call memory-only
+ *  capture durable. */
+export type DurabilityState =
+  /** Everything captured so far is in storage. A closed tab loses at most the current part. */
+  | "remote"
+  /** Parts are cut and queued but not yet stored. 🔴 UNTIL THE IndexedDB STAGING LAYER LANDS
+   *  THESE BYTES ARE HELD IN MEMORY, so this state means "safe only while this tab lives" — not
+   *  "written to disk". When staging arrives this is where it plugs in, and the meaning
+   *  strengthens rather than the name changing. */
+  | "local"
+  /** Uploads are failing. Capture continues; what is buffered is memory-only until this clears. */
+  | "degraded";
+
 export interface DurableCapture {
   /** Hand over each chunk MediaRecorder produces. Never throws. */
   onChunk: (blob: Blob) => void;
+  /** Where the captured bytes currently are. Read by the recorder for its status line. */
+  durability: () => DurabilityState;
   /** Flush whatever is buffered and mark the session finished. Never throws. */
   finish: () => Promise<RecordingManifest>;
   /** The learner threw the recording away — forget the local record of it. */
@@ -130,6 +150,20 @@ export function createDurableCapture(input: {
   const perPart = Math.max(1, Math.round(((input.partSeconds ?? PART_SECONDS) * 1000) / input.chunkMs));
   const upload = input.upload ?? uploadToBucket;
 
+  // 🔴 BUILT ONCE, HERE, AND DELIBERATELY NOT INSIDE `drain()`. `recordingPartPath` throws when
+  // there is no user id, and `drain()`'s catch is "leave it pending and retry" — so a throw in
+  // there would become an invisible forever-retry, which is the exact silent-degradation shape
+  // this whole file was rewritten to remove. Calling it now means a missing id fails loudly at
+  // construction, where it is actionable.
+  const pathFor = (sequence: number): string =>
+    recordingPartPath({
+      extension: input.extension,
+      recordingId: input.sessionId,
+      sequence,
+      userId: input.userId,
+    });
+  pathFor(0);
+
   let manifest = newManifest({
     sessionId: input.sessionId,
     userId: input.userId,
@@ -147,14 +181,14 @@ export function createDurableCapture(input: {
   /** Parts that have been cut and are waiting to land, each holding the position it was cut at.
    *  🔴 An entry leaves this list ONLY by being uploaded successfully. There is deliberately no
    *  path that returns its bytes to `buffered`, because that is what moved audio down the file. */
-  let pending: { index: number; chunks: Blob[] }[] = [];
+  let pending: { index: number; chunks: Blob[]; attempts: number }[] = [];
   /** Uploads are serialised so a slow one cannot interleave with a retry of the same part. */
   let chain: Promise<void> = Promise.resolve();
 
   /** Cut whatever is buffered into a part and give it its permanent position. */
   const cut = (): void => {
     if (buffered.length === 0) return;
-    pending.push({ chunks: buffered, index: nextIndex });
+    pending.push({ attempts: 0, chunks: buffered, index: nextIndex });
     nextIndex += 1;
     buffered = [];
   };
@@ -170,7 +204,7 @@ export function createDurableCapture(input: {
     chain = chain.then(async () => {
       for (const part of [...pending].sort((a, b) => a.index - b.index)) {
         const blob = new Blob(part.chunks, { type: input.mimeType });
-        const path = partPath(input.userId, input.sessionId, part.index, input.extension);
+        const path = pathFor(part.index);
         try {
           await upload(path, blob);
           pending = pending.filter((entry) => entry.index !== part.index);
@@ -182,7 +216,9 @@ export function createDurableCapture(input: {
           });
           writeManifest(manifest);
         } catch {
-          // Stays pending, WITH ITS INDEX, for the next flush. The microphone never stopped.
+          // Stays pending, WITH ITS INDEX, for the next flush. The microphone never stopped —
+          // but the attempt is counted, so `durability` can stop implying safety.
+          part.attempts += 1;
         }
       }
     });
@@ -195,6 +231,19 @@ export function createDurableCapture(input: {
       if (buffered.length < perPart) return;
       cut();
       drain();
+    },
+    durability() {
+      // Every branch is a claim about WHERE THE BYTES ARE, and the order is severity-first.
+      //
+      // 🔴 MEASURED PER PART, NOT AS A GLOBAL RUN OF FAILURES. A counter of consecutive failures
+      // looks equivalent and is not: on a flaky connection a retry of an older part succeeds
+      // BETWEEN two failures and resets it, so the queue can grow without bound while the state
+      // still reads healthy. What matters is whether the queue is draining, which is a property
+      // of the parts sitting in it. One failure is a blip and gets retried; a part that has
+      // failed twice means the connection is gone, not busy.
+      if (pending.some((part) => part.attempts >= 2)) return "degraded";
+      if (pending.length > 0) return "local";
+      return "remote";
     },
     async finish() {
       cut();

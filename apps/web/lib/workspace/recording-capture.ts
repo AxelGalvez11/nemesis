@@ -23,6 +23,8 @@
 // bucket's allowed_mime_types is [audio/mp4, audio/m4a, audio/aac, audio/mpeg,
 // audio/webm], so an Ogg upload is rejected at the door. Recording in a
 // container the bucket will not accept loses the lecture at the last step.
+import { recordingFinalPath } from "./recording-paths";
+
 export const RECORDING_MIME_PREFERENCE = [
   "audio/webm;codecs=opus",
   "audio/webm",
@@ -51,10 +53,13 @@ export const RECORDING_MAX_BYTES = 40 * 1024 * 1024;
 /**
  * How often MediaRecorder hands us a chunk.
  *
- * This bounds memory spikes and proves data is still flowing. It does NOT make
- * a crash survivable — the chunks accumulate in memory, so a closed tab loses
- * all of them whatever the timeslice. Surviving a crash would mean writing each
- * chunk to IndexedDB, which is real work and not what this number does.
+ * This bounds memory spikes and proves data is still flowing.
+ *
+ * It is NOT on its own what makes a crash survivable, and this comment used to say so at length
+ * because at the time nothing else did. Now `recording-durable-capture.ts` groups these chunks
+ * into parts and uploads them DURING capture, so a closed tab loses at most the current part.
+ * This number still only decides how finely the audio arrives; PART_SECONDS decides how much a
+ * crash costs.
  */
 export const RECORDING_CHUNK_MS = 5_000;
 
@@ -104,14 +109,16 @@ export function pickRecordingFormat(isSupported: (mimeType: string) => boolean):
 }
 
 /**
- * Where the audio lands in the private `recordings` bucket.
+ * Where the finished audio lands in the private `recordings` bucket.
  *
- * The `${userId}/` prefix is not cosmetic: /api/transcription/submit rejects any
- * path that does not start with the caller's own id, which is what stops one
- * account submitting another's audio.
+ * 🔴 DELEGATES — IT DOES NOT BUILD THE PATH. Every recording path is constructed in
+ * `recording-paths.ts`, which is the one place the bucket's RLS contract is written down. This
+ * function used to build its own, and so did the multipart uploader; one of the two got the
+ * required `${userId}/` prefix wrong and every part upload was silently refused by the database.
+ * Kept as a name because callers already import it, not as a second implementation.
  */
 export function recordingStoragePath(userId: string, id: string, extension: string): string {
-  return `${userId}/${id}.${extension}`;
+  return recordingFinalPath({ extension, recordingId: id, userId });
 }
 
 // `pollDelayMs` and `POLL_TIMEOUT_MS` lived here until 2026-08-05. They paced a
@@ -147,6 +154,27 @@ export function recordingStatusCopy(status: RecordingStatus): string {
     case "quota": return "Monthly limit reached";
     case "error": return "Unavailable";
     default: return "Ready";
+  }
+}
+
+/** One line naming BOTH what the microphone is doing and where the bytes are.
+ *
+ *  🔴 §26: A DEGRADED RESULT MUST BE DISTINGUISHABLE FROM A COMPLETE ONE. "Recording" while
+ *  nothing is reaching storage is a claim Nemesis cannot support, and the first version of the
+ *  durability work made exactly that claim for every recording ever made. This is deliberately
+ *  quiet — a suffix on a status line, never a modal — because interrupting a lecture to report a
+ *  network blip would be worse than the blip. The microphone keeps running in every case. */
+export function recordingDurabilityCopy(
+  status: RecordingStatus,
+  durability: "remote" | "local" | "degraded",
+): string {
+  if (status !== "recording") return recordingStatusCopy(status);
+  switch (durability) {
+    // Named as a connection problem, not as data loss: nothing has been lost yet, and saying so
+    // would send someone to stop a recording that is still working.
+    case "degraded": return "Recording · connection interrupted";
+    case "local": return "Recording · saving";
+    default: return "Recording";
   }
 }
 
