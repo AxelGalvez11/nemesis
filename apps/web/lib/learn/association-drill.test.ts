@@ -5,6 +5,7 @@ import {
   CONFUSION_AT,
   detectConfusions,
   encodingGroups,
+  groupKey,
   initialLearningComplete,
   isCorrect,
   nextDrillStep,
@@ -100,6 +101,31 @@ test("the drill encodes before it asks", () => {
   assert.equal(step?.kind, "encode");
   assert.equal(step?.pairs.length, 3, "the first group, not the whole set");
   assert.equal(step?.grouped, true);
+});
+
+test("🔴 a group that has been read is not shown again", () => {
+  // Reading has to be RECORDED, not inferred. Deciding "needs encoding" from the absence of
+  // attempts is true before the learner reads a set and still true immediately afterwards — so
+  // the drill re-showed the same three items forever and never asked anything. Caught in the
+  // browser, where the button simply did nothing.
+  const first = nextDrillStep(ALL, [])!;
+  assert.equal(first.kind, "encode");
+
+  const after = nextDrillStep(ALL, [], [groupKey(first.pairs)]);
+  assert.notDeepEqual(
+    after?.pairs.map((p) => p.id),
+    first.pairs.map((p) => p.id),
+    "the same set must not come back",
+  );
+
+  // Every group read: the drill starts asking.
+  const allKeys = encodingGroups(ALL).map(groupKey);
+  const asking = nextDrillStep(ALL, [], allKeys);
+  assert.equal(asking?.kind, "retrieve");
+});
+
+test("the group key is its membership, not the order it arrived in", () => {
+  assert.equal(groupKey([ACE[0]!, ACE[1]!]), groupKey([ACE[1]!, ACE[0]!]));
 });
 
 test("🔴 the group heading is withdrawn once initial learning is done", () => {

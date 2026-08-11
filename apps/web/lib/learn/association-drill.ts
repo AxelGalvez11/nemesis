@@ -104,6 +104,13 @@ export function encodingGroups(pairs: readonly AssociationPair[]): AssociationPa
   return groups;
 }
 
+/** Stable identity for an encoding group, so "the learner has read this set" can be recorded
+ *  and survive a reload. Sorted, because the group's identity is its membership and not the
+ *  order the extractor happened to emit. */
+export function groupKey(group: readonly AssociationPair[]): string {
+  return [...group.map((pair) => pair.id)].sort().join("|");
+}
+
 // ------------------------------------------------------------------ progress
 
 interface DirectionState {
@@ -231,6 +238,14 @@ export interface DrillStep {
 export function nextDrillStep(
   pairs: readonly AssociationPair[],
   attempts: readonly AssociationAttempt[],
+  /** Groups the learner has already read, by `groupKey`.
+   *
+   *  🔴 Reading has to be recorded, and it cannot be inferred. The first version decided a group
+   *  needed encoding whenever none of its pairs had an attempt yet — which is true before the
+   *  learner reads it and still true immediately afterwards, so the drill showed the same set
+   *  forever and never asked anything. Encoding is a real event with no answer attached, so it
+   *  needs its own record. */
+  encodedGroups: readonly string[] = [],
 ): DrillStep | null {
   if (pairs.length === 0) return null;
 
@@ -259,8 +274,9 @@ export function nextDrillStep(
   }
 
   // 2. Anything never shown gets encoded first, in its group.
-  const groups = encodingGroups(pairs);
-  for (const group of groups) {
+  const seen = new Set(encodedGroups);
+  for (const group of encodingGroups(pairs)) {
+    if (seen.has(groupKey(group))) continue;
     const untouched = group.every(
       (pair) => !progress.has(`${pair.id}:forward`) && !progress.has(`${pair.id}:backward`),
     );
