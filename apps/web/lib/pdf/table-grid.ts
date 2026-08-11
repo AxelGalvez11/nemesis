@@ -31,6 +31,19 @@ export interface PlacedText {
   y: number;
   width: number;
   height: number;
+  /**
+   * The font this run was set in, when the reader knows it.
+   *
+   * 🔴 CARRIED FOR ONE REASON: TELLING A HEADER ROW FROM THE FIRST DATA ROW.
+   * `headerRowsOf` can only ask "is every cell in row 0 filled", which is true of
+   * most first records too — so a schedule whose first row reads
+   * `Week 1 Tuesday, August 11th | 1-2:50 CT | …` was being published as the
+   * NAMES OF ITS COLUMNS. Typography is the structural evidence: a header is set
+   * differently from the rows beneath it in essentially every document that has
+   * one, in any discipline, and that is a fact about the file rather than a guess
+   * about the subject.
+   */
+  font?: string;
 }
 
 /** One drawn rule, in top-left-origin points. */
@@ -328,11 +341,37 @@ function slotOf(boundaries: readonly number[], value: number): number {
  * PURE.
  */
 export function fillGrid(grid: Grid, items: readonly PlacedText[]): string[][] {
+  return placeIntoGrid(grid, items).rows;
+}
+
+/**
+ * `fillGrid`, plus exactly which items ended up in a cell.
+ *
+ * 🔴 THE PLACED SET IS A SAFETY MECHANISM, NOT A CONVENIENCE. When a table
+ * claims a region, the caller deletes the covered text from the paragraph flow
+ * so the same words are not emitted twice. Deleting by GEOMETRY — everything
+ * whose centre falls in the rectangle — throws away any item the grid did not
+ * actually place, so a region whose reconstruction quietly dropped a line
+ * deletes that line from the document as well. The page then reads as complete
+ * and the words are simply gone.
+ *
+ * Suppressing exactly what was placed makes that impossible: an item the grid
+ * could not seat stays a paragraph. It does NOT make a wrong table safe — an
+ * item placed in the wrong cell is still placed — which is why
+ * `table-validate.ts` exists on top of this rather than instead of it.
+ *
+ * PURE.
+ */
+export function placeIntoGrid(
+  grid: Grid,
+  items: readonly PlacedText[],
+): { rows: string[][]; placed: Set<PlacedText> } {
   const rowCount = grid.rows.length - 1;
   const colCount = grid.cols.length - 1;
   const buckets: PlacedText[][][] = Array.from({ length: rowCount }, () =>
     Array.from({ length: colCount }, () => [] as PlacedText[]),
   );
+  const placed = new Set<PlacedText>();
 
   for (const item of items) {
     if (!item.text.trim()) continue;
@@ -342,14 +381,16 @@ export function fillGrid(grid: Grid, items: readonly PlacedText[]): string[][] {
     const c = slotOf(grid.cols, cx);
     if (r < 0 || c < 0) continue;
     buckets[r]![c]!.push(item);
+    placed.add(item);
   }
 
-  return buckets.map((row) =>
+  const rows = buckets.map((row) =>
     row.map((cell) => {
       cell.sort((a, b) => (Math.abs(a.y - b.y) > Math.max(a.height, b.height) * 0.5 ? a.y - b.y : a.x - b.x));
       return cell.map((i) => i.text).join(" ").replace(/\s+/g, " ").trim();
     }),
   );
+  return { placed, rows };
 }
 
 /**
@@ -378,10 +419,74 @@ export function tableFromRegion(
   rulings: readonly Ruling[],
   items: readonly PlacedText[],
 ): DocTable | null {
+  return reconstructRegion(region, rulings, items)?.table ?? null;
+}
+
+/**
+ * The most common font in each grid row. PURE.
+ *
+ * Ties and empty rows give null rather than an arbitrary winner: "the fonts here
+ * are evenly split" is not evidence of anything, and picking one would turn a
+ * coin-flip into a claim about document structure.
+ */
+function dominantRowFonts(grid: Grid, items: readonly PlacedText[]): (string | null)[] {
+  const rows: Map<string, number>[] = Array.from({ length: grid.rows.length - 1 }, () => new Map());
+  for (const item of items) {
+    if (!item.font || !item.text.trim()) continue;
+    const r = slotOf(grid.rows, item.y + item.height / 2);
+    const c = slotOf(grid.cols, item.x + item.width / 2);
+    if (r < 0 || c < 0) continue;
+    rows[r]!.set(item.font, (rows[r]!.get(item.font) ?? 0) + item.text.trim().length);
+  }
+  return rows.map((counts) => {
+    let best: string | null = null;
+    let top = 0;
+    let tied = false;
+    for (const [font, n] of counts) {
+      if (n > top) { best = font; top = n; tied = false; }
+      else if (n === top) tied = true;
+    }
+    return tied ? null : best;
+  });
+}
+
+/** Everything a validator needs to judge a reconstruction, not just its result. */
+export interface Reconstruction {
+  table: DocTable;
+  grid: Grid;
+  /** The items the grid actually seated. Only these may be suppressed. */
+  placed: Set<PlacedText>;
+  /** Every item whose centre lies in the region, placed or not. */
+  inRegion: PlacedText[];
+  /** The most common font in each row, for telling a header from a first record. */
+  rowFonts: (string | null)[];
+}
+
+/**
+ * A region reconstructed, with the evidence for judging it kept alongside.
+ *
+ * `tableFromRegion` is this with the evidence thrown away — fine for a caller
+ * that only wants the grid, wrong for the one that is about to delete the
+ * page's prose on the strength of it.
+ *
+ * PURE.
+ */
+export function reconstructRegion(
+  region: Box,
+  rulings: readonly Ruling[],
+  items: readonly PlacedText[],
+): Reconstruction | null {
   const grid = gridWithin(rulings, region, 0.6, items);
   if (!grid) return null;
-  const rows = fillGrid(grid, items);
+  const { rows, placed } = placeIntoGrid(grid, items);
   // A grid every one of whose cells is empty is a border, not a table.
   if (!rows.some((row) => row.some((cell) => cell.length > 0))) return null;
-  return { headerRows: headerRowsOf(rows), rows };
+  const inRegion = items.filter((item) => {
+    if (!item.text.trim()) return false;
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    return cx >= region.x0 && cx <= region.x1 && cy >= region.y0 && cy <= region.y1;
+  });
+  const rowFonts = dominantRowFonts(grid, items);
+  return { grid, inRegion, placed, rowFonts, table: { headerRows: headerRowsOf(rows), rows } };
 }

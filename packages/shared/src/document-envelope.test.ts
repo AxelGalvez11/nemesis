@@ -119,3 +119,52 @@ test("junk is refused rather than half-typed", () => {
   assert.equal(storedDocumentModel("a string"), null);
   assert.equal(storedDocumentModel({ format: "pdf" }), null);
 });
+
+// ── a continuation table's column names must survive storage ────────────────
+
+test("a table's columns, header source and continuation survive the round trip", () => {
+  // 🔴 THIS REPO'S SIGNATURE FAILURE IS A FIELD THAT DIES BETWEEN THE DATABASE AND THE SCREEN,
+  // one layer over from wherever it was last checked — `label` and `size` on units, `events` on a
+  // canvas. These three fields are the only record that a continuation page's columns were known
+  // at all: the page prints no header, so if they do not survive, its columns are anonymous
+  // forever and a schedule row is back to being one undifferentiated string.
+  const model = buildDocument({
+    format: "pdf",
+    title: "Syllabus",
+    units: [{ index: 0, kind: "page" }, { index: 1, kind: "page" }],
+    blocks: [
+      {
+        headingPath: [],
+        kind: "table",
+        table: { columns: ["Date", "Topic"], headerRows: 1, headerSource: "present", rows: [["Date", "Topic"], ["8-17", "Exam 1"]] },
+        text: "",
+        unit: 0,
+      },
+      {
+        headingPath: [],
+        kind: "table",
+        table: {
+          columns: ["Date", "Topic"],
+          continuesFromUnit: 0,
+          headerRows: 0,
+          headerSource: "inherited",
+          rows: [["8-24", "Lecture 5"]],
+        },
+        text: "",
+        unit: 1,
+      },
+    ],
+  });
+
+  const stored = JSON.parse(JSON.stringify(structureEnvelope({ model, text: "…", title: "Syllabus" })));
+  const read = storedDocumentModel(stored);
+  assert.ok(read, "the envelope must read back as a units-blocks model");
+
+  const [first, second] = read!.blocks.filter((b) => b.kind === "table");
+  assert.deepEqual(first!.table?.columns, ["Date", "Topic"]);
+  assert.equal(first!.table?.headerSource, "present");
+  assert.deepEqual(second!.table?.columns, ["Date", "Topic"], "inherited names must not die in storage");
+  assert.equal(second!.table?.headerSource, "inherited");
+  assert.equal(second!.table?.continuesFromUnit, 0);
+  assert.equal(second!.table?.headerRows, 0, "a continuation's first row is DATA and must not be skipped");
+});

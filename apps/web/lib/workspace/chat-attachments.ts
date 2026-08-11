@@ -329,8 +329,18 @@ export interface ExtractedFile {
    * the by-reference lane; absent means "this material was read but not kept".
    */
   librarySourceId?: string;
-  /** The durable parse's id, when one was written. Absent means no record — never "the record
-   *  says it was fine". */
+  /**
+   * The `parsed_documents` row this extraction was recorded as, when one was written.
+   *
+   * 🔴 THE ROUTE HAS RETURNED THIS ALL ALONG AND THIS TYPE HAD NO FIELD FOR IT — the same
+   * boundary defect as `model`, one field over. It is what lets anything derived from a document
+   * say WHICH STORED PARSE it came from, which is the difference between a citation that can be
+   * re-opened and a sentence that says "from your syllabus".
+   *
+   * Absent on the multipart lane (a small file with no `sourceId` is parsed and not persisted) and
+   * when the bookkeeping write failed. Absent means NO RECORD — never "the record says it was
+   * fine".
+   */
   parsedDocumentId?: string;
 }
 
@@ -542,7 +552,7 @@ export async function extractFile(
     bytes?: number;
     coverage?: unknown;
     model?: unknown;
-    parsedDocumentId?: string;
+    parsedDocumentId?: unknown;
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
@@ -552,14 +562,13 @@ export async function extractFile(
     readBy: body.readBy,
     text: body.text,
     title: body.title ?? null,
-    // 🔴 REPORTED ONLY WHEN BOTH HALVES ACTUALLY EXIST. The row id comes from our own upload, but
-    // the parse id comes from the server and is absent when `persistParse` failed — which it is
-    // allowed to do, because a student who cannot add their lecture over a bookkeeping write has
-    // lost more than the record was worth. A caller must be able to tell "filed and parsed" from
-    // "filed, parse not recorded"; collapsing them would let an extractor anchor to a source whose
-    // canonical model was never stored.
+    // 🔴 THE TWO IDS ARE REPORTED SEPARATELY BECAUSE THEY CAN DISAGREE. The row id comes from our
+    // own upload; the parse id comes from the server and is absent when `persistParse` failed —
+    // which it is allowed to do, because a student who cannot add their lecture over a bookkeeping
+    // write has lost more than the record was worth. A caller must be able to tell "filed and
+    // parsed" from "filed, parse not recorded"; collapsing them would let an extractor anchor to a
+    // source whose canonical model was never stored.
     ...(filedSourceId ? { librarySourceId: filedSourceId } : {}),
-    ...(body.parsedDocumentId ? { parsedDocumentId: body.parsedDocumentId } : {}),
     // Validated rather than cast: this crossed the wire as JSON, and a shape
     // that does not check out must become `undefined` (unknown) rather than a
     // half-built record that later reads as a claim about the document.
@@ -568,6 +577,10 @@ export async function extractFile(
     // which every consumer must read as "structure unknown, use the text" — not
     // as "this document has no structure".
     model: readDocumentModel(body.model) ?? undefined,
+    // A uuid or nothing. Checked rather than cast for the same reason as the two above.
+    parsedDocumentId: typeof body.parsedDocumentId === "string" && body.parsedDocumentId
+      ? body.parsedDocumentId
+      : undefined,
   };
 }
 

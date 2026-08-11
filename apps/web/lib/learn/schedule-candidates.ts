@@ -59,6 +59,20 @@ export interface ScheduleCandidate {
    *  date, or when the learner typed it. Without this a relative date cannot be checked. */
   resolvedAgainst?: string;
   timezone?: string;
+  /**
+   * Weekdays a repeating meeting falls on, 0 = Sunday. Absent for a one-off.
+   *
+   * 🔴 THE EXTRACTOR ALREADY KNEW THIS AND WAS THROWING IT AWAY. `meetingPatternOf` recovers
+   * days, start and end from "Tuesday and Thursday 10:00-11:20 AM", and only the start time
+   * survived — so a weekly class reached the calendar as a single undated entry and the
+   * recurrence had to be re-derived downstream or lost. A candidate carrying `meetsOn` is one
+   * series; the alternative is one row per occurrence, which is how "Tue/Thu, Aug 24 – Dec 4"
+   * becomes thirty calendar entries nobody asked for.
+   */
+  meetsOn?: number[];
+  /** Local wall-clock `HH:MM`, when the material states one. */
+  startTime?: string;
+  endTime?: string;
   /** 🔴 REQUIRED. A date with no provenance cannot be shown, because the learner's only
    *  defence against a hallucinated deadline is being able to ask where it came from. */
   sourceRefs: SourceRef[];

@@ -25,6 +25,8 @@ export interface TextItem {
   y: number;
   width: number;
   height: number;
+  /** The font the run was set in, when known. Used to tell a table header from a first record. */
+  font?: string;
 }
 
 /** A run of items sharing a baseline. */

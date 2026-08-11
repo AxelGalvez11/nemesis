@@ -1,0 +1,198 @@
+/**
+ * A table split into pieces, put back together — by evidence, never by adjacency.
+ *
+ * 🔴 TWO DIFFERENT-LOOKING PROBLEMS ARE ONE PROBLEM, AND SOLVING THEM SEPARATELY
+ * WOULD MEAN TWO SETS OF RULES TO KEEP HONEST.
+ *
+ *   ACROSS PAGES   A real syllabus prints `Date | Time | Topic | …` once and runs
+ *                  its schedule over eleven more pages that repeat none of it.
+ *   WITHIN A PAGE  A landscape schedule draws its column rules in four separate
+ *                  vertical runs with ~28pt gaps, so the lattice sees four
+ *                  regions where a reader sees one table. Measured on the
+ *                  corpus: 98 of 238 accepted candidates are single-row
+ *                  fragments of exactly this kind.
+ *
+ * Both are "this grid continues that one", so both are answered the same way and
+ * the answer is always the same shape: the later fragment keeps its own rows and
+ * borrows the earlier fragment's column names.
+ *
+ * 🔴 THE FRAGMENTS ARE NOT MERGED. Rewriting two regions into one would rebuild a
+ * grid nothing measured, invent a rect covering whitespace between them, and
+ * throw away the per-fragment locators a citation needs. Inheriting the names
+ * costs none of that and is reversible — `headerSource` says which names were
+ * printed and which were deduced.
+ *
+ * PURE.
+ */
+
+/** One accepted table, with the geometry needed to judge whether another continues it. */
+export interface Fragment {
+  unit: number;
+  /** Reading position within the unit; smaller is earlier. */
+  y0: number;
+  y1: number;
+  /** Clustered column boundary positions, left to right, in points. */
+  columnPositions: number[];
+  /** This fragment's first row, which MAY be a header or may be its first record. */
+  firstRow: string[];
+  /** Whether the first row is filled edge to edge — `headerRowsOf`'s test. */
+  firstRowComplete: boolean;
+  /** The dominant font of each row, for telling a header from a first record. */
+  rowFonts: (string | null)[];
+  /** The unit's height in points, for the page-boundary test. */
+  unitHeight: number;
+}
+
+/**
+ * Does this fragment's first row NAME the columns, rather than being the first of them?
+ *
+ * 🔴 "EVERY CELL IN ROW 0 IS FILLED" IS NOT EVIDENCE OF A HEADER, AND TREATING IT
+ * AS ONE PUBLISHED DATA AS COLUMN NAMES. A real syllabus schedule opens
+ * `Week 1 Tuesday, August 11th | 1-2:50 CT | Course Introduction | …` — a
+ * complete row, and a record rather than a heading. Shipping that as `columns`
+ * would tell every downstream consumer the date column is called "Week 1
+ * Tuesday, August 11th", and every value beneath it would be labelled with it.
+ *
+ * Two independent structural signals, either sufficient, neither about subject
+ * matter:
+ *
+ *   TYPOGRAPHY   A header is set differently from its data — bold, a different
+ *                face — in essentially every document that has one, in any
+ *                discipline. That is a fact recorded in the file.
+ *   REPETITION   A table running across pages reprints its header on each. A row
+ *                that appears verbatim at the top of two fragments with the same
+ *                column geometry is a heading; two identical DATA rows in the
+ *                same position would be a coincidence a document rarely commits.
+ *
+ * When neither holds, the answer is "unknown" and no names are published. A
+ * consumer can still read `rows[0]` itself and decide; what it must not be given
+ * is a guess wearing the label of a fact.
+ *
+ * PURE.
+ */
+function namesColumns(fragment: Fragment, all: readonly Fragment[]): boolean {
+  if (!fragment.firstRowComplete || fragment.firstRow.length < 2) return false;
+
+  const [headFont, ...bodyFonts] = fragment.rowFonts;
+  if (headFont) {
+    const counts = new Map<string, number>();
+    for (const font of bodyFonts) if (font) counts.set(font, (counts.get(font) ?? 0) + 1);
+    let dominant: string | null = null;
+    let top = 0;
+    for (const [font, n] of counts) if (n > top) { dominant = font; top = n; }
+    if (dominant && dominant !== headFont) return true;
+  }
+
+  // Serialised rather than joined on a separator: `["a b","c"]` and `["a","b c"]` join to the
+  // same string on a space, so a two-column table could match a three-column one and inherit
+  // names for columns it does not have.
+  const signature = JSON.stringify(fragment.firstRow);
+  return all.some(
+    (other) =>
+      other !== fragment &&
+      other.firstRowComplete &&
+      JSON.stringify(other.firstRow) === signature &&
+      columnsAlign(other.columnPositions, fragment.columnPositions),
+  );
+}
+
+/**
+ * The largest gap between two fragments of one table.
+ *
+ * 🔴 MEASURED, NOT PICKED. Across 494 consecutive band pairs on the corpus, the
+ * gaps between pairs sharing identical column geometry pile up at ~28.7pt — 146
+ * of 261 fall in the 20–30 band — and then fall off a cliff: only SIX pairs sit
+ * between 30 and 50. The valley is real and this sits in it. Pairs further apart
+ * than this are separate tables that happen to share a column layout, which on a
+ * form-heavy page is common.
+ */
+const MAX_SAME_UNIT_GAP = 32;
+
+/** Column positions must line up this closely. Matches `clusterLines`'s tolerance. */
+const COLUMN_TOLERANCE = 2.5;
+
+/**
+ * How near a unit's edge a fragment must sit to be split BY that edge.
+ *
+ * A table interrupted by a page break ends at the bottom margin and resumes at
+ * the top one. A table that stops half-way down a page stopped because it ended,
+ * and whatever follows on the next page is a new table however similar it looks.
+ * Generous because margins vary; the column-geometry test is what carries the
+ * decision.
+ */
+const EDGE_SLACK = 0.18;
+
+/** Do two fragments describe the same columns? PURE. */
+export function columnsAlign(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length || a.length < 3) return false;
+  return a.every((x, i) => Math.abs(x - b[i]!) <= COLUMN_TOLERANCE);
+}
+
+/**
+ * Does `next` continue `prev`?
+ *
+ * Deliberately NOT "the previous page had a table". Every condition here is
+ * evidence that the two grids are one grid: the same columns in the same places,
+ * no competing header on the later piece, and a separation explained either by a
+ * gap too small to be a new table or by the page boundary itself.
+ *
+ * PURE.
+ */
+export function continues(prev: Fragment, next: Fragment, nextHasHeader: boolean): boolean {
+  // A fragment that prints its own header is its own table, whatever precedes it.
+  if (nextHasHeader) return false;
+  if (!columnsAlign(prev.columnPositions, next.columnPositions)) return false;
+
+  if (next.unit === prev.unit) return next.y0 >= prev.y1 && next.y0 - prev.y1 <= MAX_SAME_UNIT_GAP;
+  if (next.unit !== prev.unit + 1) return false;
+
+  // Split by the page break: the earlier piece runs to the bottom, the later one
+  // starts at the top.
+  const endsLow = prev.y1 >= prev.unitHeight * (1 - EDGE_SLACK);
+  const startsHigh = next.y0 <= next.unitHeight * EDGE_SLACK;
+  return endsLow && startsHigh;
+}
+
+export interface ResolvedColumns {
+  columns: string[] | null;
+  headerSource: "present" | "inherited" | null;
+  continuesFromUnit: number | null;
+}
+
+/**
+ * Effective column names for every fragment, in document order.
+ *
+ * A chain is followed as far as the evidence reaches: page four of a schedule
+ * inherits from page three, which inherited from page two, which printed the
+ * names. One break in the chain stops the inheritance rather than jumping it —
+ * if page three's geometry does not match, page four is not silently given page
+ * two's column names.
+ *
+ * PURE.
+ */
+export function resolveColumns(fragments: readonly Fragment[]): ResolvedColumns[] {
+  const out: ResolvedColumns[] = [];
+  let carried: { columns: string[]; fromUnit: number } | null = null;
+  let previous: Fragment | null = null;
+  // Computed against the whole document, because one of the two header signals
+  // is "this row is reprinted on the next page" — unknowable from one fragment.
+  const headers = fragments.map((f) => namesColumns(f, fragments));
+
+  fragments.forEach((fragment, i) => {
+    if (headers[i]) {
+      carried = { columns: fragment.firstRow, fromUnit: fragment.unit };
+      out.push({ columns: fragment.firstRow, continuesFromUnit: null, headerSource: "present" });
+    } else if (previous && carried && continues(previous, fragment, false)) {
+      out.push({ columns: carried.columns, continuesFromUnit: previous.unit, headerSource: "inherited" });
+    } else {
+      // 🔴 THE CHAIN BREAKS HERE, AND IT MUST STAY BROKEN. Keeping `carried` alive
+      // past a fragment that failed the test would let a later, geometrically
+      // compatible table pick up names from a table two pages back that it has
+      // nothing to do with — labelling every value under a column it never had.
+      carried = null;
+      out.push({ columns: null, continuesFromUnit: null, headerSource: null });
+    }
+    previous = fragment;
+  });
+  return out;
+}
