@@ -33,7 +33,7 @@ function LearnSurface() {
   const { session } = useAuth();
 
   // No canvas named and nothing asked: this is the landing surface.
-  if (!canvasId && !ask) return <CanvasHome userId={session?.user.id ?? null} />;
+  if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
   return <LearningCanvas canvasId={canvasId} openingAsk={ask} />;
 }
 

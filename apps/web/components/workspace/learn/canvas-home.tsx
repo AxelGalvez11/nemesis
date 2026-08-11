@@ -32,12 +32,13 @@ import {
   type Folder,
 } from "@/lib/learn/canvas-store";
 import { cn } from "@/lib/utils";
+import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 
 /** How far down the page the composer finishes docking. Short, so the transition reads as one
  *  movement rather than something that tracks the scrollbar. */
 const DOCK_AFTER_PX = 120;
 
-export function CanvasHome({ userId }: { userId: string | null }) {
+export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<CanvasSummary[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -192,6 +193,15 @@ export function CanvasHome({ userId }: { userId: string | null }) {
             </button>
           )}
         </section>
+      </div>
+
+      {/* An interrupted recording is offered back here, above the composer — the one place the
+          learner is guaranteed to look, so recovery is never something they have to find. It
+          renders nothing at all when there is no crashed session, which is almost always. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 pt-4">
+        <div className="pointer-events-auto">
+          <RecordingRecoveryNotice accessToken={accessToken} />
+        </div>
       </div>
 
       {/* 🔴 ONE composer, two positions. Centred on the first screen, docked once the sessions

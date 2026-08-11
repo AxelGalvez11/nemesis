@@ -38,6 +38,9 @@ export type FinalizationState =
   | "finalizing"
   /** Every part is up and the server has been told to assemble them. */
   | "finalized"
+  /** The learner pressed finish, but parts never landed — the network was down and stayed
+   *  down. Distinct from "finalized" because the difference is whether the audio exists. */
+  | "incomplete"
   /** The tab died mid-recording. Parts are safe; nobody has finished it yet. */
   | "abandoned";
 
@@ -68,10 +71,30 @@ export const ABANDONED_AFTER_MS = 5 * 60_000;
  *  without saying out loud how many seconds of someone's lecture that buys. */
 export const PART_SECONDS = 20;
 
-export function partPath(sessionId: string, index: number, extension: string): string {
-  // Zero-padded so a lexical listing is also the correct order — recovery reads storage, and a
-  // listing that sorts part10 before part2 reassembles the lecture scrambled.
-  return `parts/${sessionId}/${String(index).padStart(5, "0")}.${extension}`;
+/** Where one part lives in the `recordings` bucket.
+ *
+ *  🔴 THE `${userId}/` PREFIX IS NOT COSMETIC AND ITS ABSENCE IS NOT A STYLE BUG. The bucket's
+ *  RLS policies are all of the form
+ *
+ *      bucket_id = 'recordings' AND (storage.foldername(name))[1] = auth.uid()::text
+ *
+ *  so the FIRST path segment must be the caller's own id. The first version of this function
+ *  returned `parts/<session>/…`, whose first segment is the literal "parts" — which means every
+ *  part upload was refused by the database, and refused SILENTLY, because the capture loop
+ *  treats an upload failure as something to retry rather than something to report. The feature
+ *  looked complete, passed its unit tests against an injected uploader, and stored nothing.
+ *
+ *  Zero-padded so a lexical listing is also the correct order — recovery may read storage
+ *  directly, and a listing that sorts part10 before part2 reassembles the lecture scrambled,
+ *  which still plays. */
+export function partPath(userId: string, sessionId: string, index: number, extension: string): string {
+  return `${userId}/parts/${sessionId}/${String(index).padStart(5, "0")}.${extension}`;
+}
+
+/** The single rule every storage path in this bucket has to satisfy. Exported so the paths can
+ *  be checked against the policy in a test instead of in production. */
+export function isOwnedPath(path: string, userId: string): boolean {
+  return path.split("/")[0] === userId && userId.length > 0;
 }
 
 /** Record that a part is safely stored.
@@ -115,6 +138,27 @@ export function isContiguous(manifest: RecordingManifest): boolean {
   return missingParts(manifest).length === 0;
 }
 
+/** What a recovery can actually offer the learner.
+ *
+ *  🔴 PART 0 IS NOT LIKE THE OTHERS, AND THIS IS THE WHOLE REASON THIS FUNCTION EXISTS.
+ *  MediaRecorder does not produce a sequence of independently playable files. It produces ONE
+ *  file cut into pieces: the container header — WebM's EBML header and segment metadata, or
+ *  MP4's moov box — rides in the FIRST chunk, and every piece after it is payload that means
+ *  nothing without it. So a set missing part 0 is not "slightly short", it is undecodable, and
+ *  a recovery that uploaded it would report success and deliver silence.
+ *
+ *  A gap ANYWHERE ELSE is a different outcome and deliberately a recoverable one: the decoder
+ *  resynchronises at the next cluster, so the lecture plays with a skip in it. Fifty-five
+ *  minutes with a hole is worth incomparably more to a student than nothing, which is why this
+ *  returns three answers and not a boolean. */
+export type Playability = "empty" | "unplayable" | "gapped" | "complete";
+
+export function playability(manifest: RecordingManifest): Playability {
+  if (manifest.parts.length === 0) return "empty";
+  if (!manifest.parts.some((part) => part.index === 0)) return "unplayable";
+  return isContiguous(manifest) ? "complete" : "gapped";
+}
+
 export function totalBytes(manifest: RecordingManifest): number {
   return manifest.parts.reduce((sum, part) => sum + part.bytes, 0);
 }
@@ -126,15 +170,53 @@ export function assemblyOrder(manifest: RecordingManifest): string[] {
 
 /** Sessions worth offering back to the learner after a crash.
  *
- *  🔴 Anything with bytes counts, including one that never reached "finalizing". The whole
+ *  🔴 Anything playable counts, including one that never reached "finalizing". The whole
  *  reason this exists is the tab that died mid-lecture — requiring a clean finish before a
- *  recording is recoverable would exclude exactly the case it was built for. */
+ *  recording is recoverable would exclude exactly the case it was built for.
+ *
+ *  A set whose part 0 never landed is deliberately NOT offered: see `playability`. Those bytes
+ *  cannot be turned into audio, and an offer that produces silence is worse than no offer,
+ *  because the learner spends their trust on it. */
 export function recoverable(manifests: readonly RecordingManifest[], now: Date): RecordingManifest[] {
+  // 🔴 THERE IS DELIBERATELY NO "IS THE TIMESTAMP SANE" TEST HERE. An earlier version dropped
+  // any manifest whose `updatedAt` was in the future, which sounds like harmless hygiene and is
+  // not: `updatedAt` comes from the recording device's own clock, so a laptop running a few
+  // seconds fast — or one whose timezone was corrected mid-lecture — silently lost its crash
+  // recovery, with real audio sitting in storage and nothing offering it back. Whether a
+  // recording is still live is a question `looksAbandoned` answers; a clock is not evidence
+  // about whether bytes exist.
+  void now;
   return manifests
     .filter((manifest) => manifest.state !== "finalized")
-    .filter((manifest) => manifest.parts.length > 0)
-    .filter((manifest) => now.getTime() - Date.parse(manifest.updatedAt) >= 0)
+    .filter((manifest) => playability(manifest) === "complete" || playability(manifest) === "gapped")
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Roughly how much audio a manifest holds, from the part cadence rather than the bytes.
+ *
+ *  Deliberately derived and deliberately approximate: the exact duration needs the decoded
+ *  file, which recovery does not have yet. It exists so the offer can say "about 47 minutes"
+ *  instead of "6 parts", which is the difference between a number a student can act on and one
+ *  only an engineer can. Rounded DOWN so it never overstates what survived. */
+export function approximateSeconds(manifest: RecordingManifest, partSeconds = PART_SECONDS): number {
+  const highest = manifest.parts.reduce((max, part) => Math.max(max, part.index), -1);
+  return Math.max(0, (highest + 1) * partSeconds);
+}
+
+/** Records that can never become an offer, and are safe to forget.
+ *
+ *  🔴 GUARDED ON `looksAbandoned`, AND THAT GUARD IS THE WHOLE POINT. A session that is being
+ *  recorded RIGHT NOW in another tab is briefly empty, and is unplayable until its first part
+ *  lands. Pruning on playability alone would therefore delete the recovery record of the live
+ *  lecture, in the first seconds of it, which is precisely the recording this system exists to
+ *  protect. Only a session that has also gone quiet is finished enough to judge. */
+export function retirable(manifests: readonly RecordingManifest[], now: Date): RecordingManifest[] {
+  return manifests.filter((manifest) => {
+    if (manifest.state === "finalized") return true;
+    if (!looksAbandoned(manifest, now)) return false;
+    const state = playability(manifest);
+    return state === "empty" || state === "unplayable";
+  });
 }
 
 /** Has this session gone quiet long enough to call it abandoned rather than in progress? */

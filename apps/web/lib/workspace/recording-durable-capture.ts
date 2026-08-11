@@ -7,9 +7,22 @@
 // one, which is the wrong trade for the thing people actually do every day.
 //
 // 🔴 AN UPLOAD FAILURE MUST NEVER STOP THE RECORDING. The microphone is the irreplaceable part;
-// the network is not. Every failure here keeps the bytes buffered and tries again at the next
-// flush, and the recording continues regardless. A durability feature that can end a lecture is
-// worse than the problem it solves.
+// the network is not. Every failure here keeps the bytes and tries again at the next flush, and
+// the recording continues regardless. A durability feature that can end a lecture is worse than
+// the problem it solves.
+//
+// ── 🔴 A SEQUENCE NUMBER IS BOUND TO ITS BYTES AND NEVER MOVES ───────────────────────────────
+//
+// This is the correctness property of the whole file, and the first version got it wrong. It
+// claimed an index from a counter, and on failure returned the bytes to a shared buffer and
+// tried to hand the index back — which only worked if no later flush had already claimed one.
+// That condition is false in exactly the case that matters: a SLOW upload is what lets the next
+// flush happen first. So the failed payload was re-uploaded at a LATER index, and the opening of
+// the lecture — the piece carrying the container header — landed in the middle of the file.
+//
+// Assembly by index is only correct if an index means the same bytes forever. A part is
+// therefore given its position the moment it is cut, and it keeps that position through every
+// retry until it lands or the recording ends.
 
 import { supabase } from "@/lib/supabase";
 
@@ -18,6 +31,7 @@ import {
   newManifest,
   partPath,
   PART_SECONDS,
+  playability,
   type RecordingManifest,
 } from "./recording-manifest";
 
@@ -32,7 +46,21 @@ export interface DurableCapture {
   finish: () => Promise<RecordingManifest>;
   /** The learner threw the recording away — forget the local record of it. */
   discard: () => void;
+  /** Wait for uploads already in flight. For tests and for anything that needs to read the
+   *  manifest at a settled moment; the recorder itself never waits on this. */
+  settled: () => Promise<void>;
   manifest: () => RecordingManifest;
+}
+
+/** Put these bytes at this path. Throws on failure. Injected so the ordering rules above can be
+ *  tested without a network, a bucket, or a microphone. */
+export type UploadPart = (path: string, blob: Blob) => Promise<void>;
+
+async function uploadToBucket(path: string, blob: Blob): Promise<void> {
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, blob, { contentType: blob.type || "application/octet-stream", upsert: true });
+  if (error) throw error;
 }
 
 // ------------------------------------------------------------- local record
@@ -96,8 +124,11 @@ export function createDurableCapture(input: {
   partSeconds?: number;
   /** MediaRecorder's timeslice, so we know how many chunks make a part. */
   chunkMs: number;
+  /** Where the bytes go. Defaults to the recordings bucket. */
+  upload?: UploadPart;
 }): DurableCapture {
   const perPart = Math.max(1, Math.round(((input.partSeconds ?? PART_SECONDS) * 1000) / input.chunkMs));
+  const upload = input.upload ?? uploadToBucket;
 
   let manifest = newManifest({
     sessionId: input.sessionId,
@@ -109,43 +140,50 @@ export function createDurableCapture(input: {
   });
   writeManifest(manifest);
 
-  /** Chunks not yet part of a successfully uploaded part. */
+  /** Chunks not yet cut into a part. */
   let buffered: Blob[] = [];
+  /** The next position to hand out. Only ever increases. */
   let nextIndex = 0;
-  /** Uploads are serialised: parts must land in order, and two in flight can reorder. */
+  /** Parts that have been cut and are waiting to land, each holding the position it was cut at.
+   *  🔴 An entry leaves this list ONLY by being uploaded successfully. There is deliberately no
+   *  path that returns its bytes to `buffered`, because that is what moved audio down the file. */
+  let pending: { index: number; chunks: Blob[] }[] = [];
+  /** Uploads are serialised so a slow one cannot interleave with a retry of the same part. */
   let chain: Promise<void> = Promise.resolve();
 
-  const flush = (): void => {
+  /** Cut whatever is buffered into a part and give it its permanent position. */
+  const cut = (): void => {
     if (buffered.length === 0) return;
-    const payload = buffered;
-    const index = nextIndex;
-    // 🔴 Claimed BEFORE the upload resolves. If the next flush reused this index while the
-    // first was still in flight, two different runs of audio would fight over one position and
-    // one would be silently lost.
+    pending.push({ chunks: buffered, index: nextIndex });
     nextIndex += 1;
     buffered = [];
+  };
 
+  /** Try to land everything still pending, oldest position first.
+   *
+   *  Oldest first because part 0 carries the container header: until it lands there is no
+   *  playable recording at all, so it is the part most worth retrying soonest. A part that
+   *  fails is left where it is and tried again at the next flush — later parts still upload,
+   *  since a hole that fills in later is far better than a queue that stalls behind one bad
+   *  request. */
+  const drain = (): void => {
     chain = chain.then(async () => {
-      const blob = new Blob(payload, { type: input.mimeType });
-      const path = partPath(input.sessionId, index, input.extension);
-      try {
-        const { error } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, blob, { contentType: blob.type || "application/octet-stream", upsert: true });
-        if (error) throw error;
-        manifest = appendPart(manifest, {
-          index,
-          path,
-          bytes: blob.size,
-          uploadedAt: new Date().toISOString(),
-        });
-        writeManifest(manifest);
-      } catch {
-        // 🔴 Put the bytes BACK at the front of the buffer so the next flush carries them, and
-        // release the index so nothing is left with a permanent hole in it. The recording is
-        // unaffected — the microphone never stopped.
-        buffered = [...payload, ...buffered];
-        if (index === nextIndex - 1) nextIndex -= 1;
+      for (const part of [...pending].sort((a, b) => a.index - b.index)) {
+        const blob = new Blob(part.chunks, { type: input.mimeType });
+        const path = partPath(input.userId, input.sessionId, part.index, input.extension);
+        try {
+          await upload(path, blob);
+          pending = pending.filter((entry) => entry.index !== part.index);
+          manifest = appendPart(manifest, {
+            bytes: blob.size,
+            index: part.index,
+            path,
+            uploadedAt: new Date().toISOString(),
+          });
+          writeManifest(manifest);
+        } catch {
+          // Stays pending, WITH ITS INDEX, for the next flush. The microphone never stopped.
+        }
       }
     });
   };
@@ -154,19 +192,30 @@ export function createDurableCapture(input: {
     onChunk(blob: Blob) {
       if (blob.size === 0) return;
       buffered.push(blob);
-      if (buffered.length >= perPart) flush();
+      if (buffered.length < perPart) return;
+      cut();
+      drain();
     },
     async finish() {
-      flush();
+      cut();
       manifest = { ...manifest, state: "finalizing" };
+      drain();
       await chain;
-      manifest = { ...manifest, state: "finalized" };
+      // 🔴 "finalized" is a claim that the audio is safe, so it is only made when it is. A
+      // network that never came back leaves the recording INCOMPLETE, which is what keeps it in
+      // the recovery list instead of retiring it as done.
+      const landed = pending.length === 0 && playability(manifest) !== "unplayable";
+      manifest = { ...manifest, state: landed ? "finalized" : "incomplete" };
       writeManifest(manifest);
       return manifest;
     },
     discard() {
       buffered = [];
+      pending = [];
       forgetManifest(input.sessionId);
+    },
+    settled() {
+      return chain;
     },
     manifest() {
       return manifest;
