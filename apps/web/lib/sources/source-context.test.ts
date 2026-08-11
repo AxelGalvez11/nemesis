@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { structureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { buildDocument, structureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
 import { capabilitiesOfStored, deriveCapabilities, parsedPageCount, parseQuality } from "./source-capabilities";
 import {
@@ -76,6 +76,9 @@ test("🔴 the real structured production document yields the capabilities it ac
     geometry: true,
     headings: true,
     hierarchy: true,
+    // Follows `tables`: with no table there is no cell model, and that is UNKNOWN
+    // rather than "this document has no merged cells".
+    mergedCells: false,
     pageAnchors: true,
     semanticUnits: true,
     tables: false, // 🔴 NOT A GAP IN THE CODE — there is no table anywhere in the corpus.
@@ -331,4 +334,47 @@ test("prose, headings and equations all read as plain text", () => {
   // anchor built from it and would then fail to match the source after a reparse.
   const heading = unitContent(context.units[0]!);
   assert.equal(heading.kind === "text" ? heading.text : null, "A heading");
+});
+
+test("🔴 mergedCells is a licence to trust a blank cell, derived from stored bytes", () => {
+  // Without a cell model, a position that is empty because a neighbour spans it is
+  // indistinguishable from one the document genuinely left blank — so "who teaches
+  // session 3" reads as unstated when the file says otherwise. Derived from the
+  // STORED envelope, like every other capability, because a parser that builds
+  // cells and a serializer that drops them must yield false.
+  const withCells = capabilitiesOfStored(JSON.parse(JSON.stringify(structureEnvelope({
+    model: buildDocument({
+      blocks: [{
+        headingPath: [],
+        kind: "table",
+        table: {
+          cells: [{ column: 0, row: 0, rowSpan: 2, text: "Dr. Farrar" }, { column: 1, row: 0, text: "A" }, { column: 1, row: 1, text: "B" }],
+          headerRows: 0,
+          rows: [["Dr. Farrar", "A"], ["", "B"]],
+        },
+        text: "",
+        unit: 0,
+      }],
+      format: "pdf",
+      title: null,
+      units: [{ index: 0, kind: "page" }],
+    }),
+    text: "…",
+    title: null,
+  }))));
+  assert.equal(withCells.tables, true);
+  assert.equal(withCells.mergedCells, true);
+
+  const gridOnly = capabilitiesOfStored(JSON.parse(JSON.stringify(structureEnvelope({
+    model: buildDocument({
+      blocks: [{ headingPath: [], kind: "table", table: { headerRows: 0, rows: [["a", "b"]] }, text: "", unit: 0 }],
+      format: "pdf",
+      title: null,
+      units: [{ index: 0, kind: "page" }],
+    }),
+    text: "…",
+    title: null,
+  }))));
+  assert.equal(gridOnly.tables, true);
+  assert.equal(gridOnly.mergedCells, false, "no cell model means UNKNOWN, not 'no merges'");
 });
