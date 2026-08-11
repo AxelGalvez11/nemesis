@@ -9,11 +9,8 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { diagnose, summariseCompletion } from "@/lib/learn/canvas-diagnosis";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import {
-  CANVAS_LEVELS,
-  LEVEL_LABELS,
   type CanvasChoiceQuestion,
   type CanvasFreeQuestion,
-  type CanvasLevel,
   type CanvasResponse,
   type LearningCanvas,
   type RecallCard,
@@ -103,42 +100,25 @@ export function CanvasEmpty({
 
 // ----------------------------------------------------------------- orientation
 
-export function CanvasOrient({
-  canvas,
-  onChoose,
-  busy,
-}: {
-  canvas: LearningCanvas;
-  onChoose: (level: CanvasLevel) => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="flex min-h-full items-center justify-center px-6">
-      <div className="w-full max-w-[30rem]">
-        {canvas.title && (
-          <p className="mb-2 text-center text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
-        )}
-        <h2 className="text-center text-[1.25rem] font-medium text-(--ui-text-primary)">Where should we start?</h2>
-        <div className="mt-6 space-y-2">
-          {CANVAS_LEVELS.map((level) => (
-            <button
-              className="w-full rounded-xl border border-(--ui-stroke-secondary) px-4 py-3 text-left text-[0.9375rem] text-(--ui-text-primary) transition-colors hover:border-(--ui-accent) hover:bg-(--ui-bg-tertiary) disabled:opacity-50"
-              disabled={busy}
-              key={level}
-              onClick={() => onChoose(level)}
-              type="button"
-            >
-              {LEVEL_LABELS[level]}
-            </button>
-          ))}
-        </div>
-        {busy && (
-          <p className="mt-6 text-center text-[0.8125rem] text-(--ui-text-tertiary)">Writing your lesson…</p>
-        )}
-      </div>
-    </div>
-  );
-}
+/* 🔴 `CanvasOrient` LIVED HERE AND HAS BEEN DELETED, NOT DISABLED.
+ *
+ * It asked "Where should we start?" and offered four labels — Start from fundamentals / I know the
+ * basics / Advanced / Exam-focused — before Nemesis had used a single thing it already knew. It was
+ * a static mode selector wearing a question mark, and it was the six-stage machine's defect at a
+ * different scale: a route chosen before anything about the learner had been established.
+ *
+ * It was also a poor input. Two people who pick "I know the basics" know completely different
+ * things, and the answer names no concept, no demonstrated capability, no misconception and nothing
+ * that has decayed. A learner can be wrong about their own level; what they DO is evidence, and
+ * what they say about themselves is a self-report.
+ *
+ * 🔴 DO NOT REPLACE IT WITH THREE STATIC QUESTIONS. "How familiar are you?" / "What's your goal?" /
+ * "When is your exam?" is the same form with more steps. Ask only what genuinely cannot be
+ * inferred, and prefer a task that REVEALS the learner over a question ABOUT them: "Which ion
+ * carries phase 0?" produces evidence, "Are you familiar with cardiac action potentials?" produces
+ * a guess. Where real ambiguity remains ("teach me World War II"), the composer can ask in words —
+ * it does not need a permanent four-button taxonomy.
+ */
 
 // -------------------------------------------------------------------- recall
 

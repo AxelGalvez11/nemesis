@@ -12,7 +12,12 @@ import type { CanvasState, LearningCanvas } from "./canvas-model";
 /** Forward edges. Everything else is refused unless it is a return to `learn`. */
 const FORWARD: Record<CanvasState, readonly CanvasState[]> = {
   empty: ["sources_attached"],
-  sources_attached: ["orient"],
+  // 🔴 STRAIGHT TO TEACHING. This used to be `["orient"]` — the level picker — and it was the only
+  // way out of an attached source. That screen is gone: Nemesis opens a canvas by doing something
+  // with the material rather than by asking the learner to classify themselves first.
+  sources_attached: ["learn"],
+  // Kept ONLY so canvases stored before the picker was removed still resolve. Nothing enters this
+  // state any more; a canvas found in it is started rather than asked anything.
   orient: ["learn"],
   learn: ["recall"],
   recall: ["test"],
