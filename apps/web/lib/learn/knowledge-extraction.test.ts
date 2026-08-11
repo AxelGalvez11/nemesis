@@ -227,3 +227,38 @@ test("a grid that stated no header states no relationship rather than inventing 
   const { objects } = extractKnowledgeObjects(glossaryContext(GLOSSARY.slice(1), 0));
   assert.equal(objects.every((o) => o.relationKind === undefined), true);
 });
+
+// ── a table that ran across a page break ────────────────────────────────────
+
+test("🔴 a continuation fragment inherits the relationship its first page printed", () => {
+  // A real glossary prints "Generic | Brand" once and then runs for pages that repeat none of it.
+  // Those fragments have headerRows: 0. Reading only the header row would leave them `unstated`,
+  // unable to converge with the fragment that DID name the columns — the same table failing to
+  // recognise itself. Delete the `content.columns` lookup and this goes red.
+  const continuation = contextOf(modelOf([{
+    id: "t1",
+    kind: "table",
+    table: {
+      columns: ["Generic", "Brand"],
+      headerRows: 0,
+      headerSource: "inherited",
+      rows: [["losartan", "Cozaar"], ["valsartan", "Diovan"]],
+    },
+    text: "",
+  }]));
+  const { objects } = extractKnowledgeObjects(continuation);
+  assert.equal(objects.length, 2);
+  assert.equal(objects.every((o) => o.relationKind === "brand|generic"), true);
+});
+
+test("a fragment with printed columns and one that inherited them are the same knowledge", () => {
+  const printed = extractKnowledgeObjects(contextOf(modelOf([{
+    id: "t1", kind: "table", text: "",
+    table: { columns: ["Generic", "Brand"], headerRows: 1, headerSource: "present", rows: [["Generic", "Brand"], ["losartan", "Cozaar"]] },
+  }])));
+  const inherited = extractKnowledgeObjects(contextOf(modelOf([{
+    id: "t9", kind: "table", text: "",
+    table: { columns: ["Generic", "Brand"], headerRows: 0, headerSource: "inherited", rows: [["losartan", "Cozaar"]] },
+  }])));
+  assert.equal(printed.objects[0]!.identityKey, inherited.objects[0]!.identityKey);
+});

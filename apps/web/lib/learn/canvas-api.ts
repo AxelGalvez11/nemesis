@@ -93,7 +93,10 @@ export async function generateLesson(
 ): Promise<CanvasCallResult<ParsedLesson>> {
   const { text, error } = await ask(
     uid,
-    lessonMessages({ topic: input.topic, level: input.level ?? "basics_known", sources: input.sources }),
+    // 🔴 NO DEFAULT. `?? "basics_known"` used to sit here, so a canvas whose learner was never
+    // asked told the model they knew the basics — a claim about a person, invented at the boundary
+    // and applied to everyone. Absent is passed through as absent.
+    lessonMessages({ topic: input.topic, level: input.level, sources: input.sources }),
     signal,
   );
   if (error) return { value: null, error };

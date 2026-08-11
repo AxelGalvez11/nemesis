@@ -25,7 +25,6 @@ import {
   CanvasComplete,
   CanvasDiagnosis,
   CanvasEmpty,
-  CanvasOrient,
   CanvasRecall,
   CanvasTest,
 } from "./canvas-stages";
@@ -237,7 +236,11 @@ export function LearningCanvas({
   // 🔴 It used to fade to 45% opacity during recall and the test, from a time when those states
   // had their own answer boxes and this bar was a distraction beneath them. Those boxes are
   // gone: this IS the answer field now, and a half-faded primary input reads as disabled.
-  const showComposer = !["empty", "orient", "complete"].includes(canvas.state);
+  // 🔴 `orient` IS NO LONGER HIDDEN FROM THE COMPOSER. It used to be, which is what made the level
+  // picker a wall rather than a suggestion: a learner could not type a word until they had chosen
+  // one of four labels. The state survives only for canvases stored before it was removed, and
+  // those should be able to talk to Nemesis like any other.
+  const showComposer = !["empty", "complete"].includes(canvas.state);
 
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
@@ -280,10 +283,6 @@ export function LearningCanvas({
         )}
 
         {canvas.state === "sources_attached" && <SourcesAttached session={session} />}
-
-        {canvas.state === "orient" && (
-          <CanvasOrient busy={busy.kind === "lesson"} canvas={canvas} onChoose={(level) => void session.chooseLevel(level)} />
-        )}
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
           <CanvasDocument

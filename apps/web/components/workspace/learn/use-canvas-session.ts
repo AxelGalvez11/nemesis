@@ -100,7 +100,6 @@ export interface CanvasSession {
   /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
    *  material is already attached. */
   begin: (topic?: string) => void;
-  chooseLevel: (level: CanvasLevel) => Promise<void>;
   command: (text: string, selected: readonly CanvasBlock[]) => Promise<void>;
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
@@ -371,32 +370,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  path (§6B, one of the two documented ways in) intermittently read a canvas with no title
    *  and refused with "Add material, or say what you want to learn." Taking the topic as an
    *  argument removes the ordering dependency instead of narrowing the window. */
-  const begin = useCallback(
-    (topic?: string) => {
-      const title = topic?.trim() ?? "";
-      const check = canStart({ sources: latest.current.sources, title: title || latest.current.title });
-      if (!check.ok) {
-        setError(check.reason);
-        return;
-      }
-      update((current) => ({ ...current, ...(title ? { title } : {}), state: "orient" }));
-    },
-    [update],
-  );
-
   // ------------------------------------------------------------------- lesson
 
-  const chooseLevel = useCallback(
-    async (level: CanvasLevel) => {
+  /**
+   * Generate the canvas's opening from the material.
+   *
+   * `level` is optional and is only ever a level the learner actually expressed. It is no longer
+   * asked for, and when it is absent the prompt is told so rather than being handed a middle value.
+   */
+  const openCanvas = useCallback(
+    async (level?: CanvasLevel) => {
       const id = requireUid();
       if (!id) return;
-      update((current) => ({ ...current, level }));
+      if (level) update((current) => ({ ...current, level }));
       setError(null);
       setBusy({ kind: "lesson", label: "Writing your lesson" });
       const startedAt = Date.now();
       const result = await generateLesson(id, {
         topic: latest.current.title,
-        level,
+        level: level ?? latest.current.level,
         sources: latest.current.sources,
       });
       setBusy({ kind: null });
@@ -423,6 +415,64 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     },
     [requireUid, update],
   );
+
+  /**
+   * Open the canvas by DOING something with the material, rather than by asking the learner to
+   * classify themselves first.
+   *
+   * 🔴 THIS USED TO ROUTE INTO `orient`, AND `orient` WAS A WALL. The composer was hidden while it
+   * showed (`showComposer` excluded the state), so the only way into a canvas was to pick one of
+   * four labels — "Start from fundamentals", "I know the basics", "Advanced", "Exam-focused" —
+   * before Nemesis had used a single thing it already knew. That is the six-stage machine's defect
+   * at a different scale: a route decided before anything about the learner was established.
+   *
+   * It is also a bad input. Two people who choose "I know the basics" know completely different
+   * things, and neither answer says which concepts are solid, which have decayed, or which
+   * misconception is in the way. Those are discovered from what someone DOES.
+   *
+   * 🔴 WHAT THIS IS NOT, YET. A real `initializeCanvas` reads learner state, objective state,
+   * recent evidence and the calendar, and picks the opening action from them. None of those exist
+   * yet — so this does the honest version: it starts from the SOURCE and the learner's own words,
+   * and asks nothing. When the policy lands it replaces the call below; it does not have to undo a
+   * question we should never have asked.
+   */
+  const begin = useCallback(
+    (topic?: string) => {
+      const title = topic?.trim() ?? "";
+      const check = canStart({ sources: latest.current.sources, title: title || latest.current.title });
+      if (!check.ok) {
+        setError(check.reason);
+        return;
+      }
+      if (title) update((current) => ({ ...current, title }));
+      // The learner's own words are the goal signal. "Teach me organic chemistry from scratch"
+      // already says where to start, so there is nothing left to ask them.
+      void openCanvas();
+    },
+    [openCanvas, update],
+  );
+
+  /**
+   * A canvas stored at `orient` is one that never got past the level picker. Start it.
+   *
+   * 🔴 WITHOUT THIS THOSE CANVASES BECOME DEAD ENDS. `orient` was only ever escapable by choosing
+   * one of four labels, and that screen is gone — so a canvas sitting in that state has no forward
+   * path at all and would open to an empty page for ever. Old rows must keep working; that is the
+   * whole reason `orient` survives in the state union rather than being deleted from it.
+   *
+   * Guarded on having produced NOTHING, so this can only ever fire for a canvas that genuinely
+   * never ran. A ref rather than state, because the effect must not re-fire while the generation it
+   * started is still in flight.
+   */
+  const resumedOrient = useRef(false);
+  useEffect(() => {
+    if (!ready || resumedOrient.current) return;
+    const current = latest.current;
+    if (current.state !== "orient") return;
+    if (current.blocks.length > 0 || current.recall.length > 0 || current.questions.length > 0) return;
+    resumedOrient.current = true;
+    void openCanvas();
+  }, [openCanvas, ready]);
 
   // ----------------------------------------------------------------- commands
 
@@ -1126,7 +1176,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     dismissAside: () => setAside(null),
     attachFiles,
     begin,
-    chooseLevel,
     command,
     askAbout,
     markKnown,

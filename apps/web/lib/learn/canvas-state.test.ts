@@ -19,10 +19,12 @@ test("attaching another source to a canvas already being read does not throw it 
 });
 
 test("the arc runs forward through every state in the brief", () => {
+  // 🔴 `orient` IS DELIBERATELY ABSENT FROM THIS ARC. It was the level picker, and nothing enters
+  // it any more — a canvas goes from attached material straight to being taught. The state itself
+  // survives only for rows stored before the screen was removed, and the test below covers that.
   const arc: LearningCanvas["state"][] = [
     "empty",
     "sources_attached",
-    "orient",
     "learn",
     "recall",
     "test",
@@ -132,4 +134,19 @@ test("the move out of diagnosis is targeted relearning only when something is ac
 
 test("a lesson with no blocks yet offers no way forward", () => {
   assert.equal(nextAction(canvasIn("learn", { blocks: [] })), null);
+});
+
+// ── the level picker is gone ────────────────────────────────────────────────
+
+test("🔴 attaching material leads to teaching, not to a level picker", () => {
+  // The picker ("Where should we start? / Start from fundamentals / I know the basics / …") was a
+  // static mode selector that made the learner choose a route before Nemesis had used anything it
+  // already knew. Restore `sources_attached: ["orient"]` and this goes red.
+  assert.equal(canTransition("sources_attached", "learn"), true);
+});
+
+test("a canvas stored at the old picker can still move forward", () => {
+  // 🔴 `orient` survives in the union for exactly one reason: rows written before the screen was
+  // removed. Deleting the state outright would strand them with no legal transition at all.
+  assert.equal(canTransition("orient", "learn"), true);
 });

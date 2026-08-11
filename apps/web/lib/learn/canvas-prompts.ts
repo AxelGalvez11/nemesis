@@ -78,7 +78,18 @@ function materialSection(sources: readonly CanvasSource[], topic: string): strin
 
 export function lessonMessages(input: {
   topic: string;
-  level: CanvasLevel;
+  /**
+   * 🔴 NULLABLE, AND NULL IS THE NORMAL CASE NOW. Nemesis no longer asks a learner to classify
+   * themselves before it has taught them anything, so most canvases have no level at all — and
+   * absent must be read as UNKNOWN, never filled in with a middle value. It used to default to
+   * `basics_known` one layer up, which meant every learner who was never asked was silently told
+   * to the model as "knows the basics": an invented claim about a person, applied to everyone.
+   *
+   * It stays on the type because a level a learner actually expressed is real information. What is
+   * gone is the requirement to have one, and the pretence of having one when we do not. The three
+   * other prompt builders in this file already worked this way; the lesson prompt now matches.
+   */
+  level: CanvasLevel | null;
   sources: readonly CanvasSource[];
 }): WireMsg[] {
   return [
@@ -86,7 +97,13 @@ export function lessonMessages(input: {
     {
       content:
         `Write a study document that teaches ${input.topic ? `"${input.topic}"` : "the attached material"}.\n\n` +
-        `${LEVEL_INSTRUCTIONS[input.level]}\n\n` +
+        (input.level
+          ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n`
+          : "You have not been told how much this learner already knows, and you must not guess a " +
+            "level from the subject. Teach what the material actually says, define a term the first " +
+            "time it is used, and do not pad with background nobody asked for. What they know will " +
+            "be established by what they demonstrate, not by an assumption made before they " +
+            "answered anything.\n\n") +
         "First decide the 5-12 CONCEPTS this material actually turns on — the ideas a learner must hold to understand it. " +
         'Give each an id ("k1", "k2", …) and a short plain label naming the idea, not the section.\n\n' +
         "Then write 8-25 blocks. Open with a heading, then the single idea everything else depends on, then the substance, " +
