@@ -15,7 +15,16 @@
 // Labels are only ever copied from headings the extractor genuinely emitted (it writes
 // "## Slide 12" for decks). No heading, no label.
 
-import { blockToText, type DocumentModel } from "@nemesis/shared";
+import type { DocumentModel } from "@nemesis/shared";
+
+import {
+  readableUnits,
+  resolveQuote,
+  sectionOf,
+  sourceContextFromModel,
+  type CanonicalSourceAnchor,
+  type SourceContext,
+} from "@/lib/sources/source-context";
 
 import type { CanvasSource, SourceExcerpt, SourceRef } from "./canvas-model";
 
@@ -85,55 +94,111 @@ export function buildExcerpts(sourceId: string, text: string): SourceExcerpt[] {
  *
  * Ids use the same `${sourceId}:e${n}` scheme and are assigned in reading order, so this is a
  * drop-in for the string version.
+ *
+ * 🔴 IT IS NOW A WRAPPER, AND THE INDIRECTION IS THE POINT. This function used to carry its own
+ * copy of the splitting rules — skip headings, never cut a table, break a long paragraph on
+ * sentences, take the label from the heading path or else the unit's own name — and so does the
+ * canonical path. Two copies of a rule are two rules the moment one is edited, and the failure
+ * would be silent and specific: a citation made from an upload response would point somewhere
+ * slightly different from the same citation made after a reload, with every test on both sides
+ * still green. There is one implementation, and both callers go through it.
  */
 export function buildExcerptsFromModel(sourceId: string, model: DocumentModel): SourceExcerpt[] {
+  // `sourceKind` only ever feeds parse QUALITY, which nothing downstream of here reads, so the
+  // model's own format is the honest answer rather than a guess about the file it came from.
+  const context = sourceContextFromModel({ model, sourceId, sourceKind: model.format });
+  return excerptsFromSourceContext(sourceId, context);
+}
+
+/**
+ * The same excerpts again, built from the CANONICAL BOUNDARY rather than from a document model
+ * handed over in an upload response.
+ *
+ * 🔴 WHY A THIRD BUILDER RATHER THAN A THIRD COPY OF THE RULES. `buildExcerptsFromModel` reads a
+ * `DocumentModel` — which Canvas only ever has for a file it just uploaded, in the seconds before
+ * the response is discarded. Everything that has to work later reads the PERSISTED parse instead:
+ * a canvas reopened tomorrow, a second canvas built on the same lecture, an extractor asked what
+ * this source teaches. Those must not re-derive structure from a different input than the one that
+ * survived, or "what the canvas cites" and "what actually got stored" drift apart with nothing
+ * able to notice.
+ *
+ * So this takes a `SourceContext`, which is read out of `parsed_documents` through the real
+ * envelope validator. The splitting rules are identical on purpose — a table is one excerpt, a
+ * heading is not itself quotable, a long paragraph breaks on sentences — because a citation made
+ * on one path has to mean the same thing as a citation made on the other.
+ *
+ * 🔴 AND EVERY EXCERPT REMEMBERS ITS UNIT. `unitId` is what later lets a durable
+ * `CanonicalSourceAnchor` be resolved into a canvas citation without anyone assuming a block id
+ * and an excerpt id are the same string.
+ */
+export function excerptsFromSourceContext(sourceId: string, context: SourceContext): SourceExcerpt[] {
   const excerpts: SourceExcerpt[] = [];
 
-  const push = (text: string, label: string | null) => {
-    excerpts.push({ id: `${sourceId}:e${excerpts.length + 1}`, label, text });
+  const push = (text: string, label: string | null, unitId: string) => {
+    excerpts.push({ id: `${sourceId}:e${excerpts.length + 1}`, label, text, unitId });
   };
 
-  for (const block of model.blocks) {
-    // A heading names what follows; it is not itself a quotable claim. It already lives in
-    // the `headingPath` of every block beneath it, so dropping it here loses nothing.
-    if (block.kind === "heading") continue;
+  for (const unit of readableUnits(context)) {
+    // A heading names what follows; it is not itself a quotable claim. It already lives in the
+    // `headingPath` of every unit beneath it, so dropping it here loses nothing.
+    if (unit.type === "heading") continue;
 
-    if (block.kind === "figure") {
-      const caption = block.text.trim();
-      const seen = block.figure?.description?.trim();
-      if (!caption && !seen) continue;
-    }
-
-    const text = blockToText(block).trim();
+    const text = (unit.text ?? "").trim();
     if (!text) continue;
 
-    const label = labelFor(model, block.unit, block.headingPath);
+    // The innermost enclosing heading, else what the document itself calls the page or slide.
+    // Never generated: a unit with neither gets `null`, exactly as the other two builders do.
+    const label = sectionOf(unit) ?? unit.unitLabel ?? null;
 
-    // 🔴 A TABLE IS NEVER SPLIT, WHATEVER ITS SIZE — the same rule the chunker follows, for
-    // the same reason: a grid with some of its rows is a different grid, and its cells only
-    // mean anything beside their headers. An oversized table stays whole and is quoted whole.
-    if (block.kind === "table") {
-      push(text, label);
+    // 🔴 A TABLE IS NEVER SPLIT, WHATEVER ITS SIZE — the same rule the chunker follows, for the
+    // same reason: a grid with some of its rows is a different grid, and its cells only mean
+    // anything beside their headers.
+    if (unit.type === "table") {
+      push(text, label, unit.id);
       continue;
     }
 
-    for (const piece of splitLong(text)) push(piece, label);
+    for (const piece of splitLong(text)) push(piece, label, unit.id);
   }
 
   return excerpts;
 }
 
 /**
- * What to call where an excerpt sat.
+ * Resolve a durable canonical anchor into a citation this canvas can actually render.
  *
- * The innermost enclosing heading, or — when the block sits under none — the unit's own
- * name, which is a slide's title placeholder or a sheet's name. Never generated: a unit with
- * no label and no heading above it gets `null`, exactly as the text path would.
+ * 🔴 THE EXPLICIT BOUNDARY THE TWO LOCATOR SYSTEMS MEET AT, AND THE REASON IT IS A FUNCTION RATHER
+ * THAN A CAST. Extraction records where something sits in the SOURCE — durable, quote-based,
+ * meaningful to any canvas and still valid after the document is reparsed by a better parser. A
+ * canvas cites where something sits in ITS OWN excerpt list — `s1:e7`, meaningless anywhere else.
+ * They are not the same identifier and converting between them by assuming they match would
+ * produce a citation that resolves to real text from the wrong place, which is worse than no
+ * citation at all: a broken locator that passes every check.
+ *
+ * Returns null rather than a best guess. A source that was never filed, an anchor from a document
+ * this canvas does not hold, or a quote that no longer exists after a reparse all mean "we cannot
+ * honestly point at this", and the caller must show no citation instead of a plausible one.
  */
-function labelFor(model: DocumentModel, unit: number, headingPath: readonly string[]): string | null {
-  const innermost = headingPath.at(-1)?.trim();
-  if (innermost) return innermost;
-  return model.units[unit]?.label?.trim() || null;
+export function groundCanonicalAnchor(
+  sources: readonly CanvasSource[],
+  anchor: CanonicalSourceAnchor,
+): SourceRef | null {
+  // Matched on the DURABLE id, never on the canvas-local one. Every canvas calls its first
+  // attachment "s1", so matching on that would resolve an anchor from a different document.
+  const source = sources.find((candidate) => candidate.librarySourceId === anchor.sourceId);
+  if (!source) return null;
+
+  const fromUnit = source.excerpts.filter((excerpt) => excerpt.unitId === anchor.unitId);
+  if (fromUnit.length === 0) return null;
+
+  // One unit can have been split into several excerpts, so the quote decides which. Without a
+  // quote there is only one honest answer — the first piece of that unit — and it is right
+  // whenever the unit was not split at all, which is the ordinary case.
+  const quote = anchor.quote;
+  if (!quote) return { excerptId: fromUnit[0]!.id, sourceId: source.id };
+
+  const hit = fromUnit.find((excerpt) => resolveQuote(excerpt.text, quote) >= 0);
+  return hit ? { excerptId: hit.id, sourceId: source.id } : null;
 }
 
 /** Break an over-long paragraph on sentence boundaries. A quote cut mid-word is unusable as

@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 import { buildSourceContext, readableUnits, type CanonicalSourceUnit } from "../lib/sources/source-context";
+import { extractKnowledgeObjects } from "../lib/learn/knowledge-extraction";
 
 function env(): { url: string; key: string } {
   // Read straight from .env rather than importing app config: this is a script, and the app's
@@ -61,6 +62,9 @@ async function main() {
   let structured = 0;
   let legacy = 0;
   let anyDate = 0;
+  let anyTable = 0;
+  let associations = 0;
+  const refusalCounts = new Map<string, number>();
 
   for (const row of data!) {
     const context = buildSourceContext({
@@ -75,6 +79,14 @@ async function main() {
     if (hasDate) anyDate += 1;
     if (context.capabilities.semanticUnits) structured += 1;
     else legacy += 1;
+    if (units.some((unit) => unit.type === "table")) anyTable += 1;
+
+    // The knowledge chain, run over the same context. Counts and refusal REASONS only.
+    const extraction = extractKnowledgeObjects(context);
+    associations += extraction.objects.length;
+    for (const refusal of extraction.refusals) {
+      refusalCounts.set(refusal.reason, (refusalCounts.get(refusal.reason) ?? 0) + 1);
+    }
 
     console.log(
       [
@@ -98,6 +110,22 @@ async function main() {
     console.log("🔴 NO SOURCE IN THE CORPUS CONTAINS A DATE — the schedule vertical slice has no");
     console.log("   acceptance case until a syllabus is uploaded. Zero extracted candidates from");
     console.log("   this corpus is the CORRECT result, and is a precision test, not a success.");
+  }
+
+  console.log("\n--- knowledge extraction (association) ---");
+  console.log(`documents containing a TABLE: ${anyTable}`);
+  console.log(`associations extracted: ${associations}`);
+  console.log(
+    `refusals: ${[...refusalCounts.entries()].map(([reason, n]) => `${reason}:${n}`).join(" ") || "none"}`,
+  );
+  if (anyTable === 0) {
+    console.log("🔴 NO SOURCE IN THE CORPUS CONTAINS A TABLE, so association extraction has no");
+    console.log("   acceptance case here either. Zero objects is the CORRECT result: the pairs in");
+    console.log("   these documents were flattened into prose before extraction could see them,");
+    console.log("   and guessing them back out of the words would mint confident nonsense — the");
+    console.log("   measured sample being room numbers, Zoom links and shredded grading tables.");
+    console.log("   🔴 DO NOT read a future non-zero number here as 'the table lane works' unless");
+    console.log("      every object also reports derivation: 'table-row'.");
   }
 }
 

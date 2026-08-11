@@ -321,6 +321,15 @@ export interface ExtractedFile {
    */
   model?: DocumentModel;
   /**
+   * The filed `library_sources.id`, when this upload became a durable source.
+   *
+   * 🔴 THIS IS WHAT MAKES ANYTHING OUTLIVE THE REQUEST. A small file posted as a form has no
+   * stored row, so nothing extracted from it can be anchored to anything a second session could
+   * find again — a knowledge object built from it would point at browser state. Present only on
+   * the by-reference lane; absent means "this material was read but not kept".
+   */
+  librarySourceId?: string;
+  /**
    * The `parsed_documents` row this extraction was recorded as, when one was written.
    *
    * 🔴 THE ROUTE HAS RETURNED THIS ALL ALONG AND THIS TYPE HAD NO FIELD FOR IT — the same
@@ -421,10 +430,56 @@ function extractErrorFor(status: number, fileName: string): string {
  *
  * Throws with a student-readable message.
  */
+/**
+ * Which lane a request takes, decided from what is actually true rather than what was asked for.
+ *
+ * 🔴 FILING IS BEST-EFFORT, AND A FILE THAT COULD NOT BE FILED IS STILL READ. `keep` deliberately
+ * does not appear here — only its OUTCOME does, as `filedSourceId`. A `keep` request whose upload
+ * was refused falls back to the lane that has always worked, because throwing would turn a
+ * document that used to open into one the student simply cannot add.
+ *
+ * And a refusal is not hypothetical: the storage bucket has a mime allowlist, and `fileMime`
+ * returns "" for a file the browser reported no type for whose extension we do not recognise —
+ * which includes a case this codebase deliberately supports, a lecture PDF whose name has lost its
+ * ".pdf" and is identified by sniffing its bytes on the server. That file went inline before and
+ * must keep going inline.
+ *
+ * What is lost in the fallback is durability, and the caller can SEE that it was lost, because
+ * `librarySourceId` comes back absent — which every consumer already reads as "not re-findable",
+ * never as "filed somewhere".
+ */
+export function uploadLane(input: {
+  /** A row the caller already had. */
+  sourceId: string | null;
+  /** The row filing produced, or null when filing was not asked for or did not work. */
+  filedSourceId: string | null;
+  size: number;
+}): "inline" | "by-reference" {
+  // A row exists, so the server can read the bytes from it — always the better lane.
+  if (input.filedSourceId ?? input.sourceId) return "by-reference";
+  // No row and too big to post: by reference is the only way, and it is allowed to fail loudly.
+  if (input.size > MAX_INLINE_UPLOAD_BYTES) return "by-reference";
+  return "inline";
+}
+
 export async function extractFile(
   file: File,
   uid: string | null,
-  opts: { sourceId?: string | null; folderPath?: string } = {},
+  opts: {
+    sourceId?: string | null;
+    folderPath?: string;
+    /**
+     * File this upload even when it is small enough to post inline.
+     *
+     * 🔴 THE DEFAULT IS DELIBERATELY NOT TO KEEP, AND THAT DEFAULT IS RIGHT FOR CHAT. A photo
+     * dropped into a conversation to ask one question should not silently become a permanent
+     * document. But it is wrong for anything whose output has to survive the session: a canvas
+     * cites its source weeks later, and a knowledge object extracted from it must be anchored to
+     * a row a SECOND canvas can find. Without a filed row the anchor points at browser state and
+     * cross-session learning cannot work at all — so the caller says which it wants, explicitly.
+     */
+    keep?: boolean;
+  } = {},
 ): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key || !uid) throw new Error("Sign in to read this attachment.");
@@ -466,13 +521,22 @@ export async function extractFile(
   // with no row still takes the multipart path — one round trip, and nothing is
   // stored for a document the student never asked us to keep.
   const sourceId = opts.sourceId ?? null;
-  if (!sourceId && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+  let filedSourceId: string | null = sourceId;
+
+  // Filing is attempted first when the caller asked for it, so its OUTCOME — not its intention —
+  // is what decides the lane. See `uploadLane`.
+  if (!sourceId && opts.keep) {
+    filedSourceId = await uploadForIngest(payload, uid, opts.folderPath ?? "");
+  }
+
+  if (uploadLane({ filedSourceId, size: payload.size, sourceId }) === "inline") {
     const form = new FormData();
     form.append("file", payload);
     response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
   } else {
-    const id = sourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
+    const id = filedSourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
     if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
+    filedSourceId = id;
     response = await fetch("/api/notebooks/extract/file", {
       body: JSON.stringify({ sourceId: id }),
       headers: { ...headers, "Content-Type": "application/json" },
@@ -498,6 +562,13 @@ export async function extractFile(
     readBy: body.readBy,
     text: body.text,
     title: body.title ?? null,
+    // 🔴 THE TWO IDS ARE REPORTED SEPARATELY BECAUSE THEY CAN DISAGREE. The row id comes from our
+    // own upload; the parse id comes from the server and is absent when `persistParse` failed —
+    // which it is allowed to do, because a student who cannot add their lecture over a bookkeeping
+    // write has lost more than the record was worth. A caller must be able to tell "filed and
+    // parsed" from "filed, parse not recorded"; collapsing them would let an extractor anchor to a
+    // source whose canonical model was never stored.
+    ...(filedSourceId ? { librarySourceId: filedSourceId } : {}),
     // Validated rather than cast: this crossed the wire as JSON, and a shape
     // that does not check out must become `undefined` (unknown) rather than a
     // half-built record that later reads as a claim about the document.

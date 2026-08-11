@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDocument } from "@nemesis/shared";
+import { buildDocument, structureEnvelope, type DocumentModel } from "@nemesis/shared";
 
-import { buildExcerpts, buildExcerptsFromModel, groundingBlock, quotedExcerpt } from "./canvas-grounding";
+import {
+  anchorInUnit,
+  buildSourceContext,
+  type CanonicalSourceAnchor,
+  type SourceContext,
+} from "@/lib/sources/source-context";
+
+import {
+  buildExcerpts,
+  buildExcerptsFromModel,
+  excerptsFromSourceContext,
+  groundCanonicalAnchor,
+  groundingBlock,
+  quotedExcerpt,
+} from "./canvas-grounding";
 import type { CanvasSource } from "./canvas-model";
 
 test("a plain run of paragraphs becomes numbered excerpts with stable ids", () => {
@@ -273,4 +287,102 @@ test("empty blocks contribute nothing rather than an empty excerpt", () => {
     ],
   });
   assert.deepEqual(buildExcerptsFromModel("s1", model).map((e) => e.text), ["Real."]);
+});
+
+// ── excerptsFromSourceContext + groundCanonicalAnchor ───────────────────────
+
+function storedStructure(m?: DocumentModel, text = "Some words.") {
+  return JSON.parse(JSON.stringify(structureEnvelope({ model: m, text, title: "A document" })));
+}
+
+function contextOf(m?: DocumentModel, text?: string): SourceContext {
+  return buildSourceContext({ sourceId: "lib-1", sourceKind: "pdf", structure: storedStructure(m, text) });
+}
+
+const TERMS: string[][] = [["Term", "Definition"], ["Stomata", "Pores in a leaf surface."]];
+
+function courseModel(): DocumentModel {
+  return {
+    blocks: [
+      { headingPath: [], id: "h1", kind: "heading", text: "Key Terms", unit: 0 },
+      { headingPath: ["Key Terms"], id: "t1", kind: "table", table: { headerRows: 1, rows: TERMS }, text: "", unit: 0 },
+      { headingPath: ["Key Terms"], id: "p1", kind: "paragraph", text: "Learn these terms.", unit: 0 },
+    ],
+    format: "pdf",
+    title: "A document",
+    units: [{ index: 0, kind: "page" }],
+  };
+}
+
+test("the canonical path builds the same excerpt shape the model path does", () => {
+  const excerpts = excerptsFromSourceContext("s1", contextOf(courseModel()));
+  assert.deepEqual(excerpts.map((e) => e.id), ["s1:e1", "s1:e2"]);
+  assert.equal(excerpts.every((e) => e.label === "Key Terms"), true);
+});
+
+test("a table crosses the canonical path whole, with its cells intact", () => {
+  const excerpts = excerptsFromSourceContext("s1", contextOf(courseModel()));
+  assert.match(excerpts[0]!.text, /Stomata/);
+  assert.match(excerpts[0]!.text, /Pores in a leaf surface/);
+  // 🔴 One excerpt, not one per row. A grid with some of its rows is a different grid.
+  assert.equal(excerpts.filter((e) => e.text.includes("Stomata")).length, 1);
+});
+
+test("every canonical excerpt remembers which unit it was cut from", () => {
+  const excerpts = excerptsFromSourceContext("s1", contextOf(courseModel()));
+  assert.deepEqual(excerpts.map((e) => e.unitId), ["t1", "p1"]);
+});
+
+test("a legacy text-only source still produces excerpts, with no unit identity to fake", () => {
+  const excerpts = excerptsFromSourceContext("s1", contextOf(undefined, "One paragraph of prose."));
+  assert.equal(excerpts.length, 1);
+  assert.equal(excerpts[0]!.unitId, "u0");
+  assert.equal(excerpts[0]!.label, null);
+});
+
+// ── the anchor → citation bridge ────────────────────────────────────────────
+
+function canvasSourceFrom(context: SourceContext): CanvasSource {
+  return {
+    excerpts: excerptsFromSourceContext("s1", context),
+    id: "s1",
+    kind: "pdf",
+    librarySourceId: "lib-1",
+    title: "A document",
+  };
+}
+
+test("a canonical anchor resolves to the canvas citation for the same text", () => {
+  const context = contextOf(courseModel());
+  const source = canvasSourceFrom(context);
+  const unit = context.units.find((u) => u.id === "p1")!;
+  const ref = groundCanonicalAnchor([source], anchorInUnit(unit, "Learn these terms."));
+  assert.deepEqual(ref, { excerptId: "s1:e2", sourceId: "s1" });
+});
+
+test("an anchor from a DIFFERENT document does not resolve against this canvas", () => {
+  // 🔴 THE DEFECT THIS PINS. Every canvas calls its first attachment "s1". Matching an anchor on
+  // the canvas-local id instead of the durable one would resolve an anchor from someone else's
+  // lecture to real text in this one — a citation that passes every check and points at the
+  // wrong document. Change `librarySourceId` to `id` in groundCanonicalAnchor and this fails.
+  const context = contextOf(courseModel());
+  const source = canvasSourceFrom(context);
+  const unit = context.units.find((u) => u.id === "p1")!;
+  const foreign = { ...anchorInUnit(unit, "Learn these terms."), sourceId: "lib-OTHER" };
+  assert.equal(groundCanonicalAnchor([source], foreign), null);
+});
+
+test("an anchor whose quote no longer exists yields no citation rather than a plausible one", () => {
+  const source = canvasSourceFrom(contextOf(courseModel()));
+  const gone: CanonicalSourceAnchor = {
+    quote: { exact: "a sentence a better parser removed" },
+    sourceId: "lib-1",
+    unitId: "p1",
+  };
+  assert.equal(groundCanonicalAnchor([source], gone), null);
+});
+
+test("a source that was never filed cannot be cited canonically at all", () => {
+  const unfiled: CanvasSource = { ...canvasSourceFrom(contextOf(courseModel())), librarySourceId: undefined };
+  assert.equal(groundCanonicalAnchor([unfiled], { sourceId: "lib-1", unitId: "p1" }), null);
 });

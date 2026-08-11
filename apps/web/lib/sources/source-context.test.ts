@@ -7,6 +7,7 @@ import { capabilitiesOfStored, deriveCapabilities, parsedPageCount, parseQuality
 import {
   anchorInUnit,
   buildSourceContext,
+  unitContent,
   quoteAnchor,
   readableUnits,
   resolveQuote,
@@ -192,4 +193,142 @@ test("an unreadable structure column yields no units rather than throwing", () =
     assert.deepEqual(context.units, []);
     assert.equal(context.quality, "failed");
   }
+});
+
+// ── tables survive the boundary ─────────────────────────────────────────────
+//
+// 🔴 THE DEFECT THESE PIN. Every canonical table builder in the codebase — pdf/structure.ts,
+// pptx-model.ts, docx-model.ts, docling-adapter.ts — writes `text: ""` on a table block, because
+// the grid is the content and `blockToText` renders it from `block.table`. This boundary copied
+// `block.text` verbatim, so every table arrived with empty text and `readableUnits` dropped it
+// entirely. Not flattened — INVISIBLE. Restore the old `text: block.text` line and both of these
+// fail, which is the only reason to trust them.
+
+const KEY_TERMS: string[][] = [
+  ["Term", "Definition"],
+  ["Photosynthesis", "Conversion of light energy into chemical energy."],
+  ["Chlorophyll", "Pigment that absorbs light."],
+];
+
+function tableModel(): DocumentModel {
+  return model([
+    block({ headingPath: [], id: "h1", kind: "heading", text: "Key Terms" }),
+    block({
+      headingPath: ["Key Terms"],
+      id: "t1",
+      kind: "table",
+      table: { headerRows: 1, rows: KEY_TERMS },
+      // As production stores it. A table's text is empty; the grid is the content.
+      text: "",
+    } as Partial<DocBlock>),
+  ]);
+}
+
+test("a table reaches an extractor as a readable unit rather than vanishing", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const tables = readableUnits(context).filter((unit) => unit.type === "table");
+  assert.equal(tables.length, 1, "the table must survive readableUnits()");
+  assert.match(tables[0]!.text ?? "", /Photosynthesis/);
+});
+
+test("a table keeps its cells, not just a rendering of them", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const table = context.units.find((unit) => unit.type === "table");
+  // 🔴 The rows are what an association extractor reads. A markdown rendering it would have to
+  // re-split on pipe characters is the flattening this boundary exists to prevent.
+  assert.deepEqual(table?.table?.rows, KEY_TERMS);
+  assert.equal(table?.table?.headerRows, 1);
+});
+
+test("a figure nobody examined is not turned into citable evidence", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "f1", kind: "figure", text: "" } as Partial<DocBlock>)])),
+  });
+  // "[Figure — not examined]" is OUR disclosure, not the document's content.
+  assert.deepEqual(readableUnits(context), []);
+});
+
+test("a figure's caption and what a model said about it stay distinguishable", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({
+      figure: { description: "The curve flattens." },
+      id: "f1",
+      kind: "figure",
+      text: "Figure 1 - rate against intensity",
+    } as Partial<DocBlock>)])),
+  });
+  const figure = readableUnits(context).find((unit) => unit.type === "figure");
+  assert.match(figure?.text ?? "", /Figure 1 - rate against intensity/);
+  assert.match(figure?.text ?? "", /The curve flattens\./);
+});
+
+// ── unitContent: the one question a semantic consumer asks ──────────────────
+
+test("a table's content is its cells, and asking for it never requires knowing that", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const unit = context.units.find((u) => u.type === "table")!;
+  const content = unitContent(unit);
+  assert.equal(content.kind, "table");
+  if (content.kind !== "table") return;
+  assert.deepEqual(content.rows, KEY_TERMS);
+  assert.match(content.rendered, /Photosynthesis/);
+});
+
+test("a figure's caption and what a model said about it arrive as separate fields", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({
+      figure: { description: "The curve flattens." },
+      id: "f1",
+      kind: "figure",
+      text: "Figure 1",
+    } as Partial<DocBlock>)])),
+  });
+  const content = unitContent(context.units[0]!);
+  assert.equal(content.kind, "figure");
+  if (content.kind !== "figure") return;
+  // 🔴 The document's words and an inference about them must never become one string here.
+  assert.equal(content.caption, "Figure 1");
+  assert.equal(content.description, "The curve flattens.");
+});
+
+test("a figure nobody examined has no content — our disclosure is not the document's", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "f1", kind: "figure", text: "" } as Partial<DocBlock>)])),
+  });
+  assert.equal(unitContent(context.units[0]!).kind, "empty");
+});
+
+test("🔴 a table is never 'empty', however empty its text field is", () => {
+  // The defect this whole accessor exists for. Every canonical table builder writes `text: ""`, so
+  // any consumer testing emptiness on that field deletes every grid in the corpus and no test
+  // fails. Make `unitContent` fall through to the text branch for tables and this goes red.
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const table = context.units.find((u) => u.type === "table")!;
+  assert.notEqual(unitContent(table).kind, "empty");
+  assert.equal(readableUnits(context).some((u) => u.type === "table"), true);
+});
+
+test("prose, headings and equations all read as plain text", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([
+      block({ id: "h1", kind: "heading", text: "A heading" }),
+      block({ id: "p1", kind: "paragraph", text: "Some prose." }),
+      block({ id: "e1", kind: "equation", text: "E = mc^2" } as Partial<DocBlock>),
+    ])),
+  });
+  assert.deepEqual(context.units.map((u) => unitContent(u).kind), ["text", "text", "text"]);
+  // 🔴 A heading arrives without markdown, because a "### " prefix would become part of any quote
+  // anchor built from it and would then fail to match the source after a reparse.
+  const heading = unitContent(context.units[0]!);
+  assert.equal(heading.kind === "text" ? heading.text : null, "A heading");
 });

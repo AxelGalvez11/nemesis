@@ -30,7 +30,8 @@ import {
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
-import { buildExcerpts, buildExcerptsFromModel } from "@/lib/learn/canvas-grounding";
+import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
+import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
@@ -291,31 +292,66 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         for (const file of Array.from(files)) {
           // The existing extraction chokepoint — same door chat attachments, Library import
           // and syllabus import all use. No second pipeline.
-          const extracted = await extractFile(file, id);
+          //
+          // 🔴 `keep` IS WHAT MAKES CROSS-SESSION LEARNING POSSIBLE AT ALL. Without it a file
+          // under 4 MB took the inline lane, which has no stored row for a parse to attach to —
+          // so a canvas attachment produced no `library_sources` row, no `parsed_documents` row
+          // and no durable id. Everything the canvas then learned from that document was anchored
+          // to a string that means nothing outside this one canvas: a second canvas built on the
+          // same lecture could not tell it was the same lecture, and retrieval, which needs a
+          // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
+          // dropped into a conversation should not silently become a permanent document.
+          const extracted = await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
           const sourceId = `s${latest.current.sources.length + 1}`;
           const note = coverageNote(extracted.coverage);
+
+          // 🔴 READ BACK WHAT SURVIVED, RATHER THAN TRUSTING WHAT WAS RETURNED. The upload
+          // response carries the model the parser produced in that request; the canvas has to
+          // work from the one that got STORED, because that is what every later reader sees —
+          // this canvas after a reload, a second canvas, retrieval, extraction. While the two are
+          // built from different inputs, a write that silently failed or a shape the envelope
+          // reader rejects looks perfect here and empty everywhere else.
+          const canonical = extracted.librarySourceId
+            ? await loadCanonicalSource(extracted.librarySourceId)
+            : { ok: false as const, reason: "not-found" as const };
+
           const source: CanvasSource = {
             id: sourceId,
             title: extracted.title ?? file.name,
             kind: extracted.kind ?? "text",
-            // 🔴 STRUCTURE WHEN WE HAVE IT, TEXT WHEN WE DO NOT — AND A MISSING
-            // MODEL IS "UNKNOWN", NOT "FLAT". The model path keeps a table whole
-            // instead of letting it arrive as a paragraph of pipe characters, and
-            // takes each excerpt's label from the heading path the parser actually
-            // recorded rather than scraping markdown back out of the text. Images
-            // have no structural pass at all and a PDF the structural reader could
-            // not open falls back to `unpdf`, so the string builder stays as the
-            // answer for both — it is a fallback, not dead code.
-            excerpts: extracted.model
-              ? buildExcerptsFromModel(sourceId, extracted.model)
-              : buildExcerpts(sourceId, extracted.text),
+            // Three inputs, in order of how much is known about them, and the fallbacks are
+            // fallbacks rather than dead code: an image has no structural pass at all, and a PDF
+            // the structural reader could not open falls back to `unpdf`.
+            //
+            //   1. the STORED canonical parse — the one everything else reads;
+            //   2. the model from this request — right, but only until the tab closes;
+            //   3. the flat text — a heading becomes a guess and a table becomes pipe soup.
+            //
+            // 🔴 AND A MISSING MODEL IS "UNKNOWN", NEVER "FLAT". Reading absence the second way
+            // is how a two-column paper gets filed as prose.
+            excerpts: canonical.ok
+              ? excerptsFromSourceContext(sourceId, canonical.context)
+              : extracted.model
+                ? buildExcerptsFromModel(sourceId, extracted.model)
+                : buildExcerpts(sourceId, extracted.text),
             ...(note ? { coverageNote: note } : {}),
+            // 🔴 STATED, NOT LEFT TO BE INFERRED. A reader must not have to work out durability
+            // from whether some other field happens to be set — an ephemeral source can teach this
+            // canvas perfectly well, and must not pretend to support anything that outlives it.
+            durability: extracted.librarySourceId ? "durable" : "ephemeral",
+            ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
+            ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
           canvasCapture("source_attached", latest.current, {
             kind: source.kind,
             excerpts: source.excerpts.length,
             chars: extracted.text.length,
+            // Logged so the proportion of canvases running on a degraded parse is findable in
+            // production without a student having to report one.
+            durability: extracted.librarySourceId ? "durable" : "ephemeral",
+            grounding: canonical.ok ? "canonical" : extracted.model ? "response-model" : "text",
+            ...(canonical.ok ? { quality: canonical.context.quality } : {}),
           });
         }
       } catch (cause) {
