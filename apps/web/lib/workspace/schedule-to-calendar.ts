@@ -10,7 +10,9 @@
 // "we'll probably test this sometime next month" on someone's calendar as an exam.
 
 import {
+  AUTO_CONFIRM_AT,
   canAutoConfirm,
+  hasHedging,
   type ScheduleCandidate,
   type ScheduleKind,
 } from "@/lib/learn/schedule-candidates";
@@ -41,7 +43,18 @@ export interface ConversionRefusal {
     | "not_confident_enough"
     | "no_provenance"
     | "hedged"
-    | "is_a_plan_not_an_obligation";
+    | "is_a_plan_not_an_obligation"
+    /**
+     * A repeating meeting whose LAST DAY the document never states.
+     *
+     * 🔴 A GUESSED END IS WORSE THAN NO SERIES, WHICH IS WHY THIS EXISTS. `recurrence.until` is
+     * required by `CalendarEvent`, and the tempting fill-in — "the latest dated thing in this
+     * document" — is a fabrication: on a real syllabus the last dated row is the final EXAM, so a
+     * Tuesday/Thursday class would silently stop on exam day and every meeting after it would
+     * vanish from the calendar. Missing work the student was never shown is the worst failure this
+     * pipeline has, so the series is refused and kept as a candidate to confirm instead.
+     */
+    | "no_series_end";
 }
 
 /** ISO instant → the local date key the calendar stores.
@@ -73,24 +86,54 @@ function localDateKey(iso: string, timezone?: string): string | null {
 export function toCalendarEvent(
   candidate: ScheduleCandidate,
   eventId: string,
+  options: {
+    /**
+     * The last day a repeating meeting runs, when the DOCUMENT states one.
+     *
+     * Never derived. A caller that does not know it gets `no_series_end` rather than a series
+     * that ends somewhere plausible.
+     */
+    seriesEnd?: string;
+  } = {},
 ): { event: DecodedCalendarEvent } | ConversionRefusal {
+  const recurring = (candidate.meetsOn?.length ?? 0) >= 2;
   const instant = candidate.dueAt ?? candidate.startAt;
-  if (!instant) return { reason: "no_date" };
+  // A recurring meeting has weekdays and times and NO single date; requiring one would refuse
+  // every class series with `no_date`, which is true of the row and false about the document.
+  if (!instant && !recurring) return { reason: "no_date" };
+
+  // 🔴 STRUCTURAL IMPOSSIBILITY IS REPORTED BEFORE CONFIDENCE, and the order is the whole
+  // usefulness of the reason. A recurring candidate has no `startAt`, so `canAutoConfirm` — which
+  // ends in `Boolean(startAt ?? dueAt)` — refuses EVERY series no matter how certain it is, and
+  // the caller was told `hedged`. That sends a reader looking for tentative language in a row that
+  // has none, when the actual missing fact is the last day of term.
+  if (recurring && !options.seriesEnd) return { reason: "no_series_end" };
 
   // A candidate the learner explicitly confirmed skips the automatic bar — they looked at it
   // and said yes, which is better evidence than any threshold.
   if (candidate.status !== "confirmed") {
     if (candidate.origin === "nemesis_plan") return { reason: "is_a_plan_not_an_obligation" };
     if (candidate.sourceRefs.length === 0) return { reason: "no_provenance" };
-    if (!canAutoConfirm(candidate)) {
+    // A series is judged on the same evidence minus the single date it cannot have: the weekdays
+    // ARE its when. Passing it through `canAutoConfirm` unchanged would fail it on the one clause
+    // that does not apply.
+    const confident = recurring
+      ? candidate.confidence >= AUTO_CONFIRM_AT
+        && !(candidate.originalExpression && hasHedging(candidate.originalExpression))
+      : canAutoConfirm(candidate);
+    if (!confident) {
       return {
         reason: candidate.originalExpression && candidate.confidence >= 0.8 ? "hedged" : "not_confident_enough",
       };
     }
   }
 
-  const date = localDateKey(instant, candidate.timezone);
-  if (!date) return { reason: "no_date" };
+  const date = instant
+    ? localDateKey(instant, candidate.timezone)
+    : options.seriesEnd && candidate.resolvedAgainst
+      ? localDateKey(candidate.resolvedAgainst, candidate.timezone)
+      : null;
+  if (!date) return { reason: recurring ? "no_series_end" : "no_date" };
 
   const event: DecodedCalendarEvent = {
     id: eventId,
@@ -108,6 +151,12 @@ export function toCalendarEvent(
     ...(candidate.resolvedAgainst ? { resolvedAgainst: candidate.resolvedAgainst } : {}),
     // Extracted events are read-only in the UI, which is what `source: "agent"` already means.
     source: "agent",
+    ...(candidate.startTime ? { time: candidate.startTime } : {}),
+    ...(candidate.endTime ? { endTime: candidate.endTime } : {}),
+    // ONE series, not one row per occurrence.
+    ...(recurring && options.seriesEnd
+      ? { recurrence: { days: [...candidate.meetsOn!].sort((a, b) => a - b), until: options.seriesEnd } }
+      : {}),
   };
 
   return { event };

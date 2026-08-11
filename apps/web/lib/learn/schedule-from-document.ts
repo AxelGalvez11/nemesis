@@ -403,9 +403,14 @@ export function scheduleCandidatesFrom(
         candidate({
           confidence: hasHedging(segment.text) ? 0.4 : 0.7,
           kind: "class",
+          // 🔴 THE DAYS TRAVEL WITH IT. Keeping only the start time left the calendar with a
+          // weekly class it could not place: one undated entry, or thirty if something
+          // downstream expanded it by guessing an end. The pattern is what the document said.
+          meetsOn: pattern.days,
           options,
           segment,
           title: titleFor(segment),
+          ...(pattern.endTime ? { endTime: pattern.endTime } : {}),
           ...(pattern.startTime ? { startTime: pattern.startTime } : {}),
         }, options.newId(segment, index)),
       );
@@ -473,6 +478,8 @@ function candidate(
     title: string;
     date?: string;
     startTime?: string;
+    endTime?: string;
+    meetsOn?: number[];
     confidence: number;
     segment: ScheduleSegment;
     options: ScheduleFromDocumentOptions;
@@ -488,6 +495,9 @@ function candidate(
     unitIndex: segment.unit,
     ...(options.parsedDocumentId ? { parsedDocumentId: options.parsedDocumentId } : {}),
   };
+  // 🔴 A RECURRING MEETING HAS NO SINGLE DATE, so it must not be given one. `startAt` is built
+  // from a resolved calendar date; a weekly class has weekdays and times and no date at all, and
+  // manufacturing one here would put the whole series on whatever day this happened to pick.
   const startAt = input.date
     ? `${input.date}T${input.startTime ?? "00:00"}:00`
     : undefined;
@@ -500,6 +510,9 @@ function candidate(
     // to be what the document says, not a tidied version of it.
     originalExpression: segment.text.slice(0, 400),
     origin: "source_extraction",
+    ...(input.meetsOn && input.meetsOn.length > 0 ? { meetsOn: input.meetsOn } : {}),
+    ...(input.startTime ? { startTime: input.startTime } : {}),
+    ...(input.endTime ? { endTime: input.endTime } : {}),
     resolvedAgainst: options.anchor.toISOString(),
     sourceRefs: [ref],
     status: "candidate",
