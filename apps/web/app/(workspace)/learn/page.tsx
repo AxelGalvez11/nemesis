@@ -30,11 +30,18 @@ function LearnSurface() {
   const params = useSearchParams();
   const canvasId = params.get("c");
   const ask = params.get("ask");
+  // The teaching-policy runtime, asked for explicitly per canvas.
+  //
+  // 🔴 A URL OPT-IN RATHER THAN A DEPLOY-TIME FLAG, ON PURPOSE. It needs no environment variable to
+  // exercise in production, it cannot switch a real learner over by accident, and it is visible in
+  // the address bar — so "which runtime was this?" is answerable afterwards instead of being
+  // inferred from behaviour. It goes when this stops being the new runtime.
+  const policy = params.get("policy") === "1";
   const { session } = useAuth();
 
   // No canvas named and nothing asked: this is the landing surface.
   if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
-  return <LearningCanvas canvasId={canvasId} openingAsk={ask} />;
+  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyRequested={policy} />;
 }
 
 export default function LearnPage() {

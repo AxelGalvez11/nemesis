@@ -1,6 +1,6 @@
 -- One learner answer is one demonstration, however many times the request arrives.
 --
--- NOT YET APPLIED as of writing; update this line when it lands.
+-- APPLIED to production 2026-08-11.
 --
 -- 🔴 APPEND-ONLY DOES NOT MEAN DUPLICATES ARE ACCEPTABLE, and this is the gap between those two
 -- things. A single submitted answer can reach the server more than once for reasons that have

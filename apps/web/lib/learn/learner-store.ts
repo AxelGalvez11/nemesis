@@ -63,9 +63,15 @@ export async function saveKnowledge(
 
   // Read back rather than trusting the upsert's return: with `ignoreDuplicates` a row that already
   // existed returns nothing, and that is the common case once a learner meets a fact twice.
+  // 🔴 SCOPED TO THE USER EXPLICITLY, NOT LEFT TO RLS. The uniqueness constraint is on
+  // `(user_id, identity_key)`, so identity alone is not unique across the table — two learners
+  // meeting the same fact hold two rows. RLS would very likely hide the other one, but
+  // `maybeSingle()` ERRORS on two rows rather than picking one, and this read is the step the
+  // whole cross-canvas proof rests on: get it wrong and evidence attaches to nothing.
   const { data: knowledgeRow, error: readError } = await supabase
     .from("knowledge_objects")
     .select("id")
+    .eq("user_id", userId)
     .eq("identity_key", identityKey)
     .maybeSingle();
   if (readError || !knowledgeRow) {
@@ -97,6 +103,7 @@ export async function saveKnowledge(
   const { data: rows, error: rowsError } = await supabase
     .from("learning_objectives")
     .select("id,identity_key")
+    .eq("user_id", userId)
     .in("identity_key", objectives.map((o) => o.identityKey));
   if (rowsError || !rows) {
     if (rowsError && !isMissingTable(rowsError)) console.warn("[learn] objective read-back failed", rowsError.message);
