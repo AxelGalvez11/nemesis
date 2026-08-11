@@ -1,0 +1,173 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   THE THREE-BEAD MARK — motion.
+
+   One rule governs everything here: MOVEMENT MEANS SOMETHING. Each state below
+   is a thing the system is actually doing, and the motion is picked to look like
+   that thing rather than to look lively. `reading` traverses downward the way
+   reading does. `diagnosing` pulls one bead out of line, holds it, and puts it
+   back — which is what isolating a fault looks like. `retrieving` compresses the
+   stack and releases it.
+
+   WHAT IS DELIBERATELY ABSENT: bounce, overshoot, squash-and-stretch, and any
+   easing with a spring in it. Every curve here is a symmetric ease-in-out, and
+   the shortest cycle is 3.6 seconds. The difference between an instrument and a
+   toy is almost entirely in that choice.
+
+   Durations are long on purpose. A three-dot loader cycles in under a second
+   because it is filling silence; this is a mark, and a mark that fidgets is a
+   mark you want to scroll past.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.mark {
+  display: block;
+  overflow: visible;
+}
+
+/* Every bead animates about its OWN centre, not the viewBox origin. Without
+   fill-box, a scale on bead 3 would swing it across the artboard. */
+.mark .bead {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+}
+
+/* The identity mark. Holds absolutely still — the nav is not a place where
+   anything should be moving. */
+.mark-static .bead { animation: none; }
+
+/* IDLE — present, not working. The stack breathes: each bead drifts a fraction
+   on its own slow cycle, out of phase, so the group never lines up into an
+   obvious loop. */
+.mark-idle .bead { animation: bead-drift 9s ease-in-out infinite; }
+.mark-idle .bead-2 { animation-duration: 11s; animation-delay: -3.2s; }
+.mark-idle .bead-3 { animation-duration: 10s; animation-delay: -6.1s; }
+
+@keyframes bead-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(1.4%, -1.6%) rotate(1.1deg); }
+  66% { transform: translate(-1.1%, 1.3%) rotate(-0.8deg); }
+}
+
+/* THINKING — the beads rotate slowly about the stack axis, so each one flattens
+   as it turns edge-on and fills out again. Scale on X reads as rotation in depth
+   without needing a 3D transform. */
+.mark-thinking .bead { animation: bead-turn 4.4s ease-in-out infinite; }
+.mark-thinking .bead-2 { animation-delay: 0.22s; }
+.mark-thinking .bead-3 { animation-delay: 0.44s; }
+
+@keyframes bead-turn {
+  0%, 100% { transform: scaleX(1) rotate(0deg); }
+  50% { transform: scaleX(0.7) rotate(-3deg); }
+}
+
+/* READING — a traverse. One bead brightens and advances as the pass moves down
+   the stack, then the pass restarts at the top. */
+.mark-reading .bead { animation: bead-scan 3.6s ease-in-out infinite; }
+.mark-reading .bead-2 { animation-delay: 0.4s; }
+.mark-reading .bead-3 { animation-delay: 0.8s; }
+
+@keyframes bead-scan {
+  0%, 44%, 100% { transform: translateX(0) scale(1); }
+  18% { transform: translateX(6%) scale(1.05); }
+}
+
+/* DIAGNOSING — one bead leaves the stack, is held apart while it is examined,
+   then rejoins. The other two hold their line: the point of the movement is that
+   ONE thing is being singled out. */
+.mark-diagnosing .bead-2 { animation: bead-isolate 5.2s ease-in-out infinite; }
+.mark-diagnosing .bead-1,
+.mark-diagnosing .bead-3 { animation: bead-close 5.2s ease-in-out infinite; }
+
+@keyframes bead-isolate {
+  0%, 100% { transform: translateX(0) scale(1); }
+  30%, 62% { transform: translateX(22%) scale(1.06); }
+}
+@keyframes bead-close {
+  0%, 100% { transform: translateY(0); }
+  30%, 62% { transform: translateY(0) scaleX(0.94); }
+}
+
+/* RETRIEVING — the stack compresses toward its centre and springs back open.
+   Reaching for something and coming back with it. */
+.mark-retrieving .bead-1 { animation: bead-pull-down 3.8s ease-in-out infinite; }
+.mark-retrieving .bead-3 { animation: bead-pull-up 3.8s ease-in-out infinite; }
+.mark-retrieving .bead-2 { animation: bead-hold 3.8s ease-in-out infinite; }
+
+@keyframes bead-pull-down {
+  0%, 100% { transform: translateY(0); }
+  46% { transform: translateY(58%); }
+}
+@keyframes bead-pull-up {
+  0%, 100% { transform: translateY(0); }
+  46% { transform: translateY(-58%); }
+}
+@keyframes bead-hold {
+  0%, 100% { transform: scale(1); }
+  46% { transform: scale(1.1); }
+}
+
+/* ADAPTING — the stack reorganises. Beads exchange lateral position and settle
+   into a new arrangement, which is what "what comes next just changed" looks
+   like without a diagram. */
+.mark-adapting .bead-1 { animation: bead-shift-a 6s ease-in-out infinite; }
+.mark-adapting .bead-2 { animation: bead-shift-b 6s ease-in-out infinite; }
+.mark-adapting .bead-3 { animation: bead-shift-c 6s ease-in-out infinite; }
+
+@keyframes bead-shift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%, 60% { transform: translate(-13%, 2%) scale(0.9); }
+}
+@keyframes bead-shift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%, 60% { transform: translate(14%, 0) scale(1.08); }
+}
+@keyframes bead-shift-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%, 60% { transform: translate(-8%, -2%) scale(0.95); }
+}
+
+/* LISTENING — the only state driven by something outside the system. A slow,
+   even level: no randomness, because a fake waveform is a lie about what is
+   being measured. */
+.mark-listening .bead { animation: bead-level 2.8s ease-in-out infinite; }
+.mark-listening .bead-2 { animation-delay: 0.18s; }
+.mark-listening .bead-3 { animation-delay: 0.36s; }
+
+@keyframes bead-level {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.1); }
+}
+
+/* SUCCESS — the one state that RESOLVES rather than loops. The beads pull into
+   perfect alignment and stop. Playing once is the whole point: a success that
+   keeps celebrating is a progress bar. */
+.mark-success .bead { animation: bead-settle 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.mark-success .bead-2 { animation-delay: 0.06s; }
+.mark-success .bead-3 { animation-delay: 0.12s; }
+
+@keyframes bead-settle {
+  from { transform: translateX(6%) scale(0.94); }
+  to { transform: translateX(0) scale(1); }
+}
+
+/* ── The lockup: mark plus lowercase wordmark ─────────────────────────────── */
+.lockup { display: inline-flex; align-items: center; gap: 10px; }
+.lockup-word {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  /* Tracking is applied to the right of every glyph INCLUDING the last, so the word
+     carries a trailing 0.34em of nothing. Cancelled here, or the lockup reads as
+     misaligned against whatever sits beside it. */
+  margin-right: -0.34em;
+  color: var(--text);
+  line-height: 1;
+}
+
+/* A reveal is decoration and may never be the reason someone cannot use the page.
+   The mark keeps its shape; it simply stops moving, and every animation above
+   resolves to its own resting state at 0%. */
+@media (prefers-reduced-motion: reduce) {
+  .mark .bead { animation: none !important; }
+}

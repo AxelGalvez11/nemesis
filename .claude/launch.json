@@ -24,6 +24,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/landing && npx next start -p 3210"],
       "port": 3210
+    },
+    {
+      "name": "landing-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/nemesis/landing && npx next dev -p 3211"],
+      "port": 3211
     }
   ]
 }
