@@ -320,6 +320,19 @@ export interface ExtractedFile {
    * already follows: when the field is missing, fall back — never conclude.
    */
   model?: DocumentModel;
+  /**
+   * The `parsed_documents` row this extraction was recorded as, when one was written.
+   *
+   * 🔴 THE ROUTE HAS RETURNED THIS ALL ALONG AND THIS TYPE HAD NO FIELD FOR IT — the same
+   * boundary defect as `model`, one field over. It is what lets anything derived from a document
+   * say WHICH STORED PARSE it came from, which is the difference between a citation that can be
+   * re-opened and a sentence that says "from your syllabus".
+   *
+   * Absent on the multipart lane (a small file with no `sourceId` is parsed and not persisted) and
+   * when the bookkeeping write failed. Absent means NO RECORD — never "the record says it was
+   * fine".
+   */
+  parsedDocumentId?: string;
 }
 
 /**
@@ -475,6 +488,7 @@ export async function extractFile(
     bytes?: number;
     coverage?: unknown;
     model?: unknown;
+    parsedDocumentId?: unknown;
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
@@ -492,6 +506,10 @@ export async function extractFile(
     // which every consumer must read as "structure unknown, use the text" — not
     // as "this document has no structure".
     model: readDocumentModel(body.model) ?? undefined,
+    // A uuid or nothing. Checked rather than cast for the same reason as the two above.
+    parsedDocumentId: typeof body.parsedDocumentId === "string" && body.parsedDocumentId
+      ? body.parsedDocumentId
+      : undefined,
   };
 }
 
