@@ -205,6 +205,16 @@ export async function readPdfStructure(
      * deployment without them parses exactly as it did before.
      */
     detectTables?: boolean;
+    /**
+     * Recover ruled tables from the page's own lines. On by default.
+     *
+     * 🔴 A MEASUREMENT SEAM, NOT A FEATURE FLAG. The deterministic lane needs no
+     * model, no artifact and no configuration, so there is no deployment in which
+     * it should be off. It exists so `scripts/lattice-corpus.mts` can parse the
+     * same file both ways and prove what the lane changed — which is the only way
+     * to show that turning it on costs no document its prose.
+     */
+    latticeTables?: boolean;
   } = {},
 ): Promise<PdfStructureResult> {
   const maxUnits = options.maxUnits ?? MAX_UNITS_PER_PARSE;
@@ -246,6 +256,7 @@ export async function readPdfStructure(
       try {
         const read = await readPage(pdfjs, page, {
           capture: options.captureFigures === true && captured < maxCaptured,
+          lattice: options.latticeTables !== false,
           layout,
         });
         captured += read.figures.filter((figure) => figure.image).length;
@@ -291,7 +302,7 @@ type Pdfjs = Awaited<ReturnType<typeof loadPdfjs>>;
 async function readPage(
   pdfjs: Pdfjs,
   page: Awaited<ReturnType<Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>["getPage"]>>,
-  options: { capture: boolean; layout?: OnnxSessionLike | null } = { capture: false },
+  options: { capture: boolean; layout?: OnnxSessionLike | null; lattice?: boolean } = { capture: false },
 ): Promise<RawPage> {
   // scale 1 and the page's own rotation, so every coordinate below is already in
   // the space a reader would render — no second convention anywhere downstream.
@@ -340,7 +351,7 @@ async function readPage(
   // only what is left.
   const rulings = await readRulings(pdfjs as never, page, viewport);
   const claimedRegions: LatticeBox[] = [];
-  {
+  if (options.lattice !== false) {
     const consumed = new Set<TextItem>();
     for (const region of latticeRegions(rulings)) {
       const built = reconstructRegion(region, rulings, items);
