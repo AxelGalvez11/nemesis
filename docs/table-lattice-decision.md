@@ -13,7 +13,10 @@ Measured against the real PHCY 2119 syllabus and three sibling syllabi. Every
 number below is re-derivable with:
 
 ```
-npx tsx scripts/table-lattice-experiment.mts <file.pdf> [--rows]
+npx tsx scripts/lattice-check.mts <file.pdf> [--rows]     # what one file yields
+npx tsx scripts/lattice-signals.mts <corpus.jsonl> <out.jsonl>  # the threshold evidence
+npx tsx scripts/lattice-corpus.mts <corpus.jsonl> <out.jsonl>   # the release gate
+npx tsx scripts/gate-d.mts <file.pdf> ...                       # schedule acceptance
 ```
 
 ---
