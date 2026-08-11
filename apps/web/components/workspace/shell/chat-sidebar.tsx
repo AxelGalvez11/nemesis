@@ -54,22 +54,32 @@ interface NavItem {
   action?: "new-session";
 }
 
-// Student-build nav (STUDENT_HIDDEN_NAV already applied): exact order.
+// TWO SURFACES. Canvas is "what am I learning or doing"; Calendar is "when does it matter".
+// Everything else is a capability inside one of them.
 //
-// Notebooks is RETIRED (owner 2026-07-23), not deleted: lecture slides and
-// school documents belong in the Library, and the chat composer's "+ → Library"
-// picker is how a thread reaches them now. The route, its store and both
-// /api/notebooks/extract/* endpoints all stay — the extract endpoints are still
-// what reads a PDF/DOCX/PPTX dropped straight onto the composer. Bringing the
-// surface back is putting this one row back.
+// 🔴 THE OLD LIST WAS THE OLD MENTAL MODEL (owner 2026-08-10). New chat / Study / Library /
+// Calendar / Chill said "Nemesis is a suite of five tools", and made the learner's first
+// decision "which tool do I want?" — a question they are not equipped to answer and should
+// never be asked. Studying is not a place you go; it is what the canvas does when the evidence
+// says retrieval is what this objective needs next.
+//
+// 🔴 THE ROWS ARE REMOVED. THE PAGES ARE NOT. Every route still resolves, every API under
+// /api/library/* still serves, and no data is touched — retiring a surface and deleting an
+// implementation are different operations with very different blast radii, and the audit found
+// live callers that would break if they were confused:
+//
+//   • the SHIPPED browser extension hardcodes app.enternemesis.com/library?import=coursework
+//   • /slides and the graph both navigate back to /library?note=…
+//   • reader-anchor.ts documents /library/source/<id>?page=…&q=… as its deep-link format
+//   • the iOS app has its own /study and /library, and push.ts routes notifications to /study
+//
+// Bringing any surface back is putting its row back here.
+//
+// Notebooks was retired the same way on 2026-07-23 and is still serving
+// /api/notebooks/extract/* today, which is the precedent this follows.
 const SIDEBAR_NAV: NavItem[] = [
-  { id: "new-session", label: "New chat", codicon: "robot", action: "new-session" },
-  { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
-  { id: "library", label: "Library", codicon: "book", route: "/library" },
+  { id: "canvas", label: "Canvas", codicon: "layout", route: "/learn" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
-  // Owner 2026-08-04: "brain break" page (named Chill) — daily games,
-  // deliberately last so the work surfaces stay first in the eye line.
-  { id: "chill", label: "Chill", codicon: "coffee", route: "/chill" },
 ];
 
 interface ChatSidebarProps {
