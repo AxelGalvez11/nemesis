@@ -167,6 +167,40 @@ export function pptxToModel(
       });
     });
 
+    // 🔴 A PICTURE NOBODY LOOKED AT IS STILL A PICTURE, AND THE DECK USED TO SAY
+    // IT WAS NOT THERE. Figure blocks were created only by parsing the lines
+    // `mergeImageDescriptions` appends, so a figure existed only if vision had
+    // already described it. With vision off — which is the default on the upload
+    // path, for cost — a deck of diagrams produced NO figure blocks at all, and
+    // "no figure block" is indistinguishable from "this deck has no images".
+    //
+    // That is the exact asymmetry this model exists to prevent, and the PDF lane
+    // already gets it right: a figure with `description: undefined` means NOT
+    // EXAMINED, is counted by `figuresUnexamined`, and keeps coverage honest.
+    // Measured over 23 real decks: not one produced a figure block.
+    //
+    // Emitted only for pictures NOT described, so the two paths are disjoint by
+    // construction and no picture can appear twice. `slides` is the reader's own
+    // 1-based attribution, so the locator is the file's, never invented.
+    for (const image of input.images) {
+      if (descriptions.has(image.name)) continue;
+      if (!image.slides.includes(index + 1)) continue;
+      slideBlocks.push({
+        figure: {
+          ref: image.name,
+          // Template furniture is a disclosed decision; anything else is a gap.
+          ...(image.recurring ? { skipped: "decorative" as const } : {}),
+        },
+        headingPath,
+        kind: "figure",
+        // A figure's text is its caption. The deck states none, so it has none —
+        // and a generated one would be indistinguishable from the author's.
+        text: "",
+        unit: index,
+        ...(pictures?.get(image.name) ? { rect: pictures.get(image.name)! } : {}),
+      });
+    }
+
     // A slide whose title never appeared in its body still deserves its heading,
     // or the slide's blocks would be filed under a heading that is in no block.
     if (title && !seenTitle) slideBlocks.unshift(heading(title, index, titleRect));

@@ -44,6 +44,12 @@ export function docxToModel(doc: DocxDocument, title: string | null): DocumentMo
           // renderer draws no separator rather than promoting a data row.
           headerRows: block.headerRows ?? 0,
           rows: block.rows ?? [],
+          // 🔴 THE MERGES WORD STATED, CARRIED RATHER THAN RE-DERIVED. Every
+          // other field here is copied through; leaving this one out is how the
+          // spans would be read from `gridSpan`/`vMerge` and then dropped one
+          // function later, which is the shape of the last six losses in this
+          // pipeline.
+          ...(block.cells && block.cells.length > 0 ? { cells: block.cells } : {}),
         },
         // A table's `text` is its rendered grid in the old shape. The canonical
         // model derives that from `table` instead, so carrying the pre-rendered

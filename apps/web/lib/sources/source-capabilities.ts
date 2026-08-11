@@ -35,6 +35,19 @@ export interface SourceCapabilities {
   pageAnchors: boolean;
   /** At least one table survived as a grid rather than as flattened words. */
   tables: boolean;
+  /**
+   * At least one table came back with a CELL model, so a merged cell is knowable.
+   *
+   * 🔴 SEPARATE FROM `tables`, AND THE DIFFERENCE IS WHAT A CALLER MAY CONCLUDE FROM A BLANK.
+   * Without cells, a position that is empty because a neighbour spans it is indistinguishable
+   * from one the document genuinely left blank — so "the instructor for session 3" reads as
+   * unstated when the file says otherwise. With cells, an empty cell is a real absence. This is
+   * therefore a licence to TRUST a blank, not a claim that the document contains merges.
+   *
+   * False means unknown, never "this document has no merged cells": a producer that does not
+   * report cells has not told us either way.
+   */
+  mergedCells: boolean;
   /** At least one figure survived as a figure. */
   figures: boolean;
   /** Blocks carry rectangles, so a region of the original can be pointed at or cropped. */
@@ -55,6 +68,7 @@ export const NO_CAPABILITIES: SourceCapabilities = {
   geometry: false,
   headings: false,
   hierarchy: false,
+  mergedCells: false,
   pageAnchors: false,
   semanticUnits: false,
   tables: false,
@@ -74,6 +88,8 @@ export function deriveCapabilities(model: DocumentModel): SourceCapabilities {
     // does not exist. Measured on the real production document this matters: 29 of its blocks are
     // headings, but only 2 of those carry a path — the hierarchy is supplied by its paragraphs.
     hierarchy: blocks.some((block) => block.headingPath.length > 0),
+    // A cell model on ANY table is what makes a blank cell mean something on that table.
+    mergedCells: blocks.some((block) => (block.table?.cells?.length ?? 0) > 0),
     pageAnchors: model.units.length > 0 && blocks.length > 0,
     semanticUnits: blocks.length > 0,
     tables: blocks.some((block) => block.kind === "table" || block.table !== undefined),

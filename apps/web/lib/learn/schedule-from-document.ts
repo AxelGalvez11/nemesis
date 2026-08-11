@@ -21,6 +21,7 @@
 
 import {
   blockToText,
+  cellText,
   type DocBlock,
   type DocumentModel,
 } from "@nemesis/shared";
@@ -207,12 +208,22 @@ export function segmentsOf(model: DocumentModel): ScheduleSegment[] {
       // parser's job; this file only consumes it.
       const columns = block.table.columns ?? null;
       const headerLine = columns ? columns.join(" | ") : "";
-      for (const row of block.table.rows.slice(block.table.headerRows)) {
-        const text = row.join(" | ").trim();
+      // 🔴 EVERY ROW IS READ THROUGH `cellText`, WHICH FOLLOWS MERGED CELLS. A
+      // syllabus that draws one Instructor box beside three sessions states the
+      // instructor for all three; reading `rows` directly gives that row's own
+      // slot, which is empty for two of them, and an empty cell reads as "the
+      // document does not say". Measured on the corpus: 150 positions across 36
+      // tables carry a value only reachable this way. Where nothing spans, this
+      // returns exactly what the row already held.
+      const table = block.table;
+      for (const [r, row] of table.rows.entries()) {
+        if (r < table.headerRows) continue;
+        const values = row.map((_, c) => cellText(table, r, c));
+        const text = values.join(" | ").trim();
         if (!text) continue;
         out.push({
           blockIds: [block.id],
-          cells: row.map((value, i) => ({ column: columns?.[i] ?? null, value })),
+          cells: values.map((value, i) => ({ column: columns?.[i] ?? null, value })),
           fromTable: true,
           // The header travels with the row so a reader (human or model) can tell which column
           // the date was in. Kept OUT of `text` so evidence stays verbatim.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDocument, documentToText } from "./document-model.ts";
+import { buildDocument, documentToText, projectCells, resolveCell } from "./document-model.ts";
 import {
   readDocumentModel,
   readStructureEnvelope,
@@ -167,4 +167,44 @@ test("a table's columns, header source and continuation survive the round trip",
   assert.equal(second!.table?.headerSource, "inherited");
   assert.equal(second!.table?.continuesFromUnit, 0);
   assert.equal(second!.table?.headerRows, 0, "a continuation's first row is DATA and must not be skipped");
+});
+
+test("🔴 merged cells survive the storage boundary, spans and all", () => {
+  // THE SIXTH TIME STRUCTURE COULD HAVE DIED AT A BOUNDARY IN THIS PIPELINE.
+  // Five fields have already been lost between a writer and a reader here —
+  // `label` and `size` on units, and four of the six on a calendar SourceRef —
+  // each time silently, each time because a validator rebuilt an object from the
+  // fields it happened to know. `cells` is what makes a merge mean anything, so
+  // it gets its own assertion rather than relying on blocks passing through whole.
+  const model = buildDocument({
+    format: "pdf",
+    title: "Schedule",
+    units: [{ index: 0, kind: "page", size: { height: 792, width: 612 } }],
+    blocks: [
+      {
+        headingPath: [],
+        kind: "table",
+        table: {
+          cells: [
+            { colSpan: 2, column: 0, row: 0, text: "Week 1" },
+            { column: 0, row: 1, rowSpan: 2, text: "Dr. Farrar" },
+            { column: 1, row: 1, text: "Session A" },
+            { column: 1, row: 2, text: "Session B" },
+          ],
+          headerRows: 0,
+          rows: [["Week 1", ""], ["Dr. Farrar", "Session A"], ["", "Session B"]],
+        },
+        text: "",
+        unit: 0,
+      },
+    ],
+  });
+
+  const read = storedDocumentModel(JSON.parse(JSON.stringify(structureEnvelope({ model, text: "…", title: "Schedule" }))));
+  assert.ok(read);
+  const table = read!.blocks[0]!.table!;
+  assert.equal(table.cells?.length, 4, "cells must not be dropped in storage");
+  assert.equal(resolveCell(table, 0, 1)?.text, "Week 1", "the covered half of the banner still resolves");
+  assert.equal(resolveCell(table, 2, 0)?.text, "Dr. Farrar", "the second session still knows its instructor");
+  assert.deepEqual(table.rows, projectCells(table.cells!), "rows must remain exactly the projection");
 });
