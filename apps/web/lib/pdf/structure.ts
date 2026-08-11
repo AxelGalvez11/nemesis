@@ -357,7 +357,16 @@ async function readPage(
       const built = reconstructRegion(region, rulings, items);
       if (!built) continue;
       const trimmed = trimEmptyColumns(built.table.rows);
-      const candidate: DocTable = { headerRows: headerRowsOf(trimmed), rows: trimmed };
+      // 🔴 PROVISIONALLY ZERO. `headerRowsOf` only asks "is every cell of row 0 filled", which is
+      // true of most first RECORDS, and whether this row names the columns cannot be decided from
+      // one fragment — one of the two signals is "it is reprinted on the next page". So the claim
+      // is withheld here and made in `assemble`, once, against the whole document.
+      //
+      // 🔴 AND IT MUST BE WITHHELD RATHER THAN GUESSED, BECAUSE `segmentsOf` SKIPS `headerRows`
+      // ROWS. A table claiming a header the corroboration later declines to confirm drops its
+      // first row from extraction entirely — measured at 14 real data rows across four syllabi,
+      // including every first session of a schedule whose header is never printed.
+      const candidate: DocTable = { headerRows: 0, rows: trimmed };
       const verdict = validateTable({
         grid: built.grid,
         inRegion: built.inRegion,
@@ -383,7 +392,7 @@ async function readPage(
         fragment: {
           columnPositions: built.grid.cols,
           firstRow: candidate.rows[0] ?? [],
-          firstRowComplete: candidate.headerRows > 0,
+          firstRowComplete: headerRowsOf(trimmed) > 0,
           rowFonts: built.rowFonts,
           unit: -1,               // filled in by `assemble`, which knows the page index
           unitHeight: viewport.height,
@@ -612,6 +621,10 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
     const owner = owners[i]!;
     owner.table = {
       ...owner.table,
+      // The header row is skipped by consumers, so it may only be declared once the document has
+      // corroborated that row 0 names the columns. An inherited header lives on ANOTHER fragment,
+      // so this one's first row is data.
+      headerRows: resolved.headerSource === "present" ? 1 : 0,
       ...(resolved.columns ? { columns: resolved.columns } : {}),
       ...(resolved.headerSource ? { headerSource: resolved.headerSource } : {}),
       ...(resolved.continuesFromUnit !== null ? { continuesFromUnit: resolved.continuesFromUnit } : {}),

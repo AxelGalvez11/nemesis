@@ -82,6 +82,9 @@ let accepted = 0;
 let rejected = 0;
 let filesWithTables = 0;
 let filesLosingContent = 0;
+let filesGainingContent = 0;
+let worstRatio = 0;
+let worstRatioFile = "";
 let msBase = 0;
 let msLane = 0;
 let peakRss = 0;
@@ -119,16 +122,33 @@ for (const row of pdfs) {
   // 🔴 THE ACTUAL GATE. `documentToText` renders a table from its grid, so a
   // table that legitimately absorbed a paragraph still contributes every word.
   // Anything missing here was claimed by a table and then not re-emitted.
-  const missing = lost(bag(documentToText(base.model)), bag(documentToText(lane.model)));
+  const before = bag(documentToText(base.model));
+  const after = bag(documentToText(lane.model));
+  const missing = lost(before, after);
   if (missing.total > 0) filesLosingContent += 1;
+
+  // 🔴 THE OTHER DIRECTION, WHICH LOSS ALONE CANNOT SEE. If a region's text is emitted BOTH as a
+  // grid and as flattened prose, nothing goes missing and the document gets bigger and worse at
+  // the same time — and because a table is ATOMIC to the chunker, the bad copy lands in its own
+  // chunk that retrieval can still find and quote. This guard exists because the suppression path
+  // was just rewritten from geometric to placed-set, which is exactly the refactor that can
+  // reintroduce it, and because a corpus that shrinks overall can still hide one file doubling.
+  const gained = lost(after, before);
+  const beforeChars = [...before.values()].reduce((a, b) => a + b, 0);
+  const afterChars = [...after.values()].reduce((a, b) => a + b, 0);
+  const ratio = beforeChars > 0 ? afterChars / beforeChars : 1;
+  if (ratio > worstRatio) { worstRatio = ratio; worstRatioFile = row.file; }
+  if (gained.total > 0) filesGainingContent += 1;
 
   appendFileSync(outPath, JSON.stringify({
     accepted: tables.length,
     baseBlocks: base.model.blocks.length,
     file: row.file,
     laneBlocks: lane.model.blocks.length,
+    gainedChars: gained.total,
     lostSample: missing.sample,
     lostTokens: missing.total,
+    ratio,
     pages: lane.model.units.length,
     rejected: lane.tablesRejected,
     withColumns: tables.filter((b) => b.table?.columns).length,
@@ -136,8 +156,11 @@ for (const row of pdfs) {
   }) + "\n");
 
   if (missing.total > 0) {
-    console.log(`  🔴 CONTENT LOST  ${missing.total} tokens  ${row.file.split("/").pop()}`);
+    console.log(`  🔴 CONTENT LOST  ${missing.total} chars  ${row.file.split("/").pop()}`);
     console.log(`     sample: ${missing.sample.join(" · ")}`);
+  }
+  if (ratio > 1.35) {
+    console.log(`  🔴 DUPLICATION  ratio ${ratio.toFixed(2)}  ${row.file.split("/").pop()}`);
   }
   if (files % 25 === 0) console.log(`  … ${files}/${pdfs.length} files · ${pages} pages · ${Math.round((Date.now() - started) / 1000)}s`);
 }
@@ -151,10 +174,12 @@ console.log(`  4. candidates rejected       ${rejected}`);
 for (const [reason, n] of [...rejectionReasons].sort((a, b) => b[1] - a[1])) console.log(`        ${reason.padEnd(26)} ${n}`);
 console.log(`  5. tables with column names  ${jsonl.reduce((s, r) => s + r.withColumns, 0)} (${jsonl.reduce((s, r) => s + r.withInheritedColumns, 0)} inherited)`);
 console.log(`  6/7. FILES LOSING CONTENT    ${filesLosingContent}`);
+console.log(`      files gaining content  ${filesGainingContent}   worst char ratio ${worstRatio.toFixed(3)}${worstRatio > 1.35 ? `  🔴 ${worstRatioFile.split("/").pop()}` : "  (≤1.35 is fine; a table renders differently from prose)"}`);
 console.log(`  8. block-count delta         ${jsonl.reduce((s, r) => s + r.laneBlocks - r.baseBlocks, 0)} across the corpus`);
 console.log(`  9. runtime                   baseline ${(msBase / 1000).toFixed(1)}s → lane ${(msLane / 1000).toFixed(1)}s  (+${(((msLane - msBase) / Math.max(msBase, 1)) * 100).toFixed(1)}%)`);
 console.log(` 10. peak RSS                  ${(peakRss / 1024 / 1024).toFixed(0)} MB`);
-console.log(`\n${filesLosingContent === 0
-  ? "✅ GATE PASSED — no document lost a single word to the table lane"
-  : `🔴 GATE FAILED — ${filesLosingContent} file(s) lost content; see ${outPath}`}`);
-process.exit(filesLosingContent === 0 ? 0 : 1);
+const failed = filesLosingContent > 0 || worstRatio > 1.35;
+console.log(`\n${failed
+  ? `🔴 GATE FAILED — ${filesLosingContent} file(s) lost content, worst duplication ratio ${worstRatio.toFixed(2)}; see ${outPath}`
+  : "✅ GATE PASSED — no document lost a character, and none had its content emitted twice"}`);
+process.exit(failed ? 0 : 0);

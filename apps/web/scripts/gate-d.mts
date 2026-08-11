@@ -86,16 +86,25 @@ for (const file of files) {
   // the value came from elsewhere in the row, which is the time-as-date failure exactly.
   //
   // `newId` numbers candidates by segment index, so `g-N` addresses segment N.
+  //
+  // 🔴 THE DENOMINATOR IS PRINTED BECAUSE "NOT EXAMINED" MUST NOT READ AS "VERIFIED CLEAN".
+  // A file whose tables carry no column names has no date cell to check, so this loop examines
+  // nothing — and a bare `0 ✅` there claims a guarantee that was never tested.
   let fromWrongCell = 0;
+  let examined = 0;
   for (const c of candidates) {
     if (!c.startAt) continue;
     const segment = segments[Number(c.id.slice(2))];
     if (!segment?.fromTable) continue;
     const cell = segment.cells.find((x) => x.column && DATE_COLUMN.test(x.column));
     if (!cell) continue;                       // no named date column: nothing was claimed
+    examined += 1;
     if (findDateMentions(cell.value).length === 0 && bareDateInCell(cell.value) === null) fromWrongCell += 1;
   }
-  console.log(`  date/time confusion ${fromWrongCell} ${fromWrongCell === 0 ? "\u2705" : "\uD83D\uDD34"}`);
+  console.log(
+    `  date/time confusion ${fromWrongCell}/${examined} ` +
+    (examined === 0 ? "— NOT CHECKED (no named date column in this file)" : fromWrongCell === 0 ? "\u2705" : "\uD83D\uDD34"),
+  );
   if (fromWrongCell > 0) failures += 1;
 }
 

@@ -146,3 +146,29 @@ test("columnsAlign needs the same count, the same places, and enough of them", (
   assert.equal(columnsAlign([72, 540], [72, 540]), false, "two positions is one column, not a grid");
   assert.equal(columnsAlign([72, 150, 540], [72, 150, 300, 540]), false);
 });
+
+// ── the header claim and the column names must never disagree ───────────────
+
+test("a first row that is NOT corroborated must not be declared a header", () => {
+  // 🔴 THE DEFECT, MEASURED: `headerRows` was set from "is row 0 completely filled" while the
+  // corroboration that produces `columns` ran later and only ever ADDED fields. A table could
+  // therefore ship `headerRows: 1` with no `columns` — and `segmentsOf` skips `headerRows` rows,
+  // so its first row never reached extraction at all. Fourteen real data rows across four
+  // syllabi, including the whole first session of a schedule whose header is never printed, and
+  // the entire top line of a grading scale.
+  //
+  // The two facts have one source now: a header is declared only where it was corroborated.
+  const resolved = resolveColumns([fragment()]);            // complete first row, no corroboration
+  assert.equal(resolved[0]!.headerSource, null);
+  assert.equal(resolved[0]!.columns, null);
+});
+
+test("an inherited header does not make THIS fragment's first row a header", () => {
+  // The names live on the earlier fragment. This one's first row is data and must be extracted.
+  const resolved = resolveColumns([
+    fragment({ firstRow: HEADER, rowFonts: [HEAD_FONT, BODY_FONT], unit: 0 }),
+    fragment({ unit: 1, y0: 80 }),
+  ]);
+  assert.equal(resolved[1]!.headerSource, "inherited");
+  assert.notEqual(resolved[1]!.headerSource, "present", "only a printed header may skip a row");
+});
