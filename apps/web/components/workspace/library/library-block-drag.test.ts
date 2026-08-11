@@ -87,6 +87,29 @@ test("each bullet is its own block, not one block for the list", () => {
   assert.deepEqual(blocks.map((block) => block.kind), ["block", "block", "list-item", "list-item", "list-item"]);
 });
 
+test("🔴 a real-sized note gets handles all the way down, not just the first 2 KB", () => {
+  // This is the test the flake was trying to be.
+  //
+  // `syntaxTree(state)` returns only what has been parsed so far, and the parser works to a
+  // TIME budget. Measured before the fix: a 46,905-character note parsed 2,127 characters —
+  // 4.5% — and produced 204 blocks for a document with four thousand bullets. Everything past
+  // the first couple of kilobytes had NO DRAG HANDLE, which is the very bug handles were added
+  // to fix.
+  //
+  // The short fixture above usually finishes inside the budget and only loses under load, so
+  // the single warning this ever produced was a test that "just needed re-running". A document
+  // big enough to exceed the budget every time turns that into a real assertion.
+  const count = 4_000;
+  const doc = `# Head\n\nPara.\n\n${Array.from({ length: count }, (_, i) => `- item ${i}`).join("\n")}\n`;
+  assert.ok(doc.length > 40_000, "the fixture has to be bigger than the parser's budget to test anything");
+
+  const blocks = blocksFor(doc);
+  assert.equal(blocks.length, count + 2, `expected every bullet to get a block, got ${blocks.length}`);
+  assert.equal(blocks.at(-1)!.kind, "list-item", "the LAST bullet must have a handle too");
+  // And it must cover the end of the document, not stop partway.
+  assert.ok(blocks.at(-1)!.to >= doc.trimEnd().length, "blocks stop short of the end of the note");
+});
+
 test("a numbered list splits per item too", () => {
   const blocks = blocksFor("1. first\n2. second\n");
   assert.equal(blocks.length, 2);

@@ -4,8 +4,20 @@
 
 "use client";
 
+import { RetiredSurfaceGuard } from "@/components/workspace/retired-surface-guard";
 import { LibraryDocsPage } from "@/components/workspace/library-v2/library-docs-page";
 
-export default function LibraryPage() {
+function LibraryPageSurface() {
   return <LibraryDocsPage />;
+}
+
+// RETIRED SURFACE. A bare visit goes to the Canvas home; a link carrying parameters is a caller
+// asking for something specific and is still served. See retired-surface-guard.tsx for the list
+// of callers this protects.
+export default function LibraryPage() {
+  return (
+    <RetiredSurfaceGuard>
+      <LibraryPageSurface />
+    </RetiredSurfaceGuard>
+  );
 }

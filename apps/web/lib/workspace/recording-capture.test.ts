@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  recordingDurabilityCopy,
   describeRecordingBlob,
   isCapturing,
   isFinishing,
@@ -68,8 +69,11 @@ test("a browser that supports nothing still returns a usable shape", () => {
 // another's audio. Getting this prefix wrong is a 403, not a bad filename.
 test("the storage path is namespaced to the owner", () => {
   const path = recordingStoragePath("user-123", "abc-def", "webm");
-  assert.equal(path, "user-123/abc-def.webm");
-  assert.ok(path.startsWith("user-123/"));
+  // The SHAPE below the owner changed when path building was centralised in recording-paths.ts.
+  // What is asserted is the rule the bucket actually enforces — the first segment — rather than
+  // a literal, because the literal is what let a second, wrong builder exist unnoticed.
+  assert.equal(path.split("/")[0], "user-123");
+  assert.ok(path.includes("abc-def"), "and the recording is still identifiable in the path");
 });
 
 // The two polling tests that stood here went with the poll loop itself on
@@ -101,4 +105,22 @@ test("the microphone and the work after it are different states", () => {
   assert.equal(isFinishing("uploading"), true);
   assert.equal(isFinishing("recording"), false);
   assert.equal(isFinishing("idle"), false);
+});
+
+// §26: a degraded result must be distinguishable from a complete one — including on screen.
+test("the status line says where the bytes are, without alarming anyone", () => {
+  assert.equal(recordingDurabilityCopy("recording", "remote"), "Recording");
+  assert.equal(recordingDurabilityCopy("recording", "local"), "Recording · saving");
+  // Named as a connection problem rather than data loss: nothing has been lost yet, and saying
+  // otherwise would send someone to stop a recording that is still working perfectly.
+  assert.equal(recordingDurabilityCopy("recording", "degraded"), "Recording · connection interrupted");
+  assert.ok(!recordingDurabilityCopy("recording", "degraded").toLowerCase().includes("lost"));
+});
+
+test("durability only qualifies the line while the microphone is actually open", () => {
+  // A finished recording's state is about the upload, not about capture, so the suffix would be
+  // meaningless — and "connection interrupted" beside "Saving audio" reads as a failed save.
+  for (const status of ["idle", "uploading", "quota", "error"] as const) {
+    assert.equal(recordingDurabilityCopy(status, "degraded"), recordingStatusCopy(status));
+  }
 });

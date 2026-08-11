@@ -21,6 +21,11 @@ import { supabase } from "@/lib/supabase";
 import { formatLiveDuration } from "@/lib/workspace/recording-note";
 import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
 import {
+  createDurableCapture,
+  type DurabilityState,
+  type DurableCapture,
+} from "@/lib/workspace/recording-durable-capture";
+import {
   describeRecordingBlob,
   pickRecordingFormat,
   RECORDING_BITS_PER_SECOND,
@@ -136,6 +141,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [level, setLevel] = useState(0);
+  /** Where the captured bytes are right now — see recording-durable-capture.ts. Polled rather
+   *  than pushed: the capture loop must not call into React from inside an upload handler. */
+  const [durability, setDurability] = useState<DurabilityState>("remote");
   const [usage, setUsage] = useState<TranscriptionUsage | null>(null);
 
   const mountedRef = useRef(true);
@@ -143,6 +151,11 @@ export function useRecordingSession(options: UseRecordingOptions) {
   const finishingRef = useRef(false);
   const nodesRef = useRef<CaptureNodes | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  /** Uploads parts of the recording WHILE it is being made, so a closed tab cannot take the
+   *  lecture with it. Runs alongside the in-memory path above, which is still what a normal
+   *  finish uses — see recording-durable-capture.ts for why it is additive rather than a
+   *  replacement. Null when there is no signed-in user to store parts for. */
+  const durableRef = useRef<DurableCapture | null>(null);
   const levelTimerRef = useRef<number | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
   const startedAtRef = useRef(0);
@@ -426,6 +439,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
         ...(skipped ? { silenceSkipped: skipped } : {}),
       });
       finishingRef.current = false;
+      // The whole file is up and the job owns it now, so the parts are redundant and this
+      // recording must never be offered back as a crash recovery. Marked finished AFTER the
+      // handoff succeeded — doing it earlier would retire the recovery record for a recording
+      // whose real upload then failed, which is the one moment those parts are worth most.
+      durableRef.current?.discard();
+      durableRef.current = null;
       // NOT guarded on `mountedRef`. The old code returned early here if the
       // component had gone, which is how a finished recording could vanish. The
       // job now exists on the server whatever this page does, and the callback
@@ -465,7 +484,11 @@ export function useRecordingSession(options: UseRecordingOptions) {
     } finally {
       releaseMedia();
     }
-    // Dropped before anything can reach for them again.
+    // Dropped before anything can reach for them again — including the uploaded parts and
+    // their recovery record. A cancel that leaves a recoverable recording behind is not a
+    // cancel.
+    durableRef.current?.discard();
+    durableRef.current = null;
     chunksRef.current = [];
     capturedMsRef.current = 0;
     captureSinceRef.current = 0;
@@ -527,8 +550,27 @@ export function useRecordingSession(options: UseRecordingOptions) {
         ...(format.mimeType ? { mimeType: format.mimeType } : {}),
       });
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (event.data.size === 0) return;
+        chunksRef.current.push(event.data);
+        // 🔴 The same bytes, written down sooner. `new Blob(chunks)` is byte concatenation, so
+        // the parts uploaded here rejoin into a byte-identical file — this is not a second
+        // encoding that has to be proved correct. Never throws; an upload failure keeps the
+        // bytes buffered and the microphone running.
+        durableRef.current?.onChunk(event.data);
       };
+      // Start writing parts to storage as they arrive. Only for a signed-in user, because
+      // there is nowhere to put them otherwise — a signed-out recording keeps exactly the
+      // behaviour it had before.
+      durableRef.current = options.uid
+        ? createDurableCapture({
+            chunkMs: RECORDING_CHUNK_MS,
+            extension: format.extension,
+            mimeType: recorder.mimeType || format.mimeType,
+            sessionId: crypto.randomUUID(),
+            targetPath: recordingStoragePath(options.uid, crypto.randomUUID(), format.extension),
+            userId: options.uid,
+          })
+        : null;
       recorder.start(RECORDING_CHUNK_MS);
 
       // Audio graph exists only to draw the meter — nothing leaves the browser.
@@ -600,7 +642,12 @@ export function useRecordingSession(options: UseRecordingOptions) {
       elapsedTimerRef.current = window.setInterval(() => {
         // runningMs, not raw wall clock: the number on screen has to stand still
         // while the recording is paused, or it claims audio that does not exist.
-        if (mountedRef.current) setElapsedSeconds(Math.floor(runningMs() / 1_000));
+        if (!mountedRef.current) return;
+        setElapsedSeconds(Math.floor(runningMs() / 1_000));
+        // Read on the same tick. The capture loop cannot push this — it would mean calling into
+        // React from inside an upload handler — and once a second is far finer than a student
+        // could act on anyway.
+        setDurability(durableRef.current?.durability() ?? "remote");
       }, 1_000);
     } catch (caught) {
       capturingRef.current = false;
@@ -637,6 +684,9 @@ export function useRecordingSession(options: UseRecordingOptions) {
     /** Throw the recording away. The caller confirms with the student first —
      *  the audio cannot be recovered. */
     discard,
+    /** "remote" | "local" | "degraded" — where the captured bytes actually are. Drives the
+     *  status suffix; never blocks or interrupts capture. */
+    durability,
     elapsedLabel: formatLiveDuration(elapsedSeconds),
     elapsedSeconds,
     error,
