@@ -162,3 +162,28 @@ test("trimming leaves a table whose columns all carry text untouched", () => {
   const cells = [{ column: 0, row: 0, text: "a" }, { column: 1, row: 0, text: "b" }];
   assert.deepEqual(trimEmptyCellColumns(cells), cells);
 });
+
+test("🔴 a row no cell puts text in is dropped — 24 such rows existed on the corpus", () => {
+  // Columns were trimmed from the start and rows never were, so a spurious
+  // horizontal rule published a blank record between two real ones.
+  const cells = trimEmptyCellColumns([
+    { column: 0, row: 0, text: "a" },
+    { column: 1, row: 0, text: "b" },
+    { column: 0, row: 1, text: "" },
+    { column: 1, row: 1, text: "" },
+    { column: 0, row: 2, text: "c" },
+    { column: 1, row: 2, text: "d" },
+  ]);
+  assert.deepEqual(projectCells(cells), [["a", "b"], ["c", "d"]]);
+});
+
+test("a span crossing a dropped row shrinks rather than disappearing", () => {
+  const cells = trimEmptyCellColumns([
+    { column: 0, row: 0, rowSpan: 3, text: "Dr. Farrar" },
+    { column: 1, row: 0, text: "Session A" },
+    { column: 1, row: 1, text: "" },
+    { column: 1, row: 2, text: "Session B" },
+  ]);
+  assert.equal(cells.find((c) => c.column === 0)!.rowSpan, 2);
+  assert.deepEqual(projectCells(cells), [["Dr. Farrar", "Session A"], ["", "Session B"]]);
+});

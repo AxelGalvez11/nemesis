@@ -184,35 +184,53 @@ export function cellsOf(grid: Grid, rows: readonly (readonly string[])[], ruling
   return cells;
 }
 
+/** Which indices along one axis any cell actually puts text at. */
+function occupied(cells: readonly DocCell[], axis: "row" | "column"): { keep: number[]; size: number } {
+  let size = 0;
+  for (const c of cells) {
+    size = Math.max(size, axis === "row" ? c.row + (c.rowSpan ?? 1) : c.column + (c.colSpan ?? 1));
+  }
+  const used = new Set<number>();
+  for (const c of cells) if (c.text.trim()) used.add(axis === "row" ? c.row : c.column);
+  const keep: number[] = [];
+  for (let i = 0; i < size; i += 1) if (used.has(i)) keep.push(i);
+  return { keep, size };
+}
+
 /**
- * Drop columns no cell puts text in, keeping spans meaningful.
+ * Drop rows and columns no cell puts text in, keeping spans meaningful.
  *
- * The cell-model counterpart of `trimEmptyColumns`: same decision — a column
- * that is empty in every row is a sliver the lattice proposed, not a column —
- * applied to a representation where a column can also be covered by a span.
- * A cell whose whole range disappears held no text and goes with it.
+ * The cell-model counterpart of `trimEmptyColumns`, extended to the other axis.
+ * Same decision in both directions — a line of the grid that is empty everywhere
+ * is a boundary the lattice proposed rather than one the table has — applied to a
+ * representation where a position can also be covered by a span, so a cell whose
+ * whole range disappears held no text and goes with it, and one that loses part
+ * of its range shrinks to fit.
+ *
+ * 🔴 THE ROW HALF IS A MEASURED DEFECT, NOT SYMMETRY FOR ITS OWN SAKE. Columns
+ * were trimmed from the start and rows never were, so a spurious horizontal rule
+ * produced a row of nothing: 24 of them across 15 tables on the corpus. It
+ * publishes a table as taller than it is and puts a blank record between two real
+ * ones.
  */
 export function trimEmptyCellColumns(cells: readonly DocCell[]): DocCell[] {
-  let width = 0;
-  for (const c of cells) width = Math.max(width, c.column + (c.colSpan ?? 1));
-  const used = new Set<number>();
-  for (const c of cells) if (c.text.trim()) used.add(c.column);
-  const keep: number[] = [];
-  for (let c = 0; c < width; c += 1) if (used.has(c)) keep.push(c);
-  if (keep.length === width) return [...cells];
+  const cols = occupied(cells, "column");
+  const rows = occupied(cells, "row");
+  if (cols.keep.length === cols.size && rows.keep.length === rows.size) return [...cells];
 
   const out: DocCell[] = [];
   for (const cell of cells) {
-    const end = cell.column + (cell.colSpan ?? 1);
-    const inside = keep.filter((c) => c >= cell.column && c < end);
-    if (inside.length === 0) continue;
-    const column = keep.indexOf(inside[0]!);
+    const cEnd = cell.column + (cell.colSpan ?? 1);
+    const rEnd = cell.row + (cell.rowSpan ?? 1);
+    const insideC = cols.keep.filter((c) => c >= cell.column && c < cEnd);
+    const insideR = rows.keep.filter((r) => r >= cell.row && r < rEnd);
+    if (insideC.length === 0 || insideR.length === 0) continue;
     out.push({
-      column,
-      row: cell.row,
+      column: cols.keep.indexOf(insideC[0]!),
+      row: rows.keep.indexOf(insideR[0]!),
       text: cell.text,
-      ...(inside.length > 1 ? { colSpan: inside.length } : {}),
-      ...(cell.rowSpan && cell.rowSpan > 1 ? { rowSpan: cell.rowSpan } : {}),
+      ...(insideC.length > 1 ? { colSpan: insideC.length } : {}),
+      ...(insideR.length > 1 ? { rowSpan: insideR.length } : {}),
     });
   }
   return out;
