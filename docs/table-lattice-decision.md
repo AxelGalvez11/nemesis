@@ -204,9 +204,33 @@ this experiment:
 **Option A**, scoped honestly:
 
 > Add a ruling-lattice region lane to `readPdfStructure`, upstream of the model
-> gate. It costs nothing to run, needs no artifact, and recovers ruled tables —
-> which is ~96.6% of the tables in the measured corpus. The layout model remains
-> the only path to **unruled** tables and stays behind its flag for that purpose.
+> gate. It costs nothing to run, needs no artifact, and recovers ruled tables.
+> The layout model remains the only path to **unruled** tables and stays behind
+> its flag for that purpose.
+
+🔴 **A NUMBER THAT USED TO SIT IN THAT PARAGRAPH WAS WRONG, AND THE WAY IT WAS
+WRONG IS WORTH KEEPING.** It read "~96.6% of the tables in the measured corpus",
+carried over from `docs/pdf-tables.md` §7, where only 3.4% of table regions had
+no rulings at all. But §7 measured **cell recovery on regions the layout model
+had already found** — the model answered "a table is here" and only the grid
+builder was under test. This lane has to find the region itself, from vertical
+rules. The two figures describe different problems and the first does not
+transfer to the second.
+
+Measured directly instead (`scripts/lattice-column-source.mts`), over the 261
+tables this lane accepts on the corpus:
+
+| where the columns came from | |
+|---|---:|
+| drawn vertical rules | **209 (80.1%)** |
+| inferred from whitespace | 52 (19.9%) |
+
+And that only counts tables that were **proposed**. Proposal requires **three
+distinct vertical positions coexisting**, so a table drawn with horizontal rules
+only — the booktabs style universal in scientific publishing — is never
+proposed, never reaches the grid builder, and cannot appear in the table above
+at all. Its true rate is unknown from this corpus and is exactly what the
+external benchmarks in §11 exist to measure.
 
 Table recovery belongs to ingestion, not to syllabus extraction. Once
 `DocumentModel` carries real `table` blocks, Calendar, retrieval, citations and
