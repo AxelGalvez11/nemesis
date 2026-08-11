@@ -7,7 +7,7 @@
 // Obsidian-specific quietly die. Reordering text ranges cannot lose a
 // character it does not understand, because it never parses one.
 
-import { syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { EditorView, ViewPlugin, type PluginValue, type ViewUpdate } from "@codemirror/view";
 
@@ -42,12 +42,32 @@ export interface DocBlock {
  * the file, and letting someone drag a paragraph above them would produce a
  * note whose properties silently stop being properties.
  */
+/** How long to spend forcing a complete parse. Generous: this runs when the drag layer is being
+ *  built, not on every keystroke, and a note whose lower half has no handles is a worse outcome
+ *  than a few hundred milliseconds. */
+const PARSE_BUDGET_MS = 5_000;
+
 export function documentBlocks(state: EditorState): DocBlock[] {
   const blocks: DocBlock[] = [];
   const push = (from: number, to: number, kind: BlockKind) => {
     if (state.doc.sliceString(from, to).trim()) blocks.push({ from, index: blocks.length, kind, to });
   };
-  syntaxTree(state).iterate({
+
+  // 🔴 `syntaxTree(state)` RETURNS WHATEVER HAS BEEN PARSED SO FAR, and for a real note that is
+  // almost nothing. Measured on a 46,905-character note: the lazy tree covered 2,127 characters
+  // — 4.5% — and this function returned 204 blocks for a document with over four thousand
+  // bullets. Every block past the first couple of kilobytes therefore had NO DRAG HANDLE, which
+  // is the same class of bug the handles were added to fix, hiding behind an identical symptom.
+  //
+  // It surfaced as an intermittently failing test rather than a bug report because the parser's
+  // budget is a TIME budget: the small fixture usually finishes, and only loses under load. An
+  // intermittent test everyone knows to re-run was the only warning this ever gave.
+  //
+  // `ensureSyntaxTree` parses to the end and returns null if it cannot finish in the budget, in
+  // which case the partial tree is still better than nothing — some handles beat none.
+  const tree = ensureSyntaxTree(state, state.doc.length, PARSE_BUDGET_MS) ?? syntaxTree(state);
+
+  tree.iterate({
     enter: (node) => {
       if (node.name === "Document") return true;
       if (node.node.parent?.name !== "Document") return false;
