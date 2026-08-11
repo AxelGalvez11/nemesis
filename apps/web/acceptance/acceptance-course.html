@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  THE NEMESIS GOLDEN ACCEPTANCE SOURCE.
+
+  🔴 SYNTHETIC CONTENT, REAL PIPELINE. Every word here is made up on purpose, so the correct
+  semantic result is not a matter of opinion. Nothing else about the test is synthetic: this is
+  rendered to a real PDF, uploaded through the real product, parsed by the real parser, stored in
+  the real table and read back through the real validator. The distinction matters — a
+  hand-authored FIXTURE proves nothing about the boundaries that have repeatedly failed here; a
+  hand-authored DOCUMENT travelling the real path exercises every one of them.
+
+  🔴 EVERY ELEMENT IS HERE FOR A REASON. Change it and the expected outputs below change too.
+
+    heading hierarchy   proves headingPath survives persistence
+    two dated lines     proves schedule extraction, including a local TIME
+    a ruled table       proves tables survive as grids, so associations are read from
+                        structure rather than reconstructed from flattened words
+    a causal sentence   the next architectural test after association; kept here now so the
+                        golden source does not have to change when that type is built
+    a figure            proves figures are preserved as figures even while uninterpreted
+    a short list        proves list items are not silently merged into paragraphs
+
+  EXPECTED SEMANTIC RESULT
+
+    schedule candidates  2   Exam 1  -> 2026-09-12 09:00 local
+                             Assignment 1 -> 2026-09-18 23:59 local
+    associations         3   from the Key Terms table, one per row
+    causal statements    1   light intensity -> rate of photosynthesis, with a limiting condition
+    invented events      0   "may be rescheduled" and "usually held in spring" must NOT
+                             produce calendar entries
+-->
+<meta charset="utf-8" />
+<title>Nemesis Acceptance Course</title>
+<style>
+  @page { size: letter; margin: 0.9in; }
+  body { font: 11.5pt/1.5 Georgia, serif; color: #111; }
+  h1 { font-size: 20pt; margin: 0 0 2pt; }
+  h2 { font-size: 14pt; margin: 22pt 0 6pt; border-bottom: 1px solid #999; padding-bottom: 2pt; }
+  h3 { font-size: 12pt; margin: 14pt 0 4pt; }
+  .sub { color: #555; font-size: 10pt; margin: 0 0 4pt; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; }
+  th, td { border: 1px solid #444; padding: 5pt 7pt; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  figure { margin: 12pt 0; }
+  figcaption { font-size: 9.5pt; color: #555; margin-top: 4pt; }
+  .box { border: 1px solid #444; height: 90pt; display: flex; align-items: center; justify-content: center; font-size: 10pt; color: #333; }
+</style>
+
+<h1>Nemesis Acceptance Course</h1>
+<p class="sub">BIOL 100 &middot; Autumn 2026 &middot; Acceptance revision <!--REVISION--></p>
+
+<h2>Course Schedule</h2>
+<p>The following dates are fixed and will not move.</p>
+<p>Exam 1: September 12, 2026 at 9:00 AM</p>
+<p>Assignment 1 due September 18, 2026 at 11:59 PM</p>
+<!-- Deliberate negatives. A system that turns either of these into a calendar entry is
+     inventing obligations, which is worse than missing one. -->
+<p>A makeup session may be rescheduled if enough students ask.</p>
+<p>The departmental colloquium is usually held in spring.</p>
+
+<h2>Key Terms</h2>
+<p>Learn these three terms and what each one does.</p>
+<table>
+  <thead>
+    <tr><th>Term</th><th>Definition</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Photosynthesis</td><td>Conversion of light energy into chemical energy stored as sugar.</td></tr>
+    <tr><td>Chlorophyll</td><td>Pigment that absorbs light, mostly in the blue and red wavelengths.</td></tr>
+    <tr><td>Stomata</td><td>Pores in a leaf surface that let carbon dioxide in and water vapour out.</td></tr>
+  </tbody>
+</table>
+
+<h2>Cause and Effect</h2>
+<h3>Light intensity</h3>
+<p>Increasing light intensity increases the rate of photosynthesis until another factor becomes
+limiting. Once carbon dioxide or temperature becomes the constraint, adding more light produces
+no further increase.</p>
+
+<h2>Laboratory Notes</h2>
+<p>Bring the following to every session:</p>
+<ul>
+  <li>A bound notebook</li>
+  <li>Safety goggles</li>
+  <li>The pre-lab worksheet, completed</li>
+</ul>
+
+<figure>
+  <div class="box">Figure 1 &mdash; rate of photosynthesis against light intensity</div>
+  <figcaption>Figure 1. The curve rises steeply, then flattens once another factor limits it.</figcaption>
+</figure>
