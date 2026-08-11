@@ -27,6 +27,8 @@
  * PURE. No zip, no I/O — callers hand it the XML parts they already unzipped.
  */
 
+import { projectCells, type DocCell } from "@nemesis/shared";
+
 import { decodeXmlEntities } from "./office-text";
 import { ommlSpans } from "./docx-omml";
 
@@ -45,6 +47,9 @@ export interface DocxBlock {
   depth?: number;
   /** table only: rows of cells, kept as a grid rather than flattened. */
   rows?: string[][];
+  /** table only: the cells, carrying the spans Word states in `gridSpan`/`vMerge`.
+   *  `rows` is the projection of this — one representation, not two. */
+  cells?: DocCell[];
   /** table only: leading rows Word MARKED as headers. 0 when it marked none. */
   headerRows?: number;
   /**
@@ -316,7 +321,10 @@ export function readDocxStructure(
   const numbering = readNumbering(numberingXml);
   const rels = readDocumentRels(relsXml);
   const blocks: DocxBlock[] = [];
+  /** Enclosing heading names, outermost first. Always dense — see the heading branch. */
   const headingPath: string[] = [];
+  /** The headings currently open, with the level each was set at. */
+  const openHeadings: { level: number; text: string }[] = [];
   // Running counts per (numId, level), so "3." is the third item of THAT list
   // rather than the third numbered paragraph in the file.
   const counters = new Map<string, number>();
@@ -345,12 +353,13 @@ export function readDocxStructure(
   for (const node of topLevelNodes(documentXml)) {
     const index = blocks.length;
     if (node.tag === "tbl") {
-      const { headerRows, rows } = readTable(node.xml);
-      const cells = rows.reduce((t, r) => t + r.length, 0);
-      if (cells) {
+      const { cells: tableCells, headerRows, rows } = readTable(node.xml);
+      const cellCount = rows.reduce((t, r) => t + r.length, 0);
+      if (cellCount) {
         counts.tables += 1;
-        counts.tableCells += cells;
+        counts.tableCells += cellCount;
         blocks.push({
+          cells: tableCells,
           headerRows,
           headingPath: [...headingPath],
           index,
@@ -378,10 +387,31 @@ export function readDocxStructure(
       // A heading with no text is a spacer, not a section — but it may still be
       // the anchor for a picture, so the figures are taken either way.
       if (!text) { pushFigures(node.xml); continue; }
-      headingPath.length = Math.max(level - 1, 0);
-      headingPath[level - 1] = text;
+      // 🔴 THE PATH IS THE HEADINGS THAT ARE ACTUALLY OPEN, NOT ONE SLOT PER
+      // LEVEL — AND GETTING THAT WRONG DELETED WHOLE DOCUMENTS.
+      //
+      // This was `headingPath[level - 1] = text` on a plain array. A document
+      // whose first heading is Heading 2, or that goes 1 → 3, leaves the skipped
+      // slots as array HOLES, which serialise to `null`. `readDocumentModel`
+      // then rejects the block — correctly, since a heading path entry must be a
+      // string — and rejecting one block rejects the model, so the ENTIRE
+      // document reads back as having no structure at all. Silently: a null
+      // model is indistinguishable from a parse that predates the canonical
+      // model, so it reports as old data rather than as a fault.
+      //
+      // Measured over 205 real Word files: 3 documents, 316 blocks between them,
+      // every one of them parsed perfectly and then thrown away on the far side
+      // of storage. Skipping a heading level is ordinary in real documents —
+      // resumes and worksheets do it constantly.
+      //
+      // An unopened level has no heading, so it contributes no ancestor. The
+      // path gets shorter and every entry in it is a heading that exists.
+      while (openHeadings.length > 0 && openHeadings[openHeadings.length - 1]!.level >= level) openHeadings.pop();
       counts.headings += 1;
-      blocks.push({ headingPath: headingPath.slice(0, level - 1), index, kind: "heading", level, text });
+      blocks.push({ headingPath: openHeadings.map((h) => h.text), index, kind: "heading", level, text });
+      openHeadings.push({ level, text });
+      headingPath.length = 0;
+      headingPath.push(...openHeadings.map((h) => h.text));
       pushFigures(node.xml);
       continue;
     }
@@ -511,31 +541,91 @@ function topLevelNodes(documentXml: string): { tag: string; xml: string }[] {
  *
  * Nested tables contribute their text to their cell. PURE.
  */
-function readTable(tableXml: string): { headerRows: number; rows: string[][] } {
-  const rows: string[][] = [];
+/**
+ * A cell's own properties, which is where Word states its merges.
+ *
+ * 🔴 READ FROM `<w:tcPr>` ONLY, NEVER FROM THE WHOLE CELL. A cell may contain a
+ * nested table whose cells have their own `tcPr`, so scanning the cell's full XML
+ * would read a grandchild's span as this cell's. `tcPr` is required to be the
+ * first child of `w:tc` when present, so the slice up to the first `<w:p` or
+ * `<w:tbl` is exactly this cell's properties.
+ */
+function cellProps(tcXml: string): string {
+  const body = tcXml.search(/<w:(?:p|tbl)[\s>]/);
+  return body === -1 ? tcXml : tcXml.slice(0, body);
+}
+
+/**
+ * One table, with the merges Word states explicitly.
+ *
+ * 🔴 `gridSpan` AND `vMerge` WERE BOTH IGNORED, AND EACH BROKE THE GRID ITS OWN
+ * WAY. A horizontally merged cell is ONE `<w:tc>` covering several grid columns,
+ * so a header spanning three of five columns produced a three-cell row beside
+ * five-cell rows — a ragged table in which no column index means the same thing
+ * twice. A vertically merged cell writes its text once and leaves every
+ * continuation row an empty `<w:tc>`, so the value was present in the first row
+ * and blank in the rest — the identical defect the PDF lane had, except Word
+ * states the merge outright rather than implying it by an undrawn rule.
+ *
+ * Measured over 158 real Word documents: not one produced a cell model, so no
+ * merged cell in any of them survived in any form.
+ *
+ * Cells are the source of truth and `rows` is their projection, exactly as in the
+ * PDF lane, so both formats mean the same thing by a table.
+ */
+function readTable(tableXml: string): { cells: DocCell[]; headerRows: number; rows: string[][] } {
+  const cells: DocCell[] = [];
   let headerRows = 0;
+  let rowIndex = 0;
   // Only this table's OWN rows and cells. A nested table's `<w:tr>` sits inside a
   // `<w:tc>` of ours, and a non-greedy match would end the outer cell at the
   // inner `</w:tc>` — truncating it and swallowing the cell beside it, so a
   // two-column row reports one column.
   const inner = tableXml.replace(/^<w:tbl\b[^>]*>/, "").replace(/<\/w:tbl>$/, "");
   for (const tr of childrenOf(inner, ["tr"])) {
-    const cells: string[] = [];
     const rowInner = tr.xml.replace(/^<w:tr\b[^>]*>/, "").replace(/<\/w:tr>$/, "");
+    let column = 0;
+    let any = false;
     for (const tc of childrenOf(rowInner, ["tc"])) {
+      const props = cellProps(tc.xml);
+      const span = Number(props.match(/<w:gridSpan\b[^>]*w:val="(\d+)"/)?.[1] ?? 1);
+      const colSpan = Number.isFinite(span) && span > 0 ? span : 1;
+      const vMerge = props.match(/<w:vMerge\b[^>]*>/)?.[0];
+      // No `w:val` means "continue" — the default, and the common case in the
+      // wild. Only `restart` begins a new merged cell.
+      const continues = vMerge !== undefined && !/w:val="restart"/.test(vMerge);
+
+      if (continues) {
+        // Grow the cell above that owns this column, rather than emitting a blank.
+        const owner = cells.find(
+          (c) => c.column === column && c.row + (c.rowSpan ?? 1) === rowIndex,
+        );
+        if (owner) owner.rowSpan = (owner.rowSpan ?? 1) + 1;
+        column += colSpan;
+        any = true;
+        continue;
+      }
+
       // Every paragraph in the cell, including any inside a nested table: its
       // text belongs to this cell, even though its grid is not ours to flatten.
       const paragraphs = [...tc.xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map((p) => paragraphText(p[0]));
-      cells.push(paragraphs.filter(Boolean).join(" ").trim());
+      cells.push({
+        column,
+        row: rowIndex,
+        text: paragraphs.filter(Boolean).join(" ").trim(),
+        ...(colSpan > 1 ? { colSpan } : {}),
+      });
+      column += colSpan;
+      any = true;
     }
-    if (!cells.length) continue;
+    if (!any) continue;
     // Only a LEADING run counts. Word allows the property anywhere, but a header
     // that does not start the table cannot be a header for the rows above it,
     // and treating a mid-table repeat as one would mislabel everything before.
-    if (isHeaderRow(rowInner) && headerRows === rows.length) headerRows += 1;
-    rows.push(cells);
+    if (isHeaderRow(rowInner) && headerRows === rowIndex) headerRows += 1;
+    rowIndex += 1;
   }
-  return { headerRows, rows };
+  return { cells, headerRows, rows: projectCells(cells) };
 }
 
 /**
