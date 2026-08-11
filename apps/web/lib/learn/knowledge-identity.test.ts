@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  KNOWLEDGE_IDENTITY_VERSION,
   identityBasis,
   relationKindFromHeader,
   identityIsStructural,
@@ -162,5 +163,15 @@ test("normalisation keeps punctuation inside the text, where it may be load-bear
 
 test("a key is stable across runs, because everything downstream is stored against it", () => {
   assert.equal(knowledgeIdentityKey(association("France", "Paris")), knowledgeIdentityKey(association("France", "Paris")));
-  assert.match(knowledgeIdentityKey(association("France", "Paris")), /^association:[0-9a-f]{16}$/);
+  assert.match(knowledgeIdentityKey(association("France", "Paris")), /^association:v\d+:[0-9a-f]{16}$/);
+});
+
+test("🔴 the key says which rules made it", () => {
+  // Evidence is stored against this string. A key computed under old rules and one computed under
+  // new rules are otherwise both just sixteen hex characters, so changing the algorithm after
+  // evidence exists would be a migration with no way to find its own rows. Drop the version from
+  // `knowledgeIdentityKey` and this goes red.
+  const key = knowledgeIdentityKey(association("losartan", "Cozaar"));
+  assert.equal(key.split(":").length, 3, "expected type:version:hash");
+  assert.equal(key.split(":")[1], `v${KNOWLEDGE_IDENTITY_VERSION}`);
 });
