@@ -311,6 +311,11 @@ const PREVIEW_FILLER: StudyCard[] = [
 
 const PREVIEW_ARTIFACTS: StudyArtifact[] = [
   { id: "preview-test", kind: "test", groupName: "Constitutional law", title: "Commerce clause practice test", status: "ready", content: PREVIEW_TEST_CONTENT, createdAt: now, updatedAt: now },
+  // The same questions with NO attempts, so /dev-preview can exercise the
+  // test PLAYER at all. Every seeded test had been taken, which meant the
+  // preview surface could only ever show the review screen — the one place
+  // a half-finished sitting can be demonstrated had no half-finishable test.
+  { id: "preview-test-fresh", kind: "test", groupName: "Constitutional law", title: "Commerce clause — not yet taken", status: "ready", content: { attempts: [], questions: PREVIEW_TEST_CONTENT.questions }, createdAt: now, updatedAt: now },
   { id: "preview-map", kind: "mindmap", groupName: "Constitutional law", title: "Commerce power", status: "ready", content: PREVIEW_MAP_CONTENT, createdAt: now, updatedAt: now },
 ];
 
