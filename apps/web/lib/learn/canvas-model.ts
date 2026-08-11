@@ -173,6 +173,22 @@ export interface CanvasSource {
   /** The extractor's own account of what it could and could not read, when it gave one.
    *  Carried so a lesson built on a half-read document can say so. */
   coverageNote?: string;
+  /**
+   * Whether anything learned from this source can outlive the session.
+   *
+   * 🔴 STATED, NOT INFERRED FROM WHETHER ANOTHER FIELD HAPPENS TO BE SET. Filing is best-effort —
+   * a storage bucket can refuse a file whose type we could not name — so a canvas holds both kinds
+   * and the difference is real, not cosmetic:
+   *
+   *   * `durable`   — a filed row exists. Knowledge extracted from it can be anchored, found by a
+   *                   second canvas, indexed for retrieval, and cited later.
+   *   * `ephemeral` — read and not kept. It can teach THIS canvas perfectly well, and it must not
+   *                   pretend to support cross-session identity, search or future provenance.
+   *
+   * Absent on canvases written before this existed, which must be read as UNKNOWN — never as
+   * durable. That is the same rule `coverage` follows, for the same reason.
+   */
+  durability?: "durable" | "ephemeral";
   /** The durable `library_sources.id` this canvas source is a view of.
    *
    *  🔴 THE CANVAS-LOCAL `id` ("s1") IS MEANINGLESS OUTSIDE THIS CANVAS. Two canvases built on the

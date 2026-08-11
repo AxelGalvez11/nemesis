@@ -13,22 +13,34 @@
 // something a student then gets DRILLED on — a wrong one does not merely waste their time, it
 // teaches them something false and then tests them on it.
 //
-// So this extractor derives associations from GRIDS, and says plainly when there were none.
+// 🔴 THIS IS ONE LANE, NOT THE DEFINITION OF ASSOCIATION KNOWLEDGE. Associations legitimately live
+// in glossaries, definition lists, bullet pairs, well-formed prose, structured textbook markup and
+// recorded speech. Each needs its own extraction lane with its own evidence standard:
+//
+//     Association extraction
+//     ├── structured-table lane    ← THIS FILE, built now, highest precision
+//     ├── structured glossary lane ← later
+//     └── semantic prose lane      ← later, conservative
+//
+// So "no table" means THIS LANE found nothing, and must never be recorded as "this document
+// teaches no associations". The refusal reasons below are written to keep that distinction
+// legible. Refusing to guess is a feature of the lane; do not weaken it to raise a count.
 
 import {
   readableUnits,
+  unitContent,
   type CanonicalSourceAnchor,
   type CanonicalSourceUnit,
   type SourceContext,
 } from "@/lib/sources/source-context";
 
-import { knowledgeIdentityKey } from "./knowledge-identity";
+import { knowledgeIdentityKey, relationKindFromHeader } from "./knowledge-identity";
 import type { KnowledgeObject } from "./knowledge-types";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
  *  comes out of the same document. */
-export const EXTRACTION_VERSION = "association/1";
+export const EXTRACTION_VERSION = "association/2";
 
 /** A pair whose cell is this long is a paragraph, not one half of an association.
  *
@@ -49,8 +61,12 @@ export type ExtractionRefusalReason =
   | "degraded-parse"
   /** Structure survived, but the document contains no grid. */
   | "no-tables"
-  /** A grid, but not a pair list — three or more columns is a matrix, and column 1 beside column 2
-   *  would be an arbitrary slice of it. */
+  /** A grid this lane does not read: three or more columns, where column 1 beside column 2 would
+   *  be an arbitrary slice.
+   *
+   *  🔴 A RULE OF THIS EXTRACTOR, NOT A TRUTH ABOUT KNOWLEDGE. A `Drug | Brand | Class` table holds
+   *  two perfectly real relationships, and a later lane that can say WHICH columns pair and why
+   *  should extract both. What is refused here is guessing, not the table. */
   | "table-not-pairs"
   /** A grid of pairs, but every row was unusable — empty cells, or cells the length of essays. */
   | "table-rows-unusable";
@@ -63,7 +79,26 @@ export interface ExtractionRefusal {
   unitId?: string;
 }
 
+/**
+ * Whether the extractor did its whole job.
+ *
+ * 🔴 ZERO OBJECTS IS A SUCCESSFUL RESULT, AND THIS IS WHERE THAT IS SAID. "complete, count 0,
+ * because this document has no grid" and "we could not read this document at all" are opposite
+ * facts that produce the identical empty array — one is about the material, the other is about our
+ * parser, and only the second is a bug to chase. Collapsing them is the same silent-degradation
+ * failure this codebase keeps paying for, so the outcome is stated rather than left to be guessed
+ * from a length.
+ */
+export type ExtractionOutcome =
+  /** Every lane ran over everything it was given. The count may still be 0. */
+  | "complete"
+  /** The lane ran, but over less than the document contains — structure did not survive its parse. */
+  | "degraded"
+  /** Nothing readable at all; no extraction was possible. */
+  | "failed";
+
 export interface KnowledgeExtraction {
+  outcome: ExtractionOutcome;
   objects: KnowledgeObject[];
   refusals: ExtractionRefusal[];
 }
@@ -83,6 +118,7 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
   if (context.quality === "failed") {
     return {
       objects,
+      outcome: "failed",
       refusals: [{
         detail: "Nothing readable survived this document's parse, so nothing could be extracted from it.",
         reason: "degraded-parse",
@@ -90,16 +126,20 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
     };
   }
 
-  const tables = readableUnits(context).filter((unit) => unit.type === "table" && unit.table);
+  // 🔴 STRUCTURE SURVIVED OR IT DID NOT, AND THAT DECIDES THE OUTCOME, NOT THE COUNT. A document
+  // with real structure and no grid was read completely and teaches this lane nothing. A document
+  // whose structure was flattened was read INCOMPLETELY, and its grids may well have existed.
+  const structured = context.capabilities.semanticUnits;
+  const tables = readableUnits(context).filter((unit) => unitContent(unit).kind === "table");
   if (tables.length === 0) {
     return {
       objects,
+      outcome: structured ? "complete" : "degraded",
       refusals: [{
-        detail: context.capabilities.semanticUnits
-          ? "This document's stored structure contains no table, so there is no grid to read pairs from."
+        detail: structured
+          ? "This document's stored structure contains no table, so this lane found nothing to read pairs from."
           : "Only flat text survived this document's parse, so any table it had was flattened before extraction could see it.",
-        // A source with no semantic units never had a chance; one with units genuinely has no grid.
-        reason: context.capabilities.semanticUnits ? "no-tables" : "degraded-parse",
+        reason: structured ? "no-tables" : "degraded-parse",
       }],
     };
   }
@@ -110,13 +150,19 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
     objects.push(...outcome.objects);
   }
 
-  return { objects, refusals };
+  // Every grid the document has was examined. A refusal here is a statement about a particular
+  // table's shape, not evidence that anything was missed.
+  return { objects, outcome: structured ? "complete" : "degraded", refusals };
 }
 
 function pairsFromTable(
   unit: CanonicalSourceUnit,
 ): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
-  const table = unit.table!;
+  // 🔴 ASKED, NOT ASSUMED. Reading `unit.table` directly here would be the same shape as the bug
+  // that deleted every grid in the corpus; `unitContent` is the one place that answers this.
+  const content = unitContent(unit);
+  if (content.kind !== "table") return { objects: [] };
+  const table = { headerRows: content.headerRows, rows: content.rows };
   const width = Math.max(0, ...table.rows.map((row) => row.length));
 
   // 🔴 EXACTLY TWO COLUMNS, AND THE STRICTNESS IS THE POINT. A three-column schedule — date,
@@ -139,6 +185,9 @@ function pairsFromTable(
   // is data: promoting row 0 to a header on a hunch would silently delete a real pair from every
   // grid that starts with one.
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
+  // What the grid called its own columns, when it named them. Part of every key below, so two
+  // sources that agree on the relationship converge and two that do not stay apart.
+  const relationKind = table.headerRows > 0 ? relationKindFromHeader(table.rows[0]) : null;
   const objects: KnowledgeObject[] = [];
 
   for (const [index, row] of dataRows.entries()) {
@@ -169,6 +218,7 @@ function pairsFromTable(
       sourceAnchors: [anchorForRow(unit, left, right)],
       statement: `${left} — ${right}`,
       type: "association",
+      ...(relationKind ? { relationKind } : {}),
     };
     objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
   }
@@ -200,7 +250,8 @@ function headingOf(unit: CanonicalSourceUnit): string | null {
  * rendered text, which is what a reparse will also produce.
  */
 function anchorForRow(unit: CanonicalSourceUnit, left: string, right: string): CanonicalSourceAnchor {
-  const rendered = unit.text ?? "";
+  const content = unitContent(unit);
+  const rendered = content.kind === "table" ? content.rendered : content.kind === "text" ? content.text : "";
   const at = rendered.indexOf(left);
   return {
     ...unit.anchor,

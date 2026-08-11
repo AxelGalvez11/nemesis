@@ -16,16 +16,25 @@
 // say so, because "we could not read the table" and "the document had no table" are different
 // facts and only one of them is the document's.
 
+import { UNSORTED_FOLDER } from "@nemesis/shared";
+
 import { supabase } from "@/lib/supabase";
 import { buildSourceContext, type SourceContext } from "@/lib/sources/source-context";
 
-/** Where a canvas attachment is filed.
+/**
+ * Where a canvas attachment is filed.
  *
- *  🔴 A NAMED FOLDER, NOT THE ROOT. Filing is not free of consequence: these rows are real
- *  documents that show up wherever documents show up. Putting them somewhere obviously named means
- *  a student who wonders where a file went has an answer, and a student who wants it elsewhere can
- *  move it — rather than material silently appearing mixed in with what they filed deliberately. */
-export const CANVAS_FOLDER = "Canvas";
+ * 🔴 THE EXISTING INBOX, NOT A NEW "CANVAS" FOLDER, AND THAT IS A PRODUCT DECISION. Filing is a
+ * BACKEND requirement: a row is what lets a second canvas recognise the same document, lets
+ * retrieval index it, and gives a citation something to point at. It is not an instruction to the
+ * student to go and manage the file somewhere.
+ *
+ * Minting a folder named after the surface would have taught exactly the mental model that was
+ * retired — "upload in Canvas, then go to the Library to look after it". The user-facing model
+ * stays `Canvas session → Sources → this document`. Chat attachments already land in the Inbox, so
+ * using it adds a durable record without adding a workflow.
+ */
+export const CANVAS_FILING_FOLDER = UNSORTED_FOLDER;
 
 export type CanonicalLoadFailure =
   /** No row, or not this user's. */
@@ -41,9 +50,10 @@ export type CanonicalLoad =
 
 /** The embed PostgREST returns for a to-one relation.
  *
- *  🔴 AN ARRAY, even though there is at most one. supabase-js types it as a list and reading it as
- *  an object gives `undefined` at runtime — a structure that is silently always missing, which
- *  would make every source look degraded and nothing would fail. */
+ *  🔴 BOTH SHAPES ARE HANDLED BECAUSE BOTH OCCUR. supabase-js types a to-one embed as a LIST, and
+ *  other code in this repo comments that it always is one — but measured against production on
+ *  2026-08-11 this particular embed comes back as a bare OBJECT. Whichever a caller assumes, the
+ *  other one silently yields `undefined`, every source looks degraded, and nothing fails loudly. */
 type ParsedEmbed = { structure?: unknown; doc_kind?: string | null };
 
 function firstEmbed(value: ParsedEmbed[] | ParsedEmbed | null | undefined): ParsedEmbed | null {

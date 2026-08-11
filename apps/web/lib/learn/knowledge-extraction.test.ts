@@ -183,3 +183,47 @@ test("one bad grid does not cost a good one its pairs", () => {
   assert.equal(refusals.length, 1);
   assert.equal(refusals[0]?.unitId, "t1");
 });
+
+// ── zero is a successful result, and says so ────────────────────────────────
+
+test("🔴 a structured document with no grid is COMPLETE with a count of zero", () => {
+  const noGrid = contextOf(modelOf([{ id: "p1", kind: "paragraph", text: "Prose only." }]));
+  const result = extractKnowledgeObjects(noGrid);
+  assert.equal(result.outcome, "complete");
+  assert.equal(result.objects.length, 0);
+  assert.equal(result.refusals[0]?.reason, "no-tables");
+});
+
+test("🔴 a flattened parse is DEGRADED, not complete — its grids may well have existed", () => {
+  const result = extractKnowledgeObjects(contextOf(undefined, "Flat text, no structure."));
+  assert.equal(result.outcome, "degraded");
+  assert.equal(result.objects.length, 0);
+});
+
+test("an unreadable parse is FAILED, which is neither of the above", () => {
+  const result = extractKnowledgeObjects(buildSourceContext({ sourceId: "s", sourceKind: "pdf", structure: null }));
+  assert.equal(result.outcome, "failed");
+});
+
+test("a grid this lane refuses does not make the extraction incomplete", () => {
+  // The three-column refusal is a statement about one table's shape, not evidence that structure
+  // was lost. Reporting it as degraded would send someone hunting a parser bug that isn't there.
+  const schedule = contextOf(modelOf([{
+    id: "t1", kind: "table",
+    table: { headerRows: 1, rows: [["Date", "Topic", "Room"], ["8-17", "Exam 1", "102"]] },
+    text: "",
+  }]));
+  assert.equal(extractKnowledgeObjects(schedule).outcome, "complete");
+});
+
+// ── the relation the grid declared about itself ─────────────────────────────
+
+test("a headed grid records what it called its own columns", () => {
+  const { objects } = extractKnowledgeObjects(glossaryContext());
+  assert.equal(objects.every((o) => o.relationKind === "definition|term"), true);
+});
+
+test("a grid that stated no header states no relationship rather than inventing one", () => {
+  const { objects } = extractKnowledgeObjects(glossaryContext(GLOSSARY.slice(1), 0));
+  assert.equal(objects.every((o) => o.relationKind === undefined), true);
+});

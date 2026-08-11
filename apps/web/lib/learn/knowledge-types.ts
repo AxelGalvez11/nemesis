@@ -140,6 +140,21 @@ export interface KnowledgeObject {
   /** Content-derived identity, stable across documents and sessions. See knowledge-identity.ts:
    *  this is what lets a second canvas recognise knowledge a first one already taught. */
   identityKey?: string;
+  /**
+   * WHAT RELATIONSHIP the two halves stand in — part of identity, not decoration.
+   *
+   * 🔴 IDENTICAL STRINGS CAN PARTICIPATE IN DIFFERENT RELATIONSHIPS, so two objects with the same
+   * pair are not necessarily the same knowledge. Without this, a glossary saying `X — its legal
+   * definition` and a parts list saying `X — its supplier` would collapse into one object and a
+   * learner would be credited with knowing something they were never asked.
+   *
+   * 🔴 AND IT IS DERIVED, NOT UNDERSTOOD. This is whatever the source called its own columns,
+   * normalised — `generic|brand`, `term|definition`. It is NOT a semantic taxonomy: nothing here
+   * knows that a "brand" is a trade name, and inferring that would need exactly the subject-matter
+   * knowledge this codebase refuses to encode. The honest cost is that a table with no header row
+   * cannot converge with one that has headers, because only one of them stated the relationship.
+   */
+  relationKind?: string;
   /** HOW this object was derived.
    *
    *  🔴 CARRIED FOR HONESTY, NOT BOOKKEEPING. "3 associations extracted" reads as "3 table rows

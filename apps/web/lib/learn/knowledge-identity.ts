@@ -31,6 +31,28 @@ import type { KnowledgeObject, KnowledgeType } from "./knowledge-types";
  * for anyone learning a language the accent frequently IS the thing being learned. A normaliser
  * that folded them would quietly report mastery of a distinction the learner never made.
  */
+/** What a source that never named its columns contributes to a key. */
+export const UNSTATED_RELATION = "unstated";
+
+/**
+ * The relationship a two-column grid declares about itself, taken from its own header cells.
+ *
+ * 🔴 DERIVED, NEVER UNDERSTOOD, AND THE DISTINCTION IS THE FIELD-AGNOSTIC RULE. This returns
+ * whatever the document wrote — `generic|brand`, `term|definition`, `case|holding`, `part|part no.`
+ * — normalised and sorted so it does not depend on column order. Nothing here knows what any of
+ * those words MEAN, and it must not: a mapping from "brand" to a notion of trade names is exactly
+ * the subject-matter knowledge that never generalises past one field.
+ *
+ * Null when the grid stated no header row, which is a real and common case — a PDF table
+ * reconstructed from ruled lines only reports `headerRows: 1` when the first row was complete.
+ */
+export function relationKindFromHeader(header: readonly string[] | undefined): string | null {
+  if (!header || header.length < 2) return null;
+  const cells = header.slice(0, 2).map((cell) => normalizeForIdentity(cell)).filter(Boolean);
+  if (cells.length < 2) return null;
+  return cells.sort().join("|");
+}
+
 export function normalizeForIdentity(text: string): string {
   return text
     // Unicode normalisation only — the composed and decomposed spellings of the same accented
@@ -71,7 +93,9 @@ function fnv1a64(text: string): string {
  * The canonical string a key is computed from. Exported so a disagreement about why two objects
  * did or did not merge can be answered by looking, rather than by guessing at a hash.
  */
-export function identityBasis(object: Pick<KnowledgeObject, "type" | "statement" | "pair">): string {
+export function identityBasis(
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
+): string {
   if (object.type === "association" && object.pair) {
     const left = normalizeForIdentity(object.pair.left);
     const right = normalizeForIdentity(object.pair.right);
@@ -84,7 +108,15 @@ export function identityBasis(object: Pick<KnowledgeObject, "type" | "statement"
     // brand from the generic" and "produce the generic from the brand" are two capabilities over
     // one fact, and `AssociationDirection` is where that distinction lives.
     const [a, b] = [left, right].sort();
-    return `association|${a}|${b}`;
+    // 🔴 THE RELATIONSHIP IS PART OF THE IDENTITY. Identical strings can stand in different
+    // relationships, and without this a glossary's `X — its definition` and a parts list's
+    // `X — its supplier` would be one object, crediting a learner with knowledge never tested.
+    //
+    // `UNSTATED` when the source did not say. It is deliberately NOT treated as a wildcard that
+    // matches everything: a headerless table converging with a headed one would be a guess about
+    // what its columns meant, and a false merge is the failure this whole file exists to avoid.
+    // The cost — two such tables not converging — is a missed merge, which is recoverable.
+    return `association|${object.relationKind ?? UNSTATED_RELATION}|${a}|${b}`;
   }
   // Every other type keys on its statement until it has a payload of its own. Deliberately not a
   // ten-way guess written before the interactions that use those payloads exist.
@@ -101,15 +133,15 @@ export function identityBasis(object: Pick<KnowledgeObject, "type" | "statement"
  * to add a scope to the key, and the tests that pin these two cases will say what broke.
  */
 export function knowledgeIdentityKey(
-  object: Pick<KnowledgeObject, "type" | "statement" | "pair">,
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
 ): string {
   return `${object.type}:${fnv1a64(identityBasis(object))}`;
 }
 
 /** Whether two objects are the same knowledge met twice. */
 export function isSameKnowledge(
-  a: Pick<KnowledgeObject, "type" | "statement" | "pair">,
-  b: Pick<KnowledgeObject, "type" | "statement" | "pair">,
+  a: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
+  b: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
 ): boolean {
   return knowledgeIdentityKey(a) === knowledgeIdentityKey(b);
 }

@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   identityBasis,
+  relationKindFromHeader,
   identityIsStructural,
   isSameKnowledge,
   knowledgeIdentityKey,
@@ -104,7 +105,55 @@ test("the same words as two different KINDS of knowledge stay distinct", () => {
 // ── the basis is inspectable ────────────────────────────────────────────────
 
 test("why two objects did or did not merge can be read rather than guessed", () => {
-  assert.equal(identityBasis(association("Paris", "France")), "association|france|paris");
+  assert.equal(identityBasis(association("Paris", "France")), "association|unstated|france|paris");
+});
+
+// ── the relationship the two halves stand in ────────────────────────────────
+
+test("🔴 identical strings in DIFFERENT relationships are different knowledge", () => {
+  // A glossary's "X — its definition" and a parts list's "X — its supplier" share both strings
+  // and are not the same thing to know. Without the relation in the key they would collapse, and
+  // a learner would be credited with knowing something they were never asked.
+  const defined = association("Widget", "Acme", { relationKind: "definition|term" });
+  const supplied = association("Widget", "Acme", { relationKind: "part|supplier" });
+  assert.equal(isSameKnowledge(defined, supplied), false);
+});
+
+test("two sources that agree on the relationship still converge", () => {
+  const lecture = association("losartan", "Cozaar", { id: "a", relationKind: "brand|generic" });
+  const revision = association("Cozaar", "losartan", { id: "b", relationKind: "brand|generic" });
+  assert.equal(isSameKnowledge(lecture, revision), true);
+});
+
+test("a grid that named no columns does not silently match one that did", () => {
+  // 🔴 "unstated" is NOT a wildcard. Matching it against a stated relationship would be a guess
+  // about what the headerless table's columns meant, and a false merge is the failure this file
+  // exists to prevent. Two such tables not converging is a missed merge, which is recoverable.
+  const stated = association("losartan", "Cozaar", { relationKind: "brand|generic" });
+  const unstated = association("losartan", "Cozaar");
+  assert.equal(isSameKnowledge(stated, unstated), false);
+});
+
+test("the relation kind is the source's own words, normalised and order-independent", () => {
+  assert.equal(relationKindFromHeader(["Generic", "Brand"]), "brand|generic");
+  assert.equal(relationKindFromHeader(["Brand", "Generic"]), "brand|generic");
+  assert.equal(relationKindFromHeader(["Term", "Definition"]), "definition|term");
+});
+
+test("a grid with no usable header states no relationship rather than inventing one", () => {
+  assert.equal(relationKindFromHeader(undefined), null);
+  assert.equal(relationKindFromHeader(["Only one"]), null);
+  assert.equal(relationKindFromHeader(["", "  "]), null);
+});
+
+test("the relation kind is DERIVED, never understood — it carries no meaning of its own", () => {
+  // 🔴 The field-agnostic rule. Nothing knows that a "brand" is a trade name; these are just the
+  // words the document used. A law source and an engineering source produce their own, and both
+  // work, precisely because no mapping from word to meaning exists anywhere.
+  assert.equal(relationKindFromHeader(["Case", "Holding"]), "case|holding");
+  // Trailing punctuation is formatting: "Part No." and "Part No" name the same column.
+  assert.equal(relationKindFromHeader(["Part", "Part No."]), "part|part no");
+  assert.equal(relationKindFromHeader(["Kanji", "Reading"]), "kanji|reading");
 });
 
 test("normalisation keeps punctuation inside the text, where it may be load-bearing", () => {

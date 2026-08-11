@@ -31,7 +31,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
@@ -301,7 +301,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // same lecture could not tell it was the same lecture, and retrieval, which needs a
           // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
           // dropped into a conversation should not silently become a permanent document.
-          const extracted = await extractFile(file, id, { folderPath: CANVAS_FOLDER, keep: true });
+          const extracted = await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
           const sourceId = `s${latest.current.sources.length + 1}`;
           const note = coverageNote(extracted.coverage);
 
@@ -335,6 +335,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                 ? buildExcerptsFromModel(sourceId, extracted.model)
                 : buildExcerpts(sourceId, extracted.text),
             ...(note ? { coverageNote: note } : {}),
+            // 🔴 STATED, NOT LEFT TO BE INFERRED. A reader must not have to work out durability
+            // from whether some other field happens to be set — an ephemeral source can teach this
+            // canvas perfectly well, and must not pretend to support anything that outlives it.
+            durability: extracted.librarySourceId ? "durable" : "ephemeral",
             ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
             ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
           };
@@ -345,7 +349,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             chars: extracted.text.length,
             // Logged so the proportion of canvases running on a degraded parse is findable in
             // production without a student having to report one.
-            filed: Boolean(extracted.librarySourceId),
+            durability: extracted.librarySourceId ? "durable" : "ephemeral",
             grounding: canonical.ok ? "canonical" : extracted.model ? "response-model" : "text",
             ...(canonical.ok ? { quality: canonical.context.quality } : {}),
           });

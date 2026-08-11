@@ -110,7 +110,54 @@ export interface CanonicalSourceUnit {
    *  matters because a deck's structure often lives entirely in title placeholders rather than in
    *  heading blocks, so without it every excerpt from a slide deck loses the only label it had. */
   unitLabel?: string;
+  /** A figure's two facts, kept apart.
+   *
+   *  🔴 THE CAPTION IS WHAT THE DOCUMENT SAYS; THE DESCRIPTION IS WHAT A MODEL SAID ABOUT IT.
+   *  Merging them makes an inference indistinguishable from the source. A description that is
+   *  absent means NOT EXAMINED — it never means the figure was empty. */
+  figure?: { caption?: string; description?: string };
   anchor: CanonicalSourceAnchor;
+}
+
+/**
+ * What a unit actually contains — the ONE question a semantic consumer should ask.
+ *
+ * 🔴 THIS EXISTS BECAUSE `unit.text === "" → discard` WAS ALREADY WRITTEN ONCE AND SILENTLY
+ * DELETED EVERY TABLE IN THE CORPUS. A unit's content is determined by its TYPE, not by assuming
+ * one field holds everything: a paragraph's content is its text, a table's content is its cells, a
+ * figure's content is a caption and — separately — whatever anyone actually observed about it.
+ *
+ * Without a single accessor, the next extractor rediscovers that the hard way, and the failure is
+ * always silent: the table simply is not there, no error is raised, and the counts look plausible.
+ * So the discriminated union is the interface. A consumer that switches on `kind` cannot write the
+ * bug; a consumer that reaches for `.text` can.
+ */
+export type UnitContent =
+  /** Prose, a heading, a list item, an equation, or a legacy whole-source blob. */
+  | { kind: "text"; text: string }
+  /** A grid. `rendered` is the markdown form for a model to read; `rows` is what to compute on. */
+  | { kind: "table"; rows: string[][]; headerRows: number; rendered: string }
+  /** At least one of caption or description is present — a figure with neither is `empty`. */
+  | { kind: "figure"; caption: string | null; description: string | null; rendered: string }
+  /** Genuinely nothing to read. 🔴 Distinct from "we did not look": that is what `coverage` says. */
+  | { kind: "empty" };
+
+export function unitContent(unit: CanonicalSourceUnit): UnitContent {
+  if (unit.type === "table" && unit.table) {
+    const { headerRows, rows } = unit.table;
+    if (rows.length === 0) return { kind: "empty" };
+    return { headerRows, kind: "table", rendered: (unit.text ?? "").trim(), rows };
+  }
+
+  if (unit.type === "figure") {
+    const caption = unit.figure?.caption?.trim() || null;
+    const description = unit.figure?.description?.trim() || null;
+    if (!caption && !description) return { kind: "empty" };
+    return { caption, description, kind: "figure", rendered: (unit.text ?? "").trim() };
+  }
+
+  const text = (unit.text ?? "").trim();
+  return text ? { kind: "text", text } : { kind: "empty" };
 }
 
 export interface SourceContext {
@@ -261,6 +308,17 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
     // the table lane lands cannot silently cross this boundary and start being branched on.
     ...(block.table ? { table: { headerRows: block.table.headerRows, rows: block.table.rows } } : {}),
     ...(model.units[block.unit]?.label?.trim() ? { unitLabel: model.units[block.unit]!.label!.trim() } : {}),
+    // 🔴 The caption and the description travel SEPARATELY, because one is the document's and the
+    // other is an inference about it. `unitText` renders them together for a model to read; a
+    // consumer that needs to tell them apart asks `unitContent`.
+    ...(block.kind === "figure"
+      ? {
+          figure: {
+            ...(block.text.trim() ? { caption: block.text.trim() } : {}),
+            ...(block.figure?.description?.trim() ? { description: block.figure.description.trim() } : {}),
+          },
+        }
+      : {}),
   }));
 }
 
@@ -299,9 +357,14 @@ export function anchorInUnit(unit: CanonicalSourceUnit, exact: string, from = 0)
   return { ...unit.anchor, quote: quoteAnchor(unit.text ?? "", exact, from) };
 }
 
-/** Everything readable, in order — an extractor's usual entry point. */
+/** Everything readable, in order — an extractor's usual entry point.
+ *
+ *  🔴 IT ASKS `unitContent`, NOT `unit.text`. This function is where the deleted-tables bug
+ *  actually happened: a table's text field is empty by construction, so filtering on it dropped
+ *  every grid in the corpus while every test passed. Routing the emptiness question through the
+ *  one accessor means a new unit type cannot be silently discarded here either. */
 export function readableUnits(context: SourceContext): CanonicalSourceUnit[] {
-  return context.units.filter((unit) => (unit.text ?? "").trim().length > 0);
+  return context.units.filter((unit) => unitContent(unit).kind !== "empty");
 }
 
 /** The heading a unit sits under, or null. Cheap section context for an extractor that wants to
