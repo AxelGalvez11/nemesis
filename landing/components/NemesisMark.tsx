@@ -36,23 +36,55 @@ export type MarkState =
   | "success";
 
 /**
- * Three beads, deliberately unequal.
+ * Three beads, tilted and stacked.
  *
- * Equal ellipses on a shared centre line read as a diagram of three ellipses. The
- * asymmetry is what makes them read as objects: each is a slightly different size,
- * each sits a fraction off the axis, and each is tilted a few degrees the other way.
- * Small enough that nobody consciously notices, large enough that the mark stops
- * looking generated.
+ * THE TILT IS THE MARK. The first version of this had them nearly horizontal, a few
+ * degrees apart — that was the earlier brand sheet, and at any real size it reads as
+ * three dashes. The 2026-08-10 sheet and the app-icon render both show the long axis
+ * running lower-left to upper-right at roughly 25 degrees, stacked close enough to
+ * almost touch. That diagonal is what makes the silhouette recognisable at 16px.
+ *
+ * Still deliberately unequal. Identical ellipses on a shared axis read as a diagram
+ * of three ellipses; a fraction of variation in size, offset and angle is what makes
+ * them read as objects. Small enough that nobody notices it, large enough that the
+ * mark stops looking generated.
  */
 const BEADS = [
-  { cx: 49.4, cy: 25, rx: 28.5, ry: 14.3, tilt: -7 },
-  { cx: 50.6, cy: 66, rx: 32, ry: 16.1, tilt: 4 },
-  { cx: 49.8, cy: 107, rx: 30, ry: 15.1, tilt: -2 },
+  { cx: 49.6, cy: 26, rx: 30, ry: 14.2, tilt: -25 },
+  { cx: 50.5, cy: 66, rx: 32, ry: 15, tilt: -23 },
+  { cx: 49.8, cy: 106, rx: 30.5, ry: 14.4, tilt: -26 },
 ] as const;
+
+/**
+ * The viewBox HUGS THE INK, and it has to be recomputed whenever BEADS changes.
+ *
+ * A rotated ellipse occupies far less width than its rx suggests — at 25 degrees
+ * these span about 60 units of the 100 the coordinates are written in. Left at
+ * "0 0 100 132" the element reserved 40 units of empty width, so `size` bought a
+ * box rather than a mark and every instance rendered visibly smaller than asked.
+ *
+ * Bounds of a rotated ellipse: half-width = √((rx·cosθ)² + (ry·sinθ)²), half-height
+ * = √((rx·sinθ)² + (ry·cosθ)²). Computed once at module load rather than typed in,
+ * so a future tweak to a bead cannot silently reintroduce the padding.
+ */
+const VIEW = (() => {
+  const PAD = 1.5;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const b of BEADS) {
+    const t = (b.tilt * Math.PI) / 180;
+    const hw = Math.hypot(b.rx * Math.cos(t), b.ry * Math.sin(t));
+    const hh = Math.hypot(b.rx * Math.sin(t), b.ry * Math.cos(t));
+    x0 = Math.min(x0, b.cx - hw); x1 = Math.max(x1, b.cx + hw);
+    y0 = Math.min(y0, b.cy - hh); y1 = Math.max(y1, b.cy + hh);
+  }
+  const w = x1 - x0 + PAD * 2;
+  const h = y1 - y0 + PAD * 2;
+  return { box: `${x0 - PAD} ${y0 - PAD} ${w} ${h}`, ratio: w / h };
+})();
 
 interface NemesisMarkProps {
   state?: MarkState;
-  /** Rendered height in px. Width follows the 100:132 viewBox. */
+  /** Rendered height in px. Width follows the ink's own aspect ratio. */
   size?: number;
   /** Give this only when the mark carries meaning on its own (the nav logo does not —
    *  it sits next to the word "nemesis", so it stays decorative and silent). */
@@ -78,9 +110,9 @@ export function NemesisMark({
   return (
     <svg
       className={[`mark mark-${state}`, className].filter(Boolean).join(" ")}
-      viewBox="0 0 100 132"
+      viewBox={VIEW.box}
       height={size}
-      width={(size * 100) / 132}
+      width={size * VIEW.ratio}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
@@ -101,12 +133,12 @@ export function NemesisMark({
           <stop offset="100%" stopColor="var(--bead-far, #050505)" />
         </radialGradient>
 
-        {/* The specular. A hard white dot reads as plastic; the glossy look comes from
-            a bright core that falls off fast and then lingers, so three stops rather
-            than two. */}
+        {/* The specular. The reference is a bright, fairly hard streak running along
+            the top of the bead, so the white holds a plateau before it falls away —
+            a single soft dot reads as matte plastic instead of glass. */}
         <radialGradient id={spec} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0.92" />
-          <stop offset="45%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0.34" />
+          <stop offset="0%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="1" />
+          <stop offset="45%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0.9" />
           <stop offset="100%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0" />
         </radialGradient>
 
@@ -129,13 +161,15 @@ export function NemesisMark({
           <g transform={`rotate(${bead.tilt} ${bead.cx} ${bead.cy})`}>
             <ellipse cx={bead.cx} cy={bead.cy} rx={bead.rx} ry={bead.ry} fill={`url(#${body})`} />
             <ellipse cx={bead.cx} cy={bead.cy} rx={bead.rx} ry={bead.ry} fill={`url(#${bounce})`} />
+            {/* No rotation of its own. The streak runs ALONG the bead's long axis,
+                and this sits inside the group that already carries the tilt — an
+                extra angle here would cross the highlight over the form. */}
             <ellipse
-              cx={bead.cx - bead.rx * 0.33}
-              cy={bead.cy - bead.ry * 0.38}
-              rx={bead.rx * 0.4}
+              cx={bead.cx - bead.rx * 0.35}
+              cy={bead.cy - bead.ry * 0.33}
+              rx={bead.rx * 0.46}
               ry={bead.ry * 0.34}
               fill={`url(#${spec})`}
-              transform={`rotate(-16 ${bead.cx - bead.rx * 0.33} ${bead.cy - bead.ry * 0.38})`}
             />
           </g>
         </g>

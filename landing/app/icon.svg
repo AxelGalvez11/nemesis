@@ -1,49 +1,80 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 0 76 100">
   <!--
-    The favicon. Replaces icon.png, which was the old wing mark — a different
-    identity entirely, sitting in the browser tab next to a site built around
-    the beads.
+    The favicon.
 
-    SVG rather than PNG for one reason that matters here: a favicon is drawn
-    against the BROWSER's chrome, not against the page, so it has to invert on
-    its own. The media query below does that. A PNG cannot, which is how the
-    old mark ended up as a black glyph on a dark tab strip.
+    GEOMETRY COMES FROM THE 2026-08-10 BRAND SHEET (v2) AND THE APP-ICON RENDER.
+    The beads are tilted roughly 25 degrees with their long axis running lower-left
+    to upper-right, stacked almost touching. The first pass at this had them nearly
+    horizontal, which is the earlier sheet and reads as three dashes rather than as
+    the mark.
 
-    Deliberately not the same geometry as NemesisMark. At 16px the page mark's
-    proportions collapse into a smudge, so the beads here are shorter, wider
-    and closer together, and the gloss is one flat highlight rather than three
-    gradients. Same identity, drawn for the size it is actually rendered at.
+    NO PADDING. The supplied app icon sits in a rounded white plate with a wide
+    margin, which is right for a home screen and wrong for a 16px tab — at that
+    size the margin eats most of the glyph. The artwork here runs edge to edge and
+    the plate is gone; the browser supplies whatever surround it wants.
+
+    REDRAWN FOR THE SIZE, NOT SCALED DOWN. Three stacked beads at their real
+    proportions make a composition about half as wide as it is tall, and a favicon
+    is square: rendered at 16px that is 16 tall by 8 wide, and it reads as a
+    squiggle with the other half of the square empty. The beads are staggered
+    slightly here so the cluster fills the square — same three beads, same tilt,
+    just drifted apart on the horizontal, which is a movement the mark already
+    makes. Verified by rendering at 16 / 24 / 32 / 48 / 96px, not by eye at
+    one size.
+
+    SVG rather than PNG because a favicon is drawn against the BROWSER's chrome,
+    not the page, so it has to invert on its own. The brand sheet's own usage
+    note — "in dark mode, invert surfaces and beads" — is what the media query
+    below does.
+
+    Duplicated on purpose from components/NemesisMark.tsx: that one is React and
+    this has to be a standalone file Next can serve as an icon. If the bead
+    geometry changes, change it in both.
   -->
   <defs>
-    <!-- A soft sheen, not a flat dot. A solid ellipse reads fine at 16px and looks
-         like a grey blob stuck on the bead at 48px, which is the size bookmark bars
-         and installed-app icons actually use. -->
+    <!-- The body. Light from the upper left, falling to near-black at the far edge. -->
+    <radialGradient id="body" cx="30%" cy="22%" r="88%">
+      <stop offset="0%" stop-color="#7a7a7a" />
+      <stop offset="44%" stop-color="#0a0a0a" />
+      <stop offset="100%" stop-color="#000000" />
+    </radialGradient>
+    <!-- The specular. The reference has a bright, fairly hard streak along the top
+         of each bead, so the white holds a plateau before it falls away. -->
     <radialGradient id="sheen" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.32" />
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="38%" stop-color="#ffffff" stop-opacity="0.88" />
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
     </radialGradient>
+    <!-- Bounce off the surface below, along the lower-right edge. -->
+    <linearGradient id="bounce" x1="10%" y1="0%" x2="60%" y2="100%">
+      <stop offset="58%" stop-color="#b3b3b3" stop-opacity="0" />
+      <stop offset="100%" stop-color="#b3b3b3" stop-opacity="0.5" />
+    </linearGradient>
   </defs>
 
   <style>
-    .bead { fill: #090909; }
-    .spec { fill: url(#sheen); opacity: 0.85; }
+    /* The brand sheet's rule: dark mode inverts the beads. One filter does the
+       whole mark, body and specular together, which is what "invert" means here. */
     @media (prefers-color-scheme: dark) {
-      .bead { fill: #f5f5f5; }
-      .spec { opacity: 1; }
+      .mark { filter: invert(1); }
     }
   </style>
 
-  <g transform="rotate(-6 50 20)">
-    <ellipse class="bead" cx="50" cy="20" rx="31" ry="13.5" />
-    <ellipse class="spec" cx="40" cy="15.2" rx="12.5" ry="5" transform="rotate(-14 40 15.2)" />
-  </g>
-  <g transform="rotate(4 50 50)">
-    <ellipse class="bead" cx="50" cy="50" rx="34" ry="14.5" />
-    <ellipse class="spec" cx="39" cy="45" rx="13.5" ry="5.4" transform="rotate(-14 39 45)" />
-  </g>
-  <g transform="rotate(-2 50 80)">
-    <ellipse class="bead" cx="50" cy="80" rx="32" ry="14" />
-    <ellipse class="spec" cx="40" cy="75.2" rx="13" ry="5.2" transform="rotate(-14 40 75.2)" />
+  <g class="mark">
+    <g transform="rotate(-24 44 19.7)">
+      <ellipse cx="44" cy="19.7" rx="30" ry="14" fill="url(#body)" />
+      <ellipse cx="44" cy="19.7" rx="30" ry="14" fill="url(#bounce)" />
+      <ellipse cx="33.5" cy="15.6" rx="13.8" ry="4.8" fill="url(#sheen)" />
+    </g>
+    <g transform="rotate(-24 50 50)">
+      <ellipse cx="50" cy="50" rx="30" ry="14" fill="url(#body)" />
+      <ellipse cx="50" cy="50" rx="30" ry="14" fill="url(#bounce)" />
+      <ellipse cx="39.5" cy="45.9" rx="13.8" ry="4.8" fill="url(#sheen)" />
+    </g>
+    <g transform="rotate(-24 56 80.3)">
+      <ellipse cx="56" cy="80.3" rx="30" ry="14" fill="url(#body)" />
+      <ellipse cx="56" cy="80.3" rx="30" ry="14" fill="url(#bounce)" />
+      <ellipse cx="45.5" cy="76.2" rx="13.8" ry="4.8" fill="url(#sheen)" />
+    </g>
   </g>
 </svg>
