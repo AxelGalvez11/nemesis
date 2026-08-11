@@ -14,6 +14,7 @@
 
 import { supabase } from "@/lib/supabase";
 
+import { decodeCalendarEvent, encodeCalendarEvent } from "./calendar-codec";
 import { fetchAllRows } from "./supabase-paging";
 
 export type CalendarEventKind = "assignment" | "exam" | "rotation" | "class" | "other";
@@ -124,25 +125,11 @@ export function parseRecurrence(raw: unknown): CalendarEvent["recurrence"] | nul
 }
 
 // A malformed entry is dropped, not fatal to the whole file.
-function sanitizeEvent(raw: unknown): CalendarEvent | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const e = raw as Record<string, unknown>;
-  if (typeof e.id !== "string" || e.id.length === 0) return null;
-  if (typeof e.title !== "string" || e.title.length === 0) return null;
-  if (typeof e.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) return null;
-  if (typeof e.kind !== "string" || !VALID_KINDS.includes(e.kind as CalendarEventKind)) return null;
-
-  const event: CalendarEvent = { id: e.id, title: e.title, date: e.date, kind: e.kind as CalendarEventKind };
-  if (typeof e.time === "string") event.time = e.time;
-  if (typeof e.endTime === "string") event.endTime = e.endTime;
-  if (typeof e.end_time === "string") event.endTime = e.end_time;
-  if (typeof e.course === "string") event.course = e.course;
-  if (typeof e.note === "string") event.note = e.note;
-  if (e.source === "agent" || e.source === "manual") event.source = e.source;
-  const recurrence = parseRecurrence(e.recurrence);
-  if (recurrence) event.recurrence = recurrence;
-  return event;
-}
+/** 🔴 DELEGATES. This used to name every key itself, and `calendarEventFromRow` named them
+ *  again for the cloud path — two lists that had to be kept in step by hand, and a field added
+ *  to one and missed in the other vanished silently on that path. There is now ONE decoder.
+ *  Do not re-inline this. */
+const sanitizeEvent = decodeCalendarEvent;
 
 function parseCalendarEvents(text: string): CalendarEvent[] {
   if (!text) return [];
@@ -177,20 +164,10 @@ function writeLocalCalendarState(key: string, state: CalendarState): void {
   }
 }
 
+/** 🔴 DELEGATES, for the same reason the reader does — a writer that named its own columns
+ *  could disagree with the decoder about what a field is called, and nothing would report it. */
 function toCloudRow(event: CalendarEvent, userId: string, source: "agent" | "manual") {
-  return {
-    id: event.id,
-    user_id: userId,
-    title: event.title,
-    date: event.date,
-    time: event.time ?? null,
-    end_time: event.endTime ?? null,
-    kind: event.kind,
-    course: event.course ?? null,
-    note: event.note ?? null,
-    source,
-    recurrence: event.recurrence ?? null,
-  };
+  return encodeCalendarEvent(event, userId, source);
 }
 
 /** One-time upload of whatever was sitting in the legacy unscoped key before

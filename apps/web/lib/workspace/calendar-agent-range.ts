@@ -13,6 +13,7 @@
 // evening in the Americas, which silently hid same-day deadlines from the
 // agent between 7 PM and midnight CDT.
 
+import { decodeCalendarEvent } from "./calendar-codec";
 import {
   addDays,
   dateKey,
@@ -45,23 +46,13 @@ export interface CalendarEventRow {
 }
 
 /** Row → typed event; null for a malformed row (dropped, never fatal). */
+/** Row → typed event.
+ *
+ *  🔴 DELEGATES to the one decoder. This function used to name every key itself while
+ *  `sanitizeEvent` named them again for the cache path; the two drifted silently and a field
+ *  present on one path disappeared on the other with no error. Do not re-inline this. */
 export function calendarEventFromRow(row: CalendarEventRow): CalendarEvent | null {
-  if (typeof row.id !== "string" || !row.id) return null;
-  if (typeof row.title !== "string" || !row.title) return null;
-  if (typeof row.date !== "string" || !DATE_KEY_RE.test(row.date)) return null;
-  const kind = typeof row.kind === "string" && VALID_KINDS.has(row.kind as CalendarEventKind)
-    ? (row.kind as CalendarEventKind)
-    : "other";
-  const event: CalendarEvent = { date: row.date, id: row.id, kind, title: row.title };
-  if (typeof row.time === "string" && row.time) event.time = row.time;
-  if (typeof row.end_time === "string" && row.end_time) event.endTime = row.end_time;
-  if (typeof row.course === "string" && row.course) event.course = row.course;
-  if (typeof row.note === "string" && row.note) event.note = row.note;
-  if (row.source === "agent" || row.source === "manual") event.source = row.source;
-  // Shared with the calendar page's own reader on purpose — see parseRecurrence.
-  const recurrence = parseRecurrence(row.recurrence);
-  if (recurrence) event.recurrence = recurrence;
-  return event;
+  return decodeCalendarEvent(row);
 }
 
 /** The window a list call asked for, resolved deterministically.
