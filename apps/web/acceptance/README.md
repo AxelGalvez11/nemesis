@@ -37,3 +37,34 @@ between those two points are exactly what this exists to test.
 
 Then read the stored row back (`apps/web/scripts/source-context-acceptance.mts`) and compare
 against the table above.
+
+---
+
+## First real run — revision A2, 2026-08-11
+
+Uploaded through the product (Library → Library tools → Import), parsed by the production parser,
+read back from `parsed_documents`. **The document paid for itself on its first run** by revealing
+two real gaps that no fixture could have shown.
+
+| | expected | actual |
+|---|---|---|
+| shape | `units-blocks` | ✅ `units-blocks`, `state: parsed` |
+| text | all of it | ✅ both dated lines, both negatives, all three terms |
+| page anchors | every block | ✅ 9/9 blocks carry a rect; 8/9 a heading path |
+| **tables** | **1 grid** | ❌ **`table_count: 0`** — the ruled table was flattened into a paragraph |
+| **headings** | **5** | ❌ **2** — "Course Schedule", "Key Terms", "Laboratory Notes" and "Light intensity" were absorbed into the paragraph that follows them |
+
+### What this means
+
+🔴 **Associations cannot be table-derived today.** The table is drawn with real vector rules and
+still comes back as prose, so an extractor that claimed to read the grid would be lying. This is
+consistent with the other production syllabus, which also reports `table_count: 0` — and with the
+table lane being built but switched off. Until that lane is on, an association extractor has to
+work from text and must **say** that is what it did.
+
+🔴 **Heading detection is unreliable at this scale.** Three of five headings merged into the
+following paragraph — including "Course Schedule", which is exactly the section a schedule
+extractor would want as context. Section context is therefore not yet dependable evidence.
+
+✅ **Schedule extraction is unblocked.** Both dated lines survive intact inside one block, with a
+rect and a heading path, which is everything a candidate needs for provenance.
