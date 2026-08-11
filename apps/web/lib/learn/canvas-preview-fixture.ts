@@ -27,7 +27,9 @@ export type PreviewSeed =
   | "choicetest"
   | "diagnose"
   | "complete"
-  | "retest";
+  | "retest"
+  /** A canvas stored at the deleted level picker — the one legacy shape that must not strand. */
+  | "orient";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 
@@ -341,6 +343,16 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
   // The blank canvas, for checking both documented ways in (§6): drop material, or type
   // a topic. The topic-first path used to read a ref React had not written yet.
   empty: () => emptyCanvas("preview-canvas-empty", NOW),
+  // 🔴 A CANVAS STORED AT THE DELETED LEVEL PICKER. `orient` was only ever escapable by choosing
+  // one of four labels, and that screen is gone — so this shape has no forward path of its own and
+  // is the one that would strand on a blank page for ever if the resume path regressed. Seeded
+  // with a source and NOTHING produced, which is exactly the state such a row is stored in.
+  orient: () => ({
+    ...emptyCanvas("preview-canvas-orient", NOW),
+    sources: [SOURCE],
+    state: "orient",
+    title: "Cardiac action potentials",
+  }),
   lesson: lessonSeed,
   recall: () => ({ ...lessonSeed(), state: "recall", recall: RECALL }),
   // Multiple choice is still reachable, because it still exists for exam simulation — but it is
