@@ -1,6 +1,6 @@
 "use client";
 
-import { NemesisMark } from "@/components/NemesisMark";
+import { ChromeBlob } from "@/components/ChromeBlob";
 import { APP_SIGN_UP } from "@/components/SiteChrome";
 import { captureCtaClick } from "@/lib/posthog";
 
@@ -19,29 +19,20 @@ export function Closer() {
   return (
     <section className="nclose" id="start">
       <div className="wrap" data-reveal="up">
-        <h2>how fast can you actually learn?</h2>
-        <p className="nclose-sub">
-          remove the busywork.
-          <br />
-          find the gaps.
-          <br />
-          keep moving.
-        </p>
+        <div className="nclose-blob" aria-hidden="true">
+          <ChromeBlob state="mastery" size={340} />
+        </div>
+        <h2>your material. your mind. faster.</h2>
         <div className="nclose-cta">
           <a
             className="btn btn-primary"
             href={APP_SIGN_UP}
-            onClick={() => captureCtaClick("closer", "Start learning")}
+            onClick={() => captureCtaClick("closer", "Enter Nemesis")}
           >
-            Start learning
+            Enter Nemesis
           </a>
         </div>
-        <p className="nclose-note">
-          Free to start, no card. The phone app is included with your account.
-        </p>
-        <div className="nclose-mark">
-          <NemesisMark state="success" size={54} />
-        </div>
+        <p className="nclose-note">Free to start. No card.</p>
       </div>
     </section>
   );

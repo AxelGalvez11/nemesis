@@ -1,6 +1,6 @@
 "use client";
 
-import { NemesisMark } from "@/components/NemesisMark";
+import { ChromeBlob } from "@/components/ChromeBlob";
 import { APP_SIGN_UP } from "@/components/SiteChrome";
 import { captureCtaClick } from "@/lib/posthog";
 
@@ -25,26 +25,32 @@ export function Hero() {
   return (
     <header className="nhero">
       <div className="wrap">
-        <div className="nhero-mark reveal">
-          <NemesisMark state="idle" size={132} label="Nemesis" />
+        {/* THE ORGANISM IS THE HERO VISUAL, at full material and full size.
+            It was a 16%-opacity wash behind the bead mark first, and that read as a
+            grey smudge rather than as black chrome — the reference forms are
+            arresting precisely because they are dense and high-contrast.
+            The bead mark is deliberately NOT repeated here: it sits in the nav
+            sixty pixels above, and two identity objects in one viewport is two
+            things to look at where the direction asks for one. */}
+        <div className="nhero-mark reveal" aria-hidden="true">
+          <ChromeBlob state="idle" size={300} />
         </div>
 
         <p className="hkicker reveal r2">cognitive accelerator</p>
 
-        <h1 className="reveal r2">learn at the speed of understanding.</h1>
+        <h1 className="reveal r2">learn what matters.</h1>
 
         <p className="nhero-lede reveal r3">
-          Nemesis turns lectures, textbooks, recordings and course material into an
-          adaptive path through knowledge.
+          Nemesis turns your material into an adaptive learning system.
         </p>
 
         <div className="nhero-cta reveal r3">
           <a
             className="btn btn-primary"
             href={APP_SIGN_UP}
-            onClick={() => captureCtaClick("hero", "Start learning")}
+            onClick={() => captureCtaClick("hero", "Enter Nemesis")}
           >
-            Start learning
+            Enter Nemesis
           </a>
           <a className="hlink" href="#canvas">
             see how it works
