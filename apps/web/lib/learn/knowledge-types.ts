@@ -19,6 +19,8 @@
 // and its holding, and a component and its part number. If a type only makes sense in one
 // field, it is the wrong abstraction.
 
+import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
+
 import type { SourceRef } from "./canvas-model";
 
 /** The ten kinds of knowledge, each of which demands a different cognitive operation.
@@ -124,8 +126,48 @@ export interface KnowledgeObject {
    *  built; deliberately not a ten-way union up front, because nine of those shapes would be
    *  guesses written before the interaction that uses them exists. */
   pair?: AssociationPair;
+  /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
+   *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];
+  /** Where this sits in the SOURCE — durable, quote-based, still valid after the document is
+   *  reparsed by a better parser.
+   *
+   *  🔴 BOTH LOCATOR FIELDS ARE HERE AND THEY ARE NOT INTERCHANGEABLE. A knowledge object outlives
+   *  the canvas that first met it, so what it stores has to mean something to a canvas that has
+   *  never seen that one — which `sourceRefs` does not. Converting between them is an explicit
+   *  step (`groundCanonicalAnchor`), never an assumption that a block id is an excerpt id. */
+  sourceAnchors?: CanonicalSourceAnchor[];
+  /** Content-derived identity, stable across documents and sessions. See knowledge-identity.ts:
+   *  this is what lets a second canvas recognise knowledge a first one already taught. */
+  identityKey?: string;
+  /** HOW this object was derived.
+   *
+   *  🔴 CARRIED FOR HONESTY, NOT BOOKKEEPING. "3 associations extracted" reads as "3 table rows
+   *  recovered" unless the object itself says otherwise — including to whoever later reads a
+   *  report and concludes the table lane is working. */
+  derivation?: KnowledgeDerivation;
+  /** Which version of the extractor produced this, so a corpus extracted under old rules can be
+   *  found and redone rather than silently mixed in with a newer one. */
+  extractionVersion?: string;
 }
+
+/**
+ * The evidence an extracted object actually rests on.
+ *
+ * 🔴 THERE IS ONLY ONE, AND THE ABSENCE OF A PROSE DERIVATION IS A MEASURED DECISION RATHER THAN
+ * AN UNFINISHED FEATURE. Across every structured document in production on 2026-08-11, 38 of 219
+ * lines matched an obvious "X: Y" or "X — Y" shape, and hardly any of them were a pair worth
+ * learning: "Memphis: 102" is a room number, "Friday Link: https://…" is a URL, and a grading
+ * table that had been flattened into prose produced "93 – 100 A 77 – 79.99 C+ 90 – 92.99 A-". A
+ * flattened schedule was worse than unstructured — it was REORDERED, its columns interleaved word
+ * by word ("3.1.1, Active 3.2.8, learning: 3.2.9, …"). An extractor reading that would mint dozens
+ * of confident, useless objects and then drill a student on room numbers.
+ *
+ * So a delimiter is not evidence of an association. A grid is.
+ */
+export type KnowledgeDerivation =
+  /** One row of a real grid, read as cells. */
+  | "table-row";
 
 /** What a learner produced on one association attempt.
  *
