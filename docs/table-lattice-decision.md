@@ -86,6 +86,30 @@ Pages 5 and 8 are not false positives: they are the **grading scale** and the
 **late-penalty table**, both recovered correctly, and both correctly excluded
 from the schedule because they have no date column.
 
+### A false positive here is content loss, not a precision statistic
+
+This is why the two-sided test is the experiment rather than a footnote. When a
+region is claimed, `readPage` **removes the text it covers from the paragraph
+flow**:
+
+```js
+if (consumed.size > 0) { const kept = items.filter((i) => !consumed.has(i)); items.length = 0; items.push(...kept); }
+```
+
+That is correct — it stops the same words being emitted twice. But it means a
+lane that fires on a page of prose does not add a junk table *beside* good
+paragraphs; it **deletes that page's paragraphs** and re-emits them as a mangled
+grid, which is then what gets chunked, indexed and cited. And because the lattice
+lane costs nothing, it would run on every PDF.
+
+Measured with `scripts/table-lattice-fp.mts`, which judges each claim by shape
+(a real table's rows have several short filled cells; prose forced into a grid
+has one very long cell per row):
+
+```
+4 syllabi · 96 pages examined · 46 regions claimed · 0 prose-shaped claims
+```
+
 ### Two defects found in region finding, both real
 
 1. **A page border is a drawn rectangle**, so "the bounding box of all rulings"
@@ -148,14 +172,21 @@ surfaced, and **neither is in the grid**:
 
 - **PHCY 2114**: the 15 misses are all `8/17/26` — a format the experiment's toy
   date reader does not accept. The cells are correct.
-- **PHCY 2105**: its schedule tables are recovered *perfectly* (`Week 1 Tuesday,
-  August 17, 2026 | 1-2:50 CT | Course Introduction | … | Exam 1`) but the
-  **header row appears only on the table's first page**, so continuation pages
-  have no column labels and the date column cannot be named. PHCY 2119 repeats
-  its header on every page, which is why it worked.
+- **PHCY 2105**: its schedule tables are recovered correctly and are
+  table-shaped (4.0–4.8 filled cells per row), but **the continuation pages carry
+  no header row at all**, so no column can be named as the date column. PHCY 2119
+  repeats its header on every page, which is why it worked.
 
-**A table that spans pages must carry its header forward.** That is the one
-genuinely new requirement this experiment surfaced, and it belongs in the parser.
+Two requirements follow, and both belong in the production design rather than in
+this experiment:
+
+1. **A table that spans pages must carry its header forward.**
+2. **The in-cell date reader must be the real one, not a strict format match.**
+   PHCY 2105 writes dates as `Week 1 Tuesday, August 11th` and `August 17, 2026`
+   *inside* a cell that also holds other text. The experiment's deliberately
+   minimal `^M-D$` reader exists only to prove that the *column* removes the
+   ambiguity; production should run the existing `findDateMentions` **scoped to
+   the date cell**. Scoping is the win — not a narrower pattern.
 
 ---
 
@@ -185,6 +216,23 @@ tableStructure: boolean // we recovered rows and cells a consumer can reason ove
 `tableStructure` is what the schedule consumer requires. Reporting
 `tables: true` for a page where a table was merely *detected* would be exactly
 the "degraded but silent" failure this codebase keeps hitting.
+
+🔴 **`tableRegions` is not derivable today, and must not be added as a
+placeholder.** `parseCapabilities` reads the persisted model, and the envelope is
+only `{ v, shape, title, text, model }`. The count of detected-but-unrecovered
+regions (`tableRegionsUnread`) reaches the **coverage record**, never the
+structure envelope. So the split is only honest once that value is plumbed
+through — until then `tableStructure` is the one fact the parse can support, and
+claiming the other would be inventing a capability signal.
+
+### Composition with the model lane must be specified before either is built
+
+If the lattice lane sits upstream of the model gate, **both lanes mutate the same
+`items` array**. With the model on, it would see a page whose table text has
+already been consumed and could emit an overlapping region — producing the same
+content twice under two block kinds, which is the precise failure `structure.ts`
+documents avoiding. The rule: **the lattice claims regions first; the model runs
+only over page area the lattice did not claim.**
 
 ---
 
@@ -220,8 +268,13 @@ idempotency → the downstream Calendar question`.
 ### Unproven
 
 - The lattice lane in production. Everything here is local.
-- Behaviour on non-syllabus documents — 4 files is not a corpus. The acceptance
-  gate before merging the parser change is a two-sided sweep over the same 164
-  PDFs `pdf-table-coverage.mts` used, reporting **false positives on prose pages**
-  as a first-class number, not only recall.
+- **Behaviour on non-syllabus documents — 4 files is not a corpus.** All four are
+  from one school and share a template, so the zero-false-positive result is
+  weaker evidence than the page count suggests. The release gate before the
+  parser change merges is a two-sided sweep over the same 164 PDFs
+  `pdf-table-coverage.mts` used, and the gate is **zero prose pages claimed** —
+  not "false positives reported as a number". A single false positive deletes a
+  page of prose from a real student's document.
 - Year resolution. The experiment was told `2026`; production must derive it.
+- Multi-page header carry-forward and cell-scoped `findDateMentions` are both
+  designs, not measurements. Neither has been built or run.
