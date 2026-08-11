@@ -193,3 +193,74 @@ test("an unreadable structure column yields no units rather than throwing", () =
     assert.equal(context.quality, "failed");
   }
 });
+
+// ── tables survive the boundary ─────────────────────────────────────────────
+//
+// 🔴 THE DEFECT THESE PIN. Every canonical table builder in the codebase — pdf/structure.ts,
+// pptx-model.ts, docx-model.ts, docling-adapter.ts — writes `text: ""` on a table block, because
+// the grid is the content and `blockToText` renders it from `block.table`. This boundary copied
+// `block.text` verbatim, so every table arrived with empty text and `readableUnits` dropped it
+// entirely. Not flattened — INVISIBLE. Restore the old `text: block.text` line and both of these
+// fail, which is the only reason to trust them.
+
+const KEY_TERMS: string[][] = [
+  ["Term", "Definition"],
+  ["Photosynthesis", "Conversion of light energy into chemical energy."],
+  ["Chlorophyll", "Pigment that absorbs light."],
+];
+
+function tableModel(): DocumentModel {
+  return model([
+    block({ headingPath: [], id: "h1", kind: "heading", text: "Key Terms" }),
+    block({
+      headingPath: ["Key Terms"],
+      id: "t1",
+      kind: "table",
+      table: { headerRows: 1, rows: KEY_TERMS },
+      // As production stores it. A table's text is empty; the grid is the content.
+      text: "",
+    } as Partial<DocBlock>),
+  ]);
+}
+
+test("a table reaches an extractor as a readable unit rather than vanishing", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const tables = readableUnits(context).filter((unit) => unit.type === "table");
+  assert.equal(tables.length, 1, "the table must survive readableUnits()");
+  assert.match(tables[0]!.text ?? "", /Photosynthesis/);
+});
+
+test("a table keeps its cells, not just a rendering of them", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const table = context.units.find((unit) => unit.type === "table");
+  // 🔴 The rows are what an association extractor reads. A markdown rendering it would have to
+  // re-split on pipe characters is the flattening this boundary exists to prevent.
+  assert.deepEqual(table?.table?.rows, KEY_TERMS);
+  assert.equal(table?.table?.headerRows, 1);
+});
+
+test("a figure nobody examined is not turned into citable evidence", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "f1", kind: "figure", text: "" } as Partial<DocBlock>)])),
+  });
+  // "[Figure — not examined]" is OUR disclosure, not the document's content.
+  assert.deepEqual(readableUnits(context), []);
+});
+
+test("a figure's caption and what a model said about it stay distinguishable", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({
+      figure: { description: "The curve flattens." },
+      id: "f1",
+      kind: "figure",
+      text: "Figure 1 - rate against intensity",
+    } as Partial<DocBlock>)])),
+  });
+  const figure = readableUnits(context).find((unit) => unit.type === "figure");
+  assert.match(figure?.text ?? "", /Figure 1 - rate against intensity/);
+  assert.match(figure?.text ?? "", /The curve flattens\./);
+});

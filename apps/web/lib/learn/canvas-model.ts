@@ -152,6 +152,19 @@ export interface CanvasSource {
   /** The extractor's own account of what it could and could not read, when it gave one.
    *  Carried so a lesson built on a half-read document can say so. */
   coverageNote?: string;
+  /** The durable `library_sources.id` this canvas source is a view of.
+   *
+   *  🔴 THE CANVAS-LOCAL `id` ("s1") IS MEANINGLESS OUTSIDE THIS CANVAS. Two canvases built on the
+   *  same lecture both call it "s1", and neither can tell they are looking at the same document.
+   *  Anything meant to outlive one session — a knowledge object, a schedule candidate — must
+   *  anchor to THIS id instead, which is the same row every canvas, the indexer and retrieval see.
+   *  Absent when the material never became a filed source (a typed topic, or a canvas whose
+   *  attachment predates filing), and absent means "not re-findable", never "not filed anywhere". */
+  librarySourceId?: string;
+  /** What SURVIVED PERSISTENCE, as the capability layer reads it — not what the parser believed
+   *  it produced. `full` when the stored parse kept structure, `degraded` when only text did.
+   *  Carried so a lesson or an extraction built on a degraded parse can say which it was. */
+  parseQuality?: "full" | "degraded" | "failed";
 }
 
 export interface SourceExcerpt {
@@ -159,6 +172,16 @@ export interface SourceExcerpt {
   /** The heading this text sat under, when the document had one. Never invented. */
   label: string | null;
   text: string;
+  /** The canonical unit (document block) this was cut from, when the excerpt was built from the
+   *  persisted document model rather than from flat text.
+   *
+   *  🔴 THIS IS A BRIDGE, NOT AN ALIAS. A block id is not an excerpt id: one block can become
+   *  several excerpts, and a legacy source has no blocks at all. Extraction records a
+   *  `CanonicalSourceAnchor` (durable, quote-based, survives a reparse); the canvas cites a
+   *  `SourceRef` (`{sourceId, excerptId}`, canvas-local). This field is what lets one be resolved
+   *  into the other explicitly — see `groundCanonicalAnchor` — instead of the two being assumed to
+   *  match, which would produce a locator that passes every check and points at nothing. */
+  unitId?: string;
 }
 
 /** A recall prompt. Reveal-then-self-grade by default (§11): typing is opt-in, because the

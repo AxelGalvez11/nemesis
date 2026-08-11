@@ -320,6 +320,18 @@ export interface ExtractedFile {
    * already follows: when the field is missing, fall back — never conclude.
    */
   model?: DocumentModel;
+  /**
+   * The filed `library_sources.id`, when this upload became a durable source.
+   *
+   * 🔴 THIS IS WHAT MAKES ANYTHING OUTLIVE THE REQUEST. A small file posted as a form has no
+   * stored row, so nothing extracted from it can be anchored to anything a second session could
+   * find again — a knowledge object built from it would point at browser state. Present only on
+   * the by-reference lane; absent means "this material was read but not kept".
+   */
+  librarySourceId?: string;
+  /** The durable parse's id, when one was written. Absent means no record — never "the record
+   *  says it was fine". */
+  parsedDocumentId?: string;
 }
 
 /**
@@ -411,7 +423,21 @@ function extractErrorFor(status: number, fileName: string): string {
 export async function extractFile(
   file: File,
   uid: string | null,
-  opts: { sourceId?: string | null; folderPath?: string } = {},
+  opts: {
+    sourceId?: string | null;
+    folderPath?: string;
+    /**
+     * File this upload even when it is small enough to post inline.
+     *
+     * 🔴 THE DEFAULT IS DELIBERATELY NOT TO KEEP, AND THAT DEFAULT IS RIGHT FOR CHAT. A photo
+     * dropped into a conversation to ask one question should not silently become a permanent
+     * document. But it is wrong for anything whose output has to survive the session: a canvas
+     * cites its source weeks later, and a knowledge object extracted from it must be anchored to
+     * a row a SECOND canvas can find. Without a filed row the anchor points at browser state and
+     * cross-session learning cannot work at all — so the caller says which it wants, explicitly.
+     */
+    keep?: boolean;
+  } = {},
 ): Promise<ExtractedFile> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key || !uid) throw new Error("Sign in to read this attachment.");
@@ -453,13 +479,15 @@ export async function extractFile(
   // with no row still takes the multipart path — one round trip, and nothing is
   // stored for a document the student never asked us to keep.
   const sourceId = opts.sourceId ?? null;
-  if (!sourceId && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
+  let filedSourceId: string | null = sourceId;
+  if (!sourceId && !opts.keep && payload.size <= MAX_INLINE_UPLOAD_BYTES) {
     const form = new FormData();
     form.append("file", payload);
     response = await fetch("/api/notebooks/extract/file", { body: form, headers, method: "POST" });
   } else {
     const id = sourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
     if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
+    filedSourceId = id;
     response = await fetch("/api/notebooks/extract/file", {
       body: JSON.stringify({ sourceId: id }),
       headers: { ...headers, "Content-Type": "application/json" },
@@ -475,6 +503,7 @@ export async function extractFile(
     bytes?: number;
     coverage?: unknown;
     model?: unknown;
+    parsedDocumentId?: string;
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
@@ -484,6 +513,14 @@ export async function extractFile(
     readBy: body.readBy,
     text: body.text,
     title: body.title ?? null,
+    // 🔴 REPORTED ONLY WHEN BOTH HALVES ACTUALLY EXIST. The row id comes from our own upload, but
+    // the parse id comes from the server and is absent when `persistParse` failed — which it is
+    // allowed to do, because a student who cannot add their lecture over a bookkeeping write has
+    // lost more than the record was worth. A caller must be able to tell "filed and parsed" from
+    // "filed, parse not recorded"; collapsing them would let an extractor anchor to a source whose
+    // canonical model was never stored.
+    ...(filedSourceId ? { librarySourceId: filedSourceId } : {}),
+    ...(body.parsedDocumentId ? { parsedDocumentId: body.parsedDocumentId } : {}),
     // Validated rather than cast: this crossed the wire as JSON, and a shape
     // that does not check out must become `undefined` (unknown) rather than a
     // half-built record that later reads as a claim about the document.
