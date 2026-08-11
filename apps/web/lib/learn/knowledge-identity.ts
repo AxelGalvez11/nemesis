@@ -132,10 +132,25 @@ export function identityBasis(
  * which is the entire behaviour being built. Global first; if real collisions turn up, the fix is
  * to add a scope to the key, and the tests that pin these two cases will say what broke.
  */
+/**
+ * The version of the identity ALGORITHM, carried inside every key it produces.
+ *
+ * 🔴 INSIDE THE KEY, NOT BESIDE IT, AND THIS SESSION IS WHY. Adding the relation kind to
+ * `identityBasis` changed every key this function had ever produced, and nothing anywhere could
+ * detect it: a key computed under the old rules and one computed under the new rules are both just
+ * sixteen hex characters. `extractionVersion` sits on the OBJECT, which does not help — the key is
+ * what learner evidence will be stored against, so the key is what has to say which rules made it.
+ *
+ * With the version inside, an old row is visibly old and can be found, recomputed or ignored.
+ * Without it, changing the rules after evidence exists is a migration with no way to target its
+ * own rows. Bump this whenever `identityBasis` changes what it returns for the same input.
+ */
+export const KNOWLEDGE_IDENTITY_VERSION = 2;
+
 export function knowledgeIdentityKey(
   object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
 ): string {
-  return `${object.type}:${fnv1a64(identityBasis(object))}`;
+  return `${object.type}:v${KNOWLEDGE_IDENTITY_VERSION}:${fnv1a64(identityBasis(object))}`;
 }
 
 /** Whether two objects are the same knowledge met twice. */
