@@ -77,8 +77,65 @@ function unauthorized(req: Request): boolean {
   return header !== `Bearer ${SERVICE_ROLE}`
 }
 
+/**
+ * 🔴 EVERY RUN REPORTS ITS OUTCOME, INCLUDING THE ONES THAT DID NOTHING.
+ *
+ * This function was dead from the day it shipped until 2026-08-10 and three
+ * layers reported success throughout: pg_cron recorded 812 `succeeded` runs
+ * (it records whether the STATEMENT ran), `run_source_indexing` returned 0
+ * (which also means "nothing to do"), and the per-document skip reason read as
+ * "old data". None of them was about a document becoming searchable.
+ *
+ * So the outcome is written where something can assert on it. A run that
+ * claimed work and indexed none of it is now a fact in a table, and
+ * `source_index_health()` turns consecutive such runs into `stalled`.
+ *
+ * Best-effort by design: a telemetry write that failed must never fail the
+ * indexing that already succeeded. But it is LOGGED, because silent telemetry
+ * is how you end up believing an empty table means an idle system.
+ */
+async function report(row: {
+  pending: number
+  claimed: number
+  indexed: number
+  skipped: number
+  chunksEmbedded: number
+  skipReasons: Record<string, number>
+  error?: string | null
+  durationMs: number
+}) {
+  const { error } = await admin.rpc('record_source_index_run', {
+    p_chunks_embedded: row.chunksEmbedded,
+    p_claimed: row.claimed,
+    p_duration_ms: row.durationMs,
+    p_error: row.error ?? null,
+    p_indexed: row.indexed,
+    p_pending: row.pending,
+    p_skip_reasons: row.skipReasons,
+    p_skipped: row.skipped,
+  })
+  if (error) console.error('source-index: run telemetry write failed', error.message)
+}
+
+/** Queue depth, unbounded by the batch limit. 0 when it cannot be read — the
+ *  count is context for the outcome, never a reason to skip recording one. */
+async function pendingCount(): Promise<number> {
+  const { data, error } = await admin.rpc('count_unchunked_parses', {
+    p_chunker_version: CHUNKER_VERSION,
+    p_embedding_version: EMBEDDING_VERSION,
+  })
+  if (error) {
+    console.error('source-index: pending count failed', error.message)
+    return 0
+  }
+  return typeof data === 'number' ? data : 0
+}
+
 Deno.serve(async (req) => {
   if (unauthorized(req)) return new Response('unauthorized', { status: 401 })
+  const startedAt = Date.now()
+
+  const pending = await pendingCount()
 
   const { data, error } = await admin.rpc('list_unchunked_parses', {
     p_chunker_version: CHUNKER_VERSION,
@@ -87,17 +144,52 @@ Deno.serve(async (req) => {
   })
   if (error) {
     console.error('source-index: queue read failed', error.message)
+    // 🔴 A FAILED RUN IS STILL A RUN. Returning here without a row is how a
+    // broken queue read becomes indistinguishable from an idle system.
+    await report({
+      chunksEmbedded: 0, claimed: 0, durationMs: Date.now() - startedAt,
+      error: `queue read failed: ${error.message}`, indexed: 0, pending,
+      skipReasons: {}, skipped: 0,
+    })
     return Response.json({ error: 'queue read failed' }, { status: 500 })
   }
 
   const parses = (data ?? []) as UnchunkedParse[]
   // Zero is the healthy answer. Reporting it as an error makes the healthy case
-  // indistinguishable from the broken one in whatever watches this function.
-  if (parses.length === 0) return Response.json({ indexed: 0, results: [] })
+  // indistinguishable from the broken one in whatever watches this function —
+  // but it is still RECORDED, because "we ran and there was nothing to do" and
+  // "we never ran" are different facts and only one of them is fine.
+  if (parses.length === 0) {
+    await report({
+      chunksEmbedded: 0, claimed: 0, durationMs: Date.now() - startedAt,
+      indexed: 0, pending, skipReasons: {}, skipped: 0,
+    })
+    return Response.json({ indexed: 0, pending, results: [] })
+  }
 
   const results = []
   for (const parse of parses) results.push(await indexOne(parse))
-  return Response.json({ indexed: results.filter((r) => r.ok).length, results })
+
+  const indexed = results.filter((r) => r.ok).length
+  const skipReasons: Record<string, number> = {}
+  for (const result of results) {
+    if (result.ok) continue
+    const reason = result.reason ?? 'unknown'
+    skipReasons[reason] = (skipReasons[reason] ?? 0) + 1
+  }
+  const chunksEmbedded = results.reduce((sum, r) => sum + (r.ok ? (r.chunks ?? 0) : 0), 0)
+
+  await report({
+    chunksEmbedded,
+    claimed: parses.length,
+    durationMs: Date.now() - startedAt,
+    indexed,
+    pending,
+    skipReasons,
+    skipped: results.length - indexed,
+  })
+
+  return Response.json({ chunksEmbedded, indexed, pending, results })
 })
 
 async function indexOne(parse: UnchunkedParse) {
