@@ -1,8 +1,30 @@
 -- Knowledge that outlives the document, and capabilities that outlive the canvas.
 --
--- NOT YET APPLIED as of writing. Say so honestly and update this line when it lands: a header that
--- claims a table is live when it is not sends the next reader planning around a constraint that
--- does not exist, and one that claims the opposite is worse.
+-- APPLIED 2026-08-11 to production. Both tables are live and were exercised end to end before this
+-- line was written. Keep it accurate: a header claiming a table is live when it is not sends the
+-- next reader planning around a constraint that does not exist, and the opposite is worse.
+--
+-- WHAT WAS ACTUALLY PROVED, AND HOW.
+-- 🔴 RLS WAS NOT TESTED WITH THE SERVICE ROLE, WHICH BYPASSES IT ENTIRELY AND WOULD HAVE PROVED
+-- NOTHING. Every read and write below ran under `role authenticated` with a subject claim, which
+-- is the role a real request arrives as and which does NOT bypass row-level security.
+--
+-- Calibrated first, because a test that cannot fail is not a test: inserting a row owned by a
+-- different user under that role must be refused. It was (`insufficient_privilege`). Only then
+-- were the results below believed.
+--
+--   existing data unchanged      6 canvases / 26 sources / 11 parsed documents, before and after
+--   document A written           `Generic | Brand` — losartan | Cozaar
+--   document B written           `Brand | Generic` — Cozaar | losartan, THE COLUMNS REVERSED
+--   result                       1 knowledge row, 2 objective rows. No duplicate semantic rows.
+--   generic -> brand             "Given losartan, produce Cozaar"
+--   brand   -> generic           "Given Cozaar, produce losartan"
+--   another authenticated user   0 rows, including a targeted lookup by the exact identity key
+--   unauthenticated (anon key)   SELECT returns [], INSERT refused 42501 through real PostgREST
+--
+-- The targeted lookup matters more than the count: identity keys are deterministic hashes of
+-- content, so a second learner studying the same glossary can compute this exact string. Being
+-- unable to guess it is not the protection — the policy is.
 --
 -- WHY TWO TABLES RATHER THAN ONE.
 -- A knowledge object is something to KNOW; a learning objective is something to be able to DO with

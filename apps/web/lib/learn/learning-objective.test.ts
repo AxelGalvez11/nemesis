@@ -214,7 +214,10 @@ test("🔴 the same role pair from either document is the same objective", () =>
   const cueOf = (context: SourceContext, pair: string) =>
     objectivesFrom(context).find((o) => `${o.parameters.inputRole}->${o.parameters.outputRole}` === pair)!.label;
   assert.equal(cueOf(REVISION, "generic->brand"), cueOf(LECTURE, "generic->brand"));
-  assert.match(cueOf(LECTURE, "generic->brand"), /Given losartan, produce Cozaar/i);
+  assert.equal(cueOf(LECTURE, "generic->brand"), "Given losartan, produce Cozaar");
+  // 🔴 THE LABEL SHOWS THE DOCUMENT'S OWN SPELLING. Normalisation exists to make two spellings
+  // converge on one identity; using the folded form here printed "produce cozaar" for a brand name
+  // the source capitalised — right identity, wrong sentence.
 });
 
 test("a headerless pair falls back to position, and never collides with a role-bearing one", () => {

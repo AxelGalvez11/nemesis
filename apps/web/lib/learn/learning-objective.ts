@@ -150,8 +150,12 @@ export function objectivesForKnowledge(object: KnowledgeObject): LearningObjecti
   if (object.type !== "association" || !object.pair) return [];
 
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
-  const left = normalizeForIdentity(object.pair.left);
-  const right = normalizeForIdentity(object.pair.right);
+  // 🔴 NORMALISED FOR IDENTITY, ORIGINAL FOR DISPLAY. Normalisation exists to make two spellings of
+  // one fact converge; it is not how the fact should be shown back to a learner. Using the folded
+  // form in the label printed "produce cozaar" for a brand name the document capitalised — the
+  // identity was right and the sentence was wrong.
+  const left = object.pair.left;
+  const right = object.pair.right;
   const { leftRole, rightRole } = object.pair;
 
   // 🔴 ROLES WHEN THE SOURCE NAMED ITS COLUMNS — the preferred form, because it describes what the
@@ -168,7 +172,9 @@ export function objectivesForKnowledge(object: KnowledgeObject): LearningObjecti
         // — sorted the same way the knowledge basis sorts, so at least the two documents that print
         // an unnamed pair in opposite orders still agree with each other.
         (() => {
-          const [first, second] = [left, right].sort();
+          // Sorted by the NORMALISED form so two documents agree, but carrying the originals.
+          const [first, second] = [left, right].sort((a, b) =>
+            normalizeForIdentity(a).localeCompare(normalizeForIdentity(b)));
           return [
             { answer: second!, cue: first!, parameters: { direction: "left_to_right" as const } },
             { answer: first!, cue: second!, parameters: { direction: "right_to_left" as const } },
