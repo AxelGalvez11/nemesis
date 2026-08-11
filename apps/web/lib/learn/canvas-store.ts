@@ -215,24 +215,49 @@ export interface CanvasSummary {
   title: string;
   state: CanvasState;
   updatedAt: string;
+  /** Set when the learner pinned it. Pinned sessions sort first. */
+  pinnedAt?: string | null;
+  folderId?: string | null;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+/** The learner's sessions, pinned first and then most recently worked.
+ *
+ *  🔴 ORDERED BY THE DATABASE, not in the page. The index
+ *  `(user_id, pinned_at desc nulls last, updated_at desc)` exists precisely so this never
+ *  becomes a client-side sort over whatever page of rows happened to arrive — which is the
+ *  quiet way a list starts lying once it exceeds one page. */
 export async function listCanvases(userId: string | null): Promise<CanvasSummary[]> {
   if (userId) {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("id,title,state,updated_at")
+      .select("id,title,state,updated_at,pinned_at,folder_id")
       .eq("deleted", false)
+      .order("pinned_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false })
-      .limit(40);
+      .limit(200);
     if (!error && data) {
       return data.map((row) => {
-        const typed = row as { id: string; title: string; state: string; updated_at: string };
+        const typed = row as {
+          id: string;
+          title: string;
+          state: string;
+          updated_at: string;
+          pinned_at: string | null;
+          folder_id: string | null;
+        };
         return {
           id: typed.id,
           title: typed.title,
           state: (CANVAS_STATES as readonly string[]).includes(typed.state) ? (typed.state as CanvasState) : "learn",
           updatedAt: typed.updated_at,
+          pinnedAt: typed.pinned_at,
+          folderId: typed.folder_id,
         };
       });
     }
@@ -242,6 +267,51 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
     .map((id) => localRead(id))
     .filter((canvas): canvas is LearningCanvas => canvas !== null)
     .map((canvas) => ({ id: canvas.id, title: canvas.title, state: canvas.state, updatedAt: canvas.updatedAt }));
+}
+
+/** Pin or unpin. Pinning stamps a time rather than setting a flag, so the pinned block has its
+ *  own stable order instead of re-shuffling every time an unrelated session is touched. */
+export async function setCanvasPinned(userId: string | null, id: string, pinned: boolean): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ pinned_at: pinned ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error && !isMissingTableError(error)) console.warn("[learn] pin failed", error.message);
+}
+
+export async function setCanvasFolder(userId: string | null, id: string, folderId: string | null): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase.from(TABLE).update({ folder_id: folderId }).eq("id", id);
+  if (error && !isMissingTableError(error)) console.warn("[learn] move failed", error.message);
+}
+
+export async function listFolders(userId: string | null): Promise<Folder[]> {
+  if (!userId) return [];
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id").order("name");
+  if (error || !data) return [];
+  return (data as { id: string; name: string; parent_id: string | null }[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    parentId: row.parent_id,
+  }));
+}
+
+export async function createFolder(userId: string | null, name: string, parentId?: string | null): Promise<Folder | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("folders")
+    .insert({ name: name.slice(0, 120), ...(parentId ? { parent_id: parentId } : {}) })
+    .select("id,name,parent_id")
+    .single();
+  if (error || !data) {
+    // The two-level trigger raises here rather than silently nesting deeper. Worth surfacing
+    // as a failure the caller can report, not swallowing.
+    console.warn("[learn] folder create failed", error?.message);
+    return null;
+  }
+  const row = data as { id: string; name: string; parent_id: string | null };
+  return { id: row.id, name: row.name, parentId: row.parent_id };
 }
 
 export async function loadCanvas(userId: string | null, id: string): Promise<LearningCanvas | null> {

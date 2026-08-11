@@ -26,7 +26,11 @@ import type { SettingsSection } from "@/components/SettingsSurface";
 import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
-import { SidebarBlankState, SidebarNoMatchState, SidebarSessionsEmptyState } from "./section-states";
+// SidebarBlankState is no longer imported: it existed to offer "New chat" when the rail had no
+// threads, and starting a chat is not something this product does any more. The component stays
+// in section-states.tsx — unused, not deleted — because the rail's own history section is one
+// constant away from coming back.
+import { SidebarNoMatchState, SidebarSessionsEmptyState } from "./section-states";
 import { useSettingsModal } from "./settings-modal";
 import { SidebarSessionRow } from "./session-row";
 import {
@@ -130,7 +134,19 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
     if (await confirm({ body: `“${title || "New chat"}” is deleted. This can't be undone.`, title: "Delete this chat?" })) remove(id);
   };
 
-  const showSessionSections = sessions.length > 0;
+  // 🔴 THE SIDEBAR NO LONGER LISTS CHAT THREADS (owner 2026-08-10, §31/§32).
+  //
+  // A chat is not a first-class object any more — a Canvas session is — and a rail full of chat
+  // history says the opposite in the most visible place in the app. It also duplicated the
+  // Canvas home, which reveals the learner's sessions on scroll and is where organising them
+  // (pin, rename, folders, delete, search) actually lives.
+  //
+  // 🔴 NOTHING IS DELETED. `useSessions()` still loads, every thread still exists, and the
+  // chat surface at /sessions still renders them — this is the rail declining to advertise a
+  // retired object, not a migration. §26: historical data may still be needed.
+  //
+  // Turning this back on is changing this one constant.
+  const showSessionSections = false;
 
   return (
     <Sidebar
@@ -291,9 +307,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
               )}
             </div>
           </>
-        ) : (
-          <SidebarBlankState onNewSession={startNewSession} />
-        )}
+        ) : null}
       </SidebarContent>
 
       <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={openSettings} />

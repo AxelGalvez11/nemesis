@@ -31,7 +31,18 @@ import {
 } from "./canvas-stages";
 import { useCanvasSession } from "./use-canvas-session";
 
-export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
+export function LearningCanvas({
+  canvasId,
+  openingAsk = null,
+}: {
+  canvasId: string | null;
+  /** What the learner typed on the home surface before this canvas existed.
+   *
+   *  Carried through so starting from the landing composer does not make them say it twice —
+   *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
+   *  consumed exactly once here. */
+  openingAsk?: string | null;
+}) {
   const router = useRouter();
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
@@ -150,6 +161,17 @@ export function LearningCanvas({ canvasId }: { canvasId: string | null }) {
     },
     [dismissSelection, pointed, session],
   );
+
+  // Consume the opening instruction exactly once, when the canvas is ready and still empty.
+  // 🔴 Guarded by a ref rather than by state: `begin` updates the canvas, which re-runs this
+  // effect, and without the latch the same topic would start a second lesson over the first.
+  const askedOnce = useRef(false);
+  useEffect(() => {
+    if (!openingAsk || askedOnce.current || !session.ready) return;
+    if (canvas.state !== "empty") return;
+    askedOnce.current = true;
+    session.begin(openingAsk);
+  }, [canvas.state, openingAsk, session]);
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
   // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the
