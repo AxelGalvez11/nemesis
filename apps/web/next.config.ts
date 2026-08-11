@@ -21,7 +21,32 @@ const nextConfig: NextConfig = {
    * analysis, and 258 MB across all platforms if a tracer gives up and takes
    * the lot. Only linux/x64 (37 MB) is ever needed on the deployment target.
    */
-  serverExternalPackages: ["onnxruntime-node", "@napi-rs/canvas"],
+  /**
+   * 🔴 `pdfjs-dist` IS HERE BECAUSE BUNDLING IT SILENTLY KILLED PDF STRUCTURE IN
+   * PRODUCTION, ON EVERY DOCUMENT, FOR AS LONG AS THE FEATURE HAS EXISTED.
+   *
+   * pdf.js loads its worker with a dynamic import resolved RELATIVE TO ITSELF.
+   * Bundled into a Next server chunk it looks for a sibling that the bundler
+   * never emitted, and throws before a single page is read:
+   *
+   *     Setting up fake worker failed: "Cannot find module
+   *     '/var/task/apps/web/.next/server/chunks/pdf.worker.mjs' imported from
+   *     .../node_modules_pdfjs-dist_legacy_build_pdf_mjs_1wr0y6b._.js"
+   *
+   * `parsePdf` caught that and fell back to unpdf, so every PDF still produced
+   * TEXT and every request still logged `state: "complete"` — while the model,
+   * and with it every table, heading, rect and locator, was gone. Four of four
+   * parses in production were stored `text-only`; the source indexer had nothing
+   * it could ever consume; Canvas got the string path. Local `tsx` resolves the
+   * worker from real node_modules, so it works on a laptop and nowhere else.
+   *
+   * 🔴 THE SAME FILE THAT BUNDLES THE PARSE WORKER ALREADY KNEW THIS. See
+   * `scripts/build-parse-thread.mjs`: pdfjs-dist is external there, with a
+   * comment saying bundling it "would break its worker resolution". That lesson
+   * was applied to the esbuild bundle and never to this one. If a package needs
+   * to be external for one bundler here, check the other.
+   */
+  serverExternalPackages: ["onnxruntime-node", "@napi-rs/canvas", "pdfjs-dist", "unpdf"],
   /**
    * 🔴 THE PARSE WORKER IS SPAWNED BY PATH, SO NOTHING TRACES IT AUTOMATICALLY.
    *
