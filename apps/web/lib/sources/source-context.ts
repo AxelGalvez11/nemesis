@@ -209,6 +209,35 @@ export function unitContent(unit: CanonicalSourceUnit): UnitContent {
   return text ? { kind: "text", text } : { kind: "empty" };
 }
 
+/**
+ * The cell at a reference the author would actually type — `"E7"`, `"C5"`.
+ *
+ * 🔴 THIS LIVES HERE FOR THE SAME REASON `unitContent` DOES. This boundary already
+ * says it: "the discriminated union is the interface — a consumer that switches on
+ * `kind` cannot write the bug; a consumer that reaches for `.text` can." A consumer
+ * left to do this arithmetic itself writes `row - (origin?.row ?? 0)`, and that
+ * `?? 0` IS the A1 assumption — the exact defect `origin` was added to remove,
+ * reintroduced one caller at a time. So the subtraction happens once, next to the
+ * accessor, and callers ask for a cell instead of computing one.
+ *
+ * Null for a unit that is not a table, a reference that is not one, and a reference
+ * outside the used range — all three of which are "no such cell", and none of which
+ * should be told apart by guessing.
+ */
+export function cellAtRef(unit: CanonicalSourceUnit, ref: string): string | null {
+  const m = /^([A-Za-z]+)(\d+)$/.exec(ref.trim());
+  if (!m) return null;
+  const content = unitContent(unit);
+  if (content.kind !== "table") return null;
+  let column = 0;
+  for (const ch of m[1]!.toUpperCase()) column = column * 26 + (ch.charCodeAt(0) - 64);
+  const origin = unit.table?.origin ?? { column: 0, row: 0 };
+  const row = Number(m[2]) - 1 - origin.row;
+  column = column - 1 - origin.column;
+  if (row < 0 || column < 0) return null;
+  return content.rows[row]?.[column] ?? null;
+}
+
 export interface SourceContext {
   sourceId: string;
   /** "pdf", "docx", "transcript", … Used for parse QUALITY only, never for extraction branching. */

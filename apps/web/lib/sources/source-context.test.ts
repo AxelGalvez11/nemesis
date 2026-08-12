@@ -7,6 +7,7 @@ import { capabilitiesOfStored, deriveCapabilities, parsedPageCount, parseQuality
 import {
   anchorInUnit,
   buildSourceContext,
+  cellAtRef,
   unitContent,
   quoteAnchor,
   readableUnits,
@@ -309,16 +310,22 @@ test("🔴 a grid that does not start at A1 arrives knowing where it starts", ()
   const unit = context.units.find((u) => u.type === "table")!;
   assert.deepEqual(unit.table?.origin, { column: 2, row: 4 });
 
-  // What the origin is FOR: turning a reference the author would type back into a cell.
-  const at = (ref: string) => {
-    const m = /^([A-Z]+)(\d+)$/.exec(ref)!;
-    let column = 0;
-    for (const ch of m[1]!) column = column * 26 + (ch.charCodeAt(0) - 64);
-    const origin = unit.table!.origin ?? { column: 0, row: 0 };
-    return unit.table!.rows[Number(m[2]) - 1 - origin.row]?.[column - 1 - origin.column];
-  };
-  assert.equal(at("C5"), KEY_TERMS[0]![0], "the top-left cell is C5, not A1");
-  assert.equal(at("A1"), undefined, "and A1 is not a cell of this table at all");
+  // What the origin is FOR, asked through the accessor rather than by arithmetic in
+  // the caller — which is the whole point of the accessor existing.
+  assert.equal(cellAtRef(unit, "C5"), KEY_TERMS[0]![0], "the top-left cell is C5, not A1");
+  assert.equal(cellAtRef(unit, "D6"), KEY_TERMS[1]![1], "and the offset holds one row and column over");
+  assert.equal(cellAtRef(unit, "A1"), null, "A1 is not a cell of this table at all");
+  assert.equal(cellAtRef(unit, "ZZ99"), null, "nor is anything past the used range");
+  assert.equal(cellAtRef(unit, "not a ref"), null);
+});
+
+test("a grid that DOES start at A1 is addressed the same way", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const unit = context.units.find((u) => u.type === "table")!;
+  assert.equal(unit.table?.origin, undefined, "absent when there is nothing to correct");
+  assert.equal(cellAtRef(unit, "A1"), KEY_TERMS[0]![0]);
+  // 🔴 A unit that is not a table has no cells, and asking must not throw or guess.
+  assert.equal(cellAtRef(context.units.find((u) => u.type === "heading")!, "A1"), null);
 });
 
 test("a figure's caption and what a model said about it arrive as separate fields", () => {

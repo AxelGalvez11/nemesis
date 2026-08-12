@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { xlsxAcceptance } from "./xlsx-acceptance";
+import { sourceContextFromModel } from "@/lib/sources/source-context";
+
+import { addressCell, xlsxAcceptance } from "./xlsx-acceptance";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
 
@@ -31,6 +33,42 @@ test("every acceptance property holds on the parser's own output", () => {
     [],
   );
   assert.equal(checks.length, 7);
+});
+
+/**
+ * 🔴 THE CALIBRATION. A CHECK NEVER SEEN FAILING IS NOT KNOWN TO CHECK ANYTHING.
+ *
+ * Two DIFFERENT defects lose the origin, and they are worth pinning separately
+ * because they fail differently — which is what makes a red run diagnosable.
+ */
+test("🔴 a parser that loses the origin fails every check that names a cell", () => {
+  const broken = model();
+  for (const block of broken.blocks) if (block.table) delete block.table.origin;
+
+  const checks = xlsxAcceptance(broken, "local-fixture");
+  assert.deepEqual(
+    checks.filter((check) => !check.ok).map((check) => check.item),
+    [2, 3, 4, 5, 7],
+    "every check that looks a cell up BY REFERENCE — which is all of them but two",
+  );
+  // 1 (sheet names) and 6 (hidden state) do not name a cell, so they still pass.
+  // A calibration that broke everything would prove nothing about which check
+  // is load-bearing for what.
+  assert.deepEqual(checks.filter((check) => check.ok).map((check) => check.item), [1, 6]);
+});
+
+test("🔴 a BOUNDARY that loses the origin fails item 7 alone — the model looks perfect", () => {
+  // The live defect, exactly: the parser had the origin, persistence kept it, and
+  // `sourceContextFromModel` dropped it on the way to the consumer. Items 1–6 read
+  // the model and all pass; nothing is missing, nothing throws, and no cell in the
+  // workbook can be addressed. That asymmetry is the reason item 7 exists.
+  const context = sourceContextFromModel({ model: model(), sourceId: "s", sourceKind: "xlsx" });
+  for (const unit of context.units) if (unit.table) delete unit.table.origin;
+
+  assert.equal(addressCell(context, "Ledger", "E7"), null, "the offset sheet loses every reference");
+  // 🔴 And a sheet that HAPPENS to start at A1 keeps working, which is why this
+  // shipped unnoticed: two of the three sheets are unaffected.
+  assert.equal(addressCell(context, "Catalog", "B2")?.text, "Beaker");
 });
 
 /**

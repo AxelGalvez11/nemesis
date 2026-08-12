@@ -24,10 +24,9 @@
 
 import { type DocumentModel, type DocTable } from "@nemesis/shared";
 
-import { sourceContextFromModel, unitContent, type SourceContext } from "@/lib/sources/source-context";
+import { cellAtRef, sourceContextFromModel, type SourceContext } from "@/lib/sources/source-context";
 
 import { cellRef } from "./xlsx-model";
-import { parseRef } from "./xlsx-structure";
 
 export interface AcceptanceCheck {
   /** The owner's numbered acceptance item. */
@@ -69,19 +68,13 @@ export function addressCell(
   sheet: string,
   ref: string,
 ): { text: string; via: string } | null {
-  const at = parseRef(ref);
-  if (!at) return null;
   for (const unit of context.units) {
     if (unit.unitLabel?.trim() !== sheet) continue;
-    const content = unitContent(unit);
-    if (content.kind !== "table") continue;
-    const origin = unit.table?.origin;
-    const row = at.row - (origin?.row ?? 0);
-    const column = at.column - (origin?.column ?? 0);
-    if (row < 0 || column < 0) continue;
-    const text = content.rows[row]?.[column];
-    if (text === undefined) continue;
-    return { text, via: `unit ${unit.anchor.page} «${sheet}» grid (${row},${column})` };
+    // The origin arithmetic is the BOUNDARY's, not ours — see `cellAtRef`. Doing it
+    // here is how the `?? 0` A1 assumption gets rewritten by every new consumer.
+    const text = cellAtRef(unit, ref);
+    if (text === null) continue;
+    return { text, via: `unit ${unit.anchor.page} «${sheet}»` };
   }
   return null;
 }

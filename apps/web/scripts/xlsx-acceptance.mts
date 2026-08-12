@@ -35,7 +35,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { readDocumentModel } from "../../../packages/shared/src/document-envelope.ts";
 import { xlsxAcceptance, addressCell } from "../lib/notebooks/xlsx-acceptance.ts";
-import { sourceContextFromModel } from "../lib/sources/source-context.ts";
+import { buildSourceContext, sourceContextFromModel } from "../lib/sources/source-context.ts";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const BUCKET = "library-sources";
@@ -183,12 +183,28 @@ async function main() {
       console.log(`  ${check.ok ? "PASS" : "FAIL"}  ${check.item}. ${check.name}\n          ${check.found}`);
     }
 
-    // A second, different reference — one cell proving the arithmetic could be a
-    // coincidence, two on different rows and columns cannot.
-    const context = sourceContextFromModel({ model, sourceId, sourceKind: "xlsx" });
-    for (const [sheet, ref] of [["Ledger", "G8"], ["Catalog", "B2"], ["Internal", "A1"]] as const) {
-      const hit = addressCell(context, sheet, ref);
-      console.log(`  addressed ${sheet}!${ref} → ${hit ? JSON.stringify(hit.text) : "nothing"}`);
+    // 🔴 THE DOOR CONSUMERS ACTUALLY USE. `xlsxAcceptance` addresses through
+    // `sourceContextFromModel`, which needs a model someone already decoded. Every
+    // real consumer starts from the stored COLUMN and calls `buildSourceContext`,
+    // which unwraps the envelope itself and knows the legacy flat-string shape. If
+    // the two ever disagree, that disagreement is the finding — so both run.
+    const fromRow = buildSourceContext({ sourceId, sourceKind: "xlsx", structure: row!.structure });
+    const fromModel = sourceContextFromModel({ model, sourceId, sourceKind: "xlsx" });
+
+    // A second and third reference on different rows and columns — one cell
+    // resolving could be arithmetic that happens to land; three cannot be.
+    for (const [sheet, ref] of [["Ledger", "E7"], ["Ledger", "G8"], ["Catalog", "B2"], ["Internal", "A1"]] as const) {
+      const viaRow = addressCell(fromRow, sheet, ref);
+      const viaModel = addressCell(fromModel, sheet, ref);
+      const agree = viaRow?.text === viaModel?.text;
+      console.log(
+        `  addressed ${sheet}!${ref} → ${viaRow ? JSON.stringify(viaRow.text) : "nothing"}` +
+          `${agree ? "" : `   🔴 DISAGREES with the model-level door: ${JSON.stringify(viaModel?.text ?? null)}`}`,
+      );
+      if (!agree) throw new Error(`${sheet}!${ref} resolves differently from the row than from the model`);
+    }
+    if (addressCell(fromRow, "Ledger", "E7")?.text !== "7.5%") {
+      throw new Error("the stored ROW does not address Ledger!E7 — item 7 fails at the door consumers use");
     }
 
     const failed = checks.filter((check) => !check.ok);
