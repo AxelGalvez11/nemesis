@@ -12,50 +12,107 @@ import { test } from "node:test";
 
 const SOURCE = readFile(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
 
-/** Every renderer belonging to the six-stage runtime. */
-const STAGES = [
-  "<CanvasEmpty",
-  "<SourcesAttached",
-  "<CanvasDocument",
-  "<CanvasRecall",
-  "<CanvasTest",
-  "<CanvasDiagnosis",
-  "<CanvasComplete",
-];
+/**
+ * The renderers that COLLECT AN ANSWER, or report on answers already collected.
+ *
+ * 🔴 THIS LIST SHRANK AT STEP 7b, AND THE SHRINKAGE IS THE FEATURE — read the reasons before
+ * concluding it eroded. It used to hold every six-stage renderer, because whole-page ownership
+ * meant exactly one thing could paint at all. Composition allows READING MATERIAL beside a hosted
+ * task; it still forbids a second ANSWER SURFACE. Three renderers left the list, each for a stated
+ * reason:
+ *
+ *   <CanvasDocument   — reading material. Collects nothing, writes no evidence. A document beside a
+ *                       question is the entire point of 7b (docs/canvas-task-hosting.md §3).
+ *   <CanvasEmpty      — a pre-content state: no document and no answer exists yet.
+ *   <SourcesAttached  — a pre-content state, same reason.
+ *
+ * Everything below owns an answer and writes evidence through `session`, so none may paint while
+ * the policy is contributing: two answer surfaces on one composer means one of them silently loses
+ * the learner's work, or the policy's prompt id receives an answer typed at a recall card.
+ */
+const ANSWER_SURFACES = ["<CanvasRecall", "<CanvasTest", "<CanvasDiagnosis", "<CanvasComplete"];
 
-test("🔴 every legacy stage renders INSIDE the single policy branch", async () => {
+test("🔴 every answer-collecting stage renders INSIDE the evidence-stage region", async () => {
   const source = await SOURCE;
-  const opens = source.indexOf("{policyOwns ? (");
-  assert.notEqual(opens, -1, "the branch itself is gone");
+  const opens = source.indexOf("{regions.stages && (");
+  assert.notEqual(opens, -1, "the evidence-stage region is gone");
   const closes = source.indexOf("</>\n        )}", opens);
-  assert.notEqual(closes, -1, "the branch's else arm is gone");
+  assert.notEqual(closes, -1, "the evidence-stage region's close is gone");
 
-  for (const stage of STAGES) {
+  for (const stage of ANSWER_SURFACES) {
     // 🔴 EVERY OCCURRENCE, NOT THE FIRST ONE. Checking only the first is a guard that cannot see
-    // the defect it is for: the realistic regression ADDS a second render site outside the branch
-    // — `{!policyOwns && canvas.state === "recall" && <CanvasRecall …>}` as a sibling — and leaves
-    // the original in place. This was calibrated with exactly that edit, and the first-occurrence
-    // version stayed green through it.
+    // the defect it is for: the realistic regression ADDS a second render site outside the region
+    // — `{canvas.state === "recall" && <CanvasRecall …>}` as a sibling — and leaves the original in
+    // place. This was calibrated with exactly that edit, and the first-occurrence version stayed
+    // green through it.
     const sites: number[] = [];
     for (let at = source.indexOf(stage); at !== -1; at = source.indexOf(stage, at + 1)) sites.push(at);
     assert.notEqual(sites.length, 0, `${stage} is no longer rendered at all`);
     for (const at of sites) {
       assert.ok(
         at > opens && at < closes,
-        `${stage} renders outside the policy branch — the policy would decide and this would paint anyway`,
+        `${stage} renders outside the evidence-stage region — it could paint beside a hosted task, and both would claim the composer`,
       );
     }
   }
 });
 
+test("🔴 the region rule is DERIVED, never re-decided in the component", async () => {
+  // What replaces "one branch as high as it goes". `composeSurface` guarantees `regions.stages` and
+  // `regions.policy` are never both true; that guarantee is worth nothing unless the component asks
+  // it rather than recomputing the condition inline. An inline `canvas.state === "recall" &&
+  // !policy.task` would drift from the module on the first edit, and the drift is invisible —
+  // both versions look correct read on their own.
+  const source = await SOURCE;
+  assert.match(source, /composeSurface\(\{/, "the component no longer derives its regions");
+  assert.match(source, /answerSink\(\{/, "the component no longer derives its answer route");
+  // 🔴 And the whole-page flag must not come back under any name. This is the specific regression
+  // the migration is most likely to suffer: someone reintroduces a single boolean because one
+  // branch is easier to reason about, and the document disappears again.
+  assert.equal(
+    /const policyOwns\s*=/.test(source),
+    false,
+    "whole-page ownership is back — 7b replaced it with composition",
+  );
+});
+
+test("🔴 a task sharing the surface does not push the document off it", async () => {
+  // The way this migration ships hollow. `composeSurface` can say `document: true, policy: true`
+  // and every structural test passes — while the policy's region still claims `min-h-full`, the
+  // document starts one full viewport below the fold, and the learner sees exactly what they saw
+  // before: one thing. "Coexisting" would be true of the DOM and false of the experience.
+  const source = await SOURCE;
+  assert.match(
+    source,
+    /<CanvasPolicyView runtime=\{policy\} sharing=\{regions\.sharing\} \/>/,
+    "the policy's region is not told whether it is sharing the surface",
+  );
+  const view = await readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
+  // 🔴 NO UNCONDITIONAL FULL-HEIGHT CLAIM ANYWHERE IN THE REGION. Calibrated by reverting
+  // `regionHeight` to a bare "min-h-full pb-40": that goes red here while leaving all 2,271 other
+  // tests green, which is precisely the blind spot being covered.
+  assert.match(view, /function regionHeight/, "the region no longer decides its own height");
+  assert.equal(
+    /className="flex min-h-full/.test(view),
+    false,
+    "a hard-coded full-height region would bury the document below the fold",
+  );
+});
+
 test("🔴 a canvas whose knowledge is still resolving paints NEITHER runtime", async () => {
   // Defaulting to "not the policy" while the round trip is in flight does not merely flicker: the
   // stage machine's own effects run, and it starts generating a lesson for a canvas the policy is
-  // about to take over.
+  // about to contribute to.
   const source = await SOURCE;
   const guard = source.indexOf('policy.status === "loading"');
   assert.notEqual(guard, -1, "the loading state is no longer waited for");
-  assert.ok(guard < source.indexOf("{policyOwns ? ("), "the wait must come before anything renders");
+  // 🔴 RE-POINTED FROM THE DELETED BRANCH TO THE COMPOSITION THAT REPLACED IT. The property is
+  // identical — nothing may render before the wait — and `composeSurface` is now the first thing
+  // that decides what renders, so it is the correct landmark.
+  assert.ok(
+    guard < source.indexOf("composeSurface({"),
+    "the wait must come before anything renders",
+  );
 });
 
 // ── the fast-retrieval presentation ────────────────────────────────────────
@@ -100,10 +157,19 @@ test("the session composer drops the attach control but keeps answering", async 
   assert.match(composer, /overflow-hidden/);
 });
 
-test("the composer answers the policy's task when the policy owns the canvas", async () => {
+test("🔴 the composer has exactly ONE answer route, and it comes from the sink", async () => {
   // A second answer box for the policy would be the one thing the composer's own header says it
-  // exists to prevent.
+  // exists to prevent. Step 7b adds a sharper failure than a second box: the SAME box wired to two
+  // receivers. Before composition `task={policyOwns ? policyTask : session.activeTask}` was safe
+  // because ownership was all-or-nothing; once a task can sit beside a document, that ternary can
+  // hand an answer typed at a recall card to the policy's prompt id.
   const source = await SOURCE;
-  assert.match(source, /task=\{policyOwns \? policyTask : session\.activeTask\}/);
+  assert.match(source, /task=\{sink\.kind === "none" \? null : sink\.task\}/, "the task is not the sink's");
+  assert.match(source, /sink\.kind === "policy"\s*\n?\s*\? \(text, via, tookMs\) => void policy\.submit/);
   assert.match(source, /policy\.submit\(text, via, tookMs\)/);
+
+  // 🔴 THE COMPOSER IS RENDERED ONCE. Two <CanvasComposer> sites — one per runtime — would give the
+  // page two answer boxes again while every assertion above still passed.
+  const composers = source.split("<CanvasComposer").length - 1;
+  assert.equal(composers, 1, "there is more than one composer on the canvas");
 });

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
+import { answerSink, composeSurface } from "@/lib/learn/canvas-hosting";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import { nextAction } from "@/lib/learn/canvas-state";
@@ -31,7 +32,7 @@ import {
   CanvasRecall,
   CanvasTest,
 } from "./canvas-stages";
-import { useCanvasSession, type ActiveTask } from "./use-canvas-session";
+import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 
 export function LearningCanvas({
@@ -253,27 +254,37 @@ export function LearningCanvas({
     );
   }
 
-  // ── The one branch ────────────────────────────────────────────────────────
+  // ── Composition, not ownership ────────────────────────────────────────────
   //
-  // 🔴 ONE BRANCH, AS HIGH AS IT GOES, AND DELIBERATELY NOT FIVE NEGATIONS ADDED TO THE STATE
-  // CHECKS BELOW. Once the policy owns this canvas the six-stage machine must not paint anything:
-  // "the policy said retrieve and the Learn stage rendered anyway" is precisely the failure this
-  // pivot exists to end, and it is the shape a per-condition guard drifts into on the first edit
-  // that forgets one.
-  const policyOwns = policy.status === "active";
+  // 🔴 THIS REPLACES "THE ONE BRANCH", AND THE PROPERTY THAT BRANCH PROTECTED SURVIVES IT.
+  //
+  // Until step 7b exactly one thing painted: `policyOwns ? <CanvasPolicyView/> : <six stages/>`.
+  // That was safe by construction — two surfaces could not be on screen, so two could not both
+  // claim the composer — and it cost the product everything the policy could not represent: §12
+  // measured it owning 0 of 6 production canvases, because a single unsupported paragraph refused
+  // the whole page.
+  //
+  // The Canvas now owns the surface and the policy CONTRIBUTES to it. Reading material and a
+  // question coexist; two ANSWER surfaces still never do. That asymmetry is the whole rule, and it
+  // lives in `composeSurface` rather than in conditions here, because conditions here are what
+  // drift on the first edit that forgets one.
+  //
+  // 🔴 `policy.decision` AND `policy.feedback`, NOT JUST THE QUESTION. A correction and a verdict
+  // occupy the surface exactly as a prompt does, and must not sit beside a recall card either.
+  const policyPresenting =
+    policy.status === "ready" && (policy.feedback !== null || policy.decision !== null);
+  const regions = composeSurface({ canvasState: canvas.state, policyPresenting });
 
-  const policyTask: ActiveTask | null =
-    policyOwns && policy.prompt && !policy.feedback
-      ? {
-          answered: false,
-          id: policy.prompt.id,
-          index: 0,
-          kind: "question",
-          placeholder: "Type your answer…",
-          prompt: policy.prompt.prompt,
-          total: 1,
-        }
-      : null;
+  // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
+  // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
+  // task can sit beside a document, a ternary would happily route an answer typed at a recall card
+  // to the policy's prompt id — evidence written against a question nobody was asked, with every
+  // test still green. See canvas-hosting.ts.
+  const sink = answerSink({
+    hosted: policy.task,
+    regions,
+    stageTask: session.activeTask,
+  });
 
   // The empty and orientation states have their own inputs and would be muddled by a second
   // one. Everywhere else the composer is present and FULL STRENGTH.
@@ -285,7 +296,7 @@ export function LearningCanvas({
   // picker a wall rather than a suggestion: a learner could not type a word until they had chosen
   // one of four labels. The state survives only for canvases stored before it was removed, and
   // those should be able to talk to Nemesis like any other.
-  const showComposer = policyOwns || !["empty", "complete"].includes(canvas.state);
+  const showComposer = regions.policy || !["empty", "complete"].includes(canvas.state);
 
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
@@ -315,7 +326,19 @@ export function LearningCanvas({
         // title and the controls back on for the feedback beat and off again for the next question
         // would put a flicker of chrome between every answer and the next — more distracting than
         // the chrome itself. A session is one continuous state.
-        minimal={policyOwns}
+        // 🔴 THE POLICY HAS THE SURFACE TO ITSELF — NOT "IS ANSWERING", AND NOT "IS PRESENT".
+        //
+        // The original rule was the whole policy session, deliberately: flipping the title and
+        // controls back on for the feedback beat and off again for the next question puts a flicker
+        // of chrome between every answer, which is more distracting than the chrome. Keying this on
+        // the answer sink would reintroduce exactly that oscillation, because `task` is null while a
+        // verdict is on screen.
+        //
+        // What composition adds is the other half: when a document is sharing the surface the
+        // learner may be reading rather than answering, and stripping the title and navigation from
+        // someone who is reading takes away their way out. So: quiet when the policy is alone,
+        // continuous across question and feedback, never quiet over a document.
+        minimal={regions.policy && !regions.sharing}
         onFiles={(files) => void session.attachFiles(files)}
         onRename={session.rename}
       />
@@ -324,9 +347,14 @@ export function LearningCanvas({
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (16px inset + 32px control + 24px breathing room). */}
       <div className="relative h-full overflow-y-auto pt-[72px]">
-        {policyOwns ? (
-          <CanvasPolicyView runtime={policy} />
-        ) : (
+        {/* 🔴 THE POLICY'S CONTRIBUTION COMES FIRST IN THE FLOW, NOT OVER THE TOP OF THE DOCUMENT.
+            An overlay would hide the very material 7b exists to keep visible, and a learner who
+            wanted to look something up would have to dismiss the question to do it. It sits above
+            the reading and the reading continues beneath it — one continuous surface, which is why
+            neither is in a panel, a modal or a column of its own. */}
+        {regions.policy && <CanvasPolicyView runtime={policy} sharing={regions.sharing} />}
+
+        {regions.document && (
           <>
         {canvas.state === "empty" && (
           <CanvasEmpty
@@ -356,6 +384,18 @@ export function LearningCanvas({
           />
         )}
 
+          </>
+        )}
+
+        {/* ── The evidence-collecting stages ────────────────────────────────
+            🔴 A SEPARATE ARM, AND THAT SEPARATION IS THE INVARIANT. Each of these owns an answer
+            and writes evidence through `session`, so none may paint while the policy is
+            contributing — two answer surfaces on one composer means one of them silently loses the
+            learner's work. `composeSurface` guarantees `regions.stages` and `regions.policy` are
+            never both true; keeping them in different arms is what makes that guarantee visible in
+            the JSX rather than a fact you have to go and look up. */}
+        {regions.stages && (
+          <>
         {canvas.state === "recall" && (
           <CanvasRecall
             canvas={canvas}
@@ -390,9 +430,17 @@ export function LearningCanvas({
         )}
 
         {canvas.state === "complete" && <CanvasComplete canvas={canvas} onReset={session.reset} />}
+          </>
+        )}
 
-        {/* A whole-page job says so once, in the middle, rather than blanking the document. */}
-        {(busy.kind === "lesson" || busy.kind === "recall" || busy.kind === "test" || busy.kind === "relearn") &&
+        {/* A whole-page job says so once, in the middle, rather than blanking the document.
+            🔴 AND NEVER WHILE THE POLICY IS CONTRIBUTING. This greys everything beneath it, which
+            under composition includes the question the learner is answering AND the document they
+            would look at to answer it — the ambient `CanvasThinking` exists precisely so a judged
+            answer does not destroy the context being held. Before 7b the legacy branch made this
+            impossible structurally; now it is a guard, so it is asserted in canvas-motion.test.ts. */}
+        {!regions.policy &&
+          (busy.kind === "lesson" || busy.kind === "recall" || busy.kind === "test" || busy.kind === "relearn") &&
           canvas.state !== "orient" && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--ui-bg-editor)/70">
               <p className="flex items-center gap-2 text-[0.875rem] text-(--ui-text-secondary)">
@@ -401,15 +449,16 @@ export function LearningCanvas({
               </p>
             </div>
           )}
-          </>
-        )}
       </div>
 
-      {(policyOwns ? policy.error : error) && (
+      {/* 🔴 THE POLICY'S ERROR WINS ONLY WHEN THE POLICY IS ON SCREEN. Both runtimes can now hold an
+          error at once — a failed judge and a failed lesson generation are different events — and
+          showing the invisible one would report a failure the learner cannot place. */}
+      {(regions.policy ? policy.error ?? error : error) && (
         <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
           <div className="flex max-w-[38rem] items-start gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3 shadow-lg">
             <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
-              {policyOwns ? policy.error : error}
+              {regions.policy ? policy.error ?? error : error}
             </p>
             <button
               aria-label="Dismiss"
@@ -427,7 +476,7 @@ export function LearningCanvas({
           exactly where it was — the learner keeps the thing they just answered in view, so nothing
           has to be reconstructed when the verdict lands. This is the replacement for the 70% scrim,
           which is why that overlay lives inside the legacy arm and can never paint here. */}
-      {policyOwns && policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+      {regions.policy && policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
 
       {pointed && (
         <CanvasSelectionMenu
@@ -444,22 +493,26 @@ export function LearningCanvas({
 
       {showComposer && (
         <CanvasComposer
-          busy={policyOwns ? policy.judging : busy.kind === "command"}
-          busyLabel={policyOwns ? "Reading your answer" : busy.label}
+          busy={sink.kind === "policy" ? policy.judging : busy.kind === "command"}
+          busyLabel={sink.kind === "policy" ? "Reading your answer" : busy.label}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.
+          // 🔴 ONE ROUTE, CHOSEN BY THE SINK. This used to read `policyOwns ? … : …`, which was a
+          // safe ternary only because ownership was all-or-nothing. `sink` is a union that cannot
+          // name two receivers, so there is no combination of states in which both branches are
+          // live — see canvas-hosting.ts.
           onAnswer={
-            policyOwns
+            sink.kind === "policy"
               ? (text, via, tookMs) => void policy.submit(text, via, tookMs)
               : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
           }
-          inSession={policyOwns}
+          inSession={sink.kind === "policy"}
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
           selected={selected}
-          task={policyOwns ? policyTask : session.activeTask}
+          task={sink.kind === "none" ? null : sink.task}
         />
       )}
     </main>

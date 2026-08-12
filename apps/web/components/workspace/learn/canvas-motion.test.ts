@@ -70,15 +70,24 @@ test("🔴 the retrieval screen has no scrim, skeleton or pulse", async () => {
   }
 });
 
-test("🔴 the whole-page scrim can never paint while the policy owns the canvas", async () => {
+test("🔴 the whole-page scrim can never paint while the policy is contributing", async () => {
   // It is the thing the ambient thinking state replaces: greying the document destroys the context
   // the learner is holding, and it has to be rebuilt when the overlay clears.
+  //
+  // 🔴 THE PROPERTY IS UNCHANGED; WHAT ENFORCES IT MOVED. Before step 7b the scrim sat inside the
+  // legacy arm of `{policyOwns ? … : …}`, so "it cannot paint over the policy" was true by POSITION
+  // and this asserted the position. Composition removed the arms — a document and a hosted task now
+  // share one surface — so the scrim needs an explicit guard. Under composition it matters MORE, not
+  // less: it would grey out the question being answered AND the document being answered from.
   const canvas = await read("./learning-canvas.tsx");
   const scrim = canvas.indexOf("bg-(--ui-bg-editor)/70");
   assert.notEqual(scrim, -1, "the legacy scrim moved — re-point this guard");
-  const branchOpens = canvas.indexOf("{policyOwns ? (");
-  const branchCloses = canvas.indexOf("</>\n        )}", branchOpens);
-  assert.ok(scrim > branchOpens && scrim < branchCloses, "the scrim escaped the legacy arm");
+  const guard = canvas.lastIndexOf("{!regions.policy &&", scrim);
+  assert.notEqual(guard, -1, "the scrim is no longer guarded against the policy's region");
+  // 🔴 CALIBRATED BY DELETING THE GUARD, which is the realistic regression — a later edit moves the
+  // overlay out and nothing complains. Nothing may open another JSX expression between the guard and
+  // the scrim: that would make the scrim a sibling the guard never covered.
+  assert.equal(canvas.slice(guard + 1, scrim).includes("{"), false, "the scrim escaped its guard");
 });
 
 // ── the glyphs that stayed have to actually move ────────────────────────────

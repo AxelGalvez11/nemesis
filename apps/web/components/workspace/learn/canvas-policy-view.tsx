@@ -29,7 +29,26 @@ function screenKey(runtime: PolicyRuntime): string {
   return `${runtime.decision.action.type}:${runtime.prompt?.id ?? runtime.decision.objective.identityKey}`;
 }
 
-export function CanvasPolicyView({ runtime }: { runtime: PolicyRuntime }) {
+/**
+ * @param sharing This task is on a surface that also holds reading material.
+ *
+ * 🔴 A COMPOSITION FACT, NOT A STYLE. It answers one question — does the task claim the whole
+ * viewport, or does it size to itself so the document below stays reachable? Before step 7b it was
+ * always the former, because the policy took the page and there was nothing underneath. Now a
+ * canvas can hold both, and `min-h-full` would push the document a full screen down: technically
+ * coexisting, practically invisible, and the learner would still see exactly one thing.
+ *
+ * 🔴 IT DOES NOT DECIDE WHAT THE TASK LOOKS LIKE. Type, spacing, weight and motion stay where they
+ * were. When a task needs a genuinely different presentation — a causal reconstruction, an ordering
+ * interaction — that is a surface for UI to design, and `runtime.task.tempo` is the signal for it.
+ */
+export function CanvasPolicyView({
+  runtime,
+  sharing = false,
+}: {
+  runtime: PolicyRuntime;
+  sharing?: boolean;
+}) {
   return (
     <>
       {runtime.forced && <ForcedNotice runtime={runtime} />}
@@ -37,11 +56,16 @@ export function CanvasPolicyView({ runtime }: { runtime: PolicyRuntime }) {
           boundary fifty times; a slide or a scale would become the dominant impression of the
           surface and make retrieval feel like an interface being waited on rather than a question
           being answered. */}
-      <div className="canvas-swap min-h-full" key={screenKey(runtime)}>
-        <PolicyScreen runtime={runtime} />
+      <div className={sharing ? "canvas-swap" : "canvas-swap min-h-full"} key={screenKey(runtime)}>
+        <PolicyScreen runtime={runtime} sharing={sharing} />
       </div>
     </>
   );
+}
+
+/** How the policy's region sizes itself: the whole surface, or only what it needs. */
+function regionHeight(sharing: boolean): string {
+  return sharing ? "py-12" : "min-h-full pb-40";
 }
 
 /**
@@ -68,14 +92,14 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
   );
 }
 
-function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
+function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: boolean }) {
   const { decision, feedback, prompt } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
   if (feedback) {
     return (
-      <Frame>
+      <Frame sharing={sharing}>
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">You said “{feedback.answer}”</p>
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
           {VERDICT_HEADLINE[feedback.evaluation.verdict]}
@@ -99,7 +123,7 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
     // could not read your file" are opposite facts that both produce no objectives.
     const nothingReadable = runtime.outcome === "failed";
     return (
-      <Frame>
+      <Frame sharing={sharing}>
         <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">
           {nothingReadable ? "Nemesis couldn't read this material" : "Nothing to practise here right now"}
         </h2>
@@ -132,7 +156,7 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
     // This is for FAST RETRIEVAL specifically. A conceptual or diagnostic interaction may need
     // scaffolding, and it should render its own thing rather than loosening this one.
     return (
-      <div className="flex min-h-full items-center justify-center px-6 pb-40">
+      <div className={`flex ${regionHeight(sharing)} items-center justify-center px-6`}>
         <h2
           // Optically centred rather than mathematically: the composer occupies the bottom of the
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
@@ -152,7 +176,7 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
     // teaching; sharing a first renderer is not the same as merging the states.
     const said = decision.state.status;
     return (
-      <Frame>
+      <Frame sharing={sharing}>
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
           {said === "partial"
             ? "You had part of this."
@@ -179,7 +203,7 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
 
   if (decision.action.type === "contrast") {
     return (
-      <Frame>
+      <Frame sharing={sharing}>
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
@@ -205,7 +229,7 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
   // `defer` — everything here was acted on moments ago, and asking again now would measure working
   // memory rather than learning.
   return (
-    <Frame>
+    <Frame sharing={sharing}>
       <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">Come back to this shortly</h2>
       <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
         You've just worked through everything here. Asking again this soon wouldn't tell either of us
@@ -217,9 +241,9 @@ function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
 
 /** The single measure the rest of the canvas is set to, so the policy's page reads as the same
  *  column as the document and the composer rather than a fourth centred thing. */
-function Frame({ children }: { children: React.ReactNode }) {
+function Frame({ children, sharing = false }: { children: React.ReactNode; sharing?: boolean }) {
   return (
-    <div className="flex min-h-full items-center justify-center px-6 pb-40">
+    <div className={`flex ${regionHeight(sharing)} items-center justify-center px-6`}>
       <div className="w-full max-w-(--canvas-column)">{children}</div>
     </div>
   );

@@ -23,6 +23,13 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
 import type { LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
 import { ensureKnowledgeForCanvas, type CanvasKnowledge } from "@/lib/learn/canvas-knowledge";
+import {
+  applyFocus,
+  availableTerritories,
+  WHOLE_CANVAS,
+  type FocusScope,
+} from "@/lib/learn/canvas-focus";
+import { tempoFor, type HostedTask } from "@/lib/learn/canvas-hosting";
 import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
@@ -42,10 +49,40 @@ import { useDelayedFlag } from "./use-delayed-flag";
 
 export interface PolicyRuntime {
   /** 🔴 THREE VALUES, NOT TWO. Resolving a canvas's knowledge is a round trip, and defaulting to
-   *  "inactive" while it runs would paint the legacy stage — and run its effects — for a canvas
-   *  the policy is about to own. A flash of the wrong runtime is not cosmetic here: the six-stage
-   *  machine starts generating a lesson. */
-  status: "loading" | "active" | "inactive";
+   *  "unavailable" while it runs would paint the legacy stage — and run its effects — for a canvas
+   *  the policy is about to contribute to. A flash of the wrong runtime is not cosmetic here: the
+   *  six-stage machine starts generating a lesson.
+   *
+   *  🔴 `ready` REPLACED `active`, AND THE RENAME IS THE WHOLE OF STEP 7b. "Active" meant *this
+   *  runtime has taken the page*; there is no such state any more. `ready` means *this runtime can
+   *  contribute a task* — the Canvas owns the surface and decides where to put it. Ownership is
+   *  still computed and still reported (`ownership`), it just no longer decides whether a question
+   *  may appear. See docs/canvas-task-hosting.md §1. */
+  status: "loading" | "ready" | "unavailable";
+  /**
+   * What the policy is contributing right now, or null when it has nothing to ask.
+   *
+   * 🔴 THE THING THE CANVAS HOSTS, AND IT IS SEPARATE FROM `status` ON PURPOSE. Three different
+   * facts used to collapse into "inactive": the policy is off, coverage refused the canvas, and
+   * there is nothing supported to ask. Only the first and last mean "no task". Merging them is how
+   * an empty task shell gets hosted over a document.
+   */
+  task: HostedTask | null;
+  /**
+   * Could the policy have taken this whole canvas? Reported, never gating presentation.
+   *
+   * 🔴 IT KEEPS ITS EXACT MEANING. `policyOwnsCanvas` still runs, still requires
+   * `unrepresented === 0`, and is still what `forced` discloses against. What changed is that a
+   * `false` here no longer hides the canvas's supported knowledge from the learner — that was
+   * whole-page scaffolding, and §14.1 says the answer to "it owns nothing" is composition, never a
+   * lower bar.
+   */
+  ownership: CanvasKnowledge["ownership"];
+  /** The territory the learner is working in. Session-local; never persisted (§11). */
+  focus: FocusScope;
+  setFocus: (scope: FocusScope) => void;
+  /** What the learner could focus on, built from knowledge this canvas actually holds. */
+  territories: readonly { label: string; identityKeys: readonly string[] }[];
   decision: PolicyDecision | null;
   /** The question on screen, when the policy asked for one. */
   prompt: RetrievalPrompt | null;
@@ -112,7 +149,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   const enabled = policyAllowed(override);
   const forced = policyForced(override);
 
-  const [status, setStatus] = useState<PolicyRuntime["status"]>(enabled ? "loading" : "inactive");
+  const [status, setStatus] = useState<PolicyRuntime["status"]>(enabled ? "loading" : "unavailable");
   const [knowledge, setKnowledge] = useState<CanvasKnowledge>({
     coverage: EMPTY_COVERAGE,
     objectives: [],
@@ -134,12 +171,16 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   /** Frozen per evidence change rather than read per render: the policy takes `now`, and a clock
    *  that moved on every render would make the decision unstable for no reason. */
   const [decidedAt, setDecidedAt] = useState(() => new Date());
+  /** 🔴 SESSION-LOCAL, NEVER PERSISTED. Where the learner is looking is not a fact about what they
+   *  know; storing it would put a UI preference inside the learner model where the next reader
+   *  could not tell it from evidence. */
+  const [focus, setFocus] = useState<FocusScope>(WHOLE_CANVAS);
 
   const sources = durableSignature(canvas);
 
   useEffect(() => {
     if (!enabled || !uid) {
-      setStatus("inactive");
+      setStatus("unavailable");
       return;
     }
     let live = true;
@@ -154,24 +195,25 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       if (!live) return;
       setKnowledge(resolved);
       const supported = supportedObjectives(resolved.objectives);
-      // 🔴 ASKED OF THE CANVAS'S MATERIAL, NOT OF WHAT CAME OUT OF IT. The decision is made in
-      // `policyOwnsCanvas` from what every source is made of, so a document holding one glossary
-      // table and forty pages of prose keeps the runtime that can show the prose.
+      // 🔴 OWNERSHIP NO LONGER DECIDES WHETHER A QUESTION MAY APPEAR — THIS IS STEP 7b.
       //
-      // 🔴 AND THE BYPASS DOES NOT REWRITE THE DECISION, IT OVERRIDES ACTING ON IT. `ownership.owns`
-      // stays false on a forced canvas, and the surface reads it to say so. Flipping the verdict
-      // itself would erase the only evidence that this session was not the ordinary path.
-      if (!resolved.ownership.owns && !forced) {
-        setPhase(null);
-        setStatus("inactive");
-        return;
-      }
-      // 🔴 A FORCED SESSION WITH NOTHING SUPPORTED IN IT HAS NO QUESTION TO ASK. Bypassing coverage
-      // cannot conjure an association out of a lecture, so this refuses rather than painting an
-      // empty runtime over a document the learner could otherwise read.
+      // The refusal that used to live here (`!resolved.ownership.owns && !forced` → inactive) was
+      // whole-page scaffolding: because ownership was all-or-nothing, a canvas holding one glossary
+      // table and forty pages of prose had to be refused entirely, and §12 measured the result as
+      // owning 0 of 6 production canvases. The Canvas now owns the surface and hosts the task
+      // beside the prose, so a partly-supported canvas gets BOTH.
+      //
+      // `resolved.ownership` is still computed, still carried out on the return value, and still
+      // what `forced` discloses against. Deleting the computation — rather than the gate — would
+      // have thrown away the one fact that tells a bypassed session from an ordinary one.
+      //
+      // 🔴 THE REMAINING REFUSAL IS THE ONE THAT IS STILL TRUE. Nothing supported means nothing to
+      // ask, on any canvas, owned or not. Hosting an empty task shell over a document is the
+      // failure this guard exists to prevent, and it is why `supported.length` was never the same
+      // question as ownership.
       if (supported.length === 0) {
         setPhase(null);
-        setStatus("inactive");
+        setStatus("unavailable");
         return;
       }
       setPhase("finding_gap");
@@ -180,7 +222,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       setEvidence(rows);
       setDecidedAt(new Date());
       setPhase(null);
-      setStatus("active");
+      setStatus("ready");
     })();
     return () => {
       live = false;
@@ -192,12 +234,18 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
 
   const supported = useMemo(() => supportedObjectives(knowledge.objectives), [knowledge]);
 
+  // 🔴 THE SCOPE NARROWS THE CANDIDATES, THEN THE POLICY CHOOSES FREELY INSIDE IT. Selecting a
+  // territory sets `focus_scope`; it does not set an operation, a difficulty or a kind of card
+  // (§11). Filtering the list `decideNext` arbitrates over is the whole of the constraint — reaching
+  // any further in would be a curriculum wearing a Minimap's clothes (§14.7).
+  const inFocus = useMemo(() => applyFocus(supported, focus), [focus, supported]);
+
   const decision = useMemo(
     () =>
-      status === "active"
-        ? decideNext({ actedOn, evidence, now: decidedAt, objectives: supported })
+      status === "ready"
+        ? decideNext({ actedOn, evidence, now: decidedAt, objectives: inFocus })
         : null,
-    [actedOn, decidedAt, evidence, status, supported],
+    [actedOn, decidedAt, evidence, inFocus, status],
   );
 
   // ── One prompt per decision ────────────────────────────────────────────────
@@ -362,6 +410,39 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   // genuinely something to wait for.
   const thinking = useDelayedFlag(phase !== null, THINKING_VISIBLE_AFTER_MS);
 
+  // ── What the Canvas can host right now ──────────────────────────────────────
+  //
+  // 🔴 A TASK EXISTS ONLY WHEN THERE IS SOMETHING TO ANSWER, AND FEEDBACK IS NOT THAT. While a
+  // verdict is on screen the learner is reading, not answering — hosting a task through it would
+  // put the next question up before they had seen what the last one showed, and the composer would
+  // start routing answers to a prompt that had replaced the one they were looking at.
+  //
+  // 🔴 IT ALSO CARRIES THE BRAIN'S OWN PAIR OUT UNTOUCHED. `operation` and `knowledgeType` are the
+  // policy's decision; the runtime hands them to the surface so a presentation can differ by
+  // cognitive demand (§9, §14.6) without re-deriving what the demand IS.
+  const task: HostedTask | null = useMemo(() => {
+    if (status !== "ready" || feedback || !decision || !prompt) return null;
+    if (decision.action.type !== "retrieve") return null;
+    const knowledgeType = decision.knowledge.type;
+    const operation = prompt.operation;
+    return {
+      knowledgeType,
+      operation,
+      task: {
+        answered: false,
+        id: prompt.id,
+        index: 0,
+        kind: "question",
+        placeholder: "Type your answer…",
+        prompt: prompt.prompt,
+        total: 1,
+      },
+      tempo: tempoFor({ knowledgeType, operation }),
+    };
+  }, [decision, feedback, prompt, status]);
+
+  const territories = useMemo(() => availableTerritories(supported), [supported]);
+
   return {
     acknowledge,
     admitUnknown,
@@ -369,15 +450,20 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     decision,
     error,
     feedback,
+    focus,
     // 🔴 FORCED MEANS "RUNNING WITHOUT OWNERSHIP", NOT "SOMEONE TYPED force". On a canvas the
     // policy owns anyway, the parameter changed nothing and there is nothing to disclose.
     forced: forced && !knowledge.ownership.owns,
     judging,
     outcome: knowledge.outcome,
+    ownership: knowledge.ownership,
     phase,
     prompt,
+    setFocus,
     status,
     submit,
+    task,
+    territories,
     thinking,
   };
 }
