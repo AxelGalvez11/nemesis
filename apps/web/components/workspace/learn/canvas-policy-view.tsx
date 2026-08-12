@@ -119,18 +119,32 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   }
 
   if (!decision) {
-    // 🔴 THE HONEST EMPTY STATE, AND IT SAYS WHICH EMPTY IT IS. "Nothing is owed here" and "we
-    // could not read your file" are opposite facts that both produce no objectives.
+    // 🔴 THE HONEST EMPTY STATE, AND IT SAYS WHICH EMPTY IT IS. "Nothing is owed here", "we could
+    // not read your file at all" and "we could only partly read your file" are three different
+    // facts and must not collapse into one message (UI-001: a source gap is not a learner gap).
+    //
+    // 🔴 `degraded` USED TO FALL INTO THE MASTERY BRANCH. Before this, a canvas the parser could
+    // only partly read, with nothing left to decide, told the learner "you've shown everything
+    // this material asks for" — a claim about THEM fabricated from a gap in OUR reading, in the
+    // opposite direction from the failure this component already guarded against. The sources
+    // panel already shows `coverageNote` for exactly this canvas; this screen was contradicting it.
     const nothingReadable = runtime.outcome === "failed";
+    const partlyReadable = runtime.outcome === "degraded";
     return (
       <Frame sharing={sharing}>
         <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">
-          {nothingReadable ? "Nemesis couldn't read this material" : "Nothing to practise here right now"}
+          {nothingReadable
+            ? "Nemesis couldn't read this material"
+            : partlyReadable
+              ? "Nemesis could only partly read this material"
+              : "Nothing to practise here right now"}
         </h2>
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
           {nothingReadable
             ? "The file is attached and safe — this is about our reading of it, not about your material."
-            : "You've shown everything this material asks for. Add more material, or come back to it later."}
+            : partlyReadable
+              ? "What came through is covered here. The rest wasn't read clearly enough to ask about — that's a gap in our reading, not a gap in what you know."
+              : "You've shown everything this material asks for. Add more material, or come back to it later."}
         </p>
       </Frame>
     );
