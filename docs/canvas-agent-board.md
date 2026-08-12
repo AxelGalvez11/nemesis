@@ -36,8 +36,8 @@ first rows through are correct.
 | `BRAIN-003` causal objectives + task contract | Brain | **BLOCKED** | UI-002 |
 | `RUNTIME-001` compositional task hosting | Runtime | **IN REVIEW** (#494) | everything |
 | `RUNTIME-002` one answer, one response identity | Runtime | **READY** | INTEGRATION-001 |
-| `PARSER-001` derived verdict crosses the boundary | Parser | **READY** | BRAIN capability gate |
-| `PARSER-002` persist the unsupported *kinds* | Parser | **READY** | PARSER-001 |
+| `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
+| `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
 | `INTEGRATION-001` first real end-to-end trace | Integration | **BLOCKED** | the whole vision |
@@ -199,6 +199,60 @@ stored coverage, and survive to a consumer.
 
 **NOTE** — `table_count` is dead (written by nothing, read by nothing, 0 on every production row
 including a DOCX with two real tables). Brain confirms no derivation may consult it.
+
+### Parser's execution plan — accepted 2026-08-12
+
+Parser claimed both tasks and proposed three slices in this order, which Brain confirmed:
+
+1. `PARSER-002` — persist `unsupported` kinds, additive optional on `ExtractionCoverage`
+2. a pure `deriveParseQuality({structure, coverage, doc_kind})` → three verdicts
+3. `PARSER-001` — carry that derived verdict across the boundary as a value
+
+**Why kinds must come first, recorded so it is not re-litigated:** the reason cannot be
+reconstructed afterwards. Once `csvCoverage` has summed `{kind,count}[]` to an integer, no later
+function can recover *why* something was unreadable — the information is gone at the point of
+summing, not merely unexposed. A verdict shipped first would be permanently unable to explain
+itself.
+
+**Brain's answer to "must the vocabulary match BRAIN-003?" — no, and deliberately.** BRAIN-003
+assumes nothing about it. Specifying the vocabulary of unsupported content from inside the
+cognition layer would be specifying perception from downstream of it. Only one distinction is
+depended on: *"we could not reliably read this"* must stay separable from *"we read this fine and
+it asserts nothing."*
+
+### 🔴 Two open points from that exchange
+
+**Verdict names embed a cognitive judgement in a perception layer.** "safe-to-teach-from" is a
+claim about teaching, which is downstream of Parser. The real issue is that **parse quality is not
+one-dimensional with respect to knowledge type**:
+
+| Damage | Associations | Causal |
+|---|---|---|
+| flattened two-column table | fatal — the pairing is destroyed | fatal — fragments, not sentences |
+| unread chart, prose intact | fine | fine |
+| intact prose, no grid | useless | fine |
+
+So one verdict is really "safe to teach from, *for the knowledge types extracted today*". When a
+knowledge type with different structural needs is added, that verdict silently means something else
+and nothing flags it. Preferred fix: name verdicts by **what survived** (sentence integrity,
+tabular structure, reading order) and let Brain map survival to teachability per type. Acceptable
+alternative: keep the names and record the baseline they were computed against. Not blocking.
+
+**🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** The 62% figure is
+per-candidate but derived from a **document-level** signal — the source's structure shape was
+`text-only` and every unit from it was stamped degraded. That is a limitation of the measurement,
+not a considered design.
+
+A document is not uniformly degraded. A lecture PDF with clean prose and one unreadable chart is
+fully usable for causal extraction of the prose. A document-level verdict either over-refuses
+(losing good prose because one figure failed) or under-refuses (letting fragments through because
+most of the document was fine).
+
+**Brain's preference: over-refuse.** A missed relationship costs coverage; an invented one teaches
+something false. If document-level is all that is cheaply available, ship it erring toward refusal
+and say so. **But unit-level is worth more to Brain than any refinement of the vocabulary** — it is
+the difference between refusing a chart and refusing the chapter it sits in. Parser has the data to
+decide this; Brain does not.
 
 ---
 
