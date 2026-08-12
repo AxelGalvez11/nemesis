@@ -150,10 +150,10 @@ export const CAUSAL_CHALLENGE: ChallengeItem[] = [
   },
   {
     domain: "chemistry",
-    expect: { cause: "the inhibitor", effect: "substrate access", negated: false, qualifier: null, relation: "inhibits" },
+    expect: { cause: "the inhibitor", effect: "substrate access", negated: false, qualifier: null, relation: "prevents" },
     id: "x12",
     label: "causal",
-    note: "🔴 inhibits, not prevents — the object is a mechanism, not an unwanted outcome.",
+    note: "🔴 RELABELLED 2026-08-12. Was pinned to `inhibits` on a mechanism-vs-outcome heuristic that turned out to be too brittle to be ontology law. `sourceVerb` keeps the author's actual word (\"blocks\"); the normalised relation is deliberately coarser and replaceable.",
     text: "The competitive inhibitor blocks substrate access to the active site.",
   },
   {
@@ -288,10 +288,10 @@ export const CAUSAL_CHALLENGE: ChallengeItem[] = [
   // ── history / social science ───────────────────────────────────────────────
   {
     domain: "history",
-    expect: { cause: "collapse of the harvest", effect: "unrest", negated: false, qualifier: "contributed to", relation: "causes" },
+    expect: { cause: "collapse of the harvest", effect: "unrest", negated: false, qualifier: null, relation: "contributes_to" },
     id: "x31",
     label: "causal",
-    note: "🔴 'contributed to' is partial causation — a qualifier, not a plain assertion.",
+    note: "🔴 RELABELLED 2026-08-12, and it is the item that motivated the seventh relation. It was pinned as `causes` + qualifier \"contributed to\", which treated partial causation as a hedge. It is not a hedge: the author is CONFIDENT about a PARTIAL role. `contributes_to` carries that, and the qualifier field goes back to meaning uncertainty and scope only.",
     text: "The collapse of the harvest in 1788 contributed to the unrest of the following year.",
   },
   { domain: "history", id: "x32", label: "sequence", text: "The treaty was signed three months after the armistice." },

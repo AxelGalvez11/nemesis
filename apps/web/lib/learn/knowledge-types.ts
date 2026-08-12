@@ -164,8 +164,25 @@ export interface CausalNode {
  * unclear in a passage, the extractor abstains rather than picking one.
  */
 export type CausalRelationKind =
-  /** Brings about — leads to, results in, produces. */
+  /** Brings about, on its own — leads to, results in, produces. */
   | "causes"
+  /**
+   * One contributing factor among others — "contributed to", "was a factor in", "helped drive".
+   *
+   * 🔴 NOT `causes` WITH A HEDGE, AND THAT IS THE WHOLE REASON IT EXISTS. "The harvest collapse
+   * contributed to the unrest" is not an uncertain claim that the collapse caused the unrest; it is
+   * a confident claim about a PARTIAL role. Flattening it asserts sufficiency the source denied,
+   * and a learner would be taught that one factor explains the whole outcome.
+   *
+   * 🔴 CAUSAL STRENGTH IS ITS OWN AXIS, separate from modality. "may contribute to" is partial AND
+   * uncertain; "contributed to" is partial and certain; "may cause" is sufficient and uncertain.
+   * Three different claims, and only a separate relation keeps them apart.
+   *
+   * Multifactorial subjects need this to be teachable at all — unrest, hypertension, inflation,
+   * heart failure. Three `contributes_to` edges into one effect can be asked as "what factors
+   * contributed?"; three `causes` edges into it would each be a lie.
+   */
+  | "contributes_to"
   | "increases"
   | "decreases"
   /** Makes possible without producing on its own — allows, permits. */

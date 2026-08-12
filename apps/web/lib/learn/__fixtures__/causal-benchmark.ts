@@ -174,7 +174,9 @@ export const EXPECTED_EDGES: ExpectedEdge[] = [
     qualifier: "may",
     relation: "causes",
   },
-  { cause: "more light", effect: "increase", id: "c233", negated: true, qualifier: null, relation: "causes" },
+  // 🔴 RELABELLED 2026-08-12: the extractor was more precise than the label. "produces no further
+  // increase" denies an INCREASE, so `increases` + negated is the exact claim; `causes` was coarser.
+  { cause: "more light", effect: "increase", id: "c233", negated: true, qualifier: null, relation: "increases" },
 ];
 
 /**

@@ -44,6 +44,7 @@ export const CAUSAL_EXTRACTION_TEMPERATURE = 0;
 
 export const CAUSAL_RELATION_KINDS: readonly CausalRelationKind[] = [
   "causes",
+  "contributes_to",
   "increases",
   "decreases",
   "enables",
@@ -68,7 +69,7 @@ increases or decreases another identifiable thing.
 For each relationship the passage asserts, return:
 - cause: the thing acting, quoted from the passage
 - effect: the thing changed, quoted from the passage
-- relation: exactly one of causes | increases | decreases | enables | inhibits | prevents
+- relation: exactly one of causes | contributes_to | increases | decreases | enables | inhibits | prevents
 - negated: true when the passage DENIES the relationship ("does not cause", "produces no increase")
 - qualifier: the passage's own hedge OR bounding condition, verbatim, or null
 - qualifierKind: "epistemic" for a hedge, "conditional" for a scope, or null when qualifier is null
@@ -81,6 +82,11 @@ same relation the passage names, and the passage's own words. Do NOT abstain mer
 assertion is negative. Only abstain if the denial itself is not stated in the passage: never infer a
 negation from surrounding context.
 
+NEGATION AND MODALITY ARE INDEPENDENT, and a passage can carry both. "may not lead to a different
+outcome" is negated: true AND qualifier: "may" — a hedged denial, not a flat one. Recording only the
+negation states the author was certain when they were not; recording only the hedge states the
+opposite of what they said. Both fields, every time they are both present.
+
 The qualifier is anything the passage uses to limit the claim, and there are two kinds:
 - epistemic — how sure the author is: "may", "can", "likely", "generally", "typically"
 - conditional — WHEN the relationship holds: "under cyclic load", "when voltage is held constant",
@@ -91,17 +97,25 @@ into a general law the passage never stated — "compression raises temperature"
 wrong thing from "compression raises temperature at constant volume".
 
 Choosing the relation:
-- causes     — brings about, leads to, results in, produces
+- causes          — brings about on its own: leads to, results in, produces
+- contributes_to  — ONE FACTOR AMONG OTHERS: "contributed to", "was a factor in", "helped drive",
+                    "played a part in". This is not a weaker version of causes and not a hedge —
+                    it is a confident claim about a partial role, and calling it "causes" asserts
+                    that this factor alone explains the outcome.
 - increases / decreases — states the direction the effect moves
-- enables    — makes possible without producing on its own: allows, permits, lets
-- inhibits   — acts against a MECHANISM or process: inhibits, blocks, suppresses
-- prevents   — stops an OUTCOME from occurring: prevents, averts
-If the passage does not settle which of these it means, abstain for that relationship.
+- enables         — makes possible without producing on its own: allows, permits, lets
+- inhibits        — reduces or works against something without necessarily stopping it
+- prevents        — stops something from happening: prevents, blocks, averts
+The line between inhibits and prevents is a soft one, and the verb you record matters more than
+which of the two you pick. If the passage does not settle which relation it means at all, abstain.
 
 ABSTAIN — return no relationship — when any of these is true:
 - it is a question rather than an assertion
 - it is a heading, a title, a caption, or a description of a picture
-- it states only that two things occur together, correlate, or trend together
+- it states only that two things occur together, correlate, vary together or trend together —
+  "Y rises with X", "Y varies with X", "Y is associated with X", "countries with more X tend to
+  have more Y". Co-variation is not a causal assertion, and nothing you know about the subject may
+  be used to upgrade it into one. Only extract if the passage separately says one drives the other
 - it states only that one thing happened after another
 - "because" introduces how we KNOW something rather than what brought it about
 - the cause or the effect is not present in the passage — including when it is a pronoun such as
@@ -129,6 +143,8 @@ relationship part of what someone is studying, or is it a rule about how a cours
 process or an institution treats a person? Judge the relationship, not whether the wording sounds
 bureaucratic.
 - "Missing two sessions leads to withdrawal from the module" — about the course, abstain
+- "Continued poor performance may result in additional required academic support" — about how the
+  course responds to a student, abstain
 - "Failure to torque the fasteners may result in rejection of the warranty claim" — a commercial
   consequence for a person, not a fact about fasteners, abstain
 - "Filing after the limitation deadline results in dismissal of the claim" — substantive law, and

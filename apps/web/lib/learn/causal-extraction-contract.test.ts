@@ -9,7 +9,7 @@ import {
   validateCausalEdges,
   type RawCausalEdge,
 } from "./causal-extraction-contract";
-import { knowledgeIdentityKey } from "./knowledge-identity";
+import { causalNodeKey, knowledgeIdentityKey } from "./knowledge-identity";
 import { objectivesForKnowledge } from "./learning-objective";
 
 // The validator is the last line before a model's opinion becomes stored knowledge, so every check
@@ -302,4 +302,78 @@ test("🔴 every caller of this lane sends temperature 0, not just the benchmark
       `${caller} must send CAUSAL_EXTRACTION_TEMPERATURE, never a literal or nothing`,
     );
   }
+});
+
+// ── negation and modality are independent axes ──────────────────────────────
+
+test("🔴 a hedged DENIAL keeps both — neither field may erase the other", () => {
+  // c032: "may not lead to a different insertion of amino acid". Recording only the negation says
+  // the author was certain when they hedged; recording only the hedge says the opposite of what
+  // they wrote. Two independent facts about one claim.
+  const passage = "A change in the last nucleotide may not lead to a different insertion of amino acid.";
+  const { relations } = validate(
+    [{
+      cause: "A change in the last nucleotide",
+      effect: "a different insertion of amino acid",
+      negated: true,
+      qualifier: "may",
+      qualifierKind: "epistemic",
+      quote: passage,
+      relation: "causes",
+    }],
+    passage,
+  );
+  assert.equal(relations[0]?.negated, true);
+  assert.equal(relations[0]?.qualifier, "may");
+  assert.equal(relations[0]?.qualifierKind, "epistemic");
+});
+
+test("🔴 a hedged denial is different knowledge from a flat one", () => {
+  const base: RawCausalEdge = { ...GOOD, negated: true, qualifier: undefined };
+  const flat = validate([base]).relations[0]!;
+  const hedged = validate([{ ...base, qualifier: "may", qualifierKind: "epistemic" }]).relations[0]!;
+  const object = (relation: typeof flat) =>
+    causalKnowledgeFrom({ anchors: [], index: 0, model: "m", relation, unitId: "b1" });
+  assert.notEqual(knowledgeIdentityKey(object(flat)), knowledgeIdentityKey(object(hedged)));
+});
+
+// ── partial causation is a relation, not a hedge ────────────────────────────
+
+test("🔴 contributes_to is its own relation, not causes with a qualifier", () => {
+  // "The harvest collapse contributed to the unrest" is a CONFIDENT claim about a PARTIAL role.
+  // Storing it as `causes` asserts that one factor explains the whole outcome; storing it as
+  // `causes` + a hedge asserts uncertainty the author never expressed.
+  const passage = "The collapse of the harvest in 1788 contributed to the unrest of the following year.";
+  const { relations } = validate(
+    [{
+      cause: "The collapse of the harvest in 1788",
+      effect: "the unrest",
+      quote: passage,
+      relation: "contributes_to",
+      verb: "contributed to",
+    }],
+    passage,
+  );
+  assert.equal(relations[0]?.relation, "contributes_to");
+  assert.equal(relations[0]?.sourceVerb, "contributed to");
+  assert.equal(relations[0]?.qualifier, undefined, "partial causation is not a hedge");
+});
+
+test("🔴 three contributing factors share an effect node without any claiming sufficiency", () => {
+  // What makes a multifactorial subject teachable: "what factors contributed?" is answerable from
+  // three contributes_to edges into one node. Three `causes` edges would each be a lie.
+  const passage = "Taxation contributed to the unrest.";
+  const { relations } = validate(
+    [{ cause: "Taxation", effect: "the unrest", quote: passage, relation: "contributes_to" }],
+    passage,
+  );
+  assert.equal(relations[0]?.effect.key, causalNodeKey("the unrest"));
+  assert.notEqual(
+    knowledgeIdentityKey(causalKnowledgeFrom({ anchors: [], index: 0, model: "m", relation: relations[0]!, unitId: "b1" })),
+    knowledgeIdentityKey(causalKnowledgeFrom({
+      anchors: [], index: 0, model: "m", unitId: "b1",
+      relation: { ...relations[0]!, relation: "causes" },
+    })),
+    "contributes_to and causes must be different knowledge",
+  );
 });
