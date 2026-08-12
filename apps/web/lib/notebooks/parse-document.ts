@@ -259,8 +259,9 @@ export async function parseDocument(
       sheets: workbook.sheets.length,
       // Charts, pivots and macros: seen, located, not turned into content. Any
       // non-zero count makes the workbook `partial`, which is the honest answer
-      // for a file whose point may be the chart we cannot read.
-      unreadable: workbook.unsupported.reduce((sum, item) => sum + item.count, 0),
+      // for a file whose point may be the chart we cannot read. The kinds ride
+      // along now instead of being summed away before coverage sees them.
+      unsupported: workbook.unsupported,
     });
   } else if (kind === "csv") {
     // 🔴 THE SAME GRID AS XLSX, ON PURPOSE. A CSV is one sheet's worth of data,
@@ -278,8 +279,8 @@ export async function parseDocument(
       rows: grid.rows,
       // A file whose columns we declined to split is READ but not fully
       // understood — `partial` is the honest answer, and the rows survive as
-      // evidence either way.
-      unreadable: grid.unsupported.reduce((sum, item) => sum + item.count, 0),
+      // evidence either way. The kinds ride along instead of being summed away.
+      unsupported: grid.unsupported,
     });
   } else {
     const deck = readPptxSlides(bytes);

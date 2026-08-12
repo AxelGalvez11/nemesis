@@ -132,6 +132,25 @@ export interface TruncationRecord {
   dropped: number;
 }
 
+/**
+ * One reason content in a region could not be recovered, and how often it
+ * happened — `unreadable-format`, `chart`, `ambiguous-delimiter`, whatever the
+ * parser that found it calls it.
+ *
+ * 🔴 `kind` STAYS A STRING, DELIBERATELY UNNARROWED. `FigureSkipReason` above is
+ * a closed union and `readCoverage` filters against a hardcoded list of six —
+ * which is exactly why a seventh reason requires editing two files or it dies
+ * silently at that boundary. The vocabulary here belongs to whichever parser
+ * measured it (grid parsers today; others later) and will grow without this
+ * module's involvement, so narrowing it would rebuild that same trap for the
+ * next one. Validate only that `count` is a positive integer; preserve `kind`
+ * verbatim.
+ */
+export interface UnreadableKind {
+  kind: string;
+  count: number;
+}
+
 export interface ExtractionCoverage {
   version: number;
   parserVersion: string;
@@ -174,6 +193,24 @@ export interface ExtractionCoverage {
    * Absent on every record written before 2026-08-07, which reads the same as 0.
    */
   unreadableRegions?: number;
+  /**
+   * WHY `unreadableRegions` is a lost count, broken down.
+   *
+   * 🔴 THIS EXISTS BECAUSE THE BREAKDOWN WAS BEING COMPUTED AND THEN THROWN
+   * AWAY. Both grid parsers (xlsx, csv) already build exactly this shape while
+   * reading a file — `ambiguous-delimiter`, `unsupported-number-format`, `chart`
+   * — and the caller that turns it into coverage summed it to one integer
+   * before it ever reached this type. `unreadableRegions: 1` survived; the
+   * reason a student's file could not be fully read did not. Nemesis could say
+   * "incomplete" and never why.
+   *
+   * Additive and optional, same convention as `unreadableRegions`: absent means
+   * not observed, never zero, and existing rows must not be backfilled with a
+   * guessed kind. Counts here sum to `unreadableRegions` — `buildCoverage`
+   * derives one from the other rather than accepting both, because two inputs
+   * that must agree eventually disagree.
+   */
+  unreadableKinds?: UnreadableKind[];
   state: ExtractionState;
 }
 
@@ -196,8 +233,15 @@ export function buildCoverage(input: {
   unitsUnread?: number;
   figures?: FigureCoverage;
   truncation?: readonly TruncationRecord[];
-  /** Regions seen but not readable. See `ExtractionCoverage.unreadableRegions`. */
+  /**
+   * Regions seen but not readable. See `ExtractionCoverage.unreadableRegions`.
+   * Mutually exclusive with `unreadableKinds` — pass the breakdown when you
+   * have one and let the count derive; passing both would be two numbers that
+   * must agree and eventually don't.
+   */
   unreadableRegions?: number;
+  /** The breakdown behind `unreadableRegions`. See `ExtractionCoverage.unreadableKinds`. */
+  unreadableKinds?: readonly UnreadableKind[];
   parserVersion?: string;
 }): ExtractionCoverage | string {
   const unitsVision = input.unitsVision ?? 0;
@@ -215,7 +259,15 @@ export function buildCoverage(input: {
   }
   const truncation = [...(input.truncation ?? [])].filter((cut) => cut.dropped > 0);
 
-  const unreadableRegions = input.unreadableRegions ?? 0;
+  if (input.unreadableRegions !== undefined && input.unreadableKinds !== undefined) {
+    return "pass unreadableRegions or unreadableKinds, not both — the count is derived from the breakdown";
+  }
+  const unreadableKinds = [...(input.unreadableKinds ?? [])];
+  for (const entry of unreadableKinds) {
+    if (!entry.kind) return "unreadableKinds: kind must not be empty";
+    if (!Number.isInteger(entry.count) || entry.count <= 0) return `unreadableKinds: count for "${entry.kind}" must be a positive integer`;
+  }
+  const unreadableRegions = input.unreadableRegions ?? unreadableKinds.reduce((total, entry) => total + entry.count, 0);
   if (!Number.isInteger(unreadableRegions) || unreadableRegions < 0) {
     return "unreadableRegions must be a non-negative integer";
   }
@@ -234,6 +286,7 @@ export function buildCoverage(input: {
     // Omitted entirely when zero, so an old record and a clean new one look the
     // same on the wire and in jsonb.
     ...(unreadableRegions > 0 ? { unreadableRegions } : {}),
+    ...(unreadableKinds.length > 0 ? { unreadableKinds } : {}),
     state: "complete",
   };
   return { ...coverage, state: deriveState(coverage) };
@@ -439,6 +492,24 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     }
   }
 
+  // 🔴 PRESERVED VERBATIM, NOT FILTERED AGAINST A KNOWN LIST — unlike the figure
+  // reasons above. That list is closed (six literals); this one is an open,
+  // parser-owned vocabulary that grows without this module's involvement, so
+  // filtering it here would silently drop every kind added after this was
+  // written — the same class of loss the six-of-eight figure-reasons bug was.
+  const unreadableKinds: UnreadableKind[] = [];
+  if (Array.isArray(raw["unreadableKinds"])) {
+    for (const entry of raw["unreadableKinds"] as unknown[]) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const item = entry as Record<string, unknown>;
+      const kind = item["kind"];
+      const count = item["count"];
+      if (typeof kind === "string" && kind.length > 0 && typeof count === "number" && Number.isInteger(count) && count > 0) {
+        unreadableKinds.push({ kind, count });
+      }
+    }
+  }
+
   return {
     version: typeof raw["version"] === "number" ? raw["version"] : EXTRACTION_COVERAGE_VERSION,
     parserVersion: typeof raw["parserVersion"] === "string" ? raw["parserVersion"] : "unknown",
@@ -455,6 +526,7 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     ...(typeof raw["unreadableRegions"] === "number" && raw["unreadableRegions"] > 0
       ? { unreadableRegions: raw["unreadableRegions"] }
       : {}),
+    ...(unreadableKinds.length > 0 ? { unreadableKinds } : {}),
     state,
   };
 }

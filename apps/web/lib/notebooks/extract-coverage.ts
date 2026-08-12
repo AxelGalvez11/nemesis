@@ -17,6 +17,7 @@ import {
   type FigureCoverage,
   type FigureSkipReason,
   type TruncationRecord,
+  type UnreadableKind,
 } from "@nemesis/shared";
 import { pageTextLength, THIN_PAGE_CHARS } from "@/lib/pdf/pages";
 
@@ -264,8 +265,10 @@ export function docxCoverage(input: {
  */
 export function xlsxCoverage(input: {
   sheets: number;
-  /** Charts, pivot tables, macros — located, not turned into content. */
-  unreadable?: number;
+  /** Charts, pivot tables, macros, unrenderable number formats — located, not
+   *  turned into content. `Workbook.unsupported`, unsummed: see
+   *  `ExtractionCoverage.unreadableKinds` for why the breakdown survives here. */
+  unsupported?: readonly UnreadableKind[];
   truncation?: readonly TruncationRecord[];
 }): ExtractionCoverage {
   const sheets = Math.max(input.sheets, 0);
@@ -275,7 +278,7 @@ export function xlsxCoverage(input: {
       units: sheets,
       unitsNative: sheets,
       truncation: input.truncation,
-      ...(input.unreadable ? { unreadableRegions: input.unreadable } : {}),
+      ...(input.unsupported?.length ? { unreadableKinds: input.unsupported } : {}),
     }),
     "sheet",
     sheets,
@@ -291,13 +294,15 @@ export function xlsxCoverage(input: {
  * has — and coverage counts the things a locator can point at. Rows are cited
  * INSIDE the grid, by reference, exactly as a workbook's are.
  *
- * `unreadable` is the delimiter refusal: a file whose columns we declined to
- * split was fully READ and not fully understood, and `partial` says so while the
- * rows survive as evidence.
+ * `unsupported` carries the delimiter refusal: a file whose columns we declined
+ * to split was fully READ and not fully understood, and `partial` says so while
+ * the rows survive as evidence — and, now, so does the reason.
  */
 export function csvCoverage(input: {
   rows: number;
-  unreadable?: number;
+  /** `Grid.unsupported`, unsummed — the delimiter refusal and any other kind
+   *  the reader recorded. See `xlsxCoverage`'s `unsupported` for the same rule. */
+  unsupported?: readonly UnreadableKind[];
   truncation?: readonly TruncationRecord[];
 }): ExtractionCoverage {
   // A file with no rows read is a sheet nobody could read, not a sheet that
@@ -309,7 +314,7 @@ export function csvCoverage(input: {
       units: sheets,
       unitsNative: sheets,
       truncation: input.truncation,
-      ...(input.unreadable ? { unreadableRegions: input.unreadable } : {}),
+      ...(input.unsupported?.length ? { unreadableKinds: input.unsupported } : {}),
     }),
     "sheet",
     sheets,

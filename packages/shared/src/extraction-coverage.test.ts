@@ -275,3 +275,82 @@ test("examined-empty also survives storage", () => {
   assert.equal(parsed?.figures.reasons["examined-empty"], 2);
   assert.equal(lostFigures(parsed!.figures), 2);
 });
+
+// --- PARSER-002: the kinds behind unreadableRegions --------------------------
+
+test("unreadableKinds derives unreadableRegions from its own sum", () => {
+  const coverage = built({
+    unitKind: "sheet",
+    units: 3,
+    unitsNative: 3,
+    unreadableKinds: [
+      { kind: "ambiguous-delimiter", count: 2 },
+      { kind: "unsupported-number-format", count: 5 },
+    ],
+  });
+  assert.equal(coverage.unreadableRegions, 7, "the count is derived, not independently supplied");
+  assert.deepEqual(coverage.unreadableKinds, [
+    { kind: "ambiguous-delimiter", count: 2 },
+    { kind: "unsupported-number-format", count: 5 },
+  ]);
+  assert.equal(coverage.state, "partial");
+});
+
+test("passing unreadableRegions and unreadableKinds together is refused", () => {
+  // Two numbers that must agree eventually disagree — so the caller picks one.
+  const result = buildCoverage({
+    unitKind: "sheet",
+    units: 1,
+    unitsNative: 1,
+    unreadableRegions: 7,
+    unreadableKinds: [{ kind: "chart", count: 7 }],
+  });
+  assert.equal(typeof result, "string");
+});
+
+test("a kind with a non-positive count is refused, not silently dropped from validation", () => {
+  assert.equal(typeof buildCoverage({ unitKind: "sheet", units: 1, unitsNative: 1, unreadableKinds: [{ kind: "chart", count: 0 }] }), "string");
+  assert.equal(typeof buildCoverage({ unitKind: "sheet", units: 1, unitsNative: 1, unreadableKinds: [{ kind: "chart", count: -1 }] }), "string");
+  assert.equal(typeof buildCoverage({ unitKind: "sheet", units: 1, unitsNative: 1, unreadableKinds: [{ kind: "", count: 1 }] }), "string");
+});
+
+test("no unreadable kinds leaves the record exactly as it was", () => {
+  const coverage = built({ unitKind: "sheet", units: 1, unitsNative: 1 });
+  assert.equal("unreadableKinds" in coverage, false);
+  assert.equal("unreadableRegions" in coverage, false);
+});
+
+test("🔴 unreadableKinds survives storage — the boundary that has died before", () => {
+  // Same shape as the figure-reasons and unreadableRegions round-trip tests
+  // above: build, serialize through JSON exactly as jsonb does, read back, and
+  // require byte-for-byte equality rather than trusting the built object.
+  const original = built({
+    unitKind: "sheet",
+    units: 2,
+    unitsNative: 2,
+    unreadableKinds: [
+      { kind: "chart", count: 1 },
+      { kind: "unsupported-number-format", count: 3 },
+    ],
+  });
+  const parsed = readCoverage(JSON.parse(JSON.stringify(original)) as unknown);
+  assert.deepEqual(parsed, original);
+  assert.equal(parsed?.unreadableRegions, 4);
+});
+
+test("readCoverage preserves an unrecognized kind verbatim — the vocabulary is not this module's to filter", () => {
+  const parsed = readCoverage({
+    unitKind: "sheet", units: 1, unitsNative: 1, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "partial",
+    unreadableRegions: 1,
+    unreadableKinds: [{ kind: "a-kind-invented-after-this-file-was-written", count: 1 }],
+  });
+  assert.equal(parsed?.unreadableKinds?.[0]?.kind, "a-kind-invented-after-this-file-was-written");
+});
+
+test("readCoverage drops a kind entry with a non-positive or non-numeric count", () => {
+  const parsed = readCoverage({
+    unitKind: "sheet", units: 1, unitsNative: 1, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "complete",
+    unreadableKinds: [{ kind: "chart", count: 0 }, { kind: "macro", count: "two" }, { kind: "pivot-table", count: 3 }],
+  });
+  assert.deepEqual(parsed?.unreadableKinds, [{ kind: "pivot-table", count: 3 }]);
+});
