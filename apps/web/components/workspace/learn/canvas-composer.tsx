@@ -45,7 +45,19 @@ interface CanvasComposerProps {
   task: ActiveTask | null;
   busy: boolean;
   busyLabel?: string;
+  /**
+   * A learning session is underway.
+   *
+   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
+   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
+   * second affordance in the one place there should be exactly one. Adding material is still how a
+   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
+   */
+  inSession?: boolean;
 }
+
+/** Grows to about six lines, then stops. Beyond that the box would eat the question. */
+const MAX_COMPOSER_HEIGHT = 160;
 
 export function CanvasComposer({
   selected,
@@ -56,6 +68,7 @@ export function CanvasComposer({
   task,
   busy,
   busyLabel,
+  inSession = false,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
@@ -86,6 +99,27 @@ export function CanvasComposer({
     spoke.current = true;
     setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
   }, [dictation.listening, dictation.transcript]);
+
+  // ── One line until the answer genuinely needs two ───────────────────────────
+  //
+  // 🔴 DRIVEN BY THE VALUE, NOT BY THE KEYSTROKE. Resizing inside `onChange` misses every way the
+  // text changes without one — submitting (which clears it), dictation writing a transcript,
+  // switching prompts — so the box kept the height of the answer before last and sat there
+  // several lines tall with nothing in it.
+  //
+  // 🔴 AND `overflow` IS PART OF THE MEASUREMENT, NOT DECORATION. A textarea that may scroll
+  // reserves the scrollbar's width and paints its track, which is the grey stripe down the inside
+  // of the pill: permanently visible, on a control that is one line tall and has nothing to
+  // scroll. Hidden while the text fits, `auto` only once it genuinely exceeds the cap, so nothing
+  // is ever unreachable.
+  useEffect(() => {
+    const element = input.current;
+    if (!element) return;
+    element.style.height = "auto";
+    const needed = element.scrollHeight;
+    element.style.height = `${Math.min(needed, MAX_COMPOSER_HEIGHT)}px`;
+    element.style.overflowY = needed > MAX_COMPOSER_HEIGHT ? "auto" : "hidden";
+  }, [text]);
 
   // Summonable from anywhere: "/" focuses the bar unless the learner is already typing.
   useEffect(() => {
@@ -174,7 +208,9 @@ export function CanvasComposer({
           )}
         >
           {/* Stays put through every state, including dictation: spatial continuity is the
-              reason there is one composer at all. Subdued, not moved, while listening. */}
+              reason there is one composer at all. Subdued, not moved, while listening.
+              🔴 Absent once a session is underway — see `inSession`. */}
+          {!inSession && (
           <label
             aria-label="Add material"
             className={cn(
@@ -200,6 +236,7 @@ export function CanvasComposer({
               type="file"
             />
           </label>
+          )}
 
           {listening ? (
             <>
@@ -228,14 +265,20 @@ export function CanvasComposer({
           ) : (
             <>
               <textarea
-                className="ml-[12px] max-h-40 min-h-[1.75rem] w-full min-w-0 flex-1 resize-none bg-transparent py-1 text-[1rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                // 🔴 `overflow-hidden` HERE AND HEIGHT IN THE EFFECT ABOVE. Without it the browser
+                // reserves and paints a scrollbar track inside a one-line control that has nothing
+                // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
+                className={cn(
+                  "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
+                  "text-[1rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
+                  // The attach control used to supply this gap. Without it the text would start
+                  // hard against the pill's edge.
+                  inSession ? "ml-[4px]" : "ml-[12px]",
+                )}
                 disabled={busy}
                 onChange={(event) => {
                   setText(event.target.value);
                   typedBefore.current = event.target.value;
-                  const element = event.target;
-                  element.style.height = "auto";
-                  element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {

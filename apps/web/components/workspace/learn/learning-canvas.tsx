@@ -302,6 +302,11 @@ export function LearningCanvas({
           void session.remove().then(() => router.push("/sessions"));
         }}
         onExit={() => router.push("/sessions")}
+        // 🔴 The whole policy runtime, not only the instant a question is on screen. Flipping the
+        // title and the controls back on for the feedback beat and off again for the next question
+        // would put a flicker of chrome between every answer and the next — more distracting than
+        // the chrome itself. A session is one continuous state.
+        minimal={policyOwns}
         onFiles={(files) => void session.attachFiles(files)}
         onRename={session.rename}
       />
@@ -434,6 +439,7 @@ export function LearningCanvas({
               ? (text, via, tookMs) => void policy.submit(text, via, tookMs)
               : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
           }
+          inSession={policyOwns}
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}

@@ -11,7 +11,6 @@
 // canvas; a retrieval prompt that grew its own textarea would put two of them on screen, which is
 // the exact thing the composer's own header says it exists to prevent.
 
-import { Codicon } from "@/components/desktop-ui/codicon";
 import { VERDICT_HEADLINE } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -61,30 +60,35 @@ export function CanvasPolicyView({ runtime }: { runtime: PolicyRuntime }) {
   }
 
   if (decision.action.type === "retrieve" && prompt) {
+    // ── The retrieval presentation ──────────────────────────────────────────
+    //
+    // 🔴 THE QUESTION IS THE WHOLE SCREEN, AND EVERYTHING REMOVED FROM HERE WAS REMOVED ON PURPOSE.
+    // An associative fact is answered in about a second, so anything else on the page is read
+    // BEFORE the answer is produced and costs exactly the thing being measured. Gone: the "answer
+    // below" instruction (the composer is the only control, blinking), and the "I don't know this
+    // one" button — a learner who does not know can say so, and `isAdmissionOfNotKnowing` sends it
+    // down the same no-demonstration path the button used, so the MEANING survives the control.
+    //
+    // 🔴 AND NOTHING TOOK THEIR PLACE. No card, no border, no hint, no progress count, no "1 of 4".
+    // The empty space IS the design: question, silence, one place to answer.
+    //
+    // 🔴 NO SPINNER EITHER. Judging already disables the composer and changes its placeholder, so a
+    // second "reading your answer" line would be a status message the learner reads while waiting
+    // — the only thing on screen competing with the question they just answered.
+    //
+    // This is for FAST RETRIEVAL specifically. A conceptual or diagnostic interaction may need
+    // scaffolding, and it should render its own thing rather than loosening this one.
     return (
-      <Frame>
-        {/* 🔴 NO ORIENTATION SCREEN, NO LEVEL QUESTION, NO "I've read this". Nemesis has no evidence
-            for this objective, and the fastest honest way to get some is to ask. Telling first
-            would assert something about the learner that nobody has observed. */}
-        <h2 className="text-[1.5rem] font-medium leading-snug text-(--ui-text-primary)">{prompt.prompt}</h2>
-        <p className="mt-4 text-[0.8125rem] text-(--ui-text-quaternary)">
-          Answer below. If you don't know it, say so — that's useful too.
-        </p>
-        <button
-          className="mt-6 text-[0.8125rem] text-(--ui-text-tertiary) underline underline-offset-4 hover:text-(--ui-text-primary) disabled:opacity-40"
-          disabled={runtime.judging}
-          onClick={() => void runtime.admitUnknown()}
-          type="button"
+      <div className="flex min-h-full items-center justify-center px-6 pb-40">
+        <h2
+          // Optically centred rather than mathematically: the composer occupies the bottom of the
+          // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
+          // expects the subject of the page to be.
+          className="w-full max-w-(--canvas-column) text-center text-[1.75rem] font-medium leading-snug text-balance text-(--ui-text-primary)"
         >
-          I don't know this one
-        </button>
-        {runtime.judging && (
-          <p className="mt-6 flex items-center gap-2 text-[0.8125rem] text-(--ui-text-tertiary)">
-            <Codicon name="loading" size="0.8125rem" />
-            Reading your answer…
-          </p>
-        )}
-      </Frame>
+          {prompt.prompt}
+        </h2>
+      </div>
     );
   }
 

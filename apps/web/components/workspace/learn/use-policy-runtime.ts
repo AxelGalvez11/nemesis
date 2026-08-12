@@ -33,6 +33,7 @@ import {
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
 import { canUsePolicyRuntime, decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
+import { isAdmissionOfNotKnowing } from "@/lib/learn/response-admission";
 
 export interface PolicyRuntime {
   /** 🔴 THREE VALUES, NOT TWO. Resolving a canvas's knowledge is a round trip, and defaulting to
@@ -171,12 +172,44 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
     [refresh, supported, uid],
   );
 
+  /** An opportunity that produced nothing — a reveal, a giving-up, a typed "I don't know". */
+  const admitNothing = useCallback(
+    async (said: string | null) => {
+      const active = prompt;
+      if (!active || !decision || !uid) return;
+      canvasCapture("canvas_unknown_admitted", canvas, { objective: decision.objective.identityKey });
+      setFeedback(null);
+      await record(
+        unobtainedEvidence({
+          canvasId: canvas.id || null,
+          objectiveRowId: decision.objective.rowId,
+          occurredAt: new Date().toISOString(),
+          prompt: active,
+          responseText: said,
+        }),
+      );
+    },
+    [canvas, decision, prompt, record, uid],
+  );
+
   const submit = useCallback(
     async (text: string, via: "typed" | "spoken", tookMs?: number) => {
       const said = text.trim();
       const active = prompt;
       if (!said || !active || !decision || !uid || judging) return;
       setError(null);
+
+      // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND THE JUDGE HAS NO WAY TO SAY SO. The
+      // dedicated control for this was removed from the recall surface — it competed with the
+      // question, and someone who does not know can simply type it. But the evaluator's verdicts
+      // are all judgements of an ATTEMPT, so an admission would come back `incorrect` and the
+      // learner would be recorded as having got it wrong when they told us they had nothing. Same
+      // path as the old button: an opportunity given, no demonstration obtained, no verdict.
+      if (isAdmissionOfNotKnowing(said)) {
+        await admitNothing(said);
+        return;
+      }
+
       setJudging(true);
       const response = { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) };
       const result = await evaluateLearningResponse(
@@ -220,27 +253,16 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
         }),
       );
     },
-    [canvas, decision, judging, prompt, record, uid],
+    [admitNothing, canvas, decision, judging, prompt, record, uid],
   );
 
+  /** Kept as a capability with no control on the recall surface: the caller decides whether to
+   *  offer a button for it, and the meaning is identical either way. */
   const admitUnknown = useCallback(async () => {
-    const active = prompt;
-    if (!active || !decision || !uid || judging) return;
+    if (judging) return;
     setError(null);
-    // 🔴 NO JUDGE CALL, AND NO VERDICT. They told us they could not produce it, which is an
-    // opportunity that yielded no demonstration — not a wrong answer. `verdict` stays null.
-    canvasCapture("canvas_unknown_admitted", canvas, { objective: decision.objective.identityKey });
-    setFeedback(null);
-    await record(
-      unobtainedEvidence({
-        canvasId: canvas.id || null,
-        objectiveRowId: decision.objective.rowId,
-        occurredAt: new Date().toISOString(),
-        prompt: active,
-        responseText: null,
-      }),
-    );
-  }, [canvas, decision, judging, prompt, record, uid]);
+    await admitNothing(null);
+  }, [admitNothing, judging]);
 
   const acknowledge = useCallback(() => {
     setFeedback(null);
