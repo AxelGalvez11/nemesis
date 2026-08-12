@@ -113,6 +113,27 @@ export interface Workbook {
   unsupported: { kind: string; count: number }[];
 }
 
+// ── attributes ─────────────────────────────────────────────────────────────
+
+/**
+ * An XML boolean attribute, read the way the schema actually defines it.
+ *
+ * 🔴 TWO WRITERS SPELL THE SAME FACT DIFFERENTLY, AGAIN. Every boolean in
+ * SpreadsheetML is an `xsd:boolean`, and that type has FOUR legal spellings:
+ * `1`, `0`, `true`, `false`. openpyxl writes `hidden="1"`; LibreOffice writes
+ * `hidden="true"` on the hidden row and, unhelpfully, `hidden="false"` on every
+ * visible one. A reader that tests `=== "1"` sees a workbook with nothing
+ * hidden — which is not a parse failure, it is a confident wrong answer, and
+ * the file still round-trips perfectly with the hidden state simply gone.
+ *
+ * Found by round-tripping a fixture through a SECOND program, exactly like the
+ * quoted-vs-escaped currency symbol. Reading our own code would not have found
+ * it, because our own code and our own fixtures agreed.
+ */
+function isTrue(value: string | null): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
 // ── A1 references ──────────────────────────────────────────────────────────
 
 /** `"C5"` → `{ row: 4, column: 2 }`, both 0-based. Null if it is not a reference. */
@@ -614,13 +635,13 @@ function readSheet(
 
   const hiddenRows: number[] = [];
   for (const row of tagsOf(xml, "row")) {
-    if (attrOf(row.attrs, "hidden") !== "1") continue;
+    if (!isTrue(attrOf(row.attrs, "hidden"))) continue;
     const index = Number(attrOf(row.attrs, "r") ?? "");
     if (Number.isFinite(index)) hiddenRows.push(index - 1 - originRow);
   }
   const hiddenColumns: number[] = [];
   for (const col of tagsOf(xml, "col")) {
-    if (attrOf(col.attrs, "hidden") !== "1") continue;
+    if (!isTrue(attrOf(col.attrs, "hidden"))) continue;
     const min = Number(attrOf(col.attrs, "min") ?? "");
     const max = Number(attrOf(col.attrs, "max") ?? min);
     if (!Number.isFinite(min)) continue;

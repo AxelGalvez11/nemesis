@@ -110,6 +110,21 @@ export interface CanonicalSourceTable {
    * stated it.
    */
   headerSource?: "present" | "inherited";
+  /**
+   * Where `rows[0][0]` actually sits in the source's own coordinates.
+   *
+   * 🔴 NOT GEOMETRY, AND THAT IS WHY IT CROSSES. Rectangles and cell spans stop
+   * at this boundary on purpose: they describe how a table was DRAWN, and a
+   * consumer branching on them would be reasoning about layout. An origin is the
+   * opposite — it is the only thing that makes a reference into the grid mean
+   * what the author would type. A spreadsheet whose data begins at C5 has its
+   * first cell at `rows[0][0]`, and a consumer that calls that "A1" cites the
+   * wrong cell of every row, silently, while the grid itself is perfect.
+   *
+   * Absent when the grid starts at the origin, which is every table that came
+   * from a page rather than a sheet.
+   */
+  origin?: { row: number; column: number };
 }
 
 export interface CanonicalSourceUnit {
@@ -192,6 +207,35 @@ export function unitContent(unit: CanonicalSourceUnit): UnitContent {
 
   const text = (unit.text ?? "").trim();
   return text ? { kind: "text", text } : { kind: "empty" };
+}
+
+/**
+ * The cell at a reference the author would actually type — `"E7"`, `"C5"`.
+ *
+ * 🔴 THIS LIVES HERE FOR THE SAME REASON `unitContent` DOES. This boundary already
+ * says it: "the discriminated union is the interface — a consumer that switches on
+ * `kind` cannot write the bug; a consumer that reaches for `.text` can." A consumer
+ * left to do this arithmetic itself writes `row - (origin?.row ?? 0)`, and that
+ * `?? 0` IS the A1 assumption — the exact defect `origin` was added to remove,
+ * reintroduced one caller at a time. So the subtraction happens once, next to the
+ * accessor, and callers ask for a cell instead of computing one.
+ *
+ * Null for a unit that is not a table, a reference that is not one, and a reference
+ * outside the used range — all three of which are "no such cell", and none of which
+ * should be told apart by guessing.
+ */
+export function cellAtRef(unit: CanonicalSourceUnit, ref: string): string | null {
+  const m = /^([A-Za-z]+)(\d+)$/.exec(ref.trim());
+  if (!m) return null;
+  const content = unitContent(unit);
+  if (content.kind !== "table") return null;
+  let column = 0;
+  for (const ch of m[1]!.toUpperCase()) column = column * 26 + (ch.charCodeAt(0) - 64);
+  const origin = unit.table?.origin ?? { column: 0, row: 0 };
+  const row = Number(m[2]) - 1 - origin.row;
+  column = column - 1 - origin.column;
+  if (row < 0 || column < 0) return null;
+  return content.rows[row]?.[column] ?? null;
 }
 
 export interface SourceContext {
@@ -347,6 +391,9 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
             rows: block.table.rows,
             ...(block.table.columns?.length ? { columns: block.table.columns } : {}),
             ...(block.table.headerSource ? { headerSource: block.table.headerSource } : {}),
+            // Deliberately admitted — see `CanonicalSourceTable.origin`. Without it a
+            // sheet that starts at C5 is addressable only as though it started at A1.
+            ...(block.table.origin ? { origin: block.table.origin } : {}),
           },
         }
       : {}),

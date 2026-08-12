@@ -7,6 +7,7 @@ import { capabilitiesOfStored, deriveCapabilities, parsedPageCount, parseQuality
 import {
   anchorInUnit,
   buildSourceContext,
+  cellAtRef,
   unitContent,
   quoteAnchor,
   readableUnits,
@@ -279,6 +280,52 @@ test("a table's content is its cells, and asking for it never requires knowing t
   if (content.kind !== "table") return;
   assert.deepEqual(content.rows, KEY_TERMS);
   assert.match(content.rendered, /Photosynthesis/);
+});
+
+/**
+ * 🔴 A GRID WITHOUT ITS ORIGIN IS ADDRESSABLE ONLY BY ACCIDENT.
+ *
+ * This boundary copies `DocTable` field by field so that layout — rectangles, cell
+ * spans — cannot silently start being reasoned about downstream. That rule was
+ * right, and it also dropped the one field a spreadsheet citation cannot work
+ * without: a sheet whose data begins at C5 has that cell at `rows[0][0]`, so a
+ * consumer resolving "E7" against a grid it believes starts at A1 reads two
+ * columns and four rows away — or, as here, off the end of a four-row grid and
+ * finds nothing at all. Nothing throws either way.
+ *
+ * Written against a grid that does NOT start at A1, because one that does passes
+ * whether the field crosses or not.
+ */
+test("🔴 a grid that does not start at A1 arrives knowing where it starts", () => {
+  const offset = model([
+    block({
+      headingPath: [],
+      id: "t1",
+      kind: "table",
+      table: { headerRows: 1, origin: { column: 2, row: 4 }, rows: KEY_TERMS },
+      text: "",
+    } as Partial<DocBlock>),
+  ]);
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "xlsx", structure: stored(offset) });
+  const unit = context.units.find((u) => u.type === "table")!;
+  assert.deepEqual(unit.table?.origin, { column: 2, row: 4 });
+
+  // What the origin is FOR, asked through the accessor rather than by arithmetic in
+  // the caller — which is the whole point of the accessor existing.
+  assert.equal(cellAtRef(unit, "C5"), KEY_TERMS[0]![0], "the top-left cell is C5, not A1");
+  assert.equal(cellAtRef(unit, "D6"), KEY_TERMS[1]![1], "and the offset holds one row and column over");
+  assert.equal(cellAtRef(unit, "A1"), null, "A1 is not a cell of this table at all");
+  assert.equal(cellAtRef(unit, "ZZ99"), null, "nor is anything past the used range");
+  assert.equal(cellAtRef(unit, "not a ref"), null);
+});
+
+test("a grid that DOES start at A1 is addressed the same way", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(tableModel()) });
+  const unit = context.units.find((u) => u.type === "table")!;
+  assert.equal(unit.table?.origin, undefined, "absent when there is nothing to correct");
+  assert.equal(cellAtRef(unit, "A1"), KEY_TERMS[0]![0]);
+  // 🔴 A unit that is not a table has no cells, and asking must not throw or guess.
+  assert.equal(cellAtRef(context.units.find((u) => u.type === "heading")!, "A1"), null);
 });
 
 test("a figure's caption and what a model said about it arrive as separate fields", () => {

@@ -276,4 +276,59 @@ else:
             zout.writestr(n, xml.encode("utf-8") if n == sheet else blobs[n])
     print("  wrote formulas-stale.xlsx (cached totals disagree with the formulas)")
 
+# ── L. 🔴 THE ACCEPTANCE COMPOSITE — every property in ONE file ─────────────
+# PRODUCTION ACCEPTANCE NEEDS ONE FILE, NOT TWELVE. The properties that must
+# survive the upload → storage → parse → persist → read-back chain are only
+# meaningful TOGETHER: a real workbook has its offset origin and its percentages
+# and its hidden rows at the same time. No fixture above carries all of them —
+# `number-formats` starts at A1, `offset-hidden` has no formulas — so uploading
+# any one of them would have proved a subset and reported it as a pass.
+#
+# Round-tripped through LibreOffice LAST, because a formula's cached result does
+# not exist until a real spreadsheet program computes it, and half these
+# assertions are about the difference between the formula and that result.
+wb = Workbook()
+ledger = wb.active
+ledger.title = "Ledger"
+# 🔴 THE GRID STARTS AT C5. Every reference below is two columns and four rows
+# out unless the origin travels all the way to the consumer.
+ledger["C5"] = "Cohort"
+ledger["D5"] = "Sat"
+ledger["E5"] = "Pass rate"
+ledger["F5"] = "Fees"
+ledger["G5"] = "Internal"
+ledger["C6"] = "2026"
+ledger["D6"] = 40
+ledger["E6"] = "=31/D6"                  # derived percentage: 0.775 → "77.5%"
+ledger["E6"].number_format = "0.0%"
+ledger["F6"] = "=D6*125"                 # derived money: 5000 → "$5,000.00"
+ledger["F6"].number_format = '"$"#,##0.00'
+ledger["G6"] = "moderation only"
+ledger["C7"] = "2025"
+ledger["D7"] = 36
+ledger["E7"] = 0.075                     # TYPED percentage → "7.5%", raw 0.075
+ledger["E7"].number_format = "0.0%"
+ledger["F7"] = 4500                      # typed money → "$4,500.00"
+ledger["F7"].number_format = '"$"#,##0.00'
+ledger["G7"] = "moderation only"
+ledger["C8"] = "WITHDRAWN"
+ledger["D8"] = 0
+ledger["E8"] = 0
+ledger["F8"] = 0
+ledger["G8"] = "this row is hidden"
+ledger.row_dimensions[8].hidden = True       # sheet row 8 == grid row 3
+ledger.column_dimensions["G"].hidden = True  # sheet column G == grid column 4
+
+catalog = wb.create_sheet("Catalog")
+catalog.append(["Code", "Item", "Count"])
+catalog.append(["B1", "Beaker", 12])
+catalog.append(["B2", "Burette", 4])
+catalog.add_table(Table(displayName="Catalog", ref="A1:C3"))
+
+internal = wb.create_sheet("Internal")
+internal.append(["Moderation notes", "not shown to students"])
+internal.sheet_state = "hidden"
+save(wb, "acceptance.xlsx")
+calculate("acceptance.xlsx", "acceptance.xlsx")
+
 print(f"\n{len(list(out.glob('*.xlsx')))} fixtures in {out}")
