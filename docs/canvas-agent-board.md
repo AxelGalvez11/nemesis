@@ -8,7 +8,22 @@ start is here — what you own, why it matters, what must stay true, and what yo
 > another lane's work. If a task here is wrong, say so — a contract that does not survive contact
 > with the implementation is a Brain defect, not an implementation inconvenience.
 
-**Last recomputed from repository reality: 2026-08-12, after #494–#499 all merged.**
+## 🔴 The live channel is GitHub issue #505, "Canvas Agent Control Room"
+
+**This file is the durable snapshot. Issue #505 is the moving state.** Contracts, invariants,
+acceptance tests and non-requirements live here and change slowly. Live claims, blockers, decisions
+and handoffs go there, tagged `[CLAIM]` `[BLOCKED]` `[QUESTION]` `[DECISION]` `[HANDOFF]`
+`[INTEGRATION PASS]` `[INTEGRATION FAIL]` `[OWNER DECISION REQUIRED]`.
+
+**Read #505 before you start, claim before you implement, and post a `[HANDOFF]` when you finish.**
+Where #505's reconciled-reality block and this file disagree, **#505 is newer** — it is recomputed
+at the start of every architecture cycle and this file is not.
+
+Never let an architectural decision live only in a chat session. If it outlives the week, it lands
+here or in the architecture doc it belongs to, in the same session it was decided.
+
+**Last recomputed from repository reality: 2026-08-12, after #500 merged — production alias
+resolved to `60b1365e`, database read directly.**
 
 ```
 Parser perceives · Brain understands · Runtime executes · UI expresses · Canvas is what the learner sees
@@ -38,11 +53,13 @@ rather than observed behaviour.
 | `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
 | `RUNTIME-003` a task targeting a SET of objectives | Runtime | **READY** — assigned | every causal operation |
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
-| `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
-| `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
+| `PARSER-001` derived verdict crosses the boundary | Parser | **IN REVIEW** — PR #504, red only from infrastructure | BRAIN capability gate |
+| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — merged, *not* deployed | — |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
-| `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
+| `INTEGRATION-001` first real end-to-end trace | Integration | 🔴 **RAN AND FAILED** — the gate was moved, not opened | — |
+| `RUNTIME-005` gate objective *production* on trust, not coverage | Runtime | 🔴 **P0 — the new critical path** | the whole vision |
+| `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after RUNTIME-003 and RUNTIME-005 | — |
 
 ---
 
@@ -87,7 +104,24 @@ such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a r
 
 ## RUNTIME-003 — a task that targets a SET of objectives
 
-**STATUS** READY — assigned 2026-08-12 to the current Runtime session
+**STATUS** ✅ **ACCEPTED** — PR #508, 2026-08-12. `prompt.targets.map` is total over the TARGETS
+rather than over the outcomes, so an objective the judge stayed silent about records
+*"nothing was shown about this"* instead of vanishing; `demonstrationObtained` follows the outcome,
+not the submission; `ObjectiveTarget` holds `rowId` and `identityKey` together so a row cannot be
+written against one objective while its verdict was decided about another.
+
+**Tests executed by Brain: none.** Its acceptance tests are unit-level and the multi-target path has
+no production caller yet, so there is nothing end-to-end to run. Said explicitly rather than letting
+"accepted" imply more than it does — see the note under `INTEGRATION-001` about what semantic
+review cost on #494.
+
+**🔴 REQUIRED BEFORE `BRAIN-003`, NOT BEFORE MERGE.** `evidenceForSubmission` takes a bare
+`outcomes` array, so an empty one writes `demonstrationObtained: false` for every target — right for
+*"the judge established nothing"*, wrong for *"the judge never ran"*. **Unreachable today, and
+verified rather than assumed:** `submit` returns early on `!result.value` and records nothing, so the
+invariant is held by the **caller**, not by the type. That arrangement breaks the moment a
+multi-objective judge returns a *short* list for a partial judgement and *nothing* for a failed one.
+Brain owns the sequencing and will not ship a multi-objective judge until the split lands.
 **PRIORITY** P0 — the next thing on the critical path after INTEGRATION-001
 **DEPENDENCIES** none blocking. The semantics are merged: `docs/causal-cognition-contract.md` §7.
 **BLOCKS** every causal cognitive operation; `UI-003`
@@ -131,12 +165,154 @@ test — it has to be true by construction, not discovered afterwards in the evi
 4. A double-submit yields one row per objective, not two.
 5. A canvas hosting the task still shows its source material.
 
+### 🔴 WHO PRODUCES PER-OBJECTIVE OUTCOMES — answered 2026-08-12, do not re-derive
+
+Runtime asked who turns one answer into per-objective outcomes, having found that §4's
+`edgesDemonstrated` are *objective keys* while the shipped `ResponseEvaluation` carries
+`demonstrated: string[]` / `missing: string[]` as free text plus **one overall** verdict. Same
+names, different things. Nothing merged produces a key from a response.
+
+**The answer, and the forbidden option.**
+
+- ✅ **The judge is told which keys are in play and returns the keys it was given**, with a verdict
+  for each. Identity is *supplied*, never invented downstream; the evaluator decides what the answer
+  showed; nothing re-derives it afterwards.
+- 🔴 **A function mapping the judge's prose to targeted keys is FORBIDDEN.** Substring-matching
+  against objective labels produces a per-objective claim *no evaluator ever made*, which
+  `learner_evidence` then stores durably as though judged. Same failure as mapping a wider operation
+  vocabulary down onto a narrower one. Brain will not build it and no lane should.
+- **Nothing arrives as an objective key today.** Ship the routing path with its single caller
+  passing one outcome; keep the multi-target path exercised by tests until a producer exists.
+
+**The agreed shape**, and it is what `BRAIN-003` will return:
+
+```ts
+outcomes: readonly { objectiveIdentityKey: string; verdict: EvidenceVerdict }[]
+```
+
+### 🔴 "NOTHING WAS DEMONSTRATED" AND "WE NEVER GOT A JUDGEMENT" MUST NOT BE THE SAME VALUE
+
+A bare `outcomes` array makes an **empty array ambiguous between two opposite obligations**:
+
+| Empty because | Required behaviour |
+|---|---|
+| the judge ran and established nothing | every target: `demonstrationObtained: false`, `verdict: null` |
+| the judge could not be reached, or returned unparseable output | **no rows at all, for any target** |
+
+A `catch` or a failed parse naturally produces an empty array, so a judge outage silently writes
+*"we asked and they showed nothing"* across every target — a durable false claim, written by an
+outage, that no test catches because it is a representation gap rather than a bug. Make it
+unrepresentable at the type, as `AnswerSink` did for two answer surfaces:
+
+```ts
+type Judgement =
+  | { judged: true; outcomes: readonly { objectiveIdentityKey: string; verdict: EvidenceVerdict }[] }
+  | { judged: false }   // writes nothing, for any target
+```
+
+The exact shape is Runtime's. The invariant is not.
+
+**This split is also what makes `edgesMissing` safe to leave implicit.** "Every target that arrived
+without an outcome" is only equivalent to `edgesMissing` once `judged: false` is separated out —
+otherwise it also covers the judge never running. The two decisions are coupled; take them together.
+
+**An outcome naming a key that was not targeted writes NO row.** That is evidence for a question
+nobody was asked, and it must be unrepresentable rather than merely unlikely.
+
 **NON-REQUIREMENTS** — React structure, hook shape, how regions compose, and whether
 `HostedTaskShape` changes at all. It may well survive untouched with the target set carried
 alongside it. How the evaluation is invoked and shaped is yours.
 
 **FILES / PARALLEL OWNERSHIP** — `learner-evidence.ts` and `learner-store.ts` are Brain's. Ask for
 boundary changes rather than making them.
+
+---
+
+## RUNTIME-005 — gate objective PRODUCTION on trust, not on coverage
+
+**STATUS** 🔴 **P0 — the critical path.** Specified by Brain 2026-08-12 in answer to Integration's
+`[INTEGRATION FAIL]`. Runtime implements; the condition is Brain's.
+**BLOCKS** `INTEGRATION-001`, and through it every claim about adaptive behaviour.
+
+**CAPABILITY BLOCKED** — No objective can be produced for any real document, so no task, no answer,
+no evidence. See the finding under `INTEGRATION-001`.
+
+### The unit of the gate is wrong, not its threshold
+
+`policyOwnsCanvas` asks *"can the policy account for **all** of this document?"* That was right when
+the policy **replaced** the page. Under composition it is a category error: the policy contributes a
+task **beside** unsupported material, and §14.1 says the answer to "it owns nothing" is composition,
+never a lower bar. A whole-document question deciding a per-knowledge action answers "no" for every
+real document.
+
+**The two facts whole-page ownership fused are already separate in `canvas-knowledge.ts`:**
+
+| Signal | Question | Job |
+|---|---|---|
+| `outcome` (`complete`/`degraded`/`failed`) | *did we read this reliably?* | **gate** |
+| `coverage.unrepresented` | *did we account for all of it?* | **disclose** |
+
+**REQUIRED CONTRACT** — Produce objectives from the knowledge actually extracted, gated on whether
+the extraction can be trusted, never on whether the document is exhaustively represented.
+
+| `outcome` | Production |
+|---|---|
+| `complete` | **produce** objectives for what was extracted |
+| `degraded` | **refuse** — err toward refusal |
+| `failed` | **refuse** |
+| `no-durable-source` | unchanged — nothing to read |
+
+`degraded` refusing the whole canvas is deliberate over-refusal today, and it is the coarseness
+`PARSER-003` removes: once unit locality survives, `degraded` refuses the *chart*, not the chapter
+it sits in. Do not soften it before that lands.
+
+**🔴 SEMANTIC INVARIANT — the one that makes this safe.** Producing objectives for extracted
+knowledge must never be read as a claim that the document is covered. `unrepresented > 0` stays
+true, stays computed, stays reported, and must reach the Minimap as source-unmapped territory and
+the UI as visible unsupported content. **This moves the unrepresented fact from *gate* to
+*disclosure*; it does not lower the bar.** `PolicyRuntime.ownership` already carries exactly this
+pattern one layer down.
+
+**THE CONCERN IN THE OLD COMMENT SURVIVES.** *"Rows produced by opening a document rather than by
+learning anything from it"* is real, and it is two things coverage was a poor proxy for:
+
+1. *Do not mint knowledge we cannot trust* — `outcome` handles this, better than coverage did.
+2. *Do not mint knowledge nobody will be asked about* — a **cost** concern, not a correctness one.
+   The honest fix is writing knowledge when a canvas is **studied**, not when it is **opened**. If
+   that distinction does not exist yet, post `[BLOCKED]` — do not reintroduce a coverage gate as a
+   proxy for it. Extraction runs a model, so this is real spend.
+
+**ACCEPTANCE TEST — and it must be EXECUTED, not asserted in a fixture**
+1. On production canvas `796a6045` ("Acceptance B1") with **no** `?policy=force`,
+   `ensureKnowledgeForCanvas` returns `objectives.length > 0`.
+2. An ordinary submission on that canvas writes a `learner_evidence` row.
+3. A canvas with `outcome: "degraded"` still produces nothing.
+4. The canvas still shows its unsupported source material, and `unrepresented` is still reported.
+
+**🔴 SCOPE — `canvas-knowledge.ts:111` IS NOT PART OF THIS AND MUST NOT BE TOUCHED.** A separate,
+earlier clause returns `nothingToRead()` when `sourceIds.length !== canvas.sources.length`, and
+**five of the six production canvases die there, not at `:160`.** That refusal is correct — an
+ephemeral source genuinely has nothing to read — and it is `RUNTIME-004`'s territory, not this task's.
+
+Stated explicitly because of the trap it sets: fix `:160`, re-run the acceptance test on one of those
+five, see no objectives, and conclude the fix failed when it worked. **Acceptance test 1 names
+`796a6045` for exactly this reason** — it is the only canvas that reaches the ownership gate.
+
+**NON-REQUIREMENTS** — Whether `policyOwnsCanvas` keeps its current shape, where the condition
+lives, and how ownership continues to be reported. All Runtime's.
+
+---
+
+## RUNTIME-004 — canvas sources attached without a durable id
+
+**STATUS** P2 — filed 2026-08-12 from Integration's `[QUESTION]`. **Do not start before
+`RUNTIME-005` and `RUNTIME-003`.**
+
+*Community IPPE Exam Prep* holds 4 sources with **0** durable — `librarySourceId` null on all four,
+so the knowledge layer cannot address any of them and the canvas dies at `canvas-knowledge.ts:111`
+before ownership is even consulted. The attach path is `use-canvas-session.ts:341`
+(`durability: extracted.librarySourceId ? "durable" : "ephemeral"`). Whether an ephemeral attach is
+ever correct is the question; Brain has not decided and does not need to before RUNTIME-005 lands.
 
 ---
 
@@ -225,7 +401,8 @@ if you need a change there, ask and Brain will make the boundary change.
 
 ## PARSER-001 — carry the derived parse verdict across the extraction boundary
 
-**STATUS** READY — sent directly 2026-08-12, now durable here
+**STATUS** **IN REVIEW** — PR #504. Mergeable. Every red check on it is infrastructure
+(GitHub Actions billing lockout, Vercel rate limit), not a code defect.
 **PRIORITY** P1
 **DEPENDENCIES** PARSER-002 for the *reason*; the verdict itself can ship first
 **BLOCKS** Brain's capability gate becoming a real mechanism instead of a fixture label
@@ -263,7 +440,9 @@ whether it is stored or derived on read. Brain does not prescribe any of it.
 
 ## PARSER-002 — persist the *kinds* of unsupported content
 
-**STATUS** READY
+**STATUS** ✅ **MERGED** — #500, commit `bee67e41`. 🔴 **Merged, not deployed:** the Vercel daily
+build cap refused it, so the stored kinds are not yet readable in production. Verification of this
+task in production waits for the cap to reset.
 **PRIORITY** P2
 **DEPENDENCIES** none
 **BLOCKS** PARSER-001 explaining *why* something is incomplete
@@ -325,7 +504,69 @@ and nothing flags it. Preferred fix: name verdicts by **what survived** (sentenc
 tabular structure, reading order) and let Brain map survival to teachability per type. Acceptable
 alternative: keep the names and record the baseline they were computed against. Not blocking.
 
-**🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** The 62% figure is
+### ✅ RESOLVED 2026-08-12 — Parser measured it and decided. Document-level ships; unit-level is next.
+
+Parser answered the open point below, which Brain could not. **Document-level ships in #504.
+Unit-level is correct and blocked on a substrate that does not exist**, because:
+
+- **0 of 11** production rows carry `unreadableRegions` at all.
+- The single row with real text loss (`9551f235`, 1 of 24 pages) has structure shape `text-only` —
+  one `u0` unit, no page number. **There is nothing to attribute the loss to.** A per-unit field
+  shipped today would read `unknown` everywhere, including on the only document that has anything
+  to say.
+- Locality is *discarded at the producers*, not missing from them: `pdf/structure.ts:278` reduces
+  per-page `tablesUnread` to one integer, and the Docling adapter counts `unitIndexesWithContent`
+  into totals without keeping which unit was which. Same shape as `PARSER-002` — the fact exists at
+  measurement and dies at summing.
+
+**`PARSER-003` — preserve unit locality at the producers — is claimed and approved.** Additive,
+optional, absent means *not observed*, no backfilled guesses. Sequencing cost accepted: every
+production source reads `unknown` at unit level until a reparse, and a reparse means a
+`PARSER_VERSION` bump because that version is half the unique key on `parsed_documents`.
+
+### 🔴 THE FLOOR RULE — Parser's wording, adopted as an invariant
+
+> **The document verdict is a floor, not a summary. Only *located* loss attributes to a unit; any
+> *unlocated* loss degrades every unit.**
+
+Brain asked only that Parser *err toward refusal*. Parser found the specific mechanism by which
+refinement would quietly stop refusing: go per-unit naively and unlocated loss **vanishes**, so a
+document with three unreadable regions whose page cannot be recovered reports every unit `intact` —
+parser incapacity reading as absence of loss, arriving through the improvement meant to prevent it.
+Calibrate by reintroducing exactly that: a mutation attributing located loss correctly *while*
+letting unlocated loss disappear must go red.
+
+### 🔴 CORRECTED — "no tables in the corpus" has expired
+
+The board previously recorded *"0 of 8 production docs contain a DATE, none a TABLE."* Production now
+holds **11 parse rows and 8 table blocks across two documents** (pptx 6, docx 2), both stored with a
+cell model. **Tables are no longer absent.** Brain's own association-extraction reasoning assumed
+they were; anyone reasoning from "there are no tables" is reasoning from an expired fact.
+
+### 🔴 NAME WHAT SURVIVED, NOT WHETHER IT CAN BE TRUSTED — Brain's answer to Parser's question
+
+"Can this text be trusted to assert something from" is a **teachability** claim, and teachability is
+not one-dimensional — it depends on the knowledge type, which lives downstream of Parser. A single
+trust verdict silently means *"trustworthy for the knowledge types we extract today"*, and adding a
+knowledge type with different structural needs changes what the stored value means with nothing to
+flag it.
+
+The two properties Brain depends on today, in priority order:
+
+1. **Sentence integrity** — did prose survive as sentences or as fragments? Decides causal
+   extraction; it is what the 62%-unusable finding was really measuring.
+2. **Tabular structure** — did row/column pairing survive? Decides associations.
+
+Reading order matters only for sequence knowledge, which does not exist. Do not build for it.
+
+**Preference, not a blocker.** If naming survival costs materially more than a trust verdict, ship
+trust and record the baseline it was computed against. Brain needs only that *"we could not reliably
+read this"* stays separable from *"we read this fine and it asserts nothing."*
+
+---
+
+**🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** *(Superseded by the
+resolution above; kept because the reasoning that led to the right question is the reusable part.)* The 62% figure is
 per-candidate but derived from a **document-level** signal — the source's structure shape was
 `text-only` and every unit from it was stamped degraded. That is a limitation of the measurement,
 not a considered design.
@@ -433,8 +674,9 @@ it a type rather than a convention.
 
 ## BRAIN-003 — causal objectives and the cognitive task contract
 
-**STATUS** BLOCKED on #496/#497 merging
-**DEPENDENCIES** #496 (substrate), #497 (contract), RUNTIME-001
+**STATUS** **READY** — #496, #497 and #494 are all merged and all ancestors of the serving commit.
+**DEPENDENCIES** ✅ satisfied. Sequenced behind `INTEGRATION-001`: designing causal cognition on top
+of a loop nobody has watched close once would be building the second storey first.
 
 `objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
 can target a **set** of objectives and one answer can write evidence for several.
@@ -459,8 +701,56 @@ satisfied *by construction* when that path is designed, not discovered afterward
 
 ## INTEGRATION-001 — the first real end-to-end learner trace
 
-**STATUS** BLOCKED
-**DEPENDENCIES** #498 (BRAIN-001) **and** #494 (RUNTIME-001) live in production
+**STATUS** 🔴 **RAN 2026-08-12 AND FAILED.** It did its job: it turned an architectural claim into
+an observed one, and the observation was that the claim was false. The fix is `RUNTIME-005` below.
+
+### 🔴 THE FINDING — RUNTIME-001 MOVED THE GATE, IT DID NOT OPEN IT
+
+`learner_evidence` cannot become non-zero through ordinary use on **any** of the 6 production
+canvases. #494 removed the ownership gate where a task is **consumed** and left an identical one
+where objectives are **produced**:
+
+- `canvas-knowledge.ts:160` returns `objectives: []` when `!ownership.owns`, bypassed only by
+  `?policy=force`.
+- `use-policy-runtime.ts:214` then refuses on `supported.length === 0` — correct in isolation, but
+  its input was already emptied upstream, so it now measures *"the policy does not own this canvas"*
+  while reading as *"there is nothing teachable here"*.
+
+**Deleting the consumption gate while the production gate zeroes its input changes nothing
+observable.** Every unit test passed because **each layer is correct alone**.
+
+Proved by executing the deployed functions against real production data, not by reading the diff:
+
+```
+=== EXTRACTION ===       outcome: complete   objects: 2   unitsUnread: 0
+=== COVERAGE ===         {"represented":1,"substantive":5,"unrepresented":4}
+=== OWNERSHIP VERDICT === owns: false | refusal: unsupported-content
+```
+
+It is structural, not a thin corpus: `policyOwnsCanvas` needs `unrepresented === 0`, `isStructural`
+skips only headings, and `expectedFrom` returns `null` for any non-table unit — so **a prose
+paragraph is substantive and can never be represented**. `owns: true` is reachable only for a
+document whose every non-heading unit is a table.
+
+The 2 knowledge objects in production are artifacts of `?policy=force`: `saveKnowledge` runs only
+*after* `:160`.
+
+### 🔴 WHAT THIS COST, AND IT IS BRAIN'S
+
+`RUNTIME-001`'s own acceptance test #2 — *"`learner_evidence` gains its first row from an ordinary
+session with no `?policy=force`"* — is exactly the test that catches this, and **it was never
+executed**. Brain accepted #494 on semantic review. **Semantic review does not substitute for
+running the acceptance test.** Every future acceptance on this board states which tests were
+executed and against what.
+
+**Verified sound, so nobody restarts the search there:** RLS insert policy is
+`WITH CHECK ((SELECT auth.uid()) = user_id)` and writes go through the browser client under the
+learner's own JWT; the unique index `(user_id, objective_id, response_id)` exists and matches the
+`onConflict`; `EVIDENCE_SELECT` reads back all six carried fields. **The loop is sound from the task
+downward. It was severed above the task.**
+**DEPENDENCIES** ✅ **SATISFIED.** The production alias `app.enternemesis.com` resolves to
+`dpl_B1Lm6ttT…` → commit `60b1365e`, and `3ec1cb71` (#494) and `c19dcc03` (#498) are both ancestors
+of it. Verified from the alias, not from a green check — see the landmine below.
 **BLOCKS** every claim about adaptive behaviour being observed rather than architectural
 
 **CAPABILITY BLOCKED** — Nemesis cannot demonstrate that the loop closes for a real learner.
@@ -481,8 +771,40 @@ row `created_at` plus a named marker, never `updated_at`.
 2. That row carries `operation`, `responseLatencyMs`, `responseId` and reads back with all three.
 3. The *next* decision differs from what it would have been without that evidence.
 
+**RE-RUN CONDITION** — re-run this the moment `RUNTIME-005` is deployed, unchanged.
+
 **ORDERING CONSTRAINT** — #498 must be live **before** evidence accumulates. Once the gate opens,
 rows written while `response_id` is unreadable have unrecoverable performance grouping, permanently.
+Satisfied: #498 is an ancestor of the serving commit.
+
+### 🔴 `learner_evidence = 0` IS THE BASELINE, NOT A FINDING
+
+Read the number correctly before spending an hour on it. `usage_events` holds 1,079 rows and its
+most recent is **2026-08-07** — nobody has used the product in five days. With no submissions, zero
+evidence rows is the *expected* value and says nothing about whether the gate works.
+
+| World | What the 0 means | What it asks for |
+|---|---|---|
+| Nobody submitted | correct and uninformative | **run the experiment** |
+| Someone submitted and got nothing | a second gate downstream | hunt the defect |
+
+`usage_events` settles it: nobody submitted. **This task is an experiment, not a bug hunt.** If the
+first real submission writes a row, the loop closes. If it does not, *that* is the finding, and it
+is worth more than anything else on this board.
+
+### 🔴 A GREEN VERCEL CHECK IS NOT A LIVE DEPLOYMENT
+
+`997a5886` and `99d1bdfe` each carry a green `Vercel – nemesis-web` status on GitHub, and both
+deployments are `CANCELED` — superseded mid-build, never aliased, never served. This codebase
+already knew *merged is not deployed*; today added *green is not deployed either*. Before verifying
+anything in production, resolve the alias:
+
+```bash
+vercel inspect https://app.enternemesis.com
+```
+
+Brain published the wrong serving commit to every lane from a green check before doing this. The
+error is recorded because the reasoning is the reusable part, not the conclusion.
 
 ---
 
@@ -516,3 +838,8 @@ are replaced, and Brain has repeatedly been unable to tell two Canvas sessions a
 3. **A contract that cannot be implemented is Brain's problem.** Push back here.
 4. **Review is semantic.** Brain will not review your CSS, your parser library, or your React.
    Brain reviews whether meaning survived your layer.
+5. **Claim in #505 before you implement, and read the existing claims first.** First claim wins; if
+   your task is already claimed, ask there rather than proceeding in parallel. This is not
+   hypothetical — two Runtime sessions independently built the same step 7b, and one of them
+   discarded the work afterwards.
+6. **Say which lane you are, every time you write.** Session names do not identify lanes.
