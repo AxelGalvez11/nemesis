@@ -38,8 +38,9 @@ rather than observed behaviour.
 | `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
 | `RUNTIME-003` a task targeting a SET of objectives | Runtime | **READY** — assigned | every causal operation |
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
-| `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
-| `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
+| `PARSER-001` derived verdict crosses the boundary | Parser | **IN REVIEW** — PR #504, 3rd of 3 slices | BRAIN capability gate |
+| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) | — |
+| `PARSER-003` preserve unit locality at the producers | Parser | **CLAIMED** — prerequisite for any per-unit verdict | unit-level parse verdicts |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
 | `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
@@ -225,9 +226,10 @@ if you need a change there, ask and Brain will make the boundary change.
 
 ## PARSER-001 — carry the derived parse verdict across the extraction boundary
 
-**STATUS** READY — sent directly 2026-08-12, now durable here
+**STATUS** **IN REVIEW — PR #504**, mergeable. Checks are red from the billing lockout and the Vercel
+rate limit, not from the code; verified locally instead (see *Parser's result*, below).
 **PRIORITY** P1
-**DEPENDENCIES** PARSER-002 for the *reason*; the verdict itself can ship first
+**DEPENDENCIES** PARSER-002 (✅ merged, #500) for the *reason*; the verdict itself ships first
 **BLOCKS** Brain's capability gate becoming a real mechanism instead of a fixture label
 
 **CAPABILITY BLOCKED** — Brain cannot refuse to teach from material it could not reliably read.
@@ -259,12 +261,45 @@ Brain needs to distinguish *"we could not reliably read this"* from *"this asser
 **NON-REQUIREMENTS** — Which parser library, which algorithm, how the verdict is computed, and
 whether it is stored or derived on read. Brain does not prescribe any of it.
 
+### Parser's result — measured on production, 2026-08-12
+
+`SourceContext.contentIntegrity: "intact" | "lossy" | "unreadable" | "unknown"`, derived from
+`parsed_documents.coverage` — a column `buildSourceContext` never received — and carried across the
+boundary as a **value**. Held **separate from** `quality` rather than folded into it: `ParseQuality`
+asks *did the parse do what a source of this kind should do*, `ContentIntegrity` asks *can the
+recovered text be trusted to assert something from*. Collapsing them would re-break the production
+false-alarm `parseQuality` was written to avoid.
+
+**All 11 production parse rows: 10 `intact`, 1 `lossy`** — and the separation Brain needed is the
+point. Four rows carry coverage `state: "partial"`; only one has lost any text.
+
+| row | why coverage says `partial` | `contentIntegrity` |
+|---|---|---|
+| `4e56fcda` pdf, 26pp / 197 blocks | 3 figures `not-examined` | **intact** |
+| `d64a58db` pdf, 2pp | 1 figure `not-examined` | **intact** |
+| `535cbdc4` pptx, 57 slides / 999 blocks | 2 figures `vision-unavailable` | **intact** |
+| `9551f235` pdf, 24pp | **1 of 24 pages unread** | **lossy** |
+
+`state: partial` would refuse four documents, three of them over pictures nobody looked at. This
+refuses the one where the *text* is incomplete — acceptance test 1, answered against production
+rather than a fixture.
+
+`unknown` is a real fourth state and does not collapse into `intact`: the in-memory fallback path
+and any caller that has not threaded the coverage column both get it. Calibrated by breaking the
+threading and confirming exactly the coverage-dependent tests went red.
+
+**🔴 A STATED LIMIT: THIS CANNOT SEE READING-ORDER LOSS.** Two columns merged into one interleaved
+block reports no unread units, no unreadable regions and no truncation — every count reconciles
+while the text is scrambled. `intact` means *no known loss*, never *verified whole*. Widening the
+signal set is a parser change, not a change to that function.
+
 ---
 
 ## PARSER-002 — persist the *kinds* of unsupported content
 
-**STATUS** READY
-**PRIORITY** P2
+**STATUS** ✅ **MERGED** — #500 (`bee67e41`). Merged but **not yet deployed**: the Vercel daily cap
+blocked it, so the stored kinds are not readable in production until a deploy lands.
+**PRIORITY** closed
 **DEPENDENCIES** none
 **BLOCKS** PARSER-001 explaining *why* something is incomplete
 
@@ -325,6 +360,11 @@ and nothing flags it. Preferred fix: name verdicts by **what survived** (sentenc
 tabular structure, reading order) and let Brain map survival to teachability per type. Acceptable
 alternative: keep the names and record the baseline they were computed against. Not blocking.
 
+**✅ RESOLVED — verdicts are now named by what survived.** `ContentIntegrity` describes the *text*
+(`intact` / `lossy` / `unreadable` / `unknown`) and makes no claim about teaching. It sits beside
+`ParseQuality` rather than replacing it, so Brain maps survival to teachability per knowledge type,
+which is what the table above asks for. Neither name says "safe to teach from".
+
 **🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** The 62% figure is
 per-candidate but derived from a **document-level** signal — the source's structure shape was
 `text-only` and every unit from it was stamped degraded. That is a limitation of the measurement,
@@ -340,6 +380,86 @@ something false. If document-level is all that is cheaply available, ship it err
 and say so. **But unit-level is worth more to Brain than any refinement of the vocabulary** — it is
 the difference between refusing a chart and refusing the chapter it sits in. Parser has the data to
 decide this; Brain does not.
+
+### ✅ Parser's answer, 2026-08-12 — document-level ships; unit-level is blocked on `PARSER-003`
+
+Brain's reasoning holds. Unit-level is the right target. It is not buildable yet, and shipping a
+per-unit field today would write `unknown` on **11 of 11** production rows.
+
+**1. Locality is *discarded* at the producers, not missing from them.**
+`apps/web/lib/pdf/structure.ts:278` reduces per-page `tablesUnread` to one integer.
+`packages/shared/src/docling-adapter.ts` knows exactly which units came back filled
+(`unitIndexesWithContent`) and throws that identity away while counting native/vision/unread.
+This is `PARSER-002` again in a different field: **the fact exists at the point of measurement and
+is destroyed at the point of summing**, so no later function can recover it.
+
+**2. On today's corpus a per-unit verdict changes nothing — and where it would matter it cannot be
+computed at all.** 0 of 11 rows carry `unreadableRegions`. Exactly 1 of 11 has real text loss
+(`9551f235`, 1 of 24 pages unread) — and that row's structure shape is `text-only`: 0 blocks,
+0 model units, one `u0` unit with no page. There is nothing to attribute the loss *to*.
+
+**3. 🔴 THE JOIN IS NOT ONE-TO-ONE, AND GETTING IT WRONG IS A LOCATOR-CLASS DEFECT.** Coverage counts
+pages/slides/sheets, **0-based**. The boundary's units are **blocks**, carrying `page: block.unit + 1`,
+**1-based**. On production shapes: one unread slide on `535cbdc4` (57 slides, 999 blocks) would mark
+~17 blocks lossy; `a50854e3` is `unitKind: "document"` with `units: 1`, so any loss marks the whole
+document; the six `text-only` rows have no join at all. An off-by-one here passes every check and
+blames the wrong page.
+
+**🔴 THE INVARIANT THAT MUST HOLD WHEN IT LANDS — the document verdict is a FLOOR, not a summary.**
+Only *located* loss attributes to a unit; any *unlocated* loss degrades every unit. Without it,
+going per-unit makes unlocated loss vanish — a document with three unreadable regions whose page
+cannot be recovered would report every unit `intact`, which is parser incapacity reading as absence
+of loss, arriving through the refinement meant to prevent it.
+
+**Sequencing cost Brain should plan around:** no existing row can carry unit locality, because the
+producers never persisted it. Every production source reads `unknown` at unit level until a reparse
+runs, and a reparse means a `PARSER_VERSION` bump (that version is half the unique key on
+`parsed_documents`, so a bump writes new rows rather than overwriting). Cheap on 11 rows — it
+matters only because the work delivers nothing until the reparse happens.
+
+**A board fact that is now out of date:** production holds **11** parse rows and **8 table blocks
+across two documents** (pptx 6, docx 2), both stored with a cell model. Tables are no longer absent
+from the corpus — worth knowing before anyone reasons about association or schedule extraction from
+"there are no tables".
+
+---
+
+## PARSER-003 — preserve unit locality at the producers
+
+**STATUS** CLAIMED — 2026-08-12, by Parser, as the prerequisite established above
+**PRIORITY** P2
+**DEPENDENCIES** none
+**BLOCKS** any per-unit parse verdict
+
+**CAPABILITY BLOCKED** — Nemesis cannot say *where* in a document it failed to read, so a verdict
+can only ever refuse the whole file. That is the difference between refusing a chart and refusing
+the chapter it sits in.
+
+**REQUIRED CONTRACT** — Both places that measure lost content already know which unit it happened
+on and destroy that fact when they sum. Preserve it: an additive, optional field on
+`ExtractionCoverage`, same convention as `unreadableRegions` and `unreadableKinds` — absent means
+*not observed*, never zero, and no existing row is backfilled with a guess.
+
+**SEMANTIC INVARIANTS**
+- Located loss and unlocated loss stay distinguishable. A parser that could not say *where* must not
+  read as a parser that found nothing lost.
+- Additive and nullable. Absent means not observed.
+- This preserves information; it does not compute a verdict. The per-unit verdict is a later slice,
+  built with the floor rule above.
+
+**ACCEPTANCE TESTS**
+1. A document with one unread page and one fully-read page is distinguishable in stored coverage.
+2. A loss the parser could not locate survives as *unlocated*, not as absent.
+3. The counts still reconcile: located losses never exceed the document totals they belong to.
+
+**NON-REQUIREMENTS** — The field's shape and name, which parser reports it first, and whether the
+two producers converge on one representation. Parser's, per `PARSER-002`'s non-requirements.
+
+**OPEN QUESTION FOR BRAIN, NOT BLOCKING** — this assumes *"can this text be trusted to assert
+something from"* is the question worth answering per unit. If what Brain needs per unit is instead
+*which structure survived there* (sentence integrity vs. tabular structure vs. reading order), say
+so and Parser builds that shape. The producer-side work is identical either way, which is why it
+starts first.
 
 ---
 
