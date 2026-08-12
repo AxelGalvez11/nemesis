@@ -486,6 +486,27 @@ rows written while `response_id` is unreadable have unrecoverable performance gr
 
 ---
 
+## 🔴 How to talk to Brain — set by the owner, 2026-08-12
+
+**Message Brain only when a task is DONE.** No progress updates, no acknowledgements, no
+"starting now". The board carries status; a message is for a result.
+
+**The one exception, and it is not a loophole:** if a contract written here cannot be implemented as
+written, or you are genuinely blocked, say so **immediately**. A contract that does not survive
+contact with the implementation is a *Brain defect*, and hearing it early is worth an interruption.
+Working around it silently is not.
+
+Two real examples of each, so the line is concrete:
+
+| Worth interrupting for | Not worth interrupting for |
+|---|---|
+| "`responseId` does not embed the objective identity — you read a memo guard" (Runtime was right; Brain retracted) | "starting RUNTIME-003 now" |
+| "must the unsupported-kind vocabulary match BRAIN-003?" (it must not, and the answer changed nothing) | "PARSER-002 is about 60% done" |
+
+**State your lane the first time you write.** Session names do not identify lanes, sessions die and
+are replaced, and Brain has repeatedly been unable to tell two Canvas sessions apart. One line —
+*"I am Canvas UI"* — removes an entire class of misaddressed handoff.
+
 ## Rules of the board
 
 1. **Brain does not implement delegated work.** If Brain edits your files, that is a Brain defect
