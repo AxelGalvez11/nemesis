@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { lossOnUnit, unlocatedRegions, unlocatedUnreadUnits } from "@nemesis/shared";
 import { THIN_PAGE_CHARS } from "@/lib/pdf/pages";
 
 import { csvCoverage, extractCut, pdfCoverage, pdfWholeCoverage, pptxCoverage, singleUnitCoverage, xlsxCoverage } from "./extract-coverage";
@@ -85,6 +86,89 @@ test("a cut PDF is partial even though every page was read", () => {
   });
   assert.equal(coverage.unitsUnread, 0);
   assert.equal(coverage.state, "partial", "the tail of the source is gone; that is a gap");
+});
+
+// --- Where the loss was, not just how much ----------------------------------
+
+test("🔴 an unread page is recorded WITH ITS PAGE NUMBER, not only as a tally", () => {
+  // The whole of PARSER-003 for this lane. The loop already decided page 2 was
+  // the unread one and kept only the count, which left a parse verdict able to
+  // refuse the document and nothing smaller.
+  const coverage = pdfCoverage({ pageTexts: [full, blank, full], readByVision: new Set() });
+  assert.equal(coverage.unitsUnread, 1);
+  assert.deepEqual(coverage.lostUnits, [{ unit: 1, unread: true }], "0-based, the same index the model uses");
+  assert.equal(unlocatedUnreadUnits(coverage), 0, "nothing left unaccounted for");
+});
+
+test("🔴 an unreadable table region lands on the page it was found on", () => {
+  const coverage = pdfCoverage({
+    pageTexts: [full, full, full],
+    readByVision: new Set(),
+    unreadableRegions: 3,
+    unreadableRegionsByUnit: [{ unit: 0, count: 1 }, { unit: 2, count: 2 }],
+  });
+  assert.equal(coverage.unreadableRegions, 3, "the total is untouched");
+  assert.deepEqual(coverage.lostUnits, [
+    { unit: 0, unreadableRegions: 1 },
+    { unit: 2, unreadableRegions: 2 },
+  ]);
+  assert.equal(unlocatedRegions(coverage), 0);
+  assert.equal(lossOnUnit(coverage, 1), null, "the middle page lost nothing, and says nothing");
+});
+
+test("🔴 a page BOTH unread and holding an unreadable region gets ONE merged entry", () => {
+  // `buildCoverage` refuses a duplicate unit outright, so an unmerged pair would
+  // not merely look untidy — the record would be refused and `orUnaccounted`
+  // would swap this document's coverage for a fallback that knows nothing about
+  // it. The merge is load-bearing, not cosmetic.
+  const coverage = pdfCoverage({
+    pageTexts: [blank, full],
+    readByVision: new Set(),
+    unreadableRegions: 1,
+    unreadableRegionsByUnit: [{ unit: 0, count: 1 }],
+  });
+  assert.deepEqual(coverage.lostUnits, [{ unit: 0, unread: true, unreadableRegions: 1 }]);
+  assert.equal(coverage.units, 2, "the real record was built, not the unaccounted fallback");
+});
+
+test("🔴 regions the structural read could not place stay visible as unlocated", () => {
+  // The direction that matters. Four regions were lost and only one could be put
+  // on a page; if the breakdown set the total, the other three would cease to
+  // exist and every page would read clean.
+  const coverage = pdfCoverage({
+    pageTexts: [full, full],
+    readByVision: new Set(),
+    unreadableRegions: 4,
+    unreadableRegionsByUnit: [{ unit: 1, count: 1 }],
+  });
+  assert.equal(coverage.unreadableRegions, 4);
+  assert.equal(unlocatedRegions(coverage), 3);
+});
+
+test("pages past the cap are located as the document's tail, not lost in a lump", () => {
+  const coverage = pdfCoverage({ pageTexts: [full, full], readByVision: new Set(), unreadBeyondCap: 2 });
+  assert.equal(coverage.units, 4);
+  assert.equal(coverage.unitsUnread, 2);
+  assert.deepEqual(coverage.lostUnits, [{ unit: 2, unread: true }, { unit: 3, unread: true }]);
+});
+
+test("a fully read PDF records no locality at all — absent means nothing was lost", () => {
+  const coverage = pdfCoverage({ pageTexts: [full, full], readByVision: new Set() });
+  assert.equal("lostUnits" in coverage, false, "an empty array would imply we looked and found nothing");
+});
+
+test("a stray page number never costs a document its coverage", () => {
+  // One out-of-range index must not make `buildCoverage` refuse the record and
+  // hand back the unaccounted fallback — the loss simply stays unlocated.
+  const coverage = pdfCoverage({
+    pageTexts: [full, full],
+    readByVision: new Set(),
+    unreadableRegions: 2,
+    unreadableRegionsByUnit: [{ unit: 0, count: 1 }, { unit: 99, count: 1 }],
+  });
+  assert.equal(coverage.units, 2, "still the real document");
+  assert.deepEqual(coverage.lostUnits, [{ unit: 0, unreadableRegions: 1 }]);
+  assert.equal(unlocatedRegions(coverage), 1, "the unplaceable one is still counted");
 });
 
 // --- Decks -------------------------------------------------------------------

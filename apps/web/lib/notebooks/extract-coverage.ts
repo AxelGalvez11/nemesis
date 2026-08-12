@@ -17,6 +17,7 @@ import {
   type FigureCoverage,
   type FigureSkipReason,
   type TruncationRecord,
+  type UnitLoss,
   type UnreadableKind,
 } from "@nemesis/shared";
 import { pageTextLength, THIN_PAGE_CHARS } from "@/lib/pdf/pages";
@@ -105,21 +106,41 @@ export function pdfCoverage(input: {
    * `partial` on any non-zero count, so plumbing it here is the whole fix.
    */
   unreadableRegions?: number;
+  /**
+   * WHICH pages those regions sat on — 0-based, straight from `readPdfStructure`.
+   *
+   * 🔴 THE COUNT ABOVE IS A SUM ACROSS PAGES, AND A SUM CANNOT BE JOINED. Having
+   * only the total leaves a parse verdict able to refuse the whole file and
+   * nothing smaller — the difference between refusing a chart and refusing the
+   * chapter it sits in. Accounts for as much of `unreadableRegions` as the pages
+   * could place; never redefines it. See `ExtractionCoverage.lostUnits`.
+   */
+  unreadableRegionsByUnit?: readonly { unit: number; count: number }[];
 }): ExtractionCoverage {
   let native = 0;
   let vision = 0;
   let both = 0;
   let unread = 0;
+  // This loop already decides, page by page, which pages nobody read — and used
+  // to keep only the tally. Keeping the index costs nothing here and is
+  // impossible anywhere later.
+  const unreadIndexes: number[] = [];
   for (let index = 0; index < input.pageTexts.length; index += 1) {
     const hasOwnText = pageTextLength(input.pageTexts[index] ?? "") >= THIN_PAGE_CHARS;
     const wasRead = input.readByVision.has(index + 1);
     if (hasOwnText && wasRead) both += 1;
     else if (hasOwnText) native += 1;
     else if (wasRead) vision += 1;
-    else unread += 1;
+    else {
+      unread += 1;
+      unreadIndexes.push(index);
+    }
   }
   const beyond = Math.max(input.unreadBeyondCap ?? 0, 0);
   const units = input.pageTexts.length + beyond;
+  // Pages past the cap are the document's tail, so they are locatable too: "not
+  // read from page 5,001 onwards" rather than "5,000 pages went missing".
+  for (let index = input.pageTexts.length; index < units; index += 1) unreadIndexes.push(index);
   return orUnaccounted(
     buildCoverage({
       unitKind: "page",
@@ -131,10 +152,39 @@ export function pdfCoverage(input: {
       truncation: input.truncation,
       ...(input.figures ? { figures: input.figures } : {}),
       ...(input.unreadableRegions ? { unreadableRegions: input.unreadableRegions } : {}),
+      lostUnits: mergeUnitLosses(unreadIndexes, input.unreadableRegionsByUnit ?? [], units),
     }),
     "page",
     units,
   );
+}
+
+/**
+ * One entry per unit, however many kinds of loss landed on it.
+ *
+ * 🔴 ONE ENTRY PER UNIT IS A STORAGE INVARIANT, NOT TIDINESS. `buildCoverage`
+ * refuses a duplicate unit outright, so a page that is BOTH unread and holds an
+ * unreadable region must arrive merged — otherwise the whole record is rejected
+ * over a locality detail and `orUnaccounted` substitutes a fallback that knows
+ * nothing about the document. Out-of-range indexes are dropped for the same
+ * reason: one stray page number must not cost a document its coverage.
+ */
+function mergeUnitLosses(
+  unreadIndexes: readonly number[],
+  regionsByUnit: readonly { unit: number; count: number }[],
+  units: number,
+): UnitLoss[] {
+  const byUnit = new Map<number, UnitLoss>();
+  const inRange = (unit: number) => Number.isInteger(unit) && unit >= 0 && unit < units;
+  for (const unit of unreadIndexes) {
+    if (inRange(unit)) byUnit.set(unit, { unit, unread: true });
+  }
+  for (const { unit, count } of regionsByUnit) {
+    if (!inRange(unit) || !Number.isInteger(count) || count <= 0) continue;
+    const existing = byUnit.get(unit);
+    byUnit.set(unit, existing ? { ...existing, unreadableRegions: count } : { unit, unreadableRegions: count });
+  }
+  return [...byUnit.values()].sort((a, b) => a.unit - b.unit);
 }
 
 /**

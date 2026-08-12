@@ -54,7 +54,7 @@ import type {
   DocumentModel,
 } from "./document-model.ts";
 import { buildCoverage } from "./extraction-coverage.ts";
-import type { CoverageUnitKind, ExtractionCoverage, FigureCoverage } from "./extraction-coverage.ts";
+import type { CoverageUnitKind, ExtractionCoverage, FigureCoverage, UnitLoss } from "./extraction-coverage.ts";
 
 /** Docling label -> our block kind. Unmapped labels are reported, not guessed. */
 const LABEL_TO_KIND: Record<string, DocBlockKind> = {
@@ -172,6 +172,30 @@ export interface DoclingObservations {
    * crop and read them has to re-parse.
    */
   equationsUnreadable: number;
+  /**
+   * WHICH units those unreadable equations sat on, 0-based, ascending.
+   *
+   * 🔴 THE BOUNDING BOXES ARE STILL DISCARDED, AS THE NOTE ABOVE SAYS — this
+   * keeps the far cheaper half of the same fact. A count alone leaves a parse
+   * verdict able only to refuse the whole file; knowing that all 27 unreadable
+   * formulas sit on four pages of a thirty-page lecture is what lets the other
+   * twenty-six be trusted. The unit is in hand at the instant the counter is
+   * incremented and gone immediately after — a fact destroyed at the point of
+   * summing, which is exactly what this stops.
+   *
+   * Never a substitute for the count: see `ExtractionCoverage.lostUnits` for why
+   * the total stays authoritative.
+   *
+   * 🔴 OPTIONAL FOR THE SAME REASON `unitIndexesWithContent` IS, and the reason
+   * is not politeness about old data — a REQUIRED field here is a field every
+   * caller must state, which means a caller that does not know is pushed into
+   * asserting `[]`, and `[]` reads as "nothing was lost anywhere" rather than
+   * "we did not record where". Absent means **the locality is unavailable**,
+   * never that no equation was lost; `equationsUnreadable` remains the fact.
+   * Making it required also fails at runtime rather than at compile time, since
+   * observations are constructed through casts in more than one place.
+   */
+  equationsUnreadableByUnit?: readonly { unit: number; count: number }[];
   /** Units the file claims to have, from Docling's own page table. */
   declaredUnits: number;
   /** Units that received at least one block. `declaredUnits - this` is a gap. */
@@ -379,9 +403,13 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
     tableFootnotes: 0,
     droppedEmptyText: 0,
     equationsUnreadable: 0,
+    equationsUnreadableByUnit: [],
     declaredUnits: 0,
     unitsWithContent: 0,
   };
+  /** Accumulated by unit while walking, then flattened once at the end — a map
+   *  cannot be the field itself because observations are serialised as JSON. */
+  const unreadableEquationsPerUnit = new Map<number, number>();
 
   const blocks: DocBlock[] = [];
   const headingStack: { level: number; text: string }[] = [];
@@ -713,6 +741,10 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
       // all unreadable reported a clean parse. It is a gap, it is now counted,
       // and `doclingCoverage` turns it into `unreadableRegions`.
       observations.equationsUnreadable += 1;
+      // 🔴 THE UNIT IS RIGHT HERE, AND ONE LINE LATER IT IS GONE. Recording it
+      // is the whole of PARSER-003 for this lane: without it a verdict can only
+      // refuse the lecture, not the four pages whose derivations were lost.
+      unreadableEquationsPerUnit.set(unit, (unreadableEquationsPerUnit.get(unit) ?? 0) + 1);
     } else {
       // Everything else with a known kind and no text: an empty paragraph, which
       // costs the student nothing. Counted anyway — an uncounted branch is how
@@ -736,6 +768,14 @@ export function adaptDoclingDocument(raw: unknown, options: AdaptOptions): Docli
     : [...new Set(blocks.map((b) => b.unit))].sort((a, b) => a - b);
   observations.unitsWithContent = filled.length;
   observations.unitIndexesWithContent = filled;
+  // Bounded by `declared` for the same reason `filled` is filtered downstream: a
+  // node carrying a page outside the page table would otherwise place a loss on
+  // a unit the document does not have, and `buildCoverage` would refuse the
+  // whole record over one stray index.
+  observations.equationsUnreadableByUnit = [...unreadableEquationsPerUnit.entries()]
+    .filter(([unit]) => unit >= 0 && unit < declared)
+    .sort(([a], [b]) => a - b)
+    .map(([unit, count]) => ({ unit, count }));
 
   const units: DocUnit[] = Array.from({ length: declared }, (_, index) => {
     const size = pageSizes.get(index + 1);
@@ -873,9 +913,25 @@ export function doclingCoverage(
     parserVersion: `docling+adapter/${observations.status}`,
   };
 
+  const inRangeFilled = new Set((observations.unitIndexesWithContent ?? []).filter((i) => i >= 0 && i < units));
+
   if (!options.nativeText) {
     const read = Math.min(observations.unitsWithContent, units);
-    return buildCoverage({ ...base, unitsNative: read, unitsUnread: units - read });
+    // 🔴 LOCALITY ONLY WHEN IT RECONCILES WITH THE COUNT THIS PATH ALREADY
+    // COMPUTES. `read` is clamped and `unitsWithContent` is a total, so a filled
+    // index outside the page table would make the list and the count disagree —
+    // and a disagreement here makes `buildCoverage` refuse the entire record
+    // over a locality detail. When they do not reconcile the loss stays
+    // unlocated, which is the cautious direction and exactly what `lostUnits`
+    // being a partial explanation is for.
+    const locatable = observations.unitIndexesWithContent !== undefined && inRangeFilled.size === read;
+    const unreadIndexes = locatable ? unitsNotIn(inRangeFilled, units) : [];
+    return buildCoverage({
+      ...base,
+      unitsNative: read,
+      unitsUnread: units - read,
+      lostUnits: mergeUnitLosses(unreadIndexes, observations.equationsUnreadableByUnit ?? [], units),
+    });
   }
 
   if (options.format === "docx") {
@@ -886,7 +942,8 @@ export function doclingCoverage(
     return "nativeText needs unitIndexesWithContent, and these observations carry none";
   }
 
-  const filledSet = new Set(filled.filter((index) => index >= 0 && index < units));
+  const filledSet = inRangeFilled;
+  const unreadIndexes: number[] = [];
   let native = 0;
   let vision = 0;
   let unread = 0;
@@ -895,6 +952,10 @@ export function doclingCoverage(
     // the model has no content for it, and a text layer nobody read is not a read.
     if (!filledSet.has(index)) {
       unread += 1;
+      // 🔴 THE LOOP ALREADY KNEW WHICH PAGE THIS WAS AND ONLY KEPT THE TALLY.
+      // Recorded here so the count and the list are produced by the same pass
+      // and cannot drift apart.
+      unreadIndexes.push(index);
       continue;
     }
     const hasOwnText = options.nativeText.get(index);
@@ -912,5 +973,40 @@ export function doclingCoverage(
     // See the header note: never observable from this export, so never claimed.
     unitsBoth: 0,
     unitsUnread: unread,
+    lostUnits: mergeUnitLosses(unreadIndexes, observations.equationsUnreadableByUnit ?? [], units),
   });
+}
+
+/** The units in `[0, units)` that are not in `filled`, ascending. */
+function unitsNotIn(filled: ReadonlySet<number>, units: number): number[] {
+  const missing: number[] = [];
+  for (let index = 0; index < units; index += 1) if (!filled.has(index)) missing.push(index);
+  return missing;
+}
+
+/**
+ * One `UnitLoss` per unit, however many kinds of loss landed on it.
+ *
+ * 🔴 ONE ENTRY PER UNIT IS A STORAGE INVARIANT, NOT A TIDINESS PREFERENCE —
+ * `buildCoverage` refuses a duplicate unit outright, so a page that is both
+ * unread and holds an unreadable equation must arrive merged or the whole
+ * record is rejected over it. Out-of-range indexes are dropped here for the same
+ * reason: one stray page number must not cost a document its coverage.
+ */
+function mergeUnitLosses(
+  unreadIndexes: readonly number[],
+  regionsByUnit: readonly { unit: number; count: number }[],
+  units: number,
+): UnitLoss[] {
+  const byUnit = new Map<number, UnitLoss>();
+  const inRange = (unit: number) => Number.isInteger(unit) && unit >= 0 && unit < units;
+  for (const unit of unreadIndexes) {
+    if (inRange(unit)) byUnit.set(unit, { unit, unread: true });
+  }
+  for (const { unit, count } of regionsByUnit) {
+    if (!inRange(unit) || !Number.isInteger(count) || count <= 0) continue;
+    const existing = byUnit.get(unit);
+    byUnit.set(unit, existing ? { ...existing, unreadableRegions: count } : { unit, unreadableRegions: count });
+  }
+  return [...byUnit.values()].sort((a, b) => a.unit - b.unit);
 }

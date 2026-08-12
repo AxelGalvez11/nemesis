@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { adaptDoclingDocument, doclingCoverage } from "./docling-adapter.ts";
 import type { DoclingObservations } from "./docling-adapter.ts";
-import { EXTRACTION_COVERAGE_VERSION } from "./extraction-coverage.ts";
+import { EXTRACTION_COVERAGE_VERSION, unlocatedRegions, unlocatedUnreadUnits } from "./extraction-coverage.ts";
 
 /** Minimal DoclingDocument, shaped exactly like the real export. */
 function doclingDoc(parts: {
@@ -865,4 +865,86 @@ test("every raw picture ends up either in the model or in a counter", () => {
     "emitted + dropped-and-counted must equal what the file declared",
   );
   assert.equal(observations.pictures, 2);
+});
+
+// --- Where the loss was, not just how much ----------------------------------
+
+test("🔴 an unreadable equation is recorded on the PAGE it was found on", () => {
+  // The measured case this field exists for: 27 of the corpus's 49 formulas came
+  // back with geometry and an empty string. Counting them made the file
+  // `partial`; knowing they sit on two pages of a five-page document is what
+  // lets the other three be trusted.
+  const coverage = doclingCoverage(
+    obs({
+      declaredUnits: 5,
+      unitsWithContent: 5,
+      equationsUnreadable: 4,
+      equationsUnreadableByUnit: [{ unit: 1, count: 3 }, { unit: 3, count: 1 }],
+    }),
+    { format: "pdf", unitsInModel: 5 },
+  );
+  assert.equal(typeof coverage, "object");
+  const record = coverage as Exclude<typeof coverage, string>;
+  assert.equal(record.unreadableRegions, 4, "the total is untouched by the breakdown");
+  assert.deepEqual(record.lostUnits, [
+    { unit: 1, unreadableRegions: 3 },
+    { unit: 3, unreadableRegions: 1 },
+  ]);
+  assert.equal(unlocatedRegions(record), 0);
+});
+
+test("🔴 the page nobody filled is named, not merely counted", () => {
+  const coverage = doclingCoverage(
+    obs({ declaredUnits: 4, unitsWithContent: 3, unitIndexesWithContent: [0, 1, 3] }),
+    { format: "pdf", unitsInModel: 4, nativeText: new Map([[0, true], [1, true], [3, false]]) },
+  );
+  const record = coverage as Exclude<typeof coverage, string>;
+  assert.equal(record.unitsUnread, 1);
+  assert.deepEqual(record.lostUnits, [{ unit: 2, unread: true }]);
+  assert.equal(unlocatedUnreadUnits(record), 0);
+});
+
+test("🔴 a page that is unread AND holds an unreadable equation is ONE entry", () => {
+  // Two entries for one unit would make `buildCoverage` refuse the whole record.
+  const coverage = doclingCoverage(
+    obs({
+      declaredUnits: 3,
+      unitsWithContent: 2,
+      unitIndexesWithContent: [0, 1],
+      equationsUnreadable: 1,
+      equationsUnreadableByUnit: [{ unit: 2, count: 1 }],
+    }),
+    { format: "pdf", unitsInModel: 3, nativeText: new Map([[0, true], [1, true]]) },
+  );
+  assert.equal(typeof coverage, "object", `expected a record, got: ${String(coverage)}`);
+  const record = coverage as Exclude<typeof coverage, string>;
+  assert.deepEqual(record.lostUnits, [{ unit: 2, unread: true, unreadableRegions: 1 }]);
+});
+
+test("observations with no locality report their loss as unlocated, never as absent", () => {
+  // Every observation produced before this field existed. `equationsUnreadable`
+  // is still the fact; what is missing is only where.
+  const coverage = doclingCoverage(
+    obs({ declaredUnits: 2, unitsWithContent: 2, equationsUnreadable: 6 }),
+    { format: "pdf", unitsInModel: 2 },
+  );
+  const record = coverage as Exclude<typeof coverage, string>;
+  assert.equal(record.unreadableRegions, 6);
+  assert.equal("lostUnits" in record, false, "absent means we did not record where, not that there was nowhere");
+  assert.equal(unlocatedRegions(record), 6);
+});
+
+test("🔴 locality is withheld rather than guessed when it cannot reconcile with the count", () => {
+  // `unitsWithContent` is a total and the path without a native-text map clamps
+  // it, so a filled index outside the page table would make the list and the
+  // count disagree — and a disagreement makes `buildCoverage` refuse the entire
+  // record over a locality detail. Withholding is the cautious answer.
+  const coverage = doclingCoverage(
+    obs({ declaredUnits: 2, unitsWithContent: 5, unitIndexesWithContent: [0, 1, 7, 8, 9] }),
+    { format: "pdf", unitsInModel: 2 },
+  );
+  assert.equal(typeof coverage, "object", `expected a record, got: ${String(coverage)}`);
+  const record = coverage as Exclude<typeof coverage, string>;
+  assert.equal(record.units, 2, "the record still describes the real document");
+  assert.equal(record.unitsUnread, 0);
 });
