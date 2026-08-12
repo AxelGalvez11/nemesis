@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDocument, documentToText, projectCells, resolveCell, type DocBlockKind } from "./document-model.ts";
+import { buildDocument, documentToText, projectCells, resolveCell, type DocBlockKind, type DocFormat } from "./document-model.ts";
 import {
   readDocumentModel,
   readStructureEnvelope,
@@ -235,4 +235,52 @@ test("🔴 EVERY DocBlockKind survives the envelope — an unknown one kills the
     kinds,
     "and every kind must come back as itself",
   );
+});
+
+test("🔴 EVERY DocFormat survives the envelope — the Set and the union are two hand-written lists", () => {
+  // The same defect as the block kinds above, one level up and worse: `format`
+  // is checked before anything else, so a format missing from `FORMATS` makes
+  // `readDocumentModel` return null for the whole document — and null is
+  // indistinguishable from "this row predates the canonical model".
+  //
+  // `DocFormat` gained "xlsx" and `FORMATS` had to gain it in the same change.
+  // This test is what makes forgetting that a red build instead of a silent
+  // whole-document loss the first time a spreadsheet is stored.
+  const formats: DocFormat[] = ["pdf", "docx", "pptx", "image", "xlsx"];
+  for (const format of formats) {
+    const model = buildDocument({
+      blocks: [{ headingPath: [], kind: "paragraph", text: "x", unit: 0 }],
+      format,
+      title: "T",
+      units: [{ index: 0, kind: "page" }],
+    });
+    const read = readStructureEnvelope(
+      JSON.parse(JSON.stringify(structureEnvelope({ model, text: "x", title: "T" }))),
+    );
+    assert.ok(read && read.shape === "units-blocks", `${format} must survive the envelope`);
+    assert.equal((read.model as typeof model).format, format, `${format} must come back as itself`);
+  }
+});
+
+test("🔴 A HIDDEN SHEET STAYS HIDDEN ACROSS THE BOUNDARY — units are rebuilt field by field", () => {
+  // `label` and `size` both died in that rebuild once. `hidden` is the third
+  // field to go through it, and the consequence of losing this one is showing a
+  // learner the sheet whose author hid it — a marking scheme, or the working.
+  const model = buildDocument({
+    blocks: [{ headingPath: [], kind: "paragraph", text: "x", unit: 1 }],
+    format: "xlsx",
+    title: "Workbook",
+    units: [
+      { index: 0, kind: "sheet", label: "Grades" },
+      { index: 1, kind: "sheet", label: "Internal", hidden: true },
+    ],
+  });
+  const read = readStructureEnvelope(
+    JSON.parse(JSON.stringify(structureEnvelope({ model, text: "x", title: "Workbook" }))),
+  );
+  assert.ok(read && read.shape === "units-blocks");
+  const units = (read.model as typeof model).units;
+  assert.equal(units[0]!.hidden, undefined, "a visible sheet says nothing rather than false");
+  assert.equal(units[1]!.hidden, true, "and a hidden one is still hidden");
+  assert.equal(units[1]!.label, "Internal", "with the author's own name intact");
 });

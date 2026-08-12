@@ -38,7 +38,10 @@ import {
   pdfWholeCoverage,
   pptxCoverage,
   singleUnitCoverage,
+  xlsxCoverage,
 } from "./extract-coverage";
+import { workbookToModel } from "./xlsx-model";
+import { readWorkbook } from "./xlsx-structure";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
@@ -48,10 +51,19 @@ import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/p
 import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
-export type DocumentKind = "pdf" | "docx" | "pptx" | "image";
+/**
+ * 🔴 ONE OF THREE HAND-WRITTEN FORMAT LISTS, AND THEY HAVE DRIFTED BEFORE.
+ * `DocFormat` (the model), `FORMATS` (the envelope's runtime allow-list) and
+ * `ParsedDocKind` (the database CHECK's mirror) all enumerate formats too.
+ * `ParsedDocKind` carried "xlsx" for months before anything could produce one.
+ * Adding a format means visiting all four; `document-envelope.test.ts` fails
+ * loudly for the pair that can lose a whole document.
+ */
+export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "image";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /** What a file claims to be, from its name and declared type. PURE. */
 export function kindFor(name: string, type: string): DocumentKind | null {
@@ -59,6 +71,7 @@ export function kindFor(name: string, type: string): DocumentKind | null {
   if (lower.endsWith(".pdf") || type === "application/pdf") return "pdf";
   if (lower.endsWith(".docx") || type === DOCX_MIME) return "docx";
   if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
+  if (lower.endsWith(".xlsx") || type === XLSX_MIME) return "xlsx";
   if (visionMime(name, type)) return "image";
   return null;
 }
@@ -78,6 +91,10 @@ export function sniffKind(bytes: Uint8Array): DocumentKind | null {
   const window = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 512 * 1024))).toString("latin1");
   if (window.includes("ppt/slides/")) return "pptx";
   if (window.includes("word/document.xml")) return "docx";
+  // `xl/workbook.xml` is the part every .xlsx has and no other Office format
+  // does. Checked last so a document that merely EMBEDS a spreadsheet — a Word
+  // file with a linked chart carries `xl/` parts — is still read as what it is.
+  if (window.includes("xl/workbook.xml")) return "xlsx";
   return null;
 }
 
@@ -219,6 +236,22 @@ export async function parseDocument(
     // a Word document had no figure record at all, so one full of diagrams read
     // as `complete` — the exact silence coverage exists to end.
     coverage = docxCoverage({ figures: figureCoverageOf(model), read: text.trim().length > 0 });
+  } else if (kind === "xlsx") {
+    // 🔴 THE GRID IS THE CONTENT, SO NOTHING IS FLATTENED ON THE WAY THROUGH.
+    // `documentToText` renders each sheet's table as markdown for the lanes that
+    // want a string, while `model` keeps the cells, their references, their
+    // formulas and their merges for the lanes that want to cite one.
+    const workbook = readWorkbook(bytes);
+    model = workbookToModel(workbook, workbook.title);
+    text = documentToText(model);
+    title = model.title;
+    coverage = xlsxCoverage({
+      sheets: workbook.sheets.length,
+      // Charts, pivots and macros: seen, located, not turned into content. Any
+      // non-zero count makes the workbook `partial`, which is the honest answer
+      // for a file whose point may be the chart we cannot read.
+      unreadable: workbook.unsupported.reduce((sum, item) => sum + item.count, 0),
+    });
   } else {
     const deck = readPptxSlides(bytes);
     const figures = deck.media.images.length
