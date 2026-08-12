@@ -35,8 +35,9 @@ import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/po
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
-  evidenceFromEvaluation,
+  evidenceForSubmission,
   objectiveAsTask,
+  outcomeFor,
   retrievalPromptFor,
   unobtainedEvidence,
   type RetrievalPrompt,
@@ -281,11 +282,35 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     [uid],
   );
 
+  /**
+   * Write everything one submission produced, then re-read.
+   *
+   * 🔴 IT TAKES THE WHOLE PERFORMANCE, NOT A ROW. One answer covering four objectives is four rows
+   * sharing one response identity, and they succeed or fail as one thing as far as the learner is
+   * concerned — so the error is reported once, about the answer, rather than four times about rows
+   * they never knew existed.
+   *
+   * 🔴 THE WRITES ARE SEQUENTIAL AND NOT ATOMIC, WHICH IS A REAL AND ACCEPTED LIMITATION. A failure
+   * partway leaves the earlier rows written. That never over-claims — the rows that landed are
+   * things the judge genuinely established — and because every row's `(objective, responseId)` pair
+   * is stable, re-submitting the same answer re-attempts all of them and the ones already stored
+   * are no-ops, so a retry converges rather than duplicating. The clean fix is a batched upsert in
+   * `learner-store.ts`, which is Brain's file; requested rather than reached into.
+   */
   const record = useCallback(
-    async (built: Parameters<typeof recordEvidence>[1]) => {
-      const written = await recordEvidence(uid, built);
+    async (built: readonly Parameters<typeof recordEvidence>[1][]) => {
+      let written = built.length > 0;
+      for (const row of built) {
+        // Sequential rather than concurrent: they conflict on the same index, and a burst of
+        // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
+        // race rather than the no-op it is meant to be.
+        if (!(await recordEvidence(uid, row))) written = false;
+      }
       if (!written) {
         setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
+        // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
+        // a half-written performance, teaching from a learner model that is missing exactly the
+        // rows the write dropped.
         return;
       }
       // 🔴 THE POLICY RUNS AGAIN FROM RE-READ EVIDENCE, NOT FROM WHAT WE JUST SENT. Applying the
@@ -311,7 +336,6 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       await record(
         unobtainedEvidence({
           canvasId: canvas.id || null,
-          objectiveRowId: decision.objective.rowId,
           occurredAt: new Date().toISOString(),
           prompt: active,
           responseText: said,
@@ -375,13 +399,18 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
         via,
       });
       await record(
-        evidenceFromEvaluation({
+        evidenceForSubmission({
           canvasId: canvas.id || null,
-          evaluation,
-          objectiveRowId: decision.objective.rowId,
           occurredAt: new Date().toISOString(),
+          // 🔴 THE JUDGE ASSESSED THE OBJECTIVE IT WAS ASKED ABOUT, AND THAT IS WHAT IS NAMED HERE.
+          // This surface stages one objective per question, so one verdict covers one target. When
+          // a multi-objective judge exists it returns one of these per objective it actually
+          // assessed, and the fan-out routes them unchanged — nothing here has to spread a verdict
+          // across a set, which is the one thing that would record demonstrations nobody made.
+          outcomes: [outcomeFor(decision.objective, evaluation)],
           prompt: active,
-          response,
+          responseText: said,
+          ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },

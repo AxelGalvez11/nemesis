@@ -13,22 +13,88 @@
 
 import type { LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
+import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
-import type { EvidenceToRecord } from "./learner-store";
+import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 
 /** Which evaluator's judgement this is. Recorded on every row: evidence from a different judge is
  *  a different claim, and after the fact nothing else can tell them apart. */
 export const EVALUATOR_VERSION = "canvas-judge/1";
 
 /**
+ * One objective a prompt is asking about.
+ *
+ * 🔴 BOTH IDENTIFIERS, TOGETHER, BECAUSE THEY ANSWER DIFFERENT QUESTIONS AND MUST NOT BE CARRIED
+ * SEPARATELY. `rowId` is where the evidence row points — `learner_evidence.objective_id` is a real
+ * foreign key. `identityKey` is what a judged outcome names, and what the projection groups by.
+ * Holding them in one value is what stops a row being written against one objective while its
+ * verdict was decided about another; passing them as two arguments is precisely how that
+ * disagreement becomes possible.
+ *
+ * It is built from a `StoredObjective` and nothing else. An objective that has never been stored
+ * cannot be asked about, because the foreign key means its evidence cannot exist.
+ */
+export interface ObjectiveTarget {
+  rowId: string;
+  identityKey: string;
+}
+
+/**
+ * What one learner submission established, per objective.
+ *
+ * 🔴 SUPPLIED, NEVER DERIVED HERE. Deciding which of the objectives a task targeted were actually
+ * demonstrated is a judgement about partial understanding, and `causal-cognition-contract.md` §7
+ * puts that outside the runtime: *"Runtime does not decide what partial understanding means."*
+ *
+ * The tempting shortcuts are both false-evidence generators. Matching the evaluator's prose
+ * (`ResponseEvaluation.demonstrated` is free text for a human to read, not identity keys) would
+ * credit an objective on a substring coincidence. "The overall verdict was correct, so every target
+ * was demonstrated" would stamp a judgement onto edges nobody assessed. Either one writes a claim
+ * about a learner that no judge ever made.
+ *
+ * This is §4's `edgesDemonstrated`/`edgesIncorrect` in normalised form, not a rival contract: those
+ * sets are already a per-edge judgement, and `{key, verdict}` says the same thing in a shape that
+ * cannot accidentally apply one overall `incorrect` to an edge the learner got right. §4's
+ * `edgesMissing` needs no representation at all — it is every target that arrives without an
+ * outcome, which is the default rather than something a caller has to remember to send.
+ */
+export interface SubmissionOutcome {
+  objectiveIdentityKey: string;
+  verdict: EvidenceVerdict;
+  /** How much this judgement settled, when the judge said. Absent means not observed. */
+  confidence?: number | null;
+  /**
+   * Competing beliefs this objective's judgement named.
+   *
+   * 🔴 PER OUTCOME, BECAUSE ATTRIBUTING A RESPONSE-LEVEL MISCONCEPTION ACROSS SEVERAL TARGETS IS A
+   * SEMANTIC DECISION AND NOT THE RUNTIME'S. One wrong belief revealed while explaining a
+   * four-link chain belongs to some of those links and not others; spreading it over all of them
+   * would record three claims a judge never made. Whoever judges says which objective it belongs
+   * to, or it stays where it was named.
+   */
+  misconceptions?: readonly string[];
+}
+
+/**
  * The one thing the learner is being asked right now.
  *
  * `id` is minted by the caller ONCE per policy decision and is the idempotency key for whatever
- * evidence comes back — see `evidenceFromEvaluation`.
+ * evidence comes back — see `evidenceForSubmission`.
+ *
+ * 🔴 THE TARGET IS A SET, AND THE ONE-OBJECTIVE CASE IS JUST A SET OF ONE. This is the whole of
+ * RUNTIME-003. A learner explaining a mechanism demonstrates several things in one answer, and the
+ * natural implementation of that — loop the objectives, build a prompt for each — gives every
+ * objective its own prompt id, which is its own response identity, which turns ONE performance into
+ * N. Latency is then counted N times and `demonstrationCount` inflates N-fold.
+ *
+ * Carrying the set on the prompt makes that unrepresentable rather than merely discouraged: there
+ * is one prompt because there is one thing to build, and every row written from it shares its id
+ * without anyone having to arrange for that.
  */
 export interface RetrievalPrompt {
   id: string;
-  objectiveIdentityKey: string;
+  /** Every objective this one question is asking about. Never empty. */
+  targets: readonly ObjectiveTarget[];
   /** The sentence the canvas prints. */
   prompt: string;
   /** What a complete answer would be. 🔴 Never shown before the learner has committed. */
@@ -86,21 +152,64 @@ export function objectivePromptText(objective: LearningObjective): string {
     : `Given ${objective.cue}, what goes with it?`;
 }
 
-export function retrievalPromptFor(objective: LearningObjective, id: string): RetrievalPrompt {
+/** The pair of identifiers a prompt needs to ask about one stored objective. */
+export function targetFor(objective: StoredObjective): ObjectiveTarget {
+  return { identityKey: objective.identityKey, rowId: objective.rowId };
+}
+
+/**
+ * Mint one prompt asking about one or more objectives.
+ *
+ * 🔴 THE ONLY WAY A PROMPT IS BUILT, AND THAT IS THE POINT. Everything that asks the learner
+ * something goes through here, so "one submission, one prompt, one response identity" is a property
+ * of there being one place to build one — not a rule each new caller has to be told about.
+ *
+ * 🔴 IT DOES NOT WORD THE QUESTION. What to ask about a set of objectives is a cognitive decision:
+ * the sentence that makes a learner reconstruct a mechanism is not derivable from the objectives by
+ * anything in this layer, and inventing one here would be the runtime deciding what a task demands.
+ * The caller supplies the wording; this owns identity, targeting and the observations.
+ */
+export function promptTargeting(input: {
+  id: string;
+  /** Never empty. A prompt asking about nothing cannot produce evidence about anything. */
+  targets: readonly ObjectiveTarget[];
+  prompt: string;
+  expectedAnswer: string;
+  operation: ObjectiveCapability;
+  task: RetrievalTask;
+  scaffoldingLevel?: number;
+}): RetrievalPrompt {
   return {
+    expectedAnswer: input.expectedAnswer,
+    id: input.id,
+    operation: input.operation,
+    prompt: input.prompt,
+    scaffoldingLevel: input.scaffoldingLevel ?? UNSUPPORTED_RETRIEVAL,
+    targets: input.targets,
+    task: input.task,
+  };
+}
+
+/**
+ * The single-objective retrieval this surface stages today — the one-element case, and nothing more.
+ *
+ * 🔴 IT DELEGATES RATHER THAN BUILDING ITS OWN SHAPE. A second construction site is how the two
+ * drift, and the field that drifts here is the response identity.
+ */
+export function retrievalPromptFor(objective: StoredObjective, id: string): RetrievalPrompt {
+  return promptTargeting({
     expectedAnswer: objective.answer,
     id,
-    objectiveIdentityKey: objective.identityKey,
     // 🔴 READ OFF THE OBJECTIVE, NOT HARD-CODED TO "recall". This surface only stages retrieval
     // today, so the two are the same value — and writing the literal here is precisely how they
     // would stay the same after `explain` ships, with every explanation recorded as a recall.
     operation: objective.capability,
     prompt: objectivePromptText(objective),
-    scaffoldingLevel: UNSUPPORTED_RETRIEVAL,
+    targets: [targetFor(objective)],
     // An association asks for a term, not an explanation. The judge is told this so it checks the
     // production rather than marking a one-word answer down for being short.
     task: "name",
-  };
+  });
 }
 
 /**
@@ -137,28 +246,91 @@ export function objectiveAsTask(
  * back; `verdict` says what it showed and is NULL whenever nothing did. A judged answer always
  * obtained a demonstration — even `incorrect` is a demonstration, of the wrong thing.
  */
-export function evidenceFromEvaluation(input: {
-  objectiveRowId: string;
+export function evidenceForSubmission(input: {
   prompt: RetrievalPrompt;
-  response: LearnerResponse;
-  evaluation: ResponseEvaluation;
+  /** What the learner submitted. Null when a control produced the outcome and nothing was typed. */
+  responseText: string | null;
+  /**
+   * How long the attempt took, when anything measured it.
+   *
+   * 🔴 ABSENT IS A REAL AND DIFFERENT CASE, never a zero. Someone who typed an answer spent time
+   * doing it; someone who revealed through a control typed nothing, so nothing was measured, and a
+   * 0 would assert an instant answer that never happened.
+   */
+  tookMs?: number;
+  /**
+   * What the judge established, per objective. Judged elsewhere; routed here.
+   *
+   * 🔴 AN OUTCOME NAMING AN OBJECTIVE THE PROMPT DID NOT TARGET IS DISCARDED. That is evidence
+   * about a question nobody was asked — the same defect as the judge's `alsoWeakConceptIds`
+   * naming a concept the canvas never declared. A judge that volunteers a fifth relationship the
+   * learner asserted is telling us something true and possibly valuable, but it is not a
+   * demonstration of anything this task put to them, and storing it here would put a claim in the
+   * durable record that no prompt supports.
+   */
+  outcomes: readonly SubmissionOutcome[];
   canvasId: string | null;
   occurredAt: string;
+}): EvidenceToRecord[] {
+  const { outcomes, prompt } = input;
+  const judged = new Map(outcomes.map((outcome) => [outcome.objectiveIdentityKey, outcome]));
+  // 🔴 TOTAL OVER THE TARGETS, NOT OVER THE OUTCOMES, AND THAT ASYMMETRY IS THE DESIGN. Iterating
+  // the judge's list would write a row only where it happened to speak, so an objective it stayed
+  // silent about would leave NO row — indistinguishable from never having been asked. Every
+  // objective this task put to the learner gets a row saying what happened to it, including
+  // "nothing was shown about this", which is a different and much more useful fact than absence.
+  return prompt.targets.map((target) =>
+    rowForTarget({
+      canvasId: input.canvasId,
+      occurredAt: input.occurredAt,
+      outcome: judged.get(target.identityKey) ?? null,
+      prompt,
+      responseText: input.responseText,
+      target,
+      ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
+    }),
+  );
+}
+
+/**
+ * One target's row.
+ *
+ * 🔴 THE ONE PLACE A ROW IS BUILT, SO THE FACTS THAT BELONG TO THE PERFORMANCE CANNOT DIVERGE
+ * BETWEEN ROWS. Response identity, latency, operation, scaffolding and the text submitted are
+ * properties of the ANSWER, so they are read off the prompt and response here and are identical on
+ * every row this submission writes. Building rows at several call sites is how one of them
+ * eventually gets a fresh id or a divided latency.
+ */
+function rowForTarget(input: {
+  target: ObjectiveTarget;
+  prompt: RetrievalPrompt;
+  outcome: SubmissionOutcome | null;
+  responseText: string | null;
+  canvasId: string | null;
+  occurredAt: string;
+  tookMs?: number;
 }): EvidenceToRecord {
-  const { evaluation, prompt } = input;
+  const { outcome, prompt } = input;
   return {
     canvasId: input.canvasId,
-    confidence: evaluation.confidence,
-    demonstrationObtained: true,
+    // 🔴 `demonstrationObtained` FOLLOWS THE OUTCOME, NOT THE SUBMISSION. An answer that established
+    // three links of four obtained a demonstration of three things and of nothing about the fourth.
+    // Setting this `true` for every target because *an* answer arrived would record the learner as
+    // having shown something about a link they never mentioned.
+    demonstrationObtained: outcome !== null,
     evaluatorVersion: EVALUATOR_VERSION,
-    misconceptions: evaluation.misconceptions,
-    objectiveRowId: input.objectiveRowId,
+    objectiveRowId: input.target.rowId,
     occurredAt: input.occurredAt,
     // 🔴 THE IDEMPOTENCY KEY IS THE TASK, NOT A FRESH UUID. One policy decision produces one
     // prompt, and one prompt is at most one demonstration however many times the submission
     // reaches the server — a double click, a retry, a replayed effect. Minting an id at submit
     // time would defeat the unique index entirely and inflate `demonstrationCount`, which is what
     // the policy reads to decide whether something has been shown repeatedly.
+    // 🔴 SHARED BY EVERY ROW THIS SUBMISSION WRITES, AND THAT IS THE INVARIANT RUNTIME-003 EXISTS
+    // FOR. One answer is one performance however many objectives it touched, so the id identifies
+    // the ANSWER and never the objective. Deriving it from anything target-specific — the row id,
+    // the identity key, an index — turns one 20-second explanation into four performances, each
+    // claiming the full 20 seconds, and inflates practice volume fourfold.
     responseId: prompt.id,
     // 🔴 THE THREE OBSERVATIONS, AND NOT ONE INTERPRETATION AMONG THEM. No band, no threshold, no
     // "fast"/"slow". A rule like `tookMs > 10_000 → weak` written here would be unreviewable and
@@ -166,10 +338,45 @@ export function evidenceFromEvaluation(input: {
     // after it changes, and nothing can recover what was actually measured. What it means is the
     // projection's job, and the projection can be rewritten.
     operation: prompt.operation,
-    responseLatencyMs: input.response.tookMs,
-    responseText: input.response.text,
+    // 🔴 THE WHOLE MEASURED DURATION ON EVERY ROW, NEVER DIVIDED AMONG THEM. The learner spent that
+    // long producing this answer; they did not spend a quarter of it on each link. Splitting it
+    // would be an interpretation, and a wrong one — the observation is the performance's.
+    responseLatencyMs: input.tookMs,
+    responseText: input.responseText,
     scaffoldingLevel: prompt.scaffoldingLevel,
     taskId: prompt.id,
+    // 🔴 NULL WHENEVER NOTHING WAS SHOWN, AND NEVER `incorrect`. An objective the answer did not
+    // address was not contradicted — nothing came back about it at all. Recording absence as a
+    // wrong answer is absence of evidence stored as negative evidence, and the learner is then
+    // taught against a mistake they never made.
+    verdict: outcome?.verdict ?? null,
+    ...(outcome?.confidence == null ? {} : { confidence: outcome.confidence }),
+    ...(outcome?.misconceptions ? { misconceptions: outcome.misconceptions } : {}),
+  };
+}
+
+/**
+ * One verdict about one objective, as the outcome the fan-out routes.
+ *
+ * 🔴 IT TAKES THE OBJECTIVE IT JUDGED, AND THAT ARGUMENT IS THE WHOLE SAFEGUARD. The convenient
+ * version of this function reads the keys off `prompt.targets` and stamps the evaluation's verdict
+ * onto all of them — which is right for the one-objective retrieval staged today and silently
+ * catastrophic the moment a prompt targets four, because it would record a learner as having
+ * demonstrated three links they never mentioned. There is deliberately no helper that can spread
+ * one verdict across a set: a judgement covers what it was made about, and the caller has to say
+ * what that was.
+ *
+ * When a genuine multi-objective judge exists it returns several of these, one per objective it
+ * actually assessed, and the fan-out routes them unchanged.
+ */
+export function outcomeFor(
+  objective: { identityKey: string },
+  evaluation: ResponseEvaluation,
+): SubmissionOutcome {
+  return {
+    confidence: evaluation.confidence,
+    misconceptions: evaluation.misconceptions,
+    objectiveIdentityKey: objective.identityKey,
     verdict: evaluation.verdict,
   };
 }
@@ -182,7 +389,6 @@ export function evidenceFromEvaluation(input: {
  * Recording any of them as `incorrect` is absence of evidence stored as negative evidence.
  */
 export function unobtainedEvidence(input: {
-  objectiveRowId: string;
   prompt: RetrievalPrompt;
   responseText: string | null;
   canvasId: string | null;
@@ -195,23 +401,20 @@ export function unobtainedEvidence(input: {
    * nothing was measured — and a 0 there would assert an instant answer that never happened.
    */
   tookMs?: number;
-}): EvidenceToRecord {
-  return {
+}): EvidenceToRecord[] {
+  // 🔴 EVERY TARGET, BECAUSE THE OPPORTUNITY WAS GIVEN FOR ALL OF THEM. Someone who says "I don't
+  // know" to a question covering four links was asked about four links and showed nothing about
+  // any of them. Writing the admission against only the first would leave the other three reading
+  // as never asked — and "we have never asked" and "we asked and nothing came back" call for
+  // different teaching, which is the distinction the two columns exist to keep.
+  //
+  // It is the same fan-out as a judged answer with no outcomes at all, which is exactly what it is.
+  return evidenceForSubmission({
     canvasId: input.canvasId,
-    demonstrationObtained: false,
-    evaluatorVersion: EVALUATOR_VERSION,
-    objectiveRowId: input.objectiveRowId,
     occurredAt: input.occurredAt,
-    // 🔴 THE SAME OBSERVATIONS AS A JUDGED ATTEMPT. What differs between this and an answer is
-    // whether a demonstration was obtained — not what was seen of the attempt. Recording these only
-    // on the judged path would make "I don't know" look like a demonstration nobody observed at
-    // all, and the two are different facts about the same opportunity.
-    operation: input.prompt.operation,
-    responseId: input.prompt.id,
-    responseLatencyMs: input.tookMs,
+    outcomes: [],
+    prompt: input.prompt,
     responseText: input.responseText,
-    scaffoldingLevel: input.prompt.scaffoldingLevel,
-    taskId: input.prompt.id,
-    verdict: null,
-  };
+    ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
+  });
 }

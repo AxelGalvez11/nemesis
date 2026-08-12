@@ -169,3 +169,32 @@ test("isEvidenceStage names exactly the answer-collecting states", () => {
     assert.equal(isEvidenceStage(state), collecting.includes(state), state);
   }
 });
+
+// ── RUNTIME-003: hosting is indifferent to how many objectives a task targets ─
+
+test("🔴 acceptance 5: a task targeting several objectives still shares the surface with the document", () => {
+  // The point of RUNTIME-003 is what it does NOT require: no causal-specific page runtime, no
+  // second layout, no "mode". A task covering four links of a mechanism is hosted by exactly the
+  // rules that host a one-word retrieval, beside reading material that stays visible.
+  //
+  // 🔴 THIS LOOKS TAUTOLOGICAL AND IS NOT. It is a guard against the obvious future edit — giving
+  // composition a reason to care about the target count, so a multi-objective task gets "its own"
+  // presentation and quietly takes the page back. Whole-page ownership is the scaffolding step 7b
+  // removed; this is what stops it growing back through a side door.
+  const regions = composeSurface({ canvasState: "learn", policyPresenting: true });
+
+  assert.equal(regions.document, true, "the source material stays on screen");
+  assert.equal(regions.policy, true);
+  assert.equal(regions.sharing, true, "and the task knows it is sharing with a real document");
+});
+
+test("🔴 a multi-objective task is still exactly ONE answer surface", () => {
+  // Several objectives is not several places to answer. If a task targeting four things ever
+  // produced more than one sink, one of those answers would be routed to a question nobody asked —
+  // which is the corruption `AnswerSink` is a union to prevent, arriving with a target set.
+  const regions = composeSurface({ canvasState: "learn", policyPresenting: true });
+  const sink = answerSink({ hosted: hosted("multi-objective"), regions, stageTask: null });
+
+  assert.equal(sink.kind, "policy");
+  assert.equal(sink.kind === "policy" && sink.task.id, "multi-objective");
+});

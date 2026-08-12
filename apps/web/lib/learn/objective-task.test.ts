@@ -3,12 +3,17 @@ import { test } from "node:test";
 
 import type { ResponseEvaluation } from "./canvas-model";
 import type { KnowledgeObject } from "./knowledge-types";
-import { objectivesForKnowledge } from "./learning-objective";
+import { performancesIn, type LearnerEvidence } from "./learner-evidence";
+import { objectivesForKnowledge, type LearningObjective } from "./learning-objective";
+import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 import {
-  evidenceFromEvaluation,
+  evidenceForSubmission,
   objectiveAsTask,
   objectivePromptText,
+  outcomeFor,
+  promptTargeting,
   retrievalPromptFor,
+  targetFor,
   unobtainedEvidence,
 } from "./objective-task";
 
@@ -22,7 +27,34 @@ const KNOWLEDGE: KnowledgeObject = {
   statement: "losartan — Cozaar",
   type: "association",
 };
-const [GENERIC_TO_BRAND, BRAND_TO_GENERIC] = objectivesForKnowledge(KNOWLEDGE);
+/** An objective as it exists once stored — which is the only state one can be asked about, because
+ *  `learner_evidence.objective_id` is a foreign key. */
+function stored(objective: LearningObjective | undefined, rowId: string): StoredObjective {
+  return { ...objective!, rowId };
+}
+
+const [FORWARD, REVERSE] = objectivesForKnowledge(KNOWLEDGE);
+const GENERIC_TO_BRAND = stored(FORWARD, "row-forward");
+const BRAND_TO_GENERIC = stored(REVERSE, "row-reverse");
+
+/** One judged answer about one objective, built the way the live retrieval path builds it. */
+function judged(input: {
+  prompt: ReturnType<typeof retrievalPromptFor>;
+  objective?: StoredObjective;
+  evaluation?: ResponseEvaluation;
+  text?: string;
+  tookMs?: number;
+  occurredAt?: string;
+}) {
+  return evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: input.occurredAt ?? "2026-08-11T12:00:00.000Z",
+    outcomes: [outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)],
+    prompt: input.prompt,
+    responseText: input.text ?? "Cozaar",
+    ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
+  });
+}
 
 const EVALUATION: ResponseEvaluation = {
   confidence: 0.9,
@@ -33,6 +65,29 @@ const EVALUATION: ResponseEvaluation = {
   verdict: "understood",
 };
 
+/**
+ * A row to record, as the same row reads back out of the database.
+ *
+ * 🔴 EVERY ROW GETS A DISTINCT `id`, AND THAT IS WHAT MAKES THE PERFORMANCE COUNT MEAN ANYTHING.
+ * `performancesIn` deduplicates by row id before it groups, so giving these a shared id would
+ * report one performance no matter what the response identity said — a test that passes because it
+ * cannot fail. Distinct ids mean the count of 1 can only come from the shared `responseId`.
+ */
+function asStored(row: EvidenceToRecord, index: number): LearnerEvidence {
+  return {
+    canvasId: row.canvasId ?? null,
+    demonstrationObtained: row.demonstrationObtained,
+    evaluatorVersion: row.evaluatorVersion ?? null,
+    id: `db-row-${index}`,
+    misconceptions: [...(row.misconceptions ?? [])],
+    objectiveIdentityKey: row.objectiveRowId,
+    occurredAt: row.occurredAt,
+    verdict: row.verdict,
+    ...(row.responseId ? { responseId: row.responseId } : {}),
+    ...(row.responseLatencyMs == null ? {} : { responseLatencyMs: row.responseLatencyMs }),
+  };
+}
+
 // ── the crossing where six things have already died ─────────────────────────
 
 test("🔴 the two directions of one pair ask OPPOSITE questions", () => {
@@ -41,8 +96,8 @@ test("🔴 the two directions of one pair ask OPPOSITE questions", () => {
   // opposite identity keys. Every downstream report then reads correctly — one direction
   // demonstrated, the reverse still unknown — and the reverse is unknown only because the learner
   // was never actually asked it.
-  const forward = retrievalPromptFor(GENERIC_TO_BRAND!, "p1");
-  const reverse = retrievalPromptFor(BRAND_TO_GENERIC!, "p2");
+  const forward = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const reverse = retrievalPromptFor(BRAND_TO_GENERIC, "p2");
 
   assert.notEqual(forward.prompt, reverse.prompt);
   assert.match(forward.prompt, /losartan/);
@@ -50,16 +105,16 @@ test("🔴 the two directions of one pair ask OPPOSITE questions", () => {
   assert.match(reverse.prompt, /Cozaar/);
   assert.equal(reverse.expectedAnswer, "losartan");
   // And what one asks for is what the other gives.
-  assert.equal(forward.expectedAnswer, BRAND_TO_GENERIC!.cue);
-  assert.equal(reverse.expectedAnswer, GENERIC_TO_BRAND!.cue);
+  assert.equal(forward.expectedAnswer, BRAND_TO_GENERIC.cue);
+  assert.equal(reverse.expectedAnswer, GENERIC_TO_BRAND.cue);
 });
 
 test("the question names the role the learner must produce, never a column position", () => {
   // "the right-hand value" means opposite things in a `Generic | Brand` glossary and a
   // `Brand | Generic` revision sheet. The role is what the learner is actually asked for.
-  assert.match(objectivePromptText(GENERIC_TO_BRAND!), /brand/i);
-  assert.match(objectivePromptText(BRAND_TO_GENERIC!), /generic/i);
-  for (const wording of [objectivePromptText(GENERIC_TO_BRAND!), objectivePromptText(BRAND_TO_GENERIC!)]) {
+  assert.match(objectivePromptText(GENERIC_TO_BRAND), /brand/i);
+  assert.match(objectivePromptText(BRAND_TO_GENERIC), /generic/i);
+  for (const wording of [objectivePromptText(GENERIC_TO_BRAND), objectivePromptText(BRAND_TO_GENERIC)]) {
     assert.equal(/left|right|column|first|second/i.test(wording), false, wording);
   }
 });
@@ -75,8 +130,8 @@ test("a headerless pair still asks something, without inventing a role", () => {
 });
 
 test("the task carries the answer as reference evidence and NO canvas concept", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "p1");
-  const task = objectiveAsTask(GENERIC_TO_BRAND!, prompt, { text: "Cozaar", via: "typed" });
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const task = objectiveAsTask(GENERIC_TO_BRAND, prompt, { text: "Cozaar", via: "typed" });
   assert.equal(task.expectedEvidence.referenceAnswer, "Cozaar");
   // 🔴 A per-canvas concept id on a durable objective would be identity leaking back in from the
   // session — the exact thing the objective layer exists to remove.
@@ -90,42 +145,31 @@ test("🔴 the verdict comes from the evaluator even when the text matches exact
   // A `said === expected` shortcut is the tempting version of this and it is wrong twice: it marks
   // a correct answer wrong over capitalisation or a synonym, and — the part that changes teaching
   // — it cannot tell a wrong answer from a specific competing belief.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "p1");
-  const evidence = evidenceFromEvaluation({
-    canvasId: "c1",
-    evaluation: { ...EVALUATION, verdict: "incorrect" },
-    objectiveRowId: "row-1",
-    occurredAt: "2026-08-11T12:00:00.000Z",
-    prompt,
-    response: { text: "Cozaar", via: "typed" },
-  });
-  assert.equal(evidence.verdict, "incorrect");
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const [evidence] = judged({ evaluation: { ...EVALUATION, verdict: "incorrect" }, prompt });
+  assert.equal(evidence!.verdict, "incorrect");
 });
 
 test("a judged answer always obtained a demonstration — including a wrong one", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "p1");
-  const evidence = evidenceFromEvaluation({
-    canvasId: "c1",
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const [evidence] = judged({
     evaluation: { ...EVALUATION, verdict: "incorrect" },
-    objectiveRowId: "row-1",
-    occurredAt: "2026-08-11T12:00:00.000Z",
     prompt,
-    response: { text: "Diovan", via: "typed" },
+    text: "Diovan",
   });
-  assert.equal(evidence.demonstrationObtained, true);
+  assert.equal(evidence!.demonstrationObtained, true);
 });
 
 test("🔴 an opportunity that produced nothing carries NO verdict", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "p1");
-  const evidence = unobtainedEvidence({
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const [evidence] = unobtainedEvidence({
     canvasId: "c1",
-    objectiveRowId: "row-1",
     occurredAt: "2026-08-11T12:00:00.000Z",
     prompt,
     responseText: null,
   });
-  assert.equal(evidence.demonstrationObtained, false);
-  assert.equal(evidence.verdict, null);
+  assert.equal(evidence!.demonstrationObtained, false);
+  assert.equal(evidence!.verdict, null);
 });
 
 // ── one performance, one row ────────────────────────────────────────────────
@@ -134,54 +178,29 @@ test("🔴 the evidence is keyed by the TASK, so one prompt can only ever be one
   // A fresh id minted at submit time would give a double click two ids and two rows for one
   // performance — and `demonstrationCount` is what the policy reads to decide whether a capability
   // has been shown repeatedly, so the learner would be credited with practice they never did.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "task-abc");
-  const base = {
-    canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-1",
-    prompt,
-    response: { text: "Cozaar", via: "typed" as const },
-  };
-  const first = evidenceFromEvaluation({ ...base, occurredAt: "2026-08-11T12:00:00.000Z" });
-  const second = evidenceFromEvaluation({ ...base, occurredAt: "2026-08-11T12:00:03.000Z" });
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "task-abc");
+  const [first] = judged({ occurredAt: "2026-08-11T12:00:00.000Z", prompt });
+  const [second] = judged({ occurredAt: "2026-08-11T12:00:03.000Z", prompt });
 
-  assert.equal(first.responseId, "task-abc");
-  assert.equal(first.taskId, "task-abc");
+  assert.equal(first!.responseId, "task-abc");
+  assert.equal(first!.taskId, "task-abc");
   // Same prompt, later clock: still the same key, so the unique index collapses them.
-  assert.equal(second.responseId, first.responseId);
+  assert.equal(second!.responseId, first!.responseId);
 });
 
 test("a different prompt is a different demonstration", () => {
-  const one = evidenceFromEvaluation({
-    canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-1",
-    occurredAt: "2026-08-11T12:00:00.000Z",
-    prompt: retrievalPromptFor(GENERIC_TO_BRAND!, "task-1"),
-    response: { text: "Cozaar", via: "typed" },
-  });
-  const two = evidenceFromEvaluation({
-    canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-1",
+  const [one] = judged({ prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-1") });
+  const [two] = judged({
     occurredAt: "2026-08-11T13:00:00.000Z",
-    prompt: retrievalPromptFor(GENERIC_TO_BRAND!, "task-2"),
-    response: { text: "Cozaar", via: "typed" },
+    prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-2"),
   });
-  assert.notEqual(one.responseId, two.responseId);
+  assert.notEqual(one!.responseId, two!.responseId);
 });
 
 test("what the learner said is kept, and the evaluator is named", () => {
-  const evidence = evidenceFromEvaluation({
-    canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-1",
-    occurredAt: "2026-08-11T12:00:00.000Z",
-    prompt: retrievalPromptFor(GENERIC_TO_BRAND!, "task-1"),
-    response: { text: "Cozaar", via: "typed" },
-  });
-  assert.equal(evidence.responseText, "Cozaar");
-  assert.ok(evidence.evaluatorVersion);
+  const [evidence] = judged({ prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-1") });
+  assert.equal(evidence!.responseText, "Cozaar");
+  assert.ok(evidence!.evaluatorVersion);
 });
 
 // ── RUNTIME-002: one answer, one response identity ──────────────────────────
@@ -204,76 +223,222 @@ test("what the learner said is kept, and the evaluator is named", () => {
 // collapse two performances into one.
 
 test("🔴 responseId identifies the ANSWER, never the objective", () => {
-  // Acceptance test 1, in the only form expressible today: no code path yet writes evidence for
-  // several objectives from one submission, so this pins the property that MAKES that safe —
-  // two different objectives, one submission, one shared response identity.
+  // 🔴 THIS TEST USED TO SIMULATE THE CASE IT DESCRIBES. When RUNTIME-002 pinned it, no code path
+  // wrote evidence for several objectives from one submission, so it built two rows by calling the
+  // single-row builder twice with the same prompt and different row ids — a hand-made stand-in for
+  // a fan-out that did not exist. It now runs against the real one, and the difference matters:
+  // the previous version could not have caught a fan-out that minted its own ids, because it WAS
+  // the fan-out.
   //
   // 🔴 CALIBRATED, AND THE FIRST ATTEMPT WAS A FALSE PASS WORTH RECORDING. Deriving `responseId`
-  // from `prompt.objectiveIdentityKey` left this GREEN, because both rows are built from the same
-  // prompt, so the derived value matched anyway. It goes red on the defect it actually names —
-  // `${objectiveRowId}:${prompt.id}` — and that is the boundary this can honestly speak about.
-  //
-  // 🔴 WHAT IT CANNOT SEE, STATED SO NOBODY READS MORE INTO IT: this pins "one prompt → one
-  // identity across objectives". It does NOT pin "one submission → one prompt". That second half
-  // lives upstream in use-policy-runtime.ts, where a future multi-objective path could mint a
-  // prompt per objective and split one answer before it ever reached here. Nothing can test that
-  // until such a path exists.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
-  const forward = evidenceFromEvaluation({
-    canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-forward",
-    occurredAt: "2026-08-12T00:00:00.000Z",
-    prompt,
-    response: { text: "Cozaar", via: "typed", tookMs: 4200 },
+  // from the prompt's own target key left this GREEN, because every row is built from the same
+  // prompt so the derived value matched anyway. It goes red on the defect it actually names —
+  // `${target.rowId}:${prompt.id}` — and that is the boundary this can honestly speak about.
+  const prompt = promptTargeting({
+    expectedAnswer: "Cozaar",
+    id: "answer-1",
+    operation: "recall",
+    prompt: "Both directions at once.",
+    targets: [targetFor(GENERIC_TO_BRAND), targetFor(BRAND_TO_GENERIC)],
+    task: "name",
   });
-  const reverse = evidenceFromEvaluation({
+  const rows = evidenceForSubmission({
     canvasId: "c1",
-    evaluation: EVALUATION,
-    objectiveRowId: "row-reverse",
     occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: [outcomeFor(GENERIC_TO_BRAND, EVALUATION), outcomeFor(BRAND_TO_GENERIC, EVALUATION)],
     prompt,
-    response: { text: "Cozaar", via: "typed", tookMs: 4200 },
+    responseText: "Cozaar",
+    tookMs: 4200,
   });
 
-  assert.equal(forward.responseId, reverse.responseId, "one answer must carry one response identity");
-  assert.notEqual(forward.objectiveRowId, reverse.objectiveRowId, "the rows are still distinct");
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map((row) => row.responseId)).size, 1, "one answer, one identity");
+  assert.equal(new Set(rows.map((row) => row.objectiveRowId)).size, 2, "the rows stay distinct");
   // 🔴 THE LATENCY IS THE PERFORMANCE'S, NOT THE ROW'S. Dividing it among rows, or measuring it per
   // objective, would make one 4.2s answer look like several faster ones.
-  assert.equal(forward.responseLatencyMs, 4200);
-  assert.equal(reverse.responseLatencyMs, 4200);
+  assert.deepEqual(
+    rows.map((row) => row.responseLatencyMs),
+    [4200, 4200],
+  );
 });
 
 test("🔴 nothing objective-specific leaks into the response identity", () => {
   // The board's stated defect, asserted directly against: hand the SAME id to two opposite
   // objectives and it must survive unchanged. If the id were ever derived from the objective, these
   // would diverge — which is the exact failure that would make one answer read as several.
-  const forward = retrievalPromptFor(GENERIC_TO_BRAND!, "shared-id");
-  const reverse = retrievalPromptFor(BRAND_TO_GENERIC!, "shared-id");
+  const forward = retrievalPromptFor(GENERIC_TO_BRAND, "shared-id");
+  const reverse = retrievalPromptFor(BRAND_TO_GENERIC, "shared-id");
   assert.equal(forward.id, "shared-id");
   assert.equal(reverse.id, "shared-id");
-  assert.notEqual(forward.objectiveIdentityKey, reverse.objectiveIdentityKey);
+  assert.notEqual(forward.targets[0]!.identityKey, reverse.targets[0]!.identityKey);
 });
 
 test("separate answers carry separate response identities", () => {
   // Acceptance test 3. The other half: sharing must not become collapsing.
-  const first = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
-  const second = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-2");
+  const first = retrievalPromptFor(GENERIC_TO_BRAND, "answer-1");
+  const second = retrievalPromptFor(GENERIC_TO_BRAND, "answer-2");
   assert.notEqual(first.id, second.id);
 });
 
 test("an unobtained demonstration carries the same answer identity", () => {
   // "I don't know" is an opportunity that produced nothing — but it is still ONE answer, and it must
   // group with anything else that submission produced rather than looking like a separate event.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
-  const nothing = unobtainedEvidence({
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "answer-1");
+  const [nothing] = unobtainedEvidence({
     canvasId: "c1",
-    objectiveRowId: "row-forward",
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt,
     responseText: "no idea",
     tookMs: 900,
   });
-  assert.equal(nothing.responseId, "answer-1");
-  assert.equal(nothing.demonstrationObtained, false);
+  assert.equal(nothing!.responseId, "answer-1");
+  assert.equal(nothing!.demonstrationObtained, false);
+});
+
+// ── RUNTIME-003: one submission, a SET of objectives ────────────────────────
+//
+// The board's acceptance tests for a task that targets several objectives at once. They run against
+// association objectives rather than causal ones deliberately: the routing is knowledge-type
+// agnostic, so pinning it here means it is already true when `objectivesForKnowledge(causal)` stops
+// returning `[]` — rather than being written for causal knowledge and discovered to be wrong for
+// everything else.
+
+/** Three objectives, as a causal chain's edges would be: separate rows, separate identities. */
+const CHAIN = [
+  GENERIC_TO_BRAND,
+  BRAND_TO_GENERIC,
+  { ...BRAND_TO_GENERIC, identityKey: "association:v2:third-edge", rowId: "row-third" },
+];
+
+const CHAIN_PROMPT = promptTargeting({
+  expectedAnswer: "the whole chain",
+  id: "one-answer",
+  operation: "explain",
+  prompt: "Explain why the first leads to the last.",
+  targets: CHAIN.map(targetFor),
+  task: "explain",
+});
+
+test("🔴 acceptance 1+2: one submission across three objectives is ONE performance", () => {
+  const rows = evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    prompt: CHAIN_PROMPT,
+    responseText: "the whole mechanism",
+    tookMs: 20_000,
+  });
+
+  assert.equal(rows.length, 3, "three objectives, three rows");
+  assert.equal(new Set(rows.map((row) => row.responseId)).size, 1, "sharing ONE response identity");
+  // Acceptance test 2, using Brain's own helper rather than a local reimplementation of it: if
+  // `performanceKey` ever stops keying on the response id, this must go red here too.
+  assert.equal(performancesIn(rows.map(asStored)).size, 1);
+  // 🔴 The 20 seconds belong to the ANSWER. Four rows each claiming a quarter of it would describe
+  // a learner who answered four times, quickly — which is not what happened.
+  assert.deepEqual(new Set(rows.map((row) => row.responseLatencyMs)), new Set([20_000]));
+});
+
+test("🔴 acceptance 3: an objective the answer did not address is NOT demonstrated, not incorrect", () => {
+  // The learner explained two links of three. The third was never mentioned — nothing about it was
+  // shown, and nothing about it was contradicted. Recording it as `incorrect` would teach against a
+  // mistake they did not make; leaving no row at all would read as never having been asked.
+  const rows = evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: [outcomeFor(CHAIN[0]!, EVALUATION), outcomeFor(CHAIN[1]!, EVALUATION)],
+    prompt: CHAIN_PROMPT,
+    responseText: "the first two links",
+    tookMs: 12_000,
+  });
+
+  assert.equal(rows.length, 3, "every target gets a row, including the silent one");
+  const third = rows.find((row) => row.objectiveRowId === "row-third");
+  assert.equal(third!.demonstrationObtained, false);
+  assert.equal(third!.verdict, null);
+  // And it is still part of the same performance — the learner answered once.
+  assert.equal(third!.responseId, "one-answer");
+  assert.equal(third!.responseLatencyMs, 12_000);
+});
+
+test("🔴 acceptance 4: a double submit is one row per objective, not two", () => {
+  // The same answer arriving twice — a double click, a replayed effect, a network retry. Every row
+  // keeps its `(objective, responseId)` pair, which is what the unique index collapses on.
+  const first = evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    prompt: CHAIN_PROMPT,
+    responseText: "the whole mechanism",
+  });
+  const again = evidenceForSubmission({
+    canvasId: "c1",
+    // A later clock, because the second arrival really is later. It must change nothing that the
+    // index conflicts on.
+    occurredAt: "2026-08-12T00:00:07.000Z",
+    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    prompt: CHAIN_PROMPT,
+    responseText: "the whole mechanism",
+  });
+
+  const key = (row: { objectiveRowId: string; responseId: string }) =>
+    `${row.objectiveRowId}:${row.responseId}`;
+  assert.deepEqual(first.map(key), again.map(key), "the same three conflict targets, both times");
+  assert.equal(new Set([...first, ...again].map(key)).size, 3, "three demonstrations, not six");
+});
+
+test("🔴 a judged outcome for an objective the task did not target writes NO row", () => {
+  // A judge that volunteers a relationship the learner asserted is telling us something real, and it
+  // is still not a demonstration of anything this task asked. Storing it would put a claim in the
+  // durable record that no prompt supports — the same defect as `alsoWeakConceptIds` naming a
+  // concept the canvas never declared.
+  //
+  // 🔴 THIS IS THE ONE FAN-OUT RULE WITH NO NATURAL PRESSURE TO STAY TRUE. Nothing else goes red if
+  // an untargeted outcome starts writing a row: the count is right, the ids are right, and the
+  // extra row looks exactly like a real one.
+  const rows = evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: [
+      outcomeFor(GENERIC_TO_BRAND, EVALUATION),
+      { objectiveIdentityKey: "association:v2:never-asked", verdict: "incorrect" },
+    ],
+    prompt: retrievalPromptFor(GENERIC_TO_BRAND, "answer-1"),
+    responseText: "Cozaar, and also something nobody asked about",
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.objectiveRowId, "row-forward");
+});
+
+test("🔴 an admission covers every objective it was asked about", () => {
+  // "I don't know" to a question spanning three links showed nothing about any of them — and all
+  // three were genuinely asked. Writing the admission against only the first would leave the other
+  // two reading as never asked, and "never asked" and "asked, nothing came back" call for different
+  // teaching.
+  const rows = unobtainedEvidence({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt: CHAIN_PROMPT,
+    responseText: "no idea",
+    tookMs: 3_000,
+  });
+
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every((row) => row.demonstrationObtained === false && row.verdict === null));
+  assert.equal(new Set(rows.map((row) => row.responseId)).size, 1);
+  assert.equal(performancesIn(rows.map(asStored)).size, 1);
+});
+
+test("🔴 the operation is the TASK'S, identical on every row it writes", () => {
+  // One answer was one cognitive demand. Rows that disagreed about which operation produced them
+  // would describe a learner who did several different things at once.
+  const rows = evidenceForSubmission({
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    prompt: CHAIN_PROMPT,
+    responseText: "the whole mechanism",
+  });
+  assert.deepEqual(new Set(rows.map((row) => row.operation)), new Set(["explain"]));
 });
