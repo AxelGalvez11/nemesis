@@ -19,7 +19,7 @@
 // at the narrowest boundary that genuinely owns it; move it outward when a second runtime needs
 // it, and verify that move with root `turbo typecheck`.
 
-import { readStructureEnvelope, type DocumentModel } from "@nemesis/shared";
+import { readStructureEnvelope, type DocumentModel, type ExtractionCoverage } from "@nemesis/shared";
 
 /** What information a stored source can supply. Each field is a promise a caller may rely on. */
 export interface SourceCapabilities {
@@ -135,6 +135,80 @@ export function parseQuality(input: {
   // A PDF that came back as bare words has not failed — the text is real and usable — but it is
   // not the intended result, and calling it "full" is how a regression stays invisible.
   return input.capabilities.semanticUnits ? "full" : "degraded";
+}
+
+/**
+ * Can the recovered TEXT itself be trusted for semantic extraction (causal
+ * relationships, associations) — as opposed to `ParseQuality`, which asks
+ * whether the PARSE did what a source of this kind should do.
+ *
+ * 🔴 A DIFFERENT QUESTION FROM `parseQuality`, ON PURPOSE, AND NOT A REPLACEMENT
+ * FOR IT. Measured by Brain: 145 of 234 causal candidates across the library
+ * (62%) came from degraded parses, and not one was usable — column fragments,
+ * not sentences, from a flattened table. Those same rows can carry
+ * `quality: "full"` under the rule above, correctly — the parse produced
+ * addressable units, citations resolve, scheduling works. What it does NOT
+ * mean is that the recovered prose is intact enough to assert a relationship
+ * from. Collapsing the two would either re-break the false-alarm problem
+ * `parseQuality` was written to avoid, or hide the content-loss signal Brain
+ * actually needs. They are stored side by side instead.
+ *
+ * 🔴 THE SAME EXCLUSION AS `parseQuality`, FOR THE SAME REASON: an unexamined
+ * figure (`figures.reasons["not-examined"]`) does not corrupt the TEXT next to
+ * it, so it must NOT downgrade this verdict either. Only signals that mean the
+ * TEXT itself is incomplete count: a region the parser saw and could not turn
+ * into content (`unreadableRegions`), a whole unit never read (`unitsUnread`),
+ * or text cut at extraction. If a future change makes this consult `figures`,
+ * that is the same false-alarm regression `parseQuality` already measured and
+ * rejected — read that docstring again before doing it.
+ *
+ * 🔴 A KNOWN, STATED LIMIT: THIS CANNOT SEE READING-ORDER LOSS. Two columns
+ * merged into one interleaved block reports no unread units, no unreadable
+ * regions and no truncation — `state=complete` and every count reconciles —
+ * because nothing in this codebase detects that failure today. `intact` here
+ * means "no known loss," not "verified whole." Widening the signal set is a
+ * parser change, not a change to this function.
+ *
+ * 🔴 `unitsVision` AND `unitsBoth` DO NOT COUNT AS LOSS, DELIBERATELY. A page
+ * read by vision instead of its text layer is still RECOVERED text — the
+ * method changed, not the outcome — so it must not downgrade this verdict.
+ * Only `unitsUnread` (nothing came back by either method) means the text
+ * itself is incomplete.
+ *
+ * 🔴 NO CONSUMER READS THIS FIELD YET. It exists to cross the boundary as a
+ * value ahead of its first reader (causal knowledge extraction), the same way
+ * `unreadableKinds` was persisted before anything computed a verdict from it.
+ * See `docs/canvas-agent-board.md`, task `PARSER-001`.
+ */
+export type ContentIntegrity =
+  /** Text recovered, and nothing charted here says any of it is missing. */
+  | "intact"
+  /** Text recovered, but coverage shows content this parse could not deliver. */
+  | "lossy"
+  /** No usable text at all — nothing here to extract a claim from. */
+  | "unreadable"
+  /**
+   * Coverage was not available to check. 🔴 MUST NOT COLLAPSE INTO `intact`.
+   * "We do not know" and "we checked and it is fine" call for the same caution
+   * Brain draws between `learner_state = unknown` and mastery — an `intact`
+   * verdict is a claim, and this function does not make it without evidence.
+   */
+  | "unknown";
+
+export function deriveContentIntegrity(input: {
+  capabilities: SourceCapabilities;
+  /** Null when coverage genuinely was not available — the in-memory fallback
+   *  path, or a row parsed before this field existed. Never a stand-in for
+   *  "nothing was lost"; that is what `intact` is for. */
+  coverage: ExtractionCoverage | null;
+}): ContentIntegrity {
+  if (!input.capabilities.text) return "unreadable";
+  if (!input.coverage) return "unknown";
+  const lossy =
+    (input.coverage.unreadableRegions ?? 0) > 0 ||
+    input.coverage.unitsUnread > 0 ||
+    input.coverage.truncation.some((cut) => cut.stage === "extract");
+  return lossy ? "lossy" : "intact";
 }
 
 /**
