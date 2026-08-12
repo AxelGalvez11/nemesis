@@ -108,11 +108,45 @@ export interface ParsedDocument {
 
 export type ParseOutcome =
   | { ok: true; document: ParsedDocument }
-  /** Nothing readable came out. Not an error — a verdict about the file. */
+  /** Nothing readable came out, and no structure either. A verdict about the file. */
   | { ok: false; reason: "empty"; kind: DocumentKind }
+  /**
+   * The file has STRUCTURE and no readable text: a scan, or slides exported as
+   * pictures. Distinct from `empty`, and the document rides along.
+   *
+   * 🔴 THIS EXISTS BECAUSE A TRUTHFUL REFUSAL WAS ERASING ITS OWN EVIDENCE.
+   * Once the `[Figure — not examined]` placeholder stopped being written into
+   * extracted text (#485), an image-only PDF finally reported the truth — no
+   * text — and this function's `if (!text)` then threw the model away with it.
+   * Measured: 8 of 458 benchmark layout PDFs and 5 of 165 real course files take
+   * this path, discarding 17 units, 25 blocks and 25 figures that the structural
+   * reader had already located, sized and placed on a page.
+   *
+   * So the student uploading a scanned handout got nothing at all — not even
+   * "this is a scan, it holds 3 pictures, and Nemesis cannot read images
+   * natively". That sentence is both true and useful; silence is neither.
+   *
+   * `text` is `""` and every caller must keep treating that as "no text to
+   * show". What changes is that `model` and `coverage` are worth PERSISTING, so
+   * a later vision pass can enrich a document whose shape is already known
+   * rather than having to decide again what the file even is.
+   */
+  | { ok: false; reason: "no-text"; kind: DocumentKind; document: ParsedDocument }
   | { ok: false; reason: "unsupported" }
   | { ok: false; reason: "too-large-image" }
   | { ok: false; reason: "vision-unavailable" };
+
+/**
+ * Did the parser find structure it could not read?
+ *
+ * The test is BLOCKS, not units. A model with pages and nothing on them records
+ * only a page count — there is no figure, no rectangle and nothing for a later
+ * pass to enrich, so it is genuinely empty. One block with a rectangle is a
+ * located thing, and a located thing is worth keeping.
+ */
+function hasStructure(model: DocumentModel | undefined): model is DocumentModel {
+  return model !== undefined && model.blocks.length > 0;
+}
 
 /**
  * Read a document.
@@ -239,19 +273,26 @@ export async function parseDocument(
     text = capped.text;
   }
 
-  if (!text) return { ok: false, kind, reason: "empty" };
-  return {
-    document: {
-      coverage,
-      kind,
-      skippedFigures,
-      text,
-      title,
-      ...(readBy ? { readBy } : {}),
-      ...(model ? { model } : {}),
-    },
-    ok: true,
+  const document: ParsedDocument = {
+    coverage,
+    kind,
+    skippedFigures,
+    text,
+    title,
+    ...(readBy ? { readBy } : {}),
+    ...(model ? { model } : {}),
   };
+
+  // 🔴 NO TEXT IS NOT NO DOCUMENT. Both branches refuse — the caller still has
+  // nothing to show a student — but only one of them has nothing to REMEMBER.
+  // Returning the same `empty` for both is what discarded a model the
+  // structural reader had already built, on every scan production has seen.
+  if (!text) {
+    return hasStructure(model)
+      ? { document, kind, ok: false, reason: "no-text" }
+      : { kind, ok: false, reason: "empty" };
+  }
+  return { document, ok: true };
 }
 
 /**

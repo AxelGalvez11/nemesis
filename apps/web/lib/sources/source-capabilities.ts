@@ -138,6 +138,27 @@ export function parseQuality(input: {
 }
 
 /**
+ * Is this a document whose content is locked in pixels?
+ *
+ * 🔴 DERIVED, NEVER STORED, AND THAT IS THE WHOLE DESIGN. "Vision is required
+ * here" is not a new fact — it is two facts this module already reads out of the
+ * persisted structure: the parse located things, and none of them are readable.
+ * A stored flag would be a third copy of an answer the bytes already give, and
+ * every stored copy in this codebase has eventually disagreed with its source.
+ *
+ * True for the case #486 exists for: a scanned handout or slides exported as
+ * images, where `figures`/`geometry` are present and `text` is absent. It says
+ * a reader that can see pictures would finish the job — NOT that one has run,
+ * and not that one is configured.
+ *
+ * False for a document with no text and no figures either: nothing was found, so
+ * there is nothing to say a second reader would rescue.
+ */
+export function needsVision(capabilities: SourceCapabilities): boolean {
+  return !capabilities.text && capabilities.figures;
+}
+
+/**
  * How many units the parse read.
  *
  * 🔴 THE HONEST NAME FOR `parsed_documents.unit_count`. That column counts units the parser

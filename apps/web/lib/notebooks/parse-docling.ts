@@ -169,6 +169,26 @@ export async function buildDoclingParse(input: DoclingParseInput): Promise<Docli
 
   const coverage = withTruncation(built, extractCut(TEXT_CAP, text.length, whole.length));
 
+  // 🔴 THE SAME DISTINCTION THE BUILT-IN PARSER MAKES, FOR THE SAME REASON.
+  // These two lanes exist to be interchangeable; a refusal that discards a model
+  // here and preserves one there would make the worker's behaviour depend on
+  // which converter happened to run. See `ParseOutcome`'s `no-text`.
+  if (!text && finalModel.blocks.length > 0) {
+    return {
+      document: {
+        coverage,
+        kind: input.kind,
+        model: finalModel,
+        readBy: "docling",
+        skippedFigures: 0,
+        text: "",
+        title: finalModel.title,
+      },
+      kind: input.kind,
+      ok: false,
+      reason: "no-text",
+    };
+  }
   if (!text) return { ok: false, kind: input.kind, reason: "empty" };
   return {
     ok: true,

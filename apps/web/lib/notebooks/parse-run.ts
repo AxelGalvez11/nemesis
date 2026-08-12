@@ -46,8 +46,16 @@ export function parseThreadPath(cwd: string = process.cwd()): string | null {
 
 export type ParseRunOutcome =
   | { status: "parsed"; parsed: unknown; ms: number; peakRssMb: number }
-  /** The parser read the file and refused it. Not an error — an answer. */
-  | { status: "refused"; reason: string; ms: number; peakRssMb: number }
+  /**
+   * The parser read the file and refused it. Not an error — an answer.
+   *
+   * `parsed` is present only for `no-text`: a scan or an image-only export,
+   * where there is no text to return and there IS a structural model worth
+   * storing. The caller decides whether to record it; this layer only carries
+   * it across, because dropping it here would lose the same model the parser
+   * deliberately kept.
+   */
+  | { status: "refused"; reason: string; parsed?: unknown; ms: number; peakRssMb: number }
   | { status: "threw"; error: string; ms: number; peakRssMb: number }
   /** Aborted by us, before the platform could abort us. */
   | { status: "deadline"; ms: number; peakRssMb: number }
@@ -179,7 +187,15 @@ export async function runParseOnThread(
       const peak = Math.max(peakRssMb, message.peakRssMb ?? 0);
       if (message.threw !== undefined) finish({ status: "threw", error: message.threw, ms: elapsed(), peakRssMb: peak });
       else if (message.ok) finish({ status: "parsed", parsed: message.parsed, ms: elapsed(), peakRssMb: peak });
-      else finish({ status: "refused", reason: message.reason ?? "unknown", ms: elapsed(), peakRssMb: peak });
+      else {
+        finish({
+          status: "refused",
+          reason: message.reason ?? "unknown",
+          ms: elapsed(),
+          peakRssMb: peak,
+          ...(message.parsed !== undefined ? { parsed: message.parsed } : {}),
+        });
+      }
     });
 
     worker.on("error", (error: Error) => {
