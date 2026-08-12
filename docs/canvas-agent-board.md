@@ -40,7 +40,7 @@ rather than observed behaviour.
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
 | `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
 | `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
-| `UI-001` three uncertainties stay distinct | UI | **READY** | — |
+| `UI-001` three uncertainties stay distinct | UI | **IN REVIEW** — PR #509 | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
 | `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
 
@@ -347,7 +347,7 @@ decide this; Brain does not.
 
 ## UI-001 — the three uncertainties must never look the same
 
-**STATUS** READY — no dependency, can start now
+**STATUS** IN REVIEW — [PR #509](https://github.com/AxelGalvez11/nemesis/pull/509)
 **PRIORITY** P1
 **DEPENDENCIES** none. The semantic states already exist.
 **BLOCKS** nothing, but it is the invariant most likely to be violated by accident
@@ -380,6 +380,23 @@ responses from a learner:
 **NON-REQUIREMENTS** — Every visual choice: colour, spacing, motion, iconography, whether a state is
 shown as text or shape, and all typography. Brain supplies the semantics and stops. Brain will not
 review CSS.
+
+**WHAT THE AUDIT FOUND (2026-08-12) — two of three tests already held; one did not.**
+
+- Test 2 (`unknown` vs `incorrect`) already holds, structurally rather than by styling:
+  `teaching-policy.ts` routes `unknown` to a `retrieve` action and `incorrect`/`partial` to
+  `show_correction` — two different renderers, not two colours of the same one.
+- Test 3 (no implied score) already holds — no percentage or score appears anywhere on this
+  surface.
+- Test 1 (degraded source vs untested learner) **did not hold.** `canvas-policy-view.tsx`'s empty
+  state special-cased `outcome === "failed"` and let `outcome === "degraded"` fall through to the
+  same message as full mastery — *"You've shown everything this material asks for."* A source the
+  parser could only partly read was telling the learner they had finished it: a claim about them,
+  fabricated from a gap in Nemesis's own reading, and in direct contradiction with the
+  `coverageNote` the Sources panel already shows for that same canvas. Fixed in
+  [PR #509](https://github.com/AxelGalvez11/nemesis/pull/509): `degraded` now gets its own message,
+  distinct from both "couldn't read this at all" and "nothing left to practise" — naming the
+  reading gap without asserting anything about what the learner does or doesn't know.
 
 ---
 
