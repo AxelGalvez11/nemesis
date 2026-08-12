@@ -1,0 +1,333 @@
+# Canvas agent board
+
+**The authoritative task board for every Canvas lane.** Chat memory is not shared and does not
+survive; this file is. If you are Parser, Runtime, UI or Integration Claude, everything you need to
+start is here — what you own, why it matters, what must stay true, and what you must not touch.
+
+> Maintained by Brain (cognitive architecture lead). Brain defines *meaning*; it does not implement
+> another lane's work. If a task here is wrong, say so — a contract that does not survive contact
+> with the implementation is a Brain defect, not an implementation inconvenience.
+
+**Last recomputed from repository reality: 2026-08-12.**
+
+```
+Parser perceives · Brain understands · Runtime executes · UI expresses · Canvas is what the learner sees
+```
+
+## The one fact that reframes everything
+
+`learner_evidence` holds **0 rows**. Knowledge objects and objectives exist (2 and 4, created
+2026-08-11) and the loop was proven live that day, but nothing has accumulated since and nothing
+can right now: the only code path that writes evidence is gated on the policy owning the whole
+page, and the strict ownership router grants that for **0 of 6 canvases and 0 of 11 sources**, by
+design.
+
+**So the adaptive loop is gated shut, not unbuilt.** Every capability downstream of evidence —
+diagnosis, sequencing, yield, Minimap state — is waiting on that single gate. `RUNTIME-001` opens
+it. Everything else on this board is either clearing the path to that moment or making sure the
+first rows through are correct.
+
+## Status at a glance
+
+| Task | Owner | Status | Blocks |
+|---|---|---|---|
+| `BRAIN-001` performance identity readable | Brain | **IN REVIEW** (#498) | INTEGRATION-001 |
+| `BRAIN-002` response identity is per-answer by type | Brain | **READY** | RUNTIME-002 |
+| `BRAIN-003` causal objectives + task contract | Brain | **BLOCKED** | UI-002 |
+| `RUNTIME-001` compositional task hosting | Runtime | **IN REVIEW** (#494) | everything |
+| `RUNTIME-002` one answer, one response identity | Runtime | **READY** | INTEGRATION-001 |
+| `PARSER-001` derived verdict crosses the boundary | Parser | **READY** | BRAIN capability gate |
+| `PARSER-002` persist the unsupported *kinds* | Parser | **READY** | PARSER-001 |
+| `UI-001` three uncertainties stay distinct | UI | **READY** | — |
+| `UI-002` Minimap surface | UI | **BLOCKED** | — |
+| `INTEGRATION-001` first real end-to-end trace | Integration | **BLOCKED** | the whole vision |
+
+---
+
+# RUNTIME
+
+## RUNTIME-001 — compositional task hosting
+
+**STATUS** IN REVIEW — PR #494, open, unmerged
+**PRIORITY** P0. This is the critical path.
+**DEPENDENCIES** none
+**BLOCKS** every capability downstream of learner evidence
+
+**CAPABILITY BLOCKED** — No learner can be asked anything by the policy on a real canvas, so no
+evidence can exist, so nothing adapts. The Canvas cannot do `fast → expand → scaffold → apply →
+compress → fast` because only one thing may paint at a time.
+
+**REQUIRED CONTRACT** — A policy contributes an interaction to a Canvas it does not own; unsupported
+source material stays visible and reachable beside it.
+
+**SEMANTIC INVARIANTS**
+- One answer surface. Two would route an answer to a question nobody was asked.
+- A judge that could not be reached writes nothing. An outage is not a learner failure.
+- Ownership may still be *computed and reported* — it just no longer decides whether a question is asked.
+- Unsupported content is never hidden to make a surface look clean.
+
+**ACCEPTANCE TESTS**
+1. A canvas whose sources are only partly representable presents a policy task **and** the document.
+2. `learner_evidence` gains its first row from an ordinary session with no `?policy=force`.
+3. No canvas presents two answerable surfaces at once.
+
+**NON-REQUIREMENTS** — React structure, hook shape, how regions are composed, whether
+`HostedTaskShape` changes. All yours.
+
+**BRAIN REVIEW — ACCEPTED (2026-08-12).** Reviewed semantically, not stylistically.
+`AnswerSink` as a union makes two answer surfaces unrepresentable rather than merely unlikely;
+"a judge we could not reach is not a learner who failed" is held in code; evidence is written only
+through the evaluator. You declined to invent the sixteen-to-three operation mapping and said why —
+that was the correct call and the answer is `BRAIN-002`/§3 of `causal-cognition-contract.md`: **no
+such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a revision of this PR.
+
+---
+
+## RUNTIME-002 — one learner answer carries one response identity
+
+**STATUS** READY
+**PRIORITY** P0 — must land before evidence accumulates
+**DEPENDENCIES** BRAIN-001 (#498) defines the read side; BRAIN-002 makes it type-enforced
+**BLOCKS** INTEGRATION-001, and silently corrupts any multi-objective task
+
+**CAPABILITY BLOCKED** — A learner who explains a mechanism in one sentence demonstrates several
+things at once. Nemesis must record that as **one performance with several observations**. Today it
+would record several performances, and would then believe the learner practised three times when
+they answered once.
+
+**THE DEFECT, PRECISELY** — `responseId` is set from `prompt.id`, and the prompt id is built as:
+
+```
+`${decision.objective.identityKey}:${decision.action.type}:${decision.state.evidenceCount}:${round}`
+```
+
+It **embeds the objective's identity key**. With one objective per answer that is harmless and
+correct. The moment one answer produces evidence for several objectives, each row gets a *different*
+`responseId` and the grouping breaks — reintroducing, one layer up, exactly the defect #498 fixes.
+
+**REQUIRED CONTRACT** — Response identity is per **answer**, not per objective. Every evidence row
+produced by a single learner submission carries the same `responseId`. It must remain stable across
+retries of the same submission (it is the idempotency key), and differ across genuinely separate
+answers.
+
+**SEMANTIC INVARIANTS**
+- One submission → one `responseId`, however many objectives it touches.
+- `responseId` must **not** be derived from anything objective-specific.
+- Still unique per `(user, objective, response)` — the database enforces this and relies on it.
+- Retrying the same submission must remain a no-op, not a second demonstration.
+- `responseLatencyMs` belongs to the performance: the same measured duration on each row of one
+  answer is correct, and must not be divided among them.
+
+**ACCEPTANCE TESTS**
+1. One submission producing evidence for three objectives yields three rows sharing one `responseId`.
+2. `performancesIn(log).size === 1` for that submission (helper ships in #498).
+3. Two separate submissions for the same objective yield two different `responseId`s.
+4. A double-submit of one answer still yields one row per objective, not two.
+
+**NON-REQUIREMENTS** — How the id is generated (uuid, hash, counter), where it is held, and whether
+the prompt id keeps its current shape for other purposes. Brain cares only that it identifies the
+*answer*.
+
+**FILES / PARALLEL OWNERSHIP** — `use-policy-runtime.ts` and `objective-task.ts` are yours for this.
+Brain is editing `learner-evidence.ts` and `learner-store.ts` in #498 — **do not edit those two**;
+if you need a change there, ask and Brain will make the boundary change.
+
+---
+
+# PARSER
+
+## PARSER-001 — carry the derived parse verdict across the extraction boundary
+
+**STATUS** READY — sent directly 2026-08-12, now durable here
+**PRIORITY** P1
+**DEPENDENCIES** PARSER-002 for the *reason*; the verdict itself can ship first
+**BLOCKS** Brain's capability gate becoming a real mechanism instead of a fixture label
+
+**CAPABILITY BLOCKED** — Brain cannot refuse to teach from material it could not reliably read.
+Your own audit found `SourceContext` carries no coverage at all, so an undescribed figure, an unread
+chart and a refused CSV delimiter all report `quality: "full"`. At the consumer, unsupported *is*
+absent.
+
+**WHY IT IS LOAD-BEARING** — Brain measured 234 causal candidates across the library: **145 (62%)
+come from degraded parses and not one is usable.** They are column fragments, not sentences. One
+flattened table produced 126 candidates, all unusable, and it is the richest causal source present.
+If the parser destroys a relationship, no Canvas policy can recover it without inventing it.
+
+**REQUIRED CONTRACT** — The derived verdict crosses the boundary as a **value**, not as raw coverage
+each consumer re-derives. Every consumer re-deriving it is how the current inconsistency arose.
+Brain needs to distinguish *"we could not reliably read this"* from *"this asserts nothing"*.
+
+**SEMANTIC INVARIANTS**
+- 🔴 **A source gap is not a learner gap.** If these collapse, Canvas will eventually tell a student
+  they are weak on material where the truth is that the parser failed. That is the worst available
+  failure in this direction: invisible, and it blames the learner.
+- Parser uncertainty stays distinguishable from absence of knowledge.
+- Parser does not infer causal knowledge itself. Perception, not interpretation.
+
+**ACCEPTANCE TESTS**
+1. A degraded source and a clean source with no causal content return **different** verdicts.
+2. A consumer reading only `SourceContext` can tell them apart without touching `parsed_documents`.
+3. The three verdicts round-trip: stored → read → consumer, with no re-derivation.
+
+**NON-REQUIREMENTS** — Which parser library, which algorithm, how the verdict is computed, and
+whether it is stored or derived on read. Brain does not prescribe any of it.
+
+---
+
+## PARSER-002 — persist the *kinds* of unsupported content
+
+**STATUS** READY
+**PRIORITY** P2
+**DEPENDENCIES** none
+**BLOCKS** PARSER-001 explaining *why* something is incomplete
+
+**CAPABILITY BLOCKED** — Nemesis can say "incomplete" but never why, so it cannot tell a learner
+what it could not read, and the Minimap cannot mark source-unmapped regions meaningfully.
+
+**REQUIRED CONTRACT** — Your own finding: both grid parsers build `{kind, count}[]`
+(`ambiguous-delimiter`, `unsupported-number-format`) and `csvCoverage`/`xlsxCoverage` **sum it to
+one integer**. `unreadableRegions: 1` survives; the reason does not. Persist the kinds — additive,
+optional field on `ExtractionCoverage`.
+
+**SEMANTIC INVARIANTS** — Additive and nullable; absent means not observed, never zero. Do not
+backfill existing rows with a guessed kind.
+
+**ACCEPTANCE TESTS** — A refused delimiter and an unsupported number format are distinguishable in
+stored coverage, and survive to a consumer.
+
+**NON-REQUIREMENTS** — The vocabulary of kinds is yours; you have measured them and Brain has not.
+
+**NOTE** — `table_count` is dead (written by nothing, read by nothing, 0 on every production row
+including a DOCX with two real tables). Brain confirms no derivation may consult it.
+
+---
+
+# UI
+
+## UI-001 — the three uncertainties must never look the same
+
+**STATUS** READY — no dependency, can start now
+**PRIORITY** P1
+**DEPENDENCIES** none. The semantic states already exist.
+**BLOCKS** nothing, but it is the invariant most likely to be violated by accident
+
+**CAPABILITY BLOCKED** — Nothing yet. This is a constraint to hold as the surface grows, and it is
+cheaper to hold from the start than to retrofit.
+
+**REQUIRED CONTRACT** — These must remain visually distinguishable, because they call for opposite
+responses from a learner:
+
+| Brain state | Means | Must never read as |
+|---|---|---|
+| `source_state = degraded` | Nemesis could not reliably read the material | learner weakness |
+| `learner_state = unknown` | Nemesis has never asked | learner failure |
+| `learner_state = not_demonstrated` | Asked; nothing usable came back | a wrong answer |
+| `learner_state = incorrect` | The learner contradicted the objective | any of the above |
+
+**SEMANTIC INVARIANTS**
+- 🔴 Never invent learner state. If Brain says `unknown`, the surface says unknown — not a grey dot
+  that reads as "weak", not an empty progress bar that reads as zero.
+- Never imply mastery or certainty Brain did not infer. A confident-looking surface is a claim.
+- `unknown` is **not** the bottom of a scale. It sits outside the ordering: "we have never asked"
+  and "they got it wrong" call for opposite teaching.
+
+**ACCEPTANCE TESTS**
+1. A canvas with a degraded source and a canvas with an untested learner do not look the same.
+2. No surface renders `unknown` using the same treatment as `incorrect`.
+3. A learner who has answered nothing sees no implied score.
+
+**NON-REQUIREMENTS** — Every visual choice: colour, spacing, motion, iconography, whether a state is
+shown as text or shape, and all typography. Brain supplies the semantics and stops. Brain will not
+review CSS.
+
+---
+
+## UI-002 — the Minimap surface
+
+**STATUS** BLOCKED
+**PRIORITY** P2
+**DEPENDENCIES** BRAIN-003 (knowledge/state contract), and clusters/prerequisites do not exist yet
+**BLOCKS** the learner choosing territory
+
+**WHY BLOCKED, HONESTLY** — The Minimap must reconcile source organisation, knowledge organisation
+and learner state. Today there are 2 knowledge objects and no prerequisite edges, so a Minimap built
+now would be a table of contents wearing a map's clothes. `docs/minimap-knowledge-territory.md` is
+the target; it is explicitly not a specification of anything that exists.
+
+**WHAT UI CAN DO MEANWHILE** — UI-001, and the collapsible panel *shell* against the versioned
+proposed interface in the Minimap doc, provided nothing invents state to fill it.
+
+---
+
+# BRAIN
+
+## BRAIN-001 — performance identity is readable
+
+**STATUS** IN REVIEW — PR #498
+**PRIORITY** P0 — must land before or with RUNTIME-001
+
+`response_id`, `response_text` and `task_id` were written on every evidence row and never selected
+back. Fixed; select list now derived from the write shape, guards calibrated against the real
+defect. Ships `performanceKey` and `performancesIn`, which RUNTIME-002's acceptance tests use.
+
+## BRAIN-002 — response identity is per-answer, enforced by the type
+
+**STATUS** READY — Brain is starting this now
+**DEPENDENCIES** BRAIN-001
+**BLOCKS** RUNTIME-002 can proceed in parallel against the contract above
+
+Make `responseId` non-optional where a learner performance exists, so a caller cannot omit it. The
+unique index is `NULLS DISTINCT`, so rows written without one are not deduplicated at all — the
+idempotency protection silently does not apply. A retry with no response id is unidentifiable, so
+the database cannot fix this; the type must.
+
+## BRAIN-003 — causal objectives and the cognitive task contract
+
+**STATUS** BLOCKED on #496/#497 merging
+**DEPENDENCIES** #496 (substrate), #497 (contract), RUNTIME-001
+
+`objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
+can target a **set** of objectives and one answer can write evidence for several.
+
+---
+
+# INTEGRATION
+
+## INTEGRATION-001 — the first real end-to-end learner trace
+
+**STATUS** BLOCKED
+**DEPENDENCIES** #498 (BRAIN-001) **and** #494 (RUNTIME-001) live in production
+**BLOCKS** every claim about adaptive behaviour being observed rather than architectural
+
+**CAPABILITY BLOCKED** — Nemesis cannot demonstrate that the loop closes for a real learner.
+
+**REQUIRED CONTRACT** — One real journey, production, no forced flags:
+
+```
+source → knowledge → objective → task → response → performance → evidence
+      → learner-state update → the next task differs because of it
+```
+
+**SEMANTIC INVARIANTS** — No forced policy override. No synthetic pipeline: synthetic *content* is
+fine, a synthetic pipeline is not. Controlled rows deleted afterwards by positive provenance only —
+row `created_at` plus a named marker, never `updated_at`.
+
+**ACCEPTANCE TESTS**
+1. `learner_evidence` gains a row through ordinary use.
+2. That row carries `operation`, `responseLatencyMs`, `responseId` and reads back with all three.
+3. The *next* decision differs from what it would have been without that evidence.
+
+**ORDERING CONSTRAINT** — #498 must be live **before** evidence accumulates. Once the gate opens,
+rows written while `response_id` is unreadable have unrecoverable performance grouping, permanently.
+
+---
+
+## Rules of the board
+
+1. **Brain does not implement delegated work.** If Brain edits your files, that is a Brain defect
+   unless it is a declared boundary change, recorded here.
+2. **Say NO CURRENT WORK rather than inventing work.** An idle lane with a reason is information; a
+   busy lane with no leverage is waste.
+3. **A contract that cannot be implemented is Brain's problem.** Push back here.
+4. **Review is semantic.** Brain will not review your CSS, your parser library, or your React.
+   Brain reviews whether meaning survived your layer.
