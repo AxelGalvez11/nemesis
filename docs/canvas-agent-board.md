@@ -32,7 +32,7 @@ first rows through are correct.
 | Task | Owner | Status | Blocks |
 |---|---|---|---|
 | `BRAIN-001` performance identity readable | Brain | **IN REVIEW** (#498) | INTEGRATION-001 |
-| `BRAIN-002` response identity is per-answer by type | Brain | **READY** | RUNTIME-002 |
+| `BRAIN-002` response identity is per-answer by type | Brain | **IN REVIEW** (#498) — contract is live for RUNTIME-002 | RUNTIME-002 |
 | `BRAIN-003` causal objectives + task contract | Brain | **BLOCKED** | UI-002 |
 | `RUNTIME-001` compositional task hosting | Runtime | **IN REVIEW** (#494) | everything |
 | `RUNTIME-002` one answer, one response identity | Runtime | **READY** | INTEGRATION-001 |
@@ -272,14 +272,23 @@ defect. Ships `performanceKey` and `performancesIn`, which RUNTIME-002's accepta
 
 ## BRAIN-002 — response identity is per-answer, enforced by the type
 
-**STATUS** READY — Brain is starting this now
+**STATUS** IN REVIEW — landed in #498. **The contract RUNTIME-002 implements against is now live.**
 **DEPENDENCIES** BRAIN-001
-**BLOCKS** RUNTIME-002 can proceed in parallel against the contract above
+**BLOCKS** nothing — RUNTIME-002 can proceed against it immediately
 
-Make `responseId` non-optional where a learner performance exists, so a caller cannot omit it. The
-unique index is `NULLS DISTINCT`, so rows written without one are not deduplicated at all — the
-idempotency protection silently does not apply. A retry with no response id is unidentifiable, so
-the database cannot fix this; the type must.
+`EvidenceToRecord.responseId` is now **required**, and it is the only field in that neighbourhood
+that is. Every observation around it stays nullable because for those, absent means *not observed*.
+An absent response identity does not mean "not measured" — it means the row cannot be counted or
+deduplicated at all. Different kinds of missing, and the interface now says which is which.
+
+The reason it is a type and not an index change: the unique index is `NULLS DISTINCT`, so rows
+written without an id never collide and deduplication silently does not apply. `NULLS NOT DISTINCT`
+would be wrong in the other direction — two genuinely separate answers that both lacked an id are
+two demonstrations, not one. **A retry is only recognisable as a retry if the answer said which
+answer it was**, so the database cannot recover an identity nobody supplied.
+
+The change immediately caught a construction site that omitted it, which is the argument for making
+it a type rather than a convention.
 
 ## BRAIN-003 — causal objectives and the cognitive task contract
 
