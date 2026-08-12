@@ -104,7 +104,24 @@ such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a r
 
 ## RUNTIME-003 — a task that targets a SET of objectives
 
-**STATUS** READY — assigned 2026-08-12 to the current Runtime session
+**STATUS** ✅ **ACCEPTED** — PR #508, 2026-08-12. `prompt.targets.map` is total over the TARGETS
+rather than over the outcomes, so an objective the judge stayed silent about records
+*"nothing was shown about this"* instead of vanishing; `demonstrationObtained` follows the outcome,
+not the submission; `ObjectiveTarget` holds `rowId` and `identityKey` together so a row cannot be
+written against one objective while its verdict was decided about another.
+
+**Tests executed by Brain: none.** Its acceptance tests are unit-level and the multi-target path has
+no production caller yet, so there is nothing end-to-end to run. Said explicitly rather than letting
+"accepted" imply more than it does — see the note under `INTEGRATION-001` about what semantic
+review cost on #494.
+
+**🔴 REQUIRED BEFORE `BRAIN-003`, NOT BEFORE MERGE.** `evidenceForSubmission` takes a bare
+`outcomes` array, so an empty one writes `demonstrationObtained: false` for every target — right for
+*"the judge established nothing"*, wrong for *"the judge never ran"*. **Unreachable today, and
+verified rather than assumed:** `submit` returns early on `!result.value` and records nothing, so the
+invariant is held by the **caller**, not by the type. That arrangement breaks the moment a
+multi-objective judge returns a *short* list for a partial judgement and *nothing* for a failed one.
+Brain owns the sequencing and will not ship a multi-objective judge until the split lands.
 **PRIORITY** P0 — the next thing on the critical path after INTEGRATION-001
 **DEPENDENCIES** none blocking. The semantics are merged: `docs/causal-cognition-contract.md` §7.
 **BLOCKS** every causal cognitive operation; `UI-003`
@@ -271,6 +288,15 @@ learning anything from it"* is real, and it is two things coverage was a poor pr
 2. An ordinary submission on that canvas writes a `learner_evidence` row.
 3. A canvas with `outcome: "degraded"` still produces nothing.
 4. The canvas still shows its unsupported source material, and `unrepresented` is still reported.
+
+**🔴 SCOPE — `canvas-knowledge.ts:111` IS NOT PART OF THIS AND MUST NOT BE TOUCHED.** A separate,
+earlier clause returns `nothingToRead()` when `sourceIds.length !== canvas.sources.length`, and
+**five of the six production canvases die there, not at `:160`.** That refusal is correct — an
+ephemeral source genuinely has nothing to read — and it is `RUNTIME-004`'s territory, not this task's.
+
+Stated explicitly because of the trap it sets: fix `:160`, re-run the acceptance test on one of those
+five, see no objectives, and conclude the fix failed when it worked. **Acceptance test 1 names
+`796a6045` for exactly this reason** — it is the only canvas that reaches the ownership gate.
 
 **NON-REQUIREMENTS** — Whether `policyOwnsCanvas` keeps its current shape, where the condition
 lives, and how ownership continues to be reported. All Runtime's.
