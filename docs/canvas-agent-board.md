@@ -16,16 +16,17 @@ Parser perceives · Brain understands · Runtime executes · UI expresses · Can
 
 ## The one fact that reframes everything
 
-`learner_evidence` holds **0 rows**. Knowledge objects and objectives exist (2 and 4, created
-2026-08-11) and the loop was proven live that day, but nothing has accumulated since and nothing
-can right now: the only code path that writes evidence is gated on the policy owning the whole
-page, and the strict ownership router grants that for **0 of 6 canvases and 0 of 11 sources**, by
-design.
+**The gate is open as of 2026-08-12, and the loop is still unproven.** Both halves matter.
 
-**So the adaptive loop is gated shut, not unbuilt.** Every capability downstream of evidence —
-diagnosis, sequencing, yield, Minimap state — is waiting on that single gate. `RUNTIME-001` opens
-it. Everything else on this board is either clearing the path to that moment or making sure the
-first rows through are correct.
+`learner_evidence` held **0 rows** because the only code path that writes evidence was gated on the
+policy owning the whole page, and the strict ownership router grants that for **0 of 6 canvases and
+0 of 11 sources**, by design. A correctness gate with no alternative path is an off switch.
+`RUNTIME-001` (#494) removed it and is live in production.
+
+**What has NOT happened: a single real learner evidence row.** Merged is not deployed, deployed is
+not served, and served is not proven. `INTEGRATION-001` is the only thing that can close that gap,
+and until it does, every claim about diagnosis, sequencing, yield or Minimap state is architecture
+rather than observed behaviour.
 
 ## Status at a glance
 
@@ -49,8 +50,8 @@ first rows through are correct.
 
 ## RUNTIME-001 — compositional task hosting
 
-**STATUS** IN REVIEW — PR #494, open, unmerged
-**PRIORITY** P0. This is the critical path.
+**STATUS** ✅ **MERGED AND LIVE** — #494, in production on main `60b1365e`
+**PRIORITY** closed
 **DEPENDENCIES** none
 **BLOCKS** every capability downstream of learner evidence
 
