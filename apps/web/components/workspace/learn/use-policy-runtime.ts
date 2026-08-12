@@ -192,7 +192,11 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
         // design exists to avoid — so nothing is recorded and the prompt stays put for another go.
         // The cost is honest and bounded: a flaky judge means no progress, never wrong progress.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
-        setError(result.error ?? "Nemesis couldn't read that answer. Try again.");
+        // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
+        // ends "Your response was saved" — true on the six-stage path, where the answer is written
+        // to the canvas before the judge is called, and FALSE here, where evidence is written only
+        // from a verdict. Passing it through would tell someone their work was kept when it was not.
+        setError("Nemesis couldn't read that answer, so nothing was recorded. Try again.");
         return;
       }
 

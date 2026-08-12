@@ -381,6 +381,12 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         "`feedback` is the ONE thing the page shows them: at most two sentences, addressed to them as \"you\", " +
         "supplying exactly what was missing and nothing else. Do not restate their answer back to them, do not list " +
         "what they got right, and do not re-teach the topic. " +
+        // 🔴 SAID OUT LOUD BECAUSE THE OBEDIENT ANSWER IS THE EMPTY ONE. "Supply exactly what was
+        // missing" has no content when nothing was missing, so a well-behaved judge returns "" for a
+        // correct answer — and the validator used to discard the whole evaluation over it, losing a
+        // demonstration the learner had genuinely given. Both ends now agree that empty is RIGHT for
+        // a pass, and the page prints its own confirmation.
+        "If nothing was missing, leave `feedback` as an empty string — the page confirms a correct answer itself. " +
         "`alsoWeakConceptIds` is for OTHER concepts on the page this performance showed to be shaky; use ids from " +
         "the list above and no others, and leave it out if there are none.",
       role: "user",
