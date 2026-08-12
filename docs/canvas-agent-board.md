@@ -35,7 +35,7 @@ first rows through are correct.
 | `BRAIN-002` response identity is per-answer by type | Brain | **IN REVIEW** (#498) — contract is live for RUNTIME-002 | RUNTIME-002 |
 | `BRAIN-003` causal objectives + task contract | Brain | **BLOCKED** | UI-002 |
 | `RUNTIME-001` compositional task hosting | Runtime | **IN REVIEW** (#494) | everything |
-| `RUNTIME-002` one answer, one response identity | Runtime | **READY** | INTEGRATION-001 |
+| `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
 | `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
 | `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
@@ -85,25 +85,55 @@ such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a r
 
 ## RUNTIME-002 — one learner answer carries one response identity
 
-**STATUS** READY
-**PRIORITY** P0 — must land before evidence accumulates
-**DEPENDENCIES** BRAIN-001 (#498) defines the read side; BRAIN-002 makes it type-enforced
-**BLOCKS** INTEGRATION-001, and silently corrupts any multi-objective task
+**STATUS** ✅ **ACCEPTED — and the defect Brain reported does not exist.** Runtime disproved it.
+**PRIORITY** closed
+**DEPENDENCIES** none
+**BLOCKS** nothing
 
-**CAPABILITY BLOCKED** — A learner who explains a mechanism in one sentence demonstrates several
-things at once. Nemesis must record that as **one performance with several observations**. Today it
-would record several performances, and would then believe the learner practised three times when
-they answered once.
+### 🔴 RETRACTED: Brain's defect report was wrong
 
-**THE DEFECT, PRECISELY** — `responseId` is set from `prompt.id`, and the prompt id is built as:
+Brain reported that `responseId` embeds the objective identity, citing:
 
 ```
 `${decision.objective.identityKey}:${decision.action.type}:${decision.state.evidenceCount}:${round}`
 ```
 
-It **embeds the objective's identity key**. With one objective per answer that is harmless and
-correct. The moment one answer produces evidence for several objectives, each row gets a *different*
-`responseId` and the grouping breaks — reintroducing, one layer up, exactly the defect #498 fixes.
+That expression is real, but it is **`decisionKey` — a memo guard deciding *when* to mint an id**,
+never the id itself. The id is `crypto.randomUUID()`
+(`use-policy-runtime.ts:271` on the branch, `:223` on main), and nothing objective-specific reaches
+it. Brain read the memo guard and assumed it fed `responseId` without tracing the second argument of
+`retrievalPromptFor`. **Verified independently on both branch and main before retracting.**
+
+The contract holds by construction and always did. This entry stays on the board rather than being
+deleted, because a retracted claim that vanishes teaches nothing — and because the reasoning error
+is the reusable part: *a cross-layer defect asserted from a partial read of one layer.* That is the
+exact class of error this board exists to catch, and it was Brain's.
+
+### What was genuinely missing, and now exists
+
+The property was **untested**, which is why it could be believed broken. Runtime pinned it
+(`objective-task.test.ts`, +94 lines): one prompt across two objectives yields one shared
+`responseId`; the measured latency is the performance's and identical on each row; nothing
+objective-specific survives into the id; separate answers stay separate; an "I don't know" carries
+the same answer identity as anything else that submission produced.
+
+**Runtime also recorded a FALSE PASS in the calibration, which is the sharpest part of the work:**
+deriving `responseId` from `prompt.objectiveIdentityKey` left the guard *green*, because both rows
+share one prompt so the derived value matched anyway. It goes red on `${objectiveRowId}:${prompt.id}`.
+A calibration that finds its own blind spot is worth more than one that simply passes.
+
+### 🔴 THE REAL REMAINING RISK, AND IT IS BRAIN'S, NOT RUNTIME'S
+
+Runtime named the half their tests cannot see, correctly: they pin **"one prompt → one identity
+across objectives"**, not **"one submission → one prompt."**
+
+The second half lives upstream, and it is a constraint on how `BRAIN-003` designs the multi-objective
+causal task. If that design mints a *prompt per objective*, every prompt gets its own UUID and one
+answer becomes several performances — the failure Brain described, arriving by a completely
+different route than the one Brain reported. Nothing can test it until such a path exists.
+
+**Moved to `BRAIN-003` as a design constraint: a causal task targeting N objectives mints ONE
+prompt and ONE response identity, shared across every row that submission writes.**
 
 **REQUIRED CONTRACT** — Response identity is per **answer**, not per objective. Every evidence row
 produced by a single learner submission carries the same `responseId`. It must remain stable across
@@ -351,6 +381,20 @@ it a type rather than a convention.
 
 `objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
 can target a **set** of objectives and one answer can write evidence for several.
+
+**🔴 DESIGN CONSTRAINT INHERITED FROM RUNTIME-002 — one submission mints ONE prompt.**
+
+Response identity is already correct per prompt: one prompt across N objectives yields one shared
+`responseId`, and Runtime has pinned it. The danger is one layer up and it is Brain's to avoid.
+
+A multi-objective causal task must mint **one prompt and one response identity**, shared by every
+row that submission writes. The natural implementation — loop the objectives, build a prompt for
+each — would give each its own UUID and turn one answer into N performances. That is the failure
+Brain originally reported, arriving by a different route than the one Brain described, and it
+becomes reachable the moment causal objectives exist.
+
+Nothing can test this until a multi-objective path exists, so the constraint is recorded here to be
+satisfied *by construction* when that path is designed, not discovered afterwards in the evidence.
 
 ---
 
