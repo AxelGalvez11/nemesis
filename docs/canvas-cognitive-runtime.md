@@ -195,6 +195,52 @@ Two further invariants earned in production:
 10. **The log is the truth; state is a projection of it.** Never write a computed status as though
     it were an observation.
 
+### 🔴 Three layers, and they must not merge
+
+The single most likely way to corrupt the learner model as it gets richer:
+
+| Layer | Example | Where it lives |
+|---|---|---|
+| **Observation** | *"Correct recall. 14.2 seconds. Short factual answer."* | the evidence row |
+| **Inference** | *"This association is retrievable but not automatic."* | the projection |
+| **Policy decision** | *"Do not reteach. Test again soon, under a different cue."* | the policy |
+
+An observation is a fact about one demonstration. An inference is a claim about the learner. A
+policy decision is a choice about what to do next. **They are written by different code, at
+different times, and only the first is durable.**
+
+🔴 **`tookMs > 10s = weak` must never appear in evidence-writing code.** The moment a threshold is
+baked into what gets stored, the judgement becomes unreviewable and unrevisable: every row written
+under the old rule silently means something different from every row written under the new one, and
+no migration can recover what was actually observed. Store `14200`. Decide what it means later, in
+one place, where changing your mind is free.
+
+The same rule governs every field in the schema below. `semantic_depth` records what the answer
+*contained*, not whether that was good enough. `scaffolding_level` records how much support was
+given, not that the learner is dependent.
+
+### 🔴 A field enters the schema when it can be OBSERVED, not when it would be useful
+
+Every field must have clear provenance — something that actually measured it. Add:
+
+```
+demonstration
+├─ verdict                the evaluator's judgement
+├─ operation              which cognitive operation was demanded
+├─ response_latency_ms    measured, never bucketed
+├─ response_text          what was actually said
+├─ scaffolding_level      how much support preceded the attempt
+└─ evaluator_observations structured output, when the evaluator produces it
+```
+
+Semantic depth, completeness, misconception structure, confidence calibration and transfer distance
+enter **only when Nemesis has a well-defined way to observe them** — not as nullable columns filled
+in later by a model guessing at old rows.
+
+**`absent` always means NOT OBSERVED. It must never be given a default.** A field added with a
+backfilled default retroactively claims something about every demonstration that came before it,
+and that claim will be wrong.
+
 ---
 
 ## 6. Learning strategy selection
@@ -447,24 +493,13 @@ Today one demonstration records essentially:
 objective · verdict · demonstrationObtained · confidence? · misconceptions? · evaluatorVersion?
 ```
 
-The architecture must make room for:
+The next boundary adds only the fields with clear provenance — `operation`,
+`response_latency_ms`, `response_text`, `scaffolding_level` — under the rules in
+[§5](#-a-field-enters-the-schema-when-it-can-be-observed-not-when-it-would-be-useful). Semantic
+depth, completeness, misconception structure, confidence calibration and transfer distance wait
+until something can actually observe them.
 
-```
-demonstration
-├─ verdict
-├─ operation            which cognitive operation was demanded
-├─ response_latency     interpreted against operation, not absolute
-├─ semantic_depth       recall / partial-causal / causal model
-├─ completeness         which relationships were omitted
-├─ misconception        named competing model
-├─ scaffolding_level    how much support was needed to get there
-├─ transfer_distance    same context / adjacent / novel
-└─ confidence
-```
-
-Not all of these now. But the schema should be able to grow into them **without a migration that
-rewrites the meaning of existing rows** — every field is an observation about one demonstration, and
-absent must always mean *not observed*, never a default value.
+The schema must be able to grow **without a migration that rewrites the meaning of existing rows**.
 
 ---
 
@@ -474,7 +509,7 @@ absent must always mean *not observed*, never a default value.
 |---|---|---|
 | **7a** — strict automatic association ownership | Removes the `?policy=1` URL gate; ownership decided from source coverage | **shipped** (PR #484) |
 | **7b** — compositional Canvas | Policy tasks stop replacing the page; the Canvas presents them alongside its document | next, and the architectural priority |
-| **Learner-state enrichment** | Elapsed time and semantic answer structure become evidence | **runs in parallel with 7b — see below** |
+| **Learner-state enrichment** | `operation`, `response_latency_ms`, `response_text` and `scaffolding_level` become observations | **runs in parallel with 7b — see below** |
 | **Causal knowledge + causal interaction** | First second knowledge type, with a real interaction rather than a fallback quiz | after 7b |
 | **Broader knowledge and strategy types** | Conceptual, procedural, quantitative; compression, mnemonics, analogies | after that |
 
@@ -526,6 +561,11 @@ Explicit prohibitions. Each one is a mistake that would look like progress.
 8. **Do not scope any of this to one field.** Nemesis is a field-agnostic academic OS. Every rule
    here must work for a law student and a mechanical engineering student. Prefer structural signals
    over subject-matter keyword lists, which never generalise.
+9. **Do not bake an interpretation into an observation.** No threshold, bucket or verdict about a
+   signal may be computed at write time — see [§5](#-three-layers-and-they-must-not-merge). Store
+   what was measured; decide what it means where the decision can be changed.
+10. **Do not add an evidence field before something can observe it.** A nullable column waiting for
+    a future model is a promise the schema cannot keep, and the backfill will invent history.
 
 ---
 
