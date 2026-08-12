@@ -52,6 +52,30 @@ export interface LearnerEvidence {
    *  on it — but recorded for the same reason identity keys carry their version. */
   evaluatorVersion?: string | null;
 
+  /**
+   * WHICH SINGLE LEARNER ACTION PRODUCED THIS OBSERVATION.
+   *
+   * 🔴 ONE PERFORMANCE, MANY OBSERVATIONS — and they are not the same thing. A learner who
+   * explains "ACE inhibition lowers angiotensin II, which lowers aldosterone, reducing potassium
+   * secretion" has answered ONCE and demonstrated THREE causal edges. Three objectives, three
+   * rows, one performance, one twenty-second latency.
+   *
+   * 🔴 THE DATABASE ALREADY ENFORCES THE HALF THAT MATTERS PER OBJECTIVE. The unique constraint
+   * is `(user_id, objective_id, response_id)`, so one response can never produce two rows for the
+   * SAME objective — which is why `demonstrationCount` below is already honest and is deliberately
+   * left alone. What was missing is the other half: nothing could tell that rows for DIFFERENT
+   * objectives came from one answer.
+   *
+   * 🔴 THIS IS AN OBSERVATION, NOT AN INFERENCE. It records that these judgements share an origin.
+   * It does NOT claim that three edges in one sentence are worth more, or less, than the same
+   * three demonstrated separately — that reading is real and important, and it belongs to the
+   * layer above, where it can be revised without rewriting a single row of what happened.
+   *
+   * Absent means not observed. Legacy rows have none, and `performanceKey` treats each of them as
+   * its own performance, which is exactly what they were.
+   */
+  responseId?: string | null;
+
   // ── Observations about the attempt ────────────────────────────────────────
   //
   // 🔴 RAW MEASUREMENTS, AND NOTHING READS THEM YET. They are carried so the record is complete,
@@ -76,6 +100,58 @@ export interface LearnerEvidence {
   /** How much assistance the runtime offered during the attempt. 0 is the prompt alone.
    *  🔴 What was OFFERED, not whether the learner needed it. */
   scaffoldingLevel?: number;
+  /**
+   * What the learner actually wrote or said, verbatim.
+   *
+   * 🔴 THE LANGUAGE OF AN ANSWER IS EVIDENCE, AND A VERDICT DISCARDS IT. "It blocks the receptor"
+   * and "AT1 blockade reduces aldosterone" can both be judged correct while showing different
+   * command of the vocabulary; which terms a learner reaches for, and which they never use, is a
+   * signal no five-value verdict can carry. Kept raw so a better evaluator can re-read it.
+   */
+  responseText?: string | null;
+  /** Which task produced this. Provenance only — 🔴 never a filter for reading state back. */
+  taskId?: string | null;
+}
+
+/**
+ * The identity of the one learner action an observation belongs to.
+ *
+ * 🔴 THE FALLBACK IS NOT A DEFAULT, IT IS THE HISTORICAL TRUTH. Every row written before response
+ * ids were carried came from a surface that produced exactly one row per answer, so treating such
+ * a row as its own performance is not a guess standing in for missing data — it is what actually
+ * happened. That is why this is a function and not a backfill: rewriting those rows would invent
+ * a shared origin that no learner ever created.
+ */
+export function performanceKey(evidence: LearnerEvidence): string {
+  return evidence.responseId ?? evidence.id;
+}
+
+/**
+ * Group a log by the learner action each observation came from.
+ *
+ * 🔴 THIS IS WHAT MAKES "ONE ANSWER" COUNTABLE. Without it the only available question is "how
+ * many rows?", and the charter's invariant — never infer the number of attempts from the number
+ * of evidence rows — cannot even be expressed, let alone held.
+ *
+ * Insertion order follows first appearance, so a caller that sorted the log by time gets
+ * performances in the order they occurred.
+ */
+export function performancesIn(
+  evidence: readonly LearnerEvidence[],
+): Map<string, readonly LearnerEvidence[]> {
+  const byPerformance = new Map<string, LearnerEvidence[]>();
+  const seenRows = new Set<string>();
+  for (const row of evidence) {
+    // Rows are deduplicated by their own id first: a log assembled from two overlapping reads
+    // would otherwise report one answer twice, which is the very miscount this exists to prevent.
+    if (seenRows.has(row.id)) continue;
+    seenRows.add(row.id);
+    const key = performanceKey(row);
+    const existing = byPerformance.get(key);
+    if (existing) existing.push(row);
+    else byPerformance.set(key, [row]);
+  }
+  return byPerformance;
 }
 
 /** The judged outcomes. Mirrors the existing `Verdict` in canvas-model.ts, which is deliberate:

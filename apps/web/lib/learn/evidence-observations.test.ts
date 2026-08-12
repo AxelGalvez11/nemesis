@@ -12,6 +12,7 @@ import {
   retrievalPromptFor,
   unobtainedEvidence,
 } from "./objective-task";
+import { EVIDENCE_SELECT, evidenceFromRow, evidenceRow } from "./learner-store";
 
 // Track B1 — the observation layer, and ONLY the observation layer.
 //
@@ -40,29 +41,26 @@ const EVALUATION = {
   verdict: "strong" as const,
 };
 
-/** The evidence INSERT, sliced from its own function.
+/**
+ * A fully-populated record, used only to enumerate which COLUMNS the write path produces.
  *
- *  🔴 ANCHORED ON `recordEvidence`, NOT ON THE FIRST `.upsert(` IN THE FILE. `saveKnowledge` sits
- *  above it and upserts too, so a bare `indexOf` slices the wrong function — and a guard reading
- *  the wrong region passes for reasons that have nothing to do with what it claims. */
-function evidenceInsert(): string {
-  const store = readFileSync(new URL("./learner-store.ts", import.meta.url), "utf8");
-  const fn = store.indexOf("export async function recordEvidence");
-  assert.notEqual(fn, -1);
-  const end = store.indexOf("ignoreDuplicates", fn);
-  assert.ok(end > fn, "recordEvidence must still upsert");
-  return store.slice(fn, end);
-}
-
-/** The evidence SELECT, sliced from `loadEvidence` for the same reason. */
-function evidenceSelect(): string {
-  const store = readFileSync(new URL("./learner-store.ts", import.meta.url), "utf8");
-  const fn = store.indexOf("export async function loadEvidence");
-  assert.notEqual(fn, -1);
-  const end = store.indexOf('.in("objective_id"', fn);
-  assert.ok(end > fn, "loadEvidence must still filter by objective");
-  return store.slice(fn, end);
-}
+ * 🔴 THE SOURCE-SLICING HELPERS THIS REPLACED ARE GONE ON PURPOSE. They existed because the write
+ * shape was built inline inside a function that needed a database, so reading the file was the
+ * only way to see it. Both are now pure and exported, and asking the code beats grepping it: the
+ * old guards broke the moment the code was restructured, while asserting nothing about behaviour.
+ */
+const RECORD_FOR_COLUMNS = {
+  demonstrationObtained: true,
+  objectiveRowId: "obj-1",
+  occurredAt: "2026-08-12T10:00:00.000Z",
+  operation: "recall" as const,
+  responseId: "resp-1",
+  responseLatencyMs: 1_000,
+  responseText: "valsartan",
+  scaffoldingLevel: 0,
+  taskId: "task-1",
+  verdict: "strong" as const,
+};
 
 function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: number }) {
   return evidenceFromEvaluation({
@@ -181,13 +179,23 @@ test("🔴 a reveal with nothing typed leaves latency ABSENT rather than 0", () 
 // ── 5. absent stays absent across the boundary ──────────────────────────────
 
 test("🔴 the writer sends null, never a default, for anything unobserved", () => {
-  for (const field of ["operation", "response_latency_ms", "scaffolding_level"]) {
-    const insert = evidenceInsert();
-    assert.ok(insert.includes(`${field}:`), `${field} must be written`);
+  // 🔴 NOW ASKED OF THE CODE, NOT OF ITS SOURCE TEXT. This used to slice `recordEvidence` and
+  // pattern-match for `?? 0`, because the row shape was built inline in a function that needed a
+  // database to call. It is a pure function now, so the guard runs it and inspects what it really
+  // produces — and no longer passes or fails on how a line happens to be written.
+  const row = evidenceRow("user-1", {
+    demonstrationObtained: false,
+    objectiveRowId: "obj-1",
+    occurredAt: "2026-08-12T10:00:00.000Z",
+    verdict: null,
+  });
+
+  for (const column of ["operation", "response_latency_ms", "scaffolding_level"]) {
+    assert.ok(column in row, `${column} must be written`);
     assert.equal(
-      new RegExp(`${field}:[^,]*\\?\\?\\s*0`).test(insert),
-      false,
-      `${field} defaults to 0 — a row nobody measured would claim a measurement`,
+      row[column],
+      null,
+      `${column} came out as ${JSON.stringify(row[column])} when nothing measured it — a row nobody measured would carry a measurement`,
     );
   }
 });
@@ -195,17 +203,24 @@ test("🔴 the writer sends null, never a default, for anything unobserved", () 
 test("🔴 the reader omits an unobserved field rather than coercing it", () => {
   // Historical rows predate all three columns. They must read back as "not observed" — and `?? 0`
   // would turn every one of them into a claim that the learner answered instantly, unaided.
-  const store = readFileSync(new URL("./learner-store.ts", import.meta.url), "utf8");
-  const mapper = store.slice(store.indexOf(".map((row) => ({"));
-  for (const [column, field] of [
-    ["operation", "operation"],
-    ["response_latency_ms", "responseLatencyMs"],
-    ["scaffolding_level", "scaffoldingLevel"],
-  ]) {
-    assert.ok(
-      new RegExp(`row\\.${column} == null \\? \\{\\} : \\{ ${field}`).test(mapper),
-      `${field} must be spread only when the column is present`,
-    );
+  // 🔴 ALSO BEHAVIOURAL NOW. Matching the source for `row.x == null ? {} : { y` asserted one
+  // spelling of the fix rather than the fix, so an equivalent rewrite would have failed it while a
+  // subtly wrong one that kept the shape would have passed.
+  const loaded = evidenceFromRow(
+    {
+      demonstration_obtained: false,
+      id: "row-1",
+      misconceptions: [],
+      occurred_at: "2026-08-12T10:00:00.000Z",
+      operation: null,
+      response_latency_ms: null,
+      scaffolding_level: null,
+      verdict: null,
+    },
+    "objective-key-1",
+  );
+  for (const field of ["operation", "responseLatencyMs", "scaffoldingLevel"]) {
+    assert.equal(field in loaded, false, `${field} must be absent, not coerced, when never observed`);
   }
 });
 
@@ -215,12 +230,18 @@ test("🔴 every observation written is also SELECTED back", () => {
   // Six structural fields have died at a boundary in this codebase by being written and never read,
   // each passing every test on both sides. A field the reader does not ask for is not persisted
   // state, it is a column nobody will discover is unreachable until something needs it.
-  const insert = evidenceInsert();
-  const select = evidenceSelect();
+  // 🔴 AND IT WAS TOO NARROW TO SEE THE BREAKAGE THAT ALREADY EXISTED. Scoped to the three columns
+  // B1 was adding, it could not notice that `response_id`, `response_text` and `task_id` were
+  // already written and never selected — a guard shaped around its author's change rather than
+  // around the defect. The general form now lives in `performance-identity.test.ts`, which checks
+  // EVERY written column; this keeps B1's three explicit, because they are the ones whose absence
+  // would silently un-observe a learner.
+  const written = Object.keys(evidenceRow("user-1", RECORD_FOR_COLUMNS));
+  const selected = EVIDENCE_SELECT.split(",");
 
   for (const field of ["operation", "response_latency_ms", "scaffolding_level"]) {
-    assert.ok(insert.includes(`${field}:`), `${field} is not written`);
-    assert.ok(select.includes(field), `${field} is written and never read back`);
+    assert.ok(written.includes(field), `${field} is not written`);
+    assert.ok(selected.includes(field), `${field} is written and never read back`);
   }
 });
 
