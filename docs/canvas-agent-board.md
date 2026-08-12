@@ -57,7 +57,9 @@ rather than observed behaviour.
 | `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — merged, *not* deployed | — |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
-| `INTEGRATION-001` first real end-to-end trace | Integration | 🔴 **UNBLOCKED, UNSTARTED — P0** | the whole vision |
+| `INTEGRATION-001` first real end-to-end trace | Integration | 🔴 **RAN AND FAILED** — the gate was moved, not opened | — |
+| `RUNTIME-005` gate objective *production* on trust, not coverage | Runtime | 🔴 **P0 — the new critical path** | the whole vision |
+| `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after RUNTIME-003 and RUNTIME-005 | — |
 
 ---
 
@@ -206,6 +208,85 @@ alongside it. How the evaluation is invoked and shaped is yours.
 
 **FILES / PARALLEL OWNERSHIP** — `learner-evidence.ts` and `learner-store.ts` are Brain's. Ask for
 boundary changes rather than making them.
+
+---
+
+## RUNTIME-005 — gate objective PRODUCTION on trust, not on coverage
+
+**STATUS** 🔴 **P0 — the critical path.** Specified by Brain 2026-08-12 in answer to Integration's
+`[INTEGRATION FAIL]`. Runtime implements; the condition is Brain's.
+**BLOCKS** `INTEGRATION-001`, and through it every claim about adaptive behaviour.
+
+**CAPABILITY BLOCKED** — No objective can be produced for any real document, so no task, no answer,
+no evidence. See the finding under `INTEGRATION-001`.
+
+### The unit of the gate is wrong, not its threshold
+
+`policyOwnsCanvas` asks *"can the policy account for **all** of this document?"* That was right when
+the policy **replaced** the page. Under composition it is a category error: the policy contributes a
+task **beside** unsupported material, and §14.1 says the answer to "it owns nothing" is composition,
+never a lower bar. A whole-document question deciding a per-knowledge action answers "no" for every
+real document.
+
+**The two facts whole-page ownership fused are already separate in `canvas-knowledge.ts`:**
+
+| Signal | Question | Job |
+|---|---|---|
+| `outcome` (`complete`/`degraded`/`failed`) | *did we read this reliably?* | **gate** |
+| `coverage.unrepresented` | *did we account for all of it?* | **disclose** |
+
+**REQUIRED CONTRACT** — Produce objectives from the knowledge actually extracted, gated on whether
+the extraction can be trusted, never on whether the document is exhaustively represented.
+
+| `outcome` | Production |
+|---|---|
+| `complete` | **produce** objectives for what was extracted |
+| `degraded` | **refuse** — err toward refusal |
+| `failed` | **refuse** |
+| `no-durable-source` | unchanged — nothing to read |
+
+`degraded` refusing the whole canvas is deliberate over-refusal today, and it is the coarseness
+`PARSER-003` removes: once unit locality survives, `degraded` refuses the *chart*, not the chapter
+it sits in. Do not soften it before that lands.
+
+**🔴 SEMANTIC INVARIANT — the one that makes this safe.** Producing objectives for extracted
+knowledge must never be read as a claim that the document is covered. `unrepresented > 0` stays
+true, stays computed, stays reported, and must reach the Minimap as source-unmapped territory and
+the UI as visible unsupported content. **This moves the unrepresented fact from *gate* to
+*disclosure*; it does not lower the bar.** `PolicyRuntime.ownership` already carries exactly this
+pattern one layer down.
+
+**THE CONCERN IN THE OLD COMMENT SURVIVES.** *"Rows produced by opening a document rather than by
+learning anything from it"* is real, and it is two things coverage was a poor proxy for:
+
+1. *Do not mint knowledge we cannot trust* — `outcome` handles this, better than coverage did.
+2. *Do not mint knowledge nobody will be asked about* — a **cost** concern, not a correctness one.
+   The honest fix is writing knowledge when a canvas is **studied**, not when it is **opened**. If
+   that distinction does not exist yet, post `[BLOCKED]` — do not reintroduce a coverage gate as a
+   proxy for it. Extraction runs a model, so this is real spend.
+
+**ACCEPTANCE TEST — and it must be EXECUTED, not asserted in a fixture**
+1. On production canvas `796a6045` ("Acceptance B1") with **no** `?policy=force`,
+   `ensureKnowledgeForCanvas` returns `objectives.length > 0`.
+2. An ordinary submission on that canvas writes a `learner_evidence` row.
+3. A canvas with `outcome: "degraded"` still produces nothing.
+4. The canvas still shows its unsupported source material, and `unrepresented` is still reported.
+
+**NON-REQUIREMENTS** — Whether `policyOwnsCanvas` keeps its current shape, where the condition
+lives, and how ownership continues to be reported. All Runtime's.
+
+---
+
+## RUNTIME-004 — canvas sources attached without a durable id
+
+**STATUS** P2 — filed 2026-08-12 from Integration's `[QUESTION]`. **Do not start before
+`RUNTIME-005` and `RUNTIME-003`.**
+
+*Community IPPE Exam Prep* holds 4 sources with **0** durable — `librarySourceId` null on all four,
+so the knowledge layer cannot address any of them and the canvas dies at `canvas-knowledge.ts:111`
+before ownership is even consulted. The attach path is `use-canvas-session.ts:341`
+(`durability: extracted.librarySourceId ? "durable" : "ephemeral"`). Whether an ephemeral attach is
+ever correct is the question; Brain has not decided and does not need to before RUNTIME-005 lands.
 
 ---
 
@@ -594,8 +675,53 @@ satisfied *by construction* when that path is designed, not discovered afterward
 
 ## INTEGRATION-001 — the first real end-to-end learner trace
 
-**STATUS** 🔴 **UNBLOCKED, UNSTARTED — P0, the highest-leverage task on this board.** The status
-table and this header disagreed until 2026-08-12; the header was stale.
+**STATUS** 🔴 **RAN 2026-08-12 AND FAILED.** It did its job: it turned an architectural claim into
+an observed one, and the observation was that the claim was false. The fix is `RUNTIME-005` below.
+
+### 🔴 THE FINDING — RUNTIME-001 MOVED THE GATE, IT DID NOT OPEN IT
+
+`learner_evidence` cannot become non-zero through ordinary use on **any** of the 6 production
+canvases. #494 removed the ownership gate where a task is **consumed** and left an identical one
+where objectives are **produced**:
+
+- `canvas-knowledge.ts:160` returns `objectives: []` when `!ownership.owns`, bypassed only by
+  `?policy=force`.
+- `use-policy-runtime.ts:214` then refuses on `supported.length === 0` — correct in isolation, but
+  its input was already emptied upstream, so it now measures *"the policy does not own this canvas"*
+  while reading as *"there is nothing teachable here"*.
+
+**Deleting the consumption gate while the production gate zeroes its input changes nothing
+observable.** Every unit test passed because **each layer is correct alone**.
+
+Proved by executing the deployed functions against real production data, not by reading the diff:
+
+```
+=== EXTRACTION ===       outcome: complete   objects: 2   unitsUnread: 0
+=== COVERAGE ===         {"represented":1,"substantive":5,"unrepresented":4}
+=== OWNERSHIP VERDICT === owns: false | refusal: unsupported-content
+```
+
+It is structural, not a thin corpus: `policyOwnsCanvas` needs `unrepresented === 0`, `isStructural`
+skips only headings, and `expectedFrom` returns `null` for any non-table unit — so **a prose
+paragraph is substantive and can never be represented**. `owns: true` is reachable only for a
+document whose every non-heading unit is a table.
+
+The 2 knowledge objects in production are artifacts of `?policy=force`: `saveKnowledge` runs only
+*after* `:160`.
+
+### 🔴 WHAT THIS COST, AND IT IS BRAIN'S
+
+`RUNTIME-001`'s own acceptance test #2 — *"`learner_evidence` gains its first row from an ordinary
+session with no `?policy=force`"* — is exactly the test that catches this, and **it was never
+executed**. Brain accepted #494 on semantic review. **Semantic review does not substitute for
+running the acceptance test.** Every future acceptance on this board states which tests were
+executed and against what.
+
+**Verified sound, so nobody restarts the search there:** RLS insert policy is
+`WITH CHECK ((SELECT auth.uid()) = user_id)` and writes go through the browser client under the
+learner's own JWT; the unique index `(user_id, objective_id, response_id)` exists and matches the
+`onConflict`; `EVIDENCE_SELECT` reads back all six carried fields. **The loop is sound from the task
+downward. It was severed above the task.**
 **DEPENDENCIES** ✅ **SATISFIED.** The production alias `app.enternemesis.com` resolves to
 `dpl_B1Lm6ttT…` → commit `60b1365e`, and `3ec1cb71` (#494) and `c19dcc03` (#498) are both ancestors
 of it. Verified from the alias, not from a green check — see the landmine below.
@@ -618,6 +744,8 @@ row `created_at` plus a named marker, never `updated_at`.
 1. `learner_evidence` gains a row through ordinary use.
 2. That row carries `operation`, `responseLatencyMs`, `responseId` and reads back with all three.
 3. The *next* decision differs from what it would have been without that evidence.
+
+**RE-RUN CONDITION** — re-run this the moment `RUNTIME-005` is deployed, unchanged.
 
 **ORDERING CONSTRAINT** — #498 must be live **before** evidence accumulates. Once the gate opens,
 rows written while `response_id` is unreadable have unrecoverable performance grouping, permanently.
