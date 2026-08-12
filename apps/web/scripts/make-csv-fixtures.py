@@ -168,6 +168,26 @@ write_raw(
     b'Code, Padded ,Value\r\n007, spaced ,0.075\r\n"  quoted spaces  ",x,1e3\r\n',
 )
 
+# ── L. 🔴 THE ACCEPTANCE COMPOSITE — every property in ONE file ─────────────
+# PRODUCTION ACCEPTANCE NEEDS ONE FILE, NOT FIFTEEN. The properties only mean
+# anything together: a real export has its quoting and its ragged last row and
+# its blank line at the same time. Uploading any single fixture would prove a
+# subset and report it as a pass — the mistake the XLSX slice nearly made.
+#
+# Carries: a BOM · a quoted delimiter · a doubled quote · an empty middle field ·
+# a multi-line quoted field · unquoted padding spaces · a numeric-looking string ·
+# a blank line mid-file · a ragged final row.
+write_raw(
+    "acceptance.csv",
+    "\ufeff".encode("utf-8")
+    + b'Student,Note,Score,Padded\r\n'
+    + b'Ada,"Comma, inside",88, spaced \r\n'
+    + b'Grace,"She said ""ok""",,007\r\n'
+    + b'Alan,"Two\r\nlines",95,x\r\n'
+    + b'\r\n'
+    + b'Barbara,short\r\n',
+)
+
 # ── K. what a real spreadsheet program produces ────────────────────────────
 # 🔴 THE INDEPENDENT WRITER. LibreOffice quotes differently from Python, picks
 # its own line endings, and re-renders values through its own display rules.
