@@ -462,7 +462,9 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | **Learning strategies** (§6) | 2 of 14 — direct retrieval, and minimal correction. |
 | **Learner-state inference** (§4) | Correctness, partial correctness, misconception naming and confidence only. |
 | **Association extraction** (§3) | The structured two-column-table lane only. Glossary lists, definition prose and speech lanes are designed but not built. |
-| **Whole-page ownership** (§8) | Strict coverage boundary shipped as **temporary scaffolding**. Owns 0 of 6 production canvases; 0 of 11 parsed sources are association-only. `?policy=force` bypasses it and declares itself on screen. |
+| **Compositional Canvas** (§8) | **Step 7b shipped.** The Canvas owns the surface and the policy contributes a task to it; `CanvasDocument` and a hosted task now render together. Ownership (`policyOwnsCanvas`) is still computed and still reported — it is what `?policy=force` discloses against — but it no longer decides whether a question may appear. Reading material may coexist with a task; a second **answer-collecting** surface may not, and that asymmetry is `lib/learn/canvas-hosting.ts`. See [`canvas-task-hosting.md`](./canvas-task-hosting.md). |
+| **Variable tempo** (§9) | The runtime **exposes** `tempo` (`instant` / `deliberate`), derived from the policy's own knowledge-type and operation pair. Nothing renders differently for it yet — one presentation still serves every task. |
+| **Minimap** (§11) | The **runtime seam only**: a session-local `focusScope` filters candidate objectives before `decideNext`, so a selected territory constrains the policy without choosing an operation. Flat only — whole canvas, or a named selection of knowledge this canvas holds. There is no Minimap surface, and parent/child territories are blocked on a missing Brain contract (see below). |
 
 ### Not implemented
 
@@ -481,11 +483,17 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
   on the evaluator being able to emit a well-defined observation, not on anyone deciding a scale.
 - **No hesitation, revision or clarification signals.**
 - **No causal, conceptual or procedural runtime** (§3) — no extraction and no interaction.
-- **No compositional generated surface** (§8, §10) — one runtime still owns the page.
+- **No generated surface** (§10) — §8's composition shipped (see above), but the surface a task is
+  presented ON is still one template. A causal reconstruction, an ordering interaction and an
+  equation workspace do not exist; `tempo` is exposed so they can differ, and nothing reads it yet.
 - **No mnemonic generation** (§6).
 - **No analogy scaffolding or its removal** (§6).
 - **No time-horizon policy** (§11) — goal and available time are not inputs to anything.
-- **No minimap** (§11).
+- **No minimap surface** (§11) — the scope seam exists and is honoured by the policy; nothing lets a
+  learner select a territory. 🔴 **Parent/child focus is blocked on a Brain contract**: knowledge
+  objects converge by `identityKey` and carry no parent/child relation, and deriving one from
+  document heading paths would assert a dependency the system cannot back up. What is needed is
+  stated in `lib/learn/canvas-focus.ts` (`MISSING_TERRITORY_CONTRACT`).
 - **Spacing is not driven by the model** — FSRS-style scheduling sits downstream and is not yet
   informed by demonstration quality.
 
@@ -512,9 +520,9 @@ The schema must be able to grow **without a migration that rewrites the meaning 
 | Step | What it changes | State |
 |---|---|---|
 | **7a** — strict automatic association ownership | Removes the `?policy=1` URL gate; ownership decided from source coverage | **shipped** (PR #484) |
-| **7b** — compositional Canvas | Policy tasks stop replacing the page; the Canvas presents them alongside its document | next, and the architectural priority |
+| **7b** — compositional Canvas | Policy tasks stop replacing the page; the Canvas presents them alongside its document | **shipped** |
 | **B1 - preserve raw observations** | `operation`, `response_latency_ms`, `scaffolding_level` recorded; `response_text` was already stored | **shipped** |
-| **Causal knowledge + causal interaction** | First second knowledge type, with a real interaction rather than a fallback quiz | after 7b |
+| **Causal knowledge + causal interaction** | First second knowledge type, with a real interaction rather than a fallback quiz | next |
 | **Broader knowledge and strategy types** | Conceptual, procedural, quantitative; compression, mnemonics, analogies | after that |
 
 ### 🔴 Two axes, and they do not block each other

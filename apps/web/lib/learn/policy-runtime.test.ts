@@ -190,16 +190,30 @@ test("an association with a recall objective is acted on", () => {
 // checked only the first occurrence of a stage component and stayed green through a duplicate
 // rendered outside the branch. So the wiring is asserted, not assumed.
 
-test("🔴 the runtime refuses BEFORE it goes active, on ownership rather than on a count", () => {
+test("🔴 the runtime refuses BEFORE it goes ready, on having something supported to ask", () => {
+  // 🔴 THIS TEST CHANGED AT STEP 7b, AND THE CHANGE IS THE MIGRATION — read this before restoring
+  // the old assertion. It used to require `if (!resolved.ownership.owns && !forced)` to run before
+  // the runtime went active: whole-page ownership, in which one unsupported paragraph refused the
+  // entire canvas. §12 measured the result as owning 0 of 6 production canvases, and §14.1 says the
+  // answer to that is composition, NEVER a lower coverage bar.
+  //
+  // So ownership stopped gating presentation. What survives is the refusal still true on any canvas,
+  // owned or not: nothing supported means nothing to ask, and hosting an empty task shell over a
+  // document is the defect this guards.
   const source = readFileSync(
     new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
     "utf8",
   );
-  const refusal = source.indexOf("if (!resolved.ownership.owns && !forced)");
-  const active = source.indexOf('setStatus("active")');
-  assert.notEqual(refusal, -1, "the runtime must consult policyOwnsCanvas's decision");
-  assert.notEqual(active, -1);
-  assert.ok(refusal < active, "ownership must be checked before the runtime takes the surface");
+  const refusal = source.indexOf("if (supported.length === 0)");
+  const ready = source.indexOf('setStatus("ready")');
+  assert.notEqual(refusal, -1, "the runtime must refuse when nothing is supported");
+  assert.notEqual(ready, -1);
+  assert.ok(refusal < ready, "the refusal must be checked before the runtime offers a task");
+
+  // 🔴 OWNERSHIP IS STILL COMPUTED AND STILL CARRIED OUT. Removing the gate must not remove the
+  // fact: it is what `forced` discloses against, and losing it would make a bypassed session
+  // indistinguishable from an ordinary one — precisely what `?policy=1` cost.
+  assert.match(source, /ownership: knowledge\.ownership/, "ownership is no longer reported at all");
 });
 
 test("🔴 a bypassed session declares itself all the way to the screen", () => {
