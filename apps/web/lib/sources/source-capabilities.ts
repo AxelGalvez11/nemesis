@@ -143,15 +143,42 @@ export function parseQuality(input: {
  * whether the PARSE did what a source of this kind should do.
  *
  * 🔴 A DIFFERENT QUESTION FROM `parseQuality`, ON PURPOSE, AND NOT A REPLACEMENT
- * FOR IT. Measured by Brain: 145 of 234 causal candidates across the library
- * (62%) came from degraded parses, and not one was usable — column fragments,
- * not sentences, from a flattened table. Those same rows can carry
- * `quality: "full"` under the rule above, correctly — the parse produced
- * addressable units, citations resolve, scheduling works. What it does NOT
- * mean is that the recovered prose is intact enough to assert a relationship
- * from. Collapsing the two would either re-break the false-alarm problem
- * `parseQuality` was written to avoid, or hide the content-loss signal Brain
- * actually needs. They are stored side by side instead.
+ * FOR IT. The precise gap, because it is easy to state wrongly:
+ * **`parseQuality` never consults coverage.** It takes capabilities and a source
+ * kind, nothing else. So it catches a STRUCTURAL collapse and cannot, even in
+ * principle, see CONTENT loss inside a parse that came back well structured — a
+ * 26-page PDF with 197 blocks and twenty pages unread still reports `"full"`,
+ * because it produced addressable units and that is all `parseQuality` asks.
+ *
+ * Measured over all 11 production rows rather than argued: the six `text-only`
+ * PDFs report `quality: "degraded"` — that collapse is already caught, and this
+ * verdict adds nothing there. Where it earns its place is the other five, which
+ * report `"full"`: three of them carry coverage `state: "partial"` purely
+ * because figures were never examined, and one (`9551f235`) has genuinely lost a
+ * page of text. Gating on `state` refuses all four; gating on `quality` refuses
+ * none of them. `contentIntegrity` refuses exactly the one whose TEXT is
+ * incomplete. That 4-vs-1 separation is the whole reason it exists, and neither
+ * existing field can express it.
+ *
+ * Collapsing the two would either re-break the false-alarm problem
+ * `parseQuality` was written to avoid, or hide the content-loss signal. They are
+ * stored side by side instead.
+ *
+ * 🔴 THE BASELINE THIS WAS COMPUTED AGAINST — 2026-08-12, recorded because the
+ * value ROTS SILENTLY WITHOUT IT. "Can the recovered text be trusted" is a claim
+ * about usefulness, and usefulness is not one-dimensional: it depends on the
+ * knowledge type, which lives downstream of this layer. Today two structural
+ * properties are depended on — SENTENCE INTEGRITY (did prose survive as
+ * sentences or as fragments), which decides causal extraction, and TABULAR
+ * STRUCTURE (did row/column pairing survive), which decides associations.
+ * Reading order matters only for sequence knowledge, which does not exist yet.
+ *
+ * So `intact` means "intact for those two". Add a knowledge type with different
+ * structural needs and a stored `intact` silently starts meaning something
+ * narrower than it did, with nothing to flag it. The durable fix is to name
+ * verdicts by WHAT SURVIVED rather than by whether it can be trusted; that is
+ * agreed and not yet built. Until it is, this docstring is the baseline — read
+ * it before treating an old `intact` as an answer to a new question.
  *
  * 🔴 THE SAME EXCLUSION AS `parseQuality`, FOR THE SAME REASON: an unexamined
  * figure (`figures.reasons["not-examined"]`) does not corrupt the TEXT next to
