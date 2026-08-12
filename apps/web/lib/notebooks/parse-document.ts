@@ -39,7 +39,10 @@ import {
   pptxCoverage,
   singleUnitCoverage,
   xlsxCoverage,
+  csvCoverage,
 } from "./extract-coverage";
+import { csvToModel } from "./csv-model";
+import { readCsv } from "./csv-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
@@ -59,7 +62,7 @@ import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_
  * Adding a format means visiting all four; `document-envelope.test.ts` fails
  * loudly for the pair that can lose a whole document.
  */
-export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "image";
+export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "image";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -72,6 +75,7 @@ export function kindFor(name: string, type: string): DocumentKind | null {
   if (lower.endsWith(".docx") || type === DOCX_MIME) return "docx";
   if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
   if (lower.endsWith(".xlsx") || type === XLSX_MIME) return "xlsx";
+  if (lower.endsWith(".csv") || type === "text/csv") return "csv";
   if (visionMime(name, type)) return "image";
   return null;
 }
@@ -95,6 +99,12 @@ export function sniffKind(bytes: Uint8Array): DocumentKind | null {
   // does. Checked last so a document that merely EMBEDS a spreadsheet — a Word
   // file with a linked chart carries `xl/` parts — is still read as what it is.
   if (window.includes("xl/workbook.xml")) return "xlsx";
+  // 🔴 CSV IS DELIBERATELY NOT SNIFFED. It has no signature — it is plain text
+  // with separators in it — so any content test for it is really a test for
+  // "does this look tabular", which a Markdown table, a log file and a list of
+  // names all pass. Guessing here would silently reclassify other people's text
+  // files as grids. A `.csv` extension or a `text/csv` type is a CLAIM the
+  // uploader made, and that is the only evidence this format offers.
   return null;
 }
 
@@ -251,6 +261,25 @@ export async function parseDocument(
       // non-zero count makes the workbook `partial`, which is the honest answer
       // for a file whose point may be the chart we cannot read.
       unreadable: workbook.unsupported.reduce((sum, item) => sum + item.count, 0),
+    });
+  } else if (kind === "csv") {
+    // 🔴 THE SAME GRID AS XLSX, ON PURPOSE. A CSV is one sheet's worth of data,
+    // so it reuses the identical table representation rather than getting a
+    // parallel one — two models of "a grid" would mean two locators, two
+    // renderers, and a second copy that drifts.
+    //
+    // Deterministic end to end: no model call, no heuristic beyond a delimiter
+    // rule that refuses when it cannot tell (see `chooseDelimiter`).
+    const grid = readCsv(bytes);
+    model = csvToModel(grid);
+    text = documentToText(model);
+    title = null;
+    coverage = csvCoverage({
+      rows: grid.rows,
+      // A file whose columns we declined to split is READ but not fully
+      // understood — `partial` is the honest answer, and the rows survive as
+      // evidence either way.
+      unreadable: grid.unsupported.reduce((sum, item) => sum + item.count, 0),
     });
   } else {
     const deck = readPptxSlides(bytes);

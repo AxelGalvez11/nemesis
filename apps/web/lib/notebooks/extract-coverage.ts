@@ -283,6 +283,40 @@ export function xlsxCoverage(input: {
 }
 
 /**
+ * A delimited text file: one grid, and the rows are the unit that was read.
+ *
+ * 🔴 THE UNIT IS THE SHEET, NOT THE ROW, AND THAT IS DELIBERATE. It would be
+ * tempting to report a 400-row export as 400 units read, which flatters every
+ * number downstream. But a CSV is ONE grid — the same shape a one-sheet workbook
+ * has — and coverage counts the things a locator can point at. Rows are cited
+ * INSIDE the grid, by reference, exactly as a workbook's are.
+ *
+ * `unreadable` is the delimiter refusal: a file whose columns we declined to
+ * split was fully READ and not fully understood, and `partial` says so while the
+ * rows survive as evidence.
+ */
+export function csvCoverage(input: {
+  rows: number;
+  unreadable?: number;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  // A file with no rows read is a sheet nobody could read, not a sheet that
+  // isn't there — `orUnaccounted` turns the difference into the honest state.
+  const sheets = input.rows > 0 ? 1 : 0;
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "sheet",
+      units: sheets,
+      unitsNative: sheets,
+      truncation: input.truncation,
+      ...(input.unreadable ? { unreadableRegions: input.unreadable } : {}),
+    }),
+    "sheet",
+    sheets,
+  );
+}
+
+/**
  * A file with no unit structure this parser can see — a photograph, or any
  * format whose reader cannot yet describe what is inside it.
  *

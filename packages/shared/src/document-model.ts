@@ -62,7 +62,7 @@ export type DocUnitKind = "page" | "slide" | "sheet" | "body" | "image";
  * nothing. `document-envelope.test.ts` round-trips every member of this union
  * for exactly that reason; keep the two in step by making that test fail.
  */
-export type DocFormat = "pdf" | "docx" | "pptx" | "image" | "xlsx";
+export type DocFormat = "pdf" | "docx" | "pptx" | "image" | "xlsx" | "csv";
 
 /**
  * A rectangle in UNIT-RELATIVE coordinates, every value in 0..1.
@@ -327,6 +327,16 @@ export interface DocTable {
    * (`ListObject`), never a name we invented. Absent when the file gives none.
    */
   name?: string;
+  /**
+   * For a delimited text file, the character that actually separated the fields.
+   *
+   * 🔴 PROVENANCE FOR A DECISION, NOT DECORATION. A `.csv` is not always
+   * comma-separated — an export from a locale that uses a comma for decimals
+   * writes semicolons — so reading one involves a choice, and this records which
+   * choice was made. Absent for a comma file, and absent entirely for every
+   * format that has real cell boundaries instead of a separator.
+   */
+  delimiter?: string;
 }
 
 /**
