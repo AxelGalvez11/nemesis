@@ -123,6 +123,80 @@ export interface AssociationPair {
   groupLabel?: string;
 }
 
+/**
+ * One end of a causal edge.
+ *
+ * 🔴 A NODE, SO EDGES CAN SHARE ONE. `A → B` and `B → C` both mint a node for B, and because the
+ * key is derived from B's own text they are the SAME key — which is what lets a mechanism be
+ * assembled later by joining edges, rather than being stored now as one opaque paragraph nobody can
+ * query, re-order, or discover a learner holds half of.
+ *
+ * 🔴 AND THE KEY IS NORMALISED TEXT, NOT A CONCEPT. "protein function" and "the function of the
+ * protein" are two nodes today. That is a stated limitation rather than an oversight: merging them
+ * needs a real entity-identity layer, and having a model declare two phrasings equivalent would be
+ * a guess that silently welds unrelated mechanisms together. A missed merge is recoverable; a false
+ * one asserts a chain the source never made.
+ */
+export interface CausalNode {
+  /** The author's own words. */
+  text: string;
+  /** Normalised form — used for identity, and for joining one edge to the next. */
+  key: string;
+}
+
+/**
+ * What the source claims the cause DOES to the effect.
+ *
+ * 🔴 FIVE, EACH GROUNDED IN LANGUAGE ACTUALLY PRESENT IN THE CORPUS — not an ontology written in
+ * advance. Measured 2026-08-12 over 1,231 readable units: `leads to`/`results in`/`produces`;
+ * `increases`/`raises`; `reduces`/`lowers`/`ablates`; `inhibits`/`blocks`/`suppresses`/`prevents`;
+ * `allows`/`enables`/`permits`. Add a sixth when a real document needs one.
+ *
+ * 🔴 CAUSALITY AND POLARITY ARE DIFFERENT AXES, which is why this is not `increase | decrease`.
+ * "Receptor activation enables a downstream process" and "drug X inhibits enzyme Y" are causal
+ * claims carrying no polarity, and forcing them onto a polarity scale would invent one.
+ */
+export type CausalRelationKind =
+  /** Brings about — leads to, results in, produces. */
+  | "causes"
+  | "increases"
+  | "decreases"
+  /** Makes possible without producing on its own — allows, permits. */
+  | "enables"
+  /** Stops or suppresses — inhibits, blocks, prevents. */
+  | "prevents";
+
+/**
+ * One DIRECTED causal edge, exactly as the source asserted it.
+ *
+ * 🔴 ONE EDGE, NEVER A MECHANISM. `A → B → C` is two objects sharing node B. Storing the chain as a
+ * single object would make it one indivisible piece of knowledge, so nothing could ever discover
+ * that a learner holds the first link and not the second — which is the whole reason for modelling
+ * causality apart from prose.
+ */
+export interface CausalRelation {
+  cause: CausalNode;
+  effect: CausalNode;
+  relation: CausalRelationKind;
+  /**
+   * The source DENIED the relationship.
+   *
+   * 🔴 ITS OWN FIELD, AND PART OF IDENTITY. "may not lead to a different amino acid" and "leads to
+   * a different amino acid" are opposite claims about the same two nodes. Without this they collapse
+   * into one object and a learner is drilled on the negation of what the document says.
+   */
+  negated: boolean;
+  /**
+   * The source's own hedge, verbatim — "generally", "may", "likely", "in most patients".
+   *
+   * 🔴 MODALITY IS PART OF THE CLAIM. "X causes Y" and "X may cause Y" are different assertions,
+   * and flattening the second into the first states something the author declined to state. It is
+   * therefore part of identity too. Absent means the source asserted it plainly — never that
+   * nobody looked.
+   */
+  qualifier?: string;
+}
+
 /** One learnable thing, of one type.
  *
  *  Sits BETWEEN the canvas's coarse objectives (`CanvasConcept`) and the prompts that test them:
@@ -136,10 +210,12 @@ export interface KnowledgeObject {
   statement: string;
   /** The coarse objectives this belongs to, so existing diagnosis keeps working unchanged. */
   conceptIds?: string[];
-  /** Set only when `type` is "association". Other types will add their own payloads as they are
-   *  built; deliberately not a ten-way union up front, because nine of those shapes would be
-   *  guesses written before the interaction that uses them exists. */
+  /** Set only when `type` is "association". Other types add their own payloads as they are built;
+   *  deliberately not a ten-way union up front, because eight of those shapes would be guesses
+   *  written before the interaction that uses them exists. */
   pair?: AssociationPair;
+  /** Set only when `type` is "causal". One directed edge — see `CausalRelation`. */
+  relation?: CausalRelation;
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];
