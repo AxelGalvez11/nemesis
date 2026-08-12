@@ -35,6 +35,7 @@ first rows through are correct.
 | `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
 | `BRAIN-003` causal objectives + task contract | Brain | **READY** — dependencies merged | UI-002 |
 | `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
+| `RUNTIME-003` a task targeting a SET of objectives | Runtime | **READY** — assigned | every causal operation |
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
 | `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
 | `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
@@ -80,6 +81,61 @@ source material stays visible and reachable beside it.
 through the evaluator. You declined to invent the sixteen-to-three operation mapping and said why —
 that was the correct call and the answer is `BRAIN-002`/§3 of `causal-cognition-contract.md`: **no
 such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a revision of this PR.
+
+---
+
+## RUNTIME-003 — a task that targets a SET of objectives
+
+**STATUS** READY — assigned 2026-08-12 to the current Runtime session
+**PRIORITY** P0 — the next thing on the critical path after INTEGRATION-001
+**DEPENDENCIES** none blocking. The semantics are merged: `docs/causal-cognition-contract.md` §7.
+**BLOCKS** every causal cognitive operation; `UI-003`
+
+**CAPABILITY BLOCKED** — Canvas cannot present causal knowledge at all. A learner explaining a
+mechanism demonstrates several things in one answer, and today a task can target only one objective.
+Until this exists, `objectivesForKnowledge(causal)` must keep returning `[]`, and it does.
+
+**REQUIRED CONTRACT** — A task that targets a **set** of objectives, routes **one** learner
+submission to an evaluation that writes evidence for several of them, and does so **without a
+causal-specific page runtime**. The cognitive meaning is already written and merged — §7 of the
+causal cognition contract is the handoff. Runtime works against that document, not against a future
+Brain message.
+
+**🔴 THE CONSTRAINT THAT MUST HOLD BY CONSTRUCTION** — one submission mints **one prompt and one
+response identity**, shared by every row that submission writes.
+
+The natural implementation — loop the objectives, build a prompt for each — gives each its own UUID
+and turns one answer into N performances. That is the same corruption `BRAIN-001` fixed at the
+storage layer, arriving from above it.
+
+The previous Runtime session pinned *"one prompt → one identity across objectives"* and named the
+half its tests could not reach: *"one submission → one prompt."* Nothing can test that half until
+this path exists, which is why it is written here as a design constraint rather than an acceptance
+test — it has to be true by construction, not discovered afterwards in the evidence.
+
+**SEMANTIC INVARIANTS**
+- One answer surface, always.
+- A judge that could not be reached writes nothing. An outage is not a learner failure.
+- `responseLatencyMs` belongs to the **performance**: the same measured duration on each row of one
+  answer is correct and must not be divided among them.
+- An objective the answer did not address is `not_demonstrated`, never `incorrect`. A learner who
+  explains two links of three has not failed the third — nothing was shown about it.
+- Unsupported content stays visible and reachable.
+- Runtime does not decide what partial understanding means.
+
+**ACCEPTANCE TESTS**
+1. One submission targeting three objectives writes three evidence rows sharing one `responseId`.
+2. `performancesIn(log).size === 1` for that submission.
+3. An objective the response did not address records `demonstrationObtained: false`, `verdict: null`.
+4. A double-submit yields one row per objective, not two.
+5. A canvas hosting the task still shows its source material.
+
+**NON-REQUIREMENTS** — React structure, hook shape, how regions compose, and whether
+`HostedTaskShape` changes at all. It may well survive untouched with the target set carried
+alongside it. How the evaluation is invoked and shaped is yours.
+
+**FILES / PARALLEL OWNERSHIP** — `learner-evidence.ts` and `learner-store.ts` are Brain's. Ask for
+boundary changes rather than making them.
 
 ---
 
