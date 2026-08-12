@@ -104,7 +104,20 @@ export type DocBlockKind =
   | "figure"
   | "caption"
   | "equation"
-  | "note";
+  | "note"
+  /**
+   * Running page furniture — the header and footer a document repeats on every
+   * page.
+   *
+   * 🔴 A KIND, NOT A DELETION. An external benchmark scored Page-header and
+   * Page-footer at exactly 0.0 F1 because Nemesis had no way to say either, so a
+   * course name and "Page 3 of 30" were indistinguishable from body prose. These
+   * blocks keep their text, rect, unit, id and locator; what changes is that a
+   * consumer can now tell furniture from what the author wrote, and leave it out
+   * of ordinary prose flow without guessing.
+   */
+  | "pageHeader"
+  | "pageFooter";
 
 /**
  * A table kept as a grid.

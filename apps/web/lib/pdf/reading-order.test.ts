@@ -35,8 +35,13 @@ const FROZEN: Record<string, { blocks: number; hash: string; order: string; unit
     blocks: 17,
     hash: "711b17efcad7d157",
     order:
-      "0:heading 0:paragraph 0:paragraph 0:paragraph 1:heading 1:paragraph 1:paragraph 1:paragraph 1:paragraph " +
-      "2:heading 2:paragraph 2:paragraph 3:heading 3:paragraph 3:paragraph 3:paragraph 3:paragraph",
+      // 🔴 THIS VALUE MOVED ONCE, AND ONLY THE LABELS MOVED. The last block on
+      // each page is running furniture and is now named `pageFooter` rather than
+      // `paragraph`. The SEQUENCE is identical — same blocks, same positions, same
+      // units — and the proof is that `hash` above did not change: a reorder would
+      // have broken the text-sequence hash, a relabel cannot.
+      "0:heading 0:paragraph 0:paragraph 0:pageFooter 1:heading 1:paragraph 1:paragraph 1:paragraph 1:pageFooter " +
+      "2:heading 2:paragraph 2:pageFooter 3:heading 3:paragraph 3:paragraph 3:paragraph 3:pageFooter",
     units: 4,
   },
   pptx: {

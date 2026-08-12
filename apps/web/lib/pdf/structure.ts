@@ -41,6 +41,7 @@
 
 import {
   buildDocument,
+  classifyFurniture,
   projectCells,
   type DocBlock,
   type DocRect,
@@ -747,7 +748,12 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
     }
   });
 
-  return buildDocument({
+  // 🔴 NAMED AFTER THE MODEL EXISTS, BECAUSE THE EVIDENCE IS CROSS-PAGE. Running
+  // furniture is only visible by comparing every page against every other, which
+  // is a property of the whole document rather than of the page being read. This
+  // relabels blocks and changes nothing else — text, rect, unit, id and locator
+  // are carried through, so a citation written against this parse still resolves.
+  return classifyFurniture(buildDocument({
     blocks,
     format: "pdf",
     title,
@@ -756,7 +762,7 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
       kind: "page",
       size: { height: page.height, width: page.width },
     })),
-  });
+  }));
 }
 
 /** Re-exported so callers measuring a page do not reimplement the union. */

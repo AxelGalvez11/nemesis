@@ -126,7 +126,7 @@ export function chunkDocument(
   const furniture = findFurniture(doc);
 
   for (const block of doc.blocks) {
-    if (furniture.has(block.id)) continue;
+    if (furniture.has(block.id) || block.kind === "pageHeader" || block.kind === "pageFooter") continue;
     const text = blockToText(block);
     if (text.trim().length === 0) continue;
 

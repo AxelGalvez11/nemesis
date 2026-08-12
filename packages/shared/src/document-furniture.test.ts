@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { documentFurniture, findFurniture, readingFlow } from "./document-furniture.ts";
+import { classifyFurniture, documentFurniture, findFurniture, readingFlow } from "./document-furniture.ts";
 import { buildDocument, type DocBlock } from "./document-model.ts";
 
 function page(unit: number, blocks: { text: string; y: number; kind?: DocBlock["kind"] }[]) {
@@ -147,4 +147,60 @@ test("reading flow drops furniture and keeps every word of the body", () => {
   }
   // 🔴 And the whole document is still reachable — nothing was destroyed.
   assert.equal(model.blocks.length, 12);
+});
+
+// ── classifyFurniture: the label, and everything it must not touch ──────────
+
+test("🔴 classification changes the KIND and nothing else", () => {
+  const model = doc([0, 1, 2, 3].map((i) => page(i, [
+    { text: "PHCY 2119 Syllabus", y: 0.04 },
+    { text: BODY[i]!, y: 0.5 },
+    { text: `Page ${i + 1} of 4`, y: 0.96 },
+  ])));
+  const after = classifyFurniture(model);
+
+  assert.equal(after.blocks.length, model.blocks.length, "no block appears or disappears");
+  for (let i = 0; i < model.blocks.length; i += 1) {
+    const before = model.blocks[i]!;
+    const now = after.blocks[i]!;
+    assert.equal(now.id, before.id, "the id is the locator — it must survive");
+    assert.equal(now.text, before.text, "content is never rewritten by a label");
+    assert.deepEqual(now.rect, before.rect);
+    assert.equal(now.unit, before.unit);
+    assert.deepEqual(now.headingPath, before.headingPath);
+  }
+  assert.equal(after.blocks.filter((b) => b.kind === "pageHeader").length, 4);
+  assert.equal(after.blocks.filter((b) => b.kind === "pageFooter").length, 4);
+});
+
+test("🔴 a table keeps its grid and is never relabelled furniture", () => {
+  const table = { cells: [{ column: 0, row: 0, text: "Dose" }], headerRows: 0, rows: [["Dose"]] };
+  const model = buildDocument({
+    blocks: [0, 1, 2, 3].flatMap((i) => [
+      { headingPath: [], kind: "table" as const, rect: { height: 0.02, width: 0.8, x: 0.1, y: 0.04 }, table, text: "", unit: i },
+      { headingPath: [], kind: "paragraph" as const, rect: { height: 0.02, width: 0.8, x: 0.1, y: 0.5 }, text: BODY[i]!, unit: i },
+    ]),
+    format: "pdf",
+    title: "T",
+    units: [0, 1, 2, 3].map((i) => ({ index: i, kind: "page" as const })),
+  });
+  const after = classifyFurniture(model);
+  const tables = after.blocks.filter((b) => b.kind === "table");
+  assert.equal(tables.length, 4, "every table is still a table");
+  for (const t of tables) assert.deepEqual(t.table, table, "and still carries its grid");
+});
+
+test("classification is idempotent — running it twice cannot drift", () => {
+  const model = doc([0, 1, 2, 3].map((i) => page(i, [
+    { text: "Running Title", y: 0.04 },
+    { text: BODY[i]!, y: 0.5 },
+  ])));
+  const once = classifyFurniture(model);
+  const twice = classifyFurniture(once);
+  assert.deepEqual(twice.blocks.map((b) => b.kind), once.blocks.map((b) => b.kind));
+});
+
+test("a document with no furniture is returned unchanged, by identity", () => {
+  const model = doc([0, 1, 2, 3].map((i) => page(i, [{ text: BODY[i]!, y: 0.5 }])));
+  assert.equal(classifyFurniture(model), model, "no allocation when there is nothing to say");
 });

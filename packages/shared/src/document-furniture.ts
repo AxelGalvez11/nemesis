@@ -109,6 +109,8 @@ export function findFurniture(doc: DocumentModel): Map<string, Furniture> {
     // A table is never furniture. A repeated grid is a repeated grid, and
     // suppressing one would delete a page of data to tidy a margin.
     if (block.kind === "table" || block.kind === "figure") continue;
+    // Already named on a previous pass — idempotent, so a re-run cannot drift.
+    if (block.kind === "pageHeader" || block.kind === "pageFooter") continue;
     // A heading is grouped by its exact text; everything else may collapse its
     // digits, which is what lets "Page 3 of 30" and "Page 4 of 30" be one thing.
     const key = block.kind === "heading" ? `=${exactKey(block.text)}` : `~${runningKey(block.text)}`;
@@ -157,12 +159,41 @@ export function findFurniture(doc: DocumentModel): Map<string, Furniture> {
 export function documentFurniture(doc: DocumentModel): { block: DocBlock; where: Furniture }[] {
   const found = findFurniture(doc);
   return doc.blocks
-    .filter((b) => found.has(b.id))
-    .map((block) => ({ block, where: found.get(block.id)! }));
+    .filter((b) => found.has(b.id) || b.kind === "pageHeader" || b.kind === "pageFooter")
+    .map((block) => ({ block, where: found.get(block.id) ?? (block.kind as Furniture) }));
 }
 
 /** The blocks that carry the document's prose, furniture excluded. */
 export function readingFlow(doc: DocumentModel): DocBlock[] {
+  // Either already named by `classifyFurniture`, or detectable now — both are
+  // furniture, and a consumer should not have to know which pass ran.
   const found = findFurniture(doc);
-  return doc.blocks.filter((b) => !found.has(b.id));
+  return doc.blocks.filter((b) => !found.has(b.id) && b.kind !== "pageHeader" && b.kind !== "pageFooter");
+}
+
+/**
+ * The same model, with running furniture named as such.
+ *
+ * 🔴 IMMUTABLE, AND IT CHANGES EXACTLY ONE FIELD. `text`, `rect`, `unit`, `id`,
+ * `headingPath`, `table`, `figure` and every locator are carried through
+ * untouched — a block's identity and provenance must survive a relabelling, or a
+ * citation written before it would stop resolving afterwards. A wrong label is
+ * recoverable; a rewritten block is not.
+ *
+ * 🔴 AND IT NEVER OVERRIDES STRUCTURE THE FORMAT ALREADY STATED. A table carries
+ * a grid and a figure carries a reference; neither is furniture no matter where
+ * it sits or how often it repeats, and `findFurniture` already declines to
+ * consider them. Headings are considered but must repeat EXACTLY, because the
+ * parser has already judged them and overriding that needs stronger evidence.
+ */
+export function classifyFurniture(doc: DocumentModel): DocumentModel {
+  const found = findFurniture(doc);
+  if (found.size === 0) return doc;
+  return {
+    ...doc,
+    blocks: doc.blocks.map((block) => {
+      const where = found.get(block.id);
+      return where ? { ...block, kind: where } : block;
+    }),
+  };
 }
