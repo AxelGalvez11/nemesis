@@ -1,0 +1,5 @@
+Item,Description
+A,"first line
+second line"
+B,"""fully quoted"""
+C,"ends with a quote """
