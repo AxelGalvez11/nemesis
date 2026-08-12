@@ -373,6 +373,22 @@ there.*
 **As of 2026-08-12.** 🔴 **This is the only section describing what exists. Update it whenever
 behaviour changes, and never blur the three categories.**
 
+### Declared capabilities
+
+The block below is **machine-checked** against the running code by
+`apps/web/lib/learn/canvas-runtime-doc.test.ts`. Widening a capability without updating it fails
+the build; rewording any prose in this document does not. The test compares *capabilities*, never
+sentences — it exists to stop the code and the matrix drifting apart, not to freeze the wording.
+
+<!-- capability-matrix -->
+```yaml
+# What the code actually does today. Every value is derived from behaviour, not from intent.
+knowledge_types: association
+cognitive_operations: recall
+# The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveRowId, occurredAt, responseId, responseText, taskId, verdict
+```
+
 ### Implemented
 
 | Capability | Where |
