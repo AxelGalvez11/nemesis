@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import {
   CAUSAL_EXTRACTION_PROMPT,
   CAUSAL_EXTRACTION_VERSION,
+  CAUSAL_EXTRACTION_TEMPERATURE,
   CAUSAL_SCHEMA_VERSION,
   validateCausalEdges,
   type RawCausalEdge,
@@ -40,6 +41,9 @@ async function extract(passage: string): Promise<Call> {
         { content: `Passage:\n${passage}`, role: "user" },
       ],
       model: MODEL,
+      // 🔴 THE SAME VALUE PRODUCTION MUST USE. See CAUSAL_EXTRACTION_TEMPERATURE — sampling made
+      // this benchmark unable to tell a real improvement from noise.
+      temperature: CAUSAL_EXTRACTION_TEMPERATURE,
     }),
     headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
     method: "POST",

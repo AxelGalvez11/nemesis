@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   CAUSAL_EXTRACTION_PROMPT,
+  CAUSAL_EXTRACTION_TEMPERATURE,
   causalKnowledgeFrom,
   validateCausalEdges,
   type RawCausalEdge,
@@ -101,6 +102,77 @@ test("a denied edge and an asserted one are different knowledge", () => {
   assert.notEqual(knowledgeIdentityKey(object(asserted)), knowledgeIdentityKey(object(denied)));
 });
 
+// ── negation is a valid OUTPUT, and only ever caught one way ────────────────
+
+test("🔴 a positive edge from a quote that denies it is REJECTED", () => {
+  // The worst output this lane can produce: the stored claim would be the opposite of the document.
+  // Not repaired into a negation — a model that misread the polarity may have misread more.
+  const passage = "Price controls do not increase supply.";
+  const { rejected, relations } = validate(
+    [{ cause: "Price controls", effect: "supply", negated: false, quote: passage, relation: "increases" }],
+    passage,
+  );
+  assert.equal(relations.length, 0);
+  assert.equal(rejected[0]?.reason, "negation-dropped");
+});
+
+test("the same edge, correctly marked negated, is kept", () => {
+  const passage = "Price controls do not increase supply.";
+  const { relations } = validate(
+    [{ cause: "Price controls", effect: "supply", negated: true, quote: passage, relation: "increases" }],
+    passage,
+  );
+  assert.equal(relations.length, 1);
+  assert.equal(relations[0]?.negated, true);
+});
+
+test("🔴 nothing infers a negation from a quote that merely lacks one", () => {
+  // The check fires one way only. Absence of a denial must never be read as a denial — that would
+  // invent the opposite claim from silence, which is the same defect in reverse.
+  const { relations } = validate([GOOD]);
+  assert.equal(relations[0]?.negated, false);
+});
+
+// ── bounding conditions are modality ────────────────────────────────────────
+
+test("🔴 a conditional scope is preserved and labelled, not treated as decoration", () => {
+  // Dropping "until the enzyme saturates" does not lose a detail — it turns a bounded observation
+  // into a general law the source never stated, and a learner taught that gets the real case wrong.
+  const passage = "Increased substrate concentration raises reaction velocity until the enzyme saturates.";
+  const { relations } = validate(
+    [{
+      cause: "Increased substrate concentration",
+      effect: "reaction velocity",
+      qualifier: "until the enzyme saturates",
+      qualifierKind: "conditional",
+      quote: passage,
+      relation: "increases",
+    }],
+    passage,
+  );
+  assert.equal(relations[0]?.qualifier, "until the enzyme saturates");
+  assert.equal(relations[0]?.qualifierKind, "conditional");
+});
+
+test("an epistemic hedge is labelled as one", () => {
+  const { relations } = validate([{ ...GOOD, qualifier: "may", qualifierKind: "epistemic" }]);
+  assert.equal(relations[0]?.qualifierKind, "epistemic");
+});
+
+test("an unrecognised qualifierKind is dropped rather than guessed", () => {
+  const { relations } = validate([{ ...GOOD, qualifier: "will", qualifierKind: "vibes" }]);
+  assert.equal(relations[0]?.qualifier, "will");
+  assert.equal(relations[0]?.qualifierKind, undefined);
+});
+
+test("🔴 a conditional scope changes identity — the bounded claim is different knowledge", () => {
+  const plain = validate([{ ...GOOD, qualifier: undefined }]).relations[0]!;
+  const bounded = validate([{ ...GOOD, qualifier: "until saturation", qualifierKind: "conditional" }]).relations[0]!;
+  const object = (relation: typeof plain) =>
+    causalKnowledgeFrom({ anchors: [], index: 0, model: "m", relation, unitId: "b1" });
+  assert.notEqual(knowledgeIdentityKey(object(plain)), knowledgeIdentityKey(object(bounded)));
+});
+
 // ── the object it becomes ───────────────────────────────────────────────────
 
 test("a validated edge becomes a knowledge object carrying its whole provenance", () => {
@@ -142,13 +214,18 @@ test("🔴 the prompt teaches no single academic field", () => {
   // The development corpus is one pharmacogenomics lecture. A prompt carrying molecular examples
   // would learn that shape and fail on a statute or a control loop, and the benchmark could not tell
   // us — 30 of its 33 positives come from that same lecture.
+  // 🔴 WHOLE WORDS, LISTED EXPLICITLY. A stem match flagged "generally" for containing "gene" and
+  // failed a prompt that was fine — and a guard that cries wolf gets deleted rather than heeded.
   const domainWords = [
-    "allele", "codon", "enzyme", "gene", "nucleotide", "protein", "metaboliz",
-    "CYP", "drug", "patient", "dose", "receptor",
+    "allele", "alleles", "codon", "codons", "enzyme", "enzymes", "gene", "genes", "genetic",
+    "nucleotide", "nucleotides", "protein", "proteins", "metabolizer", "metabolizers", "metabolism",
+    "CYP", "drug", "drugs", "patient", "patients", "dose", "doses", "receptor", "receptors",
   ];
+  // 🔴 WORD BOUNDARIES, NOT SUBSTRINGS. The first version matched "gene" inside "generally" and
+  // failed on a prompt that was fine — a guard that cries wolf gets deleted rather than heeded.
   for (const word of domainWords) {
     assert.equal(
-      CAUSAL_EXTRACTION_PROMPT.toLowerCase().includes(word.toLowerCase()),
+      new RegExp(`\\b${word}\\b`, "i").test(CAUSAL_EXTRACTION_PROMPT),
       false,
       `the prompt mentions "${word}" — it is teaching one field`,
     );
@@ -165,8 +242,45 @@ test("🔴 the prompt tells the model that abstaining is correct", () => {
   }
 });
 
+test("🔴 the prompt says a denied relationship is still a relationship", () => {
+  // Measured: every negated claim in the benchmark was abstained on. Safe, but "X does not cause Y"
+  // is real knowledge and was invisible to Nemesis.
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("A DENIED relationship is a relationship"));
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("never infer a"), "and it must not be inferred");
+});
+
+test("🔴 the prompt names bounding conditions as modality, with examples from several fields", () => {
+  // The model preserved "may" and dropped every condition that says WHEN a claim holds.
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("conditional"));
+  for (const example of ["under cyclic load", "when voltage is held constant", "at constant volume"]) {
+    assert.ok(CAUSAL_EXTRACTION_PROMPT.includes(example), `missing conditional example: ${example}`);
+  }
+});
+
+test("🔴 the prompt separates a speculative example from a general conditional rule", () => {
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("HYPOTHETICALS"));
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("how things work"));
+});
+
+test("🔴 the ownership rule judges the relationship, not the tone", () => {
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("WHOSE KNOWLEDGE IS IT"));
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("not whether the wording sounds"));
+});
+
+test("the prompt refuses a passage that states both directions", () => {
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("BOTH directions"));
+});
+
 test("🔴 the prompt distinguishes course policy from subject matter", () => {
   // Refusing "filing after the deadline results in dismissal" would make Nemesis unable to teach
   // whole disciplines; accepting "miss two sessions and you are withdrawn" teaches the syllabus.
-  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("SUBJECT BEING STUDIED"));
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("limitation deadline"), "the law case must be shown");
+  assert.ok(CAUSAL_EXTRACTION_PROMPT.includes("withdrawal from the module"), "and the course case");
+});
+
+test("🔴 the lane declares a deterministic temperature, and it is zero", () => {
+  // Measured: at the valve's default sampling the identical prompt flipped 12.8% of the development
+  // fold between two runs — one reporting 0 fabricated edges and the next 3. A zero-tolerance
+  // criterion cannot be checked against a sampled result.
+  assert.equal(CAUSAL_EXTRACTION_TEMPERATURE, 0);
 });

@@ -24,6 +24,24 @@ import type { CausalRelation, CausalRelationKind, KnowledgeObject } from "./know
 export const CAUSAL_EXTRACTION_VERSION = "causal/1";
 export const CAUSAL_SCHEMA_VERSION = "causal-edges/1";
 
+/**
+ * The sampling temperature this lane MUST be called with.
+ *
+ * 🔴 NOT A TUNING PREFERENCE — IT IS WHAT MAKES A ZERO-TOLERANCE CRITERION CHECKABLE. Measured
+ * 2026-08-12: the identical prompt over the identical 78 passages flipped 12.8% of them between two
+ * runs at the valve's default sampling. One run reported 0 fabricated edges and the next reported 3.
+ * A criterion like "never invent a causal claim" cannot be verified against a sampled result, and a
+ * benchmark that moves on its own cannot tell a real improvement from noise — for a while it told
+ * me a prompt change had fixed something that sampling had merely hidden.
+ *
+ * At 0 the same 78 passages agreed 78/78 across two runs.
+ *
+ * 🔴 THE PRODUCTION LANE MUST SEND THIS TOO. Reading a document is not a creative task, and an
+ * extractor that answers differently on a re-run would mint knowledge objects that appear and
+ * disappear between imports of the same file.
+ */
+export const CAUSAL_EXTRACTION_TEMPERATURE = 0;
+
 export const CAUSAL_RELATION_KINDS: readonly CausalRelationKind[] = [
   "causes",
   "increases",
@@ -52,9 +70,25 @@ For each relationship the passage asserts, return:
 - effect: the thing changed, quoted from the passage
 - relation: exactly one of causes | increases | decreases | enables | inhibits | prevents
 - negated: true when the passage DENIES the relationship ("does not cause", "produces no increase")
-- qualifier: the passage's own hedge or bounding condition, verbatim, or null
+- qualifier: the passage's own hedge OR bounding condition, verbatim, or null
+- qualifierKind: "epistemic" for a hedge, "conditional" for a scope, or null when qualifier is null
 - verb: the word or phrase the passage used to assert it, verbatim
 - quote: the exact sentence or clause from the passage that asserts it, copied character for character
+
+A DENIED relationship is a relationship. "Aspirin does not prevent myocardial infarction" and "price
+controls do not increase supply" are knowledge worth keeping — return them with negated: true, the
+same relation the passage names, and the passage's own words. Do NOT abstain merely because the
+assertion is negative. Only abstain if the denial itself is not stated in the passage: never infer a
+negation from surrounding context.
+
+The qualifier is anything the passage uses to limit the claim, and there are two kinds:
+- epistemic — how sure the author is: "may", "can", "likely", "generally", "typically"
+- conditional — WHEN the relationship holds: "under cyclic load", "when voltage is held constant",
+  "at constant volume", "during exertion", "in the presence of a moderator", "until the mixture
+  reaches equilibrium"
+Both must be preserved verbatim. Dropping a condition does not lose a detail, it changes the claim
+into a general law the passage never stated — "compression raises temperature" is a different and
+wrong thing from "compression raises temperature at constant volume".
 
 Choosing the relation:
 - causes     — brings about, leads to, results in, produces
@@ -67,21 +101,40 @@ If the passage does not settle which of these it means, abstain for that relatio
 ABSTAIN — return no relationship — when any of these is true:
 - it is a question rather than an assertion
 - it is a heading, a title, a caption, or a description of a picture
-- it describes a hypothetical or counterfactual the author is exploring
 - it states only that two things occur together, correlate, or trend together
 - it states only that one thing happened after another
 - "because" introduces how we KNOW something rather than what brought it about
-- the cause or the effect is not present in the passage — including when it is only a pronoun
-  such as "this", "that" or "it" whose referent is in another sentence
+- the cause or the effect is not present in the passage — including when it is a pronoun such as
+  "this", "that" or "it", or a phrase pointing back at something outside the passage such as
+  "these factors", "the above" or "such changes"
 - the passage is fragmentary and you cannot tell which part is the cause
-- it is a rule about a course, a class, or a person's conduct — attendance, deadlines for
-  coursework, grading, discipline, or academic policy
+- the passage gives BOTH directions and does not settle which — "it can raise or lower the value
+  depending on the setting" states no direction, and choosing one invents a claim
+- the relationship does not belong to the subject being studied
 - you are unsure
 
-Note the distinction in that last rule: a consequence imposed on a STUDENT by a course is not
-knowledge. A consequence that is part of the SUBJECT BEING STUDIED is. "Missing two sessions leads
-to withdrawal from the module" is course policy — abstain. "Filing after the limitation deadline
-results in dismissal of the claim" is substantive law — extract it.
+HYPOTHETICALS. A speculative example is not knowledge; a general conditional rule is. The test is
+whether the passage asserts that the relationship HOLDS, or merely imagines one instance of it:
+- "Suppose the temperature were doubled; the rate would roughly quadruple." — imagining a case,
+  abstain
+- "If the central bank were to cut rates, investment would likely rise." — a speculation about one
+  possible future, abstain
+- "When the load exceeds the yield point, deformation becomes permanent." — a general rule stated
+  with a condition, extract it with that condition as the qualifier
+"If/when X, then Y" is extractable when the passage presents it as how things work, not as a
+scenario being entertained.
+
+WHOSE KNOWLEDGE IS IT. The last abstention rule is about ownership, not tone. Ask: is this
+relationship part of what someone is studying, or is it a rule about how a course, a platform, a
+process or an institution treats a person? Judge the relationship, not whether the wording sounds
+bureaucratic.
+- "Missing two sessions leads to withdrawal from the module" — about the course, abstain
+- "Failure to torque the fasteners may result in rejection of the warranty claim" — a commercial
+  consequence for a person, not a fact about fasteners, abstain
+- "Filing after the limitation deadline results in dismissal of the claim" — substantive law, and
+  someone is studying it, extract it
+- "Under-torquing the bolt allows the joint to loosen under vibration" — a fact about the
+  mechanism, extract it
 
 Returning nothing is a correct and common answer. Most passages assert no causal relationship, and a
 relationship you are unsure about is worth less than none: a missed relationship costs coverage, an
@@ -98,6 +151,7 @@ export interface RawCausalEdge {
   relation?: unknown;
   negated?: unknown;
   qualifier?: unknown;
+  qualifierKind?: unknown;
   verb?: unknown;
   quote?: unknown;
 }
@@ -114,7 +168,10 @@ export type EdgeRejection =
   /** Cause and effect are the same thing. */
   | "degenerate"
   /** An endpoint is a bare pronoun, so the edge points at nothing resolvable. */
-  | "pronoun-endpoint";
+  | "pronoun-endpoint"
+  /** The quote denies the relationship but the edge came back positive — the stored claim would be
+   *  the opposite of the document. 🔴 One-way only; nothing here infers a negation from absence. */
+  | "negation-dropped";
 
 export interface ValidatedEdges {
   relations: CausalRelation[];
@@ -126,6 +183,13 @@ const PRONOUNS = new Set([
   "this", "that", "it", "these", "those", "they", "them", "he", "she", "we", "you",
   "the effect", "the result", "the above", "the following",
 ]);
+
+/** Explicit denial, as a passage writes one.
+ *
+ *  🔴 USED ONLY TO CATCH A DROPPED NEGATION, NEVER TO ADD ONE. Matching this does not make an edge
+ *  negative; failing to match it does not make an edge positive. It answers exactly one question:
+ *  did the model return a positive edge from a quote that plainly denies it? */
+const DENIAL = /\b(do(es)?\s+not|did\s+not|will\s+not|would\s+not|cannot|can\s?not|is\s+not|are\s+not|no\s+(further|additional|significant)?\s*\w*(increase|decrease|change|effect)|never|fails?\s+to)\b|\bn't\b/i;
 
 function contains(haystack: string, needle: string): boolean {
   return normalizeForIdentity(haystack).includes(normalizeForIdentity(needle));
@@ -180,8 +244,24 @@ export function validateCausalEdges(input: {
       continue;
     }
 
+    // 🔴 THE DENIAL CHECK, AND IT ONLY EVER FIRES ONE WAY. When the quote plainly denies the
+    // relationship but the edge came back positive, the stored claim would be the OPPOSITE of the
+    // document — the single worst output this lane can produce. It is not repaired into a negation,
+    // because a model that misread the polarity may have misread more than the polarity.
+    //
+    // 🔴 AND THERE IS NO CHECK IN THE OTHER DIRECTION. Nothing here concludes a claim is negative
+    // because the quote lacks a denial: negation is asserted by the source or not at all, never
+    // inferred from what is missing.
+    if (edge.negated !== true && DENIAL.test(quote)) {
+      reject("negation-dropped", "the quote denies the relationship but the edge came back positive");
+      continue;
+    }
+
     const qualifier = typeof edge.qualifier === "string" && edge.qualifier.trim() ? edge.qualifier.trim() : undefined;
     const verb = typeof edge.verb === "string" && edge.verb.trim() ? edge.verb.trim() : undefined;
+    const kind = edge.qualifierKind === "epistemic" || edge.qualifierKind === "conditional"
+      ? edge.qualifierKind
+      : undefined;
     relations.push({
       assertion: quote,
       cause: { key: causalNodeKey(cause), text: cause },
@@ -192,6 +272,7 @@ export function validateCausalEdges(input: {
       negated: edge.negated === true,
       relation: relation as CausalRelationKind,
       ...(qualifier ? { qualifier } : {}),
+      ...(qualifier && kind ? { qualifierKind: kind } : {}),
       ...(verb ? { sourceVerb: verb } : {}),
     });
   }

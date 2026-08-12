@@ -196,14 +196,36 @@ export interface CausalRelation {
    */
   negated: boolean;
   /**
-   * The source's own hedge, verbatim — "generally", "may", "likely", "in most patients".
+   * The source's own hedge OR bounding condition, verbatim.
    *
    * 🔴 MODALITY IS PART OF THE CLAIM. "X causes Y" and "X may cause Y" are different assertions,
    * and flattening the second into the first states something the author declined to state. It is
    * therefore part of identity too. Absent means the source asserted it plainly — never that
    * nobody looked.
+   *
+   * 🔴 AND A BOUNDING CONDITION IS MODALITY, NOT DECORATION. Measured 2026-08-12: the model
+   * preserved epistemic hedges like "may" and dropped every condition that says WHEN a relationship
+   * holds — "until the enzyme saturates", "under cyclic load", "when voltage is held constant".
+   * Dropping one does not lose detail, it STRENGTHENS the claim into a general law:
+   *
+   *     "more substrate increases reaction rate"                     an overgeneralised rule
+   *     "more substrate increases reaction rate until saturation"    what the source said
+   *
+   * A learner taught the first will get the second wrong, and Nemesis will have taught them that.
    */
   qualifier?: string;
+  /**
+   * Which KIND of qualification it is.
+   *
+   * 🔴 ONE FIELD WOULD LOSE A DISTINCTION CANVAS NEEDS. "may increase heart rate" and "increases
+   * heart rate during exertion" are both qualified, but the first is uncertainty about whether the
+   * relationship holds and the second is a scope in which it definitely does. A later interaction
+   * that wants to test "when does this apply?" can only find the second.
+   *
+   * Deliberately a label rather than a parsed condition — this is not a logic system, and the
+   * source's own words remain the record.
+   */
+  qualifierKind?: "epistemic" | "conditional";
   /**
    * The verb the document actually used — "leads to", "inhibits", "ablates".
    *
