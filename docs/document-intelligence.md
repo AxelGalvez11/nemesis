@@ -479,8 +479,24 @@ acceptance-proven" with no stated criterion just moves the ambiguity somewhere h
 | 6 — Semantic extractors | IN PROGRESS | Extractors (`document-facts.ts`) **and consumers** (`document-artifacts.ts`): flashcards, calendar candidates, grading schemes and note sections, each carrying the blocks it came from. It PROPOSES — no database, no calendar, no deck — so extraction can never become a consequential write, and the existing confirmation flows receive these as candidates. `EXAM_ITEM_RULES` is now field-neutral, with a test that fails if anyone reaches for a familiar example again. | *Facts are found by shape and carry provenance.* → **Yes**: definitions cut by real files **925 → 265 → 89**; two fixtures, law and welding, share no vocabulary and yield identical fact kinds. *Artifacts are derived from them, with provenance, without inventing prose.* → **Yes**, on 200 real files: 2,385 facts → 147 flashcards (35 files), 96 calendar candidates (41 files), 949 note sections. **0 artifacts without source blocks, 0 Word artifacts claiming a page, 0 cards containing text the document does not contain.** Script: `scripts/phase6-artifacts.mts`. | Not merged · Not deployed · Not production-proven. | 🔴 **The measurement found the grading-scheme extractor returning ZERO across 200 files.** Its shape test was right; its only input was a `table` block, and PDF table detection is deliberately unbuilt — so the extractor aimed squarely at a syllabus could never see one. It now also reads a run of sibling lines each ending in a percent, which finds **1**. That number is low and is the honest one. Still unbuilt: no UI presents these candidates, and 1,005 figure facts + 187 table facts build nothing. Known gaps: English month names only; a trailing letter is an enumerator in *Answer D* and a real term in *Vitamin D*. |
 | 7 — Capacity | IN PROGRESS | `MAX_UNITS_PER_PARSE` now **enforced** in `readPdfStructure`, which reports `declaredUnits` separately. `ArchiveRefusal` so our own refusals survive wrapping. 18 hardening tests. | *Adversarial input is bounded and disclosed, not crashed on.* → **Yes, for the parsers in isolation**: three defects found and fixed — a PDF that would not open threw out of the parser and took the upload request with it; fflate's `invalid zip data` reached the student verbatim; coverage printed `5000 of 100000` beside a sentence that grouped its digits. *The integrated pipeline is bounded.* → **Yes**, now: `pipeline-hardening.test.ts` runs each fixture bytes → parse → model → chunk → rows → facts → artifacts, and the database half is proven separately against a real Postgres. It found a disclosure defect immediately — a chunk was reported `oversized` only when it held exactly ONE block, so a 20,000-character paragraph preceded by its own heading (the ordinary case, since a heading opens a chunk and never closes one) was carried whole and reported as ordinary. The text was never at risk; the warning was. | Not merged · Not deployed · Not production-proven. | Still unbuilt: bounded entry-at-a-time Office reading, streaming inflation to close the understated-`originalSize` gap, and concurrency/memory behaviour under the real runtime. |
 
+| **Grids — spreadsheets and delimited files** (added 2026-08-12) | **DONE for `.xlsx`** · CSV IN PROGRESS | `xlsx-structure.ts` → `xlsx-model.ts`; `csv-structure.ts` → `csv-model.ts`. One representation for both: `DocTable`/`DocCell` with `origin`, `formula`, `raw`, `format`, `hiddenRows`/`hiddenColumns`, `delimiter`. `cellAtRef` at the extraction boundary. | *A real workbook uploaded to production is read back out of the row, decoded through `readDocumentModel`, and every property a citation depends on survives — including a cell reference that resolves literally.* → **Yes, 7 of 7**, on a composite fixture carrying all seven at once. CSV: *the same chain to a cell locator* → **Yes**, locally; 15 files / 112 cells / 112 references resolve. | XLSX merged `d7442d73` (#490, #491) · Deployed · **Production-proven** — real upload, real row, `Ledger!E7 → "7.5%"`. CSV: #492 open, **not merged**. | 🔴 **CSV's `doc_kind` migration is NOT APPLIED** — the CHECK would reject every CSV parse at INSERT, after all the work. Needs owner approval as a production change. 🔴 Nine client `accept=` lists omit `.xlsx`, so no UI can select one. 🔴 `parsed_documents.table_count` is written by NOTHING and read by nothing — every row reads 0, including a DOCX with two real tables (spawned separately). |
+
 **Benchmark status, both halves: not run.** `docs/document-benchmark.md` records no value for any
 metric. Therefore no parity claim of any kind is currently supported, in either direction.
+
+**What the grid work established about verification itself**, because it cost three defects to learn
+and it applies to every row above:
+
+1. **A merged, green, deployed parser can be unreachable.** The `.xlsx` lane was complete and the
+   upload route refused it with 415, because that route carried a private copy of the format list.
+   *Deployed* and *reachable* are separate states, and only a real upload tells them apart.
+2. **Fixtures written by one library agree with the code that reads them.** Two production defects
+   were found by round-tripping a fixture through a SECOND program — LibreOffice writes
+   `hidden="true"` where openpyxl writes `hidden="1"`, and escapes a currency symbol where openpyxl
+   quotes it. Neither was findable by reading our own code.
+3. **The properties must be verified TOGETHER.** Six of seven passed while no consumer could address
+   a single cell, because the extraction boundary dropped the grid's origin. A per-property fixture
+   set would have reported a pass.
 
 **Production verification is blocked, and that is a status, not a stopping point.** Every deploy-
 dependent check is queued in `docs/document-intelligence-handoff.md` §6 rather than treated as done
@@ -665,11 +681,33 @@ generated artifact, which is the precondition for making generation opt-in at al
 
 ### Spreadsheets are documents, not CSV
 
-`.xlsx` is refused outright today — `kindFor`/`sniffKind` know only pdf/docx/pptx/image. Real support
-means workbook → sheets → tables → cells: sheet names, coordinates and ranges, header rows, merged
-cells, displayed values, and formulas where they carry meaning. The target is answering *"why did
-revenue fall in Q3?"* while citing a sheet and range — which the schema already accommodates through
-`unit_kind='sheet'`, `unit_label` and `cell_range`.
+**Shipped and production-proven, 2026-08-12.** This section previously read "`.xlsx` is refused
+outright today". It is not: `xlsx-structure.ts` → `xlsx-model.ts` produce workbook → sheets → tables
+→ cells, and a real upload through the production route has been read back out of `parsed_documents`
+with all seven properties intact — sheet names, a non-A1 origin citing `C5` as `C5`, a percentage
+keeping `text: "7.5%"` beside `raw: "0.075"` and its format code, currency identity, a formula
+alongside its cached result, hidden row/column/sheet state, and `Ledger!E7` resolving through
+`buildSourceContext` on the stored column. Merged `d7442d73` (#490, #491).
+
+Three things that verification established and that this section previously assumed away:
+
+- **A grid coordinate is not a cell reference.** A sheet starting at C5 has its first cell at grid
+  (0,0). Calling that "A1" misplaces every citation *while every round-trip test still passes*,
+  because both sides are wrong identically. The assertion has to be the A1 STRING.
+- **Displayed and stored are two facts, and a `.xlsx` carries both.** `0.075` and `7.5%` are the same
+  number and not the same source. Four format classes are rendered; everything else is refused BY
+  NAME with its format code preserved, rather than a formatting engine being built.
+- **A `.csv` is the same grid with one truth.** It has already collapsed display and stored — the
+  same sheet exports as `77.5%` and bare `5000` — so a CSV cell has no `raw` and no `format`, and
+  adding them for parity would mean inventing a second truth out of one string. CSV therefore reuses
+  `DocTable`/`DocCell` rather than getting a parallel model (#492).
+
+The target remains answering *"why did revenue fall in Q3?"* while citing a sheet and range, which
+the schema accommodates through `unit_kind='sheet'`, `unit_label` and `cell_range`.
+
+🔴 **The server accepting a format is not a student being able to add one.** Nine client-side
+`accept=` lists still omit `.xlsx`, so today the only caller that can reach this lane is the API.
+That is UI, owned elsewhere, and is listed in #491 rather than fixed here.
 
 ### Visual elements are generic
 
