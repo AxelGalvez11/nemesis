@@ -98,6 +98,18 @@ export interface CanvasRegions {
    * inside this region is narrower — see `AnswerSink`.
    */
   policy: boolean;
+  /**
+   * The hosted task is sharing the surface with reading material that is genuinely there.
+   *
+   * 🔴 NOT THE SAME QUESTION AS `document`, AND CONFLATING THEM IS A REAL DEFECT. `document` is
+   * also true for the PRE-CONTENT states, which paint a placeholder rather than a document. A task
+   * told it is "sharing" on `sources_attached` shrinks to leave room for reading material that does
+   * not exist, and ends up floating at the top of an empty surface beside a centred button.
+   *
+   * That is the COMMON shape today, not an edge case: a canvas with sources attached and no
+   * generated lesson is most of them, so it is the path this migration exercises first.
+   */
+  sharing: boolean;
 }
 
 /** Canvas states whose surface collects an answer or reports on answers already collected. */
@@ -109,14 +121,16 @@ const EVIDENCE_STAGES: readonly CanvasState[] = [
   "complete",
 ];
 
-/** Canvas states that show reading material, or the absence of it. */
-const READING_STATES: readonly CanvasState[] = [
-  "empty",
-  "sources_attached",
-  "orient",
-  "learn",
-  "targeted_relearn",
-];
+/** Canvas states that hold reading material the learner can actually read. */
+const READING_STATES: readonly CanvasState[] = ["orient", "learn", "targeted_relearn"];
+
+/**
+ * Canvas states with no reading material yet — they paint a placeholder in the same region.
+ *
+ * 🔴 SEPARATE FROM `READING_STATES` BECAUSE `sharing` DEPENDS ON THE DIFFERENCE. Both paint in the
+ * document region; only one of them is something a task has to make room for.
+ */
+const PRE_CONTENT_STATES: readonly CanvasState[] = ["empty", "sources_attached"];
 
 export function isEvidenceStage(state: CanvasState): boolean {
   return EVIDENCE_STAGES.includes(state);
@@ -146,13 +160,15 @@ export function composeSurface(input: {
 }): CanvasRegions {
   const { canvasState, policyPresenting } = input;
   const evidenceStage = isEvidenceStage(canvasState);
+  const reading = READING_STATES.includes(canvasState);
+  const policy = policyPresenting && !evidenceStage;
 
   return {
     // 🔴 A hosted task does NOT suppress reading. This single `true` is the behaviour change of
     // 7b: material the policy cannot represent stays on screen instead of being hidden behind a
     // runtime that took the page (§14.1 — the answer to zero owned canvases is composition, never
     // a lower coverage bar).
-    document: READING_STATES.includes(canvasState),
+    document: reading || PRE_CONTENT_STATES.includes(canvasState),
     // 🔴 NOT `evidenceStage && !hasTask`. That was the first version, and it painted NOTHING when a
     // task was pending during a run: the stage stood down for the task, and the task stood down for
     // the stage, so a learner mid-test saw a blank canvas with no error. The exclusion is
@@ -163,7 +179,10 @@ export function composeSurface(input: {
     // machine is a run the learner started and is partway through; interrupting it to ask a
     // policy question would discard answers already given to it. The task waits — `decideNext` is
     // stateless, so nothing is lost by asking again once the run ends.
-    policy: policyPresenting && !evidenceStage,
+    policy,
+    // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
+    // for a placeholder that is itself waiting for one.
+    sharing: policy && reading,
   };
 }
 

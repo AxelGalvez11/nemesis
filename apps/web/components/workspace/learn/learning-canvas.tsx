@@ -326,11 +326,19 @@ export function LearningCanvas({
         // title and the controls back on for the feedback beat and off again for the next question
         // would put a flicker of chrome between every answer and the next — more distracting than
         // the chrome itself. A session is one continuous state.
-        // 🔴 KEYED ON THE ANSWER SINK, NOT ON THE POLICY BEING PRESENT. The header goes quiet while
-        // the learner is answering; under composition the policy can be contributing a correction
-        // beside a document they are still reading, and stripping the title and controls there
-        // would take away navigation from someone who is reading rather than being asked.
-        minimal={sink.kind === "policy"}
+        // 🔴 THE POLICY HAS THE SURFACE TO ITSELF — NOT "IS ANSWERING", AND NOT "IS PRESENT".
+        //
+        // The original rule was the whole policy session, deliberately: flipping the title and
+        // controls back on for the feedback beat and off again for the next question puts a flicker
+        // of chrome between every answer, which is more distracting than the chrome. Keying this on
+        // the answer sink would reintroduce exactly that oscillation, because `task` is null while a
+        // verdict is on screen.
+        //
+        // What composition adds is the other half: when a document is sharing the surface the
+        // learner may be reading rather than answering, and stripping the title and navigation from
+        // someone who is reading takes away their way out. So: quiet when the policy is alone,
+        // continuous across question and feedback, never quiet over a document.
+        minimal={regions.policy && !regions.sharing}
         onFiles={(files) => void session.attachFiles(files)}
         onRename={session.rename}
       />
@@ -344,7 +352,7 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && <CanvasPolicyView runtime={policy} sharing={regions.document} />}
+        {regions.policy && <CanvasPolicyView runtime={policy} sharing={regions.sharing} />}
 
         {regions.document && (
           <>

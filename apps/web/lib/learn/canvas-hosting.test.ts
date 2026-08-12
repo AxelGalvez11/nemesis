@@ -45,9 +45,25 @@ test("unsupported material stays readable when the policy has nothing to ask", (
   assert.equal(regions.policy, false);
 });
 
-test("pure association recall still works — a task with no document to sit beside", () => {
-  const regions = composeSurface({ canvasState: "sources_attached", policyPresenting: true });
-  assert.equal(regions.policy, true);
+test("🔴 pure association recall works, and does NOT think it is sharing with a document", () => {
+  // CALIBRATION: `sharing` was first wired to `regions.document`, which is also true for the
+  // pre-content states. On `sources_attached` that made a task shrink to leave room for reading
+  // material that does not exist — floating at the top of an empty surface beside a centred button.
+  // And this is the COMMON shape: a canvas with sources attached and no generated lesson yet.
+  const pre = composeSurface({ canvasState: "sources_attached", policyPresenting: true });
+  assert.equal(pre.policy, true, "the task must still be presentable");
+  assert.equal(pre.document, true, "the pre-content placeholder still paints");
+  assert.equal(pre.sharing, false, "there is no document here to make room for");
+
+  const withDocument = composeSurface({ canvasState: "learn", policyPresenting: true });
+  assert.equal(withDocument.sharing, true, "a real document must be made room for");
+});
+
+test("sharing is never true without the policy actually presenting", () => {
+  for (const state of CANVAS_STATES) {
+    const regions = composeSurface({ canvasState: state, policyPresenting: false });
+    assert.equal(regions.sharing, false, `${state}: nothing is being shared with`);
+  }
 });
 
 // ── the invariant that replaces whole-page ownership ─────────────────────────

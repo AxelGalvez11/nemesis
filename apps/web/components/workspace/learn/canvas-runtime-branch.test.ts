@@ -84,7 +84,7 @@ test("🔴 a task sharing the surface does not push the document off it", async 
   const source = await SOURCE;
   assert.match(
     source,
-    /<CanvasPolicyView runtime=\{policy\} sharing=\{regions\.document\} \/>/,
+    /<CanvasPolicyView runtime=\{policy\} sharing=\{regions\.sharing\} \/>/,
     "the policy's region is not told whether it is sharing the surface",
   );
   const view = await readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
