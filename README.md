@@ -80,6 +80,7 @@ docs/                    the design references below
 |---|---|
 | [`docs/canvas-cognitive-runtime.md`](docs/canvas-cognitive-runtime.md) | **The north star for Canvas.** Target architecture, and §12 is a dated matrix of what is actually built. Read before changing the runtime, extraction, policy, evidence or presentation. |
 | [`docs/minimap-knowledge-territory.md`](docs/minimap-knowledge-territory.md) | **The north star for the Minimap.** How the learner navigates the knowledge territory, and what that demands of the layers below. Target only. |
+| [`docs/causal-cognition-contract.md`](docs/causal-cognition-contract.md) | **What a response demonstrates about a mechanism.** Edge-level evaluation, the operations causal knowledge supports, and what evidence must record. Target only. |
 | [`docs/document-intelligence.md`](docs/document-intelligence.md) | What Nemesis can read, and how well |
 | [`docs/document-graph.md`](docs/document-graph.md) | The canonical document model |
 | [`docs/parsing-architecture.md`](docs/parsing-architecture.md) | How files become that model |
