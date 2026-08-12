@@ -146,6 +146,60 @@ test — it has to be true by construction, not discovered afterwards in the evi
 4. A double-submit yields one row per objective, not two.
 5. A canvas hosting the task still shows its source material.
 
+### 🔴 WHO PRODUCES PER-OBJECTIVE OUTCOMES — answered 2026-08-12, do not re-derive
+
+Runtime asked who turns one answer into per-objective outcomes, having found that §4's
+`edgesDemonstrated` are *objective keys* while the shipped `ResponseEvaluation` carries
+`demonstrated: string[]` / `missing: string[]` as free text plus **one overall** verdict. Same
+names, different things. Nothing merged produces a key from a response.
+
+**The answer, and the forbidden option.**
+
+- ✅ **The judge is told which keys are in play and returns the keys it was given**, with a verdict
+  for each. Identity is *supplied*, never invented downstream; the evaluator decides what the answer
+  showed; nothing re-derives it afterwards.
+- 🔴 **A function mapping the judge's prose to targeted keys is FORBIDDEN.** Substring-matching
+  against objective labels produces a per-objective claim *no evaluator ever made*, which
+  `learner_evidence` then stores durably as though judged. Same failure as mapping a wider operation
+  vocabulary down onto a narrower one. Brain will not build it and no lane should.
+- **Nothing arrives as an objective key today.** Ship the routing path with its single caller
+  passing one outcome; keep the multi-target path exercised by tests until a producer exists.
+
+**The agreed shape**, and it is what `BRAIN-003` will return:
+
+```ts
+outcomes: readonly { objectiveIdentityKey: string; verdict: EvidenceVerdict }[]
+```
+
+### 🔴 "NOTHING WAS DEMONSTRATED" AND "WE NEVER GOT A JUDGEMENT" MUST NOT BE THE SAME VALUE
+
+A bare `outcomes` array makes an **empty array ambiguous between two opposite obligations**:
+
+| Empty because | Required behaviour |
+|---|---|
+| the judge ran and established nothing | every target: `demonstrationObtained: false`, `verdict: null` |
+| the judge could not be reached, or returned unparseable output | **no rows at all, for any target** |
+
+A `catch` or a failed parse naturally produces an empty array, so a judge outage silently writes
+*"we asked and they showed nothing"* across every target — a durable false claim, written by an
+outage, that no test catches because it is a representation gap rather than a bug. Make it
+unrepresentable at the type, as `AnswerSink` did for two answer surfaces:
+
+```ts
+type Judgement =
+  | { judged: true; outcomes: readonly { objectiveIdentityKey: string; verdict: EvidenceVerdict }[] }
+  | { judged: false }   // writes nothing, for any target
+```
+
+The exact shape is Runtime's. The invariant is not.
+
+**This split is also what makes `edgesMissing` safe to leave implicit.** "Every target that arrived
+without an outcome" is only equivalent to `edgesMissing` once `judged: false` is separated out —
+otherwise it also covers the judge never running. The two decisions are coupled; take them together.
+
+**An outcome naming a key that was not targeted writes NO row.** That is evidence for a question
+nobody was asked, and it must be unrepresentable rather than merely unlikely.
+
 **NON-REQUIREMENTS** — React structure, hook shape, how regions compose, and whether
 `HostedTaskShape` changes at all. It may well survive untouched with the target set carried
 alongside it. How the evaluation is invoked and shaped is yours.
@@ -343,7 +397,69 @@ and nothing flags it. Preferred fix: name verdicts by **what survived** (sentenc
 tabular structure, reading order) and let Brain map survival to teachability per type. Acceptable
 alternative: keep the names and record the baseline they were computed against. Not blocking.
 
-**🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** The 62% figure is
+### ✅ RESOLVED 2026-08-12 — Parser measured it and decided. Document-level ships; unit-level is next.
+
+Parser answered the open point below, which Brain could not. **Document-level ships in #504.
+Unit-level is correct and blocked on a substrate that does not exist**, because:
+
+- **0 of 11** production rows carry `unreadableRegions` at all.
+- The single row with real text loss (`9551f235`, 1 of 24 pages) has structure shape `text-only` —
+  one `u0` unit, no page number. **There is nothing to attribute the loss to.** A per-unit field
+  shipped today would read `unknown` everywhere, including on the only document that has anything
+  to say.
+- Locality is *discarded at the producers*, not missing from them: `pdf/structure.ts:278` reduces
+  per-page `tablesUnread` to one integer, and the Docling adapter counts `unitIndexesWithContent`
+  into totals without keeping which unit was which. Same shape as `PARSER-002` — the fact exists at
+  measurement and dies at summing.
+
+**`PARSER-003` — preserve unit locality at the producers — is claimed and approved.** Additive,
+optional, absent means *not observed*, no backfilled guesses. Sequencing cost accepted: every
+production source reads `unknown` at unit level until a reparse, and a reparse means a
+`PARSER_VERSION` bump because that version is half the unique key on `parsed_documents`.
+
+### 🔴 THE FLOOR RULE — Parser's wording, adopted as an invariant
+
+> **The document verdict is a floor, not a summary. Only *located* loss attributes to a unit; any
+> *unlocated* loss degrades every unit.**
+
+Brain asked only that Parser *err toward refusal*. Parser found the specific mechanism by which
+refinement would quietly stop refusing: go per-unit naively and unlocated loss **vanishes**, so a
+document with three unreadable regions whose page cannot be recovered reports every unit `intact` —
+parser incapacity reading as absence of loss, arriving through the improvement meant to prevent it.
+Calibrate by reintroducing exactly that: a mutation attributing located loss correctly *while*
+letting unlocated loss disappear must go red.
+
+### 🔴 CORRECTED — "no tables in the corpus" has expired
+
+The board previously recorded *"0 of 8 production docs contain a DATE, none a TABLE."* Production now
+holds **11 parse rows and 8 table blocks across two documents** (pptx 6, docx 2), both stored with a
+cell model. **Tables are no longer absent.** Brain's own association-extraction reasoning assumed
+they were; anyone reasoning from "there are no tables" is reasoning from an expired fact.
+
+### 🔴 NAME WHAT SURVIVED, NOT WHETHER IT CAN BE TRUSTED — Brain's answer to Parser's question
+
+"Can this text be trusted to assert something from" is a **teachability** claim, and teachability is
+not one-dimensional — it depends on the knowledge type, which lives downstream of Parser. A single
+trust verdict silently means *"trustworthy for the knowledge types we extract today"*, and adding a
+knowledge type with different structural needs changes what the stored value means with nothing to
+flag it.
+
+The two properties Brain depends on today, in priority order:
+
+1. **Sentence integrity** — did prose survive as sentences or as fragments? Decides causal
+   extraction; it is what the 62%-unusable finding was really measuring.
+2. **Tabular structure** — did row/column pairing survive? Decides associations.
+
+Reading order matters only for sequence knowledge, which does not exist. Do not build for it.
+
+**Preference, not a blocker.** If naming survival costs materially more than a trust verdict, ship
+trust and record the baseline it was computed against. Brain needs only that *"we could not reliably
+read this"* stays separable from *"we read this fine and it asserts nothing."*
+
+---
+
+**🔴 UNIT-LEVEL OR DOCUMENT-LEVEL? Brain does not know, and says so.** *(Superseded by the
+resolution above; kept because the reasoning that led to the right question is the reusable part.)* The 62% figure is
 per-candidate but derived from a **document-level** signal — the source's structure shape was
 `text-only` and every unit from it was stamped degraded. That is a limitation of the measurement,
 not a considered design.
