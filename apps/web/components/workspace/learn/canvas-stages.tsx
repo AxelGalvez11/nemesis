@@ -59,7 +59,7 @@ export function CanvasEmpty({
             over ? "border-(--ui-accent) bg-(--ui-bg-tertiary)" : "border-(--ui-stroke-primary) hover:bg-(--ui-bg-tertiary)",
           )}
         >
-          <Codicon name={busy ? "loading" : "cloud-upload"} size="1.125rem" />
+          <Codicon name={busy ? "loading" : "cloud-upload"} size="1.125rem" spinning={busy} />
           <span className="text-[0.875rem] text-(--ui-text-secondary)">
             {busy ? "Reading your material…" : "Drop a lecture, slides, PDF, or other material"}
           </span>

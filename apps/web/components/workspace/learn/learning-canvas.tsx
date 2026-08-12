@@ -20,6 +20,7 @@ import { CanvasComposer } from "./canvas-composer";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
 import { CanvasPolicyView } from "./canvas-policy-view";
+import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { useCanvasSelection } from "./use-canvas-selection";
 import {
@@ -241,7 +242,15 @@ export function LearningCanvas({
   // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
   // machine's own effects would start generating a lesson for a canvas the policy is about to own.
   if (!session.ready || policy.status === "loading") {
-    return <main className="flex h-full items-center justify-center bg-(--ui-bg-editor)" />;
+    return (
+      <main className="relative flex h-full items-center justify-center bg-(--ui-bg-editor)">
+        {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally finishes
+            far inside the threshold, and a caption that appeared and vanished in 200ms would be a
+            flicker rather than information. It surfaces only when a step has genuinely been running
+            long enough to be worth naming — and it names the step that IS running. */}
+        {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+      </main>
+    );
   }
 
   // ── The one branch ────────────────────────────────────────────────────────
@@ -387,7 +396,7 @@ export function LearningCanvas({
           canvas.state !== "orient" && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--ui-bg-editor)/70">
               <p className="flex items-center gap-2 text-[0.875rem] text-(--ui-text-secondary)">
-                <Codicon name="loading" size="0.875rem" />
+                <Codicon name="loading" size="0.875rem" spinning />
                 {busy.label}…
               </p>
             </div>
@@ -413,6 +422,12 @@ export function LearningCanvas({
           </div>
         </div>
       )}
+
+      {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus
+          exactly where it was — the learner keeps the thing they just answered in view, so nothing
+          has to be reconstructed when the verdict lands. This is the replacement for the 70% scrim,
+          which is why that overlay lives inside the legacy arm and can never paint here. */}
+      {policyOwns && policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
 
       {pointed && (
         <CanvasSelectionMenu

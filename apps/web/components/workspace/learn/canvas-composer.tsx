@@ -271,6 +271,13 @@ export function CanvasComposer({
                 className={cn(
                   "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
                   "text-[1rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
+                  // 🔴 HEIGHT ONLY, AND SHORT ENOUGH TO BE INVISIBLE AS A DELAY. `transition-all`
+                  // here would animate colour and opacity on every keystroke and make typing feel
+                  // syrupy; a long duration would let the caret outrun the box on the wrap. 90ms is
+                  // below the threshold where a size change reads as motion, so the growth looks
+                  // like the box was always that size rather than like an animation the learner has
+                  // to wait out. `motion-reduce` drops it entirely.
+                  "transition-[height] duration-90 ease-out motion-reduce:transition-none",
                   // The attach control used to supply this gap. Without it the text would start
                   // hard against the pill's edge.
                   inSession ? "ml-[4px]" : "ml-[12px]",
@@ -321,7 +328,12 @@ export function CanvasComposer({
                 onClick={submit}
                 type="button"
               >
-                <Codicon name={busy ? "loading" : "arrow-up"} size="0.9375rem" />
+                {/* 🔴 `spinning` IS NOT OPTIONAL ON A LOADING GLYPH. Without the modifier the
+                    codicon renders a static broken circle — it had been sitting there perfectly
+                    still through every wait, reading as a decorative icon or a rendering fault
+                    rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
+                    is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
+                <Codicon name={busy ? "loading" : "arrow-up"} size="0.9375rem" spinning={busy} />
               </button>
             </>
           )}

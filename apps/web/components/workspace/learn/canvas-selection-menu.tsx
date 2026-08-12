@@ -119,7 +119,7 @@ export function CanvasSelectionMenu({
 
           {busy && (
             <p className="mt-2 flex items-center gap-1.5 text-[0.8125rem] text-(--ui-text-tertiary)">
-              <Codicon name="loading" size="0.75rem" />
+              <Codicon name="loading" size="0.75rem" spinning />
               Looking at this…
             </p>
           )}

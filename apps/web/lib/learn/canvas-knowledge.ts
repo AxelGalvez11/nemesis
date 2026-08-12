@@ -16,6 +16,7 @@ import type { LearningCanvas } from "./canvas-model";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
 import type { KnowledgeObject } from "./knowledge-types";
 import { saveKnowledge, type StoredObjective } from "./learner-store";
+import type { ThinkingPhase } from "./thinking-phases";
 
 /** One objective, with the knowledge it is a capability over. */
 export interface ResolvedObjective {
@@ -42,6 +43,16 @@ export interface CanvasKnowledge {
 export async function ensureKnowledgeForCanvas(
   userId: string | null,
   canvas: LearningCanvas,
+  /**
+   * Called as each real step begins.
+   *
+   * 🔴 REPORTED, NOT SIMULATED. The caller shows this to the learner, so it must correspond to work
+   * genuinely starting — never to a timer walking a list of plausible-sounding stages. If a step is
+   * fast, its phase is emitted and superseded within milliseconds and the caller's own threshold
+   * means nothing is ever shown for it. That is correct: the honest answer to "what took so long?"
+   * is sometimes "nothing did".
+   */
+  onPhase?: (phase: ThinkingPhase) => void,
 ): Promise<CanvasKnowledge> {
   // 🔴 DURABLE SOURCES ONLY. An ephemeral source has no library row, so anchors minted from it
   // point at something no later canvas can resolve — knowledge that cannot outlive its session is
@@ -55,11 +66,13 @@ export async function ensureKnowledgeForCanvas(
   let outcome: ExtractionOutcome = "complete";
 
   for (const sourceId of sourceIds) {
+    onPhase?.("reading_source");
     const canonical = await loadCanonicalSource(sourceId);
     if (!canonical.ok) {
       outcome = "failed";
       continue;
     }
+    onPhase?.("mapping_knowledge");
     const extraction = extractKnowledgeObjects(canonical.context);
     // The worst outcome across the canvas's sources wins: one source read completely does not make
     // the canvas complete when another was flattened.

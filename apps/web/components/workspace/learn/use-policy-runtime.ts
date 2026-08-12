@@ -34,6 +34,9 @@ import {
 } from "@/lib/learn/objective-task";
 import { canUsePolicyRuntime, decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
 import { isAdmissionOfNotKnowing } from "@/lib/learn/response-admission";
+import { THINKING_VISIBLE_AFTER_MS, type ThinkingPhase } from "@/lib/learn/thinking-phases";
+
+import { useDelayedFlag } from "./use-delayed-flag";
 
 export interface PolicyRuntime {
   /** 🔴 THREE VALUES, NOT TWO. Resolving a canvas's knowledge is a round trip, and defaulting to
@@ -47,6 +50,17 @@ export interface PolicyRuntime {
   /** What the judge said about the last answer, held until the learner moves on. */
   feedback: { evaluation: ResponseEvaluation; answer: string } | null;
   judging: boolean;
+  /**
+   * The step currently running, or null when nothing is.
+   *
+   * 🔴 SET BY THE STEP ITSELF. Nothing advances this on a timer, and there is no ordered list it
+   * walks — if a phase is skipped or repeated, that is because the work was. A caption that cycled
+   * through plausible stages would be indistinguishable from a working system right up until it
+   * described something that never ran.
+   */
+  phase: ThinkingPhase | null;
+  /** The phase has run long enough to be worth saying out loud. See THINKING_VISIBLE_AFTER_MS. */
+  thinking: boolean;
   error: string | null;
   /** Why this canvas has the objectives it has — stated, so "nothing to teach" and "we could not
    *  read the file" stay different facts. */
@@ -77,9 +91,14 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
   const [prompt, setPrompt] = useState<RetrievalPrompt | null>(null);
   const [feedback, setFeedback] = useState<PolicyRuntime["feedback"]>(null);
   const [judging, setJudging] = useState(false);
+  const [phase, setPhase] = useState<ThinkingPhase | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Bumped when the learner reads a correction, so the same state can produce a fresh prompt. */
   const [round, setRound] = useState(0);
+  /** 🔴 SESSION-LOCAL, NEVER PERSISTED. Reading a correction says nothing about what the learner
+   *  can now do, so it is not evidence and must not be stored as any. It exists only to stop the
+   *  same card being served twice in a row — see `decideNext`'s `actedOn`. */
+  const [actedOn, setActedOn] = useState<ReadonlySet<string>>(() => new Set());
   /** Frozen per evidence change rather than read per render: the policy takes `now`, and a clock
    *  that moved on every render would make the decision unstable for no reason. */
   const [decidedAt, setDecidedAt] = useState(() => new Date());
@@ -94,18 +113,23 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
     let live = true;
     setStatus("loading");
     void (async () => {
-      const resolved = await ensureKnowledgeForCanvas(uid, canvas);
+      const resolved = await ensureKnowledgeForCanvas(uid, canvas, (step) => {
+        if (live) setPhase(step);
+      });
       if (!live) return;
       setKnowledge(resolved);
       const supported = supportedObjectives(resolved.objectives);
       if (!canUsePolicyRuntime(resolved.objectives)) {
+        setPhase(null);
         setStatus("inactive");
         return;
       }
+      setPhase("finding_gap");
       const rows = await loadEvidence(uid, supported.map((entry) => entry.objective));
       if (!live) return;
       setEvidence(rows);
       setDecidedAt(new Date());
+      setPhase(null);
       setStatus("active");
     })();
     return () => {
@@ -119,8 +143,11 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
   const supported = useMemo(() => supportedObjectives(knowledge.objectives), [knowledge]);
 
   const decision = useMemo(
-    () => (status === "active" ? decideNext({ evidence, now: decidedAt, objectives: supported }) : null),
-    [decidedAt, evidence, status, supported],
+    () =>
+      status === "active"
+        ? decideNext({ actedOn, evidence, now: decidedAt, objectives: supported })
+        : null,
+    [actedOn, decidedAt, evidence, status, supported],
   );
 
   // ── One prompt per decision ────────────────────────────────────────────────
@@ -211,6 +238,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
       }
 
       setJudging(true);
+      setPhase("reading_answer");
       const response = { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) };
       const result = await evaluateLearningResponse(
         uid,
@@ -218,6 +246,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
         objectiveAsTask(decision.objective, active, response),
       );
       setJudging(false);
+      setPhase(null);
 
       if (!result.value) {
         // 🔴 A JUDGE WE COULD NOT REACH IS NOT A LEARNER WHO FAILED. Writing `not_demonstrated`
@@ -265,10 +294,18 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
   }, [admitNothing, judging]);
 
   const acknowledge = useCallback(() => {
+    const seen = decision?.objective.identityKey;
     setFeedback(null);
     setRound((current) => current + 1);
+    if (seen) setActedOn((current) => new Set(current).add(seen));
     setDecidedAt(new Date());
-  }, []);
+  }, [decision]);
+
+  // 🔴 THE ONLY THING THAT DECIDES WHETHER AN INDICATOR APPEARS IS HOW LONG THE WORK ACTUALLY TOOK.
+  // Everything in the recall path normally finishes well inside this window, so a learner drilling
+  // facts sees no loading state at all — not a fast one, none. It surfaces only when there is
+  // genuinely something to wait for.
+  const thinking = useDelayedFlag(phase !== null, THINKING_VISIBLE_AFTER_MS);
 
   return {
     acknowledge,
@@ -278,8 +315,10 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
     feedback,
     judging,
     outcome: knowledge.outcome,
+    phase,
     prompt,
     status,
     submit,
+    thinking,
   };
 }

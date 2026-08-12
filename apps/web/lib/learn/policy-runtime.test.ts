@@ -128,6 +128,41 @@ test("the decision does not depend on the order evidence arrives in", () => {
   );
 });
 
+// ── reading a correction is not evidence, but it must still move ────────────
+
+test("🔴 an acknowledged correction does not serve the identical card again", () => {
+  // Found by clicking "Got it" in the running app. Showing a correction produces no new evidence —
+  // correctly, because reading one says nothing about what the learner can now do — so the state
+  // that asked for it is unchanged and it asks again. The card looped for ever.
+  const held = RESOLVED[0]!.objective.identityKey;
+  const evidence = [ev("e1", held, ago(60_000), null)];
+  const before = decideNext({ evidence, now: NOW, objectives: RESOLVED });
+  assert.equal(before?.action.type, "show_correction");
+  assert.equal(before?.objective.identityKey, held);
+
+  const after = decideNext({ actedOn: new Set([held]), evidence, now: NOW, objectives: RESOLVED });
+  assert.notEqual(after?.objective.identityKey, held, "the same card came back immediately");
+  assert.equal(after?.action.type, "retrieve");
+});
+
+test("acting on everything comes back round rather than ending in a blank page", () => {
+  // 🔴 A REORDERING, NOT A FILTER. Being shown something twice is a far smaller failure than a
+  // surface with nothing on it and no way forward.
+  const all = new Set(RESOLVED.map(({ objective }) => objective.identityKey));
+  const decision = decideNext({ actedOn: all, evidence: [], now: NOW, objectives: RESOLVED });
+  assert.equal(decision?.action.type, "retrieve");
+});
+
+test("acknowledging is session state and never reaches the learner's record", async () => {
+  // If this ever became evidence it would assert that reading an answer is a demonstration.
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
+  const ack = source.slice(source.indexOf("const acknowledge = useCallback"), source.indexOf("return {", source.indexOf("const acknowledge")));
+  for (const forbidden of ["recordEvidence", "unobtainedEvidence", "evidenceFromEvaluation"]) {
+    assert.equal(ack.includes(forbidden), false, `acknowledging must not write ${forbidden}`);
+  }
+});
+
 // ── the gate is the supported slice ─────────────────────────────────────────
 
 test("🔴 a knowledge type with no built interaction does NOT switch the runtime on", () => {

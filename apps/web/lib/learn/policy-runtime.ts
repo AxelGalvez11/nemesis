@@ -42,8 +42,29 @@ export function decideNext(input: {
   objectives: readonly ResolvedObjective[];
   evidence: readonly LearnerEvidence[];
   now: Date;
+  /**
+   * Objectives this session has already acted on, moved to the back of the queue.
+   *
+   * 🔴 SESSION STATE, AND DELIBERATELY NOT LEARNER STATE. Reading a correction is not a claim that
+   * anyone can now do anything, so it must never become evidence — which leaves a gap the policy
+   * cannot close on its own: showing a correction produces no new evidence, so the state that asked
+   * for it is unchanged, so it asks again. "Got it" re-rendered the identical card for ever.
+   *
+   * 🔴 AND IT IS A REORDERING, NOT A FILTER. If every objective has been acted on, the last one
+   * still comes back rather than the session ending in a blank page — being shown something twice
+   * is a much smaller failure than a surface with nothing on it.
+   */
+  actedOn?: ReadonlySet<string>;
 }): PolicyDecision | null {
-  const decisions = input.objectives.map(({ knowledge, objective }) => {
+  const acted = input.actedOn ?? new Set<string>();
+  // Stable: identity order is preserved inside each group, so this only moves already-seen
+  // objectives behind unseen ones and never shuffles the rest.
+  const ordered = [
+    ...input.objectives.filter(({ objective }) => !acted.has(objective.identityKey)),
+    ...input.objectives.filter(({ objective }) => acted.has(objective.identityKey)),
+  ];
+
+  const decisions = ordered.map(({ knowledge, objective }) => {
     // 🔴 FILTERED BY OBJECTIVE, NEVER BY CANVAS. The evidence handed in is everything this learner
     // holds for these objectives across every session — a canvas filter here would silently turn
     // the durable learner model back into a session transcript, and every test would still pass.

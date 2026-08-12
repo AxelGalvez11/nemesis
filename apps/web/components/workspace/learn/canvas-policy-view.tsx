@@ -15,7 +15,32 @@ import { VERDICT_HEADLINE } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
 
+/**
+ * What is on screen right now, as one value.
+ *
+ * 🔴 THE FADE IS KEYED ON THIS AND NOTHING ELSE. React remounts on a changed key, which is what
+ * makes the 140ms entry fade run exactly once per real change of state — and, just as importantly,
+ * NOT run when the same question re-renders because evidence reloaded or the clock moved. A fade
+ * that retriggered on every render would strobe the question while the learner was reading it.
+ */
+function screenKey(runtime: PolicyRuntime): string {
+  if (runtime.feedback) return `feedback:${runtime.feedback.answer}`;
+  if (!runtime.decision) return "empty";
+  return `${runtime.decision.action.type}:${runtime.prompt?.id ?? runtime.decision.objective.identityKey}`;
+}
+
 export function CanvasPolicyView({ runtime }: { runtime: PolicyRuntime }) {
+  return (
+    // 🔴 OPACITY ONLY, 140ms, AND NO TRANSFORM. Someone drilling fifty facts crosses this boundary
+    // fifty times; a slide or a scale would become the dominant impression of the surface and make
+    // retrieval feel like an interface being waited on rather than a question being answered.
+    <div className="canvas-swap min-h-full" key={screenKey(runtime)}>
+      <PolicyScreen runtime={runtime} />
+    </div>
+  );
+}
+
+function PolicyScreen({ runtime }: { runtime: PolicyRuntime }) {
   const { decision, feedback, prompt } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
