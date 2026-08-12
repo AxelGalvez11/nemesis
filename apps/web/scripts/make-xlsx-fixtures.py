@@ -142,6 +142,49 @@ table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=T
 ws.add_table(table)
 save(wb, "list-object.xlsx")
 
+# ── J. 🔴 OFFSET *AND* HIDDEN TOGETHER ─────────────────────────────────────
+# The origin arithmetic applies to hidden row/column indexes too, and neither
+# earlier fixture exercises that: `merged-hidden` starts at A1 (so subtracting
+# the origin is a no-op) and `offset-origin` hides nothing. A wrong subtraction
+# here lands negative and is silently filtered away — a hidden row that simply
+# disappears, which is the same shape as the A1/C5 defect one field over.
+wb = Workbook()
+ws = wb.active
+ws.title = "Offset Hidden"
+ws["C5"] = "Drug"
+ws["D5"] = "Dose"
+ws["E5"] = "Note"
+ws["C6"] = "Amoxicillin"
+ws["D6"] = "500 mg"
+ws["E6"] = "with food"
+ws["C7"] = "WITHDRAWN"
+ws["D7"] = "-"
+ws["E7"] = "this row is hidden"
+ws["C8"] = "Ibuprofen"
+ws["D8"] = "400 mg"
+ws["E8"] = "as needed"
+ws.row_dimensions[7].hidden = True     # sheet row 7 == grid row 2
+ws.column_dimensions["D"].hidden = True  # sheet column D == grid column 1
+save(wb, "offset-hidden.xlsx")
+
+# ── K. two sheets, each with its OWN table, at the SAME range ──────────────
+# 🔴 THE DISCRIMINATING CASE FOR TABLE OWNERSHIP. Both tables start at A1, so a
+# reader that falls back to "every table part in the archive" cannot tell them
+# apart and will attach one sheet's header count and name to the other.
+wb = Workbook()
+first = wb.active
+first.title = "Reagents"
+first.append(["Code", "Name"])
+first.append(["R1", "Ethanol"])
+first.append(["R2", "Acetone"])
+first.add_table(Table(displayName="Reagents", ref="A1:B3"))
+second = wb.create_sheet("Glassware")
+second.append(["Code", "Name"])
+second.append(["G1", "Beaker"])
+second.append(["G2", "Funnel"])
+second.add_table(Table(displayName="Glassware", ref="A1:B3"))
+save(wb, "two-tables.xlsx")
+
 # ── I. a chart: content this reader does NOT turn into text ────────────────
 # 🔴 UNSUPPORTED IS NOT ABSENT (owner, 2026-08-12). Charts are deliberately out
 # of scope, and the wrong way to be out of scope is to say nothing — a workbook

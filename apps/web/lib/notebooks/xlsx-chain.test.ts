@@ -249,3 +249,44 @@ test("the workbook's text is the grids, and it names each sheet", async () => {
   assert.match(document.text, /Ada/, "and so do the values");
   assert.match(document.text, /\|/, "as a table, not as flattened prose");
 });
+
+test("🔴 HIDDEN ROWS AND COLUMNS ARE RELATIVE TO THE ORIGIN TOO", async () => {
+  // The sibling of the C5 defect, and neither earlier fixture could see it:
+  // `merged-hidden` starts at A1 so subtracting the origin is a no-op, and
+  // `offset-origin` hides nothing. Here the sheet starts at C5 AND hides a row
+  // and a column inside its range, so the arithmetic is actually exercised.
+  //
+  // A wrong subtraction lands negative and is filtered away silently — a hidden
+  // row that simply disappears, with nothing to show it ever existed.
+  const { after } = await chain("offset-hidden.xlsx");
+  const table = tableOn(after, 0)!;
+  assert.deepEqual(table.origin, { column: 2, row: 4 });
+
+  // Sheet row 7 is grid row 2; sheet column D is grid column 1.
+  assert.deepEqual(table.hiddenRows, [2], "the hidden row is named in GRID coordinates");
+  assert.deepEqual(table.hiddenColumns, [1]);
+
+  // 🔴 And the assertion that actually pins it: the hidden row must be the one a
+  // person would see hidden when they open the file.
+  assert.equal(cellRef(table, table.hiddenRows![0]!, 0), "C7", "the hidden row is sheet row 7");
+  assert.equal(cellRef(table, 0, table.hiddenColumns![0]!), "D5", "the hidden column is sheet column D");
+  assert.equal(
+    table.cells!.find((c) => c.row === 2 && c.column === 0)?.text,
+    "WITHDRAWN",
+    "and its content is kept — hiding is the consumer's decision, not the parser's",
+  );
+});
+
+test("🔴 EACH SHEET GETS ITS OWN TABLE, even when both start at A1", async () => {
+  // The discriminating case for table ownership. An archive-wide fallback cannot
+  // tell these apart — both refs are A1:B3 — so one sheet would take the other's
+  // name and header count, attaching the wrong column names to every value.
+  const { after } = await chain("two-tables.xlsx");
+  assert.equal(tableOn(after, 0)!.name, "Reagents");
+  assert.equal(tableOn(after, 1)!.name, "Glassware");
+  assert.deepEqual(tableOn(after, 0)!.columns, ["Code", "Name"]);
+  assert.deepEqual(tableOn(after, 1)!.columns, ["Code", "Name"]);
+  // Both are real tables, so both declare a header row from the file itself.
+  assert.equal(tableOn(after, 0)!.headerRows, 1);
+  assert.equal(tableOn(after, 1)!.headerRows, 1);
+});

@@ -8,7 +8,7 @@
  *
  * ── WHAT REAL FILES ACTUALLY DO, MEASURED BEFORE THIS WAS WRITTEN ──────────
  *
- * Eight fixtures (`scripts/make-xlsx-fixtures.py`), surveyed with
+ * Eleven fixtures (`scripts/make-xlsx-fixtures.py`), surveyed with
  * `scripts/xlsx-survey.mts` against the raw XML:
  *
  *   * STRINGS COME TWO WAYS. openpyxl writes `<is>` inline strings and no
@@ -253,13 +253,30 @@ function sharedStrings(zip: Record<string, Uint8Array>): string[] {
   return tagsOf(strFromU8(part), "si").map((si) => textRuns(si.inner));
 }
 
-/** Table definitions a sheet points at, resolved through its own relationships. */
-function tablesFor(zip: Record<string, Uint8Array>, part: string, xml: string): SheetTable[] {
-  if (tagsOf(xml, "tablePart").length === 0) return [];
+/**
+ * Table definitions this sheet points at, resolved through its OWN relationships.
+ *
+ * 🔴 NO ARCHIVE-WIDE FALLBACK, AND THAT IS THE WHOLE CARE HERE. An earlier
+ * version fell back to "every table part in the archive" when a sheet's rels
+ * could not be read. In a workbook where two sheets each define a table starting
+ * at A1 — which is the ordinary case, not a contrived one — that hands both
+ * tables to both sheets, and `declaredHeaderRows` takes the first whose origin
+ * matches. One sheet then gets the other's name and header count, and the wrong
+ * column names are attached to every value beneath them.
+ *
+ * A missing header count is a stated absence that `headerRows: 0` handles
+ * correctly. A WRONG one is unrecoverable. So an unresolvable `tablePart` is
+ * counted as unsupported and nothing is guessed.
+ */
+function tablesFor(
+  zip: Record<string, Uint8Array>,
+  part: string,
+  xml: string,
+  unsupported: Map<string, number>,
+): SheetTable[] {
+  const parts = tagsOf(xml, "tablePart").length;
+  if (parts === 0) return [];
   const out: SheetTable[] = [];
-  // Every table part in the archive is a candidate; the relationship indirection
-  // adds nothing here because a table belongs to exactly one sheet and the ref
-  // itself says which range it covers.
   const relPart = part.replace(/worksheets\/(sheet\d+)\.xml$/, "worksheets/_rels/$1.xml.rels");
   const rels = zip[relPart];
   const targets = new Set<string>();
@@ -269,7 +286,13 @@ function tablesFor(zip: Record<string, Uint8Array>, part: string, xml: string): 
       if (target.includes("tables/")) targets.add(`xl/${target.replace(/^\.\.\//, "").replace(/^\/?xl\//, "")}`);
     }
   }
-  for (const name of targets.size > 0 ? [...targets] : Object.keys(zip).filter((k) => k.startsWith("xl/tables/"))) {
+  if (targets.size === 0) {
+    // The sheet says it has tables and we cannot tell which. Saying so is the
+    // only honest option; picking some is how the wrong headers get attached.
+    bump(unsupported, "unresolved-table-definition");
+    return [];
+  }
+  for (const name of targets) {
     const entry = zip[name];
     if (!entry) continue;
     const table = tagsOf(strFromU8(entry), "table")[0];
@@ -351,7 +374,7 @@ function readSheet(
     absolute.push({ column: at.column, row: at.row, text, ...(formula ? { formula } : {}), ...(raw ? { raw } : {}) });
   }
 
-  if (absolute.length === 0) return { ...empty, tables: tablesFor(zip, meta.part, xml) };
+  if (absolute.length === 0) return { ...empty, tables: tablesFor(zip, meta.part, xml, unsupported) };
 
   // ── the origin, from the cells that exist ──
   // 🔴 NOT FROM `<dimension>`. An empty sheet still declares `A1:A1`, and some
@@ -411,7 +434,7 @@ function readSheet(
     name: meta.name,
     origin: { column: originColumn, row: originRow },
     rows: maxRow - originRow + 1,
-    tables: tablesFor(zip, meta.part, xml),
+    tables: tablesFor(zip, meta.part, xml, unsupported),
   };
 }
 
