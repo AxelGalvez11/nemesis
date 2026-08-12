@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { THIN_PAGE_CHARS } from "@/lib/pdf/pages";
 
-import { extractCut, pdfCoverage, pdfWholeCoverage, pptxCoverage, singleUnitCoverage } from "./extract-coverage";
+import { csvCoverage, extractCut, pdfCoverage, pdfWholeCoverage, pptxCoverage, singleUnitCoverage, xlsxCoverage } from "./extract-coverage";
 
 /** A page with enough text that the extractor counts it as read. */
 const full = "x".repeat(THIN_PAGE_CHARS + 50);
@@ -209,4 +209,36 @@ test("unreadable regions and unread pages are different facts and both survive",
   assert.equal(coverage.unitsUnread, 1, "the blank page");
   assert.equal(coverage.unreadableRegions, 2, "and two regions we could not rebuild");
   assert.equal(coverage.state, "partial");
+});
+
+// ── PARSER-002: the grid coverages carry the kinds, not just the sum ────────
+
+test("xlsxCoverage passes the workbook's unsupported kinds through, not just their sum", () => {
+  const coverage = xlsxCoverage({
+    sheets: 2,
+    unsupported: [
+      { kind: "chart", count: 1 },
+      { kind: "unsupported-number-format", count: 4 },
+    ],
+  });
+  assert.equal(coverage.unreadableRegions, 5, "the sum still derives, for every reader that only checks the count");
+  assert.deepEqual(coverage.unreadableKinds, [
+    { kind: "chart", count: 1 },
+    { kind: "unsupported-number-format", count: 4 },
+  ]);
+  assert.equal(coverage.state, "partial");
+});
+
+test("xlsxCoverage with nothing unsupported carries neither field", () => {
+  const coverage = xlsxCoverage({ sheets: 3, unsupported: [] });
+  assert.equal("unreadableRegions" in coverage, false);
+  assert.equal("unreadableKinds" in coverage, false);
+  assert.equal(coverage.state, "complete");
+});
+
+test("csvCoverage carries the delimiter refusal as a kind, not a bare count", () => {
+  const coverage = csvCoverage({ rows: 40, unsupported: [{ kind: "ambiguous-delimiter", count: 1 }] });
+  assert.equal(coverage.unreadableRegions, 1);
+  assert.deepEqual(coverage.unreadableKinds, [{ kind: "ambiguous-delimiter", count: 1 }]);
+  assert.equal(coverage.state, "partial", "read, but not fully understood");
 });
