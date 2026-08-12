@@ -94,7 +94,7 @@ function fnv1a64(text: string): string {
  * did or did not merge can be answered by looking, rather than by guessing at a hash.
  */
 export function identityBasis(
-  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
 ): string {
   if (object.type === "association" && object.pair) {
     const left = normalizeForIdentity(object.pair.left);
@@ -118,9 +118,45 @@ export function identityBasis(
     // The cost — two such tables not converging — is a missed merge, which is recoverable.
     return `association|${object.relationKind ?? UNSTATED_RELATION}|${a}|${b}`;
   }
+  if (object.type === "causal" && object.relation) {
+    const { cause, effect, negated, qualifier, relation } = object.relation;
+    // 🔴 NOT SORTED, AND THAT IS THE WHOLE DIFFERENCE FROM AN ASSOCIATION. A pair sorts its sides
+    // because which one is the CUE belongs to the objective rather than to the fact. Here direction
+    // IS the fact: "aldosterone falls → potassium rises" and "potassium rises → aldosterone falls"
+    // are opposite claims about physiology, and a sorted key would make them one object — after
+    // which a learner could be credited with a mechanism they were taught backwards.
+    //
+    // 🔴 NEGATION AND MODALITY ARE BOTH IN THE KEY. "X causes Y", "X does not cause Y" and "X may
+    // cause Y" are three different assertions over the same two nodes. Dropping either from the key
+    // merges claims the source deliberately kept apart — and turning "may cause" into "causes" is
+    // not a missed merge to repair later, it is a false statement stored as knowledge.
+    //
+    // The cost is accepted on purpose: two documents hedging the same relationship differently
+    // ("generally" vs "usually") mint two objects. That is a false NON-merge, which is recoverable,
+    // and it is the direction this file has always erred in.
+    return [
+      "causal",
+      relation,
+      negated ? "not" : "is",
+      `mod=${qualifier ? normalizeForIdentity(qualifier) : "-"}`,
+      cause.key,
+      effect.key,
+    ].join("|");
+  }
   // Every other type keys on its statement until it has a payload of its own. Deliberately not a
   // ten-way guess written before the interactions that use those payloads exist.
   return `${object.type}|${normalizeForIdentity(object.statement)}`;
+}
+
+/**
+ * The key one end of a causal edge is joined on.
+ *
+ * 🔴 SHARED BY EVERY EDGE THAT MENTIONS THE SAME NODE, which is what lets `A → B` and `B → C` be
+ * assembled into a mechanism later without one ever being stored. Normalised text and nothing
+ * cleverer — `CausalNode` records why an entity-resolution step is deliberately absent.
+ */
+export function causalNodeKey(text: string): string {
+  return normalizeForIdentity(text);
 }
 
 /**
@@ -148,15 +184,15 @@ export function identityBasis(
 export const KNOWLEDGE_IDENTITY_VERSION = 2;
 
 export function knowledgeIdentityKey(
-  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
 ): string {
   return `${object.type}:v${KNOWLEDGE_IDENTITY_VERSION}:${fnv1a64(identityBasis(object))}`;
 }
 
 /** Whether two objects are the same knowledge met twice. */
 export function isSameKnowledge(
-  a: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
-  b: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relationKind">,
+  a: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
+  b: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
 ): boolean {
   return knowledgeIdentityKey(a) === knowledgeIdentityKey(b);
 }
@@ -167,5 +203,5 @@ export function isSameKnowledge(
  *  differently will not converge — so a caller building on convergence should know which kind it
  *  is holding rather than discovering it from behaviour. */
 export function identityIsStructural(type: KnowledgeType): boolean {
-  return type === "association";
+  return type === "association" || type === "causal";
 }

@@ -123,6 +123,172 @@ export interface AssociationPair {
   groupLabel?: string;
 }
 
+/**
+ * One end of a causal edge.
+ *
+ * 🔴 A NODE, SO EDGES CAN SHARE ONE. `A → B` and `B → C` both mint a node for B, and because the
+ * key is derived from B's own text they are the SAME key — which is what lets a mechanism be
+ * assembled later by joining edges, rather than being stored now as one opaque paragraph nobody can
+ * query, re-order, or discover a learner holds half of.
+ *
+ * 🔴 AND THE KEY IS NORMALISED TEXT, NOT A CONCEPT. "protein function" and "the function of the
+ * protein" are two nodes today. That is a stated limitation rather than an oversight: merging them
+ * needs a real entity-identity layer, and having a model declare two phrasings equivalent would be
+ * a guess that silently welds unrelated mechanisms together. A missed merge is recoverable; a false
+ * one asserts a chain the source never made.
+ */
+export interface CausalNode {
+  /** The author's own words. */
+  text: string;
+  /** Normalised form — used for identity, and for joining one edge to the next. */
+  key: string;
+}
+
+/**
+ * What the source claims the cause DOES to the effect.
+ *
+ * 🔴 EACH ONE GROUNDED IN LANGUAGE ACTUALLY PRESENT IN THE CORPUS — not an ontology written in
+ * advance. Measured 2026-08-12 over 1,231 readable units: `leads to`/`results in`/`produces`;
+ * `increases`/`raises`; `reduces`/`lowers`/`ablates`; `inhibits`/`blocks`/`suppresses`;
+ * `prevents`/`averts`; `allows`/`enables`/`permits`. Add another when a real document needs one.
+ *
+ * 🔴 CAUSALITY AND POLARITY ARE DIFFERENT AXES, which is why this is not `increase | decrease`.
+ * "Receptor activation enables a downstream process" and "drug X inhibits enzyme Y" are causal
+ * claims carrying no polarity, and forcing them onto a polarity scale would invent one.
+ *
+ * 🔴 `inhibits` AND `prevents` ARE SEPARATE BECAUSE THE CORPUS USES THEM SEPARATELY. Measured: the
+ * object of `inhibit` is a mechanism — a protein, a conversion, reuptake, an ion channel — while
+ * the object of `prevent` is an outcome someone did not want. "Drug inhibits enzyme" and "drug
+ * prevents stroke" are different claims, and collapsing them to fit a smaller enum would be exactly
+ * the semantic corruption this file refuses everywhere else. When the distinction is genuinely
+ * unclear in a passage, the extractor abstains rather than picking one.
+ */
+export type CausalRelationKind =
+  /** Brings about, on its own — leads to, results in, produces. */
+  | "causes"
+  /**
+   * One contributing factor among others — "contributed to", "was a factor in", "helped drive".
+   *
+   * 🔴 NOT `causes` WITH A HEDGE, AND THAT IS THE WHOLE REASON IT EXISTS. "The harvest collapse
+   * contributed to the unrest" is not an uncertain claim that the collapse caused the unrest; it is
+   * a confident claim about a PARTIAL role. Flattening it asserts sufficiency the source denied,
+   * and a learner would be taught that one factor explains the whole outcome.
+   *
+   * 🔴 CAUSAL STRENGTH IS ITS OWN AXIS, separate from modality. "may contribute to" is partial AND
+   * uncertain; "contributed to" is partial and certain; "may cause" is sufficient and uncertain.
+   * Three different claims, and only a separate relation keeps them apart.
+   *
+   * Multifactorial subjects need this to be teachable at all — unrest, hypertension, inflation,
+   * heart failure. Three `contributes_to` edges into one effect can be asked as "what factors
+   * contributed?"; three `causes` edges into it would each be a lie.
+   */
+  | "contributes_to"
+  | "increases"
+  | "decreases"
+  /** Makes possible without producing on its own — allows, permits. */
+  | "enables"
+  /** Acts against a MECHANISM — inhibits, blocks, suppresses. */
+  | "inhibits"
+  /** Stops an OUTCOME from occurring — prevents, averts. */
+  | "prevents";
+
+/**
+ * One DIRECTED causal edge, exactly as the source asserted it.
+ *
+ * 🔴 ONE EDGE, NEVER A MECHANISM. `A → B → C` is two objects sharing node B. Storing the chain as a
+ * single object would make it one indivisible piece of knowledge, so nothing could ever discover
+ * that a learner holds the first link and not the second — which is the whole reason for modelling
+ * causality apart from prose.
+ */
+export interface CausalRelation {
+  cause: CausalNode;
+  effect: CausalNode;
+  relation: CausalRelationKind;
+  /**
+   * The source DENIED the relationship.
+   *
+   * 🔴 ITS OWN FIELD, AND PART OF IDENTITY. "may not lead to a different amino acid" and "leads to
+   * a different amino acid" are opposite claims about the same two nodes. Without this they collapse
+   * into one object and a learner is drilled on the negation of what the document says.
+   */
+  negated: boolean;
+  /**
+   * The source's own hedge OR bounding condition, verbatim.
+   *
+   * 🔴 MODALITY IS PART OF THE CLAIM. "X causes Y" and "X may cause Y" are different assertions,
+   * and flattening the second into the first states something the author declined to state. It is
+   * therefore part of identity too. Absent means the source asserted it plainly — never that
+   * nobody looked.
+   *
+   * 🔴 AND A BOUNDING CONDITION IS MODALITY, NOT DECORATION. Measured 2026-08-12: the model
+   * preserved epistemic hedges like "may" and dropped every condition that says WHEN a relationship
+   * holds — "until the enzyme saturates", "under cyclic load", "when voltage is held constant".
+   * Dropping one does not lose detail, it STRENGTHENS the claim into a general law:
+   *
+   *     "more substrate increases reaction rate"                     an overgeneralised rule
+   *     "more substrate increases reaction rate until saturation"    what the source said
+   *
+   * A learner taught the first will get the second wrong, and Nemesis will have taught them that.
+   */
+  qualifier?: string;
+  /**
+   * Which KIND of qualification it is.
+   *
+   * 🔴 ONE FIELD WOULD LOSE A DISTINCTION CANVAS NEEDS. "may increase heart rate" and "increases
+   * heart rate during exertion" are both qualified, but the first is uncertainty about whether the
+   * relationship holds and the second is a scope in which it definitely does. A later interaction
+   * that wants to test "when does this apply?" can only find the second.
+   *
+   * Deliberately a label rather than a parsed condition — this is not a logic system, and the
+   * source's own words remain the record.
+   */
+  qualifierKind?: "epistemic" | "conditional";
+  /**
+   * The verb the document actually used — "leads to", "inhibits", "ablates".
+   *
+   * 🔴 KEPT BECAUSE THE NORMALISED KIND IS A LOSSY READING OF IT. `relation` is what identity and
+   * composition run on; this is what the author wrote. When a later pass decides the six kinds were
+   * too coarse, the evidence for re-deriving them is here rather than gone — and an audit asking
+   * "why does Nemesis call this `inhibits`?" has an answer that is not a hash.
+   */
+  sourceVerb?: string;
+  /**
+   * The exact passage that asserts this edge, verbatim.
+   *
+   * 🔴 SOURCE TRUTH AND NORMALISED REPRESENTATION ARE DIFFERENT THINGS AND BOTH ARE REQUIRED. The
+   * normalised edge exists so two documents can converge and so mechanisms can compose; this exists
+   * so the claim can be checked against the document by eye. Together they answer the only question
+   * that matters when a learner disputes something: "Nemesis believes A may cause B because THIS
+   * passage said THAT." A model-extracted edge with no assertion behind it is an assertion by us.
+   */
+  assertion: string;
+}
+
+/**
+ * Which system produced a knowledge object, and under what rules.
+ *
+ * 🔴 KNOWLEDGE-GENERATION PROVENANCE, NEVER LEARNER COGNITION. Nothing here may reach
+ * `learner_evidence`: a model's confidence that a passage asserts something is a fact about our
+ * extractor, and storing it beside a learner's demonstration would let one be read as the other.
+ * The learner's uncertainty, the extractor's uncertainty and the parser's limitations are three
+ * different kinds of not-knowing, and collapsing any two of them into a generic "unknown" is how a
+ * system starts filling gaps with confidence.
+ *
+ * 🔴 AND IT EXISTS SO A CORPUS CAN BE REGENERATED SAFELY. When the prompt or the model changes,
+ * "which objects came from the old extractor?" must be answerable by query rather than by guessing
+ * from dates — otherwise the only safe migration is deleting everything.
+ */
+export interface ExtractionProvenance {
+  /** The extractor and its rules version, e.g. "causal/1". */
+  extractor: string;
+  /** Which lane produced it — a deterministic grid reader, a model over prose. */
+  lane: KnowledgeDerivation;
+  /** The model, when one was involved. Absent for deterministic lanes. */
+  model?: string;
+  /** The version of the response schema the model was held to. */
+  schemaVersion?: string;
+}
+
 /** One learnable thing, of one type.
  *
  *  Sits BETWEEN the canvas's coarse objectives (`CanvasConcept`) and the prompts that test them:
@@ -136,10 +302,12 @@ export interface KnowledgeObject {
   statement: string;
   /** The coarse objectives this belongs to, so existing diagnosis keeps working unchanged. */
   conceptIds?: string[];
-  /** Set only when `type` is "association". Other types will add their own payloads as they are
-   *  built; deliberately not a ten-way union up front, because nine of those shapes would be
-   *  guesses written before the interaction that uses them exists. */
+  /** Set only when `type` is "association". Other types add their own payloads as they are built;
+   *  deliberately not a ten-way union up front, because eight of those shapes would be guesses
+   *  written before the interaction that uses them exists. */
   pair?: AssociationPair;
+  /** Set only when `type` is "causal". One directed edge — see `CausalRelation`. */
+  relation?: CausalRelation;
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];
@@ -178,6 +346,9 @@ export interface KnowledgeObject {
   /** Which version of the extractor produced this, so a corpus extracted under old rules can be
    *  found and redone rather than silently mixed in with a newer one. */
   extractionVersion?: string;
+  /** The full generation record — which system, which lane, which model, which schema.
+   *  🔴 Never learner cognition. See `ExtractionProvenance`. */
+  provenance?: ExtractionProvenance;
 }
 
 /**
@@ -195,8 +366,16 @@ export interface KnowledgeObject {
  * So a delimiter is not evidence of an association. A grid is.
  */
 export type KnowledgeDerivation =
-  /** One row of a real grid, read as cells. */
-  | "table-row";
+  /** One row of a real grid, read as cells. Deterministic. */
+  | "table-row"
+  /** A model reading structured prose under a strict abstain-first contract.
+   *
+   *  🔴 THE FIRST LANE WHERE A MODEL DECIDES WHAT KNOWLEDGE EXISTS, which is why it is named
+   *  rather than folded into the one above. Measured 2026-08-12: trigger-word matching over this
+   *  corpus was 14% precise, so a deterministic prose lane was not an option — but a model-derived
+   *  object must be distinguishable from a grid-derived one for ever, because they carry different
+   *  risk and only one of them can be re-derived by reading the document. */
+  | "model-prose";
 
 /** What a learner produced on one association attempt.
  *

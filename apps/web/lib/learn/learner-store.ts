@@ -27,6 +27,72 @@ export interface StoredObjective extends LearningObjective {
 }
 
 /**
+ * The fields `knowledge_objects` keeps in columns of their own. Everything else goes to `payload`.
+ *
+ * 🔴 THIS EXISTS BECAUSE PERSISTENCE USED TO ENUMERATE THE PAYLOAD BY HAND — `{ anchors, pair }` —
+ * so every field of every FUTURE knowledge type was deleted on the way to the database before it was
+ * ever written. Nothing could catch it, because nothing read a knowledge object back at all: the
+ * payload was write-only. A causal relation would have stored as an empty object and the loss would
+ * have surfaced weeks later as "the mechanism extractor doesn't work".
+ *
+ * 🔴 SO THE RULE IS SUBTRACTIVE, NOT ADDITIVE. Persistence names the fields it handles specially
+ * and keeps everything else without knowing what any of it is. Adding a knowledge type must never
+ * require editing this boundary again.
+ */
+const COLUMN_FIELDS: readonly string[] = [
+  "type",
+  "statement",
+  "relationKind",
+  "identityKey",
+  "extractionVersion",
+];
+
+/**
+ * Everything about an object that is not already a column, ready to store.
+ *
+ * 🔴 `sourceAnchors` IS WRITTEN AS `anchors`, WHICH IS NOT A STYLE CHOICE. Rows already in
+ * production use that name, and renaming it here would make every existing object read back with no
+ * provenance — a silent loss of precisely what anchors exist to prevent.
+ */
+export function knowledgePayload(knowledge: KnowledgeObject): Record<string, unknown> {
+  const rest: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(knowledge)) {
+    if (COLUMN_FIELDS.includes(field) || field === "sourceAnchors") continue;
+    if (value !== undefined) rest[field] = value;
+  }
+  return { anchors: knowledge.sourceAnchors ?? [], ...rest };
+}
+
+/**
+ * A stored row, back as the object it was.
+ *
+ * 🔴 THE MISSING HALF OF THE BOUNDARY. Until this existed, knowledge was written and never read, so
+ * "does the payload survive?" was a question nothing in the system could answer — the exact shape of
+ * the six structural fields this codebase has already lost at boundaries. The round-trip test that
+ * pins causal payloads is only possible because this function exists.
+ */
+export function knowledgeFromRow(row: {
+  type: string;
+  statement: string;
+  relation_kind?: string | null;
+  identity_key: string;
+  extraction_version?: string | null;
+  payload?: Record<string, unknown> | null;
+}): KnowledgeObject {
+  const { anchors, ...rest } = (row.payload ?? {}) as Record<string, unknown>;
+  return {
+    ...(rest as Partial<KnowledgeObject>),
+    id: typeof rest.id === "string" ? rest.id : row.identity_key,
+    identityKey: row.identity_key,
+    sourceAnchors: (anchors as KnowledgeObject["sourceAnchors"]) ?? [],
+    statement: row.statement,
+    type: row.type as KnowledgeObject["type"],
+    ...(row.relation_kind ? { relationKind: row.relation_kind } : {}),
+    ...(row.extraction_version ? { extractionVersion: row.extraction_version } : {}),
+  };
+}
+
+/**
  * Store a knowledge object and every objective it supports, and return the objectives with their
  * row ids.
  *
@@ -48,7 +114,9 @@ export async function saveKnowledge(
       extraction_version: knowledge.extractionVersion ?? null,
       identity_key: identityKey,
       identity_version: KNOWLEDGE_IDENTITY_VERSION,
-      payload: { anchors: knowledge.sourceAnchors ?? [], pair: knowledge.pair ?? null },
+      // 🔴 DERIVED, NOT ENUMERATED. See `knowledgePayload` — listing fields here is what silently
+      // deleted every future knowledge type's payload.
+      payload: knowledgePayload(knowledge),
       relation_kind: knowledge.relationKind ?? null,
       statement: knowledge.statement,
       type: knowledge.type,
