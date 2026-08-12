@@ -36,7 +36,7 @@ import { usePolicyRuntime } from "./use-policy-runtime";
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
-  policyRequested = false,
+  policyEnabled = true,
 }: {
   canvasId: string | null;
   /** What the learner typed on the home surface before this canvas existed.
@@ -45,18 +45,18 @@ export function LearningCanvas({
    *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
    *  consumed exactly once here. */
   openingAsk?: string | null;
-  /** Opt in to the teaching-policy runtime for this canvas.
+  /** The teaching-policy runtime's emergency stop, defaulting to on.
    *
-   *  🔴 REQUESTED IS NOT THE SAME AS AVAILABLE, AND BOTH GATES ARE REAL. This says someone asked
-   *  for it; the runtime still refuses unless the canvas has an association with a recall
-   *  objective, because that is the only slice built end to end. Widening it means shipping the
-   *  next knowledge type, not flipping this. */
-  policyRequested?: boolean;
+   *  🔴 THIS IS NOT AN OPT-IN, AND THE DEFAULT IS THE POINT. Whether the policy takes this canvas
+   *  is decided from what its sources contain — `policyOwnsCanvas` — so the only thing left for a
+   *  caller to say is "not right now". `false` forces the legacy runtime; `true` merely allows the
+   *  question to be asked. */
+  policyEnabled?: boolean;
 }) {
   const router = useRouter();
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyRequested);
+  const policy = usePolicyRuntime(canvas, policyEnabled);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selected = useMemo(

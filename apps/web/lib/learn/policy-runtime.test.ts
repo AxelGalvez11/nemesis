@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import type { ResolvedObjective } from "./canvas-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { LearnerEvidence } from "./learner-evidence";
 import { objectivesForKnowledge } from "./learning-objective";
-import { canUsePolicyRuntime, decideNext, supportedObjectives } from "./policy-runtime";
+import { decideNext, supportedObjectives } from "./policy-runtime";
 
 const KNOWLEDGE: KnowledgeObject = {
   id: "k1",
@@ -163,22 +164,61 @@ test("acknowledging is session state and never reaches the learner's record", as
   }
 });
 
-// ── the gate is the supported slice ─────────────────────────────────────────
+// ── the supported slice ─────────────────────────────────────────────────────
 
-test("🔴 a knowledge type with no built interaction does NOT switch the runtime on", () => {
-  // The gate is what keeps this honest: shipping the next knowledge type means building its
-  // interaction, not flipping a flag and letting it fall back to a quiz.
+test("🔴 a knowledge type with no built interaction yields nothing to act on", () => {
+  // Shipping the next knowledge type means building its interaction, not flipping a flag and
+  // letting it fall back to a quiz.
   const causal: ResolvedObjective[] = [
     {
       knowledge: { ...KNOWLEDGE, id: "k2", type: "causal" },
       objective: { ...FORWARD!, rowId: "row-causal" },
     },
   ];
-  assert.equal(canUsePolicyRuntime(causal), false);
   assert.equal(supportedObjectives(causal).length, 0);
+  assert.equal(decideNext({ evidence: [], now: NOW, objectives: supportedObjectives(causal) }), null);
 });
 
-test("an association with a recall objective does switch it on", () => {
-  assert.equal(canUsePolicyRuntime(RESOLVED), true);
+test("an association with a recall objective is acted on", () => {
   assert.equal(supportedObjectives(RESOLVED).length, 2);
+});
+
+// ── the runtime actually asks ───────────────────────────────────────────────
+//
+// 🔴 EVERY TEST ABOVE COULD BE GREEN WHILE PRODUCTION IGNORED ALL OF IT. A strict ownership rule
+// that nothing calls changes nothing; the previous version of this pivot shipped a guard that
+// checked only the first occurrence of a stage component and stayed green through a duplicate
+// rendered outside the branch. So the wiring is asserted, not assumed.
+
+test("🔴 the runtime refuses BEFORE it goes active, on ownership rather than on a count", () => {
+  const source = readFileSync(
+    new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
+    "utf8",
+  );
+  const refusal = source.indexOf("if (!resolved.ownership.owns)");
+  const active = source.indexOf('setStatus("active")');
+  assert.notEqual(refusal, -1, "the runtime must consult policyOwnsCanvas's decision");
+  assert.notEqual(active, -1);
+  assert.ok(refusal < active, "ownership must be checked before the runtime takes the surface");
+});
+
+test("🔴 no URL parameter can switch the policy runtime ON", () => {
+  // The temporary `?policy=1` opt-in is gone. What replaced it may only ever turn the runtime OFF:
+  // routing on a query parameter is routing on what somebody typed, which is the opposite of
+  // routing on what the canvas's sources contain.
+  const page = readFileSync(new URL("../../app/(workspace)/learn/page.tsx", import.meta.url), "utf8");
+  const code = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(/get\("policy"\)\s*===/.test(code), false, "a `policy` equality check would be an opt-in");
+  assert.ok(code.includes('get("policy") !== "0"'), "the kill switch must be disable-only");
+});
+
+test("🔴 no permissive ownership predicate has grown back beside the filter", () => {
+  // `canUsePolicyRuntime` was `objectives.some(supported)` — one association handed the runtime a
+  // whole canvas, and a lecture containing a single glossary table satisfied it exactly as well as
+  // a glossary did. Ownership belongs in knowledge-coverage.ts, decided from what the SOURCE holds.
+  // This is here because deleting a function does not stop the next edit reintroducing it.
+  const source = readFileSync(new URL("./policy-runtime.ts", import.meta.url), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(/\.some\s*\(/.test(code), false, "policy-runtime must not decide ownership with .some()");
+  assert.equal(code.includes("canUsePolicyRuntime"), false);
 });

@@ -365,6 +365,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
               canvasCapture("knowledge_extracted", latest.current, {
                 objectives: resolved.objectives.length,
                 outcome: resolved.outcome,
+                // 🔴 LOGGED, BECAUSE `objectives: 0` NO LONGER MEANS EXTRACTION FOUND NOTHING.
+                // Knowledge is stored only for a canvas the policy owns, so a mixed document now
+                // reports zero objectives having extracted plenty — and without these three fields
+                // that reads in production as a broken extractor rather than a deliberate refusal.
+                owned: resolved.ownership.owns,
+                refusal: resolved.ownership.refusal,
+                substantiveUnits: resolved.coverage.substantive,
+                unrepresentedUnits: resolved.coverage.unrepresented,
               });
             })();
           }

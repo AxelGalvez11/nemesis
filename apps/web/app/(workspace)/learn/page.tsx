@@ -30,18 +30,23 @@ function LearnSurface() {
   const params = useSearchParams();
   const canvasId = params.get("c");
   const ask = params.get("ask");
-  // The teaching-policy runtime, asked for explicitly per canvas.
+  // The teaching-policy runtime's emergency stop — and ONLY that.
   //
-  // 🔴 A URL OPT-IN RATHER THAN A DEPLOY-TIME FLAG, ON PURPOSE. It needs no environment variable to
-  // exercise in production, it cannot switch a real learner over by accident, and it is visible in
-  // the address bar — so "which runtime was this?" is answerable afterwards instead of being
-  // inferred from behaviour. It goes when this stops being the new runtime.
-  const policy = params.get("policy") === "1";
+  // 🔴 `?policy=0` DISABLES; NOTHING HERE ENABLES. Which runtime a canvas gets is decided from what
+  // its sources actually contain (see `policyOwnsCanvas`), not from the address bar: routing on a
+  // query parameter is routing on what someone typed, which is the opposite of routing on the
+  // persisted knowledge representation.
+  //
+  // 🔴 AND IT IS DELIBERATELY NOT AN ENVIRONMENT VARIABLE. This file is a client component, so a
+  // kill switch here would have to be `NEXT_PUBLIC_*`, which Next inlines at BUILD time — turning
+  // "emergency rollback" into a redeploy, against a Vercel account with a daily build cap. A URL
+  // that can only ever turn the runtime OFF costs nothing and works instantly.
+  const policyEnabled = params.get("policy") !== "0";
   const { session } = useAuth();
 
   // No canvas named and nothing asked: this is the landing surface.
   if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
-  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyRequested={policy} />;
+  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyEnabled={policyEnabled} />;
 }
 
 export default function LearnPage() {

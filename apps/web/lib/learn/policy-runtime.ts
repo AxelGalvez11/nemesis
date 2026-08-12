@@ -92,18 +92,15 @@ export function decideNext(input: {
   );
 }
 
-/** Does this canvas have anything the policy runtime can actually teach?
+/** The objectives this runtime can act on, of the ones a canvas resolved.
  *
- *  🔴 THE GATE IS THE SUPPORTED SLICE, NOT A GUESS ABOUT THE CANVAS. Association recall is the one
- *  path built end to end; a canvas with a causal knowledge object and no association has nothing
- *  here and must keep the runtime it already had. Widening this is what shipping the next
- *  knowledge type MEANS — not a flag flip. */
-export function canUsePolicyRuntime(objectives: readonly ResolvedObjective[]): boolean {
-  return objectives.some(
-    ({ knowledge, objective }) => knowledge.type === "association" && objective.capability === "recall",
-  );
-}
-
+ *  🔴 THIS IS A FILTER, NOT AN OWNERSHIP TEST, AND THERE IS DELIBERATELY NO `canUsePolicyRuntime`
+ *  BESIDE IT ANY MORE. There used to be: `objectives.some(supported)` — one association was enough
+ *  to hand the runtime a whole canvas, so a forty-page lecture containing a single glossary table
+ *  satisfied it exactly as well as a glossary did, and every paragraph in it would have become
+ *  unreachable. Ownership is decided in `knowledge-coverage.ts`, from what the SOURCE contains
+ *  rather than from what happened to be extractable out of it. Do not reintroduce a permissive
+ *  predicate here; make the loose question unrepresentable instead. */
 export function supportedObjectives(objectives: readonly ResolvedObjective[]): ResolvedObjective[] {
   return objectives.filter(
     ({ knowledge, objective }) => knowledge.type === "association" && objective.capability === "recall",
