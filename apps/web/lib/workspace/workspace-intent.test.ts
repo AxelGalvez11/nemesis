@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyChatEffort, toolsAllowed } from "./chat-effort";
 import { classifyChatRequest } from "./chat-routing";
 import { detectsWorkspaceIntent } from "./workspace-intent";
 
@@ -34,15 +33,11 @@ const MUST_KEEP_TOOLS = [
 test("🔴 workspace questions never lose their tools — not to news words, not to the effort dial", () => {
   for (const prompt of MUST_KEEP_TOOLS) {
     const decision = classifyChatRequest(prompt);
-    assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
     assert.equal(
       decision.workspaceIntent === true || decision.savesToWorkspace === true,
       true,
       `neither workspace flag set: ${prompt}`,
     );
-    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
-    // The stored High preference must not silently blind a workspace turn.
-    assert.equal(toolsAllowed(applyChatEffort(decision, "high")), true, `High dial stripped tools: ${prompt}`);
   }
 });
 
@@ -76,14 +71,11 @@ export const ACCEPTANCE_PROMPTS = [
 test("🔴 every acceptance prompt reaches the tools-capable model with tools attached", () => {
   for (const prompt of ACCEPTANCE_PROMPTS) {
     const decision = classifyChatRequest(prompt);
-    assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
     assert.equal(
       decision.workspaceIntent === true || decision.savesToWorkspace === true,
       true,
       `neither workspace flag set: ${prompt}`,
     );
-    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
-    assert.equal(toolsAllowed(applyChatEffort(decision, "high")), true, `High dial stripped tools: ${prompt}`);
     assert.equal(decision.searchWeb, false, `bought a web search it did not need: ${prompt}`);
   }
 });
@@ -94,7 +86,6 @@ test("saving a document to the Library is a workspace turn too", () => {
   // separately rather than smuggled into the verbatim list above.
   const decision = classifyChatRequest("Save this lecture to my Library.");
   assert.equal(decision.savesToWorkspace === true || decision.workspaceIntent === true, true);
-  assert.equal(toolsAllowed(decision), true);
 });
 
 // ── Asking what to study ────────────────────────────────────────────────────
@@ -118,8 +109,6 @@ test("🔴 asking what to study is a workspace question, not a tutoring one", ()
   ]) {
     assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
     const decision = classifyChatRequest(prompt);
-    assert.equal(decision.model, "deepseek-chat", `wrong model: ${prompt}`);
-    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
   }
 });
 
@@ -158,17 +147,15 @@ test("workspace reads never buy a web search unless the web was asked for", () =
   for (const prompt of ["what's on my schedule today", "what do I have today?", "organize my schedule"]) {
     assert.equal(classifyChatRequest(prompt).searchWeb, false, prompt);
   }
-  // An explicit web ask keeps it — deepseek-chat can search AND hold tools.
+  // An explicit web ask keeps it.
   const explicit = classifyChatRequest("search the web for my university's exam schedule policy");
   assert.equal(explicit.searchWeb, true);
-  assert.equal(explicit.model, "deepseek-chat");
 });
 
 test("a save still outranks the workspace read — it carries the stronger instruction", () => {
   const decision = classifyChatRequest("add my exam to my calendar for Oct 14");
   assert.equal(decision.savesToWorkspace, true);
   assert.equal(decision.workspaceIntent, undefined);
-  assert.equal(decision.model, "deepseek-chat");
 });
 
 // ── What must NOT fire ──────────────────────────────────────────────────────
@@ -191,7 +178,7 @@ test("learning and news questions keep their original routes", () => {
   }
   // And the news route still exists at all — the fix must not eat it.
   assert.equal(classifyChatRequest("who won the game today").route, "current");
-  assert.equal(classifyChatRequest("what's the latest news").model, "deepseek-reasoner");
+  assert.equal(classifyChatRequest("what's the latest news").route, "current");
 });
 
 // ── Asking Nemesis to CREATE something ──────────────────────────────────────
@@ -213,8 +200,6 @@ test("🔴 asking to add an event carries the tools that can add it", () => {
   // The exact production message, verbatim.
   const decision = classifyChatRequest("Add an exam called Phase 2 Probe Exam on 2026-09-15 from 13:30 to 14:30.");
   assert.equal(decision.workspaceIntent, true);
-  assert.equal(decision.model, "deepseek-chat");
-  assert.equal(toolsAllowed(decision), true);
 });
 
 test("creating anything in the workspace is a workspace turn", () => {
@@ -231,7 +216,6 @@ test("creating anything in the workspace is a workspace turn", () => {
   ]) {
     const decision = classifyChatRequest(prompt);
     assert.equal(decision.workspaceIntent === true || decision.savesToWorkspace === true, true, `missed: ${prompt}`);
-    assert.equal(toolsAllowed(decision), true, `tools stripped: ${prompt}`);
   }
 });
 
@@ -263,7 +247,6 @@ test("🔴 a singular 'class' is a workspace noun — `classes?` never matched i
     "when is my next class",
   ]) {
     assert.equal(detectsWorkspaceIntent(prompt), true, `missed: ${prompt}`);
-    assert.equal(toolsAllowed(classifyChatRequest(prompt)), true, `tools stripped: ${prompt}`);
   }
   // The plural still works.
   assert.equal(detectsWorkspaceIntent("show me my classes this semester"), true);

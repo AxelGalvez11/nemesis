@@ -398,7 +398,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                             const reply = await postChatCompletion(
                               userId,
                               reviseCardMessages({ back: current.back, front: current.front, transcript: explainTranscript(turns) }),
-                              { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+                              { decision: { route: "conversation", searchWeb: false } },
                             );
                             const revised = reply.text ? parseRevisedCard(reply.text) : null;
                             if (!revised) return reply.errorText ?? "The engine couldn't produce a clean rewrite — tell it what to change and try again.";

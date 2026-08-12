@@ -4,7 +4,7 @@
 // Why this exists (owner 2026-08-05, the calendar incident): whether a turn
 // carries the workspace tools used to be decided by what it was NOT — anything
 // matching the news/current-events words went to the reasoner, and the reasoner
-// cannot carry tools (chat-effort.ts:toolsAllowed). "Organize my schedule",
+// cannot carry tools. "Organize my schedule",
 // "what's due today", "give me an update on my calendar" all contain
 // current-events words, so the exact phrasings that most need the tools were
 // the ones guaranteed to lose them — and the no-tools prompt then told the
@@ -12,12 +12,12 @@
 // that as "Nemesis can't see my events."
 //
 // So workspace intent is now detected FIRST, positively, and it wins the route
-// (chat-routing.ts consults this before the current-events check; chat-effort
-// keeps the tools on whatever the effort dial says).
+// (chat-routing.ts consults this before the current-events check).
 //
-// Bias, stated on purpose: LEAN TOWARD MATCHING. A false positive costs the
-// turn the thinking model — it still answers well on deepseek-chat, with the
-// student's real data attached. A false negative recreates the incident above.
+// Bias, stated on purpose: LEAN TOWARD MATCHING. A false positive costs the turn
+// nothing but a workspace instruction it did not need — the tools ride every
+// route, and how hard to think is the server's call, made separately from this.
+// A false negative recreates the incident above.
 // The one thing the noun list must never contain is a subject term: "my notes"
 // is workspace for a law student and a machinist alike; "my immune system"
 // belongs to no product surface and must not fire.

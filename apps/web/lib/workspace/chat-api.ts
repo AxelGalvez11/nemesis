@@ -21,15 +21,7 @@ import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-sto
 import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
-import {
-  readWebNeedReply,
-  shouldAskModelAboutWeb,
-  WEB_NEED_PROMPT,
-  WEB_NEED_TIMEOUT_MS,
-  type WebNeedContext,
-} from "@/lib/workspace/chat-web-need";
-import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
-import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
+import { MAX_WEB_RESULTS, numberWebResults, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
@@ -43,7 +35,35 @@ const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 // Cost attribution: tells the metering valve WHICH app spent the tokens, so provider
 // spend can be reported per app. The valve falls back to the device-key label when
 // this is missing, and to "unknown" when neither says — never silently to "web".
-const CLIENT_HEADER = { "X-Nemesis-Client": "web" } as const;
+const CLIENT_HEADER = {
+  "X-Nemesis-Client": "web",
+  // 🔴 A CAPABILITY, NOT A PREFERENCE. The gateway may switch DeepSeek's thinking
+  // mode on by itself now, and a thinking turn must echo the model's
+  // `reasoning_content` back on every tool round or the round after it breaks.
+  // This client does (see appendToolRound). A client that does not say so gets
+  // thinking off whenever it attaches tools — which is what protects the phone
+  // builds already on students' devices, since a gateway deploy reaches them
+  // with no app update involved.
+  "X-Nemesis-Caps": "reasoning-echo",
+} as const;
+
+/**
+ * The model name on the wire. A CONSTANT, because the client no longer chooses.
+ *
+ * 🔴 THIS FIELD USED TO BE A SPEND DECISION MADE IN THE BROWSER. It alternated
+ * between `deepseek-chat` and `deepseek-reasoner`, and the gateway read it to
+ * pick the thinking mode — so the cost of a turn was set by a string in a JSON
+ * body that anyone holding a device key could edit. The gateway now ignores it
+ * (supabase/functions/_shared/model-routing.ts) and classifies the student's own
+ * words instead. It stays on the wire only because `/v1/chat/completions`
+ * requires the field.
+ *
+ * 🔴 DEPLOY ORDER: the gateway must go out BEFORE this build. Against the old
+ * gateway a constant `deepseek-chat` means thinking off on every turn — a real
+ * quality regression for the window in between. The reverse order is safe: the
+ * new gateway ignores whatever the old clients send.
+ */
+export const WIRE_MODEL = "deepseek-chat";
 
 export interface WireToolCall {
   id: string;
@@ -58,6 +78,11 @@ export interface WireMsg {
   tool_calls?: WireToolCall[];
   /** Tool-result messages: which call this answers. */
   tool_call_id?: string;
+  /** The thinking the model did BEFORE it asked for those tools. Thinking mode
+   *  requires this to ride every subsequent round; omitting it is what kept
+   *  tools off the reasoner entirely. Assistant messages only, and only when
+   *  the model actually produced any. */
+  reasoning_content?: string;
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
@@ -69,8 +94,35 @@ const CHAT_PROMPT_HEAD =
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
-  "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. ";
+
+/**
+ * WHERE AN ANSWER SHOULD COME FROM. Rides every turn that carries tools.
+ *
+ * The tool descriptions say what each tool does; this says how to CHOOSE, and
+ * the two have to agree. Owner 2026-08-06: "Nemesis should reason about what
+ * information it needs and where that information should come from."
+ *
+ * The order is the policy. Retrieving nothing comes first because the defect
+ * being fixed is reaching for a tool that adds nothing, and the private-beats-
+ * public rule comes before the web because for a student's own coursework the
+ * web is not merely unnecessary — it does not hold the answer at any price.
+ */
+const SOURCE_ROUTING_POLICY =
+  "BEFORE ANSWERING, DECIDE WHERE THE ANSWER LIVES. Work through these in order and stop at the first that fits.\n"
+  + "1. YOU ALREADY KNOW IT. Explanations, definitions, derivations, calculations, translations, feedback on their writing, and anything about "
+  + "yourself or this app. Answer directly. Most questions end here, and a tool call that adds nothing costs the student time and money.\n"
+  + "2. IT IS THE STUDENT'S OWN MATERIAL. Their lectures, notes, slides, recordings, syllabus, deadlines, courses, decks or grades. Read it with "
+  + "the workspace tools. Their material always beats an outside source when the question is about their course — the web has never seen their "
+  + "lecture and cannot guess what their professor said.\n"
+  + "3. IT DEPENDS ON THE OUTSIDE WORLD, AND ON IT BEING CURRENT. Something that gets revised, released, ruled on, or published; a URL they "
+  + "named; or a fact from after your knowledge cutoff. Use search_web.\n"
+  + "4. IT NEEDS BOTH. A question that sets their material against the outside world — 'is what I was taught still right?' — needs the private "
+  + "source AND the search. Do both and say plainly where the two agree and where they differ.\n"
+  + "Judge the QUESTION, never a word in it. 'Latest', 'current', 'schedule', 'sources', 'who is', and a recent year all appear constantly in "
+  + "questions about a student's own course, and none of them is a reason to search the web. Conversely a question can need fresh information "
+  + "while containing no such word at all. When you genuinely cannot tell whether something has changed since you learned it, checking is the "
+  + "cheaper mistake — but say what you checked. ";
 
 /** True ONLY on a turn that actually carries AGENT_TOOLS. */
 export const CHAT_TOOLS_PROMPT =
@@ -118,8 +170,8 @@ export const CHAT_TOOLS_PROMPT =
   "full ONLY when the student asked to see it rather than save it, or when the save failed and they would otherwise lose the work. ";
 
 /**
- * What replaces it when the turn goes out WITHOUT tools (a reasoner route, or
- * high effort — see chat-effort.ts:toolsAllowed).
+ * What replaces it when the turn goes out WITHOUT tools (a caller that passes
+ * `toolsEnabled: false` — no route withholds them any more).
  *
  * This paragraph exists because the sentence above used to ride every turn
  * unconditionally, including the ones with no tools attached. Observed live
@@ -172,7 +224,11 @@ export function chatSystemPrompt(toolsEnabled: boolean): string {
   // hedge-heavy prose the voice rules exist to prevent — so they need to be read
   // in that order. Shared with the phone (packages/shared) so the two surfaces
   // cannot drift.
-  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
+  // The routing policy rides with the tools and only with them: telling a
+  // tool-free turn where the answer lives is telling it to promise a lookup it
+  // cannot perform, which is the fabrication CHAT_NO_TOOLS_PROMPT exists to
+  // prevent.
+  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT + SOURCE_ROUTING_POLICY : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
 }
 
 /** The tools-on prompt, kept as a named export for callers and tests that want
@@ -225,9 +281,10 @@ export function buildWireMessages(
   history: SessionMessage[],
   userText: string,
   decision = classifyChatRequest(userText),
-  // Derived from the decision by default so a caller cannot accidentally
-  // describe tools that will not be sent.
-  toolsEnabled = toolsAllowed(decision),
+  // Every route carries tools. Kept as a parameter because a few mechanical
+  // callers (study generation, the librarian) genuinely send none, and the
+  // prompt must not promise what is not attached.
+  toolsEnabled = true,
   /** Retrieved background — the second-brain packet. Its OWN system message, on
    *  purpose; see the block comment on the grounding message below. */
   groundingContext = "",
@@ -373,6 +430,26 @@ export function completionText(body: unknown): string | null {
 }
 
 /**
+ * The reasoner's thoughts on a NON-streamed response.
+ *
+ * The streaming path assembles the same thing from `delta.reasoning_content`
+ * (chat-stream.ts). Both exist because the echo thinking mode requires on a
+ * tool round has to survive whichever path the turn took, and a turn is only
+ * streamed when the caller asked for deltas — the web-need pre-flight and the
+ * phone's non-streaming calls did not.
+ *
+ * "" rather than null: this value is concatenated, never branched on, and an
+ * absent field and an empty one mean the same thing to the next round.
+ */
+export function completionReasoning(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const choices = (body as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices.length) return "";
+  const message = (choices[0] as { message?: { reasoning_content?: unknown } }).message;
+  return typeof message?.reasoning_content === "string" ? message.reasoning_content : "";
+}
+
+/**
  * The model a non-streaming response says actually produced it.
  *
  * Pure and exported so the fallback-detection rule can be pinned by a test
@@ -479,6 +556,9 @@ export interface ChatReply {
   outputs?: SessionOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
+  /** The reasoner's thoughts for this round. Echoed back on the next round and
+   *  never shown or saved — see CompletionStreamResult.reasoning. */
+  reasoning?: string;
   /** A delete the model asked for and the gate held. NOTHING has been deleted;
    *  the page shows a card and only the student's click carries it out. Never
    *  persisted — a decision they have not made is not a deliverable. */
@@ -530,6 +610,35 @@ export interface ChatCompletionOptions {
  *  copy). Streams when `onDelta` is supplied. Resolves (never rejects) for network/API failures —
  *  those come back as a student-readable line. Only an aborted `signal` rejects, so the caller can
  *  tell "the user stopped it" apart from "it failed". */
+/**
+ * The exact JSON body one turn sends to the valve.
+ *
+ * 🔴 EXTRACTED SO THE ABSENCE OF `tool_choice` IS A TEST, NOT A COMMENT. DeepSeek
+ * V4 defaults to thinking mode, and thinking mode REJECTS a forced tool choice —
+ * the provider answers "Thinking mode does not support this tool_choice"
+ * (api-docs.deepseek.com/guides/tool_calls, and the same string is quoted in
+ * supabase/functions/ask/llm.ts, which met it live). Every route in this chat
+ * now carries tools, so any future line that sets tool_choice would break the
+ * thinking routes specifically — the hardest questions — and would break them
+ * only in production. A comment saying "we never send it" cannot fail; this can.
+ *
+ * `tools` is omitted entirely rather than sent empty: an empty array is a
+ * different request from no tools at all, and the last round deliberately goes
+ * out with none so the model has to answer in text.
+ */
+export function completionPayload(
+  wireMessages: readonly WireMsg[],
+  _decision: ChatRouteDecision,
+  options: Pick<ChatCompletionOptions, "onDelta" | "tools"> = {},
+): Record<string, unknown> {
+  return {
+    messages: wireMessages,
+    model: WIRE_MODEL,
+    ...(options.onDelta ? { stream: true } : {}),
+    ...(options.tools?.length ? { tools: options.tools } : {}),
+  };
+}
+
 export async function postChatCompletion(
   uid: string,
   wireMessages: WireMsg[],
@@ -539,13 +648,7 @@ export async function postChatCompletion(
   if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
   const decision = options.decision ?? { route: "conversation", model: "deepseek-chat", searchWeb: false };
-  const payload = JSON.stringify({
-    messages: wireMessages,
-    model: decision.model,
-    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
-    ...(options.onDelta ? { stream: true } : {}),
-    ...(options.tools?.length ? { tools: options.tools } : {}),
-  });
+  const payload = JSON.stringify(completionPayload(wireMessages, decision, options));
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
@@ -577,15 +680,21 @@ export async function postChatCompletion(
     let text: string | null = null;
     let toolCalls: AgentToolCall[] = [];
     let answeringModel: string | undefined;
+    // Carried out of BOTH paths: a turn is streamed or not depending on whether
+    // the caller wants deltas, and thinking mode's echo requirement does not
+    // care which one ran.
+    let reasoning = "";
     if (options.onDelta) {
       const streamed = await readCompletionStreamFull(res.body, options.onDelta);
       text = streamed.text.trim() ? streamed.text : null;
       toolCalls = streamed.toolCalls;
+      reasoning = streamed.reasoning;
     } else {
       const body = (await res.json().catch(() => null)) as unknown;
       text = completionText(body);
       toolCalls = completionToolCalls(body);
       answeringModel = completionModel(body);
+      reasoning = completionReasoning(body);
     }
     if (text || toolCalls.length) {
       return {
@@ -594,6 +703,7 @@ export async function postChatCompletion(
         sources: [],
         text,
         ...(answeringModel ? { model: answeringModel } : {}),
+        ...(reasoning ? { reasoning } : {}),
         ...(toolCalls.length ? { toolCalls } : {}),
       };
     }
@@ -759,37 +869,22 @@ function startWaitingStrip(onActivity?: (label: string | null) => void): Waiting
   };
 }
 
-/**
- * Ask the model whether this turn needs the live web.
- *
- * Bounded twice over: it is only called when the cheap checks could not decide
- * (shouldAskModelAboutWeb), and it gives up after WEB_NEED_TIMEOUT_MS. Every
- * failure path — timeout, network, auth, a reply that is not the one word it
- * was asked for — resolves to false, so the worst case is the behaviour we had
- * before this existed rather than a stalled turn.
- */
-async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: AbortSignal): Promise<boolean> {
-  if (!shouldAskModelAboutWeb(context)) return false;
-  const timer = new AbortController();
-  // Linked to the caller's signal so pressing Stop kills the pre-flight too,
-  // rather than leaving a request running against a turn nobody wants.
-  const onAbort = () => timer.abort();
-  signal?.addEventListener("abort", onAbort, { once: true });
-  const deadline = setTimeout(() => timer.abort(), WEB_NEED_TIMEOUT_MS);
-  try {
-    const reply = await postChatCompletion(
-      uid,
-      [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
-      { background: true, decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
-    );
-    return readWebNeedReply(reply.text);
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(deadline);
-    signal?.removeEventListener("abort", onAbort);
-  }
-}
+// 🔴 THE WEB-NEED PRE-FLIGHT LIVED HERE AND IS GONE (owner 2026-08-06).
+//
+// It asked a small model one YES/NO question — "does answering this need a live
+// search?" — before the real turn, and it was a reasonable answer to the wrong
+// problem. Its own file said so: "the obvious design is to hand the model a
+// search_web tool and let it call it. It cannot", because tools were switched
+// off for every reasoner turn. That premise was a bug in our stream, not a
+// limit of the model, and it has been fixed.
+//
+// So the pre-flight is not merely redundant now, it is worse than the tool on
+// every axis: it spent a model call on EVERY qualifying turn whether or not a
+// search followed, it decided from the question alone with none of the turn's
+// context, it could not tell the web apart from the student's own Library, and
+// it could not look twice. The tool does all four. Deleted rather than left
+// dormant — a second decision-maker for the same question is how the two
+// keyword lists came to disagree with each other in the first place.
 
 export async function sendChatTurn(
   uid: string,
@@ -797,7 +892,6 @@ export async function sendChatTurn(
   userText: string,
   signal?: AbortSignal,
   onDelta?: CompletionDeltaHandler,
-  effort: ChatEffort = DEFAULT_CHAT_EFFORT,
   /** Live thinking-strip copy (owner 2026-08-03: the static "Thinking" shimmer
    *  on a minute-long turn "wasn't dynamic"). Fed from two places: the
    *  reasoner's streamed thoughts and the agent's tool rounds. null = back to
@@ -818,37 +912,31 @@ export async function sendChatTurn(
     ? ATTACHMENT_ONLY_DECISION
     : classifyChatRequest(askText, priorAssistant);
   // 🔴 THE STRIP STARTS HERE, NOT AT THE MODEL CALL. Everything between this
-  // line and the answer is time the student spends waiting — the web-need
-  // pre-flight, the search itself, the brain lookup — and a strip that only
-  // woke up for the final call would leave a silent gap in front of it and
-  // then restart its clock at zero, which is the exact staleness this is
-  // meant to fix. One strip, one clock, for the whole turn.
+  // line and the answer is time the student spends waiting — the brain lookup,
+  // the tool rounds — and a strip that only woke up for the final call would
+  // leave a silent gap in front of it and then restart its clock at zero,
+  // which is the exact staleness this is meant to fix. One strip, one clock.
   let strip = startWaitingStrip(onActivity);
-  // The keyword lists are a fast path, not the whole decision: when they miss,
-  // the model itself is asked whether this question needs live sources. See
-  // chat-web-need.ts for why this is a pre-flight and not a tool.
+  // 🔴 NOTHING DECIDES ABOUT THE WEB HERE ANY MORE (owner 2026-08-06).
   //
-  // A WORKSPACE turn opts out of the whole web apparatus unless the student
-  // explicitly asked for the web (classifyChatRequest already set searchWeb
-  // then): "what's my schedule tomorrow" is a database read, and it used to
-  // buy a paid search off the word "tomorrow" AND get promoted onto the
-  // tool-less reasoner below — the two halves of the calendar incident.
-  const regexSaidYes = classified.workspaceIntent
-    ? classified.searchWeb
-    : classified.searchWeb || shouldSearchWeb(askText);
-  const needsWeb = regexSaidYes || (!classified.workspaceIntent && await modelWantsWeb(uid, {
-    ask: askText,
-    hasAttachments: userText.trim() !== askText.trim(),
-    regexSaidYes,
-    savesToWorkspace: classified.savesToWorkspace === true,
-  }, signal));
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.workspaceIntent
-    ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
-    : classified;
-  // The student's dial wins over the route's own guess at how hard to think.
-  const decision = applyChatEffort(routed, effort);
-  let groundedText = userText;
-  let sources: ChatWebResult[] = [];
+  // What stood here: a keyword list, then a small model asked YES/NO, then a
+  // paid search, then a promotion of the whole turn onto the tool-less
+  // reasoner. Three mechanisms, none of which could see the question the way
+  // the answering model can, and all of them spent before it was consulted.
+  // "who are you?" came through this path and searched the live web.
+  //
+  // The web is a tool now (search_web, agent-tools.ts). The model reads the
+  // question, weighs the student's own material against the outside world, and
+  // calls what it needs — including both, and including twice when the first
+  // results are thin. The route below chooses which INSTRUCTION rides and
+  // whether a workspace snapshot is attached; it no longer buys anything, and
+  // since 2026-08-06 it does not pick the model either — the server does, from
+  // the student's own words (supabase/functions/_shared/work-class.ts).
+  const decision = classified;
+  const groundedText = userText;
+  // Everything search_web found this turn, in citation order. Appended to
+  // across searches so [n] keeps meaning the same page — see numberWebResults.
+  const sources: ChatWebResult[] = [];
   // Start the second-brain lookup beside live web search. It combines semantic
   // Library passages with typed graph neighbors, Calendar deadlines, and Study
   // weak spots in one bounded packet; failures are a normal empty context.
@@ -861,15 +949,23 @@ export async function sendChatTurn(
   const overviewLookup: Promise<unknown> = classified.workspaceIntent
     ? loadWorkspaceOverview().catch(() => null)
     : Promise.resolve(null);
-  if (needsWeb) {
+  /**
+   * One search_web call, numbered into this turn's running source list.
+   *
+   * Handed to the tool rather than imported by it, so agent-tools.ts never has
+   * to know about device keys or about this turn (see AgentToolOptions).
+   */
+  const runWebSearch = async (query: string) => {
     strip.pin("Searching the web");
-    const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
-    strip.resume();
-    sources = result.sources;
-    groundedText = result.context
-      ? `${userText}\n\n${result.context}`
-      : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
-  }
+    try {
+      const found = await searchWebContext(uid, query, signal);
+      const { added, numbered } = numberWebResults(sources, found);
+      sources.push(...added);
+      return numbered;
+    } finally {
+      strip.resume();
+    }
+  };
   // The question decides which parts of the packet survive — Calendar and Study
   // rows have to be asked for or share vocabulary with it now, rather than
   // riding along on every turn. See brain-context.ts.
@@ -877,7 +973,7 @@ export async function sendChatTurn(
   const overview = await overviewLookup;
   const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 
-  const toolsEnabled = toolsAllowed(decision);
+  const toolsEnabled = true;
   // Where the attached documents already live, resolved from the database
   // BEFORE the model runs. A deck or test written from a lecture belongs beside
   // that lecture, and the model cannot be the one to decide that: on
@@ -941,7 +1037,7 @@ export async function sendChatTurn(
     onActivity?.(activityLabel(calls));
     const results = await Promise.all(calls.map(async (call) => ({
       call,
-      result: await executeAgentTool(call, { askText, sourceAttached: attachedIds.length > 0, sourceFolder }),
+      result: await executeAgentTool(call, { askText, searchWeb: runWebSearch, sourceAttached: attachedIds.length > 0, sourceFolder }),
     })));
     onActivity?.(null);
     for (const { result } of results) {
@@ -953,29 +1049,23 @@ export async function sendChatTurn(
       const held = (result as Record<string, unknown> | null)?.pending_delete;
       if (!pendingDelete && held && typeof held === "object") pendingDelete = held as PendingDelete;
     }
-    messages = [
-      ...messages,
-      {
-        content: reply.text ?? "",
-        role: "assistant",
-        tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
-      },
-      ...results.map(({ call, result }) => ({
-        // Never a blind slice: an over-budget result comes back as valid JSON
-        // that says complete:false and where to resume. See chat-tool-result.ts.
-        content: serializeToolResult(result),
-        role: "tool" as const,
-        tool_call_id: call.id,
-      })),
-    ];
+    messages = appendToolRound(messages, reply, calls, results.map(({ call, result }) => ({ id: call.id, result })));
   }
   const shown = collapseOutputs(outputs);
   onActivity?.(null);
   // Last line of defence: whatever survived the loop is checked for leaked
   // invocation syntax before it can be shown or saved (chat-tool-markup.ts).
   const cleaned = sanitizeAssistantText(reply.text);
+  // 🔴 THE REASONING STOPS HERE. It exists for exactly one purpose — being
+  // echoed back to the provider on the next tool round, which has already
+  // happened by now — and the turn is over. `...reply` would otherwise carry
+  // the model's private chain of thought out to the UI, where the caller
+  // persists what it is handed; today it reads named fields only, but a field
+  // that must never be stored should not be reachable in the first place.
+  // Deleted from the returned object rather than trusted to callers.
+  const { reasoning: _private, ...visible } = reply;
   return {
-    ...reply,
+    ...visible,
     text: cleaned.text,
     sources,
     ...(shown.length ? { outputs: shown } : {}),
@@ -983,9 +1073,64 @@ export async function sendChatTurn(
   };
 }
 
-export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
+/**
+ * The two messages one completed tool round adds to the conversation.
+ *
+ * 🔴 EXTRACTED SO IT CAN BE PROVEN, because this is the exact seam the historical
+ * bug lived in. DeepSeek V4 thinking mode requires that the reasoning a model
+ * produced BEFORE a tool call is concatenated back into context on every later
+ * round; drop it and the round is rejected. That is not visible from a single
+ * successful tool call — it only appears between rounds, which is why the tests
+ * beside this run four of them.
+ *
+ * Everything the assistant produced rides back unchanged and together:
+ * `reasoning_content`, `content`, and `tool_calls` with their original ids. The
+ * ids are what pair a result to its call; invent or reorder one and the provider
+ * either rejects the round or answers about the wrong tool.
+ */
+export function appendToolRound(
+  messages: readonly WireMsg[],
+  reply: ChatReply,
+  calls: readonly AgentToolCall[],
+  results: readonly { id: string; result: unknown }[],
+): WireMsg[] {
+  return [
+    ...messages,
+    {
+      content: reply.text ?? "",
+      role: "assistant",
+      // The thinking that produced these calls rides with them. Sent only when
+      // the model actually produced some: an empty `reasoning_content` on a
+      // non-thinking turn is a field the provider never asked for.
+      ...(reply.reasoning ? { reasoning_content: reply.reasoning } : {}),
+      tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
+    },
+    ...results.map(({ id, result }) => ({
+      // Never a blind slice: an over-budget result comes back as valid JSON
+      // that says complete:false and where to resume. See chat-tool-result.ts.
+      content: serializeToolResult(result),
+      role: "tool" as const,
+      // Paired by the id the model issued, never by position — a turn that
+      // calls two tools at once gets its results back in whatever order they
+      // resolved, and position would silently swap them.
+      tool_call_id: id,
+    })),
+  ];
+}
+
+/**
+ * One metered web search. Returns the usable results and nothing else.
+ *
+ * It used to return a formatted prompt block alongside them, from back when
+ * the results were stapled to the student's message before the turn. The
+ * formatting now belongs to search_web's tool result, where the numbering can
+ * account for earlier searches in the same turn — so this stays the thin
+ * network call it always wanted to be. An empty array is a legitimate answer
+ * and callers must treat it as one; it is never an exception.
+ */
+export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<ChatWebResult[]> {
   const key = await deviceKey(uid);
-  if (!key) return { context: "", sources: [] };
+  if (!key) return [];
   try {
     const response = await fetch("/api/workspace/search", {
       body: JSON.stringify({ query, limit: MAX_WEB_RESULTS }),
@@ -993,14 +1138,11 @@ export async function searchWebContext(uid: string, query: string, signal?: Abor
       method: "POST",
       signal,
     });
-    if (!response.ok) return { context: "", sources: [] };
+    if (!response.ok) return [];
     const body = (await response.json()) as { data?: { web?: ChatWebResult[] } };
-    // Same list the prompt numbers, so an inline [n] in the answer resolves to
-    // the source the model actually cited.
-    const sources = usableWebResults(body.data?.web ?? []);
-    return { context: formatWebSearchContext(sources), sources };
+    return usableWebResults(body.data?.web ?? []);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    return { context: "", sources: [] };
+    return [];
   }
 }

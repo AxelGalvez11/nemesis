@@ -7,7 +7,7 @@ import { serializeToolResult, TOOL_RESULT_CHAR_BUDGET } from "@/lib/workspace/ch
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
 const wire = [{ content: "hello", role: "user" as const }];
-const plain: ChatRouteDecision = { model: "deepseek-chat", route: "conversation", searchWeb: false };
+const plain: ChatRouteDecision = { route: "conversation", searchWeb: false };
 const workspace: ChatRouteDecision = { ...plain, workspaceIntent: true };
 
 test("the final tool-free round tells the model its tools are gone", () => {

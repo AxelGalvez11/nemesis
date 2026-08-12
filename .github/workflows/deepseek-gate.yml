@@ -1,0 +1,52 @@
+# The DeepSeek V4 acceptance gate — manual only, and deliberately awkward to run.
+#
+# 🔴 THIS WORKFLOW SPENDS REAL MONEY AND HOLDS A REAL CREDENTIAL, so every
+# trigger that could fire it from someone else's code is absent by design:
+#
+#   * `workflow_dispatch` ONLY. No pull_request, no push, no schedule. A PR
+#     cannot run this, which matters because a PR can change the very script
+#     the secret would be handed to — that is how a "test" exfiltrates a key.
+#   * NO REF INPUT. It runs the repository's default branch and nothing else.
+#     An earlier draft of this file took a branch name so you could gate a PR
+#     before merging, which quietly handed the key to unreviewed code and undid
+#     the bullet above. To gate a branch, run it locally with the documented
+#     prompt-for-key command, or merge first.
+#   * The secret is a DEDICATED acceptance-test device key
+#     (NEMESIS_GATE_DEVICE_KEY). Never the owner's personal key: this runs on
+#     GitHub's infrastructure, and a key that can spend a real student's meter
+#     does not belong there. Mint a key on a throwaway test account, give that
+#     account the plan under test, and revoke it when the run is done.
+#   * `environment: acceptance` gates it behind whatever reviewers/rules that
+#     environment carries. Create it with required reviewers before first use.
+#
+# The gate prints reasoning LENGTHS, never reasoning text; it never prints the
+# key, the student's Library, or a search query.
+name: deepseek-gate
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deepseek-gate
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Create this environment with required reviewers before the first run.
+    # Without it the job fails closed rather than running unattended.
+    environment: acceptance
+    steps:
+      # Default branch only — no ref, by design. See the header.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Four-round thinking-mode gate
+        env:
+          # A dedicated test-account key. If this secret is missing the script
+          # exits 2 and says so, rather than silently "passing" with no calls.
+          NEMESIS_DEVICE_KEY: ${{ secrets.NEMESIS_GATE_DEVICE_KEY }}
+          NEMESIS_LLM_URL: ${{ secrets.NEMESIS_LLM_URL }}
+        run: node_modules/.bin/tsx apps/web/scripts/deepseek-v4-gate.mts

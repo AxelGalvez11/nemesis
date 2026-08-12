@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 
-import { applyChatEffort, toolsAllowed } from "./chat-effort";
 import { acceptsOffer, classifyChatRequest, detectsSaveRequest, offersToCreate, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION } from "./chat-routing";
 import { buildWireMessages } from "./chat-api";
-import { shouldSearchWeb } from "./chat-web-search";
 
-// Ordinary conversation stays on the least expensive lane.
+// 🔴 THE DECISION NO LONGER NAMES A MODEL. It says what KIND of turn this is —
+// which instruction rides, whether a workspace snapshot is attached — and
+// nothing about what the turn costs. The server reads the student's words and
+// picks the model (packages/shared/src/work-class.ts).
 assert.deepEqual(classifyChatRequest("hello"), {
   route: "conversation",
-  model: "deepseek-chat",
   searchWeb: false,
 });
 
-// Learning is discipline-neutral and gets Flash thinking, not a premium model request.
+// Learning is discipline-neutral.
 for (const prompt of [
   "Explain eigenvectors geometrically",
   "Compare negligence and strict liability",
@@ -23,21 +23,16 @@ for (const prompt of [
 ]) {
   const decision = classifyChatRequest(prompt);
   assert.equal(decision.route, "learning", prompt);
-  assert.equal(decision.model, "deepseek-reasoner", prompt);
   assert.equal(decision.searchWeb, false, prompt);
-  assert.equal(decision.reasoningEffort, undefined, prompt);
 }
 
 assert.deepEqual(classifyChatRequest("What is the latest Next.js release?"), {
   route: "current",
-  model: "deepseek-reasoner",
   searchWeb: true,
 });
 assert.deepEqual(classifyChatRequest("Write a literature review with peer-reviewed sources about urban heat islands"), {
   route: "research",
-  model: "deepseek-reasoner",
   searchWeb: true,
-  reasoningEffort: "high",
 });
 
 assert.match(routeInstruction("learning"), /learner's level/);
@@ -73,16 +68,13 @@ for (const prompt of [
 ]) {
   assert.equal(detectsSaveRequest(prompt), true, prompt);
   const decision = classifyChatRequest(prompt);
-  assert.equal(decision.model, "deepseek-chat", prompt);
   assert.notEqual(decision.route, "conversation", prompt);
-  assert.equal(decision.reasoningEffort, undefined, prompt);
-  // The flag applyChatEffort reads to stop the High dial stripping the tools.
+  // The flag that used to stop the effort dial stripping a save's tools.
   assert.equal(decision.savesToWorkspace, true, prompt);
 }
 
-// A save request that also names a current topic keeps web AND the tools model.
+// A save request that also names a current topic keeps its web route.
 const currentSave = classifyChatRequest("make flashcards about the latest COVID variants");
-assert.equal(currentSave.model, "deepseek-chat");
 assert.equal(currentSave.searchWeb, true);
 
 // But a YEAR inside a save request is part of a date, not a request for current
@@ -121,25 +113,28 @@ for (const prompt of [
 for (const prompt of ["can you make me flashcards on the Krebs cycle", "could you build a mind map of this"]) {
   assert.equal(detectsSaveRequest(prompt), true, prompt);
 }
-// The reasoner routes those still resolve to are untouched by the save gate.
-assert.equal(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
+// The learning route those still resolve to is untouched by the save gate.
+assert.equal(classifyChatRequest("explain how beta blockers work").route, "learning");
 {
   const prior =
     "Before I build the test: what do you want for how many questions, the difficulty (easy, medium, hard, or mixed), and the question types (multiple choice, true/false, or a mix)?";
   const decision = classifyChatRequest("20, hard, with a mix", prior);
   assert.equal(decision.savesToWorkspace, true);
-  assert.equal(decision.model, "deepseek-chat");
 }
 
 // The regression that raising the attachment budget amplified: a lecture slide
 // citing a recent year tripped the web-search matcher, buying a paid search on
 // every upload. Routing reads what the student TYPED; skills still read it all.
+//
+// The matcher itself is gone (2026-08-06 — the web is a tool the model calls,
+// so no regex reads this text looking for a reason to search). The SPLIT still
+// matters and is still asserted: it decides which model answers and what the
+// turn is treated as, and a lecture must not be able to answer that on the
+// student's behalf.
 {
   const wireText = "summarise this\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024. Updated guidance.";
   assert.equal(promptWithoutAttachments(wireText), "summarise this");
-  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
-  // The raw wire text is exactly what used to trip it.
-  assert.equal(shouldSearchWeb(wireText), true);
+  assert.equal(classifyChatRequest(promptWithoutAttachments(wireText)).searchWeb, false);
 }
 // The same regression, in the case that actually happens most: files attached
 // with NOTHING typed. prepareChatAttachments trims the wire text, so the blank
@@ -153,20 +148,18 @@ assert.equal(classifyChatRequest("explain how beta blockers work").model, "deeps
   const wireText = `${"".trim()}\n\n### Attachment: week3.pptx\nType: application/pptx\n\nAdapted from Smith et al., 2024.`.trim();
   assert.ok(wireText.startsWith("### Attachment: "), "the real shape has no leading blank line");
   assert.equal(promptWithoutAttachments(wireText), "");
-  assert.equal(shouldSearchWeb(promptWithoutAttachments(wireText)), false);
 }
 
-// A message with no attachment is untouched, and a real live-info question still searches.
+// A message with no attachment is untouched.
 assert.equal(promptWithoutAttachments("what is the latest guidance"), "what is the latest guidance");
-assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidance")), true);
 
 // Accepting the offer our OWN lecture-intake skill makes. Observed live
 // 2026-07-27: the student replied "flashcards", LEARNING_PATTERN matched
 // `flashcards?`, the turn went to the tool-less reasoner, and the model wrote
 // "[Calling tool: add_flashcards ...]" as prose and reported 14 cards saved to
-// a deck that does not exist. Asserted at the END of the chain — through
-// applyChatEffort to toolsAllowed — because that is where the failure was; a
-// classifier-only assertion would pass over the same dead feature.
+// a deck that does not exist. The tool-withholding half of that failure is gone
+// for good: no route strips tools, and since 2026-08-06 the client does not pick
+// the model at all, so there is no longer a dial that could take them away.
 {
   const offer = "I have read the lecture.\n\nWant me to turn this into notes, flashcards, a practice test, or all three?";
   assert.equal(offersToCreate(offer), true);
@@ -174,25 +167,22 @@ assert.equal(shouldSearchWeb(promptWithoutAttachments("what is the latest guidan
     assert.equal(detectsSaveRequest(reply, offer), true, reply);
     const decision = classifyChatRequest(reply, offer);
     assert.equal(decision.savesToWorkspace, true, reply);
-    for (const effort of ["instant", "medium", "high"] as const) {
-      assert.equal(toolsAllowed(applyChatEffort(decision, effort)), true, `${reply} @ ${effort}`);
-    }
   }
 }
 
 // The same shape for syllabus-intake, whose offer names the CALENDAR rather than
 // a study artifact. Without "calendar" in the offer vocabulary a bare "yes" kept
 // its tools only by accident — it fell through to the conversation route, which
-// happens to use the tools model. On High effort that accident stops working and
-// the turn lands on the tool-less lane, which is the fabrication path.
+// happened to be the tools-capable one. The accident is not what holds it up now,
+// but the classification still has to be right: the offer decides the
+// INSTRUCTION, and a save turn with no save instruction writes the deck into the
+// chat instead.
 {
   const offer = "Here are the 22 dated items I found.\n\nWant me to add these to your calendar?";
   assert.equal(offersToCreate(offer), true);
   for (const reply of ["yes", "yes please", "go ahead", "sure"]) {
     assert.equal(detectsSaveRequest(reply, offer), true, reply);
     assert.equal(classifyChatRequest(reply, offer).savesToWorkspace, true, reply);
-    // High is the case that was silently broken.
-    assert.equal(toolsAllowed(applyChatEffort(classifyChatRequest(reply, offer), "high")), true, `${reply} @ high`);
   }
 }
 
@@ -251,11 +241,9 @@ for (const prompt of [
   assert.ok(!plainTurn[0]?.content.includes(SAVE_INSTRUCTION), "an ordinary question does not");
 }
 
-// A save turn on the High dial keeps its tools (applyChatEffort) — and must
-// therefore still carry the instruction that tells it to use them.
+// A save turn carries the instruction that tells it to use the tools.
 {
-  const decision = applyChatEffort(classifyChatRequest("create a test on the krebs cycle"), "high");
-  assert.equal(toolsAllowed(decision), true, "High must not strip a save's tools");
+  const decision = classifyChatRequest("create a test on the krebs cycle");
   const messages = buildWireMessages([], "create a test on the krebs cycle", decision);
   assert.ok(messages[0]?.content.includes(SAVE_INSTRUCTION));
 }

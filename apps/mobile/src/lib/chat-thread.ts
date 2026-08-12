@@ -409,7 +409,7 @@ export function withAttachmentNote(text: string, title: string | null): string {
  *  is the closest fidelity available: fidelity to web's routing model over
  *  inventing a new one. */
 export function forcedResearchDecision(): ChatRouteDecision {
-  return { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true };
+  return { route: "research", searchWeb: true };
 }
 
 /** Format live web-search results into a context block the model is told to

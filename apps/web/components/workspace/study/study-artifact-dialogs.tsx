@@ -342,7 +342,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 transcript: explainTranscript(turns),
                 why: explainQuestion.why,
               }),
-              { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+              { decision: { route: "conversation", searchWeb: false } },
             );
             const revised = reply.text ? parseRevisedQuestion(reply.text) : null;
             if (!revised) return reply.errorText ?? "The engine couldn't produce a clean rewrite — tell it what to change and try again.";

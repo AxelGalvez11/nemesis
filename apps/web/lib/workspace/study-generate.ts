@@ -42,7 +42,7 @@ export async function generateStudyArtifact(opts: GenerateStudyArtifactOpts): Pr
       ? buildTestGenMessages(opts.material, opts.questionCount ?? 10)
       : buildMindmapGenMessages(opts.material);
     const reply = await postChatCompletion(opts.uid, messages, {
-      decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+      decision: { route: "conversation", searchWeb: false },
     });
     if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't generate that. Try again.");
 

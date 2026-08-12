@@ -5,11 +5,13 @@
 import { assertEquals, assertMatch, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { classifyChatRequest, detectsSaveRequest, routeForTurn, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 
-Deno.test("classifyChatRequest: ordinary conversation stays on the least expensive lane", () => {
-  assertEquals(classifyChatRequest("hello"), { route: "conversation", model: "deepseek-chat", searchWeb: false });
+// 🔴 THE DECISION NO LONGER NAMES A MODEL. It says what KIND of turn this is;
+// the server reads the student's words and picks what answers.
+Deno.test("classifyChatRequest: ordinary conversation is classified as conversation", () => {
+  assertEquals(classifyChatRequest("hello"), { route: "conversation", searchWeb: false });
 });
 
-Deno.test("classifyChatRequest: learning is discipline-neutral and gets Flash thinking, not a premium model request", () => {
+Deno.test("classifyChatRequest: learning is discipline-neutral", () => {
   const prompts = [
     "Explain eigenvectors geometrically",
     "Compare negligence and strict liability",
@@ -21,26 +23,25 @@ Deno.test("classifyChatRequest: learning is discipline-neutral and gets Flash th
   for (const prompt of prompts) {
     const decision = classifyChatRequest(prompt);
     assertEquals(decision.route, "learning", prompt);
-    assertEquals(decision.model, "deepseek-reasoner", prompt);
     assertEquals(decision.searchWeb, false, prompt);
-    assertEquals(decision.reasoningEffort, undefined, prompt);
   }
 });
 
 Deno.test("classifyChatRequest: current-events and explicit-web prompts route to current + searchWeb", () => {
   assertEquals(classifyChatRequest("What is the latest Next.js release?"), {
     route: "current",
-    model: "deepseek-reasoner",
     searchWeb: true,
   });
 });
 
-Deno.test("classifyChatRequest: research prompts get the premium reasoning effort", () => {
+// 🔴 THIS USED TO ASSERT `reasoningEffort: "high"`, and that was the last place
+// the phone ever asked for deep thinking — through a field the composer's dial
+// stripped on every real turn. Effort is the server's judgement now
+// (supabase/functions/_shared/work-class.ts); the route only picks the framing.
+Deno.test("classifyChatRequest: research prompts keep the research framing", () => {
   assertEquals(classifyChatRequest("Write a literature review with peer-reviewed sources about urban heat islands"), {
     route: "research",
-    model: "deepseek-reasoner",
     searchWeb: true,
-    reasoningEffort: "high",
   });
 });
 
@@ -77,20 +78,17 @@ const SAVE_PROMPTS = [
   "add my exam to my calendar",
 ];
 
-Deno.test("a save request routes to the model whose tools work", () => {
+Deno.test("a save request is classified as a save, so its instruction rides", () => {
   for (const prompt of SAVE_PROMPTS) {
     assertEquals(detectsSaveRequest(prompt), true, prompt);
     const decision = classifyChatRequest(prompt);
-    assertEquals(decision.model, "deepseek-chat", prompt);
     assertNotEquals(decision.route, "conversation", prompt);
-    assertEquals(decision.reasoningEffort, undefined, prompt);
     assertEquals(decision.savesToWorkspace, true, prompt);
   }
 });
 
-Deno.test("a save about a current topic keeps live search AND the tools model", () => {
+Deno.test("a save about a current topic keeps live search", () => {
   const decision = classifyChatRequest("make flashcards about the latest COVID variants");
-  assertEquals(decision.model, "deepseek-chat");
   assertEquals(decision.searchWeb, true);
   assertEquals(decision.savesToWorkspace, true);
 });
@@ -109,7 +107,7 @@ Deno.test("ordinary learning and research requests are not saves", () => {
   ]) {
     assertEquals(detectsSaveRequest(prompt), false, prompt);
   }
-  assertEquals(classifyChatRequest("explain how beta blockers work").model, "deepseek-reasoner");
+  assertEquals(classifyChatRequest("explain how beta blockers work").route, "learning");
   assertEquals(classifyChatRequest("explain how beta blockers work").savesToWorkspace, undefined);
 });
 
@@ -118,15 +116,12 @@ Deno.test("a reply to the test-preference question keeps the original save route
     "Before I build the test: what do you want for how many questions, the difficulty (easy, medium, hard, or mixed), and the question types (multiple choice, true/false, or a mix)?";
   assertEquals(detectsSaveRequest("20, hard, with a mix", prior), true);
   const decision = classifyChatRequest("20, hard, with a mix", prior);
-  assertEquals(decision.model, "deepseek-chat");
   assertEquals(decision.savesToWorkspace, true);
 });
 
 // ── Deep research toggle vs a save ───────────────────────────────────────────
 
 const FORCED_RESEARCH: ChatRouteDecision = {
-  model: "deepseek-reasoner",
-  reasoningEffort: "high",
   route: "research",
   searchWeb: true,
 };
@@ -140,9 +135,7 @@ Deno.test("a save beats the Deep research toggle, because research carries no to
   // "make me flashcards" is what they typed a second ago. Left the other way
   // round, the turn returns an essay and saves nothing, with no way to tell why.
   const decision = routeForTurn("make me flashcards on beta blockers", FORCED_RESEARCH);
-  assertEquals(decision.model, "deepseek-chat");
   assertEquals(decision.savesToWorkspace, true);
-  assertEquals(decision.reasoningEffort, undefined);
 });
 
 Deno.test("with the toggle off, routeForTurn is just the classifier", () => {

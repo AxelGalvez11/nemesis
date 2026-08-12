@@ -22,7 +22,6 @@ import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calenda
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { executeAgentTool } from "@/lib/workspace/agent-tools";
 import type { PendingDelete } from "@nemesis/shared";
-import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { groupTurns } from "@/lib/workspace/session-turns";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 import { useRecordingArtifacts } from "@/lib/workspace/recording-artifacts";
@@ -128,9 +127,6 @@ export function SessionChat() {
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
-  // A ref, not state: the effort in force when a turn is SENT is what matters,
-  // and re-rendering the thread because a dropdown moved would be waste.
-  const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
   /** What the thinking strip says right now — a live phrase from the model's
    *  streamed thoughts or a tool verb ("Searching the web"). Keyed to a
@@ -238,7 +234,6 @@ export function SessionChat() {
   const turnError: TurnError | null = error && error.sessionId === selectedId ? { kind: error.kind, text: error.text } : null;
 
   const runTurn = useCallback(async (targetUid: string, targetId: string, history: SessionMessage[], text: string) => {
-    const effort = effortRef.current;
     turnStartedAt.current.set(targetId, Date.now());
     sessionsStore.setWorking(targetId, true);
 
@@ -249,7 +244,7 @@ export function SessionChat() {
     try {
       const reply = await sendChatTurn(targetUid, history, text, controller.signal, (_delta, accumulated) => {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
-      }, effort, (label) => {
+      }, (label) => {
         setLiveActivity(label ? { label, sessionId: targetId } : null);
       });
       if (reply.text) {
@@ -882,7 +877,6 @@ export function SessionChat() {
             busy={busy}
             centered={isFreshThread && composerMode === "chat"}
             mode={composerMode}
-            onEffortChange={(effort) => { effortRef.current = effort; }}
             onModeChange={handleModeChange}
             onRecordingChange={handleRecordingChange}
             onRecordingPauseToggle={handleRecordingPauseToggle}

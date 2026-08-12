@@ -57,8 +57,8 @@ export function NotebookProjectMenu() {
     setFinding(true);
     try {
       if (!uid) throw new Error("Sign in to find sources.");
-      const result = await searchWebContext(uid, topic);
-      const candidates = result.sources.filter((source) => source.url).slice(0, MAX_FOUND_SOURCES);
+      const found = await searchWebContext(uid, topic);
+      const candidates = found.filter((source) => source.url).slice(0, MAX_FOUND_SOURCES);
       if (candidates.length === 0) throw new Error("No sources found — try a more specific topic.");
       let added = 0;
       for (const candidate of candidates) {

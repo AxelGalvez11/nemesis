@@ -56,6 +56,9 @@ const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nem
 // this file deliberately keeps its own copy of the transport (see the header comment).
 const CLIENT_HEADER = { "X-Nemesis-Client": "ios" } as const;
 
+/** The model name on the wire. A CONSTANT — see api/chat.ts. */
+const WIRE_MODEL = "deepseek-chat";
+
 /** PostgREST "relation does not exist" — lets reads degrade to empty instead of throwing
  *  (mirrors apps/web/lib/notebooks/api.ts's isMissingRelation guard). */
 function isMissingRelation(error: { code?: string } | null): boolean {
@@ -310,8 +313,6 @@ export interface NotebookChatReply {
 async function postNotebookCompletion(
   uid: string,
   wireMessages: WireMsg[],
-  model: string,
-  reasoningEffort: "high" | undefined,
   onDelta?: CompletionDeltaHandler,
 ): Promise<NotebookChatReply> {
   let key = await deviceKey(uid);
@@ -319,9 +320,8 @@ async function postNotebookCompletion(
 
   const payload = JSON.stringify({
     messages: wireMessages,
-    model,
+    model: WIRE_MODEL,
     stream: true,
-    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   });
   const call = (bearer: string) =>
     expoFetch(`${LLM_BASE}/v1/chat/completions`, {
@@ -373,7 +373,7 @@ export async function sendNotebookMessage(opts: SendNotebookMessageOpts): Promis
     sources: opts.sources,
     userText: opts.userText,
   });
-  return postNotebookCompletion(opts.uid, wire, decision.model, decision.reasoningEffort, opts.onDelta);
+  return postNotebookCompletion(opts.uid, wire, opts.onDelta);
 }
 
 /** Move a chat thread's conversation into a notebook as a notebook chat (owner

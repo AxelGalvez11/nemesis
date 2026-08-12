@@ -70,6 +70,14 @@ export const WEB_EXTRA_AGENT_TOOL_NAMES = [
   // model. It reads as missing DATA, and the model reports it as loss.
   "list_recordings",
   "read_recording_transcript",
+  // 🔴 THE OUTSIDE WORLD, AS A TOOL. Every other name on this list reaches
+  // something of the student's own; the live web was the one source the model
+  // could not choose, because a keyword list chose it before the turn started
+  // and pasted the results in. That asymmetry WAS the routing bug: private
+  // sources were selected by a model that can read a question, and the public
+  // one by a regex that cannot. Sits with its siblings so the model weighs
+  // "their material or the world?" as a single decision.
+  "search_web",
 ] as const;
 
 export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [

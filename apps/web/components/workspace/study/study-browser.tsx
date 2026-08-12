@@ -255,7 +255,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
       } else {
         if (!userId) throw new Error("Sign in to use AI tagging.");
         const reply = await postChatCompletion(userId, buildAutoTagMessages(targets), {
-          decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+          decision: { route: "conversation", searchWeb: false },
         });
         if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't tag these cards. Try again.");
         assigned = parseAutoTags(reply.text, targets.map((card) => card.id));

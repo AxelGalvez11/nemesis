@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutputs, completionModel, isFallbackModel } from "@/lib/workspace/chat-api";
 import { WRITING_VOICE } from "@nemesis/shared";
-import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -69,13 +68,20 @@ test("a turn with tools is told to show the card, not reprint what it saved", ()
 });
 
 test("buildWireMessages derives the tools claim from the route, not from hope", () => {
-  // "explain osmosis" routes to the reasoner, which carries no tools.
-  const learning = classifyChatRequest("explain osmosis");
-  assert.equal(toolsAllowed(learning), false);
-  assert.match(systemText("explain osmosis"), /This turn carries no tools/);
-  // A save keeps deepseek-chat, so the tools paragraph is true and stays.
-  assert.equal(toolsAllowed(classifyChatRequest("make me flashcards on ACE inhibitors")), true);
-  assert.match(systemText("make me flashcards on ACE inhibitors"), /through your tools/);
+  // Every route carries tools now — the old restriction was our own dropped
+  // `reasoning_content`, not a limit of the model — so every route gets both the
+  // paragraph that says so and the policy telling it where an answer belongs.
+  for (const ask of ["explain osmosis", "make me flashcards on ACE inhibitors"]) {
+    assert.match(systemText(ask), /through your tools/, ask);
+    assert.match(systemText(ask), /DECIDE WHERE THE ANSWER LIVES/, ask);
+  }
+  // The claim is still DERIVED, which is the property this test is named for: a
+  // turn built without tools says so plainly and promises no lookup it cannot
+  // run. That is what stops the model writing "[Calling tool: ...]" as prose.
+  const noTools = buildWireMessages([], "explain osmosis", classifyChatRequest("explain osmosis"), false)
+    .filter((wire) => wire.role === "system").map((wire) => wire.content).join("\n");
+  assert.match(noTools, /This turn carries no tools/);
+  assert.doesNotMatch(noTools, /DECIDE WHERE THE ANSWER LIVES/);
 });
 
 // Importing a real syllabus calls add_calendar_event once per date. Measured
