@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -283,4 +284,22 @@ test("🔴 the lane declares a deterministic temperature, and it is zero", () =>
   // fold between two runs — one reporting 0 fabricated edges and the next 3. A zero-tolerance
   // criterion cannot be checked against a sampled result.
   assert.equal(CAUSAL_EXTRACTION_TEMPERATURE, 0);
+});
+
+test("🔴 every caller of this lane sends temperature 0, not just the benchmark", () => {
+  // Knowledge extraction is STATE CREATION. The same source imported twice must not produce
+  // different durable knowledge because sampling differed — a learner would find facts appearing
+  // and disappearing between imports of one file, with nothing to explain it.
+  //
+  // Asserted across every caller rather than inside one, because the eval harness getting this
+  // right while a production path forgot is exactly how the 12.8% flip rate would come back
+  // invisibly: the benchmark would stay reproducible while production quietly was not.
+  const callers = ["../../scripts/eval/causal-eval.mts"];
+  for (const caller of callers) {
+    const source = readFileSync(new URL(caller, import.meta.url), "utf8");
+    assert.ok(
+      /temperature:\s*CAUSAL_EXTRACTION_TEMPERATURE/.test(source),
+      `${caller} must send CAUSAL_EXTRACTION_TEMPERATURE, never a literal or nothing`,
+    );
+  }
 });

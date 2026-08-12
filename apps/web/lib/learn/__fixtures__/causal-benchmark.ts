@@ -82,6 +82,26 @@ export const BENCHMARK_DOCUMENTS: string[] = [...new Set(CAUSAL_BENCHMARK.map((i
  * Endpoints are matched by containment after normalisation, never by exact string, so an extractor
  * that trims an article still passes.
  */
+/**
+ * 🔴 MATERIAL MODALITY, NOT EVERY AUXILIARY VERB.
+ *
+ * The zero-tolerance criterion is semantic STRENGTHENING — storing a claim broader or more certain
+ * than the source made it. These change the proposition and must survive:
+ *
+ *   epistemic    "may", "might", "can" (as possibility), "likely", "possibly", "generally"
+ *   conditional  "when X", "under Y", "in the presence of Z", "until saturation"
+ *   partial      "contributed to" — the cause was contributory, not sufficient
+ *
+ * These do NOT change the proposition, and demanding them would make the extractor preserve
+ * grammatical surface form rather than meaning:
+ *
+ *   tense/aspect  "will lead to" → `causes` loses nothing; the claim is the same claim
+ *
+ * 🔴 c020 AND c037 WERE ORIGINALLY LABELLED WITH `"will"` AND THAT WAS A BENCHMARK DEFECT, not an
+ * extractor one. Scoring them as modality loss would have driven a prompt change teaching the model
+ * to copy auxiliaries — surface fidelity bought at the cost of the thing actually being measured.
+ * Relabelled 2026-08-12 rather than tuning the prompt to satisfy them.
+ */
 export interface ExpectedEdge {
   id: string;
   /** A distinctive phrase the extracted cause must contain. */
@@ -89,20 +109,23 @@ export interface ExpectedEdge {
   effect: string;
   relation: CausalRelationKind;
   negated: boolean;
-  /** The hedge the source used, when it hedged. `null` asserts there is none to find. */
+  /** MATERIAL qualification only — see above. `null` asserts the claim is unqualified in the sense
+   *  that matters, even where the sentence carries tense markers. */
   qualifier: string | null;
 }
 
 export const EXPECTED_EDGES: ExpectedEdge[] = [
   // ── plain assertions ──
-  { cause: "combined sequences", effect: "phenotype", id: "c020", negated: false, qualifier: "will", relation: "causes" },
+  // 🔴 `qualifier: null` DESPITE "will" — future tense, not modality. See ExpectedEdge.
+  { cause: "combined sequences", effect: "phenotype", id: "c020", negated: false, qualifier: null, relation: "causes" },
   { cause: "nucleotide switch", effect: "stop codon", id: "c036", negated: false, qualifier: null, relation: "causes" },
   {
     cause: "incorporation of a stop codon",
     effect: "termination",
     id: "c037",
     negated: false,
-    qualifier: "will",
+    // 🔴 `null` DESPITE "will" — the same relabel as c020, and the reason this rule is written down.
+    qualifier: null,
     relation: "causes",
   },
   // ── an arrow that IS causal, unlike c048's range ──
