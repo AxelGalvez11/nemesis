@@ -361,10 +361,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // reported as "file upload failed". What fails here costs adaptation, not the lesson.
           if (canonical.ok && extracted.librarySourceId) {
             void (async () => {
+              // No bypass here on purpose: attaching a file is not a request to run the policy on
+              // material it cannot teach, so the ordinary rule decides whether anything is stored.
               const resolved = await ensureKnowledgeForCanvas(uid, latest.current);
               canvasCapture("knowledge_extracted", latest.current, {
                 objectives: resolved.objectives.length,
                 outcome: resolved.outcome,
+                // 🔴 LOGGED, BECAUSE `objectives: 0` NO LONGER MEANS EXTRACTION FOUND NOTHING.
+                // Knowledge is stored only for a canvas the policy owns, so a mixed document now
+                // reports zero objectives having extracted plenty — and without these three fields
+                // that reads in production as a broken extractor rather than a deliberate refusal.
+                owned: resolved.ownership.owns,
+                refusal: resolved.ownership.refusal,
+                substantiveUnits: resolved.coverage.substantive,
+                unrepresentedUnits: resolved.coverage.unrepresented,
               });
             })();
           }

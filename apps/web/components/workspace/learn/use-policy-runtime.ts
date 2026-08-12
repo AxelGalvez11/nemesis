@@ -23,6 +23,8 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
 import type { LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
 import { ensureKnowledgeForCanvas, type CanvasKnowledge } from "@/lib/learn/canvas-knowledge";
+import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
+import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
@@ -32,7 +34,7 @@ import {
   unobtainedEvidence,
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
-import { canUsePolicyRuntime, decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
+import { decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
 import { isAdmissionOfNotKnowing } from "@/lib/learn/response-admission";
 import { THINKING_VISIBLE_AFTER_MS, type ThinkingPhase } from "@/lib/learn/thinking-phases";
 
@@ -65,6 +67,17 @@ export interface PolicyRuntime {
   /** Why this canvas has the objectives it has — stated, so "nothing to teach" and "we could not
    *  read the file" stay different facts. */
   outcome: CanvasKnowledge["outcome"];
+  /**
+   * This runtime is on a canvas it does not own, because someone asked for it.
+   *
+   * 🔴 CARRIED TO THE SCREEN, NOT KEPT INTERNAL. A bypassed session that looked identical to a real
+   * one is precisely what made the old `?policy=1` untrustworthy: "is ownership working?" could not
+   * be answered by using the product. Anything showing this runtime must say when it was forced.
+   */
+  forced: boolean;
+  /** What the canvas is made of and what supported knowledge accounts for — the ownership numbers,
+   *  so a forced session can show WHY it would otherwise have been refused. */
+  coverage: CanvasKnowledge["coverage"];
   submit: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
   admitUnknown: () => Promise<void>;
   /** Read the correction, then let the policy decide again from the same state. */
@@ -73,6 +86,9 @@ export interface PolicyRuntime {
 
 /** The sources this canvas can produce durable knowledge from. Used as an effect dependency so
  *  attaching material re-resolves, and re-rendering does not. */
+/** A canvas with no sources at all, before anything has been read. Nothing is owned from here. */
+const EMPTY_COVERAGE = emptyCoverage(0);
+
 function durableSignature(canvas: LearningCanvas): string {
   return canvas.sources
     .map((source) => source.librarySourceId)
@@ -81,12 +97,28 @@ function durableSignature(canvas: LearningCanvas): string {
     .join(",");
 }
 
-export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): PolicyRuntime {
+/**
+ * @param override What the URL asked for, if anything. `null` is the ordinary case.
+ *
+ * 🔴 THERE IS NO OPT-IN HERE ANY MORE. Ownership is decided from what the canvas's sources contain
+ * — see `policyOwnsCanvas` — so an ordinary visit passes `null` and coverage answers. The two
+ * things left are a stop and a bypass, and the bypass DECLARES ITSELF all the way to the screen:
+ * a forced session that looked like an owned one would make "did ownership work?" unanswerable by
+ * looking, which is exactly what the old `?policy=1` cost.
+ */
+export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverride): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
+  const enabled = policyAllowed(override);
+  const forced = policyForced(override);
 
   const [status, setStatus] = useState<PolicyRuntime["status"]>(enabled ? "loading" : "inactive");
-  const [knowledge, setKnowledge] = useState<CanvasKnowledge>({ objectives: [], outcome: "no-durable-source" });
+  const [knowledge, setKnowledge] = useState<CanvasKnowledge>({
+    coverage: EMPTY_COVERAGE,
+    objectives: [],
+    outcome: "no-durable-source",
+    ownership: { coverage: EMPTY_COVERAGE, owns: false, refusal: "source-not-read" },
+  });
   const [evidence, setEvidence] = useState<LearnerEvidence[]>([]);
   const [prompt, setPrompt] = useState<RetrievalPrompt | null>(null);
   const [feedback, setFeedback] = useState<PolicyRuntime["feedback"]>(null);
@@ -113,13 +145,31 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
     let live = true;
     setStatus("loading");
     void (async () => {
-      const resolved = await ensureKnowledgeForCanvas(uid, canvas, (step) => {
-        if (live) setPhase(step);
+      const resolved = await ensureKnowledgeForCanvas(uid, canvas, {
+        bypassOwnership: forced,
+        onPhase: (step) => {
+          if (live) setPhase(step);
+        },
       });
       if (!live) return;
       setKnowledge(resolved);
       const supported = supportedObjectives(resolved.objectives);
-      if (!canUsePolicyRuntime(resolved.objectives)) {
+      // 🔴 ASKED OF THE CANVAS'S MATERIAL, NOT OF WHAT CAME OUT OF IT. The decision is made in
+      // `policyOwnsCanvas` from what every source is made of, so a document holding one glossary
+      // table and forty pages of prose keeps the runtime that can show the prose.
+      //
+      // 🔴 AND THE BYPASS DOES NOT REWRITE THE DECISION, IT OVERRIDES ACTING ON IT. `ownership.owns`
+      // stays false on a forced canvas, and the surface reads it to say so. Flipping the verdict
+      // itself would erase the only evidence that this session was not the ordinary path.
+      if (!resolved.ownership.owns && !forced) {
+        setPhase(null);
+        setStatus("inactive");
+        return;
+      }
+      // 🔴 A FORCED SESSION WITH NOTHING SUPPORTED IN IT HAS NO QUESTION TO ASK. Bypassing coverage
+      // cannot conjure an association out of a lecture, so this refuses rather than painting an
+      // empty runtime over a document the learner could otherwise read.
+      if (supported.length === 0) {
         setPhase(null);
         setStatus("inactive");
         return;
@@ -138,7 +188,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
     // 🔴 Keyed on the SOURCES, not on `canvas`. The canvas object is replaced on every keystroke of
     // a rename and on every block edit; depending on it would re-resolve knowledge continuously.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, sources, uid]);
+  }, [enabled, forced, sources, uid]);
 
   const supported = useMemo(() => supportedObjectives(knowledge.objectives), [knowledge]);
 
@@ -310,9 +360,13 @@ export function usePolicyRuntime(canvas: LearningCanvas, enabled: boolean): Poli
   return {
     acknowledge,
     admitUnknown,
+    coverage: knowledge.coverage,
     decision,
     error,
     feedback,
+    // 🔴 FORCED MEANS "RUNNING WITHOUT OWNERSHIP", NOT "SOMEONE TYPED force". On a canvas the
+    // policy owns anyway, the parameter changed nothing and there is nothing to disclose.
+    forced: forced && !knowledge.ownership.owns,
     judging,
     outcome: knowledge.outcome,
     phase,

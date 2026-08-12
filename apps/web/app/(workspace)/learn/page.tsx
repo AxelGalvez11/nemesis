@@ -22,6 +22,7 @@ import { Suspense } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasHome } from "@/components/workspace/learn/canvas-home";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
+import { policyOverrideFrom } from "@/lib/learn/policy-override";
 
 function LearnSurface() {
   // A canvas is addressable by `?c=<id>` rather than by path segment, because the shell's
@@ -30,18 +31,19 @@ function LearnSurface() {
   const params = useSearchParams();
   const canvasId = params.get("c");
   const ask = params.get("ask");
-  // The teaching-policy runtime, asked for explicitly per canvas.
+  // What the URL is still allowed to say about the teaching-policy runtime: stop it, or bypass
+  // ownership deliberately. Neither is an opt-in — see policy-override.ts, where the rules live and
+  // are tested, rather than as an expression here that nothing could assert.
   //
-  // 🔴 A URL OPT-IN RATHER THAN A DEPLOY-TIME FLAG, ON PURPOSE. It needs no environment variable to
-  // exercise in production, it cannot switch a real learner over by accident, and it is visible in
-  // the address bar — so "which runtime was this?" is answerable afterwards instead of being
-  // inferred from behaviour. It goes when this stops being the new runtime.
-  const policy = params.get("policy") === "1";
+  // 🔴 DELIBERATELY NOT AN ENVIRONMENT VARIABLE. This file is a client component, so a flag here
+  // would have to be `NEXT_PUBLIC_*`, which Next inlines at BUILD time — turning "emergency
+  // rollback" into a redeploy, against a Vercel account with a daily build cap.
+  const policyOverride = policyOverrideFrom(params.get("policy"));
   const { session } = useAuth();
 
   // No canvas named and nothing asked: this is the landing surface.
   if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
-  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyRequested={policy} />;
+  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyOverride={policyOverride} />;
 }
 
 export default function LearnPage() {

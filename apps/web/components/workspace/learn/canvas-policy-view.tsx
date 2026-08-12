@@ -31,11 +31,39 @@ function screenKey(runtime: PolicyRuntime): string {
 
 export function CanvasPolicyView({ runtime }: { runtime: PolicyRuntime }) {
   return (
-    // 🔴 OPACITY ONLY, 140ms, AND NO TRANSFORM. Someone drilling fifty facts crosses this boundary
-    // fifty times; a slide or a scale would become the dominant impression of the surface and make
-    // retrieval feel like an interface being waited on rather than a question being answered.
-    <div className="canvas-swap min-h-full" key={screenKey(runtime)}>
-      <PolicyScreen runtime={runtime} />
+    <>
+      {runtime.forced && <ForcedNotice runtime={runtime} />}
+      {/* 🔴 OPACITY ONLY, 140ms, AND NO TRANSFORM. Someone drilling fifty facts crosses this
+          boundary fifty times; a slide or a scale would become the dominant impression of the
+          surface and make retrieval feel like an interface being waited on rather than a question
+          being answered. */}
+      <div className="canvas-swap min-h-full" key={screenKey(runtime)}>
+        <PolicyScreen runtime={runtime} />
+      </div>
+    </>
+  );
+}
+
+/**
+ * This session is running on a canvas the policy does not own.
+ *
+ * 🔴 IT IS ON SCREEN BECAUSE A BYPASS THAT LOOKED LIKE THE PRODUCT WORKING WOULD BE WORSE THAN NO
+ * BYPASS AT ALL. The whole reason the previous `?policy=1` had to go is that a forced session and a
+ * real one were indistinguishable, so "is ownership working?" could not be answered by using the
+ * thing. This says which it is, and how much of the canvas is being hidden to do it.
+ *
+ * 🔴 AND IT DOES NOT VIOLATE "THE QUESTION IS THE WHOLE SCREEN". It appears only when someone has
+ * deliberately typed `?policy=force`, so it can never reach a learner drilling facts. It sits above
+ * the fade rather than inside it, so it does not re-animate between questions.
+ */
+function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
+  const { unrepresented } = runtime.coverage;
+  return (
+    <div className="pointer-events-none sticky top-0 z-30 flex justify-center pt-1">
+      <p className="rounded-full bg-(--ui-bg-warning,#3a2f14) px-3 py-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+        Ownership bypassed —{" "}
+        {unrepresented === 1 ? "1 part of this canvas is" : `${unrepresented} parts of this canvas are`} hidden
+      </p>
     </div>
   );
 }
