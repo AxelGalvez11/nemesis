@@ -164,6 +164,17 @@ export function storedDocumentModel(value: unknown): DocumentModel | null {
 
 const FORMATS = new Set(["pdf", "docx", "pptx", "image"]);
 const UNIT_KINDS = new Set(["page", "slide", "sheet", "body", "image"]);
+/**
+ * 🔴 THIS LIST IS A BOUNDARY, AND AN UNKNOWN KIND KILLS THE WHOLE MODEL.
+ * `readDocumentModel` returns null for the entire document when one block fails
+ * here, and null is indistinguishable from "this parse predates the canonical
+ * model" — so the failure reports as old data rather than as a fault. That is
+ * exactly how three complete Word documents were lost once already.
+ *
+ * Adding a member to `DocBlockKind` without adding it here is therefore not a
+ * missing feature, it is silent data loss. `document-envelope.test.ts` asserts
+ * this set and the union agree, so the compiler and a test both object.
+ */
 const BLOCK_KINDS = new Set([
   "heading",
   "paragraph",
@@ -173,5 +184,7 @@ const BLOCK_KINDS = new Set([
   "caption",
   "equation",
   "note",
+  "pageHeader",
+  "pageFooter",
 ]);
 

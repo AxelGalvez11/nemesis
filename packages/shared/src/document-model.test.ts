@@ -146,9 +146,17 @@ test("a figure keeps its caption and its description apart", () => {
   assert.equal(caption, "[Figure: Figure 2. Plasma concentration.]\nTwo curves crossing at 40 minutes.");
 });
 
-test("an unexamined figure says so rather than reading as empty", () => {
+test("🔴 an unexamined figure reads as EMPTY — it does not narrate its own absence", () => {
+  // This asserted the opposite until 2026-08-11: that the block rendered as
+  // "[Figure — not examined]" so it would not "read as empty". The intent was
+  // disclosure, but the effect was a sentence no author wrote travelling into
+  // chunks, embeddings, retrieval and chat as the document's own words —
+  // measured at 8,135 occurrences across 769 of 2,036 benchmark documents.
+  //
+  // Empty is the honest rendering. The disclosure lives in `coverage` and in
+  // `figureFacts(...).examined`, where nothing can mistake it for the source.
   const text = blockToText({ figure: {}, headingPath: [], id: "b0", kind: "figure", text: "", unit: 0 });
-  assert.equal(text, "[Figure — not examined]");
+  assert.equal(text, "");
 });
 
 test("a list item keeps the marker the numbering resolved", () => {

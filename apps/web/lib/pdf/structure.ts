@@ -41,6 +41,7 @@
 
 import {
   buildDocument,
+  classifyFurniture,
   projectCells,
   type DocBlock,
   type DocRect,
@@ -60,6 +61,7 @@ import { latticeRegions, type LatticeBox } from "./table-lattice";
 import { cellsOf, trimEmptyCellColumns } from "./table-spans";
 import { validateTable, type TableRejection } from "./table-validate";
 import {
+  columnSplit,
   groupLines,
   groupParagraphs,
   headingLevels,
@@ -676,7 +678,16 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
   let title: string | null = null;
 
   pages.forEach((page, unit) => {
-    const lines = readingOrder(groupLines(page.items), page.width);
+    // 🔴 FIND THE GUTTER BEFORE ANYTHING IS FUSED. `columnSplit` refuses any
+    // boundary that a line crosses, so asking it after `groupLines` asks it
+    // about lines that may already straddle the very gutter being looked for.
+    // Raw items cannot straddle it — a run of text sits in one column — so this
+    // is the only point where the question can be answered honestly.
+    //
+    // A page with no real gutter returns null and `groupLines` behaves exactly
+    // as before.
+    const gutter = columnSplit(page.items, page.width);
+    const lines = readingOrder(groupLines(page.items, gutter), page.width);
     const groups = groupParagraphs(lines);
     const levels = headingLevels(groups);
 
@@ -737,7 +748,12 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
     }
   });
 
-  return buildDocument({
+  // 🔴 NAMED AFTER THE MODEL EXISTS, BECAUSE THE EVIDENCE IS CROSS-PAGE. Running
+  // furniture is only visible by comparing every page against every other, which
+  // is a property of the whole document rather than of the page being read. This
+  // relabels blocks and changes nothing else — text, rect, unit, id and locator
+  // are carried through, so a citation written against this parse still resolves.
+  return classifyFurniture(buildDocument({
     blocks,
     format: "pdf",
     title,
@@ -746,7 +762,7 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
       kind: "page",
       size: { height: page.height, width: page.width },
     })),
-  });
+  }));
 }
 
 /** Re-exported so callers measuring a page do not reimplement the union. */

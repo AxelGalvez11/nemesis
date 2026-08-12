@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDocument, documentToText, projectCells, resolveCell } from "./document-model.ts";
+import { buildDocument, documentToText, projectCells, resolveCell, type DocBlockKind } from "./document-model.ts";
 import {
   readDocumentModel,
   readStructureEnvelope,
@@ -207,4 +207,32 @@ test("🔴 merged cells survive the storage boundary, spans and all", () => {
   assert.equal(resolveCell(table, 0, 1)?.text, "Week 1", "the covered half of the banner still resolves");
   assert.equal(resolveCell(table, 2, 0)?.text, "Dr. Farrar", "the second session still knows its instructor");
   assert.deepEqual(table.rows, projectCells(table.cells!), "rows must remain exactly the projection");
+});
+
+test("🔴 EVERY DocBlockKind survives the envelope — an unknown one kills the whole model", () => {
+  // `readDocumentModel` returns null for the ENTIRE document when one block's
+  // kind is not in its allow-list, and null reads as "predates the canonical
+  // model" rather than as an error. Three complete Word documents were lost that
+  // way. So every member of the union has to be round-tripped, not just the ones
+  // someone remembered.
+  const kinds: DocBlockKind[] = [
+    "heading", "paragraph", "listItem", "table",
+    "figure", "caption", "equation", "note",
+    "pageHeader", "pageFooter",
+  ];
+  const model = buildDocument({
+    blocks: kinds.map((kind) => ({ headingPath: [], kind, text: `a ${kind}`, unit: 0 })),
+    format: "pdf",
+    title: "T",
+    units: [{ index: 0, kind: "page" }],
+  });
+  const read = readStructureEnvelope(
+    JSON.parse(JSON.stringify(structureEnvelope({ model, text: "…", title: "T" }))),
+  );
+  assert.ok(read && read.shape === "units-blocks", "the model must survive at all");
+  assert.deepEqual(
+    (read.model as typeof model).blocks.map((b) => b.kind),
+    kinds,
+    "and every kind must come back as itself",
+  );
 });

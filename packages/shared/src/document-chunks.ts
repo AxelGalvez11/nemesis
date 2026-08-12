@@ -23,6 +23,7 @@
  * PURE. No tokenizer, no embedding, no storage.
  */
 
+import { findFurniture } from "./document-furniture.ts";
 import {
   blockToText,
   type DocBlock,
@@ -116,7 +117,16 @@ export function chunkDocument(
     length = 0;
   };
 
+  // 🔴 RUNNING FURNITURE IS NOT CHUNKED. A course name printed on thirty pages
+  // becomes thirty near-identical chunks that compete with real content for
+  // every retrieval slot, and "Page 3 of 30" answers no question anyone asks.
+  // The blocks are NOT deleted — they stay in the model, addressable and
+  // citable, and `documentFurniture()` hands them back to anyone who wants the
+  // running title.
+  const furniture = findFurniture(doc);
+
   for (const block of doc.blocks) {
+    if (furniture.has(block.id) || block.kind === "pageHeader" || block.kind === "pageFooter") continue;
     const text = blockToText(block);
     if (text.trim().length === 0) continue;
 

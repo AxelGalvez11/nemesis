@@ -545,9 +545,15 @@ export function inventoryFacts(doc: DocumentModel): DocFact[] {
     if (block.kind === "figure") {
       out.push(
         fact(doc, block, {
+          // 🔴 `examined` IS WHERE "NOBODY LOOKED AT THIS" LIVES — not in `text`.
+          // The text used to fall back to "[Figure — not examined]", so a fact
+          // about the parser's coverage was written into a field that means
+          // "what this figure says", and every reader of `.text` inherited a
+          // sentence the document does not contain. Absent text with
+          // `examined: false` says the same thing without forging prose.
           examined: Boolean(block.figure?.description),
           kind: "figure",
-          text: block.text.trim() || block.figure?.description?.trim() || "[Figure — not examined]",
+          text: block.text.trim() || block.figure?.description?.trim() || "",
         }),
       );
     } else if (block.kind === "table" && block.table) {

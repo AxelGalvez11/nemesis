@@ -118,15 +118,34 @@ test("chunk indexes are contiguous from zero", () => {
   assert.deepEqual(chunks.map((c) => c.index), chunks.map((_, i) => i));
 });
 
-// 🔴 AN UNEXAMINED FIGURE MUST STILL BE RETRIEVABLE.
-// It is the marker saying something is missing here; a chunker that dropped it
-// would remove the only trace of the gap from the very layer that answers.
-test("an unexamined figure survives chunking as its own retrievable piece", () => {
+// 🔴 AN UNEXAMINED FIGURE CONTRIBUTES NO TEXT TO RETRIEVAL.
+//
+// This test used to assert the opposite — that "[Figure — not examined]"
+// survived into a chunk, on the reasoning that it was "the only trace of the
+// gap in the very layer that answers". That reasoning inverts. A chunk is
+// retrievable, so the sentence came back to a learner as something the document
+// said. Making a coverage fact searchable prose does not disclose the gap; it
+// launders the gap into content. The disclosure belongs in `coverage`, which
+// nobody can mistake for the author's words.
+test("an unexamined figure contributes no synthetic prose to any chunk", () => {
   const built = doc([
     para("Before the figure."),
     { figure: {}, headingPath: [], kind: "figure", text: "", unit: 0 },
     para("After the figure."),
   ]);
   const chunks = chunkDocument(built);
-  assert.ok(chunks.some((c) => c.text.includes("[Figure — not examined]")));
+  const all = chunks.map((c) => c.text).join("\n");
+  assert.ok(!/not examined/i.test(all), "no invented sentence reaches retrieval");
+  assert.ok(!/\[Figure/i.test(all), "and no invented marker either");
+  // The real text on both sides is untouched — this removes an addition, never content.
+  assert.ok(all.includes("Before the figure."));
+  assert.ok(all.includes("After the figure."));
+});
+
+test("a figure the document captioned still reaches retrieval — that IS source text", () => {
+  const built = doc([
+    { figure: {}, headingPath: [], kind: "figure", text: "Figure 3. Renal clearance over time.", unit: 0 },
+  ]);
+  const all = chunkDocument(built).map((c) => c.text).join("\n");
+  assert.ok(all.includes("Renal clearance over time."), "a caption is what the document says");
 });

@@ -81,7 +81,7 @@ export function unionBox(boxes: readonly Box[]): Box {
  * ordinary, producers emit text in font order all the time — still lands on its
  * own line rather than starting a new one.
  */
-export function groupLines(items: readonly TextItem[]): TextLine[] {
+export function groupLines(items: readonly TextItem[], gutter: number | null = null): TextLine[] {
   const sorted = [...items]
     .filter((i) => i.text.length > 0)
     .sort((a, b) => a.y - b.y || a.x - b.x);
@@ -104,7 +104,37 @@ export function groupLines(items: readonly TextItem[]): TextLine[] {
     // order and rejoin inside a paragraph — while under-splitting is the column
     // defect itself.
     const adjacent = last && item.x - right(last) <= Math.max(item.height * LINE_GAP_EMS, 2);
-    if (sameBaseline && adjacent) {
+    // 🔴 AND NOTHING MAY BE JOINED ACROSS A GUTTER THE PAGE ACTUALLY HAS.
+    //
+    // The em-scaled allowance above is a property of the TYPE; a gutter is a
+    // property of the PAGE. So the licence to cross a column boundary grew with
+    // the font size, and the blocks most able to weld two columns together were
+    // the largest ones — the titles and headings that anchor a document. Measured
+    // on a real two-column paper, `groupLines` emitted a single block spanning 75%
+    // of the page: "How Prompt Politeness Affects through a natural language
+    // interface, there are also" — the title's second line married to the right
+    // column's body.
+    //
+    // 🔴 AND THE DAMAGE COMPOUNDED. `columnSplit` rejects any candidate boundary
+    // that a line CROSSES, so one fused line vetoed the whole split, `readingOrder`
+    // fell back to a plain top-to-bottom sort, and the two columns interleaved for
+    // the rest of the page. The fusion destroyed the very evidence the column
+    // detector needed.
+    //
+    // The gutter is therefore measured from RAW ITEMS, before any fusing, and
+    // passed in. Where a page has none — every single-column document — this is
+    // null and the behaviour is unchanged, byte for byte.
+    // 🔴 SYMMETRIC, BECAUSE THE JOIN HAPPENS BACKWARDS AS OFTEN AS FORWARDS.
+    // Items are sorted by y then x, and the two columns' baselines differ by a
+    // few points, so the RIGHT column's run is frequently reached first and the
+    // LEFT column's run then joins onto it right-to-left. Measured on the paper
+    // above: the body run at y=82.8 x=324 is emitted before the title fragment at
+    // y=88.1 x=80.7, and the second joins the first. A one-directional test sees
+    // nothing wrong with that, which is why the first version of this changed no
+    // output at all.
+    const crossesGutter = gutter !== null && last !== undefined
+      && ((right(last) <= gutter && item.x >= gutter) || (last.x >= gutter && right(item) <= gutter));
+    if (sameBaseline && adjacent && !crossesGutter) {
       last.items.push(item);
       last.width = Math.max(right(last), right(item)) - last.x;
       continue;
@@ -158,8 +188,8 @@ function finishLine(line: TextLine): TextLine {
  * two-column page with a full-width heading has two clusters and must still be
  * read straight down, or the heading is torn in half.
  */
-export function columnSplit(lines: readonly TextLine[], pageWidth: number): number | null {
-  const body = lines.filter((l) => l.text.length > 1);
+export function columnSplit(lines: readonly (Box & { text: string })[], pageWidth: number): number | null {
+  const body = lines.filter((l) => l.text.trim().length > 1);
   // Too few lines to be a layout rather than a coincidence.
   if (body.length < MIN_COLUMN_LINES * 2) return null;
 
@@ -169,8 +199,9 @@ export function columnSplit(lines: readonly TextLine[], pageWidth: number): numb
     const split = pageWidth * fraction;
     let leftEdge = -Infinity;
     let rightEdge = Infinity;
-    const left: TextLine[] = [];
-    const rightLines: TextLine[] = [];
+    type Sided = Box & { text: string };
+    const left: Sided[] = [];
+    const rightLines: Sided[] = [];
     let crosses = false;
     for (const line of body) {
       if (line.x < split && right(line) > split) { crosses = true; break; }
