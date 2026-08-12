@@ -29,7 +29,7 @@ import { pageTextLength, THIN_PAGE_CHARS } from "@/lib/pdf/pages";
  * bug visible. Falling back to "complete" would restore exactly the silence this
  * module exists to end.
  */
-function orUnaccounted(result: ExtractionCoverage | string, unitKind: "page" | "slide" | "document", units: number): ExtractionCoverage {
+function orUnaccounted(result: ExtractionCoverage | string, unitKind: "page" | "slide" | "sheet" | "document", units: number): ExtractionCoverage {
   if (typeof result !== "string") return result;
   console.warn(JSON.stringify({ event: "coverage_inconsistent", detail: result }));
   const fallback = buildCoverage({ unitKind, units: Math.max(units, 1), unitsNative: 0, unitsUnread: Math.max(units, 1) });
@@ -241,6 +241,44 @@ export function docxCoverage(input: {
     }),
     "document",
     1,
+  );
+}
+
+/**
+ * A workbook's coverage.
+ *
+ * 🔴 EVERY SHEET IS READ, AND AN EMPTY SHEET IS READ TOO. A sheet's cells are
+ * XML: if there are none, the sheet is genuinely empty and we know that with
+ * certainty. That is NOT the PDF situation, where a page with no text layer may
+ * be a scan whose words are pixels — there, "no text" is a failure to read and
+ * counting it unread is honest. Marking a blank tab unread would make almost
+ * every real workbook `partial`, and a warning that appears everywhere is read
+ * nowhere.
+ *
+ * 🔴 WHAT DOES DOWNGRADE IT IS CONTENT WE SAW AND COULD NOT DELIVER — a chart, a
+ * pivot table, a macro. Those go to `unreadableRegions`, which is exactly the
+ * field's stated purpose ("the next parser will hit this with a different node
+ * label — a chart with no data"), and any non-zero count forces `partial`. A
+ * workbook whose point is its chart must not report itself completely read;
+ * unsupported is not absent.
+ */
+export function xlsxCoverage(input: {
+  sheets: number;
+  /** Charts, pivot tables, macros — located, not turned into content. */
+  unreadable?: number;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  const sheets = Math.max(input.sheets, 0);
+  return orUnaccounted(
+    buildCoverage({
+      unitKind: "sheet",
+      units: sheets,
+      unitsNative: sheets,
+      truncation: input.truncation,
+      ...(input.unreadable ? { unreadableRegions: input.unreadable } : {}),
+    }),
+    "sheet",
+    sheets,
   );
 }
 

@@ -99,6 +99,11 @@ export function readDocumentModel(value: unknown): DocumentModel | null {
       kind: u.kind as DocumentModel["units"][number]["kind"],
       ...(typeof u.label === "string" ? { label: u.label } : {}),
       ...(isSize(u.size) ? { size: u.size } : {}),
+      // A spreadsheet's hidden sheet. Added here in the SAME change that added it
+      // to `DocUnit`, because the whole point of the note above is that the two
+      // are one edit — a hidden sheet that read back as visible would put the
+      // marking scheme in front of the student.
+      ...(u.hidden === true ? { hidden: true } : {}),
     });
   }
 
@@ -162,7 +167,11 @@ export function storedDocumentModel(value: unknown): DocumentModel | null {
   return readDocumentModel(value);
 }
 
-const FORMATS = new Set(["pdf", "docx", "pptx", "image"]);
+/** 🔴 THE RUNTIME HALF OF `DocFormat`, AND IT IS HAND-WRITTEN. A format present
+ *  in the type and missing here reads back as `null` for the entire document —
+ *  the same silent whole-model loss `BLOCK_KINDS` caused. The every-member
+ *  round-trip in the test file is what keeps the two honest. */
+const FORMATS = new Set(["pdf", "docx", "pptx", "image", "xlsx"]);
 const UNIT_KINDS = new Set(["page", "slide", "sheet", "body", "image"]);
 /**
  * 🔴 THIS LIST IS A BOUNDARY, AND AN UNKNOWN KIND KILLS THE WHOLE MODEL.

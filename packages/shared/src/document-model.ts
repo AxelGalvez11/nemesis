@@ -52,8 +52,17 @@ import type { FigureCoverage, FigureSkipReason } from "./extraction-coverage.ts"
 
 export type DocUnitKind = "page" | "slide" | "sheet" | "body" | "image";
 
-/** Which formats can produce this model. */
-export type DocFormat = "pdf" | "docx" | "pptx" | "image";
+/**
+ * Which formats can produce this model.
+ *
+ * 🔴 ADDING ONE MEANS ADDING IT TO `FORMATS` IN document-envelope.ts TOO. That
+ * Set is the runtime half of this type, hand-written, and `readDocumentModel`
+ * returns null for the WHOLE model when `format` is not in it — so a format
+ * added here alone would parse perfectly, store perfectly, and read back as
+ * nothing. `document-envelope.test.ts` round-trips every member of this union
+ * for exactly that reason; keep the two in step by making that test fail.
+ */
+export type DocFormat = "pdf" | "docx" | "pptx" | "image" | "xlsx";
 
 /**
  * A rectangle in UNIT-RELATIVE coordinates, every value in 0..1.
@@ -94,6 +103,20 @@ export interface DocUnit {
    * from one the author wrote, and citations would quote it as the deck's words.
    */
   label?: string;
+  /**
+   * The source marks this whole unit hidden — a spreadsheet's hidden sheet.
+   *
+   * 🔴 KEPT, NOT DROPPED, for the same reason as `DocTable.hiddenRows`: a hidden
+   * sheet is often the marking scheme or the author's working, and whether a
+   * learner should see it is not the parser's decision to make silently. A
+   * consumer can exclude it; only the parser can lose it.
+   *
+   * 🔴 ANYTHING ADDED TO `DocUnit` MUST ALSO BE ADDED TO `readDocumentModel`,
+   * which rebuilds units FIELD BY FIELD — `label` and `size` both died there
+   * once already. A field not listed there is gone between the database and
+   * every consumer, silently.
+   */
+  hidden?: boolean;
 }
 
 export type DocBlockKind =
@@ -143,6 +166,14 @@ export type DocBlockKind =
  * than four.
  */
 export interface DocCell {
+  /**
+   * What the cell shows.
+   *
+   * For a spreadsheet this is the DISPLAYED value — the cached result of a
+   * formula, or the stored value rendered where its number format makes the
+   * stored form unintelligible (see `raw`). It is what `rows` projects, what
+   * retrieval indexes, and what a person reading the sheet would see.
+   */
   text: string;
   /** 0-based grid row of the cell's top-left position. */
   row: number;
@@ -152,6 +183,36 @@ export interface DocCell {
   rowSpan?: number;
   /** Columns covered, counting its own. Omitted when 1. */
   colSpan?: number;
+  /**
+   * The formula, without its leading `=`. Spreadsheets only.
+   *
+   * 🔴 A FORMULA AND ITS CACHED RESULT ARE DIFFERENT FACTS AND MAY CONTRADICT
+   * EACH OTHER (owner, 2026-08-12). A file written by a program with no formula
+   * engine carries `<f>` and no cached value at all — measured: 4 of 15 cells in
+   * a workbook openpyxl wrote. A file edited by such a program carries a cached
+   * value computed from inputs that have since changed — measured: a fixture
+   * whose `B2` is 9,999 while `D2 = B2*C2` still caches 2.5, from when B2 was 10.
+   *
+   * Neither may be silently chosen as the truth. `text` says what the file
+   * claims the answer is; this says what the file says the question was. A
+   * consumer that needs to know whether to trust the number has both.
+   */
+  formula?: string;
+  /**
+   * The stored value, when `text` is a rendering of it rather than a copy.
+   *
+   * 🔴 PRESENT ONLY WHEN THEY GENUINELY DIFFER, so its absence means "`text` is
+   * what the file stores". A date is held as a serial number — measured:
+   * 2026-03-15 is `<v>46096</v>` — and showing "46096" to a student is not a
+   * styling shortfall, it is a different value. So dates are rendered and the
+   * serial kept here.
+   *
+   * Currency and percentages are NOT rendered: 1234.5 and 0.075 are the correct
+   * numbers merely without their decoration, and a half-built format engine that
+   * handled some styles and not others would be harder to reason about than one
+   * that handles none. That is a recorded limit, not an oversight.
+   */
+  raw?: string;
 }
 
 export interface DocTable {
@@ -218,6 +279,41 @@ export interface DocTable {
    * re-deriving adjacency — which is the parser's job, not theirs.
    */
   continuesFromUnit?: number;
+  /**
+   * Where grid position (0,0) sits in the source's own coordinates. Spreadsheets.
+   *
+   * 🔴🔴 WITHOUT THIS, EVERY CITATION INTO AN OFFSET SHEET POINTS AT THE WRONG
+   * CELL, AND NO ROUND-TRIP TEST CAN SEE IT. A grid coordinate is not a cell
+   * reference: a sheet whose data begins at C5 has its first cell at grid (0,0),
+   * and calling that "A1" is wrong by two columns and four rows. Stored-versus-
+   * read-back comparison passes anyway, because both sides are wrong identically
+   * — so the assertion that catches this has to be the A1 STRING, which is what
+   * `cellRef` produces and what the fixture `offset-origin.xlsx` exists to prove.
+   *
+   * Absent means the grid starts at the origin, which is the common case and
+   * what every non-spreadsheet producer means.
+   */
+  origin?: { row: number; column: number };
+  /**
+   * Grid rows and columns the source marks hidden.
+   *
+   * 🔴 HIDDEN IS NOT DELETED, AND THE CHOICE OF WHAT TO DO ABOUT IT IS THE
+   * CONSUMER'S. A hidden column often holds the working a spreadsheet's author
+   * did not want printed; a hidden row is sometimes a withdrawn entry and
+   * sometimes the answer key. Dropping them here would decide that silently for
+   * every caller, and the content would be unrecoverable. Recording them lets a
+   * caller exclude what a person would not see WITHOUT the parser destroying it.
+   *
+   * Indices are grid-relative, so they compose with `origin` rather than
+   * duplicating it.
+   */
+  hiddenRows?: number[];
+  hiddenColumns?: number[];
+  /**
+   * The source's own name for this table — a spreadsheet's defined table
+   * (`ListObject`), never a name we invented. Absent when the file gives none.
+   */
+  name?: string;
 }
 
 /**
