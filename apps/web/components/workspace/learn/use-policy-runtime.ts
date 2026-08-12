@@ -257,6 +257,23 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   // to decide whether something has been shown repeatedly, so the learner would be credited with
   // practice they never did. A fresh random id per decision is also why a genuinely new attempt
   // after a reload lands rather than being swallowed as a duplicate.
+  //
+  // 🔴 THIS IS NOW THE LAST PLACE "ONE SUBMISSION → ONE PROMPT" CAN BREAK, AND IT IS THE ONE PLACE
+  // NO TEST CAN SEE IT. The fan-out below holds the other half by construction: a prompt carries a
+  // SET of targets, so however many objectives one answer touches, they share its id because they
+  // share its prompt.
+  //
+  // What is not structural is up here. `decideNext` returns exactly one objective today, so one
+  // decision is one key and one key is one prompt. The moment a `PolicyDecision` carries a set —
+  // which is what `BRAIN-003` exists to make possible — the tempting edit is to build a key per
+  // objective, and that mints a prompt per objective, and each prompt gets its own
+  // `crypto.randomUUID()`. One 20-second explanation is then four performances of 20 seconds each.
+  //
+  // That failure arrives from ABOVE the layer that guards against it, so nothing in
+  // `objective-task.ts` can catch it and no test asserts on it — there is no multi-objective
+  // decision to test with yet. THE KEY MUST IDENTIFY THE SUBMISSION, NEVER AN OBJECTIVE WITHIN IT:
+  // a decision covering four objectives is ONE key, and `retrievalPromptFor` gives way to
+  // `promptTargeting` with all four targets on the single prompt it returns.
   const decisionKey = decision
     ? `${decision.objective.identityKey}:${decision.action.type}:${decision.state.evidenceCount}:${round}`
     : null;
