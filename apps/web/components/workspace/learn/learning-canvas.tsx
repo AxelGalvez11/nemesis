@@ -19,6 +19,8 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 import { CanvasComposer } from "./canvas-composer";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { CanvasPolicyView } from "./canvas-policy-view";
+import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { useCanvasSelection } from "./use-canvas-selection";
 import {
@@ -28,11 +30,13 @@ import {
   CanvasRecall,
   CanvasTest,
 } from "./canvas-stages";
-import { useCanvasSession } from "./use-canvas-session";
+import { useCanvasSession, type ActiveTask } from "./use-canvas-session";
+import { usePolicyRuntime } from "./use-policy-runtime";
 
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
+  policyRequested = false,
 }: {
   canvasId: string | null;
   /** What the learner typed on the home surface before this canvas existed.
@@ -41,10 +45,18 @@ export function LearningCanvas({
    *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
    *  consumed exactly once here. */
   openingAsk?: string | null;
+  /** Opt in to the teaching-policy runtime for this canvas.
+   *
+   *  🔴 REQUESTED IS NOT THE SAME AS AVAILABLE, AND BOTH GATES ARE REAL. This says someone asked
+   *  for it; the runtime still refuses unless the canvas has an association with a recall
+   *  objective, because that is the only slice built end to end. Widening it means shipping the
+   *  next knowledge type, not flipping this. */
+  policyRequested?: boolean;
 }) {
   const router = useRouter();
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
+  const policy = usePolicyRuntime(canvas, policyRequested);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selected = useMemo(
@@ -226,9 +238,42 @@ export function LearningCanvas({
     else if (next.to === "complete") session.finish();
   }, [next, session]);
 
-  if (!session.ready) {
-    return <main className="flex h-full items-center justify-center bg-(--ui-bg-editor)" />;
+  // 🔴 `loading` IS WAITED FOR, NOT TREATED AS "NO". Resolving this canvas's knowledge is a round
+  // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
+  // machine's own effects would start generating a lesson for a canvas the policy is about to own.
+  if (!session.ready || policy.status === "loading") {
+    return (
+      <main className="relative flex h-full items-center justify-center bg-(--ui-bg-editor)">
+        {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally finishes
+            far inside the threshold, and a caption that appeared and vanished in 200ms would be a
+            flicker rather than information. It surfaces only when a step has genuinely been running
+            long enough to be worth naming — and it names the step that IS running. */}
+        {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+      </main>
+    );
   }
+
+  // ── The one branch ────────────────────────────────────────────────────────
+  //
+  // 🔴 ONE BRANCH, AS HIGH AS IT GOES, AND DELIBERATELY NOT FIVE NEGATIONS ADDED TO THE STATE
+  // CHECKS BELOW. Once the policy owns this canvas the six-stage machine must not paint anything:
+  // "the policy said retrieve and the Learn stage rendered anyway" is precisely the failure this
+  // pivot exists to end, and it is the shape a per-condition guard drifts into on the first edit
+  // that forgets one.
+  const policyOwns = policy.status === "active";
+
+  const policyTask: ActiveTask | null =
+    policyOwns && policy.prompt && !policy.feedback
+      ? {
+          answered: false,
+          id: policy.prompt.id,
+          index: 0,
+          kind: "question",
+          placeholder: "Type your answer…",
+          prompt: policy.prompt.prompt,
+          total: 1,
+        }
+      : null;
 
   // The empty and orientation states have their own inputs and would be muddled by a second
   // one. Everywhere else the composer is present and FULL STRENGTH.
@@ -240,7 +285,7 @@ export function LearningCanvas({
   // picker a wall rather than a suggestion: a learner could not type a word until they had chosen
   // one of four labels. The state survives only for canvases stored before it was removed, and
   // those should be able to talk to Nemesis like any other.
-  const showComposer = !["empty", "complete"].includes(canvas.state);
+  const showComposer = policyOwns || !["empty", "complete"].includes(canvas.state);
 
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
@@ -266,6 +311,11 @@ export function LearningCanvas({
           void session.remove().then(() => router.push("/sessions"));
         }}
         onExit={() => router.push("/sessions")}
+        // 🔴 The whole policy runtime, not only the instant a question is on screen. Flipping the
+        // title and the controls back on for the feedback beat and off again for the next question
+        // would put a flicker of chrome between every answer and the next — more distracting than
+        // the chrome itself. A session is one continuous state.
+        minimal={policyOwns}
         onFiles={(files) => void session.attachFiles(files)}
         onRename={session.rename}
       />
@@ -274,6 +324,10 @@ export function LearningCanvas({
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (16px inset + 32px control + 24px breathing room). */}
       <div className="relative h-full overflow-y-auto pt-[72px]">
+        {policyOwns ? (
+          <CanvasPolicyView runtime={policy} />
+        ) : (
+          <>
         {canvas.state === "empty" && (
           <CanvasEmpty
             busy={busy.kind === "source"}
@@ -342,17 +396,21 @@ export function LearningCanvas({
           canvas.state !== "orient" && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--ui-bg-editor)/70">
               <p className="flex items-center gap-2 text-[0.875rem] text-(--ui-text-secondary)">
-                <Codicon name="loading" size="0.875rem" />
+                <Codicon name="loading" size="0.875rem" spinning />
                 {busy.label}…
               </p>
             </div>
           )}
+          </>
+        )}
       </div>
 
-      {error && (
+      {(policyOwns ? policy.error : error) && (
         <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
           <div className="flex max-w-[38rem] items-start gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3 shadow-lg">
-            <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{error}</p>
+            <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
+              {policyOwns ? policy.error : error}
+            </p>
             <button
               aria-label="Dismiss"
               className="mt-0.5 text-(--ui-text-quaternary) hover:text-(--ui-text-primary)"
@@ -364,6 +422,12 @@ export function LearningCanvas({
           </div>
         </div>
       )}
+
+      {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus
+          exactly where it was — the learner keeps the thing they just answered in view, so nothing
+          has to be reconstructed when the verdict lands. This is the replacement for the 70% scrim,
+          which is why that overlay lives inside the legacy arm and can never paint here. */}
+      {policyOwns && policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
 
       {pointed && (
         <CanvasSelectionMenu
@@ -380,14 +444,22 @@ export function LearningCanvas({
 
       {showComposer && (
         <CanvasComposer
-          busy={busy.kind === "command"}
-          busyLabel={busy.label}
-          onAnswer={(text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)}
+          busy={policyOwns ? policy.judging : busy.kind === "command"}
+          busyLabel={policyOwns ? "Reading your answer" : busy.label}
+          // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
+          // the policy. What a submission IS comes from whether something is currently being
+          // asked, which is the rule this component already ran on.
+          onAnswer={
+            policyOwns
+              ? (text, via, tookMs) => void policy.submit(text, via, tookMs)
+              : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
+          }
+          inSession={policyOwns}
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
           selected={selected}
-          task={session.activeTask}
+          task={policyOwns ? policyTask : session.activeTask}
         />
       )}
     </main>

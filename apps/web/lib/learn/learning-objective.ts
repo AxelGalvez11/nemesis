@@ -82,6 +82,22 @@ export interface LearningObjective {
   parameters: ObjectiveParameters;
   /** One line for a human reading a log or a panel. 🔴 NEVER part of identity — see the header. */
   label: string;
+  /**
+   * What the learner is SHOWN, and what a complete answer would be.
+   *
+   * 🔴 DERIVED HERE BECAUSE THE SIDES ARE DECIDED HERE, AND ANYWHERE ELSE WOULD BE A SECOND
+   * IMPLEMENTATION OF THE SAME DECISION. Working out which half of a pair is the cue means
+   * resolving `inputRole` against the pair's own role labels — and, when the source named no
+   * columns, reproducing the canonical sort the fallback uses. A task builder that re-derived
+   * that would be one edit away from disagreeing with identity, and the disagreement is silent:
+   * both directions would ask the SAME question while carrying OPPOSITE keys, so "the reverse is
+   * still unknown" would pass for the wrong reason — the learner was never asked the reverse.
+   *
+   * 🔴 PRESENTATION, NEVER IDENTITY. Two canvases may word the prompt around these however they
+   * like. `objectiveIdentityBasis` does not read them.
+   */
+  cue: string;
+  answer: string;
 }
 
 /**
@@ -182,7 +198,9 @@ export function objectivesForKnowledge(object: KnowledgeObject): LearningObjecti
         })();
 
   return sides.map(({ answer, cue, parameters }) => ({
+    answer,
     capability: "recall" as const,
+    cue,
     identityKey: objectiveIdentityKey({ capability: "recall", knowledgeIdentityKey: knowledge, parameters }),
     identityVersion: OBJECTIVE_IDENTITY_VERSION,
     knowledgeIdentityKey: knowledge,

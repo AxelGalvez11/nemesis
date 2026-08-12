@@ -37,13 +37,45 @@ test("a verdict outside the closed set is refused rather than coerced", () => {
   assert.match(rejected.join(" "), /verdict/i);
 });
 
-test("a judgement with no refinement is refused", () => {
-  // §20: the point is the targeted correction. A judgement with nothing to say has no way to
-  // change the teaching, so it is not worth storing.
+test("a judgement that FELL SHORT with no refinement is refused", () => {
+  // §20: the point is the targeted correction. A verdict that fell short and cannot say what was
+  // missing has no way to change the teaching, so it is not worth storing.
   for (const bad of [undefined, "", "   ", 7]) {
     const { evaluation } = validateEvaluation(raw({ feedback: bad }), { conceptIds: CONCEPTS });
     assert.equal(evaluation, null, `refinement ${JSON.stringify(bad)} should be refused`);
   }
+});
+
+test("🔴 a CORRECT answer with no refinement survives — nothing was missing to supply", () => {
+  // Found live, on the first real run of the policy loop. The prompt tells the judge that feedback
+  // must supply "exactly what was missing and nothing else", so an obedient model returns "" for a
+  // complete answer. This check then discarded the entire evaluation, the learner was shown
+  // "Nemesis couldn't read that answer", and the demonstration they had genuinely just given was
+  // recorded as no evidence at all — a right answer turned into absence.
+  for (const pass of ["understood", "strong"]) {
+    for (const empty of [undefined, "", "   "]) {
+      const { evaluation } = validateEvaluation(raw({ feedback: empty, verdict: pass }), {
+        conceptIds: CONCEPTS,
+      });
+      assert.equal(evaluation?.verdict, pass, `${pass} with feedback ${JSON.stringify(empty)} was thrown away`);
+    }
+  }
+});
+
+test("the judge is TOLD that empty feedback is right for a pass, so both ends agree", async () => {
+  // A validator that accepts empty feedback while the prompt still demands prose would work by
+  // luck: the model would keep inventing a sentence, and the day it stopped would look like a
+  // regression in the validator rather than a contract nobody wrote down.
+  const { evaluationMessages } = await import("./canvas-prompts");
+  const wire = evaluationMessages({
+    concepts: [],
+    expectedEvidence: { referenceAnswer: "valsartan" },
+    objective: { conceptId: null, label: "Given Diovan, produce valsartan" },
+    prompt: "What is the generic for Diovan?",
+    response: { text: "valsartan", via: "typed" },
+    task: "name",
+  });
+  assert.match(wire.map((m) => m.content).join("\n"), /nothing was missing.*empty string/is);
 });
 
 test("non-string entries in got/missing are dropped, not stringified", () => {
