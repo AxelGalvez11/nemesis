@@ -8,7 +8,7 @@ start is here — what you own, why it matters, what must stay true, and what yo
 > another lane's work. If a task here is wrong, say so — a contract that does not survive contact
 > with the implementation is a Brain defect, not an implementation inconvenience.
 
-**Last recomputed from repository reality: 2026-08-12.**
+**Last recomputed from repository reality: 2026-08-12, after #494–#499 all merged.**
 
 ```
 Parser perceives · Brain understands · Runtime executes · UI expresses · Canvas is what the learner sees
@@ -31,16 +31,16 @@ first rows through are correct.
 
 | Task | Owner | Status | Blocks |
 |---|---|---|---|
-| `BRAIN-001` performance identity readable | Brain | **IN REVIEW** (#498) | INTEGRATION-001 |
-| `BRAIN-002` response identity is per-answer by type | Brain | **IN REVIEW** (#498) — contract is live for RUNTIME-002 | RUNTIME-002 |
-| `BRAIN-003` causal objectives + task contract | Brain | **BLOCKED** | UI-002 |
-| `RUNTIME-001` compositional task hosting | Runtime | **IN REVIEW** (#494) | everything |
+| `BRAIN-001` performance identity readable | Brain | ✅ **MERGED** (#498) | — |
+| `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
+| `BRAIN-003` causal objectives + task contract | Brain | **READY** — dependencies merged | UI-002 |
+| `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
 | `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
 | `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
-| `INTEGRATION-001` first real end-to-end trace | Integration | **BLOCKED** | the whole vision |
+| `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
 
 ---
 
