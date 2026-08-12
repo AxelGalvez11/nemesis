@@ -361,6 +361,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // reported as "file upload failed". What fails here costs adaptation, not the lesson.
           if (canonical.ok && extracted.librarySourceId) {
             void (async () => {
+              // No bypass here on purpose: attaching a file is not a request to run the policy on
+              // material it cannot teach, so the ordinary rule decides whether anything is stored.
               const resolved = await ensureKnowledgeForCanvas(uid, latest.current);
               canvasCapture("knowledge_extracted", latest.current, {
                 objectives: resolved.objectives.length,

@@ -61,17 +61,33 @@ export interface CanvasKnowledge {
 export async function ensureKnowledgeForCanvas(
   userId: string | null,
   canvas: LearningCanvas,
-  /**
-   * Called as each real step begins.
-   *
-   * 🔴 REPORTED, NOT SIMULATED. The caller shows this to the learner, so it must correspond to work
-   * genuinely starting — never to a timer walking a list of plausible-sounding stages. If a step is
-   * fast, its phase is emitted and superseded within milliseconds and the caller's own threshold
-   * means nothing is ever shown for it. That is correct: the honest answer to "what took so long?"
-   * is sometimes "nothing did".
-   */
-  onPhase?: (phase: ThinkingPhase) => void,
+  options: {
+    /**
+     * Called as each real step begins.
+     *
+     * 🔴 REPORTED, NOT SIMULATED. The caller shows this to the learner, so it must correspond to
+     * work genuinely starting — never to a timer walking a list of plausible-sounding stages. If a
+     * step is fast, its phase is emitted and superseded within milliseconds and the caller's own
+     * threshold means nothing is ever shown for it. That is correct: the honest answer to "what
+     * took so long?" is sometimes "nothing did".
+     */
+    onPhase?: (phase: ThinkingPhase) => void;
+    /**
+     * Store this canvas's knowledge even though the policy does not own it.
+     *
+     * 🔴 IT CHANGES WHAT IS WRITTEN, NEVER WHAT IS DECIDED. `ownership` in the result still says
+     * `owns: false` and still names the refusal, so a caller running a forced session can — and
+     * must — disclose it. A bypass that rewrote the verdict would delete the only record that this
+     * was not the ordinary path, which is the flaw in the `?policy=1` opt-in it replaces.
+     *
+     * 🔴 AND THE EVIDENCE SEMANTICS ARE UNCHANGED. A demonstration made in a forced session is a
+     * real demonstration of a real objective, so it is written exactly as any other. What is
+     * bypassed is which runtime got the surface, not what counts as having learned something.
+     */
+    bypassOwnership?: boolean;
+  } = {},
 ): Promise<CanvasKnowledge> {
+  const { bypassOwnership = false, onPhase } = options;
   // 🔴 DURABLE SOURCES ONLY. An ephemeral source has no library row, so anchors minted from it
   // point at something no later canvas can resolve — knowledge that cannot outlive its session is
   // exactly what this layer exists to stop producing.
@@ -79,11 +95,7 @@ export async function ensureKnowledgeForCanvas(
     .map((source) => source.librarySourceId)
     .filter((id): id is string => Boolean(id));
 
-  // 🔴 AND A CANVAS HOLDING ANY SOURCE THIS LAYER CANNOT READ IS ALREADY UNOWNABLE, so it is
-  // answered before a single round trip. This is not only an optimisation: it is the check that
-  // stops a durable glossary beside an ephemeral lecture reporting full coverage of the glossary
-  // and taking the page, with the lecture nowhere.
-  if (!userId || sourceIds.length !== canvas.sources.length || sourceIds.length === 0) {
+  const nothingToRead = (): CanvasKnowledge => {
     const coverage = emptyCoverage(canvas.sources.length);
     return {
       coverage,
@@ -91,7 +103,19 @@ export async function ensureKnowledgeForCanvas(
       outcome: "no-durable-source",
       ownership: policyOwnsCanvas({ coverage, outcome: "no-durable-source" }),
     };
-  }
+  };
+
+  // Nothing durable at all, or nobody to store it for: there is nothing to read and nothing to
+  // decide from. A bypass cannot help — it changes what is written, not what exists.
+  if (!userId || sourceIds.length === 0) return nothingToRead();
+
+  // 🔴 AND A CANVAS HOLDING ANY SOURCE THIS LAYER CANNOT READ IS ALREADY UNOWNABLE, so it is
+  // answered before a single round trip. This is not only an optimisation: it is the check that
+  // stops a durable glossary beside an ephemeral lecture reporting full coverage of the glossary
+  // and taking the page, with the lecture nowhere.
+  //
+  // Skipped under a bypass, where the whole intent is to reach the durable material anyway.
+  if (sourceIds.length !== canvas.sources.length && !bypassOwnership) return nothingToRead();
 
   const extracted: KnowledgeObject[] = [];
   let coverage = emptyCoverage(canvas.sources.length);
@@ -133,7 +157,7 @@ export async function ensureKnowledgeForCanvas(
   // 🔴 NOTHING IS WRITTEN FOR A CANVAS THE POLICY WILL NOT TEACH. The knowledge would be correct
   // and completely unused, and it would make the learner's own tables fill up with rows produced by
   // opening a document rather than by learning anything from it.
-  if (!ownership.owns) return { coverage, objectives: [], outcome, ownership };
+  if (!ownership.owns && !bypassOwnership) return { coverage, objectives: [], outcome, ownership };
 
   const resolved: ResolvedObjective[] = [];
   for (const knowledge of extracted) {

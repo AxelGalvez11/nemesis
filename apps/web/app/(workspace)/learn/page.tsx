@@ -22,6 +22,7 @@ import { Suspense } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasHome } from "@/components/workspace/learn/canvas-home";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
+import { policyOverrideFrom } from "@/lib/learn/policy-override";
 
 function LearnSurface() {
   // A canvas is addressable by `?c=<id>` rather than by path segment, because the shell's
@@ -30,23 +31,19 @@ function LearnSurface() {
   const params = useSearchParams();
   const canvasId = params.get("c");
   const ask = params.get("ask");
-  // The teaching-policy runtime's emergency stop — and ONLY that.
+  // What the URL is still allowed to say about the teaching-policy runtime: stop it, or bypass
+  // ownership deliberately. Neither is an opt-in — see policy-override.ts, where the rules live and
+  // are tested, rather than as an expression here that nothing could assert.
   //
-  // 🔴 `?policy=0` DISABLES; NOTHING HERE ENABLES. Which runtime a canvas gets is decided from what
-  // its sources actually contain (see `policyOwnsCanvas`), not from the address bar: routing on a
-  // query parameter is routing on what someone typed, which is the opposite of routing on the
-  // persisted knowledge representation.
-  //
-  // 🔴 AND IT IS DELIBERATELY NOT AN ENVIRONMENT VARIABLE. This file is a client component, so a
-  // kill switch here would have to be `NEXT_PUBLIC_*`, which Next inlines at BUILD time — turning
-  // "emergency rollback" into a redeploy, against a Vercel account with a daily build cap. A URL
-  // that can only ever turn the runtime OFF costs nothing and works instantly.
-  const policyEnabled = params.get("policy") !== "0";
+  // 🔴 DELIBERATELY NOT AN ENVIRONMENT VARIABLE. This file is a client component, so a flag here
+  // would have to be `NEXT_PUBLIC_*`, which Next inlines at BUILD time — turning "emergency
+  // rollback" into a redeploy, against a Vercel account with a daily build cap.
+  const policyOverride = policyOverrideFrom(params.get("policy"));
   const { session } = useAuth();
 
   // No canvas named and nothing asked: this is the landing surface.
   if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
-  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyEnabled={policyEnabled} />;
+  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyOverride={policyOverride} />;
 }
 
 export default function LearnPage() {

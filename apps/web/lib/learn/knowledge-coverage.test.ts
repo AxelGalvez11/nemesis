@@ -282,14 +282,30 @@ test("🔴 nothing is written before ownership is decided", () => {
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   const read = code.indexOf("await Promise.all(");
-  const decide = code.indexOf("if (!ownership.owns) return");
+  const decide = code.indexOf("policyOwnsCanvas({ coverage, outcome })");
+  const gate = code.indexOf("if (!ownership.owns");
   const write = code.indexOf("await saveKnowledge(");
 
   assert.notEqual(read, -1);
   assert.notEqual(decide, -1, "ownership must be decided in canvas-knowledge, not by the caller");
+  assert.notEqual(gate, -1);
   assert.notEqual(write, -1);
   assert.ok(read < decide, "sources are read before ownership can be decided");
-  assert.ok(decide < write, "a canvas the policy will not teach must leave no rows behind");
+  assert.ok(decide < gate && gate < write, "a canvas the policy will not teach must leave no rows behind");
+});
+
+test("🔴 the bypass changes what is WRITTEN, never what is DECIDED", () => {
+  // A forced session must still report `owns: false` and its refusal, because that is the only
+  // record that it was not the ordinary path — and the surface reads it to say so on screen. If
+  // `bypassOwnership` ever reached `policyOwnsCanvas`, a test drive would become indistinguishable
+  // from the product working, which is exactly the flaw in the `?policy=1` opt-in it replaces.
+  const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+  const call = source.slice(source.indexOf("policyOwnsCanvas({ coverage, outcome })"));
+  assert.equal(call.startsWith("policyOwnsCanvas({ coverage, outcome })"), true);
+
+  const rule = readFileSync(new URL("./knowledge-coverage.ts", import.meta.url), "utf8");
+  assert.equal(rule.includes("bypass"), false, "the rule must not know a bypass exists");
+  assert.equal(rule.includes("force"), false, "nor that anything can force it");
 });
 
 test("coverage accumulates without mutating what it was given", () => {

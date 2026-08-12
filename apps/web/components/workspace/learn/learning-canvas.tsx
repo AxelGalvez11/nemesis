@@ -14,6 +14,7 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import { nextAction } from "@/lib/learn/canvas-state";
+import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { CanvasComposer } from "./canvas-composer";
@@ -36,7 +37,7 @@ import { usePolicyRuntime } from "./use-policy-runtime";
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
-  policyEnabled = true,
+  policyOverride = null,
 }: {
   canvasId: string | null;
   /** What the learner typed on the home surface before this canvas existed.
@@ -45,18 +46,17 @@ export function LearningCanvas({
    *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
    *  consumed exactly once here. */
   openingAsk?: string | null;
-  /** The teaching-policy runtime's emergency stop, defaulting to on.
+  /** What the URL asked for, if anything — a stop, or a deliberate bypass of ownership.
    *
-   *  🔴 THIS IS NOT AN OPT-IN, AND THE DEFAULT IS THE POINT. Whether the policy takes this canvas
-   *  is decided from what its sources contain — `policyOwnsCanvas` — so the only thing left for a
-   *  caller to say is "not right now". `false` forces the legacy runtime; `true` merely allows the
-   *  question to be asked. */
-  policyEnabled?: boolean;
+   *  🔴 THE DEFAULT IS THE POINT, AND IT IS `null`. Whether the policy takes this canvas is decided
+   *  from what its sources contain (`policyOwnsCanvas`), so there is nothing here for an ordinary
+   *  visit to say. See policy-override.ts. */
+  policyOverride?: PolicyOverride;
 }) {
   const router = useRouter();
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyEnabled);
+  const policy = usePolicyRuntime(canvas, policyOverride);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selected = useMemo(

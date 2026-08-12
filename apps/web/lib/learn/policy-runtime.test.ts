@@ -195,21 +195,31 @@ test("🔴 the runtime refuses BEFORE it goes active, on ownership rather than o
     new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
     "utf8",
   );
-  const refusal = source.indexOf("if (!resolved.ownership.owns)");
+  const refusal = source.indexOf("if (!resolved.ownership.owns && !forced)");
   const active = source.indexOf('setStatus("active")');
   assert.notEqual(refusal, -1, "the runtime must consult policyOwnsCanvas's decision");
   assert.notEqual(active, -1);
   assert.ok(refusal < active, "ownership must be checked before the runtime takes the surface");
 });
 
-test("🔴 no URL parameter can switch the policy runtime ON", () => {
-  // The temporary `?policy=1` opt-in is gone. What replaced it may only ever turn the runtime OFF:
-  // routing on a query parameter is routing on what somebody typed, which is the opposite of
-  // routing on what the canvas's sources contain.
-  const page = readFileSync(new URL("../../app/(workspace)/learn/page.tsx", import.meta.url), "utf8");
-  const code = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.equal(/get\("policy"\)\s*===/.test(code), false, "a `policy` equality check would be an opt-in");
-  assert.ok(code.includes('get("policy") !== "0"'), "the kill switch must be disable-only");
+test("🔴 a bypassed session declares itself all the way to the screen", () => {
+  // The one property that makes an override safe to have. `?policy=1` was untrustworthy because a
+  // forced session looked exactly like an owned one; anything showing this runtime must be able to
+  // tell them apart, and must actually do it.
+  const runtime = readFileSync(
+    new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    runtime.includes("forced: forced && !knowledge.ownership.owns"),
+    "the runtime must disclose running without ownership, and only then",
+  );
+
+  const view = readFileSync(
+    new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(view.includes("runtime.forced &&"), "the surface must show it");
 });
 
 test("🔴 no permissive ownership predicate has grown back beside the filter", () => {
