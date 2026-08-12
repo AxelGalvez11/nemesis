@@ -29,7 +29,7 @@ import { serviceRoleKey } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { runParseOnThread } from "@/lib/notebooks/parse-run";
-import { contentHashOf, structureEnvelope } from "@/lib/notebooks/parse-record";
+import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
 import {
   DEADLINE_ABORT_MS,
   isRetryable,
@@ -538,10 +538,13 @@ async function runDoclingLane(input: {
  * "three pages were read". A count derived from the model would silently mean
  * the second while being read as the first.
  */
+/**
+ * 🔴 DELEGATES, RATHER THAN COUNTING AGAIN. This function used to read
+ * `coverage.figures.total` — a field `FigureCoverage` does not have — through a
+ * cast that hid it from the compiler, so this lane wrote `visual_count = 0` for
+ * every document it ever parsed while the upload lane wrote the real number.
+ * `rowCounts` is now the single definition both lanes call.
+ */
 function countsFor(parsed: ParsedDocument): { units: number; visuals: number } {
-  const coverage = parsed.coverage as { units?: number; figures?: { total?: number } };
-  return {
-    units: coverage.units ?? parsed.model?.units.length ?? 0,
-    visuals: coverage.figures?.total ?? 0,
-  };
+  return rowCounts(parsed.coverage, parsed.model?.units.length ?? 0);
 }

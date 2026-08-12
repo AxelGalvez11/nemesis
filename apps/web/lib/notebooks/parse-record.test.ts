@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { buildCoverage, readCoverage, type ExtractionCoverage } from "@nemesis/shared";
 
-import { contentHashOf, pipelineStateFor, structureEnvelope } from "./parse-record";
+import { contentHashOf, pipelineStateFor, rowCounts, structureEnvelope } from "./parse-record";
 
 function coverage(input: Parameters<typeof buildCoverage>[0]): ExtractionCoverage {
   const built = buildCoverage(input);
@@ -92,4 +92,43 @@ test("🔴 an EMPTY coverage is not complete — unknown never means fine", () =
   // would have every new row claim completeness before anything was read.
   const derive = (raw: Record<string, unknown>) => ((raw.state as string | undefined) ?? "") === "complete";
   assert.equal(derive({}), false);
+});
+
+test("🔴 BOTH LANES COUNT THE ROW THE SAME WAY — they had silently disagreed", () => {
+  // The worker read `coverage.figures.total`, which `FigureCoverage` does not
+  // have, through an `as` cast that hid it from the compiler. Every document it
+  // parsed stored `visual_count = 0` while the upload lane stored the real
+  // number. Neither lane had a test on the column, which is why it survived.
+  const record = coverage({
+    unitKind: "slide",
+    units: 12,
+    unitsNative: 12,
+    figures: { found: 9, described: 4, skipped: 5, reasons: { "not-examined": 5 } },
+  });
+  assert.deepEqual(rowCounts(record), { units: 12, visuals: 4 });
+  // The field that did not exist would have produced this instead.
+  assert.notEqual(rowCounts(record).visuals, 0, "a deck with four described pictures does not store zero");
+});
+
+test("a scan stores zero described pictures, and its inventory lives in the coverage", () => {
+  // 🔴 NOT A BUG, AND WORTH PINNING SO IT IS NOT 'FIXED' LATER. `visual_count`
+  // means what made it through to the student. An image-only PDF read nothing,
+  // so zero is the honest column value — while `coverage.figures.found` still
+  // records that three pictures are in there, which is what #486 persists.
+  const record = coverage({
+    unitKind: "page",
+    units: 1,
+    unitsNative: 0,
+    unitsUnread: 1,
+    figures: { found: 3, described: 0, skipped: 3, reasons: { "not-examined": 3 } },
+  });
+  assert.deepEqual(rowCounts(record), { units: 1, visuals: 0 });
+  assert.equal(record.figures.found, 3, "the inventory is kept where consumers read it");
+});
+
+test("a record mangled crossing the worker's thread boundary counts rather than throwing", () => {
+  // `runParseOnThread` returns `unknown` and the caller casts it. A malformed
+  // record must not throw inside the write, taking a real parse down with it.
+  const broken = undefined as unknown as ExtractionCoverage;
+  assert.deepEqual(rowCounts(broken, 7), { units: 7, visuals: 0 });
 });
