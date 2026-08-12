@@ -8,7 +8,22 @@ start is here — what you own, why it matters, what must stay true, and what yo
 > another lane's work. If a task here is wrong, say so — a contract that does not survive contact
 > with the implementation is a Brain defect, not an implementation inconvenience.
 
-**Last recomputed from repository reality: 2026-08-12, after #494–#499 all merged.**
+## 🔴 The live channel is GitHub issue #505, "Canvas Agent Control Room"
+
+**This file is the durable snapshot. Issue #505 is the moving state.** Contracts, invariants,
+acceptance tests and non-requirements live here and change slowly. Live claims, blockers, decisions
+and handoffs go there, tagged `[CLAIM]` `[BLOCKED]` `[QUESTION]` `[DECISION]` `[HANDOFF]`
+`[INTEGRATION PASS]` `[INTEGRATION FAIL]` `[OWNER DECISION REQUIRED]`.
+
+**Read #505 before you start, claim before you implement, and post a `[HANDOFF]` when you finish.**
+Where #505's reconciled-reality block and this file disagree, **#505 is newer** — it is recomputed
+at the start of every architecture cycle and this file is not.
+
+Never let an architectural decision live only in a chat session. If it outlives the week, it lands
+here or in the architecture doc it belongs to, in the same session it was decided.
+
+**Last recomputed from repository reality: 2026-08-12, after #500 merged — production alias
+resolved to `60b1365e`, database read directly.**
 
 ```
 Parser perceives · Brain understands · Runtime executes · UI expresses · Canvas is what the learner sees
@@ -38,11 +53,11 @@ rather than observed behaviour.
 | `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
 | `RUNTIME-003` a task targeting a SET of objectives | Runtime | **READY** — assigned | every causal operation |
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
-| `PARSER-001` derived verdict crosses the boundary | Parser | **CLAIMED** — 3rd of 3 slices | BRAIN capability gate |
-| `PARSER-002` persist the unsupported *kinds* | Parser | **IN PROGRESS** — 1st slice | PARSER-001 |
+| `PARSER-001` derived verdict crosses the boundary | Parser | **IN REVIEW** — PR #504, red only from infrastructure | BRAIN capability gate |
+| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — merged, *not* deployed | — |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
-| `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
+| `INTEGRATION-001` first real end-to-end trace | Integration | 🔴 **UNBLOCKED, UNSTARTED — P0** | the whole vision |
 
 ---
 
@@ -225,7 +240,8 @@ if you need a change there, ask and Brain will make the boundary change.
 
 ## PARSER-001 — carry the derived parse verdict across the extraction boundary
 
-**STATUS** READY — sent directly 2026-08-12, now durable here
+**STATUS** **IN REVIEW** — PR #504. Mergeable. Every red check on it is infrastructure
+(GitHub Actions billing lockout, Vercel rate limit), not a code defect.
 **PRIORITY** P1
 **DEPENDENCIES** PARSER-002 for the *reason*; the verdict itself can ship first
 **BLOCKS** Brain's capability gate becoming a real mechanism instead of a fixture label
@@ -263,7 +279,9 @@ whether it is stored or derived on read. Brain does not prescribe any of it.
 
 ## PARSER-002 — persist the *kinds* of unsupported content
 
-**STATUS** READY
+**STATUS** ✅ **MERGED** — #500, commit `bee67e41`. 🔴 **Merged, not deployed:** the Vercel daily
+build cap refused it, so the stored kinds are not yet readable in production. Verification of this
+task in production waits for the cap to reset.
 **PRIORITY** P2
 **DEPENDENCIES** none
 **BLOCKS** PARSER-001 explaining *why* something is incomplete
@@ -433,8 +451,9 @@ it a type rather than a convention.
 
 ## BRAIN-003 — causal objectives and the cognitive task contract
 
-**STATUS** BLOCKED on #496/#497 merging
-**DEPENDENCIES** #496 (substrate), #497 (contract), RUNTIME-001
+**STATUS** **READY** — #496, #497 and #494 are all merged and all ancestors of the serving commit.
+**DEPENDENCIES** ✅ satisfied. Sequenced behind `INTEGRATION-001`: designing causal cognition on top
+of a loop nobody has watched close once would be building the second storey first.
 
 `objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
 can target a **set** of objectives and one answer can write evidence for several.
@@ -459,8 +478,11 @@ satisfied *by construction* when that path is designed, not discovered afterward
 
 ## INTEGRATION-001 — the first real end-to-end learner trace
 
-**STATUS** BLOCKED
-**DEPENDENCIES** #498 (BRAIN-001) **and** #494 (RUNTIME-001) live in production
+**STATUS** 🔴 **UNBLOCKED, UNSTARTED — P0, the highest-leverage task on this board.** The status
+table and this header disagreed until 2026-08-12; the header was stale.
+**DEPENDENCIES** ✅ **SATISFIED.** The production alias `app.enternemesis.com` resolves to
+`dpl_B1Lm6ttT…` → commit `60b1365e`, and `3ec1cb71` (#494) and `c19dcc03` (#498) are both ancestors
+of it. Verified from the alias, not from a green check — see the landmine below.
 **BLOCKS** every claim about adaptive behaviour being observed rather than architectural
 
 **CAPABILITY BLOCKED** — Nemesis cannot demonstrate that the loop closes for a real learner.
@@ -483,6 +505,36 @@ row `created_at` plus a named marker, never `updated_at`.
 
 **ORDERING CONSTRAINT** — #498 must be live **before** evidence accumulates. Once the gate opens,
 rows written while `response_id` is unreadable have unrecoverable performance grouping, permanently.
+Satisfied: #498 is an ancestor of the serving commit.
+
+### 🔴 `learner_evidence = 0` IS THE BASELINE, NOT A FINDING
+
+Read the number correctly before spending an hour on it. `usage_events` holds 1,079 rows and its
+most recent is **2026-08-07** — nobody has used the product in five days. With no submissions, zero
+evidence rows is the *expected* value and says nothing about whether the gate works.
+
+| World | What the 0 means | What it asks for |
+|---|---|---|
+| Nobody submitted | correct and uninformative | **run the experiment** |
+| Someone submitted and got nothing | a second gate downstream | hunt the defect |
+
+`usage_events` settles it: nobody submitted. **This task is an experiment, not a bug hunt.** If the
+first real submission writes a row, the loop closes. If it does not, *that* is the finding, and it
+is worth more than anything else on this board.
+
+### 🔴 A GREEN VERCEL CHECK IS NOT A LIVE DEPLOYMENT
+
+`997a5886` and `99d1bdfe` each carry a green `Vercel – nemesis-web` status on GitHub, and both
+deployments are `CANCELED` — superseded mid-build, never aliased, never served. This codebase
+already knew *merged is not deployed*; today added *green is not deployed either*. Before verifying
+anything in production, resolve the alias:
+
+```bash
+vercel inspect https://app.enternemesis.com
+```
+
+Brain published the wrong serving commit to every lane from a green check before doing this. The
+error is recorded because the reasoning is the reusable part, not the conclusion.
 
 ---
 
@@ -516,3 +568,8 @@ are replaced, and Brain has repeatedly been unable to tell two Canvas sessions a
 3. **A contract that cannot be implemented is Brain's problem.** Push back here.
 4. **Review is semantic.** Brain will not review your CSS, your parser library, or your React.
    Brain reviews whether meaning survived your layer.
+5. **Claim in #505 before you implement, and read the existing claims first.** First claim wins; if
+   your task is already claimed, ask there rather than proceeding in parallel. This is not
+   hypothetical — two Runtime sessions independently built the same step 7b, and one of them
+   discarded the work afterwards.
+6. **Say which lane you are, every time you write.** Session names do not identify lanes.
