@@ -1,4 +1,10 @@
-# Reading order: the failure taxonomy, measured
+# Column segmentation (formerly filed as "reading order")
+
+🔴 **THE NAME CHANGED BECAUSE THE DIAGNOSIS DID.** This was opened as a
+reading-order defect on the strength of a 44.80 score. Inspecting the failures
+showed sequencing is 0.6% of them; the real defect was two columns being welded
+into one line before ordering ever ran. Keeping the old title would preserve a
+misleading diagnosis in the place people look it up.
 
 **The premise did not hold.** "Reading order 44.80" is overwhelmingly not a
 sequencing defect. Measured on ParseBench's own `order` rules:
@@ -94,3 +100,53 @@ CJK (5.6%), and mojibake — measured at **1 document in 381**, after an initial
 over-generalisation from a single example. Font data (`standardFontDataUrl`,
 `cMapUrl`, `useSystemFonts`) was tested against that document and changed
 nothing: the PDF has no ToUnicode map and the text is unrecoverable natively.
+
+
+---
+
+# THE FIX, AND WHAT IT DID
+
+`groupLines` now refuses to join two runs that sit on opposite sides of a gutter
+the page actually has, and the gutter is measured from RAW ITEMS before anything
+is fused — the only moment the question can be answered honestly, since
+`columnSplit` refuses any boundary a line crosses and a fused line vetoes its own
+detection.
+
+🔴 **THE CHECK IS SYMMETRIC, AND THE FIRST VERSION WAS NOT.** Items sort by y then
+x and the two columns' baselines differ by a few points, so the RIGHT column's run
+is usually reached first and the LEFT column's run joins onto it right-to-left. A
+one-directional test changed no output at all. Measured: the body run at y=82.8
+x=324 is emitted before the title fragment at y=88.1 x=80.7.
+
+## Gate results
+
+| | benchmark text set (120 docs) | Nemesis corpus (165 PDFs) |
+|---|--:|--:|
+| pages | 107 | 811 |
+| pages with a detected gutter | 31 (29.0%) | 35 (4.3%) |
+| documents whose text changed | 29 | 13 |
+| full-width fused groups | 858 → 576 (**282 repaired**) | 2972 → 2898 (**74 repaired**) |
+| pages losing or duplicating a character | **0** | **0** |
+| no-gutter pages that changed | **0** | **0** |
+| crashes | 0 | 0 |
+
+Single-column documents are byte-identical: with no gutter the parameter is null
+and the old path runs unchanged.
+
+## Taxonomy, before and after — same 14 multi-column documents
+
+| | before | after |
+|---|--:|--:|
+| both strings present | 147 | **209** |
+| — of those, WRONG SEQUENCE | 6 | **8** |
+| — of those, correct order | 141 | **201** |
+| `before` text not extracted | 196 | **149** |
+| — of those, present but FRAGMENTED | 109 | **73** |
+| `after` text not extracted | 197 | **152** |
+
+🔴 **SEGMENTATION IMPROVED; GENUINE MISORDERING DID NOT.** Fragmentation fell by a
+third (109 → 73) and 62 more sentence pairs are now found intact, but the count of
+truly out-of-sequence pairs rose from 6 to 8. As a share of judgeable pairs it is
+flat (4.1% → 3.8%), and the rise is because far more text now survives to BE
+judged — but it did not improve, and this is not a reading-order win. Ordering
+remains unfixed and unclaimed.

@@ -60,6 +60,7 @@ import { latticeRegions, type LatticeBox } from "./table-lattice";
 import { cellsOf, trimEmptyCellColumns } from "./table-spans";
 import { validateTable, type TableRejection } from "./table-validate";
 import {
+  columnSplit,
   groupLines,
   groupParagraphs,
   headingLevels,
@@ -676,7 +677,16 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
   let title: string | null = null;
 
   pages.forEach((page, unit) => {
-    const lines = readingOrder(groupLines(page.items), page.width);
+    // 🔴 FIND THE GUTTER BEFORE ANYTHING IS FUSED. `columnSplit` refuses any
+    // boundary that a line crosses, so asking it after `groupLines` asks it
+    // about lines that may already straddle the very gutter being looked for.
+    // Raw items cannot straddle it — a run of text sits in one column — so this
+    // is the only point where the question can be answered honestly.
+    //
+    // A page with no real gutter returns null and `groupLines` behaves exactly
+    // as before.
+    const gutter = columnSplit(page.items, page.width);
+    const lines = readingOrder(groupLines(page.items, gutter), page.width);
     const groups = groupParagraphs(lines);
     const levels = headingLevels(groups);
 

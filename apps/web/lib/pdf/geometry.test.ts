@@ -184,3 +184,84 @@ test("a zero-sized page yields a zero rect rather than a division by zero", () =
     y: 0,
   });
 });
+
+// ── The column gutter ───────────────────────────────────────────────────────
+//
+// 🔴 THE DEFECT THESE PIN. `groupLines` allowed a join when the horizontal gap
+// was under 2.5x the item's OWN font height. That licence is a property of the
+// TYPE, while a gutter is a property of the PAGE, so the bigger the text the
+// more freely it could weld two columns together — and the biggest text on a
+// page is its title. Measured on a real two-column paper, one emitted block
+// spanned 75% of the page: the title's second line married to the right
+// column's body text.
+//
+// Worse, the damage was self-concealing: `columnSplit` refuses any candidate
+// boundary that a line CROSSES, so a single fused line vetoed the split,
+// `readingOrder` fell back to top-to-bottom, and the columns interleaved for the
+// rest of the page. The fusion destroyed the evidence the detector needed.
+
+test("🔴 a title fragment does not marry the next column's body text", () => {
+  // The real geometry, from text_multicolumns__2col_paper.pdf page 1.
+  const title = { height: 15.1, text: "How Prompt Politeness Affects", width: 198.8, x: 80.7, y: 88.1 };
+  const body = { height: 10.1, text: "through a natural language interface, there ", width: 216, x: 324, y: 82.8 };
+  const gutter = 306;
+
+  assert.equal(groupLines([title, body]).length, 1, "without the gutter they fuse — the defect");
+  const split = groupLines([title, body], gutter);
+  assert.equal(split.length, 2, "with it they stay apart");
+  assert.ok(split.every((l) => l.width < 300), "and neither line spans the page");
+});
+
+test("🔴 the check is SYMMETRIC — the right column is often reached FIRST", () => {
+  // Items sort by y then x, and the two columns' baselines differ by a few
+  // points, so the right column's run is frequently emitted first and the left
+  // column's run joins onto it RIGHT-TO-LEFT. A one-directional test sees
+  // nothing wrong with that, which is why the first version of this fix changed
+  // no output at all.
+  const rightFirst = { height: 10, text: "right column text", width: 200, x: 324, y: 82 };
+  const leftSecond = { height: 15, text: "left column text", width: 190, x: 80, y: 88 };
+  assert.equal(groupLines([rightFirst, leftSecond], 306).length, 2);
+});
+
+test("a gutter of null leaves grouping exactly as it was", () => {
+  const items = [item("one", 50, 100), item("two", 90, 100), item("far", 400, 100)];
+  assert.deepEqual(
+    groupLines(items, null).map((l) => l.text),
+    groupLines(items).map((l) => l.text),
+  );
+});
+
+test("🔴 runs on ONE side of the gutter still join normally", () => {
+  // The rule forbids crossing, not joining. Two words inside the left column
+  // must still make one line, or every column would shatter into single words.
+  const a = item("hello", 80, 100);
+  const b = item("world", 80 + a.width + 3, 100);
+  assert.equal(groupLines([a, b], 306).length, 1);
+});
+
+test("columnSplit reads raw items, which is the only moment it can be asked honestly", () => {
+  // 🔴 REAL COLUMN GEOMETRY, NOT A SKETCH. A first attempt used 100pt columns
+  // with a 170pt trough and was correctly REFUSED: `columnSplit` requires the
+  // gutter to be narrow beside the columns it separates, which is the test that
+  // tells a two-column article from a term-and-definition list. Typeset columns
+  // are ~250pt with a ~30pt gutter on a 612pt page.
+  const wide = (text: string, x: number, y: number): TextItem => ({ height: 10, text, width: 250, x, y });
+  const items: TextItem[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    items.push(wide("left side words here", 60, 100 + i * 14));
+    items.push(wide("right side words here", 340, 100 + i * 14));
+  }
+  const split = columnSplit(items, 612);
+  assert.ok(split !== null, "a real gutter is found");
+  assert.ok(split! > 200 && split! < 400, `split sits in the gutter, got ${split}`);
+});
+
+test("🔴 a page with a full-width line reports NO columns — reading it in column order would scramble it", () => {
+  const wide = (text: string, x: number, y: number, w = 250): TextItem => ({ height: 10, text, width: w, x, y });
+  const items: TextItem[] = [wide("a headline that runs the whole width", 60, 60, 530)];
+  for (let i = 0; i < 5; i += 1) {
+    items.push(wide("left side words", 60, 100 + i * 14));
+    items.push(wide("right side words", 340, 100 + i * 14));
+  }
+  assert.equal(columnSplit(items, 612), null);
+});
