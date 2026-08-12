@@ -110,6 +110,21 @@ export interface CanonicalSourceTable {
    * stated it.
    */
   headerSource?: "present" | "inherited";
+  /**
+   * Where `rows[0][0]` actually sits in the source's own coordinates.
+   *
+   * 🔴 NOT GEOMETRY, AND THAT IS WHY IT CROSSES. Rectangles and cell spans stop
+   * at this boundary on purpose: they describe how a table was DRAWN, and a
+   * consumer branching on them would be reasoning about layout. An origin is the
+   * opposite — it is the only thing that makes a reference into the grid mean
+   * what the author would type. A spreadsheet whose data begins at C5 has its
+   * first cell at `rows[0][0]`, and a consumer that calls that "A1" cites the
+   * wrong cell of every row, silently, while the grid itself is perfect.
+   *
+   * Absent when the grid starts at the origin, which is every table that came
+   * from a page rather than a sheet.
+   */
+  origin?: { row: number; column: number };
 }
 
 export interface CanonicalSourceUnit {
@@ -347,6 +362,9 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
             rows: block.table.rows,
             ...(block.table.columns?.length ? { columns: block.table.columns } : {}),
             ...(block.table.headerSource ? { headerSource: block.table.headerSource } : {}),
+            // Deliberately admitted — see `CanonicalSourceTable.origin`. Without it a
+            // sheet that starts at C5 is addressable only as though it started at A1.
+            ...(block.table.origin ? { origin: block.table.origin } : {}),
           },
         }
       : {}),
