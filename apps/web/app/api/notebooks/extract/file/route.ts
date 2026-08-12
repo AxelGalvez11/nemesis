@@ -42,7 +42,7 @@ import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
-import { parseDocument } from "@/lib/notebooks/parse-document";
+import { kindFor, parseDocument, sniffKind } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
 import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
@@ -60,11 +60,6 @@ export const maxDuration = 300;
  *  the real fix. Anything larger must come in by reference. */
 const MAX_INLINE_BYTES = 4 * 1024 * 1024;
 
-type FileKind = "pdf" | "docx" | "pptx" | "image";
-
-const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-
 /** The one place the ceiling is put into words, so the number a student reads
  *  can never drift from the number the code enforces — which is exactly how
  *  "25 MB max" survived for months against a real limit of 4.5. */
@@ -72,41 +67,25 @@ function sizeMessage(): string {
   return `That file is too large (${Math.round(MAX_SOURCE_BYTES / (1024 * 1024))} MB max).`;
 }
 
-function kindFor(name: string, type: string): FileKind | null {
-  const lower = name.toLowerCase();
-  if (lower.endsWith(".pdf") || type === "application/pdf") return "pdf";
-  if (lower.endsWith(".docx") || type === DOCX_MIME) return "docx";
-  if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
-  if (visionMime(name, type)) return "image";
-  return null;
-}
-
 /**
- * What a file IS, when its name no longer says.
+ * 🔴 WHICH FORMATS EXIST IS NOT THIS FILE'S OPINION — AND IT USED TO BE.
  *
- * A real course folder had two lecture PDFs whose long filenames had been truncated
- * past the ".pdf" — the app refused both, and the student would have had no idea why
- * a file that opens fine everywhere else could not be added. The contents are
- * unambiguous, so read them: a PDF opens with "%PDF", and the Office formats are zips
- * whose first entry names say which one they are. PURE.
+ * This route carried its own private `kindFor`/`sniffKind`, written before the
+ * canonical pair moved to lib/, and the worker route already imported the real
+ * ones. So the two lanes disagreed about what a file even IS. When .xlsx support
+ * landed, `parse-document.ts` learned about spreadsheets, the worker learned with
+ * it, and this route — the door EVERY interactive upload comes through — kept
+ * refusing them with 415 "Unsupported file". A complete parser behind a shut door
+ * looks exactly like a missing parser to a student.
+ *
+ * Found by uploading a real workbook to production. Every unit test passed,
+ * because they all tested the canonical copy.
+ *
+ * The old comment here said these were not exported because Next rejects extra
+ * exports from a route file, and that the fix was to move them to lib/ if anyone
+ * else needed them. They were moved. This is the other half of that move.
  */
-// NOT exported: Next type-checks a route file's exports against its own Route
-// type and rejects any extra one ("sniffKind is not a valid Route export
-// field"), which fails `next build` outright. Nothing imports this — the export
-// keyword was never load-bearing. If it is ever needed elsewhere, move the
-// function to lib/ rather than exporting it from a route.
-function sniffKind(bytes: Uint8Array): FileKind | null {
-  if (bytes.length < 4) return null;
-  if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
-  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
-  if (!isZip) return null;
-  // Only the entry names are needed, and they are plain ASCII in the headers, so a
-  // scan beats unpacking a 25 MB archive to answer one question.
-  const window = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 512 * 1024))).toString("latin1");
-  if (window.includes("ppt/slides/")) return "pptx";
-  if (window.includes("word/document.xml")) return "docx";
-  return null;
-}
+const supportedFormats = "a photo, a PDF, Word (.docx), PowerPoint (.pptx), or Excel (.xlsx)";
 
 export async function POST(req: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
@@ -203,7 +182,7 @@ export async function POST(req: Request): Promise<Response> {
   const kind = kindFor(sourceName, sourceType) ?? sniffKind(bytes);
   if (!kind) {
     return NextResponse.json(
-      { error: "Unsupported file. Add a photo, a PDF, Word (.docx), or PowerPoint (.pptx)." },
+      { error: `Unsupported file. Add ${supportedFormats}.` },
       { status: 415 },
     );
   }
