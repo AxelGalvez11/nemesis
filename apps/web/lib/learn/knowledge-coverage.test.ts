@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { structureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
@@ -268,6 +269,27 @@ test("two sources both fully covered are owned; one uncovered unit anywhere is n
 
   const withProse = modelOf([{ id: "p1", text: "One paragraph of ordinary explanation." }, GLOSSARY_TABLE]);
   assert.equal(canvasOf(glossary, withProse).owns, false);
+});
+
+// ── read, then decide, then write ───────────────────────────────────────────
+
+test("🔴 nothing is written before ownership is decided", () => {
+  // 🔴 THIS GATE IS CLOSED FOR EVERY CANVAS IN PRODUCTION TODAY, so no run exercises it and every
+  // test above would stay green if the write moved back above the decision. The previous step lost
+  // a week to exactly this shape: an insert path that passed its proof because the proof tested the
+  // index instead of the write. Ordering is therefore asserted directly.
+  const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  const read = code.indexOf("await Promise.all(");
+  const decide = code.indexOf("if (!ownership.owns) return");
+  const write = code.indexOf("await saveKnowledge(");
+
+  assert.notEqual(read, -1);
+  assert.notEqual(decide, -1, "ownership must be decided in canvas-knowledge, not by the caller");
+  assert.notEqual(write, -1);
+  assert.ok(read < decide, "sources are read before ownership can be decided");
+  assert.ok(decide < write, "a canvas the policy will not teach must leave no rows behind");
 });
 
 test("coverage accumulates without mutating what it was given", () => {
