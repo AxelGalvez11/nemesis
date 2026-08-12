@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase";
 
 import type { LearnerEvidence, EvidenceVerdict } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
-import { objectivesForKnowledge, type LearningObjective } from "./learning-objective";
+import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 
 /** A table that does not exist yet is a deployment state, not a bug worth shouting about. */
@@ -128,6 +128,20 @@ export interface EvidenceToRecord {
   responseId?: string | null;
   responseText?: string | null;
   taskId?: string | null;
+  // ── Observations about the attempt ────────────────────────────────────────
+  //
+  // 🔴 WHAT WAS MEASURED, NEVER WHAT IT MEANS. There is no `fluency`, no `automaticity` and no
+  // banded latency here, and there must never be: an interpretation written into the log cannot be
+  // revised afterwards, because rows recorded under the old rule mean something different from rows
+  // recorded under the new one and nothing can tell them apart.
+  //
+  // 🔴 OPTIONAL BECAUSE ABSENT MEANS NOT OBSERVED — never defaulted, never backfilled.
+  /** Which cognitive operation was demanded. */
+  operation?: ObjectiveCapability | null;
+  /** Milliseconds from the prompt appearing to submission, as measured. Raw. */
+  responseLatencyMs?: number | null;
+  /** How much assistance the runtime offered during the attempt. 0 is the prompt alone. */
+  scaffoldingLevel?: number | null;
 }
 
 /**
@@ -152,8 +166,15 @@ export async function recordEvidence(userId: string | null, evidence: EvidenceTo
       misconceptions: evidence.misconceptions ?? [],
       objective_id: evidence.objectiveRowId,
       occurred_at: evidence.occurredAt,
+      // 🔴 `?? null` IS "NOT OBSERVED", AND THAT IS WHY IT IS NOT `?? 0`. A zero latency asserts an
+      // instantaneous answer; a zero scaffolding level asserts an unaided attempt. Both are real
+      // claims, and writing either when nothing measured it puts a fact into the log that never
+      // happened — which no later migration can distinguish from one that did.
+      operation: evidence.operation ?? null,
       response_id: evidence.responseId ?? null,
+      response_latency_ms: evidence.responseLatencyMs ?? null,
       response_text: evidence.responseText ?? null,
+      scaffolding_level: evidence.scaffoldingLevel ?? null,
       task_id: evidence.taskId ?? null,
       user_id: userId,
       verdict: evidence.verdict,
@@ -182,7 +203,14 @@ export async function loadEvidence(
   const keyFor = new Map(objectives.map((o) => [o.rowId, o.identityKey]));
   const { data, error } = await supabase
     .from("learner_evidence")
-    .select("id,objective_id,occurred_at,demonstration_obtained,verdict,confidence,misconceptions,canvas_id,evaluator_version")
+    // 🔴 THE OBSERVATIONS ARE READ BACK, NOT ONLY WRITTEN. A field that is stored and never
+    // selected is this codebase's most-repeated defect — six structural fields have died at a
+    // boundary exactly this way, each one passing every test on both sides. Nothing INTERPRETS
+    // these yet; they are carried so the projection can, and so the round trip is provable now
+    // rather than discovered to be broken when something finally needs them.
+    .select(
+      "id,objective_id,occurred_at,demonstration_obtained,verdict,confidence,misconceptions,canvas_id,evaluator_version,operation,response_latency_ms,scaffolding_level",
+    )
     .in("objective_id", [...keyFor.keys()])
     // Ends in a unique column so a paged read cannot silently skip or repeat a row.
     .order("occurred_at", { ascending: true })
@@ -204,5 +232,11 @@ export async function loadEvidence(
       occurredAt: new Date(row.occurred_at as string).toISOString(),
       verdict: (row.verdict as EvidenceVerdict | null) ?? null,
       ...(row.confidence == null ? {} : { confidence: row.confidence as number }),
+      // 🔴 OMITTED WHEN NULL RATHER THAN COERCED. A row written before these existed must read back
+      // as "not observed", and `?? 0` would turn every one of them into a claim that the learner
+      // answered instantly with no help. Spread-when-present keeps absent absent.
+      ...(row.operation == null ? {} : { operation: row.operation as ObjectiveCapability }),
+      ...(row.response_latency_ms == null ? {} : { responseLatencyMs: row.response_latency_ms as number }),
+      ...(row.scaffolding_level == null ? {} : { scaffoldingLevel: row.scaffolding_level as number }),
     }));
 }

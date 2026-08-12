@@ -249,9 +249,13 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     [refresh, supported, uid],
   );
 
-  /** An opportunity that produced nothing — a reveal, a giving-up, a typed "I don't know". */
+  /** An opportunity that produced nothing — a reveal, a giving-up, a typed "I don't know".
+   *
+   *  🔴 `tookMs` TRAVELS DOWN THIS PATH TOO. Someone who typed "I don't know" spent time doing it,
+   *  and that is an observation about the attempt worth keeping — dropping it here would make the
+   *  admission look like an opportunity nobody watched. It stays absent when nothing typed it. */
   const admitNothing = useCallback(
-    async (said: string | null) => {
+    async (said: string | null, tookMs?: number) => {
       const active = prompt;
       if (!active || !decision || !uid) return;
       canvasCapture("canvas_unknown_admitted", canvas, { objective: decision.objective.identityKey });
@@ -263,6 +267,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
           occurredAt: new Date().toISOString(),
           prompt: active,
           responseText: said,
+          ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
@@ -283,7 +288,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       // learner would be recorded as having got it wrong when they told us they had nothing. Same
       // path as the old button: an opportunity given, no demonstration obtained, no verdict.
       if (isAdmissionOfNotKnowing(said)) {
-        await admitNothing(said);
+        await admitNothing(said, tookMs);
         return;
       }
 

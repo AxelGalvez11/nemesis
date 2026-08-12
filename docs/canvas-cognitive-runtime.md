@@ -432,7 +432,7 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 knowledge_types: association
 cognitive_operations: recall
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
-evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveRowId, occurredAt, responseId, responseText, taskId, verdict
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseText, scaffoldingLevel, taskId, verdict
 ```
 
 ### Implemented
@@ -443,6 +443,7 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | Content-derived versioned identity, converging across canvases without a join | `lib/learn/knowledge-identity.ts` |
 | Objectives as capabilities over knowledge, with semantic roles | `lib/learn/learning-objective.ts` |
 | Append-only evidence log as truth; state as a projection | `lib/learn/learner-evidence.ts`, `learner_evidence` table |
+| Raw observations preserved — `operation`, `response_latency_ms`, `scaffolding_level` | Track B1; written, read back, and interpreted by nothing |
 | Stateless one-decision policy (no sequence, no memory between calls) | `lib/learn/teaching-policy.ts`, `policy-runtime.ts` |
 | Evidence invariants §5 items 1–4, 6 | `use-policy-runtime.ts`, `objective-task.ts` |
 | "I don't know" as no-demonstration, distinct from incorrect (§5.5) | `lib/learn/response-admission.ts` |
@@ -469,12 +470,15 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 - **No compression strategy** (§7) — no rule extraction, chunking, grouping or class-plus-exception
   detection. Four facts stay four facts.
 - **No adaptive difficulty** (§4) — nothing moves the demand toward the edge of ability.
-- **Response latency captured but unused** — `tookMs` reaches the evaluator's task payload and is
-  **not written to evidence**. The learner model cannot currently distinguish fast automatic recall
-  from slow successful reconstruction.
+- **Nothing INFERS from the observations yet.** `operation`, `response_latency_ms` and
+  `scaffolding_level` are recorded and read back as of Track B1, and `projectLearnerState` ignores
+  all three — deliberately, and a test asserts it. The learner model still cannot distinguish fast
+  automatic recall from slow successful reconstruction; what changed is that the raw material for
+  that distinction is no longer being thrown away.
 - **Semantic answer depth not represented** — the evaluator returns a verdict, so *"ACE inhibitors
   cause high potassium"* and a full causal explanation produce the **same** state update. This
-  directly violates the intent of §4 and is the largest single gap in the learner model.
+  directly violates the intent of §4 and is the largest remaining gap in the learner model. It waits
+  on the evaluator being able to emit a well-defined observation, not on anyone deciding a scale.
 - **No hesitation, revision or clarification signals.**
 - **No causal, conceptual or procedural runtime** (§3) — no extraction and no interaction.
 - **No compositional generated surface** (§8, §10) — one runtime still owns the page.
@@ -509,7 +513,7 @@ The schema must be able to grow **without a migration that rewrites the meaning 
 |---|---|---|
 | **7a** — strict automatic association ownership | Removes the `?policy=1` URL gate; ownership decided from source coverage | **shipped** (PR #484) |
 | **7b** — compositional Canvas | Policy tasks stop replacing the page; the Canvas presents them alongside its document | next, and the architectural priority |
-| **Learner-state enrichment** | `operation`, `response_latency_ms`, `response_text` and `scaffolding_level` become observations | **runs in parallel with 7b — see below** |
+| **B1 - preserve raw observations** | `operation`, `response_latency_ms`, `scaffolding_level` recorded; `response_text` was already stored | **shipped** |
 | **Causal knowledge + causal interaction** | First second knowledge type, with a real interaction rather than a fallback quiz | after 7b |
 | **Broader knowledge and strategy types** | Conceptual, procedural, quantitative; compression, mnemonics, analogies | after that |
 

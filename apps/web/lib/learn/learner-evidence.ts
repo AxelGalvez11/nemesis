@@ -11,6 +11,8 @@
 // `?? "basics_known"` one layer deeper: the moment "we have not asked" is stored as "they cannot",
 // every later decision is made against a claim about a person that nobody ever observed.
 
+import type { ObjectiveCapability } from "./learning-objective";
+
 /**
  * Two INDEPENDENT facts, kept independent.
  *
@@ -49,6 +51,31 @@ export interface LearnerEvidence {
    *  after the fact there is no other way to tell them apart. Not part of any key — nothing keys
    *  on it — but recorded for the same reason identity keys carry their version. */
   evaluatorVersion?: string | null;
+
+  // ── Observations about the attempt ────────────────────────────────────────
+  //
+  // 🔴 RAW MEASUREMENTS, AND NOTHING READS THEM YET. They are carried so the record is complete,
+  // not because the projection below has started using them — `projectLearnerState` ignores all
+  // three, and a test asserts that it does. Inference over them is a later, separate step, and
+  // keeping the two apart is exactly what lets Nemesis change its mind about what 14 seconds means
+  // without corrupting a single row of what actually happened.
+  //
+  // 🔴 ABSENT MEANS NOT OBSERVED. Never zero, never a default, never backfilled.
+
+  /** Which cognitive operation the prompt demanded. */
+  operation?: ObjectiveCapability;
+  /**
+   * Milliseconds from the prompt appearing to the answer being submitted.
+   *
+   * 🔴 RAW, AND IT MUST STAY RAW. Nothing may store a band, a percentile or a verdict about this.
+   * Time means different things for different operations — 15 seconds is slow for an association
+   * and unremarkable for a causal explanation — so any interpretation depends on context this row
+   * does not hold, and burying one here would make it permanent.
+   */
+  responseLatencyMs?: number;
+  /** How much assistance the runtime offered during the attempt. 0 is the prompt alone.
+   *  🔴 What was OFFERED, not whether the learner needed it. */
+  scaffoldingLevel?: number;
 }
 
 /** The judged outcomes. Mirrors the existing `Verdict` in canvas-model.ts, which is deliberate:
