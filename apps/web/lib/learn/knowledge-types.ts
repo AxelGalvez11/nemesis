@@ -147,14 +147,21 @@ export interface CausalNode {
 /**
  * What the source claims the cause DOES to the effect.
  *
- * 🔴 FIVE, EACH GROUNDED IN LANGUAGE ACTUALLY PRESENT IN THE CORPUS — not an ontology written in
+ * 🔴 EACH ONE GROUNDED IN LANGUAGE ACTUALLY PRESENT IN THE CORPUS — not an ontology written in
  * advance. Measured 2026-08-12 over 1,231 readable units: `leads to`/`results in`/`produces`;
- * `increases`/`raises`; `reduces`/`lowers`/`ablates`; `inhibits`/`blocks`/`suppresses`/`prevents`;
- * `allows`/`enables`/`permits`. Add a sixth when a real document needs one.
+ * `increases`/`raises`; `reduces`/`lowers`/`ablates`; `inhibits`/`blocks`/`suppresses`;
+ * `prevents`/`averts`; `allows`/`enables`/`permits`. Add another when a real document needs one.
  *
  * 🔴 CAUSALITY AND POLARITY ARE DIFFERENT AXES, which is why this is not `increase | decrease`.
  * "Receptor activation enables a downstream process" and "drug X inhibits enzyme Y" are causal
  * claims carrying no polarity, and forcing them onto a polarity scale would invent one.
+ *
+ * 🔴 `inhibits` AND `prevents` ARE SEPARATE BECAUSE THE CORPUS USES THEM SEPARATELY. Measured: the
+ * object of `inhibit` is a mechanism — a protein, a conversion, reuptake, an ion channel — while
+ * the object of `prevent` is an outcome someone did not want. "Drug inhibits enzyme" and "drug
+ * prevents stroke" are different claims, and collapsing them to fit a smaller enum would be exactly
+ * the semantic corruption this file refuses everywhere else. When the distinction is genuinely
+ * unclear in a passage, the extractor abstains rather than picking one.
  */
 export type CausalRelationKind =
   /** Brings about — leads to, results in, produces. */
@@ -163,7 +170,9 @@ export type CausalRelationKind =
   | "decreases"
   /** Makes possible without producing on its own — allows, permits. */
   | "enables"
-  /** Stops or suppresses — inhibits, blocks, prevents. */
+  /** Acts against a MECHANISM — inhibits, blocks, suppresses. */
+  | "inhibits"
+  /** Stops an OUTCOME from occurring — prevents, averts. */
   | "prevents";
 
 /**
@@ -195,6 +204,50 @@ export interface CausalRelation {
    * nobody looked.
    */
   qualifier?: string;
+  /**
+   * The verb the document actually used — "leads to", "inhibits", "ablates".
+   *
+   * 🔴 KEPT BECAUSE THE NORMALISED KIND IS A LOSSY READING OF IT. `relation` is what identity and
+   * composition run on; this is what the author wrote. When a later pass decides the six kinds were
+   * too coarse, the evidence for re-deriving them is here rather than gone — and an audit asking
+   * "why does Nemesis call this `inhibits`?" has an answer that is not a hash.
+   */
+  sourceVerb?: string;
+  /**
+   * The exact passage that asserts this edge, verbatim.
+   *
+   * 🔴 SOURCE TRUTH AND NORMALISED REPRESENTATION ARE DIFFERENT THINGS AND BOTH ARE REQUIRED. The
+   * normalised edge exists so two documents can converge and so mechanisms can compose; this exists
+   * so the claim can be checked against the document by eye. Together they answer the only question
+   * that matters when a learner disputes something: "Nemesis believes A may cause B because THIS
+   * passage said THAT." A model-extracted edge with no assertion behind it is an assertion by us.
+   */
+  assertion: string;
+}
+
+/**
+ * Which system produced a knowledge object, and under what rules.
+ *
+ * 🔴 KNOWLEDGE-GENERATION PROVENANCE, NEVER LEARNER COGNITION. Nothing here may reach
+ * `learner_evidence`: a model's confidence that a passage asserts something is a fact about our
+ * extractor, and storing it beside a learner's demonstration would let one be read as the other.
+ * The learner's uncertainty, the extractor's uncertainty and the parser's limitations are three
+ * different kinds of not-knowing, and collapsing any two of them into a generic "unknown" is how a
+ * system starts filling gaps with confidence.
+ *
+ * 🔴 AND IT EXISTS SO A CORPUS CAN BE REGENERATED SAFELY. When the prompt or the model changes,
+ * "which objects came from the old extractor?" must be answerable by query rather than by guessing
+ * from dates — otherwise the only safe migration is deleting everything.
+ */
+export interface ExtractionProvenance {
+  /** The extractor and its rules version, e.g. "causal/1". */
+  extractor: string;
+  /** Which lane produced it — a deterministic grid reader, a model over prose. */
+  lane: KnowledgeDerivation;
+  /** The model, when one was involved. Absent for deterministic lanes. */
+  model?: string;
+  /** The version of the response schema the model was held to. */
+  schemaVersion?: string;
 }
 
 /** One learnable thing, of one type.
@@ -254,6 +307,9 @@ export interface KnowledgeObject {
   /** Which version of the extractor produced this, so a corpus extracted under old rules can be
    *  found and redone rather than silently mixed in with a newer one. */
   extractionVersion?: string;
+  /** The full generation record — which system, which lane, which model, which schema.
+   *  🔴 Never learner cognition. See `ExtractionProvenance`. */
+  provenance?: ExtractionProvenance;
 }
 
 /**
@@ -271,8 +327,16 @@ export interface KnowledgeObject {
  * So a delimiter is not evidence of an association. A grid is.
  */
 export type KnowledgeDerivation =
-  /** One row of a real grid, read as cells. */
-  | "table-row";
+  /** One row of a real grid, read as cells. Deterministic. */
+  | "table-row"
+  /** A model reading structured prose under a strict abstain-first contract.
+   *
+   *  🔴 THE FIRST LANE WHERE A MODEL DECIDES WHAT KNOWLEDGE EXISTS, which is why it is named
+   *  rather than folded into the one above. Measured 2026-08-12: trigger-word matching over this
+   *  corpus was 14% precise, so a deterministic prose lane was not an option — but a model-derived
+   *  object must be distinguishable from a grid-derived one for ever, because they carry different
+   *  risk and only one of them can be re-derived by reading the document. */
+  | "model-prose";
 
 /** What a learner produced on one association attempt.
  *

@@ -1,0 +1,3069 @@
+{
+  "builtAt": "2026-08-12",
+  "corpus": "production library_sources, 8 parsed documents, 1231 readable units",
+  "counts": {
+    "degraded-source": 145,
+    "noun-phrase": 2,
+    "causal": 33,
+    "epistemic": 3,
+    "vague": 7,
+    "figure-description": 4,
+    "duplicate": 6,
+    "cross-sentence": 5,
+    "arrow-as-range": 1,
+    "question-stem": 17,
+    "fragment": 3,
+    "administrative": 7,
+    "non-assertion": 1
+  },
+  "items": [
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c001",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Identify the influence of environmental and behavioral factors on health to appropriately reduce",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c002",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Partial completion of a higher grade’s requirements does not raise your final grade.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c003",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "activity that allows pharmacy students to work with and learn from at least one other health",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c004",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "result in failing the course or remediation of the activity specified by the Course Director.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c005",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "activity is mandatory, and failure to complete it satisfactorily will result in an incomplete in the course",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c006",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Late submissions are likely to lead to a reduction in your letter grade",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c007",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Continued poor performance may result in additional required academic",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c008",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Failure to comply with this will result in reporting to Academic Affairs and the course director.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c009",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "This course includes an interprofessional education (IPE) activity/ies that allows pharmacy students to",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c010",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Failure to successfully complete the IPE activity may result in failure of the course or remediation of the",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c011",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "absences will result in missed opportunities to meet required specifications, which will affect the final",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c012",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "hours of the scheduled class will result in an unexcused absence.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c013",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Each unexcused absence beyond the first will result in a grade reduction as outlined in the IPECS 2 grading",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c014",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "Failure to adhere to this policy may result in disciplinary action,",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c015",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "is not permitted unless explicitly authorized by the course director or instructor.",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c016",
+      "label": "degraded-source",
+      "source": "317f3172",
+      "text": "any point during a course or the program may result in a course letter grade of “F” and/or disciplinary",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c017",
+      "label": "noun-phrase",
+      "source": "9a3360d1",
+      "text": "95% of patients genotyped have at least one high-risk result in their health record",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b55",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c018",
+      "label": "noun-phrase",
+      "source": "9a3360d1",
+      "text": "## Slide 6: 95% of patients genotyped have at least one high-risk result in their health record",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b56",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c019",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Now in nature, the same gene region may have slight differences (or variations) at specific locations leading to a different (or alternate) form of the gene sequence.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b162",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c020",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "The combined sequences will lead to your phenotype.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b162",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c021",
+      "label": "epistemic",
+      "source": "9a3360d1",
+      "text": "In pharmacogenomics, this CYP2D6 is one of the ideal examples because of how many variants have been identified in it (leading to a wide swath of protein activity changes).",
+      "triggers": [
+        "leads to",
+        "because"
+      ],
+      "unitId": "b173",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c022",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Thus, it will not take a genius to realize if both alleles make a normal CYP2D6 protein, those two gene copies will produce a “normal” phenotype.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b173",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c023",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Since you still have one functional gene, your expected phenotype would more than likely produce reduced protein levels and function (or intermediate function).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b173",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c024",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "In the end, you need to know that the underlying variants (which you will shortly learn about) drive the type of alleles that are found in nature for any particular gene, and therefore they provide you with the genetic diversity that ultimately forms the basis of a patient’s phenotype or protein function.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b173",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c025",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Also, intrinsic biological mechanisms as you should be aware of where cells are designed to undergo DNA repair or replication, especially in reproductive cells, were errors can occur and lead to a permanent change in the DNA.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b240",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c026",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "Therefore, each individual will have their own set of genetic code by birth, but over time, DNA can change based upon these factors so slow evolution of genetic code will be propagated.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b240",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c027",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "[Speaker notes: Going back to what you know about gene structure with 4 distinct regions listed below: First, there is a promoter region that will bind a series of transcription factors that leads to the expression of a gene that is comprised of the coding sequence (exons or expressed sequences) and intervening sequences (introns).",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b275",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c028",
+      "label": "figure-description",
+      "source": "9a3360d1",
+      "text": "This image shows two vertical stacks of toy blocks representing nucleotide bases.",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "b299",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c029",
+      "label": "figure-description",
+      "source": "9a3360d1",
+      "text": "The top stack features a yellow block with a red letter \"A\" above a small block labeled \"OR\" and a green block with a white letter \"G,\" while the bottom stack features an orange block with a white letter \"C\" above a small block labeled \"OR\" and a blue block with a red letter \"T.\"",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "b299",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c030",
+      "label": "epistemic",
+      "source": "9a3360d1",
+      "text": "In this example, you have ATG GCC ATC C (and you would know it is DNA because it has a T not U, which is in RNA).",
+      "triggers": [
+        "because"
+      ],
+      "unitId": "b312",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c031",
+      "label": "epistemic",
+      "source": "9a3360d1",
+      "text": "Therefore, you would generally document this as a DNA level change (“g”) at 6C>A.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b312",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c032",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "The thing you can notice from the codon table is that a change in the last (third) nucleotide in the codon is “wobbling” and may not lead to a different insertion of amino acid.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b312",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c033",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C  T (this is a transition variant – pyrimidine to pyrimidine).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b327",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c034",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C  T (this is a transition variant – pyrimidine to pyrimidine).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b403",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c035",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "[Speaker notes: In this example, a series of nucleotides starting with C-A-T is shown and this sequence results in the incorporation of an amino acid (His).",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b478",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c036",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Similar to the missense variant in the last slide where the nucleotide change is associated with an amino acid change, a nonsense variant is where the nucleotide switch results in a stop codon.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b550",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c037",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "The incorporation of a stop codon will lead to pre-mature termination of the amino acid change.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b550",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c038",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "If it is located near the 5’ end of the sequence, this will result in complete loss of the amino acid (and therefore, protein function).",
+      "triggers": [
+        "results in",
+        "therefore"
+      ],
+      "unitId": "b550",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c039",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "However, the effect will generally lead to reduced protein function (from little effect to a complete loss in protein function).",
+      "triggers": [
+        "leads to",
+        "incr/decr"
+      ],
+      "unitId": "b550",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c040",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "- If nucleotide change is within the coding region and leads to a 1 or 2 bp indel, the amino acid sequence will be definitely altered by composition or length.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b556",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c041",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "can be the most protein altering due to what it causes…a “frameshift”.",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "b557",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c042",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "This type of indel will definitely change the composition of the amino acid sequence after the location of the indel and likely incorporate a stop codon to pre-maturely reduce protein length.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b557",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c043",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Invariably, this would reduce, if not completely ablate the normal function of this protein.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b630",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c044",
+      "label": "cross-sentence",
+      "source": "9a3360d1",
+      "text": "Thus, changing the amino acid from His to Thr.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b737",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c045",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "This single amino acid addition (or you could have a situation where a His was removed) could have an effect on protein function, but generally it would be minimal to what a 1 or 2 bp deletion would cause.",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "b737",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c046",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "In one scenario, you can have a single bp deletion that leads to a change in the codons reading the sequence and actually leads to a pre-mature insertion of a termination codon.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b769",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c047",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "In a second scenario, you can have a 2 bp deletion that also leads to amino acid changes distinct from the 1 bp deletion, but in the end, does completely effects what the protein will form after the deletion.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b769",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c048",
+      "label": "arrow-as-range",
+      "source": "9a3360d1",
+      "text": "- Large DNA segments (kb → Mb) that may vary in copy number (duplication or deletion)",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "b774",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c049",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "- Change gene dosage → affects protein levels and function",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "b777",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c050",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Since they are typically gene sequences, this can duplicate or more the number of copies of a particular gene, and thus, affect the gene expression and protein function.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b778",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c051",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "If this B gene has normal function, then the additional copies (3 more over the normal 2 copies) would likely increase the overall protein function as the amount of the protein would be increased.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b778",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c052",
+      "label": "cross-sentence",
+      "source": "9a3360d1",
+      "text": "Therefore, instead of 2 copies, the offspring would have 1 copy from the other parent.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b778",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c053",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Therefore, this person would likely have reduced protein function as only half the gene are present.",
+      "triggers": [
+        "therefore",
+        "incr/decr"
+      ],
+      "unitId": "b778",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c054",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "This is a typical example of gene dosage and if a particular gene like B is involved in drug action, it can clearly increase or decrease activity depending on the copies of the gene.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b778",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c055",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "Each functionally have the same role in the liver, but the variants within this gene leads to normal or their own distinct level of function.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b783",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c056",
+      "label": "vague",
+      "source": "9a3360d1",
+      "text": "The key thing to remember is that the reference enzyme is called *1, and all function will revolve around that version as a comparison (either the same, increased or decreased function).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b783",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c057",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Activity Title: A single nucleotide variant is detected in your patient leading to an amino acid change.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b804",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c058",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Activity Title: A single nucleotide variant is detected in your patient leading to an amino acid change.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b806",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c059",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "A single nucleotide variant is detected in your patient leading to an amino acid change.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b810",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c060",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "This image is a multiple-choice poll question asking, \"A single nucleotide variant is detected in your patient leading to an amino acid change.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b814",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c061",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Activity Title: Gene expression levels were increased for a specific drug metabolizing enzyme (DME).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b815",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c062",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Protein activity was correspondingly increased for this DME.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b815",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c063",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Activity Title: Gene expression levels were increased for a specific drug metabolizing enzyme (DME).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b817",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c064",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Protein activity was correspondingly increased for this DME.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b817",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c065",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Gene expression levels were increased for a specific drug metabolizing enzyme (DME).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b821",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c066",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Protein activity was correspondingly increased for this DME.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b821",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c067",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "This image displays a multiple-choice poll question asking, \"Gene expression levels were increased for a specific drug metabolizing enzyme (DME).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b825",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c068",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "Protein activity was correspondingly increased for this DME.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b825",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c069",
+      "label": "fragment",
+      "source": "9a3360d1",
+      "text": "- *1 (normal) *2 (increased activity)",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b829",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c070",
+      "label": "fragment",
+      "source": "9a3360d1",
+      "text": "| *1/*10 | Normal / Decreased | SNV (missense) | Intermediate (IM) |",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b835",
+      "unitType": "table"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c071",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "On the other hand, a different type of missense variant, called *10, has reduced protein function so by mixing the *1 with *10, this leads to an intermediate phenotype.",
+      "triggers": [
+        "leads to",
+        "incr/decr"
+      ],
+      "unitId": "b837",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c072",
+      "label": "cross-sentence",
+      "source": "9a3360d1",
+      "text": "Therefore, patients using drugs through CYP2D6 would be unable to modify them at all.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b837",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c073",
+      "label": "cross-sentence",
+      "source": "9a3360d1",
+      "text": "Therefore, they would be classified as poor metabolizers.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b837",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c074",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "With multiple gene copies (at least wild-type level), this increases their protein activity.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b837",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c075",
+      "label": "cross-sentence",
+      "source": "9a3360d1",
+      "text": "Therefore, they are ultrarapid metabolizers.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b837",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c076",
+      "label": "fragment",
+      "source": "9a3360d1",
+      "text": "| Decreased function | 0.5 |",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b846",
+      "unitType": "table"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c077",
+      "label": "figure-description",
+      "source": "9a3360d1",
+      "text": "This image illustrates different structural variations of the CYP2D6 gene, categorized into four sections: multiplication of functional alleles (a), multiplication of reduced or non-functional alleles (b), variations involving CYP2D6*36 (c), and deletion of the CYP2D6 gene (d).",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b853",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c078",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Your underlying DNA sequence that can have a dynamic range of protein activity, but for most people, it will be considered normal and therefore these people will be within the drug range specified by FDA.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b862",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c079",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "As variants occur, you can swing to the left as low protein activity (poor metabolizer or responder) or all the way to the right as high protein activity (and therefore, ultrarapid metabolizer or responder).",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b862",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c080",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "For active drugs that immediately can provide a therapeutic effect, someone who cannot modify this drug (the poor metabolizers) will keep it in their body longer and therefore, have the potential for toxicity (sometimes good things can be bad, right?).",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b862",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c081",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "On the flip slide, if the protein is overactive on the drug, it would activate it too quickly and perhaps increase its level so high that it becomes toxic.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b862",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c082",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "Therefore, you might want to consider reducing the drug in these patients compared to what would be normally prescribed to a normal patient.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b862",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c083",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "Your underlying DNA sequence that can have a dynamic range of protein activity, but for most people, it will be considered normal and therefore these people will be within the drug range specified by FDA.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b899",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c084",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "As variants occur, you can swing to the left as low protein activity (poor metabolizer or responder) or all the way to the right as high protein activity (and therefore, ultrarapid metabolizer or responder).",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b899",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c085",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "For active drugs that immediately can provide a therapeutic effect, someone who cannot modify this drug (the poor metabolizers) will keep it in their body longer and therefore, have the potential for toxicity (sometimes good things can be bad, right?).",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b899",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c086",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "On the flip slide, if the protein is overactive on the drug, it would activate it too quickly and perhaps increase its level so high that it becomes toxic.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b899",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c087",
+      "label": "duplicate",
+      "source": "9a3360d1",
+      "text": "Therefore, you might want to consider reducing the drug in these patients compared to what would be normally prescribed to a normal patient.",
+      "triggers": [
+        "therefore"
+      ],
+      "unitId": "b899",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c088",
+      "label": "figure-description",
+      "source": "9a3360d1",
+      "text": "The table cells describe the clinical consequences for each combination, such as \"Reduced elimination / Increased toxicity risk\" for a Poor Metabolizer taking standard drugs, and \"Increased activation / Increased toxicity risk\" for a Rapid/Ultra Rapid Metabolizer taking prodrugs.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b902",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c089",
+      "label": "causal",
+      "source": "9a3360d1",
+      "text": "- Genetic testing reveals the patient has two alleles *3/*6 containing a missense variant leading to the production of a nonfunctional enzyme.",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "b922",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c090",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "How will decreased CYP2D6 activity affect the activation of this prodrug?",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b945",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c091",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "How will decreased CYP2D6 activity affect the activation of this prodrug?",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b947",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c092",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "How will decreased CYP2D6 activity affect the activation of this prodrug?",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b951",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c093",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "This slide displays a multiple-choice question asking how decreased CYP2D6 activity affects the activation of a prodrug, with options ranging from increased or decreased activation to no change or faster elimination, all showing 0% responses.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b955",
+      "unitType": "figure"
+    },
+    {
+      "degraded": false,
+      "docKind": "pptx",
+      "id": "c094",
+      "label": "question-stem",
+      "source": "9a3360d1",
+      "text": "This slide displays a multiple-choice question asking for the most likely outcome compared to the first patient if a new patient takes the same prodrug, with options concerning drug effect, reduced activation, increased activation, or needing more information, all showing 0% responses.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b988",
+      "unitType": "figure"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c095",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "blocks beta1-",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c096",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Decreased BP, HR",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c097",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "start or dose increase)",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c098",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "bradycardia, heart block,",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c099",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "block = Avoid",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c100",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "block = Monitor HR, ECG,",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c101",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "reduces bisoprolol",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c102",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "metabolism increases risk",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c103",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Reduce dose with",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c104",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-May cause dizziness,",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c105",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Inhibit Ca from",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c106",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "resulting in relaxation",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c107",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "(dose increase)",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c108",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "monitor/ (dose decrease)",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c109",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-use lower starting doses",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c110",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-may cause dizziness; be",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c111",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Increases urination.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c112",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- Increased urine output",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c113",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "fluid), decreased edema,",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c114",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-May cause sun sensitivity –",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c115",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Increases sodium",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c116",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- Increased urine output",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c117",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-May cause dizziness or low",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c118",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-May cause sun sensitivity –",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c119",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Prevents conversion",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c120",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "leads to reduction in",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c121",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Reduce morbidity",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c122",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Heart Failure (reduced",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c123",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-May cause dry cough",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c124",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "give reduced",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c125",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Decreased BP",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c126",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Selective inhibitor of factor Xa which results in a decrease in thrombin production and thrombus development",
+      "triggers": [
+        "results in",
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c127",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Premature discontinuation (↑ thrombotic events)<br>",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c128",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Antiplatelet agents, NSAIDs, anticoagulants, SSRIs: ↑ risk of bleeding= avoid/ monitor<br><br>",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c129",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-CYP3A4/5 inducers: ↑ metabolism, ↓ effectiveness= avoid<br>",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c130",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- CYP3A4/5 inhibitors: ↓ metabolism, ↑ risk of toxicity= avoid/monitor<br><br>",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c131",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-P-gp inducers: ↑ R/E met, ↓ effectiveness= avoid<br>",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c132",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-P-gp inhibitors: ↓ R/E met, ↑ risk of toxicity= avoid/monitor",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c133",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Lower risk of bleeding compared to warfarin<br>",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c134",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "inhibit conversion",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c135",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increase in LDL",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c136",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Reduced dosing with",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c137",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "myolysis= avoid/ reduce",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c138",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "properties; suppresses",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c139",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "that in turn inhibit",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c140",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Decreased growth in",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c141",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Increased risk of infection",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c142",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "steroid - ¯ efficacy -> monitor,",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c143",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "steroid - toxicity -> monitor,",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c144",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "tendon rupture -> avoid or",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c145",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Warfarin: possible - INR ->",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c146",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "prevent GI upset",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c147",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Inhibit H-K-ATPase",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c148",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "leading to inhibition",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c149",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "inhibitors: lower",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c150",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "inducers: increase",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c151",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- Maximal gastric output is inhibited 66%",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c152",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "hospitalized patients), increases risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c153",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Prolonged dosing can lead to bone loss",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c154",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "and increased risk for osteoporosis",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c155",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Decreases hepatic",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c156",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increased activity of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c157",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Increases peripheral",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c158",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "GFR decreases.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c159",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increases; transient",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c160",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "2 diabetes; reduces",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c161",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Does not cause",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c162",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increases in dose.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c163",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increases satiety.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c164",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "may increase risk",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c165",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Lira, Dula, Sema: reduces",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c166",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Type 1: use lower",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c167",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increase risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c168",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "may increase risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c169",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "(Decrease histamine",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c170",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "spit after using to prevent",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c171",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "with lower ini2al",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c172",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Weakly inhibits",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c173",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Seizure disorder (lowers",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c174",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "All: Increased risk of suicidal",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c175",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "– taper if discontinuing to prevent",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c176",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "dysfunction, decreased",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c177",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "have increased risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c178",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Inhibits reuptake of",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c179",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Dyspepsia, decreased",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c180",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "decreased appetite,",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c181",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "decreased weight,",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c182",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "weight loss, decreased",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c183",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increase risk of sudden",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c184",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "increased risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c185",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "CHF, heart block,",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c186",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "(PDE-5) causing",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c187",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "ED: lower initial",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c188",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "ED: lower initial",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c189",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "medications can cause ED.",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c190",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "results in ¯ gastric,",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c191",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "CNS depression -> monitor/ ¯",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c192",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Buprenorphine, naloxone ->",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c193",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "w/d symptoms -> avoid",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c194",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "MAOIs-> -resp depression ->",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c195",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "SSRIs, SNRIs, TCAs, triptans -> -",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c196",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "risk serotonin syndrome ->",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c197",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "to hydromorphone -> ¯",
+      "triggers": [
+        "arrow"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c198",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Reversibly inhibits",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c199",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "decreased forma8on",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c200",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "leads to an8pyre8c,",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c201",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Increased risk of",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c202",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "*May lead to HF",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c203",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-↑ risk of lithium/",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c204",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "are at ↑ risk of CV SE.",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c205",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-Elderly pts à ↑ risk of",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c206",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "-wt < 50 kg ↑risk of SE",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c207",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "reduces elevated",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c208",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Estrogen increases",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c209",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "leading to the",
+      "triggers": [
+        "leads to"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c210",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "SE: Neutropenia; MON: CBC Vesicant: Can cause irritation Moderate 3A4 inducer",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c211",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "↑ SCr with vancomycin",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c212",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "IM SE: ↑ seizure risk relative to other",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c213",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "Only compatible in NS ↑ metabolism of valproic",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c214",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "↓K+/Mg2+, or",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c215",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "(May exacerbate block)",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c216",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- ↑ myelosuppression risk after 2",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c217",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- Mecamylamine: May ↑",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c218",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "age for up to 21 days - Systemic retinoic acid: ↑",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c219",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "inhibit protein",
+      "triggers": [
+        "inhibit"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c220",
+      "label": "degraded-source",
+      "source": "81d27bd2",
+      "text": "- G6PD deficiency: ↑ risk of",
+      "triggers": [
+        "delta"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c221",
+      "label": "degraded-source",
+      "source": "d872a1c4",
+      "text": "because the shim stack relaxes once the housing is reseated.",
+      "triggers": [
+        "because"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c222",
+      "label": "degraded-source",
+      "source": "3ab0ca21",
+      "text": "Two unexcused absences are permitted per semester.",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": true,
+      "docKind": "pdf",
+      "id": "c223",
+      "label": "degraded-source",
+      "source": "3ab0ca21",
+      "text": "A third absence lowers the final grade by one letter.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "u0",
+      "unitType": "text"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c224",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Extenuating circumstances may allow for exceptions.",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "b52",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c225",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Unless there are extreme circumstances, a student is not permitted to miss classes to take a make-up examination.",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "b72",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c226",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Failure to adhere to this policy may result in disciplinary action, as determined by the course director, and/ or appearance before the Professional Conduct Committee of the College.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b82",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c227",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "The use of artificial intelligence (AI) to represent or apply a student's knowledge, learning, or understanding is not permitted unless explicitly authorized by the course director or instructor.",
+      "triggers": [
+        "enables"
+      ],
+      "unitId": "b88",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c228",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Academic dishonesty at any point during a course or the program may result in a course letter grade of “F” and/or disciplinary actions as recommended by the Honor Council and determined by the Dean.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b89",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c229",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Continued poor performance may result in additional required academic support",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b165",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c230",
+      "label": "administrative",
+      "source": "7c696ebb",
+      "text": "Failure to engage in or comply with this process will result in reporting to Academic Affairs and the course director.",
+      "triggers": [
+        "results in"
+      ],
+      "unitId": "b166",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c231",
+      "label": "non-assertion",
+      "source": "6ecc0f7b",
+      "text": "Cause and Effect",
+      "triggers": [
+        "causes"
+      ],
+      "unitId": "b4",
+      "unitType": "heading"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c232",
+      "label": "causal",
+      "source": "6ecc0f7b",
+      "text": "Light intensity Increasing light intensity increases the rate of photosynthesis until another factor becomes limiting.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b5",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "pdf",
+      "id": "c233",
+      "label": "causal",
+      "source": "6ecc0f7b",
+      "text": "Once carbon dioxide or temperature becomes the constraint, adding more light produces no further increase.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b5",
+      "unitType": "paragraph"
+    },
+    {
+      "degraded": false,
+      "docKind": "docx",
+      "id": "c234",
+      "label": "causal",
+      "source": "021f8c74",
+      "text": "Increasing resistance decreases current when voltage is held constant.",
+      "triggers": [
+        "incr/decr"
+      ],
+      "unitId": "b8",
+      "unitType": "paragraph"
+    }
+  ]
+}

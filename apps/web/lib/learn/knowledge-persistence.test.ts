@@ -18,17 +18,25 @@ import { objectivesForKnowledge } from "./learning-objective";
 // Round trip means `object → payload → row → object`, compared field by field.
 
 const RELATION: CausalRelation = {
+  assertion: "The incorporation of a stop codon will lead to pre-mature termination of the amino acid change.",
   cause: { key: causalNodeKey("Incorporation of a stop codon"), text: "Incorporation of a stop codon" },
   effect: { key: causalNodeKey("premature termination"), text: "premature termination" },
   negated: false,
   qualifier: "will",
   relation: "causes",
+  sourceVerb: "will lead to",
 };
 
 const CAUSAL: KnowledgeObject = {
-  derivation: "table-row",
+  derivation: "model-prose",
   extractionVersion: "causal/1",
   id: "b550:c1",
+  provenance: {
+    extractor: "causal/1",
+    lane: "model-prose",
+    model: "claude-sonnet-5",
+    schemaVersion: "causal-edges/1",
+  },
   relation: RELATION,
   sourceAnchors: [
     {
@@ -87,10 +95,37 @@ test("provenance survives: anchors come back with page, headings and quote intac
   assert.deepEqual(back.sourceAnchors?.[0], CAUSAL.sourceAnchors![0]);
 });
 
-test("derivation and extraction version survive", () => {
+test("🔴 extraction provenance survives — which system made this, under which rules", () => {
+  // A model-extracted object must stay distinguishable from a grid-extracted one for ever. When the
+  // prompt or the model changes, "which objects came from the old extractor?" has to be answerable
+  // by query — otherwise the only safe migration is deleting the corpus.
   const back = roundTrip(CAUSAL);
-  assert.equal(back.derivation, "table-row");
+  assert.equal(back.derivation, "model-prose");
   assert.equal(back.extractionVersion, "causal/1");
+  assert.deepEqual(back.provenance, {
+    extractor: "causal/1",
+    lane: "model-prose",
+    model: "claude-sonnet-5",
+    schemaVersion: "causal-edges/1",
+  });
+});
+
+test("🔴 source truth survives beside the normalised edge", () => {
+  // The normalised edge is for identity and composition; the assertion is for grounding and audit.
+  // Both, or "Nemesis believes A may cause B because this passage said X" is unanswerable.
+  const back = roundTrip(CAUSAL);
+  assert.equal(back.relation?.assertion, RELATION.assertion);
+  assert.equal(back.relation?.sourceVerb, "will lead to");
+});
+
+test("🔴 extraction confidence never appears in the knowledge payload", () => {
+  // Knowledge-generation uncertainty and learner cognition are different kinds of not-knowing.
+  // A model's confidence that a passage asserts something must never sit where it could be read as
+  // a fact about the person.
+  const payload = JSON.stringify(knowledgePayload(CAUSAL));
+  for (const banned of ["confidence", "score", "probability", "certainty"]) {
+    assert.equal(payload.includes(banned), false, `knowledge payload carries ${banned}`);
+  }
 });
 
 // ── association persistence is unchanged ────────────────────────────────────
