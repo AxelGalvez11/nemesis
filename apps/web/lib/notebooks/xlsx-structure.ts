@@ -25,9 +25,14 @@
  *     `C5:D7`. Grid (0,0) is C5, and calling it A1 misplaces every citation.
  *   * AN EMPTY SHEET STILL DECLARES `A1:A1`, so the dimension cannot be used to
  *     decide whether a sheet holds anything. Count cells instead.
- *   * DATES ARE SERIAL NUMBERS. 2026-03-15 is `<v>46096</v>`; only the number
- *     format says otherwise. Showing "46096" is not an unstyled date, it is a
- *     different value — so dates are the one format rendered here.
+ *   * A STORED NUMBER IS NOT WHAT THE AUTHOR SAW. 2026-03-15 is `<v>46096</v>`,
+ *     7.5% is `0.075`, and $1,234.50 is `1234.5`; only the number format says
+ *     otherwise. Four classes are rendered — date, percentage, currency, grouped
+ *     decimal — and everything else keeps its stored value and is refused BY
+ *     NAME with its code preserved. See `classifyFormat`.
+ *   * A CURRENCY SYMBOL MAY BE QUOTED *OR* ESCAPED. openpyxl writes `"$"`,
+ *     LibreOffice writes `\$`. Deleting escapes before looking for a symbol
+ *     turned `$5,000.00` into `5,000.00` — caught by a fixture, not by reading.
  *
  * PURE apart from the unzip. No network, no database, no model — `xlsx-model.ts`
  * turns this into a `DocumentModel`, so the shape of the file and the shape of
@@ -48,8 +53,17 @@ export interface SheetCell {
   text: string;
   /** The formula without its `=`, when the cell has one. */
   formula?: string;
-  /** The stored value when `text` is a rendering of it (dates only, today). */
+  /** The stored value, whenever `text` is a rendering of it rather than a copy. */
   raw?: string;
+  /**
+   * The source's own number-format code, when it has one.
+   *
+   * Kept for every formatted cell, not only the ones we could not render: it is
+   * the evidence for why `text` differs from `raw`, it lets a consumer re-render
+   * differently, and for an `unsupported` format it is the only record that we
+   * declined to render rather than that the cell was plain.
+   */
+  format?: string;
 }
 
 export interface SheetTable {
@@ -158,37 +172,211 @@ function textRuns(xml: string): string {
 // ── dates ──────────────────────────────────────────────────────────────────
 
 /**
- * Number-format ids that mean "this number is a date or a time".
+ * ── NUMBER FORMATS: WHAT THE AUTHOR SAW ────────────────────────────────────
  *
- * 14–22 and 45–47 are the built-ins the specification fixes; anything else is a
- * custom format whose CODE has to be inspected, which `dateFormatIds` does.
+ * 🔴 `0.075` AND `7.5%` ARE THE SAME NUMBER AND NOT THE SAME SOURCE (owner,
+ * 2026-08-12). Nemesis may quote a cell, teach from it, or ask a learner what it
+ * says — and every one of those is wrong if we present a fraction where the
+ * spreadsheet showed a percentage. This is the same class of defect as calling
+ * grid (0,0) "A1": both storage sides can agree on `0.075` perfectly and both be
+ * wrong about the document.
+ *
+ * An earlier version of this file rendered only dates and called the rest
+ * "decoration". It was not decoration; `SheetCell.text` is documented as the
+ * DISPLAYED value, and for every other numeric cell it held the stored one.
+ *
+ * 🔴 AND THIS IS NOT AN EXCEL FORMATTING ENGINE, DELIBERATELY. Four classes are
+ * rendered — date, percentage, currency, grouped/fixed decimal — because those
+ * are what real coursework holds and each one changes what the value MEANS to a
+ * reader. Anything else keeps its stored value and is recorded as
+ * `unsupported-number-format` with its code preserved, so a consumer can see
+ * that we did not render rather than believing we did.
  */
-const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+
+/** The built-in format codes worth naming. Ids above 163 are always custom. */
+const BUILTIN_FORMATS: Record<number, string> = {
+  0: "General",
+  1: "0",
+  2: "0.00",
+  3: "#,##0",
+  4: "#,##0.00",
+  5: '"$"#,##0_);("$"#,##0)',
+  6: '"$"#,##0_);[Red]("$"#,##0)',
+  7: '"$"#,##0.00_);("$"#,##0.00)',
+  8: '"$"#,##0.00_);[Red]("$"#,##0.00)',
+  9: "0%",
+  10: "0.00%",
+  11: "0.00E+00",
+  12: "# ?/?",
+  13: "# ??/??",
+  14: "mm-dd-yy",
+  15: "d-mmm-yy",
+  16: "d-mmm",
+  17: "mmm-yy",
+  18: "h:mm AM/PM",
+  19: "h:mm:ss AM/PM",
+  20: "h:mm",
+  21: "h:mm:ss",
+  22: "m/d/yy h:mm",
+  37: "#,##0_);(#,##0)",
+  38: "#,##0_);[Red](#,##0)",
+  39: "#,##0.00_);(#,##0.00)",
+  40: "#,##0.00_);[Red](#,##0.00)",
+  44: '_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)',
+  45: "mm:ss",
+  46: "[h]:mm:ss",
+  47: "mmss.0",
+  48: "##0.0E+0",
+  49: "@",
+};
+
+export type NumberFormat =
+  /** No format, or one that only affects appearance we do not model. */
+  | { kind: "general"; code: string }
+  | { kind: "date"; code: string }
+  | { kind: "percent"; code: string; decimals: number }
+  | { kind: "currency"; code: string; symbol: string; decimals: number; grouping: boolean }
+  | { kind: "number"; code: string; decimals: number; grouping: boolean }
+  /** Recognised as SOMETHING, and deliberately not rendered. Code preserved. */
+  | { kind: "unsupported"; code: string };
 
 /**
- * Which style indexes mean a date, from `xl/styles.xml`.
+ * A format code has two halves, and conflating them loses currency symbols.
  *
- * A cell's `s` attribute indexes `cellXfs`; that entry's `numFmtId` is either a
- * built-in or points at a custom `numFmt` whose `formatCode` we inspect for the
- * date letters. Quoted literals are stripped first so a format like
- * `0" days"` cannot be read as a day pattern.
+ * 🔴 AN ESCAPE IS A LITERAL, NOT NOISE. LibreOffice writes `$` as `\$` where
+ * openpyxl writes `"$"`. An earlier version DELETED backslash escapes before
+ * looking for a symbol, so `\$#,##0.00` classified as a plain grouped number and
+ * `$5,000.00` rendered as `5,000.00` — the currency identity silently dropped
+ * from a column about money. Found by a fixture, not by reading the code.
+ *
+ * `placeholders` is what controls the number's SHAPE (digits, separators, `%`,
+ * date letters); `literals` is the text the format prints verbatim, which is
+ * where the symbol lives. Locale-tagged currency — `[$€-407]` — is pulled out
+ * before the bracket groups are stripped, for the same reason.
  */
-function dateFormatIds(stylesXml: string): Set<number> {
-  const custom = new Set<number>();
+function formatParts(code: string): { placeholders: string; literals: string } {
+  const section = code.split(";")[0] ?? code;
+  const literals: string[] = [];
+  // `[$€-407]` and `[$£]`: the symbol is between `[$` and the locale's `-`.
+  for (const m of section.matchAll(/\[\$([^\]\-]*)-?[^\]]*\]/g)) literals.push(m[1] ?? "");
+  for (const m of section.matchAll(/"([^"]*)"/g)) literals.push(m[1] ?? "");
+  for (const m of section.matchAll(/\\(.)/g)) literals.push(m[1] ?? "");
+  const placeholders = section
+    .replace(/\[[^\]]*\]/g, "")   // colours and locale tags
+    .replace(/"[^"]*"/g, "")      // quoted literals
+    .replace(/\\./g, "")          // escaped literals
+    .replace(/_./g, "")           // padding
+    .replace(/\*./g, "")          // fill
+    .trim();
+  return { literals: literals.join(""), placeholders };
+}
+
+const CURRENCY_SIGNS = /[$£€¥₹₽¢₩]/;
+
+/**
+ * What a format code means, as far as this reader models it.
+ *
+ * Order matters: a date is checked first because its letters would otherwise be
+ * read as digits-and-text; percent next because `%` is unambiguous; currency
+ * next; then a plain grouped/fixed decimal. Anything left is refused by name.
+ */
+export function classifyFormat(rawCode: string): NumberFormat {
+  const code = rawCode.trim();
+  if (!code || code === "General") return { code: code || "General", kind: "general" };
+  // Text format: the cell's value is shown verbatim.
+  if (code === "@") return { code, kind: "general" };
+
+  const { literals, placeholders } = formatParts(code);
+  // Date letters come only from the PLACEHOLDERS, so `0" days"` and `0\d` are
+  // numbers with a literal beside them rather than day patterns.
+  if (/[ymdhs]/i.test(placeholders)) return { code, kind: "date" };
+
+  const decimalsOf = (text: string): number => {
+    const m = /\.(0+)/.exec(text);
+    return m ? m[1]!.length : 0;
+  };
+
+  if (placeholders.includes("%")) return { code, decimals: decimalsOf(placeholders), kind: "percent" };
+
+  // The symbol is a LITERAL, whether the file quoted it, escaped it, or tagged
+  // it with a locale. Falling back to the placeholders catches a bare `$`.
+  const symbol = CURRENCY_SIGNS.exec(literals)?.[0] ?? CURRENCY_SIGNS.exec(placeholders)?.[0];
+  const grouping = placeholders.includes(",");
+
+  // 🔴 LITERAL TEXT WE WOULD NOT PRINT MAKES THE WHOLE FORMAT UNSUPPORTED.
+  // `0" widgets"` shows `12 widgets`; rendering `12` drops a word the author
+  // wrote, which is the same defect as dropping a currency symbol, only smaller.
+  // Rather than grow a literal-placement engine, the format is refused by name
+  // and its code travels with the cell.
+  const leftover = literals.replace(new RegExp(CURRENCY_SIGNS.source, "g"), "").trim();
+
+  if (symbol) {
+    if (leftover) return { code, kind: "unsupported" };
+    return { code, decimals: decimalsOf(placeholders), grouping, kind: "currency", symbol };
+  }
+
+  // A plain number pattern: digits, placeholders, separators and nothing else.
+  if (/^[#0,.\s]+$/.test(placeholders) && /[#0]/.test(placeholders)) {
+    if (leftover) return { code, kind: "unsupported" };
+    return { code, decimals: decimalsOf(placeholders), grouping, kind: "number" };
+  }
+  // 🔴 REFUSED BY NAME RATHER THAN APPROXIMATED. Scientific notation, fractions,
+  // conditional and locale-tagged formats all land here. Guessing would put a
+  // number on screen the author never wrote.
+  return { code, kind: "unsupported" };
+}
+
+/** Style index → its format code, resolved through custom and built-in tables. */
+function styleFormats(stylesXml: string): string[] {
+  const custom = new Map<number, string>();
   for (const fmt of tagsOf(stylesXml, "numFmt")) {
     const id = Number(attrOf(fmt.attrs, "numFmtId"));
     const code = unescapeXml(attrOf(fmt.attrs, "formatCode") ?? "");
-    const bare = code.replace(/"[^"]*"/g, "").replace(/\\./g, "");
-    if (Number.isFinite(id) && /[ymdhs]/i.test(bare)) custom.add(id);
+    if (Number.isFinite(id)) custom.set(id, code);
   }
-  const out = new Set<number>();
   const cellXfs = tagsOf(stylesXml, "cellXfs")[0];
-  if (!cellXfs) return out;
-  tagsOf(cellXfs.inner, "xf").forEach((xf, index) => {
+  if (!cellXfs) return [];
+  return tagsOf(cellXfs.inner, "xf").map((xf) => {
     const id = Number(attrOf(xf.attrs, "numFmtId") ?? "0");
-    if (BUILTIN_DATE_FORMATS.has(id) || custom.has(id)) out.add(index);
+    return custom.get(id) ?? BUILTIN_FORMATS[id] ?? "";
   });
-  return out;
+}
+
+/** A number with a fixed number of decimals and optional thousands grouping. */
+function fixed(value: number, decimals: number, grouping: boolean): string {
+  const text = Math.abs(value).toFixed(decimals);
+  const [whole = "", fraction] = text.split(".");
+  const grouped = grouping ? whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : whole;
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${grouped}${fraction ? `.${fraction}` : ""}`;
+}
+
+/**
+ * What the spreadsheet shows for this stored value, or null to keep it as-is.
+ *
+ * Null is a real answer and the safe one: it means this reader did not model the
+ * format, so the stored value stands and the code travels with the cell.
+ */
+export function renderNumber(stored: string, format: NumberFormat): string | null {
+  const value = Number(stored);
+  if (!Number.isFinite(value)) return null;
+  switch (format.kind) {
+    case "date":
+      return serialToIso(value);
+    case "percent":
+      // 🔴 THE MULTIPLICATION IS THE POINT. 0.075 is SHOWN as 7.5%, and a reader
+      // told "0.075" has been told something the document does not say.
+      return `${fixed(value * 100, format.decimals, false)}%`;
+    case "currency":
+      // The symbol is part of the value's identity — "1,234.50" and "$1,234.50"
+      // are not the same fact in a document about money.
+      return `${value < 0 ? "-" : ""}${format.symbol}${fixed(Math.abs(value), format.decimals, format.grouping)}`;
+    case "number":
+      // Only when it actually changes the text; `0` on an integer is a no-op.
+      return format.decimals > 0 || format.grouping ? fixed(value, format.decimals, format.grouping) : null;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -314,7 +502,7 @@ function readSheet(
   zip: Record<string, Uint8Array>,
   meta: { name: string; hidden: boolean; part: string },
   strings: string[],
-  dateStyles: Set<number>,
+  formats: string[],
   unsupported: Map<string, number>,
 ): Sheet {
   const entry = zip[meta.part];
@@ -326,7 +514,7 @@ function readSheet(
   const xml = strFromU8(entry);
 
   // ── the cells, in absolute sheet coordinates first ──
-  interface Absolute { row: number; column: number; text: string; formula?: string; raw?: string }
+  interface Absolute { row: number; column: number; text: string; formula?: string; raw?: string; format?: string }
   const absolute: Absolute[] = [];
   for (const cell of tagsOf(xml, "c")) {
     const at = parseRef(attrOf(cell.attrs, "r") ?? "");
@@ -343,6 +531,7 @@ function readSheet(
 
     let text = "";
     let raw: string | undefined;
+    let formatCode: string | undefined;
     if (type === "inlineStr") {
       text = textRuns(cell.inner);
     } else {
@@ -360,18 +549,31 @@ function readSheet(
       } else if (type === "str" || type === "d") {
         text = value;
       } else {
-        // A number, possibly a date wearing one.
-        const iso = dateStyles.has(styleIndex) ? serialToIso(Number(value)) : null;
-        if (iso) {
-          text = iso;
+        // 🔴 A NUMBER IS NOT ITS DISPLAY. `0.075` shown as `7.5%` is one value
+        // and two facts, and `text` is contracted to be the one the author saw.
+        const format = classifyFormat(formats[styleIndex] ?? "");
+        if (format.kind !== "general") formatCode = format.code;
+        const shown = renderNumber(value, format);
+        if (shown !== null && shown !== value) {
+          text = shown;
           raw = value;
         } else {
           text = value;
+          // Recorded so "we could not render this" is distinguishable from
+          // "this cell was plain" — the code above travels with the cell.
+          if (format.kind === "unsupported") bump(unsupported, "unsupported-number-format");
         }
       }
     }
     if (!text && !formula) continue;   // a styled but empty cell carries nothing
-    absolute.push({ column: at.column, row: at.row, text, ...(formula ? { formula } : {}), ...(raw ? { raw } : {}) });
+    absolute.push({
+      column: at.column,
+      row: at.row,
+      text,
+      ...(formula ? { formula } : {}),
+      ...(raw ? { raw } : {}),
+      ...(formatCode ? { format: formatCode } : {}),
+    });
   }
 
   if (absolute.length === 0) return { ...empty, tables: tablesFor(zip, meta.part, xml, unsupported) };
@@ -391,6 +593,7 @@ function readSheet(
     text: c.text,
     ...(c.formula ? { formula: c.formula } : {}),
     ...(c.raw ? { raw: c.raw } : {}),
+    ...(c.format ? { format: c.format } : {}),
   }));
 
   // ── merges, hidden rows and columns, in the same grid coordinates ──
@@ -454,7 +657,7 @@ export function readWorkbook(bytes: Uint8Array): Workbook {
   const zip = unzipBounded(bytes);
   const strings = sharedStrings(zip);
   const stylesPart = zip["xl/styles.xml"];
-  const dateStyles = stylesPart ? dateFormatIds(strFromU8(stylesPart)) : new Set<number>();
+  const formats = stylesPart ? styleFormats(strFromU8(stylesPart)) : [];
   const unsupported = new Map<string, number>();
 
   // Things present in the archive that this reader does not turn into content.
@@ -469,7 +672,7 @@ export function readWorkbook(bytes: Uint8Array): Workbook {
   const declared = core ? tagsOf(strFromU8(core), "dc:title")[0] : undefined;
   const title = declared ? unescapeXml(declared.inner).trim() : "";
 
-  const sheets = sheetOrder(zip).map((meta) => readSheet(zip, meta, strings, dateStyles, unsupported));
+  const sheets = sheetOrder(zip).map((meta) => readSheet(zip, meta, strings, formats, unsupported));
   return {
     sheets,
     title: title || null,

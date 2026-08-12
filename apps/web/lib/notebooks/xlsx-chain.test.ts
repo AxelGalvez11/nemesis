@@ -183,19 +183,80 @@ test("🔴 headerRows STAYS 0 when the file does not say — a top row is not ev
   assert.equal(tableOn(after, 0)!.columns, undefined);
 });
 
-test("a date is shown as a date, and the serial it came from is kept", async () => {
-  // 2026-03-15 is stored as 46096. Showing "46096" is not an unstyled date, it
-  // is a different value — and Nemesis puts dates on a calendar.
+test("🔴🔴 A CELL SHOWS WHAT THE AUTHOR SAW — 7.5%, not 0.075", async () => {
+  // 🔴 THE SAME CLASS OF DEFECT AS CALLING C5 "A1", AND I SHIPPED IT ONCE.
+  // `text` is contracted to be the DISPLAYED value; an earlier version stored
+  // the underlying number for everything except dates and called the difference
+  // decoration. It is not. `0.075` and `7.5%` are the same number and not the
+  // same source, and Nemesis may quote a cell, teach from it, or ask a learner
+  // what it says. Round-tripping `0.075` perfectly is no defence: both storage
+  // sides agree and both are wrong about the document.
   const { after } = await chain("number-formats.xlsx");
   const table = tableOn(after, 0)!;
   const at = (ref: string) => table.cells!.find((c) => cellRef(table, c.row, c.column) === ref);
+
+  // A date: unchanged behaviour, asserted so this change cannot regress it.
   assert.equal(at("B2")?.text, "2026-03-15");
   assert.equal(at("B2")?.raw, "46096", "the stored form is kept, so nothing is unrecoverable");
-  // A recorded limit, asserted so it cannot drift unnoticed: percentages and
-  // currency are NOT rendered. 0.075 is the correct number without decoration.
-  assert.equal(at("B3")?.text, "0.075");
-  assert.equal(at("B4")?.text, "1234.5");
+
+  // A percentage, custom format.
+  assert.equal(at("B3")?.text, "7.5%", "🔴 what the spreadsheet shows");
+  assert.equal(at("B3")?.raw, "0.075", "and the number it holds — one truth is not replaced by the other");
+  assert.equal(at("B3")?.format, "0.0%", "with the source's own evidence for why they differ");
+
+  // A percentage from a BUILT-IN format id, which resolves through a different path.
+  assert.equal(at("B7")?.text, "50%");
+  assert.equal(at("B7")?.raw, "0.5");
+
+  // Currency: the symbol is part of the value's identity in a document about money.
+  assert.equal(at("B4")?.text, "$1,234.50");
+  assert.equal(at("B4")?.raw, "1234.5");
+
+  // A grouped decimal, which changes the text a reader sees.
+  assert.equal(at("B6")?.text, "1,234,567.89");
+  assert.equal(at("B6")?.raw, "1234567.891");
+
   assert.equal(at("B5")?.text, "007", "and text that looks numeric stays text");
+  assert.equal(at("B5")?.raw, undefined, "with no raw, because nothing was rendered");
+});
+
+test("🔴 A FORMAT WE DO NOT MODEL IS REFUSED BY NAME, never approximated", async () => {
+  // `0" widgets"` shows `12 widgets`. Rendering `12` drops a word the author
+  // wrote — the same defect as dropping a currency symbol, only smaller. So the
+  // stored value stands, the code travels with the cell, and the workbook says
+  // it could not read it. Preserve the evidence; do not guess.
+  const { after } = await chain("number-formats.xlsx");
+  const table = tableOn(after, 0)!;
+  const b8 = table.cells!.find((c) => cellRef(table, c.row, c.column) === "B8");
+  assert.equal(b8?.text, "12", "the stored value stands");
+  assert.equal(b8?.format, '0" widgets"', "and the format is preserved so a consumer can see we declined");
+
+  const outcome = await parseDocument(bytes("number-formats.xlsx"), "number-formats.xlsx", "");
+  assert.equal(outcome.ok, true);
+  if (!outcome.ok) throw new Error("unreachable");
+  assert.ok(
+    (outcome.document.coverage.unreadableRegions ?? 0) > 0,
+    "and the workbook reports that something in it was not read",
+  );
+});
+
+test("🔴 A FORMULA'S CACHED RESULT IS DISPLAYED THE WAY THE SHEET DISPLAYS IT", async () => {
+  // A percentage is usually computed, not typed. If the display rule applied
+  // only to literal cells, every derived percentage in every workbook would
+  // reach the learner as a fraction — and the formula is still kept beside it.
+  const { after } = await chain("formatted-formulas.xlsx");
+  const table = tableOn(after, 0)!;
+  const at = (ref: string) => table.cells!.find((c) => cellRef(table, c.row, c.column) === ref);
+
+  assert.equal(at("D2")?.text, "77.5%", "the pass rate as the sheet shows it");
+  assert.equal(at("D2")?.raw, "0.775", "the number behind it");
+  assert.equal(at("D2")?.formula, "C2/B2", "and the question that produced it — all three");
+
+  // 🔴 CURRENCY WRITTEN AS AN ESCAPE, NOT A QUOTE. LibreOffice emits `\$` where
+  // openpyxl emits `"$"`. Deleting escapes before looking for a symbol made this
+  // render as `5,000.00`, silently dropping the currency from a column of money.
+  assert.equal(at("E2")?.text, "$5,000.00");
+  assert.equal(at("E2")?.raw, "5000");
 });
 
 // ── unsupported is not absent ──────────────────────────────────────────────

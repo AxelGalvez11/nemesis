@@ -63,6 +63,7 @@ function cellsWithMerges(sheet: Sheet): DocCell[] {
       text: cell.text,
       ...(cell.formula ? { formula: cell.formula } : {}),
       ...(cell.raw ? { raw: cell.raw } : {}),
+      ...(cell.format ? { format: cell.format } : {}),
     });
   }
   for (const merge of sheet.merges) {

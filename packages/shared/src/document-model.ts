@@ -207,12 +207,25 @@ export interface DocCell {
    * styling shortfall, it is a different value. So dates are rendered and the
    * serial kept here.
    *
-   * Currency and percentages are NOT rendered: 1234.5 and 0.075 are the correct
-   * numbers merely without their decoration, and a half-built format engine that
-   * handled some styles and not others would be harder to reason about than one
-   * that handles none. That is a recorded limit, not an oversight.
+   * 🔴 A PERCENTAGE IS NOT DECORATION EITHER, AND CALLING IT THAT WAS WRONG.
+   * `0.075` and `7.5%` are the same number and not the same source: Nemesis may
+   * quote a cell, teach from it, or ask a learner what it says, and every one of
+   * those is wrong if we show a fraction where the document showed a percentage.
+   * So percentages, currency and grouped decimals are rendered too, and the
+   * stored number lives here. Formats outside those classes are refused rather
+   * than approximated — see `format`.
    */
   raw?: string;
+  /**
+   * The source's own presentation code for the value — a spreadsheet's number
+   * format, such as `0.0%` or `"$"#,##0.00`.
+   *
+   * 🔴 EVIDENCE, NOT STYLING. It is why `text` differs from `raw`, it lets a
+   * consumer re-render the value differently, and when the parser could NOT
+   * render a format it is the only record that we declined rather than that the
+   * cell was plain. Absent means the source stated no format.
+   */
+  format?: string;
 }
 
 export interface DocTable {

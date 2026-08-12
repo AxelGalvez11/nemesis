@@ -78,7 +78,30 @@ ws["B4"] = 1234.5
 ws["B4"].number_format = '"$"#,##0.00'
 ws["A5"] = "plain text that looks numeric"
 ws["B5"] = "007"
+ws["A6"] = "grouped number"
+ws["B6"] = 1234567.891
+ws["B6"].number_format = "#,##0.00"
+ws["A7"] = "builtin percent"
+ws["B7"] = 0.5
+ws["B7"].number_format = "0%"          # builtin numFmtId 9
+ws["A8"] = "a format we will not render"
+ws["B8"] = 12
+ws["B8"].number_format = '0" widgets"'  # deliberately outside the supported classes
 save(wb, "number-formats.xlsx")
+
+# ── H2. a FORMULA whose cached result carries a number format ──────────────
+# 🔴 THE CASE THAT JOINS THE TWO HALVES. A percentage is usually computed, not
+# typed, so the display rule has to apply to a formula's cached result too —
+# otherwise every derived percentage in every workbook shows as a fraction.
+# Written by openpyxl (formula, no cached value), then calculated by LibreOffice.
+wb = Workbook()
+ws = wb.active
+ws.title = "Derived"
+ws.append(["Cohort", "Sat", "Passed", "Pass rate", "Fees"])
+ws.append(["2026", 40, 31, "=C2/B2", "=B2*125"])
+ws["D2"].number_format = "0.0%"
+ws["E2"].number_format = '"$"#,##0.00'
+save(wb, "formatted-formulas.xlsx")
 
 # ── B. formulas with NO cached value ───────────────────────────────────────
 # openpyxl does not calculate. This is exactly what a workbook written by a
@@ -211,18 +234,25 @@ if not soffice:
     print("  ⚠ LibreOffice not found — skipping the calculated and stale fixtures")
     sys.exit(0)
 
-src = out / "formulas-uncalculated.xlsx"
-work = out / "_convert"
-work.mkdir(exist_ok=True)
-subprocess.run(
-    [soffice, "--headless", "--convert-to", "xlsx", "--outdir", str(work), str(src)],
-    check=True, capture_output=True, timeout=180,
-)
-converted = work / "formulas-uncalculated.xlsx"
-target = out / "formulas-calculated.xlsx"
-shutil.move(str(converted), target)
-shutil.rmtree(work)
-print("  wrote formulas-calculated.xlsx (LibreOffice computed the values)")
+def calculate(source_name, target_name):
+    """Round-trip through LibreOffice so a real program computes the formulas."""
+    work = out / "_convert"
+    work.mkdir(exist_ok=True)
+    subprocess.run(
+        [soffice, "--headless", "--convert-to", "xlsx", "--outdir", str(work), str(out / source_name)],
+        check=True, capture_output=True, timeout=180,
+    )
+    target = out / target_name
+    shutil.move(str(work / source_name), target)
+    shutil.rmtree(work)
+    print(f"  wrote {target_name} (LibreOffice computed the values)")
+    return target
+
+
+target = calculate("formulas-uncalculated.xlsx", "formulas-calculated.xlsx")
+# The formatted-formula fixture is only interesting once something has computed
+# it: an uncalculated percentage has no cached result to display.
+calculate("formatted-formulas.xlsx", "formatted-formulas.xlsx")
 
 # G. 🔴 A CACHED VALUE THAT DISAGREES WITH ITS FORMULA.
 # Edit an input cell in the raw XML and do NOT recalculate — which is precisely
