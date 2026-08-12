@@ -4,9 +4,9 @@
   "counts": {
     "degraded-source": 145,
     "noun-phrase": 2,
-    "causal": 33,
+    "causal": 34,
     "epistemic": 3,
-    "vague": 7,
+    "vague": 6,
     "figure-description": 4,
     "duplicate": 6,
     "cross-sentence": 5,
@@ -36,7 +36,7 @@
       "id": "c002",
       "label": "degraded-source",
       "source": "317f3172",
-      "text": "Partial completion of a higher grade’s requirements does not raise your final grade.",
+      "text": "Partial completion of a higher grade\u2019s requirements does not raise your final grade.",
       "triggers": [
         "incr/decr"
       ],
@@ -218,7 +218,7 @@
       "id": "c016",
       "label": "degraded-source",
       "source": "317f3172",
-      "text": "any point during a course or the program may result in a course letter grade of “F” and/or disciplinary",
+      "text": "any point during a course or the program may result in a course letter grade of \u201cF\u201d and/or disciplinary",
       "triggers": [
         "results in"
       ],
@@ -297,7 +297,7 @@
       "id": "c022",
       "label": "causal",
       "source": "9a3360d1",
-      "text": "Thus, it will not take a genius to realize if both alleles make a normal CYP2D6 protein, those two gene copies will produce a “normal” phenotype.",
+      "text": "Thus, it will not take a genius to realize if both alleles make a normal CYP2D6 protein, those two gene copies will produce a \u201cnormal\u201d phenotype.",
       "triggers": [
         "therefore"
       ],
@@ -321,14 +321,15 @@
       "degraded": false,
       "docKind": "pptx",
       "id": "c024",
-      "label": "vague",
+      "label": "causal",
       "source": "9a3360d1",
-      "text": "In the end, you need to know that the underlying variants (which you will shortly learn about) drive the type of alleles that are found in nature for any particular gene, and therefore they provide you with the genetic diversity that ultimately forms the basis of a patient’s phenotype or protein function.",
+      "text": "In the end, you need to know that the underlying variants (which you will shortly learn about) drive the type of alleles that are found in nature for any particular gene, and therefore they provide you with the genetic diversity that ultimately forms the basis of a patient\u2019s phenotype or protein function.",
       "triggers": [
         "therefore"
       ],
       "unitId": "b173",
-      "unitType": "paragraph"
+      "unitType": "paragraph",
+      "adjudication": "2026-08-12: relabelled from `vague`. \"drive\" is an explicit causal predicate, both endpoints are grounded in the assertion, and the source is making the relationship rather than Nemesis inferring it. Awkward prose is not grounds for a negative label. The extractor was NOT changed for this item."
     },
     {
       "degraded": false,
@@ -414,7 +415,7 @@
       "id": "c031",
       "label": "epistemic",
       "source": "9a3360d1",
-      "text": "Therefore, you would generally document this as a DNA level change (“g”) at 6C>A.",
+      "text": "Therefore, you would generally document this as a DNA level change (\u201cg\u201d) at 6C>A.",
       "triggers": [
         "therefore"
       ],
@@ -427,7 +428,7 @@
       "id": "c032",
       "label": "causal",
       "source": "9a3360d1",
-      "text": "The thing you can notice from the codon table is that a change in the last (third) nucleotide in the codon is “wobbling” and may not lead to a different insertion of amino acid.",
+      "text": "The thing you can notice from the codon table is that a change in the last (third) nucleotide in the codon is \u201cwobbling\u201d and may not lead to a different insertion of amino acid.",
       "triggers": [
         "leads to"
       ],
@@ -440,7 +441,7 @@
       "id": "c033",
       "label": "causal",
       "source": "9a3360d1",
-      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C  T (this is a transition variant – pyrimidine to pyrimidine).",
+      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C \uf0e0 T (this is a transition variant \u2013 pyrimidine to pyrimidine).",
       "triggers": [
         "incr/decr"
       ],
@@ -453,7 +454,7 @@
       "id": "c034",
       "label": "duplicate",
       "source": "9a3360d1",
-      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C  T (this is a transition variant – pyrimidine to pyrimidine).",
+      "text": "Now if there is a variation shown in the lower sequence as U (at nucleotide #12), this corresponds to the nucleotide #12 switch from C \uf0e0 T (this is a transition variant \u2013 pyrimidine to pyrimidine).",
       "triggers": [
         "incr/decr"
       ],
@@ -505,7 +506,7 @@
       "id": "c038",
       "label": "causal",
       "source": "9a3360d1",
-      "text": "If it is located near the 5’ end of the sequence, this will result in complete loss of the amino acid (and therefore, protein function).",
+      "text": "If it is located near the 5\u2019 end of the sequence, this will result in complete loss of the amino acid (and therefore, protein function).",
       "triggers": [
         "results in",
         "therefore"
@@ -546,7 +547,7 @@
       "id": "c041",
       "label": "vague",
       "source": "9a3360d1",
-      "text": "can be the most protein altering due to what it causes…a “frameshift”.",
+      "text": "can be the most protein altering due to what it causes\u2026a \u201cframeshift\u201d.",
       "triggers": [
         "causes"
       ],
@@ -637,7 +638,7 @@
       "id": "c048",
       "label": "arrow-as-range",
       "source": "9a3360d1",
-      "text": "- Large DNA segments (kb → Mb) that may vary in copy number (duplication or deletion)",
+      "text": "- Large DNA segments (kb \u2192 Mb) that may vary in copy number (duplication or deletion)",
       "triggers": [
         "arrow"
       ],
@@ -650,7 +651,7 @@
       "id": "c049",
       "label": "causal",
       "source": "9a3360d1",
-      "text": "- Change gene dosage → affects protein levels and function",
+      "text": "- Change gene dosage \u2192 affects protein levels and function",
       "triggers": [
         "arrow"
       ],
@@ -1497,7 +1498,7 @@
       "id": "c114",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-May cause sun sensitivity –",
+      "text": "-May cause sun sensitivity \u2013",
       "triggers": [
         "causes"
       ],
@@ -1549,7 +1550,7 @@
       "id": "c118",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-May cause sun sensitivity –",
+      "text": "-May cause sun sensitivity \u2013",
       "triggers": [
         "causes"
       ],
@@ -1667,7 +1668,7 @@
       "id": "c127",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-Premature discontinuation (↑ thrombotic events)<br>",
+      "text": "-Premature discontinuation (\u2191 thrombotic events)<br>",
       "triggers": [
         "delta"
       ],
@@ -1680,7 +1681,7 @@
       "id": "c128",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-Antiplatelet agents, NSAIDs, anticoagulants, SSRIs: ↑ risk of bleeding= avoid/ monitor<br><br>",
+      "text": "-Antiplatelet agents, NSAIDs, anticoagulants, SSRIs: \u2191 risk of bleeding= avoid/ monitor<br><br>",
       "triggers": [
         "delta"
       ],
@@ -1693,7 +1694,7 @@
       "id": "c129",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-CYP3A4/5 inducers: ↑ metabolism, ↓ effectiveness= avoid<br>",
+      "text": "-CYP3A4/5 inducers: \u2191 metabolism, \u2193 effectiveness= avoid<br>",
       "triggers": [
         "delta"
       ],
@@ -1706,7 +1707,7 @@
       "id": "c130",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "- CYP3A4/5 inhibitors: ↓ metabolism, ↑ risk of toxicity= avoid/monitor<br><br>",
+      "text": "- CYP3A4/5 inhibitors: \u2193 metabolism, \u2191 risk of toxicity= avoid/monitor<br><br>",
       "triggers": [
         "delta"
       ],
@@ -1719,7 +1720,7 @@
       "id": "c131",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-P-gp inducers: ↑ R/E met, ↓ effectiveness= avoid<br>",
+      "text": "-P-gp inducers: \u2191 R/E met, \u2193 effectiveness= avoid<br>",
       "triggers": [
         "delta"
       ],
@@ -1732,7 +1733,7 @@
       "id": "c132",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-P-gp inhibitors: ↓ R/E met, ↑ risk of toxicity= avoid/monitor",
+      "text": "-P-gp inhibitors: \u2193 R/E met, \u2191 risk of toxicity= avoid/monitor",
       "triggers": [
         "delta"
       ],
@@ -1862,7 +1863,7 @@
       "id": "c142",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "steroid - ¯ efficacy -> monitor,",
+      "text": "steroid - \u00af efficacy -> monitor,",
       "triggers": [
         "arrow"
       ],
@@ -2291,7 +2292,7 @@
       "id": "c175",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "– taper if discontinuing to prevent",
+      "text": "\u2013 taper if discontinuing to prevent",
       "triggers": [
         "inhibit"
       ],
@@ -2486,7 +2487,7 @@
       "id": "c190",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "results in ¯ gastric,",
+      "text": "results in \u00af gastric,",
       "triggers": [
         "results in"
       ],
@@ -2499,7 +2500,7 @@
       "id": "c191",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "CNS depression -> monitor/ ¯",
+      "text": "CNS depression -> monitor/ \u00af",
       "triggers": [
         "arrow"
       ],
@@ -2577,7 +2578,7 @@
       "id": "c197",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "to hydromorphone -> ¯",
+      "text": "to hydromorphone -> \u00af",
       "triggers": [
         "arrow"
       ],
@@ -2655,7 +2656,7 @@
       "id": "c203",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-↑ risk of lithium/",
+      "text": "-\u2191 risk of lithium/",
       "triggers": [
         "delta"
       ],
@@ -2668,7 +2669,7 @@
       "id": "c204",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "are at ↑ risk of CV SE.",
+      "text": "are at \u2191 risk of CV SE.",
       "triggers": [
         "delta"
       ],
@@ -2681,7 +2682,7 @@
       "id": "c205",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-Elderly pts à ↑ risk of",
+      "text": "-Elderly pts \u00e0 \u2191 risk of",
       "triggers": [
         "delta"
       ],
@@ -2694,7 +2695,7 @@
       "id": "c206",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "-wt < 50 kg ↑risk of SE",
+      "text": "-wt < 50 kg \u2191risk of SE",
       "triggers": [
         "delta"
       ],
@@ -2759,7 +2760,7 @@
       "id": "c211",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "↑ SCr with vancomycin",
+      "text": "\u2191 SCr with vancomycin",
       "triggers": [
         "delta"
       ],
@@ -2772,7 +2773,7 @@
       "id": "c212",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "IM SE: ↑ seizure risk relative to other",
+      "text": "IM SE: \u2191 seizure risk relative to other",
       "triggers": [
         "delta"
       ],
@@ -2785,7 +2786,7 @@
       "id": "c213",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "Only compatible in NS ↑ metabolism of valproic",
+      "text": "Only compatible in NS \u2191 metabolism of valproic",
       "triggers": [
         "delta"
       ],
@@ -2798,7 +2799,7 @@
       "id": "c214",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "↓K+/Mg2+, or",
+      "text": "\u2193K+/Mg2+, or",
       "triggers": [
         "delta"
       ],
@@ -2824,7 +2825,7 @@
       "id": "c216",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "- ↑ myelosuppression risk after 2",
+      "text": "- \u2191 myelosuppression risk after 2",
       "triggers": [
         "delta"
       ],
@@ -2837,7 +2838,7 @@
       "id": "c217",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "- Mecamylamine: May ↑",
+      "text": "- Mecamylamine: May \u2191",
       "triggers": [
         "delta"
       ],
@@ -2850,7 +2851,7 @@
       "id": "c218",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "age for up to 21 days - Systemic retinoic acid: ↑",
+      "text": "age for up to 21 days - Systemic retinoic acid: \u2191",
       "triggers": [
         "delta"
       ],
@@ -2876,7 +2877,7 @@
       "id": "c220",
       "label": "degraded-source",
       "source": "81d27bd2",
-      "text": "- G6PD deficiency: ↑ risk of",
+      "text": "- G6PD deficiency: \u2191 risk of",
       "triggers": [
         "delta"
       ],
@@ -2980,7 +2981,7 @@
       "id": "c228",
       "label": "administrative",
       "source": "7c696ebb",
-      "text": "Academic dishonesty at any point during a course or the program may result in a course letter grade of “F” and/or disciplinary actions as recommended by the Honor Council and determined by the Dean.",
+      "text": "Academic dishonesty at any point during a course or the program may result in a course letter grade of \u201cF\u201d and/or disciplinary actions as recommended by the Honor Council and determined by the Dean.",
       "triggers": [
         "results in"
       ],

@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import { causalNodeKey, identityBasis, knowledgeIdentityKey } from "./knowledge-identity";
 import type { CausalRelation, KnowledgeObject } from "./knowledge-types";
+import { CAUSAL_BENCHMARK, eligibleForExtraction, stageOf } from "./__fixtures__/causal-benchmark";
 import { knowledgeFromRow, knowledgePayload } from "./learner-store";
 import { objectivesForKnowledge } from "./learning-objective";
 
@@ -272,4 +273,32 @@ test("🔴 causal knowledge mints NO objectives, so no policy can reach it", () 
 
 test("association still mints its two directions", () => {
   assert.equal(objectivesForKnowledge(ASSOCIATION).length, 2);
+});
+
+// ── the benchmark's three stages ────────────────────────────────────────────
+
+test("🔴 capability, dedup and semantic negatives stay three different things", () => {
+  // A degraded source, a repeated assertion and a passage that makes no claim all produce no
+  // causal object — for three unrelated reasons. Collapsing them made the acceptance fold read
+  // 33% precise when the slice production actually sends was 100%.
+  const capability = CAUSAL_BENCHMARK.filter((i) => stageOf(i) === "capability");
+  const dedup = CAUSAL_BENCHMARK.filter((i) => stageOf(i) === "dedup");
+  const semantic = eligibleForExtraction();
+
+  assert.ok(capability.length > 0, "the corpus must still carry degraded material as evidence");
+  assert.ok(dedup.length > 0, "and repeated assertions");
+  assert.equal(capability.length + dedup.length + semantic.length, CAUSAL_BENCHMARK.length);
+
+  // Every degraded item is capability-stage regardless of what its text looks like: the question
+  // is whether we could reliably LOOK, never what we would have found.
+  assert.ok(capability.every((i) => i.degraded));
+  assert.ok(semantic.every((i) => !i.degraded && i.label !== "duplicate"));
+});
+
+test("🔴 no positive is hidden behind a gate", () => {
+  // If a `causal` item were degraded or a duplicate, the benchmark would be quietly excusing a
+  // recall miss by calling it an ineligible input.
+  for (const item of CAUSAL_BENCHMARK.filter((i) => i.label === "causal")) {
+    assert.equal(stageOf(item), "semantic", `${item.id} is a positive behind a ${stageOf(item)} gate`);
+  }
 });

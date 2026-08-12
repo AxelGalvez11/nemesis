@@ -33,7 +33,20 @@ import type { CausalRelationKind } from "../knowledge-types";
 
 import benchmark from "./causal-benchmark.json";
 
-/** Why a candidate is not a teachable causal edge. `causal` is the only positive. */
+/**
+ * 🔴 THE LABELLING RULE, so a negative is never a judgement about prose quality.
+ *
+ * If the source explicitly asserts a SUPPORTED CAUSAL PREDICATE and BOTH ENDPOINTS are grounded in
+ * that assertion, the item is `causal` — however awkward, hedged, parenthetical or long-winded the
+ * surrounding sentence is. Imprecise writing is not the same as an absent claim.
+ *
+ * 🔴 c024 WAS RELABELLED UNDER THIS RULE ON 2026-08-12 rather than the extractor being changed to
+ * satisfy it. "the underlying variants ... DRIVE the type of alleles" is an explicit causal
+ * predicate with both ends present; calling it `vague` because the sentence rambles contradicted the
+ * extraction contract. Adjudication recorded on the item itself in the JSON.
+ *
+ * Why a candidate is not a teachable causal edge. `causal` is the only positive.
+ */
 export type CausalLabel =
   | "causal"
   /** The parse kept no structure, so the text is fragments and no edge can be grounded.
@@ -66,6 +79,34 @@ export interface BenchmarkItem {
 }
 
 export const CAUSAL_BENCHMARK: BenchmarkItem[] = benchmark.items as BenchmarkItem[];
+
+/**
+ * WHICH STAGE OF THE PIPELINE AN ITEM TESTS.
+ *
+ * 🔴 THREE DIFFERENT REASONS FOR PRODUCING NO CAUSAL OBJECT, AND THEY MUST STAY DIFFERENT — the
+ * same discipline that keeps "I don't know" apart from a wrong answer in the learner model:
+ *
+ *   capability   "don't ask the extractor"       the parse kept no structure to ground an edge in
+ *   dedup        "we already asked this"         the same assertion, repeated by the document
+ *   semantic     "we asked, and there is no claim" the extractor's actual job
+ *
+ * 🔴 ONLY THE THIRD IS THE EXTRACTOR'S PERFORMANCE. Production never sends the first two, so
+ * counting them as ordinary false positives measures inputs the model is never given — it made the
+ * acceptance fold read 33% precise when the eligible slice was 100%. They stay in the fixture
+ * because they are the evidence that both gates must exist; they are reported under their own stage.
+ */
+export type BenchmarkStage = "capability" | "dedup" | "semantic";
+
+export function stageOf(item: BenchmarkItem): BenchmarkStage {
+  if (item.degraded) return "capability";
+  if (item.label === "duplicate") return "dedup";
+  return "semantic";
+}
+
+/** The items production would actually put in front of the model. */
+export function eligibleForExtraction(items: readonly BenchmarkItem[] = CAUSAL_BENCHMARK): BenchmarkItem[] {
+  return items.filter((item) => stageOf(item) === "semantic");
+}
 
 /** Every distinct document in the benchmark — the unit a holdout split is taken over. */
 export const BENCHMARK_DOCUMENTS: string[] = [...new Set(CAUSAL_BENCHMARK.map((i) => i.source))].sort();
