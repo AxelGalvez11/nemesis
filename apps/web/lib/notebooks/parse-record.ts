@@ -91,6 +91,39 @@ export function contentHashOf(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * The two denormalised counts on `parsed_documents`.
+ *
+ * 🔴 ONE DEFINITION, BECAUSE THE TWO LANES HAD ALREADY DRIFTED APART SILENTLY.
+ * The worker read `coverage.figures.total` — a field that does not exist on
+ * `FigureCoverage`, reached through an `as` cast so the compiler could not say
+ * so — and therefore wrote `visual_count = 0` for every document it has ever
+ * parsed, whatever the file contained. The upload lane meanwhile wrote
+ * `figures.described`. Two writers, two answers, one column, and no test on
+ * either, which is how the disagreement survived.
+ *
+ * 🔴 `visuals` IS WHAT WAS DESCRIBED, NOT WHAT WAS FOUND, and that is deliberate:
+ * the number a reader should trust is the one that says how much made it
+ * through. So an image-only PDF stores `0` here even though it holds pictures —
+ * correctly, because none of them were read. The INVENTORY lives in
+ * `coverage.figures.found`, which is the field consumers actually ask, and which
+ * #486 makes sure is persisted for exactly those documents.
+ *
+ * The fallback exists because the worker receives its parse back across a thread
+ * boundary as `unknown` and casts it; a malformed record must produce a wrong
+ * count rather than throw inside the write.
+ */
+export function rowCounts(
+  coverage: ExtractionCoverage,
+  fallbackUnits = 0,
+): { units: number; visuals: number } {
+  const loose = coverage as Partial<ExtractionCoverage> | undefined;
+  return {
+    units: loose?.units ?? fallbackUnits,
+    visuals: loose?.figures?.described ?? 0,
+  };
+}
+
 export interface PersistParseInput {
   /** The id `verifyDeviceKey` resolved. Never from the request body. */
   userId: string;
@@ -157,10 +190,8 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
         title: input.title,
         ...(input.model ? { model: input.model } : {}),
       }) as unknown as Record<string, unknown>,
-      p_unit_count: input.coverage.units,
-      // What was actually described, not what was found — the number a reader
-      // should trust is the one that says how much made it through.
-      p_visual_count: input.coverage.figures.described,
+      p_unit_count: rowCounts(input.coverage).units,
+      p_visual_count: rowCounts(input.coverage).visuals,
       p_user_id: input.userId,
     });
     if (error || typeof data !== "string") {

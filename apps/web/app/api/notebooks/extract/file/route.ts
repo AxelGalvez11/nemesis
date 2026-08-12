@@ -43,6 +43,7 @@ import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { parseDocument } from "@/lib/notebooks/parse-document";
+import { noTextMessage } from "@/lib/notebooks/parse-message";
 import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
@@ -255,7 +256,10 @@ export async function POST(req: Request): Promise<Response> {
     if (!outcome.ok && outcome.reason === "unsupported") {
       return NextResponse.json({ error: "That file type isn't supported yet." }, { status: 415 });
     }
-    const parsed = outcome.ok ? outcome.document : null;
+    // 🔴 `no-text` IS A REFUSAL THAT STILL HAS A DOCUMENT. A scan has nothing to
+    // return to the student and plenty to remember: units, figures, geometry.
+    // Treating it as `null` here is what discarded that model before #486.
+    const parsed = outcome.ok || outcome.reason === "no-text" ? outcome.document : null;
     const result = { text: parsed?.text ?? "", title: parsed?.title ?? null };
     const readBy = parsed?.readBy;
     const skippedFigures = parsed?.skippedFigures ?? 0;
@@ -267,33 +271,13 @@ export async function POST(req: Request): Promise<Response> {
       parsed?.coverage ?? singleUnitCoverage({ read: false, method: "native" });
     const text = result.text;
 
-    if (!text) {
-      console.warn(JSON.stringify({
-        event: "file_extract_empty",
-        requestId,
-        kind,
-        readBy: readBy ?? null,
-        durationMs: Date.now() - startedAt,
-      }));
-      return NextResponse.json(
-        {
-          error:
-            kind === "pdf"
-              ? "This PDF has no selectable text (it may be scanned images)."
-              : kind === "image"
-                ? "Couldn't read anything in that picture. Try again with more light, or hold the camera steadier."
-              : "No readable text was found in that file.",
-        },
-        { status: 422 },
-      );
-    }
-
     // ── The durable record ─────────────────────────────────────────────────
-    // 🔴 AFTER the text is known and BEFORE the response, so what the caller
-    // receives and what survives a reload are the same account of the same
-    // parse. Written for the by-reference lane only: a multipart upload has no
-    // stored row to attach a parse to, and inventing one would create a source
-    // the student never asked us to keep.
+    // 🔴 BEFORE THE `!text` RETURN, NOT AFTER IT, AND THAT ORDER IS THE FIX.
+    // What survives a reload must be the same account of the same parse the
+    // caller receives — including when the account is "this file is pictures".
+    // Written for the by-reference lane only: a multipart upload has no stored
+    // row to attach a parse to, and inventing one would create a source the
+    // student never asked us to keep.
     //
     // Best-effort by design. A student who cannot add their lecture because a
     // bookkeeping write timed out has lost more than the caveat was worth, so a
@@ -301,7 +285,7 @@ export async function POST(req: Request): Promise<Response> {
     // failure, and `persisted` says so rather than the response implying a
     // record exists.
     let parsedDocumentId: string | null = null;
-    if (sourceId) {
+    if (sourceId && parsed) {
       const saved = await persistParse({
         contentHash: contentHashOf(original),
         coverage,
@@ -316,9 +300,25 @@ export async function POST(req: Request): Promise<Response> {
         // model that dies with the upload. That is the same defect Phase 3 had
         // one layer down, where Word's structure was rendered to a string and
         // thrown away at the function boundary.
-        ...(parsed?.model ? { model: parsed.model } : {}),
+        ...(parsed.model ? { model: parsed.model } : {}),
       });
       if (saved.ok) parsedDocumentId = saved.parsedDocumentId;
+    }
+
+    if (!text) {
+      console.warn(JSON.stringify({
+        event: "file_extract_empty",
+        requestId,
+        kind,
+        readBy: readBy ?? null,
+        // Distinguishes "nothing at all" from "pictures we cannot read", which
+        // are different bugs and were the same log line until now.
+        figures: coverage.figures.found,
+        structural: Boolean(parsed?.model),
+        persisted: parsedDocumentId !== null,
+        durationMs: Date.now() - startedAt,
+      }));
+      return NextResponse.json({ error: noTextMessage(kind, coverage) }, { status: 422 });
     }
 
     const baseName = sourceName.replace(/\.[^.]+$/, "").trim();

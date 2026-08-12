@@ -41,7 +41,19 @@ export interface ParseThreadInput {
  */
 export type ParseThreadOutput =
   | { ok: true; parsed: unknown; peakRssMb: number }
-  | { ok: false; reason: string; peakRssMb: number }
+  /**
+   * A refusal, and — for `no-text` — what was found anyway.
+   *
+   * 🔴 `parsed` ON A REFUSAL IS NOT A CONTRADICTION, AND OMITTING IT WAS THE
+   * WHOLE DEFECT ONE LAYER DOWN. An image-only PDF is refused (there is no text
+   * to return) while still holding units, figures and geometry worth storing.
+   * If only the reason string crossed this boundary, the model would die here
+   * instead of in the parser — the same loss, one file further along.
+   *
+   * It survives `postMessage` for the same reason the success path's does: the
+   * model is plain data, so structured cloning carries it intact.
+   */
+  | { ok: false; reason: string; parsed?: unknown; peakRssMb: number }
   | { threw: string; peakRssMb: number };
 
 /** Peak resident memory seen by this thread, sampled as the parse runs. */
@@ -82,7 +94,13 @@ export async function runParseThread(
       // starts writing `result.parsed.document.text`.
       outcome.ok
         ? { ok: true, parsed: outcome.document, peakRssMb: peakRss }
-        : { ok: false, reason: outcome.reason, peakRssMb: peakRss },
+        : {
+            ok: false,
+            reason: outcome.reason,
+            peakRssMb: peakRss,
+            // Only `no-text` carries one. Every other refusal has nothing to send.
+            ...(outcome.reason === "no-text" ? { parsed: outcome.document } : {}),
+          },
     );
   } catch (caught) {
     sampleRss();

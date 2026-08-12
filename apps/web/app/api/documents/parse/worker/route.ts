@@ -29,7 +29,7 @@ import { serviceRoleKey } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { runParseOnThread } from "@/lib/notebooks/parse-run";
-import { contentHashOf, structureEnvelope } from "@/lib/notebooks/parse-record";
+import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
 import {
   DEADLINE_ABORT_MS,
   isRetryable,
@@ -325,6 +325,17 @@ async function runOne(
     case "parsed":
       break;
     case "refused":
+      // 🔴 A REFUSAL CAN STILL CARRY A DOCUMENT, AND THEN IT IS A RECORD, NOT A
+      // FAILURE TO WRITE. `no-text` means a scan: no text to return, and units,
+      // figures and geometry the structural reader already found. Taking the
+      // `fail` branch would store the refusal and throw that away — the exact
+      // loss #486 exists to stop, one lane over from where it was found.
+      //
+      // The resulting artifact still reports `failed` to the student, because
+      // its coverage says zero pages were read and that is true. The difference
+      // is that the file's shape survives, so a later vision pass enriches a
+      // known document instead of deciding again what it is.
+      if (run.parsed) return await finish(run.parsed as ParsedDocument, run.ms, run.peakRssMb);
       // The parser read the file and declined it. That verdict will not change
       // on a fourth attempt.
       return await fail(new Error(`unsupported: ${run.reason}`), false);
@@ -527,10 +538,13 @@ async function runDoclingLane(input: {
  * "three pages were read". A count derived from the model would silently mean
  * the second while being read as the first.
  */
+/**
+ * 🔴 DELEGATES, RATHER THAN COUNTING AGAIN. This function used to read
+ * `coverage.figures.total` — a field `FigureCoverage` does not have — through a
+ * cast that hid it from the compiler, so this lane wrote `visual_count = 0` for
+ * every document it ever parsed while the upload lane wrote the real number.
+ * `rowCounts` is now the single definition both lanes call.
+ */
 function countsFor(parsed: ParsedDocument): { units: number; visuals: number } {
-  const coverage = parsed.coverage as { units?: number; figures?: { total?: number } };
-  return {
-    units: coverage.units ?? parsed.model?.units.length ?? 0,
-    visuals: coverage.figures?.total ?? 0,
-  };
+  return rowCounts(parsed.coverage, parsed.model?.units.length ?? 0);
 }
