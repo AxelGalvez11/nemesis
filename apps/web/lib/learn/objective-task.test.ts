@@ -183,3 +183,97 @@ test("what the learner said is kept, and the evaluator is named", () => {
   assert.equal(evidence.responseText, "Cozaar");
   assert.ok(evidence.evaluatorVersion);
 });
+
+// ── RUNTIME-002: one answer, one response identity ──────────────────────────
+//
+// 🔴 THESE PIN A PROPERTY THAT ALREADY HOLDS, AND THAT IS THE POINT.
+//
+// The coordination board (docs/canvas-agent-board.md) records RUNTIME-002 against a stated defect:
+// that the prompt id is built as `${objective.identityKey}:${action.type}:${evidenceCount}:${round}`
+// and therefore "embeds the objective's identity key". That expression is real, but it is
+// `decisionKey` in use-policy-runtime.ts — a memo guard deciding WHEN to mint a fresh id. The id
+// itself is `crypto.randomUUID()`, on this branch and on main. Nothing objective-specific reaches it.
+//
+// So the contract is already satisfied by construction. What was missing is any test that says so —
+// which is why the property could be believed broken, and why a later edit could break it for real
+// without anything going red. The defect was misdiagnosed; the invariant is worth holding.
+//
+// 🔴 AND "FIXING" THE REPORTED DEFECT WOULD HAVE CAUSED ONE. The random id is what makes a genuinely
+// new attempt after a reload land instead of being swallowed as a duplicate; deriving the id from
+// the decision — the shape the board describes as correct-by-accident — is what would actually
+// collapse two performances into one.
+
+test("🔴 responseId identifies the ANSWER, never the objective", () => {
+  // Acceptance test 1, in the only form expressible today: no code path yet writes evidence for
+  // several objectives from one submission, so this pins the property that MAKES that safe —
+  // two different objectives, one submission, one shared response identity.
+  //
+  // 🔴 CALIBRATED, AND THE FIRST ATTEMPT WAS A FALSE PASS WORTH RECORDING. Deriving `responseId`
+  // from `prompt.objectiveIdentityKey` left this GREEN, because both rows are built from the same
+  // prompt, so the derived value matched anyway. It goes red on the defect it actually names —
+  // `${objectiveRowId}:${prompt.id}` — and that is the boundary this can honestly speak about.
+  //
+  // 🔴 WHAT IT CANNOT SEE, STATED SO NOBODY READS MORE INTO IT: this pins "one prompt → one
+  // identity across objectives". It does NOT pin "one submission → one prompt". That second half
+  // lives upstream in use-policy-runtime.ts, where a future multi-objective path could mint a
+  // prompt per objective and split one answer before it ever reached here. Nothing can test that
+  // until such a path exists.
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
+  const forward = evidenceFromEvaluation({
+    canvasId: "c1",
+    evaluation: EVALUATION,
+    objectiveRowId: "row-forward",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt,
+    response: { text: "Cozaar", via: "typed", tookMs: 4200 },
+  });
+  const reverse = evidenceFromEvaluation({
+    canvasId: "c1",
+    evaluation: EVALUATION,
+    objectiveRowId: "row-reverse",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt,
+    response: { text: "Cozaar", via: "typed", tookMs: 4200 },
+  });
+
+  assert.equal(forward.responseId, reverse.responseId, "one answer must carry one response identity");
+  assert.notEqual(forward.objectiveRowId, reverse.objectiveRowId, "the rows are still distinct");
+  // 🔴 THE LATENCY IS THE PERFORMANCE'S, NOT THE ROW'S. Dividing it among rows, or measuring it per
+  // objective, would make one 4.2s answer look like several faster ones.
+  assert.equal(forward.responseLatencyMs, 4200);
+  assert.equal(reverse.responseLatencyMs, 4200);
+});
+
+test("🔴 nothing objective-specific leaks into the response identity", () => {
+  // The board's stated defect, asserted directly against: hand the SAME id to two opposite
+  // objectives and it must survive unchanged. If the id were ever derived from the objective, these
+  // would diverge — which is the exact failure that would make one answer read as several.
+  const forward = retrievalPromptFor(GENERIC_TO_BRAND!, "shared-id");
+  const reverse = retrievalPromptFor(BRAND_TO_GENERIC!, "shared-id");
+  assert.equal(forward.id, "shared-id");
+  assert.equal(reverse.id, "shared-id");
+  assert.notEqual(forward.objectiveIdentityKey, reverse.objectiveIdentityKey);
+});
+
+test("separate answers carry separate response identities", () => {
+  // Acceptance test 3. The other half: sharing must not become collapsing.
+  const first = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
+  const second = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-2");
+  assert.notEqual(first.id, second.id);
+});
+
+test("an unobtained demonstration carries the same answer identity", () => {
+  // "I don't know" is an opportunity that produced nothing — but it is still ONE answer, and it must
+  // group with anything else that submission produced rather than looking like a separate event.
+  const prompt = retrievalPromptFor(GENERIC_TO_BRAND!, "answer-1");
+  const nothing = unobtainedEvidence({
+    canvasId: "c1",
+    objectiveRowId: "row-forward",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt,
+    responseText: "no idea",
+    tookMs: 900,
+  });
+  assert.equal(nothing.responseId, "answer-1");
+  assert.equal(nothing.demonstrationObtained, false);
+});
