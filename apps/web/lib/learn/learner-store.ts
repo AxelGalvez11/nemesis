@@ -124,8 +124,26 @@ export interface EvidenceToRecord {
   misconceptions?: readonly string[];
   canvasId?: string | null;
   evaluatorVersion?: string | null;
-  /** 🔴 THE IDEMPOTENCY KEY. The id of the response this is evidence for. */
-  responseId?: string | null;
+  /**
+   * 🔴 THE IDEMPOTENCY KEY, AND REQUIRED FOR A REASON THE DATABASE CANNOT ENFORCE.
+   *
+   * The unique index behind the upsert is `(user_id, objective_id, response_id)` and it is
+   * `NULLS DISTINCT` — the Postgres default. Two rows whose `response_id` is NULL therefore never
+   * collide, and the deduplication `ignoreDuplicates` exists to provide **silently does not apply
+   * to them**. A retried answer written without one becomes a second demonstration, crediting the
+   * learner with practice they never did.
+   *
+   * 🔴 AND NO INDEX CHANGE CAN FIX IT. `NULLS NOT DISTINCT` would collapse every unidentified row
+   * for an objective into one, which is wrong in the other direction: two genuinely separate
+   * answers that both failed to carry an id are two demonstrations. A retry is only recognisable as
+   * a retry if the answer said which answer it was. So the type is the enforcement — evidence
+   * without a response identity is not a weaker record, it is an uncountable one.
+   *
+   * 🔴 IT IDENTIFIES THE ANSWER, NEVER THE OBJECTIVE. One submission demonstrating several things
+   * carries ONE id across every row it writes. Deriving it from anything objective-specific turns
+   * one performance into several — see `performanceKey` in `learner-evidence.ts`.
+   */
+  responseId: string;
   responseText?: string | null;
   taskId?: string | null;
   // ── Observations about the attempt ────────────────────────────────────────
@@ -155,30 +173,102 @@ export interface EvidenceToRecord {
  *
  * So a retry is a NO-OP rather than an error: it must neither fail loudly nor succeed twice.
  */
+/**
+ * Exactly the row one demonstration becomes.
+ *
+ * 🔴 PURE, AND SEPARATE FROM THE WRITE, SO THE READ CAN BE CHECKED AGAINST IT. While this lived
+ * inline inside the upsert, the only way to know which columns existed was to read the function and
+ * remember — and that is precisely how `response_id`, `response_text` and `task_id` came to be
+ * written on every row and selected by nothing. A test now compares this shape against the select
+ * list, so a field added here and forgotten there fails immediately instead of years later.
+ */
+export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<string, unknown> {
+  return {
+    canvas_id: evidence.canvasId ?? null,
+    confidence: evidence.confidence ?? null,
+    demonstration_obtained: evidence.demonstrationObtained,
+    evaluator_version: evidence.evaluatorVersion ?? null,
+    misconceptions: evidence.misconceptions ?? [],
+    objective_id: evidence.objectiveRowId,
+    occurred_at: evidence.occurredAt,
+    // 🔴 `?? null` IS "NOT OBSERVED", AND THAT IS WHY IT IS NOT `?? 0`. A zero latency asserts an
+    // instantaneous answer; a zero scaffolding level asserts an unaided attempt. Both are real
+    // claims, and writing either when nothing measured it puts a fact into the log that never
+    // happened — which no later migration can distinguish from one that did.
+    operation: evidence.operation ?? null,
+    // 🔴 NO `?? null`, UNLIKE EVERY OBSERVATION AROUND IT. The others are nullable because absent
+    // means not observed; this one is required because an absent response identity does not mean
+    // "not observed", it means the row cannot be counted or deduplicated at all.
+    response_id: evidence.responseId,
+    response_latency_ms: evidence.responseLatencyMs ?? null,
+    response_text: evidence.responseText ?? null,
+    scaffolding_level: evidence.scaffoldingLevel ?? null,
+    task_id: evidence.taskId ?? null,
+    user_id: userId,
+    verdict: evidence.verdict,
+  };
+}
+
+/**
+ * Columns written by `evidenceRow` that the reader deliberately does not select.
+ *
+ * 🔴 EVERY ENTRY NEEDS A REASON, BECAUSE THIS IS THE ONLY WAY A FIELD MAY LEGITIMATELY NOT COME
+ * BACK. An unexplained name here is indistinguishable from the defect this guards against.
+ */
+export const EVIDENCE_WRITE_ONLY_COLUMNS: readonly string[] = [
+  // The row's owner. Reading it back would tell a caller only what it already had to know to ask.
+  "user_id",
+  // Read as `objective_id` and immediately resolved to the objective's identity key, which is what
+  // every consumer actually uses. The raw row id never leaves this file.
+  "objective_id",
+];
+
+/**
+ * What `loadEvidence` selects. 🔴 DERIVED FROM THE WRITE SHAPE, NEVER HAND-MAINTAINED — a list
+ * typed out by hand is a list that drifts, which is the whole history of this boundary.
+ *
+ * 🔴 THE PROBE IS A REAL `EvidenceToRecord`, NOT A CAST. `{} as EvidenceToRecord` would compile
+ * and would keep compiling after a required field was renamed, which is precisely how a cast has
+ * already killed one field in this codebase. A genuine value makes the type checker an ally here.
+ */
+const COLUMN_PROBE: EvidenceToRecord = {
+  demonstrationObtained: false,
+  objectiveRowId: "",
+  occurredAt: "",
+  responseId: "",
+  verdict: null,
+};
+
+export const EVIDENCE_COLUMNS: readonly string[] = [
+  // Server-generated, so it is not in the write shape, but every consumer needs it — it is the
+  // row's own identity and the fallback performance key for rows written before response ids.
+  "id",
+  // Not selected for its own sake: resolved to the objective's identity key and then dropped.
+  "objective_id",
+  ...Object.keys(evidenceRow("", COLUMN_PROBE)).filter(
+    (column) => !EVIDENCE_WRITE_ONLY_COLUMNS.includes(column),
+  ),
+];
+
+/**
+ * The literal handed to PostgREST.
+ *
+ * 🔴 IT HAS TO BE A LITERAL, AND THAT IS THE ONLY REASON IT IS WRITTEN OUT TWICE. supabase-js
+ * derives the row's TYPE from this string, so passing a computed `string` erases the result type
+ * to `GenericStringError[]` and every field access below becomes an unchecked cast — trading a
+ * drift bug for a much quieter one.
+ *
+ * 🔴 SO THE DUPLICATION IS GUARDED, NOT TOLERATED. A test asserts this matches `EVIDENCE_COLUMNS`
+ * exactly, which makes the pair non-tautological in both directions: the derived list cannot drift
+ * from the write shape, and this literal cannot drift from the derived list.
+ */
+export const EVIDENCE_SELECT =
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,occurred_at,operation,response_id,response_latency_ms,response_text,scaffolding_level,task_id,verdict";
+
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
   const { error } = await supabase.from("learner_evidence").upsert(
-    {
-      canvas_id: evidence.canvasId ?? null,
-      confidence: evidence.confidence ?? null,
-      demonstration_obtained: evidence.demonstrationObtained,
-      evaluator_version: evidence.evaluatorVersion ?? null,
-      misconceptions: evidence.misconceptions ?? [],
-      objective_id: evidence.objectiveRowId,
-      occurred_at: evidence.occurredAt,
-      // 🔴 `?? null` IS "NOT OBSERVED", AND THAT IS WHY IT IS NOT `?? 0`. A zero latency asserts an
-      // instantaneous answer; a zero scaffolding level asserts an unaided attempt. Both are real
-      // claims, and writing either when nothing measured it puts a fact into the log that never
-      // happened — which no later migration can distinguish from one that did.
-      operation: evidence.operation ?? null,
-      response_id: evidence.responseId ?? null,
-      response_latency_ms: evidence.responseLatencyMs ?? null,
-      response_text: evidence.responseText ?? null,
-      scaffolding_level: evidence.scaffoldingLevel ?? null,
-      task_id: evidence.taskId ?? null,
-      user_id: userId,
-      verdict: evidence.verdict,
-    },
+    evidenceRow(userId, evidence),
     { ignoreDuplicates: true, onConflict: "user_id,objective_id,response_id" },
   );
   if (error && !isMissingTable(error)) {
@@ -208,9 +298,13 @@ export async function loadEvidence(
     // boundary exactly this way, each one passing every test on both sides. Nothing INTERPRETS
     // these yet; they are carried so the projection can, and so the round trip is provable now
     // rather than discovered to be broken when something finally needs them.
-    .select(
-      "id,objective_id,occurred_at,demonstration_obtained,verdict,confidence,misconceptions,canvas_id,evaluator_version,operation,response_latency_ms,scaffolding_level",
-    )
+    // 🔴 AND IT HAPPENED ANYWAY, IN THE CODE THAT WARNS ABOUT IT. `response_id`, `response_text`
+    // and `task_id` are written by `recordEvidence` on every row — `response_id` is the
+    // idempotency key the upsert conflicts on — and all three were missing from this list, so
+    // they were stored on every row and visible to nothing. Adding a column here is not enough on
+    // its own: `EVIDENCE_COLUMNS` below is asserted against the write path, so the next field can
+    // only die here if someone deletes that test.
+    .select(EVIDENCE_SELECT)
     .in("objective_id", [...keyFor.keys()])
     // Ends in a unique column so a paged read cannot silently skip or repeat a row.
     .order("occurred_at", { ascending: true })
@@ -222,21 +316,38 @@ export async function loadEvidence(
   }
   return (data as Record<string, unknown>[])
     .filter((row) => keyFor.has(row.objective_id as string))
-    .map((row) => ({
-      canvasId: (row.canvas_id as string | null) ?? null,
-      demonstrationObtained: row.demonstration_obtained as boolean,
-      evaluatorVersion: (row.evaluator_version as string | null) ?? null,
-      id: row.id as string,
-      misconceptions: Array.isArray(row.misconceptions) ? (row.misconceptions as string[]) : [],
-      objectiveIdentityKey: keyFor.get(row.objective_id as string)!,
-      occurredAt: new Date(row.occurred_at as string).toISOString(),
-      verdict: (row.verdict as EvidenceVerdict | null) ?? null,
-      ...(row.confidence == null ? {} : { confidence: row.confidence as number }),
-      // 🔴 OMITTED WHEN NULL RATHER THAN COERCED. A row written before these existed must read back
-      // as "not observed", and `?? 0` would turn every one of them into a claim that the learner
-      // answered instantly with no help. Spread-when-present keeps absent absent.
-      ...(row.operation == null ? {} : { operation: row.operation as ObjectiveCapability }),
-      ...(row.response_latency_ms == null ? {} : { responseLatencyMs: row.response_latency_ms as number }),
-      ...(row.scaffolding_level == null ? {} : { scaffoldingLevel: row.scaffolding_level as number }),
-    }));
+    .map((row) => evidenceFromRow(row, keyFor.get(row.objective_id as string)!));
+}
+
+/**
+ * One stored row, as the rest of the system sees it.
+ *
+ * 🔴 EXTRACTED SO THE ROUND TRIP IS PROVABLE WITHOUT A DATABASE. While this lived inline in the
+ * query, the only way to test that a written field came back was to reach production — so nothing
+ * tested it, and three fields did not come back for as long as they existed.
+ */
+export function evidenceFromRow(
+  row: Record<string, unknown>,
+  objectiveIdentityKey: string,
+): LearnerEvidence {
+  return {
+    canvasId: (row.canvas_id as string | null) ?? null,
+    demonstrationObtained: row.demonstration_obtained as boolean,
+    evaluatorVersion: (row.evaluator_version as string | null) ?? null,
+    id: row.id as string,
+    misconceptions: Array.isArray(row.misconceptions) ? (row.misconceptions as string[]) : [],
+    objectiveIdentityKey,
+    occurredAt: new Date(row.occurred_at as string).toISOString(),
+    verdict: (row.verdict as EvidenceVerdict | null) ?? null,
+    ...(row.confidence == null ? {} : { confidence: row.confidence as number }),
+    // 🔴 OMITTED WHEN NULL RATHER THAN COERCED. A row written before these existed must read back
+    // as "not observed", and `?? 0` would turn every one of them into a claim that the learner
+    // answered instantly with no help. Spread-when-present keeps absent absent.
+    ...(row.operation == null ? {} : { operation: row.operation as ObjectiveCapability }),
+    ...(row.response_latency_ms == null ? {} : { responseLatencyMs: row.response_latency_ms as number }),
+    ...(row.scaffolding_level == null ? {} : { scaffoldingLevel: row.scaffolding_level as number }),
+    ...(row.response_id == null ? {} : { responseId: row.response_id as string }),
+    ...(row.response_text == null ? {} : { responseText: row.response_text as string }),
+    ...(row.task_id == null ? {} : { taskId: row.task_id as string }),
+  };
 }
