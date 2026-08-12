@@ -259,7 +259,10 @@ export function buildCoverage(input: {
   }
   const truncation = [...(input.truncation ?? [])].filter((cut) => cut.dropped > 0);
 
-  if (input.unreadableRegions !== undefined && input.unreadableKinds !== undefined) {
+  // An empty `unreadableKinds` is not a breakdown — a caller passing `[]` beside
+  // `unreadableRegions` is not stating two disagreeing numbers, just an unused
+  // default. Only a non-empty breakdown competes with a direct region count.
+  if (input.unreadableRegions !== undefined && (input.unreadableKinds?.length ?? 0) > 0) {
     return "pass unreadableRegions or unreadableKinds, not both — the count is derived from the breakdown";
   }
   const unreadableKinds = [...(input.unreadableKinds ?? [])];
@@ -510,6 +513,18 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     }
   }
 
+  // 🔴 RE-DERIVED, NOT READ VERBATIM — THE ONE EXCEPTION IN THIS FUNCTION.
+  // Every other field here is trusted as stored. This one cannot be: a
+  // malformed entry dropped from `unreadableKinds` just above must not leave a
+  // STALE, now-too-low `unreadableRegions` sitting next to it — that is
+  // `buildCoverage`'s own "two numbers that must agree eventually disagree"
+  // problem, reappearing on the read side instead of the write side. Taking
+  // the max of what survived filtering and what storage says never LOSES a
+  // count filtering could not explain; it only ever raises the floor.
+  const storedRegions = typeof raw["unreadableRegions"] === "number" ? raw["unreadableRegions"] : 0;
+  const explainedRegions = unreadableKinds.reduce((total, entry) => total + entry.count, 0);
+  const unreadableRegions = Math.max(storedRegions, explainedRegions);
+
   return {
     version: typeof raw["version"] === "number" ? raw["version"] : EXTRACTION_COVERAGE_VERSION,
     parserVersion: typeof raw["parserVersion"] === "string" ? raw["parserVersion"] : "unknown",
@@ -521,11 +536,7 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     unitsUnread,
     figures: { found: figureNum("found"), described: figureNum("described"), skipped: figureNum("skipped"), reasons },
     truncation,
-    // Same rule as the reasons above: a field this reader does not know about is
-    // a field that dies between the database and the screen.
-    ...(typeof raw["unreadableRegions"] === "number" && raw["unreadableRegions"] > 0
-      ? { unreadableRegions: raw["unreadableRegions"] }
-      : {}),
+    ...(unreadableRegions > 0 ? { unreadableRegions } : {}),
     ...(unreadableKinds.length > 0 ? { unreadableKinds } : {}),
     state,
   };

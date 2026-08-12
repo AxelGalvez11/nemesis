@@ -349,8 +349,40 @@ test("readCoverage preserves an unrecognized kind verbatim — the vocabulary is
 
 test("readCoverage drops a kind entry with a non-positive or non-numeric count", () => {
   const parsed = readCoverage({
-    unitKind: "sheet", units: 1, unitsNative: 1, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "complete",
+    unitKind: "sheet", units: 1, unitsNative: 1, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "partial",
     unreadableKinds: [{ kind: "chart", count: 0 }, { kind: "macro", count: "two" }, { kind: "pivot-table", count: 3 }],
   });
   assert.deepEqual(parsed?.unreadableKinds, [{ kind: "pivot-table", count: 3 }]);
+});
+
+test("an explicit empty unreadableKinds is not a breakdown that competes with unreadableRegions", () => {
+  // A caller passing an empty array (an unused default) is not stating two
+  // numbers that must agree — only a NON-EMPTY breakdown does that.
+  const coverage = built({ unitKind: "page", units: 4, unitsNative: 4, unreadableRegions: 1, unreadableKinds: [] });
+  assert.equal(coverage.unreadableRegions, 1);
+  assert.equal("unreadableKinds" in coverage, false);
+});
+
+test("🔴 readCoverage re-derives unreadableRegions when a malformed kind entry is dropped, rather than trusting a now-stale stored total", () => {
+  // Reproduces the boundary defect: raw storage claims 7 unreadable regions but
+  // one kind entry is malformed and gets dropped during parsing, leaving only 3
+  // explained. Trusting the stored 7 verbatim would let filtering silently
+  // shrink what the record can account for while the number stays the same —
+  // exactly the "two numbers that must agree eventually disagree" problem
+  // `buildCoverage` refuses on write, reappearing on read instead.
+  const parsed = readCoverage({
+    unitKind: "sheet", units: 2, unitsNative: 2, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "partial",
+    unreadableRegions: 7,
+    unreadableKinds: [{ kind: "chart", count: 3 }, { kind: "macro", count: -1 }],
+  });
+  assert.equal(parsed?.unreadableRegions, 7, "the higher, stored total is kept — filtering never LOSES a count it cannot explain");
+  assert.deepEqual(parsed?.unreadableKinds, [{ kind: "chart", count: 3 }]);
+
+  // The other direction: kinds explain MORE than a (malformed or absent)
+  // stored total says. The floor must rise to match what actually survived.
+  const raised = readCoverage({
+    unitKind: "sheet", units: 1, unitsNative: 1, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "partial",
+    unreadableKinds: [{ kind: "chart", count: 1 }, { kind: "unsupported-number-format", count: 4 }],
+  });
+  assert.equal(raised?.unreadableRegions, 5);
 });
