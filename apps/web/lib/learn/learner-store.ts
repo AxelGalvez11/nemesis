@@ -124,8 +124,26 @@ export interface EvidenceToRecord {
   misconceptions?: readonly string[];
   canvasId?: string | null;
   evaluatorVersion?: string | null;
-  /** 🔴 THE IDEMPOTENCY KEY. The id of the response this is evidence for. */
-  responseId?: string | null;
+  /**
+   * 🔴 THE IDEMPOTENCY KEY, AND REQUIRED FOR A REASON THE DATABASE CANNOT ENFORCE.
+   *
+   * The unique index behind the upsert is `(user_id, objective_id, response_id)` and it is
+   * `NULLS DISTINCT` — the Postgres default. Two rows whose `response_id` is NULL therefore never
+   * collide, and the deduplication `ignoreDuplicates` exists to provide **silently does not apply
+   * to them**. A retried answer written without one becomes a second demonstration, crediting the
+   * learner with practice they never did.
+   *
+   * 🔴 AND NO INDEX CHANGE CAN FIX IT. `NULLS NOT DISTINCT` would collapse every unidentified row
+   * for an objective into one, which is wrong in the other direction: two genuinely separate
+   * answers that both failed to carry an id are two demonstrations. A retry is only recognisable as
+   * a retry if the answer said which answer it was. So the type is the enforcement — evidence
+   * without a response identity is not a weaker record, it is an uncountable one.
+   *
+   * 🔴 IT IDENTIFIES THE ANSWER, NEVER THE OBJECTIVE. One submission demonstrating several things
+   * carries ONE id across every row it writes. Deriving it from anything objective-specific turns
+   * one performance into several — see `performanceKey` in `learner-evidence.ts`.
+   */
+  responseId: string;
   responseText?: string | null;
   taskId?: string | null;
   // ── Observations about the attempt ────────────────────────────────────────
@@ -178,7 +196,10 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     // claims, and writing either when nothing measured it puts a fact into the log that never
     // happened — which no later migration can distinguish from one that did.
     operation: evidence.operation ?? null,
-    response_id: evidence.responseId ?? null,
+    // 🔴 NO `?? null`, UNLIKE EVERY OBSERVATION AROUND IT. The others are nullable because absent
+    // means not observed; this one is required because an absent response identity does not mean
+    // "not observed", it means the row cannot be counted or deduplicated at all.
+    response_id: evidence.responseId,
     response_latency_ms: evidence.responseLatencyMs ?? null,
     response_text: evidence.responseText ?? null,
     scaffolding_level: evidence.scaffoldingLevel ?? null,
@@ -214,6 +235,7 @@ const COLUMN_PROBE: EvidenceToRecord = {
   demonstrationObtained: false,
   objectiveRowId: "",
   occurredAt: "",
+  responseId: "",
   verdict: null,
 };
 

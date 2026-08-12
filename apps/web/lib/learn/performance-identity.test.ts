@@ -146,6 +146,31 @@ test("🔴 CALIBRATION: the guard fails when a mapped field stops arriving", () 
   assert.deepEqual(missing, ["response_id"], "the guard must notice a field that did not arrive");
 });
 
+test("🔴 a response identity is always written — it is never null the way observations are", () => {
+  // The unique index is (user_id, objective_id, response_id) and NULLS DISTINCT, so two rows with a
+  // null response_id never collide and the deduplication silently does not apply to them. A retry
+  // written without one becomes a second demonstration — practice the learner never did.
+  //
+  // 🔴 AND THE INDEX CANNOT BE FIXED INSTEAD. `NULLS NOT DISTINCT` would collapse every
+  // unidentified row for an objective into one, which is wrong the other way: two separate answers
+  // that both lacked an id are two demonstrations. Only the answer can say which answer it was.
+  const row = evidenceRow("user-1", RECORD);
+  assert.equal(row.response_id, "resp-1");
+  assert.notEqual(row.response_id, null);
+
+  // Its neighbours stay nullable, because for them absent genuinely means not observed.
+  const unobserved = evidenceRow("user-1", {
+    demonstrationObtained: false,
+    objectiveRowId: "obj-1",
+    occurredAt: "2026-08-12T10:00:00.000Z",
+    responseId: "resp-2",
+    verdict: null,
+  });
+  assert.equal(unobserved.response_id, "resp-2");
+  assert.equal(unobserved.response_latency_ms, null);
+  assert.equal(unobserved.operation, null);
+});
+
 test("🔴 the three fields that actually died come back", () => {
   const loaded = evidenceFromRow(storedRow(), "objective-key-1");
   assert.equal(loaded.responseId, "resp-1");

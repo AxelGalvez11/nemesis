@@ -187,6 +187,10 @@ test("🔴 the writer sends null, never a default, for anything unobserved", () 
     demonstrationObtained: false,
     objectiveRowId: "obj-1",
     occurredAt: "2026-08-12T10:00:00.000Z",
+    // 🔴 REQUIRED, AND THE CONTRAST WITH THE LOOP BELOW IS THE POINT. Everything checked below is
+    // optional because absent means not observed. This one is not optional, because an absent
+    // response identity does not mean "not measured" — it means the row cannot be deduplicated.
+    responseId: "resp-1",
     verdict: null,
   });
 
