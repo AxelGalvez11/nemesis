@@ -31,6 +31,15 @@ interface CanvasHeaderProps {
   /** The card or question being answered right now, so the objectives panel can say which one
    *  the canvas is actually working on rather than guessing from state alone. */
   activeTaskId?: string | null;
+  /**
+   * A retrieval is on screen and the learner is meant to answer it, not manage the canvas.
+   *
+   * 🔴 THE TITLE IS THE PROBLEM, NOT JUST THE MENU. A fast associative recall is answered in about a
+   * second, so everything on screen is read BEFORE the answer is produced. The canvas's own name is
+   * text, at the top, in the reading position — it gets read first and it teaches nothing.
+   * Management actions belong to the session, not to the moment inside it.
+   */
+  minimal?: boolean;
 }
 
 export function CanvasHeader({
@@ -40,6 +49,7 @@ export function CanvasHeader({
   onRename,
   onDelete,
   activeTaskId,
+  minimal = false,
 }: CanvasHeaderProps) {
   return (
     <header className="pointer-events-none absolute inset-x-[16px] top-[16px] z-30 flex h-[36px] items-center gap-2">
@@ -58,15 +68,25 @@ export function CanvasHeader({
           🔴 Stays `pointer-events-none` (inherited). It is `flex-1`, so making it clickable
           turned a full-width strip of dead label into a click trap: the document scrolls
           underneath it, and selecting the top line of text hit the title instead. */}
-      <span className="min-w-0 flex-1 truncate text-[0.875rem] text-(--ui-text-secondary)">
-        {canvas.title || "New canvas"}
-      </span>
+      {!minimal && (
+        <span className="min-w-0 flex-1 truncate text-[0.875rem] text-(--ui-text-secondary)">
+          {canvas.title || "New canvas"}
+        </span>
+      )}
 
       {/* §1: three compact controls, floating. Not a toolbar — see the note at the top of
-          canvas-controls.tsx for what that costs when it slips. */}
-      <SourcesControl canvas={canvas} onFiles={onFiles} />
-      <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
-      <SessionControl canvas={canvas} onDelete={onDelete} onRename={onRename} />
+          canvas-controls.tsx for what that costs when it slips.
+          🔴 ABSENT DURING A RETRIEVAL, and the back arrow is deliberately the only thing left. The
+          controls are not removed from the product — they are the session's, and the session is
+          where they belong; this is the one second inside it where the learner is producing an
+          answer and every glyph on screen is competition. */}
+      {!minimal && (
+        <>
+          <SourcesControl canvas={canvas} onFiles={onFiles} />
+          <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+          <SessionControl canvas={canvas} onDelete={onDelete} onRename={onRename} />
+        </>
+      )}
     </header>
   );
 }

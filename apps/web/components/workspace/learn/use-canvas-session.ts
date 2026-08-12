@@ -32,6 +32,7 @@ import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
+import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
 import { deriveSchedulingSignal } from "@/lib/learn/canvas-scheduling";
@@ -342,6 +343,32 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
+
+          // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until this landed,
+          // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
+          // production tables could only ever be filled by hand — which is why nothing could
+          // accumulate across sessions no matter how correct the extractor was.
+          //
+          // 🔴 THE SAME FUNCTION A SECOND CANVAS CALLS ON OPEN, AND THAT IS WHY IT CONVERGES.
+          // Attaching here and resolving there are the identical path over the identical source,
+          // so both land on the same identity keys and therefore the same rows. A bespoke
+          // extract-on-attach would be a second implementation of the step the cross-session claim
+          // rests on, free to drift from it by one edit.
+          //
+          // Deliberately BEST-EFFORT and after the canvas has already been updated: a learner
+          // whose material is attached and readable must not lose the attachment because the
+          // knowledge layer had a bad day. §13 — "semantic extraction failed" must never be
+          // reported as "file upload failed". What fails here costs adaptation, not the lesson.
+          if (canonical.ok && extracted.librarySourceId) {
+            void (async () => {
+              const resolved = await ensureKnowledgeForCanvas(uid, latest.current);
+              canvasCapture("knowledge_extracted", latest.current, {
+                objectives: resolved.objectives.length,
+                outcome: resolved.outcome,
+              });
+            })();
+          }
+
           canvasCapture("source_attached", latest.current, {
             kind: source.kind,
             excerpts: source.excerpts.length,

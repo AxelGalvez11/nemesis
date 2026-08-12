@@ -604,3 +604,49 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 }
 .break-mini-flash { animation: break-cell-flash 650ms ease var(--break-delay, 0ms); }
 .break-mini-wrongshake { animation: break-shake 400ms ease-in-out; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CANVAS MOTION GRAMMAR
+   ──────────────────────────────────────────────────────────────────────────
+   🔴 MOTION COMMUNICATES COGNITIVE STATE. IT DOES NOT DECORATE, AND IT DOES NOT
+   MERELY MEAN "WAITING". The amount of movement is tied to the amount and kind
+   of thinking actually happening:
+
+     associative recall      → almost none. Throughput is the feature.
+     evaluation / correction → a short crossfade, and activity shown LOCALLY.
+     conceptual expansion    → a slightly richer transition as content reorganises.
+     long generation         → an ambient thinking state naming the real step.
+
+   🔴 AND IF ANIMATION IMPLIES INFORMATION, IT MUST CORRESPOND TO SOMETHING REAL.
+   This is the microphone waveform's rule, generalised: those bars are driven by
+   actual amplitude, because a canned loop would look identical while the mic was
+   dead. The same standard applies to every phase label below — each one is shown
+   because a specific step is running, never on a timer.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* One item replacing another: question → feedback → next question.
+   🔴 OPACITY ONLY, AND SHORT. Someone drilling fifty facts crosses this boundary
+   fifty times, so anything that slides, scales or bounces becomes the dominant
+   experience of the surface and turns retrieval into an interface to wait on. */
+@keyframes canvas-swap-in { from { opacity: 0; } to { opacity: 1; } }
+.canvas-swap { animation: canvas-swap-in 140ms ease-out both; }
+
+/* The thinking state's caption, changing as the real step changes. Slower than
+   the swap: this is ambient, and a fast flicker between phases reads as churn. */
+@keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
+.canvas-phrase { animation: canvas-phrase-in 260ms ease-out both; }
+
+/* 🔴 REDUCED MOTION COVERS THE UTILITIES TOO, WHICH IS THE PART THAT GETS MISSED.
+   Hand-written animations in this file were already guarded; `animate-pulse` is a
+   Tailwind utility and was not, so a scoped paragraph kept breathing for someone
+   who had asked the whole system to stop moving. Scoped to the workspace so this
+   cannot reach outside it. */
+@media (prefers-reduced-motion: reduce) {
+  .canvas-swap,
+  .canvas-phrase,
+  [data-workspace] .animate-pulse {
+    animation: none;
+  }
+  /* Still has to read as "this region is busy" — it simply stops moving. */
+  [data-workspace] .animate-pulse { opacity: 0.6; }
+}

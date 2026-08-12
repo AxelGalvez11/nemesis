@@ -99,8 +99,19 @@ export function validateEvaluation(raw: unknown, context: EvaluationContext): Ev
     };
   }
 
+  // 🔴 A CORRECT ANSWER LEGITIMATELY HAS NOTHING TO SAY, AND REQUIRING SOMETHING THREW IT AWAY.
+  //
+  // The prompt tells the judge that `feedback` must supply "exactly what was missing and nothing
+  // else". When a performance is complete, nothing IS missing — so an obedient model returns an
+  // empty string, and this check then discarded the whole evaluation. The learner answered
+  // perfectly and was told "Nemesis couldn't read that answer", while the demonstration they had
+  // just given was dropped: a right answer recorded as no evidence at all.
+  //
+  // So the requirement is now tied to what feedback is FOR. A verdict that fell short owes the
+  // learner the missing piece, and an evaluation that cannot supply it is unusable. A passing
+  // verdict owes them nothing beyond the confirmation `VERDICT_HEADLINE` already prints.
   const feedback = clampText(raw.feedback, MAX_FEEDBACK_CHARS);
-  if (!feedback) {
+  if (!feedback && !verdictIsPass(raw.verdict)) {
     return { evaluation: null, rejected: ["the evaluation had no feedback to show the learner"] };
   }
 
