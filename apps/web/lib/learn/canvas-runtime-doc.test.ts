@@ -92,10 +92,9 @@ test("🔴 the declared cognitive operations are the ones objectives carry", () 
 });
 
 test("🔴 the declared evidence fields are the ones a demonstration actually writes", () => {
-  // 🔴 BY BUILDING ONE, NOT BY READING THE SOURCE. `response` carries a latency and a modality that
-  // the evidence boundary currently discards; the moment either starts surviving, this set grows
-  // and the matrix has to say so. §13 calls that the cheapest open gap in the learner model, so it
-  // is the one most likely to be closed without the document noticing.
+  // 🔴 BY BUILDING ONE, NOT BY READING THE SOURCE. Whatever a demonstration actually carries is
+  // what the matrix must declare, so a field added or removed anywhere on this path shows up here
+  // rather than being noticed months later.
   const [objective] = objectivesForKnowledge(extractKnowledgeObjects(glossaryContext()).objects[0]!);
   const built = evidenceFromEvaluation({
     canvasId: null,
@@ -119,11 +118,13 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
     "evidence writes fields §12 does not declare (or declares fields it does not write)",
   );
 
-  // The claim §12 makes in prose, asserted as behaviour: nothing observed about HOW the answer was
-  // produced survives into the record.
-  assert.equal(
+  // 🔴 THE MEASUREMENT SURVIVES VERBATIM. This assertion used to say the opposite — that latency
+  // reached nothing — and it FAILED the moment Track B1 preserved it, which is what a drift guard is
+  // for. Its successor guards the property that replaced it: the number that was measured is the
+  // number that is stored, with no band, bucket or verdict applied on the way.
+  assert.equal(built.responseLatencyMs, 14_200, "the measurement must survive unaltered");
+  assert.ok(
     JSON.stringify(built).includes("14200"),
-    false,
-    "response latency now reaches evidence — §12 must stop calling it captured but unused",
+    "latency must reach the record — see evidence-observations.test.ts for the no-interpretation rule",
   );
 });
