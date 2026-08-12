@@ -40,7 +40,7 @@ rather than observed behaviour.
 | `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
 | `PARSER-001` derived verdict crosses the boundary | Parser | **IN REVIEW** — PR #504, 3rd of 3 slices | BRAIN capability gate |
 | `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) | — |
-| `PARSER-003` preserve unit locality at the producers | Parser | **CLAIMED** — prerequisite for any per-unit verdict | unit-level parse verdicts |
+| `PARSER-003` preserve unit locality at the producers | Parser | **IN REVIEW** — PR #510 | unit-level parse verdicts |
 | `UI-001` three uncertainties stay distinct | UI | **READY** | — |
 | `UI-002` Minimap surface | UI | **BLOCKED** | — |
 | `INTEGRATION-001` first real end-to-end trace | Integration | **UNBLOCKED — IN PROGRESS** | the whole vision |
@@ -426,7 +426,7 @@ from the corpus — worth knowing before anyone reasons about association or sch
 
 ## PARSER-003 — preserve unit locality at the producers
 
-**STATUS** CLAIMED — 2026-08-12, by Parser, as the prerequisite established above
+**STATUS** **IN REVIEW — PR #510.** Built 2026-08-12 by Parser as the prerequisite established above.
 **PRIORITY** P2
 **DEPENDENCIES** none
 **BLOCKS** any per-unit parse verdict
@@ -460,6 +460,33 @@ something from"* is the question worth answering per unit. If what Brain needs p
 *which structure survived there* (sentence integrity vs. tabular structure vs. reading order), say
 so and Parser builds that shape. The producer-side work is identical either way, which is why it
 starts first.
+
+### Parser's result — PR #510
+
+`ExtractionCoverage.lostUnits`, additive and optional, one entry per unit, absent meaning **not
+observed**. Both producers stopped destroying locality they already had.
+
+**🔴 THE CONSTRAINT ANY PER-UNIT VERDICT INHERITS — the totals are a FLOOR, and `lostUnits` never
+sets them.** This is the opposite of `unreadableKinds`, which legitimately derives its total, and
+the difference is the whole design. If the breakdown set the totals, unplaceable loss would vanish:
+three unattributable regions would leave `lostUnits` empty, every unit would read clean, and a
+verdict built on that would call the document intact. `buildCoverage` therefore validates `≤` in
+both directions, and `unlocatedRegions` / `unlocatedUnreadUnits` are how a consumer asks what is
+still unaccounted for.
+
+**So attributing loss per unit is only honest while both are 0.** Above 0, either every unit
+degrades or the document refuses to be per-unit at all. Which one is the verdict's decision; that it
+cannot ignore those numbers is not.
+
+Both properties are calibrated rather than asserted: deriving the total from the breakdown turns
+three guards red, and an off-by-one in the unit index turns three of the four real-file tests red.
+The fixture (`mixed-pages.pdf`, generated) loses its **middle** page, so `unit: 1` is the only
+correct answer — an off-by-one gives 0 or 2 and a first-page default gives 0, neither of which a
+single-page fixture could distinguish.
+
+**🔴 NO PRODUCTION ROW CAN CARRY IT YET.** The producers never persisted locality, so every existing
+source reads unlocated until a reparse runs, and a reparse means a `PARSER_VERSION` bump. Merging
+#510 is not the same as having the capability.
 
 ---
 
