@@ -195,6 +195,51 @@ Two further invariants earned in production:
 10. **The log is the truth; state is a projection of it.** Never write a computed status as though
     it were an observation.
 
+### 🔴 11. SCREEN STATE IS REPLACEABLE; EVIDENCE STATE IS DURABLE
+
+**Owner invariant, 2026-08-13. This is a Canvas-wide architectural rule, not a UI preference**, and
+it binds three lanes differently:
+
+| Lane | What it means |
+|---|---|
+| **Runtime** | must be **free to retire** rendered interactions once they have served their cognitive purpose |
+| **UI** | must **not turn Canvas into a transcript** |
+| **Brain** | must **never depend on visible history as its memory** |
+
+```
+durable history  ≠  visible history
+```
+
+The exact invariant, in the owner's words:
+
+> **Removing an element from the rendered Canvas must never destroy durable learner or source state,
+> and Canvas should retain only the information still necessary for the current cognitive operation
+> or immediate continuity.**
+
+🔴 **And the second half is load-bearing:**
+
+```
+minimal  ≠  contextless
+```
+
+Some information is temporarily necessary for the operation in progress *even though* it is durably
+stored elsewhere. Mid-way through a causal reconstruction —
+
+```
+ACE inhibition
+   ↓
+angiotensin II ↓
+   ↓
+   ?
+```
+
+— removing the visible chain destroys the working context the learner is reasoning inside. Durable
+storage does not make it redundant *right now*. **The test is not "is this saved somewhere"; it is
+"is this still doing work for the operation in progress."**
+
+This invariant is what makes [`canvas-interaction-model.md` §A](./canvas-interaction-model.md#a-the-canvas-is-a-surface-not-a-transcript)
+safe rather than lossy, and it is proven by acceptance criterion **C4**.
+
 ### 🔴 Three layers, and they must not merge
 
 The single most likely way to corrupt the learner model as it gets richer:
@@ -364,6 +409,30 @@ surface and slow the interaction. The interface changes with the cognition requi
 
 Variable tempo is a core feature, not an inconsistency.
 
+### 🔴 Variable tempo governs RETURN, not only pace within a session
+
+**Owner ruling, 2026-08-13**, made when setting the retrieval interval to ten minutes:
+
+> Keep it **a policy constant, not the conceptual model of spacing.** Eventually *"when does this
+> return?"* must depend on evidence, operation, prior demonstrations, forgetting, and time horizon.
+
+The split, which decides where the work goes:
+
+```
+RUNTIME  implements the ABILITY to schedule a re-demonstration
+BRAIN    eventually decides WHEN
+```
+
+A single constant is the correct v1 — it is honest, it is one number, and it is deliberately dull.
+**The failure mode is not that the number is wrong; it is that the number becomes the model.** Once
+every caller reads a constant, "when does this return?" has no place to become a decision, and the
+next person to improve it has to unpick the reads before they can start.
+
+🔴 **So the constant must be reached through something that could later take those inputs**, even
+while it takes none. That is the seam. It is **not** permission to build a schedule — north star
+§14's warning against a second pseudo-FSRS inside Canvas policy stands, and adding an input to that
+seam is a separate decision, not an implementation detail.
+
 ---
 
 ## 10. The generated surface
@@ -386,6 +455,17 @@ thinking Canvas wants the learner to perform:
 | Compare / contrast | Temporary structured comparison |
 | Clinical application | Case simulation |
 | Conceptual system | A model that expands and collapses as needed |
+
+### 🔴 This table is Canvas choosing a surface. It is not the learner choosing a modality.
+
+Everything above describes surfaces **Canvas generates because the cognition calls for them.** The
+owner's interaction-model specification adds the opposite direction, and the two are easy to
+conflate: **type · dictate · draw are available to the learner in the composer regardless of what
+Canvas presented.** A learner facing a prose question may answer with a sketch because that is how
+they think.
+
+Both capabilities are required and neither substitutes for the other. See
+[`canvas-interaction-model.md` §E](./canvas-interaction-model.md#e-drawing-is-a-first-class-answer-modality).
 
 ---
 
@@ -583,6 +663,10 @@ Explicit prohibitions. Each one is a mistake that would look like progress.
 
 ## Related
 
+- [`canvas-interaction-model.md`](./canvas-interaction-model.md) — **how this reaches and returns
+  from a learner.** Additive to this document, owner spec 2026-08-13. This document is cognition;
+  that one is interaction. Its opening table marks which of its rules are new and which restate
+  something already written here — read that before implementing from it.
 - [`document-intelligence.md`](./document-intelligence.md) — what Nemesis can read
 - [`document-graph.md`](./document-graph.md) — the canonical document model
 - [`learning-canvas-pilot.md`](./learning-canvas-pilot.md) — the surface's own history

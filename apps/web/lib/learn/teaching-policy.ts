@@ -169,12 +169,30 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
     // later on its own merits, once forgetting is modelled"; nothing had checked whether that day
     // had arrived, and it had not.
     case "correct": {
-      // 🔴 SUPPRESSION FIRST, AND IT IS INDEPENDENT OF THE INTERVAL BY CONSTRUCTION. Layer 1 —
-      // never re-ask the thing just answered — must keep holding whatever tempo the owner later
-      // sets. Checking `actedJustNow` before eligibility means even an interval of zero could not
-      // reopen the immediate repeat: the two guards compose rather than compete. This is a door
-      // being added, not a lock being removed.
-      if (!actedJustNow && eligibleForRetrieval({ lastEvidenceAt: state.lastEvidenceAt, now: input.now })) {
+      // 🔴 EXACTLY ONE INTERVAL GOVERNS TEMPO HERE, AND THE CONJUNCTION THAT USED TO SIT ON THIS
+      // LINE IS WHY THAT SENTENCE HAS TO BE WRITTEN DOWN. This read `!actedJustNow &&
+      // eligibleForRetrieval(...)`. `actedJustNow` is measured against `ACT_AGAIN_AFTER_MS`, so a
+      // learner waited the LONGER of the two and the owner's ruling on tempo was inert anywhere
+      // below one hour. Measured, not reasoned: the constant moved 60 min → 10 min and the decision
+      // table did not change by a single row.
+      //
+      // The two constants answer different questions, which is why only this branch changed.
+      // `ACT_AGAIN_AFTER_MS` asks "have we just TOUCHED this objective?" — a churn guard, blind to
+      // the outcome, and the ONLY guard on the three branches above, where it still does real work.
+      // Eligibility asks "is this demonstrated objective DUE?" — a scheduling decision. On THIS
+      // branch it is the more specific of the two and never looser, so it subsumes the churn guard.
+      //
+      // 🔴 LAYER 1 DID NOT LEAVE, IT MOVED FROM THE DECISION ONTO THE CONFIGURATION. Never
+      // re-asking the thing just answered is now guaranteed by the floor asserted at module scope
+      // in `retrieval-eligibility.ts`: a tempo short enough to reopen the immediate repeat cannot
+      // be configured at all. A bound on the input can never out-vote the number the owner set —
+      // a second interval in this condition could, and did.
+      //
+      // 🔴 AND THIS IS THE SEAM. Eligibility is consulted from exactly one place. When "when does
+      // this return?" stops being a constant READ and becomes a question ASKED — of evidence, of
+      // the operation, of prior demonstrations, of forgetting — it is this one expression that
+      // changes, not the shape of the policy around it.
+      if (eligibleForRetrieval({ lastEvidenceAt: state.lastEvidenceAt, now: input.now })) {
         return {
           because: `demonstrated before, and long enough ago that asking again measures memory rather than the last few minutes`,
           objectiveId: id,
@@ -182,9 +200,7 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
         };
       }
       return {
-        because: actedJustNow
-          ? `just demonstrated — asking again now would measure working memory rather than learning`
-          : `already demonstrated, and not yet due for another retrieval`,
+        because: `already demonstrated, and not yet due for another retrieval`,
         type: "advance",
       };
     }

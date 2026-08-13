@@ -93,6 +93,37 @@ affect nothing.**
 | J3 | **Provenance survives; the toolbar does not.** | *"Where did this come from?"* is legitimately useful. It should read as **evidence behind the Canvas** — a quiet citation marker, or answering the learner's own question — not as document-editing chrome. Exact presentation is UI's. |
 | J4 | 🔴 **Uploaded material is not automatically rewritten into a mini-textbook.** | Exposition is **a cognitive strategy used when needed, not the default surface.** For an arbitrary association (`losartan ↔ Cozaar`), go straight to production. Expand only when evidence says the learner lacks the distinction. For causal material, expose only enough structure to build a model, then immediately require explanation, prediction or reconstruction. |
 
+### 🔴 J2 EXTENDS TO EXPANDING — ruling 2026-08-13, and it reverses a wrong one
+
+Integration asked whether a control that only reveals **more**, and stores nothing about the learner,
+violates a criterion written to stop controls that **hide** material. Brain first ruled it permitted:
+*"expanding asserts 'show me more', which is a request for information, not a claim about knowledge,
+and it cannot hide anything."* **Every clause is true and the conclusion is wrong.**
+
+**J2's harm was never only concealment.** The owner's own words, below:
+
+> *"…appear, disappear, compress, **expand**, or change representation because Brain's estimate of
+> the learner changed."*
+
+`expand` is in that list. J2 is a rule about **who decides resolution**, not about which direction
+the block moves. A manual expand is the learner managing AI-generated blocks — the named
+prohibition.
+
+**The resolution is not "no agency". It is where the agency lives**, and §K5 already decides it:
+*navigation is scrolling; the control surface is the composer.*
+
+| | |
+|---|---|
+| *"explain that properly"*, *"go deeper"* — **through the composer** | ✅ the learner states intent; **Brain** changes resolution |
+| a per-block expand control | ❌ document-reader chrome; the learner edits the document directly |
+
+Same capability, different seam. One produces intent the policy can act on and record; the other
+bypasses the policy entirely. **This is the standing rule: remove the control, never the feature.**
+
+🔴 **Unreachable is not compliant.** The click-to-reopen path cannot currently be triggered — 0 of 73
+production blocks carry `collapsed` — but an affordance nobody can reach today is *undetonated*, not
+absent. It fails J2 and it is removed, not left in place because nothing hits it.
+
 **The principle, in the owner's words:**
 
 > The learner should not manage AI-generated blocks. **The blocks themselves should appear,
@@ -140,6 +171,25 @@ closer to ChatGPT or Claude than to a quiz app.
 | K4 | **Correctness is not announced unless there is a reason** — emphasise a misconception, not a score. |
 | K5 | **Navigation is scrolling; the control surface is the composer.** Remove explicit in-sequence navigation. The learner may type or dictate *"keep going"*, *"explain that"*, *"I don't understand preload"*, or simply answer. |
 | K6 | **Temporary states are ephemeral thinking previews, not permanent chrome** — *"Checking your reasoning…"*, *"Connecting this to the previous concept…"*, *"Looking for the weak point…"*, *"Building from what you already understand…"*. They fade in and disappear as content streams. Ingestion uses the same language: *"Reading the lecture…" → "Identifying the main concepts…" → "Ready."* No progress workflow unless the work genuinely takes long enough for progress to matter. |
+| K8 | 🔴 **The surface may remove, not only append.** A Canvas obeying every rule above can still be a chat log: no labels, no counters, and an ever-growing column of alternating turns. Prior interactions are *evidence*, and evidence lives in `learner_evidence`; they need not remain visible. Once an interaction has served its purpose it may collapse, fade, or leave the primary surface. See [`canvas-interaction-model.md` §A](./canvas-interaction-model.md#a-the-canvas-is-a-surface-not-a-transcript) — **including the precondition, which is that removing an element from the DOM must destroy nothing.** |
+
+### 🔴 K1 IS A BAN ON CEREMONY, NOT A BAN ON WORDS — reconciliation, 2026-08-13
+
+K1 forbids *"Correct"* banners; K4 says correctness is not announced without reason. The owner's
+interaction-model specification permits a **minimal** correctness signal — `✓`, or the word
+*Correct* — plus a subtle visual state change, and requires explicit `Partial` and `Misconception`
+labels where a wrong *model* must be named. **That is not a contradiction, and it must not be
+resolved by guessing.** The resolving principle:
+
+> A label must carry **information the learner needs**. It must never **narrate the machine.**
+
+A *"Correct"* banner after every right answer is machine narration — it tells the learner what they
+already knew, with ceremony proportional to nothing. A `✓` sized to be skipped past is punctuation.
+By the same rule, *"Partial"* and *"Misconception"* are **permitted under K1**: what kind of wrong
+this is is exactly the information the learner needs, and nothing else conveys it.
+
+Full four-tier contract:
+[`canvas-interaction-model.md` §G](./canvas-interaction-model.md#g-feedback-intensity-scales-with-information-value).
 
 ### 🔴 K7 — THE ONE THAT CAN GO WRONG QUIETLY, AND THE EXISTING INVARIANT THAT PREVENTS IT
 
@@ -328,6 +378,49 @@ source → knowledge → objective → cognitive task → learner response
 | C1 | `learner_evidence` gains a row through ordinary use | the row, and the session that produced it |
 | C2 | That row reads back with `operation`, `responseLatencyMs`, `responseId` | the readback |
 | C3 | 🔴 The next decision differs **because of the evidence** | a counterfactual, not a sequence — see below |
+| C4 | 🔴 **A response can leave the Canvas while its evidence still governs a later decision** | the trace below |
+
+### 🔴 C4 — THE TEST THAT PROVES THE ARCHITECTURE, NOT THE FEATURE
+
+**Owner criterion, 2026-08-13.** C1–C3 prove evidence is written, readable, and causal. C4 proves
+the thing that makes Canvas *a state rather than a transcript* — that the durable record and the
+visible surface are genuinely separate systems, and not merely described as separate.
+
+```
+learner answers
+        ↓
+the answer eventually LEAVES THE SCREEN
+        ↓
+twenty minutes later
+        ↓
+Brain still knows exactly what was demonstrated
+        ↓
+the next interaction reflects it
+```
+
+**This is the observable form of Canvas-wide invariant 11** — *screen state is replaceable; evidence
+state is durable*
+([`canvas-cognitive-runtime.md` §5](./canvas-cognitive-runtime.md#-11-screen-state-is-replaceable-evidence-state-is-durable)).
+
+**Why it is worth its own criterion:** every other route to "the Canvas is not a transcript" is a
+claim about rendering, and rendering claims are cheap. This one cannot pass by accident. A Canvas
+that secretly depends on visible history as its memory will fail it, and will fail it *only* here —
+every other criterion in this document would stay green.
+
+**What makes it a real pass:**
+
+- The disappearance must be **ordinary behaviour**, not a reload, a navigation, or a devtools
+  deletion. If the element is removed by the harness rather than by the Canvas, the test proves
+  nothing about the Canvas.
+- The later decision must be **demonstrably caused by** that evidence — the same counterfactual
+  discipline as [C3](#-c3-is-a-counterfactual-not-a-beforeafter-diff), not a plausible sequence.
+- 🔴 **A page reload is the degenerate pass.** Re-fetching from the database after a reload proves
+  the database works, which nobody doubts. The point is that the *live* surface let go of it and the
+  *live* policy still knew.
+
+**What it must NOT be read as licensing:** removing anything still doing work for the operation in
+progress. See `minimal ≠ contextless` in invariant 11 — a half-built causal chain stays on screen
+even though every part of it is durably stored.
 
 ### 🔴 C3 IS A COUNTERFACTUAL, NOT A BEFORE/AFTER DIFF
 

@@ -161,7 +161,7 @@ export function composeSurface(input: {
   const { canvasState, policyPresenting } = input;
   const evidenceStage = isEvidenceStage(canvasState);
   const reading = READING_STATES.includes(canvasState);
-  const policy = policyPresenting && !evidenceStage;
+  const policy = policyPresenting;
 
   return {
     // 🔴 A hosted task does NOT suppress reading. This single `true` is the behaviour change of
@@ -169,16 +169,40 @@ export function composeSurface(input: {
     // runtime that took the page (§14.1 — the answer to zero owned canvases is composition, never
     // a lower coverage bar).
     document: reading || PRE_CONTENT_STATES.includes(canvasState),
-    // 🔴 NOT `evidenceStage && !hasTask`. That was the first version, and it painted NOTHING when a
-    // task was pending during a run: the stage stood down for the task, and the task stood down for
-    // the stage, so a learner mid-test saw a blank canvas with no error. The exclusion is
-    // one-directional — the stage wins, the task waits — and it is expressed in exactly one place
-    // (below) rather than on both sides where the two can disagree.
-    stages: evidenceStage,
-    // 🔴 REFUSED WHILE AN EVIDENCE STAGE IS UP, rather than the stage being refused. The six-stage
-    // machine is a run the learner started and is partway through; interrupting it to ask a
-    // policy question would discard answers already given to it. The task waits — `decideNext` is
-    // stateless, so nothing is lost by asking again once the run ends.
+    // 🔴 THE LEGACY ARM IS NOW A FALLBACK: it paints only where the policy has nothing to say.
+    //
+    // The exclusion is still one-directional and still expressed in exactly one place — the
+    // direction is simply reversed. Both arms can never paint at once, which is the property that
+    // matters (two answer surfaces on one composer means one of them silently loses the learner's
+    // work), and it is still impossible to have neither: when the policy stands down,
+    // `policyPresenting` is false and the stage paints.
+    stages: evidenceStage && !policyPresenting,
+    // 🔴 THE COMMENT THAT USED TO SIT HERE WAS RIGHT WHEN WRITTEN AND IS KEPT AS A RECORD, BECAUSE
+    // WHAT FALSIFIED IT IS THE WHOLE JUSTIFICATION FOR THIS CHANGE. It read:
+    //
+    //     "REFUSED WHILE AN EVIDENCE STAGE IS UP, rather than the stage being refused. The
+    //      six-stage machine is a run the learner started and is partway through; interrupting it
+    //      to ask a policy question would discard answers already given to it."
+    //
+    // The premise is false. **The legacy arm has never written a `learner_evidence` row.** That is
+    // established from the CALL GRAPH: `recordEvidence` has exactly one caller and it is in the
+    // policy arm, so a legacy run accumulates answers in `canvas.document` and nothing durable is
+    // ever produced from them.
+    //
+    // 🔴 IT IS NOT ESTABLISHED BY THE EMPTY TABLE, AND THAT DISTINCTION IS LEFT HERE BECAUSE I GOT
+    // IT WRONG FIRST. `learner_evidence` reads zero rows, which looks like corroboration and is
+    // not. A real row WAS written from the live policy canvas on 2026-08-13 — the table went 0 → 1,
+    // observed with the service role — and was then deliberately deleted by id, because a row
+    // claiming the account holder demonstrated something they were never asked is a durable false
+    // claim about a person. **The table is empty because cleanup worked.**
+    //
+    // The general form, which is worth more than this instance: an empty table is not evidence that
+    // a write path is dead. It is evidence of nothing until you check whether the upstream activity
+    // ever happened — and here it did.
+    //
+    // So the precedence was protecting a run whose output was never recorded — it gave the surface
+    // to the arm that cannot learn anything about the learner, and kept it there. That is exactly
+    // backwards, and it is why the owner met a fixed six-question quiz on their own canvas.
     policy,
     // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
     // for a placeholder that is itself waiting for one.

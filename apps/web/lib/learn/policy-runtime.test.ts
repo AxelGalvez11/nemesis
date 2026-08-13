@@ -7,6 +7,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import type { LearnerEvidence } from "./learner-evidence";
 import { objectivesForKnowledge } from "./learning-objective";
 import { decideNext, supportedObjectives } from "./policy-runtime";
+import { RETRIEVAL_ELIGIBLE_AFTER_MS } from "./retrieval-eligibility";
 
 const KNOWLEDGE: KnowledgeObject = {
   id: "k1",
@@ -19,6 +20,26 @@ const KNOWLEDGE: KnowledgeObject = {
 const [FORWARD, REVERSE] = objectivesForKnowledge(KNOWLEDGE);
 const NOW = new Date("2026-08-11T12:00:00Z");
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+
+/**
+ * 🔴 DERIVED FROM THE TEMPO, NEVER WRITTEN AS A LITERAL, AND THE REASON IS A REAL FAILURE.
+ *
+ * These fixtures used to read `ago(10 * 60_000)` — chosen when the tempo was a provisional one hour
+ * and the policy ALSO conjoined a separate one-hour churn guard. Ten minutes looked "comfortably
+ * recent" because the real boundary was sixty, and the fixture had fifty minutes of slack nobody
+ * knew about. The assumption it silently encoded: *ten minutes is strictly inside the suppression
+ * window*.
+ *
+ * When the owner ruled the tempo to be exactly ten minutes and the churn guard left this branch,
+ * that slack vanished and these fixtures landed exactly ON an inclusive boundary — describing a
+ * demonstration that is DUE while claiming it is recent. Three tests went red at once.
+ *
+ * So the age is expressed as a FRACTION of the tempo. These tests are about whether suppression
+ * exists at all, not about what the tempo is — the tempo itself is asserted in exactly one place,
+ * by the sweep in `retrieval-eligibility.test.ts`. Any future ruling moves these with it.
+ */
+const RECENT_MS = RETRIEVAL_ELIGIBLE_AFTER_MS / 2;
+const MORE_RECENT_MS = RETRIEVAL_ELIGIBLE_AFTER_MS / 4;
 
 const RESOLVED: ResolvedObjective[] = [
   { knowledge: KNOWLEDGE, objective: { ...FORWARD!, rowId: "row-forward" } },
@@ -67,13 +88,16 @@ test("🔴 evidence is matched by objective, never merely 'this canvas has evide
 });
 
 test("both directions demonstrated means nothing is owed — while the demonstrations are recent", () => {
-  // 🔴 THE CLOCK IN THIS FIXTURE IS NOW LOAD-BEARING. It used to read 1-2 hours, which was safe only
+  // 🔴 THE CLOCK IN THIS FIXTURE IS LOAD-BEARING. It used to read 1-2 hours, which was safe only
   // because a demonstrated objective never came back at all. Now that one can become eligible again,
   // "nothing is owed" is a claim about a WINDOW, and the fixture has to sit inside it or it is
   // asserting the absence of a feature rather than the presence of suppression.
+  //
+  // It then read a literal ten minutes, which put it exactly ON the window's inclusive edge the
+  // moment the owner ruled that number. Both ages are now fractions of the tempo — see `RECENT_MS`.
   const evidence = [
-    ev("e1", FORWARD!.identityKey, ago(10 * 60_000), "understood"),
-    ev("e2", REVERSE!.identityKey, ago(5 * 60_000), "understood"),
+    ev("e1", FORWARD!.identityKey, ago(RECENT_MS), "understood"),
+    ev("e2", REVERSE!.identityKey, ago(MORE_RECENT_MS), "understood"),
   ];
   assert.equal(decideNext({ evidence, now: NOW, objectives: RESOLVED }), null);
 });
@@ -94,10 +118,11 @@ test("🔴 …and once they are no longer recent, the SAME log owes a retrieval 
 
 test("a demonstrated objective is never re-tested to fill a stage", () => {
   // Recent, for the same reason as above: this is about `advance` not being an ACTION, not about
-  // whether a review ever comes due.
+  // whether a review ever comes due. Ages derived from the tempo so a future ruling cannot silently
+  // turn "recent" into "due" and leave this test asserting something it was never about.
   const evidence = [
-    ev("e1", FORWARD!.identityKey, ago(10 * 60_000), "understood"),
-    ev("e2", REVERSE!.identityKey, ago(5 * 60_000), "understood"),
+    ev("e1", FORWARD!.identityKey, ago(RECENT_MS), "understood"),
+    ev("e2", REVERSE!.identityKey, ago(MORE_RECENT_MS), "understood"),
   ];
   const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
   assert.equal(decision, null, "advance is the absence of a next action, not an action");

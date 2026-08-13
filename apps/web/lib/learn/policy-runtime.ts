@@ -89,22 +89,29 @@ export function decideNext(input: {
     (decision) => decision.action.type !== "advance" && decision.action.type !== "defer",
   );
 
-  // 🔴 NEVER-ESTABLISHED OUTRANKS DUE-FOR-REVIEW, AND THIS TIER IS LOAD-BEARING.
+  // NEVER-ESTABLISHED OUTRANKS DUE-FOR-REVIEW.
   //
-  // Before objectives could become eligible again, this was free: `correct` produced `advance`,
-  // `advance` was unselectable, and nothing demonstrated could compete with anything unasked. Making
-  // demonstrated objectives askable again removed that accident — and without a tier, a review that
-  // came due two hours ago would beat an objective NOBODY HAS EVER BEEN ASKED, decided by nothing
-  // more principled than which identity key sorts first.
+  // 🔴 THIS IS A STATED DEFAULT, NOT AN INVARIANT, AND IT IS WRITTEN DOWN AS ONE ON PURPOSE.
+  // **Interleaving new and review material is a legitimate alternative**, and choosing between them
+  // is a product decision about how a session should feel — not a correctness property anything
+  // downstream may assume. Whoever finds this rule later should read a choice that can be revisited,
+  // with its reasoning attached, rather than a law they are afraid to touch.
   //
-  // That is the exact defect the reverse-direction acceptance case exists to catch: demonstrate
-  // "losartan → Cozaar" and the next question must be "Cozaar → ?", not the same direction again
-  // because its review interval happened to elapse. A learner would be re-asked what they just
-  // showed while a fact they have never seen waits behind it.
+  // What is NOT optional is that *some* rule is stated here. Before objectives could become eligible
+  // again, ordering between them was free: `correct` produced `advance`, `advance` was unselectable,
+  // and nothing demonstrated could compete with anything unasked. Making demonstrated objectives
+  // askable again removed that accident — and the alternative to this tier was never "prefer
+  // review", it was ARBITRARY: whichever identity key happened to sort first.
   //
-  // 🔴 IT IS A PRECEDENCE RULE, NOT A SECOND INTERVAL. There is no number here and nothing to tune —
-  // exactly one value governs tempo (`RETRIEVAL_ELIGIBLE_AFTER_MS`) and this does not touch it.
-  // Within each tier the existing positional order still decides, so nothing else changes.
+  // The reverse-direction acceptance case is what caught its absence. Demonstrate "losartan →
+  // Cozaar" and the next question must be "Cozaar → ?", not the same direction again because its
+  // interval elapsed — a learner re-asked what they just showed, while a fact they have never seen
+  // waits behind it. Three existing tests failed without this, so it is required to hold behaviour
+  // that was already accepted, which is what makes it mechanism rather than a new preference.
+  //
+  // 🔴 AND IT IS A PRECEDENCE RULE, NOT A SECOND INTERVAL. There is no number here and nothing to
+  // tune — exactly one value governs tempo (`RETRIEVAL_ELIGIBLE_AFTER_MS`) and this does not touch
+  // it. Within each tier the existing positional order still decides, so nothing else changes.
   return (
     owed.find((decision) => decision.state.status !== "correct") ??
     owed[0] ??

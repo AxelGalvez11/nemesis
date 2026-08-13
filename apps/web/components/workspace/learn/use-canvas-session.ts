@@ -49,7 +49,7 @@ import {
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps } from "@/lib/learn/canvas-ops";
 import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
-import { canStart } from "@/lib/learn/canvas-state";
+import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
@@ -579,7 +579,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   // ------------------------------------------------------------------- recall
 
+  // 🔴 THE STAGE STARTERS NOW ASK THE STATE MACHINE FIRST, AND THAT IS A REAL GAP BEING CLOSED
+  // RATHER THAN A FORMALITY. These wrote `state` straight through `save`, so `canTransition` — the
+  // guard the ops validator consults before it lets the model move the page anywhere — was never
+  // consulted on the path a LEARNER actually takes. The model was held to a rule the UI was not.
+  //
+  // It also makes the six-stage retirement hold everywhere instead of only on the advance button.
+  // `nextAction` no longer OFFERS a move into an evidence stage, but it is not the only entrance:
+  // `CanvasRecall`'s `onDone` calls `startTest()` directly off the last card, so a canvas already
+  // in `recall` would have walked itself into `test` with no button involved. Closing the offer
+  // alone would have looked closed and not been.
+  //
+  // A caller that now does nothing is dead UI, which Canvas UI removes with the stage components.
+  // 🔴 That deletion must come AFTER this: a canvas in an evidence stage with no stage component
+  // and no policy objectives paints nothing at all.
   const startRecall = useCallback(async () => {
+    if (!canTransition(latest.current.state, "recall")) return;
     const id = requireUid();
     if (!id) return;
     setError(null);
@@ -747,6 +762,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   const runTest = useCallback(
     async (state: "test" | "retest", format: RetrievalFormat = "free") => {
+      // Retired — see `startRecall`. This one call covers `startTest`, `startRetest` AND
+      // `startChoiceTest`, which all delegate here, so there is no fourth entrance behind them.
+      if (!canTransition(latest.current.state, state)) return;
       const id = requireUid();
       if (!id) return;
       setError(null);
