@@ -32,6 +32,8 @@
 
 import type * as React from "react";
 
+import { useDeclareImmersiveSurface } from "@/components/workspace/shell/immersive-surface";
+
 /** The reading measure every part of the canvas is set to — document, question, diagnosis and
  *  composer — so the page reads as one column rather than four things that happen to be centred. */
 const CANVAS_COLUMN_PX = "680px";
@@ -47,6 +49,11 @@ interface CanvasSurfaceProps {
 }
 
 export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) {
+  // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
+  // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
+  // the two live in the same component: you cannot take the claim without taking the `×` with it.
+  useDeclareImmersiveSurface();
+
   return (
     <main
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"

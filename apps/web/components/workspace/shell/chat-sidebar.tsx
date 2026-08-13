@@ -5,7 +5,8 @@
 // Sessions sections, account footer. Class strings are verbatim transplants.
 
 import { usePathname, useRouter } from "next/navigation";
-import { IconLayoutSidebarLeftCollapse, IconSearch, IconX } from "@tabler/icons-react";
+import { IconSearch, IconX } from "@tabler/icons-react";
+import { PanelLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -200,8 +201,10 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
           >
             {searchOpen ? <IconX /> : <IconSearch />}
           </Button>
+          {/* Same panel-left glyph as the reopen toggle (UX brief §27.1): one icon means "the
+              sidebar", and the direction is carried by where the control is, not by the drawing. */}
           <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
-            <IconLayoutSidebarLeftCollapse />
+            <PanelLeft size={16} strokeWidth={1.7} />
           </Button>
         </div>
         {searchOpen && showSessionSections && (
