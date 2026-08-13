@@ -19,21 +19,37 @@
 // than being negotiated with it.
 //
 // 🔴 THE VALUE IS A PRODUCT DECISION AND IT IS NOT RUNTIME'S. The MECHANISM is architecture; the
-// TEMPO is the owner's. They are separated here so that ruling on tempo is a one-line change to a
-// single constant rather than a rewrite — which is the only reason it is safe to ship a number
-// nobody has ruled on yet.
+// TEMPO is the owner's.
+//
+// 🔴 AND THE CLAIM THAT USED TO SIT HERE — "ruling on tempo is a one-line change to a single
+// constant" — WAS FALSE, WHICH IS WORTH LEAVING WRITTEN DOWN RATHER THAN QUIETLY CORRECTING.
+// It was true of this file and false of the decision. `chooseNextTeachingAction` conjoins this
+// interval with `ACT_AGAIN_AFTER_MS`, so what a learner actually waits is the LONGER of the two.
+// Every value here above one hour was indistinguishable from every other, and the first ruling
+// that landed below one hour changed nothing at all. Measured, not reasoned: the constant moved
+// 60 min → 10 min and the decision table was byte-identical.
+//
+// The lesson generalises past this file. A number is only a knob if something downstream cannot
+// out-vote it, and "one exported constant" is a statement about a file, not about a behaviour.
+// Which is why the test for it is now a SWEEP OF THE DECISION rather than a read of this source.
 
 /**
  * How long after a demonstration the same objective may be asked for again.
  *
- * 🔴 PROVISIONAL, AND CONSERVATIVE ON PURPOSE. Erring long risks an objective not returning within
- * a sitting; erring short risks asking someone something they answered minutes ago, which measures
- * working memory and records it as learning — a false claim about a person, stored durably. Only
- * one of those two mistakes is invisible, so the default leans away from it.
+ * 🔴 RULED BY THE OWNER, 2026-08-13: TEN MINUTES. The brief was "comes back within the same
+ * sitting, after other material has intervened" — the short end of the escalated range. This is no
+ * longer provisional and no longer a placeholder to be replaced later. It is the tempo, and the
+ * interval a learner actually experiences must EQUAL it.
  *
- * Not derived from anything. Not tuned. Replace this one number when the owner rules on tempo.
+ * The asymmetry that framed the escalation still holds, and it is why ten minutes is a floor to
+ * defend rather than a starting point to shrink: erring long risks an objective not returning
+ * within a sitting — visible, and recoverable. Erring short risks asking someone something they
+ * answered minutes ago, which measures working memory and records it as learning — a false claim
+ * about a person, stored durably, and invisible. Only one of those two mistakes cannot be seen.
+ *
+ * Not derived from anything. Not tuned. Not per-objective. One number.
  */
-export const RETRIEVAL_ELIGIBLE_AFTER_MS = 60 * 60 * 1000;
+export const RETRIEVAL_ELIGIBLE_AFTER_MS = 10 * 60 * 1000;
 
 /**
  * Is a demonstrated objective askable again?

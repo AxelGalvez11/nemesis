@@ -51,6 +51,39 @@ test("🔴 ACCEPTANCE: one objective, answered correctly, is eligible again afte
   assert.equal(longAfter?.objective.identityKey, KEY);
 });
 
+test("🔴 ACCEPTANCE: the interval a learner WAITS is the interval the owner RULED", () => {
+  // 🔴 THIS IS THE TEST THE OLD ONES COULD NOT BE, AND IT IS RED ON PURPOSE UNTIL THE CONJUNCTION
+  // IN `teaching-policy.ts` IS RESOLVED. Read the failure message before changing anything here.
+  //
+  // Every other test in this file asks the PREDICATE what it thinks, or asks the DECISION about one
+  // hand-picked age. Neither can catch the defect that is actually present: `chooseNextTeachingAction`
+  // gates the `correct` branch on `!actedJustNow && eligibleForRetrieval(...)`, and `actedJustNow`
+  // is measured against `ACT_AGAIN_AFTER_MS` — a SEPARATE, LONGER constant. So what a learner waits
+  // is `max(ACT_AGAIN_AFTER_MS, RETRIEVAL_ELIGIBLE_AFTER_MS)`, and the owner's ruling is inert
+  // wherever it lands below one hour.
+  //
+  // So this does not sample. It SWEEPS for the age at which the objective actually becomes askable
+  // again and compares that to the ruled constant. A constant is only a knob if nothing downstream
+  // can out-vote it, and that is a property of the decision, never of a source file.
+  const MINUTE = 60_000;
+  let waited: number | null = null;
+  for (let mins = 1; mins <= 24 * 60; mins += 1) {
+    if (decideNext({ evidence: correctAt(ago(mins * MINUTE)), now: NOW, objectives: ONLY })) {
+      waited = mins * MINUTE;
+      break;
+    }
+  }
+
+  assert.notEqual(waited, null, "a demonstrated objective must become askable again within a day");
+  assert.equal(
+    waited,
+    RETRIEVAL_ELIGIBLE_AFTER_MS,
+    `the owner ruled ${RETRIEVAL_ELIGIBLE_AFTER_MS / MINUTE} min, but a learner waits ${
+      waited! / MINUTE
+    } min — a second constant is overriding the one value that is supposed to govern tempo`,
+  );
+});
+
 test("🔴 ACCEPTANCE: `projectLearnerState` is byte-identical either way", () => {
   // Eligibility must not reach into the projection. `correct` staying `correct` is RIGHT — the
   // learner did demonstrate it, and elapsed time does not make that untrue. A projection that
@@ -76,10 +109,24 @@ test("🔴 suppression is guarded SEPARATELY from eligibility, so tempo cannot d
   // "not just acted" are the same instant and no evidence age can separate them. The test was
   // passing for the wrong reason, which is worse than not existing.
   //
-  // The guard is genuinely defensive: it becomes load-bearing the moment the owner sets a tempo
-  // SHORTER than one hour, and it costs nothing until then. Since no behavioural input can reach
-  // that state today, the invariant is pinned structurally — `actedJustNow` must be checked before
-  // eligibility, so layer 1 composes with tempo rather than competing with it.
+  // 🔴 UPDATE, 2026-08-13 — THE OWNER RULED TEN MINUTES, AND THIS TEST STAYS STRUCTURAL ANYWAY.
+  // THAT IS A DELIBERATE REFUSAL, NOT AN OMISSION. Read this before "finishing the job".
+  //
+  // The note above predicted the guard would become load-bearing below one hour. It became
+  // something worse: DOMINANT. `actedJustNow` is measured against `ACT_AGAIN_AFTER_MS` (1 h), so
+  // the conjunction makes a learner wait `max(1 h, tempo)` and the owner's ten minutes never takes
+  // effect. The two windows were never collapsed — they are INVERTED, and the wrong one wins.
+  //
+  // The behavioural version of this test is now writable: ages 10–59 min separate the windows
+  // (eligible, yet "just acted"), so a case at 30 min asserting `null` would pass, and deleting
+  // `!actedJustNow` would turn it red. It would calibrate perfectly — and it would assert, as a
+  // protected invariant, that the owner's ruling does not take effect for another fifty minutes.
+  // A test that pins the defect is worse than no test, so it is not written. The invariant stays
+  // pinned structurally: `actedJustNow` must be checked before eligibility, so layer 1 composes
+  // with tempo rather than competing with it.
+  //
+  // Layer 1 itself is not at risk in the meantime. At a ten-minute tempo, `eligibleForRetrieval`
+  // alone already refuses anything answered ninety seconds ago.
   const code = readFileSync(new URL("./teaching-policy.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
@@ -107,6 +154,14 @@ test("eligibility is a function of elapsed time and nothing else", () => {
 });
 
 test("🔴 ONE knob, and it stays one knob", () => {
+  // 🔴 THIS TEST HAS A BLIND SPOT AND IT COST THE TEAM THE WHOLE TEMPO RULING. It reads ONE FILE.
+  // `ACT_AGAIN_AFTER_MS` lives in `teaching-policy.ts`, is an interval over the same elapsed time,
+  // and is conjoined into the same decision — a second knob governing tempo, older than this one
+  // and currently the one that wins. This test asserted "exactly one exported value governs tempo"
+  // and stayed green throughout. It is not wrong, it is NARROW: it guards this file against growing
+  // a scheduler. The claim about the DECISION is the sweep test above, and that is where a future
+  // second knob will actually be caught.
+  //
   // 🔴 THE SPECIFIC FAILURE THIS GUARDS AGAINST. A second parameter here — difficulty, stability,
   // ease, a per-objective multiplier — is the moment this becomes a spaced-repetition system
   // invented inside the teaching policy, which is the thing this codebase was explicitly told not to
