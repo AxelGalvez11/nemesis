@@ -40,13 +40,24 @@ interface ImmersiveRegistry {
 
 const ImmersiveSurfaceContext = createContext<ImmersiveRegistry | null>(null);
 
-/** True on the very first client render when the URL already names a canvas. Never true on the
- *  server: the workspace shell only mounts after the client-side auth gate resolves, so there is
- *  no server pass of this tree to disagree with. */
+/**
+ * Whether the first paint should already be immersive, given where the browser is.
+ *
+ * 🔴 EXPORTED AND PURE SO THE DANGEROUS CASE IS A TEST. The seed hides the rail before anything
+ * has claimed it; if it were ever true for a URL that does not mount a canvas, the rail would stay
+ * hidden on a page with no `×` — which is the dead end, arriving through the optimisation meant to
+ * smooth it. The front door is the case that must come back false.
+ */
+export function immersiveSeed(pathname: string, search: string): boolean {
+  if (pathname.replace(/\/+$/, "") !== CANVAS_PATHNAME) return false;
+  return canvasIsImmersive(learnEntryFromSearch(search));
+}
+
+/** Never true on the server: the workspace shell only mounts after the client-side auth gate
+ *  resolves, so there is no server pass of this tree to disagree with. */
 function seededFromUrl(): boolean {
   if (typeof window === "undefined") return false;
-  if (window.location.pathname.replace(/\/+$/, "") !== CANVAS_PATHNAME) return false;
-  return canvasIsImmersive(learnEntryFromSearch(window.location.search));
+  return immersiveSeed(window.location.pathname, window.location.search);
 }
 
 export function ImmersiveSurfaceProvider({ children }: { children: React.ReactNode }) {
