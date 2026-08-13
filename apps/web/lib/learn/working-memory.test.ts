@@ -184,9 +184,18 @@ test("🔴 the ordered log is session-local and never persisted", async () => {
     source.indexOf("const [correctionsShown"),
   );
   assert.ok(declaration.includes("useState"), "it is React state, not a store");
-  const setter = source.slice(source.indexOf("if (seen) setActedOn"), source.indexOf("if (seen) setActedOn") + 200);
-  for (const forbidden of ["recordEvidence", "supabase", "localStorage", "saveCanvas", "recordEvent"]) {
-    assert.equal(setter.includes(forbidden), false, `acting on an objective must not ${forbidden}`);
+  // 🔴 THE WHOLE CALLBACK, NOT A WINDOW AROUND ONE SPELLING. An earlier version of this sliced 200
+  // characters from the literal `if (seen) setActedOn` — and calibration proved it blind: writing
+  // `if (seen) { localStorage.setItem(...); setActedOn(...) }` moves the anchor, `indexOf` returns
+  // -1, and the guard silently inspects the wrong region and passes. Anchoring a guard to an exact
+  // spelling is how a reformatted defect walks past it.
+  const acknowledge = source.slice(
+    source.indexOf("const acknowledge = useCallback"),
+    source.indexOf("const thinking = useDelayedFlag"),
+  );
+  assert.ok(acknowledge.includes("setActedOn"), "the acted-on log is written from acknowledge");
+  for (const forbidden of ["recordEvidence", "supabase", "localStorage", "sessionStorage", "saveCanvas", "recordEvent", "fetch("]) {
+    assert.equal(acknowledge.includes(forbidden), false, `acting on an objective must not ${forbidden}`);
   }
 });
 

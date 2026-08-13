@@ -77,12 +77,16 @@ test("🔴 every action the policy can produce carries an exposition the Canvas 
   // silently appearing on a retrieval, or on a two-word answer exposure. The claim asserted here is
   // that the un-emitted path is unreachable from a real decision, which is the whole point of
   // landing the producer.
+  // 🔴 THROUGH `declaredCognitiveMode`, NOT PAST IT. Calibration caught this: handing
+  // `exposition.mode` straight to `readingRequirementOf` skips the structural reader, so deleting a
+  // member from the reader's own match list left this green while the Canvas silently stopped
+  // recognising it. The reader is the thing under test, so the reader has to be in the path.
   const seen = new Set<string>();
   for (const action of everyReachableAction()) {
-    const exposition = expositionOf(action);
     seen.add(action.type);
-    const read = readingRequirementOf(exposition.mode);
-    assert.equal(read.unknown, false, `${action.type} produced a mode the Canvas cannot read`);
+    const asTheCanvasSeesIt = declaredCognitiveMode({ exposition: expositionOf(action), cognitiveMode: expositionOf(action).mode });
+    assert.notEqual(asTheCanvasSeesIt, null, `${action.type} produced a mode the Canvas cannot read`);
+    assert.equal(readingRequirementOf(asTheCanvasSeesIt).unknown, false);
   }
   assert.deepEqual([...seen].sort(), ["advance", "contrast", "defer", "retrieve", "show_correction"]);
 });
