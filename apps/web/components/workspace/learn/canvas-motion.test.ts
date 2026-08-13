@@ -97,8 +97,12 @@ test("🔴 every retained loading glyph spins", async () => {
   // through every wait, reading as decoration or as a rendering fault rather than as activity.
   for (const file of [
     "./canvas-composer.tsx",
-    "./canvas-stages.tsx",
+    // Was `canvas-stages.tsx`, deleted with the six-stage machine. Repointed at
+    // `canvas-empty.tsx`, which carries the loading glyph that file used to hold — the property
+    // outlives the component, so the check follows it rather than retiring.
+    "./canvas-empty.tsx",
     "./canvas-selection-menu.tsx",
+    "./canvas-policy-view.tsx",
     "./learning-canvas.tsx",
   ]) {
     const source = await read(file);

@@ -13,48 +13,43 @@ import { test } from "node:test";
 const SOURCE = readFile(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
 
 /**
- * The renderers that COLLECT AN ANSWER, or report on answers already collected.
+ * The renderers that COLLECTED AN ANSWER, or reported on answers already collected.
  *
- * 🔴 THIS LIST SHRANK AT STEP 7b, AND THE SHRINKAGE IS THE FEATURE — read the reasons before
- * concluding it eroded. It used to hold every six-stage renderer, because whole-page ownership
- * meant exactly one thing could paint at all. Composition allows READING MATERIAL beside a hosted
- * task; it still forbids a second ANSWER SURFACE. Three renderers left the list, each for a stated
- * reason:
+ * 🔴 THEY ARE ALL DELETED NOW, AND THIS LIST IS WHY THE FILE STILL HAS A JOB. It used to name the
+ * six-stage renderers so a test could prove each one painted INSIDE `{regions.stages && (…)}` —
+ * confined, so it could never appear beside a hosted task and have both claim the composer.
  *
- *   <CanvasDocument   — reading material. Collects nothing, writes no evidence. A document beside a
- *                       question is the entire point of 7b (docs/canvas-task-hosting.md §3).
- *   <CanvasEmpty      — a pre-content state: no document and no answer exists yet.
- *   <SourcesAttached  — a pre-content state, same reason.
+ * Confinement is no longer the bound. `canvas-stages.tsx` is gone, the region with it, and a task
+ * now COMPOSES on top of reading material instead of replacing the page. So the invariant this file
+ * exists for — never two answer surfaces on one composer — is satisfied by there being exactly one.
  *
- * Everything below owns an answer and writes evidence through `session`, so none may paint while
- * the policy is contributing: two answer surfaces on one composer means one of them silently loses
- * the learner's work, or the policy's prompt id receives an answer typed at a recall card.
+ * 🔴 WHICH MAKES THE CHECK STRICTER, NOT LOOSER. "Confined to a region" permitted these to exist;
+ * "absent" does not. The realistic regression is someone reintroducing a stage renderer because a
+ * single state needs a special screen, and the composer silently acquires a rival.
  */
 const ANSWER_SURFACES = ["<CanvasRecall", "<CanvasTest", "<CanvasDiagnosis", "<CanvasComplete"];
 
-test("🔴 every answer-collecting stage renders INSIDE the evidence-stage region", async () => {
+test("🔴 no answer-collecting stage renders on the canvas at all", async () => {
   const source = await SOURCE;
-  const opens = source.indexOf("{regions.stages && (");
-  assert.notEqual(opens, -1, "the evidence-stage region is gone");
-  const closes = source.indexOf("</>\n        )}", opens);
-  assert.notEqual(closes, -1, "the evidence-stage region's close is gone");
 
   for (const stage of ANSWER_SURFACES) {
-    // 🔴 EVERY OCCURRENCE, NOT THE FIRST ONE. Checking only the first is a guard that cannot see
-    // the defect it is for: the realistic regression ADDS a second render site outside the region
-    // — `{canvas.state === "recall" && <CanvasRecall …>}` as a sibling — and leaves the original in
-    // place. This was calibrated with exactly that edit, and the first-occurrence version stayed
-    // green through it.
-    const sites: number[] = [];
-    for (let at = source.indexOf(stage); at !== -1; at = source.indexOf(stage, at + 1)) sites.push(at);
-    assert.notEqual(sites.length, 0, `${stage} is no longer rendered at all`);
-    for (const at of sites) {
-      assert.ok(
-        at > opens && at < closes,
-        `${stage} renders outside the evidence-stage region — it could paint beside a hosted task, and both would claim the composer`,
-      );
-    }
+    assert.ok(
+      !source.includes(stage),
+      `${stage} is back — it would paint beside a hosted task and both would claim the composer. A task composes on top of reading material now; it does not get its own page.`,
+    );
   }
+
+  // And the region that used to confine them must not return either: reintroducing it is how the
+  // stages would come back one at a time, each looking locally reasonable.
+  assert.ok(
+    !source.includes("{regions.stages && ("),
+    "the evidence-stage region is back — there is nothing left that legitimately needs it",
+  );
+
+  // 🔴 The pre-content renderer is NOT an answer surface and must survive all of this. It was filed
+  // inside the deleted `canvas-stages.tsx` and came within one commit of going with it, which would
+  // have painted nothing for every user who has added no material yet.
+  assert.ok(source.includes("<CanvasEmpty"), "CanvasEmpty stopped rendering — an empty canvas now paints nothing");
 });
 
 test("🔴 the region rule is DERIVED, never re-decided in the component", async () => {

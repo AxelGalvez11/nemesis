@@ -26,13 +26,7 @@ import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { useCanvasSelection } from "./use-canvas-selection";
-import {
-  CanvasComplete,
-  CanvasDiagnosis,
-  CanvasEmpty,
-  CanvasRecall,
-  CanvasTest,
-} from "./canvas-stages";
+import { CanvasEmpty } from "./canvas-empty";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 
@@ -387,51 +381,17 @@ export function LearningCanvas({
           </>
         )}
 
-        {/* ── The evidence-collecting stages ────────────────────────────────
-            🔴 A SEPARATE ARM, AND THAT SEPARATION IS THE INVARIANT. Each of these owns an answer
-            and writes evidence through `session`, so none may paint while the policy is
-            contributing — two answer surfaces on one composer means one of them silently loses the
-            learner's work. `composeSurface` guarantees `regions.stages` and `regions.policy` are
-            never both true; keeping them in different arms is what makes that guarantee visible in
-            the JSX rather than a fact you have to go and look up. */}
-        {regions.stages && (
-          <>
-        {canvas.state === "recall" && (
-          <CanvasRecall
-            canvas={canvas}
-            cards={canvas.recall}
-            index={session.activeTask?.index ?? 0}
-            judging={session.judging}
-            onDone={() => void session.startTest()}
-            onNext={session.advanceTask}
-            onUnknown={() => void session.admitUnknown()}
-          />
-        )}
+        {/* 🔴 THE EVIDENCE-COLLECTING STAGE ARM IS GONE, NOT DISABLED. `CanvasRecall`,
+            `CanvasTest`, `CanvasDiagnosis` and `CanvasComplete` painted here and are deleted with
+            `canvas-stages.tsx`. Nothing replaces them: a task now COMPOSES on top of reading
+            material through `CanvasPolicyView` above, rather than replacing the page with a stage.
+            That is why there is no second answer surface left to guard against — the invariant the
+            old comment here defended (never two answer surfaces on one composer) is now structural
+            rather than conditional, because there is only one.
 
-        {["test", "retest"].includes(canvas.state) && (
-          <CanvasTest
-            canvas={canvas}
-            index={session.activeTask?.index ?? 0}
-            judging={session.judging}
-            onAnswer={session.answer}
-            onFinish={session.finishTest}
-            onNext={session.advanceTask}
-            onUnknown={() => void session.admitUnknown()}
-          />
-        )}
-
-        {canvas.state === "diagnose" && (
-          <CanvasDiagnosis
-            busy={busy.kind === "relearn"}
-            canvas={canvas}
-            onFinish={session.finish}
-            onRelearn={() => void session.relearn()}
-          />
-        )}
-
-        {canvas.state === "complete" && <CanvasComplete canvas={canvas} onReset={session.reset} />}
-          </>
-        )}
+            The states themselves are unreachable in both directions and stay that way without any
+            help from this file: `canvas-state.ts` refuses any transition INTO an evidence stage,
+            and `canvas-store.ts` coerces a canvas already stored in one to `learn` on read. */}
 
         {/* A whole-page job says so once, in the middle, rather than blanking the document.
             🔴 AND NEVER WHILE THE POLICY IS CONTRIBUTING. This greys everything beneath it, which
