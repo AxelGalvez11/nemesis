@@ -218,9 +218,32 @@ test("🔴 an acknowledged correction does not serve the identical card again", 
   assert.equal(before?.action.type, "show_correction");
   assert.equal(before?.objective.identityKey, held);
 
-  const after = decideNext({ actedOn: [held], evidence, now: NOW, objectives: RESOLVED });
+  // 🔴 THE LOOP-BREAKER IS `correctionsShown`, AND THIS TEST USED TO SIMULATE A BROKEN ACKNOWLEDGE.
+  // It passed `actedOn` alone — modelling a runtime that reorders after showing a correction but
+  // never records having shown it. That was faithful when `actedOn` was the only mechanism; it
+  // stopped being faithful when `correctionsShown` arrived, and it has now stopped being harmless:
+  // an owed exposition outranks a question (§39 `fail -> EXPOSE ANSWER -> move on`), so reordering
+  // alone can no longer suppress a correction and must not be expected to.
+  //
+  // What `acknowledge` really does is fill BOTH, which is what is passed here. The property the test
+  // was written for is unchanged and still asserted: the identical card does not come back.
+  const after = decideNext({
+    actedOn: [held],
+    correctionsShown: new Set([held]),
+    evidence,
+    now: NOW,
+    objectives: RESOLVED,
+  });
   assert.notEqual(after?.objective.identityKey, held, "the same card came back immediately");
   assert.equal(after?.action.type, "retrieve");
+
+  // 🔴 AND THE OPPOSITE ERROR, WHICH IS THE ONE THAT WAS LIVE FOR MONTHS. Reordering WITHOUT the
+  // record must NOT suppress the correction — that is the state the runtime is in between painting
+  // the verdict and painting the answer, and treating it as "already shown" is precisely how the
+  // product lost its corrections. See correction-reaches-the-learner.test.ts.
+  const owed = decideNext({ actedOn: [held], evidence, now: NOW, objectives: RESOLVED });
+  assert.equal(owed?.objective.identityKey, held);
+  assert.equal(owed?.action.type, "show_correction", "an answer that is owed must not be postponed by a reorder");
 });
 
 test("acting on everything comes back round rather than ending in a blank page", () => {
