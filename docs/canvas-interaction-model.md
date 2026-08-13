@@ -921,6 +921,77 @@ screen state is replaceable.
 🔴 **Do not reintroduce the retired six-stage engine as a shortcut.** A fixed sequence would satisfy
 "the topic produces something to do" and violate everything above it.
 
+### 🔴 THE PROVENANCE CONTRACT — the thing that actually blocks the front door
+
+**Brain contract, 2026-08-13.** `canvas-knowledge.ts` refuses any canvas with no durable source:
+
+```ts
+if (!userId || sourceIds.length === 0) return nothingToRead();
+```
+
+The stated reason is sound and is **not** being weakened: *an ephemeral source has no library row, so
+anchors minted from it point at something no later canvas can resolve. Knowledge that cannot outlive
+its session is exactly what this layer exists to stop producing.*
+
+**The clause conflates two things, and separating them is the whole fix.**
+
+| | Question | Where it lives today |
+|---|---|---|
+| **Identity** | *what is this knowledge ABOUT?* | `objectiveIdentityKey`, keyed per **user** — **already source-independent** |
+| **Provenance** | *where did this claim COME FROM?* | the source id — **absent for topic-first** |
+
+🔴 **Identity does not depend on provenance, and the code already proves it.** Objectives are keyed
+`user × identityKey`, not `canvas × source`. `losartan → Cozaar` is the same objective whichever
+document taught it, and `decideNext` filters on `objectiveIdentityKey` **and takes no canvas
+parameter at all** — the same construction proof that made acceptance C4 pass.
+
+**So knowledge from a topic-first canvas is perfectly resolvable by a later canvas.** What it lacks
+is not an identity. It lacks a *source*, and the clause refuses it as though those were the same
+thing.
+
+### The contract
+
+> **Provenance is a VALUE, not a precondition.** Knowledge requires an identity that outlives the
+> session — which it already has — and a provenance that is **honestly stated**, which may be
+> *"model knowledge"*.
+
+Minimum two states, and they must be distinguishable at every consumer:
+
+```
+sourced   traces to a durable library source; anchors resolve into it; citation markers work
+model     generated from model knowledge; NO source anchor; must never be presented as
+          the learner's own material
+```
+
+**Consequences, each of which is a rule rather than a suggestion:**
+
+1. **The refusal moves from "no source" to "no honest provenance".** A topic-first canvas has a
+   provenance — `model` — so it is no longer refused.
+2. 🔴 **`model` provenance may never render as a citation into the learner's material.** The quiet
+   `¹` marker means *"here is the excerpt this came from."* Model knowledge has no excerpt. Showing
+   one would be a fabricated source, which is worse than showing none.
+3. 🔴 **Where source context IS acquired in the background** (§M), the resulting knowledge is
+   `sourced` and the marker works normally. **Topic-first is not permanently `model`** — it is
+   `model` until Nemesis has grounded a claim.
+4. **A `model`-provenance claim must be distinguishable by the learner**, not merely in the
+   database. The global invariant governs: *every claim the UI makes about the source must be
+   traceable to source capability.* Model knowledge **is** a capability, just a different one — so
+   **the answer is to label it, never to hide it.**
+
+### 🔴 What this contract does NOT authorise
+
+- **Not** weakening the durable-source rule for canvases that *do* have sources. A source that
+  failed to persist is still a defect (see `186d0749`: 4 attached, 0 durable — a separate,
+  Parser-side question).
+- **Not** minting anchors that point at nothing. `model` provenance means **no anchor**, not a
+  dangling one.
+- **Not** presenting generated material as source material — which is the owner's own line and the
+  reason this contract exists rather than a simple removal of the clause.
+
+**Sequencing note:** the partial-durability branch has **never been exercised in production** — no
+canvas has *some* durable sources. Anyone reasoning about this fix through that branch is designing
+against a case that has never occurred.
+
 ---
 
 ## Ownership — Runtime provides mechanism, Brain decides meaning
