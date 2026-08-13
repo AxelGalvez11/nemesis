@@ -245,7 +245,13 @@ export function ObjectivesControl({
                 )}
               >
                 {objective.label}
-                {/* The state in words, for the one row where it matters most. */}
+                {/* The state in words, for the one row where it matters most.
+                    The em dash here is DELIBERATE and exempt from "no em dashes on the Canvas"
+                    (Brain 2026-08-13): `sr-only` is never rendered, so it is not on the Canvas —
+                    the rule governs what the learner SEES. It is a separator a screen reader
+                    reads as a pause. 🔴 If this line ever changes for another reason, make it a
+                    period: a period gets the same pause more reliably across screen readers than
+                    an em dash does. */}
                 <span className="sr-only"> — {MEANING[objective.state]}</span>
               </span>
             </div>

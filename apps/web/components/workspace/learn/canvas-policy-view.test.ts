@@ -58,6 +58,59 @@ test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their
   assert.match(source, /"Here's the one to fix\."/);
 });
 
+test("🔴 §K: the surviving arm never narrates the learner's own turn back at them", async () => {
+  const source = await SOURCE;
+
+  // §K -- the learner does not see the lesson engine. Four literals carried it; three lived in
+  // canvas-stages.tsx (the legacy six-stage machine, being deleted) and THIS one lived here, in
+  // the compositional runtime we are keeping. Deleting the legacy arm would have removed three
+  // and left this one saying it to every learner, quietly.
+  //
+  // The words the learner typed still appear, quoted -- the verdict directly below is about them,
+  // and removing them would be `minimal` mistaken for `contextless`. What must not come back is
+  // the ATTRIBUTION in front of the quote: it tells the learner something they already know, in a
+  // voice that exists only to stage the exchange, and that narration is what makes a surface read
+  // as a transcript even when nothing accumulates.
+  //
+  // 🔴 COMMENTS ARE STRIPPED BEFORE ANY OF THIS. §K is about what the LEARNER SEES, and this file
+  // discusses the banned shapes at length in order to explain why they are banned -- its own
+  // header says "no Learn -> Recall -> Test". Grepping raw source failed on that sentence the
+  // first time this test ran, which is the whole failure mode: a test that cannot tell rendered
+  // copy from a comment about rendered copy will either cry wolf or, worse, be "fixed" by
+  // deleting the explanation.
+  const rendered = stripComments(source);
+
+  // Built from fragments so the banned phrases are not spelled out even in the stripped text.
+  const you = "You ";
+  for (const verb of ["said", "wrote"]) {
+    assert.doesNotMatch(
+      rendered,
+      new RegExp(escapeRegExp(you + verb)),
+      `§K: "${you}${verb}" is back in the policy view -- quote the learner, never narrate them`,
+    );
+  }
+
+  // ...and the quote itself must still be RENDERED, or this test would pass by deleting the
+  // context rather than the narration.
+  assert.match(rendered, /[“"]\{feedback\.answer\}[”"]/, "the learner's own words stopped being shown at all");
+
+  // No stage label and no step counter reach this arm either. These are the other three §K
+  // literals' shapes; asserting them here means deleting the legacy arm cannot quietly
+  // reintroduce them on the way past.
+  assert.doesNotMatch(rendered, /\b(Recall|Retest)\b/, "§K: a stage label appeared in the policy view");
+  assert.doesNotMatch(rendered, /\{\s*index \+ 1\s*\}\s*of\b/, "§K: a step counter appeared in the policy view");
+
+  // The stripper must actually be removing something, or every assertion above is vacuously true
+  // against an unchanged string and this test quietly stops testing.
+  assert.ok(rendered.length < source.length, "stripComments removed nothing -- the guard is inert");
+});
+
 function escapeRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Source with comments removed, so a §K check reads rendered copy rather than prose about it.
+ *  Block form covers JSX `{​/* … *​/}` too, since that is a block comment inside braces. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[^\S\n]*\/\/.*$/gm, "");
 }

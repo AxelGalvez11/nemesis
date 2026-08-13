@@ -100,7 +100,29 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   if (feedback) {
     return (
       <Frame sharing={sharing}>
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">You said “{feedback.answer}”</p>
+        {/* 🔴 THE WORDS STAY, THE ATTRIBUTION GOES (§K, Brain 2026-08-13). This line used to open
+            with a two-word attribution naming the speaker before the quotation marks — one of the
+            four §K literals, and the only one that lived in the policy arm rather than the legacy
+            six-stage one, so deleting that arm would have left it standing.
+
+            THE QUOTE STAYS because it is doing real work: the verdict below is ABOUT these words,
+            and feedback that names a wrong model earns its space by naming it, so detached from
+            the sentence that produced it the learner has to reconstruct what was judged. Removing
+            the whole line would be `minimal` mistaken for `contextless`.
+
+            THE ATTRIBUTION WENT because it tells the learner something they already know, in a
+            voice that exists only to stage the exchange. A label must carry information the
+            learner needs and must never narrate the machine, and narration is what makes a
+            surface read as a transcript even when nothing accumulates. The quotation marks
+            already carry the attribution.
+
+            🔴 A §K guard in `canvas-policy-view.test.ts` holds this. It strips comments before
+            checking, precisely so prose like this paragraph cannot trip it — the first version
+            grepped raw source and failed on THIS FILE'S OWN header, which names the stage
+            sequence in order to say the page does not have one. A guard that cannot tell rendered
+            copy from a comment about rendered copy gets "fixed" by deleting the explanation. The
+            banned phrase is still not spelled out here anyway, which costs nothing. */}
+        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">“{feedback.answer}”</p>
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
           {VERDICT_HEADLINE[feedback.evaluation.verdict]}
         </h2>
@@ -222,10 +244,15 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
         </h2>
-        <ul className="mt-4 space-y-2">
+        {/* The list has a real marker now. Each row used to open with an em dash, which was the
+            list's ONLY marker because the <ul> had none of its own — so the punctuation was doing
+            structural work. That is a reason the design was wrong, not a reason to keep the em
+            dash: a marker that means "list item" is better than one that means "aside", and the
+            owner's rule is no em dashes on the Canvas. */}
+        <ul className="mt-4 list-disc space-y-2 pl-5">
           {decision.action.competingWith.map((competing) => (
             <li className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" key={competing}>
-              — not {competing}
+              not {competing}
             </li>
           ))}
         </ul>
