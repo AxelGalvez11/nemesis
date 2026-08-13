@@ -548,11 +548,41 @@ export function relearnMessages(input: {
 
 // ------------------------------------------------------------ small helpers
 
-/** The canvas as plain text for prompts that read it rather than edit it. Collapsed and
- *  already-known blocks are left out: the learner has told us those are not the work. */
+/**
+ * The canvas as plain text for prompts that read it rather than edit it.
+ *
+ * 🔴 EVERY BLOCK, BECAUSE NEITHER FLAG IS TRACEABLE TO LEARNER EVIDENCE. This used to read
+ * `.filter((block) => !block.collapsed && !block.known)`, under the comment *"the learner has told
+ * us those are not the work."* That sentence was doing a lot of work, and both halves of it were
+ * wrong in different ways.
+ *
+ * 🔴 `collapsed` HAS TWO AUTHORS AND ONE OF THEM IS A MODEL. `collapse_block` is an operation the
+ * model may use on any chat command (`canvas-ops.ts`, and the permitted-operations list above), so
+ * a model-collapsed block and a learner-folded one are the SAME BOOLEAN and indistinguishable from
+ * here. Filtering on it while claiming the learner said so attributed to a person a decision a model
+ * may have made — the global invariant violated with no learner involved at all.
+ *
+ * And even when a learner does fold a block, folding is a READING-FLOW act: "get this out of my
+ * way right now" is not "never ask me about this". Presentation state must not decide curriculum.
+ * If a model's collapse should ever influence generation, that needs its own field naming its
+ * author, never this one boolean.
+ *
+ * 🔴 `known` IS A SELF-REPORT WITH NO DEMONSTRATION BEHIND IT. It is set by an "I already know this"
+ * control and nothing else — no judge, no evidence row. Because this text feeds recall and both
+ * test-generation branches, and those cards are written through to `study_decks`/`study_cards`, one
+ * click was permanently removing material from spaced repetition on the learner's own say-so. That
+ * is durable curriculum suppression, and it is exactly what "every claim about the learner must be
+ * traceable to learner evidence" forbids.
+ *
+ * Measured before changing it: **73 blocks across all live canvases, zero carrying either flag.**
+ * So this is prevention rather than remediation — no learner's material changes today, and the
+ * mechanism stops being available. Visibility driven by cognitive state rather than self-report is
+ * the replacement, and it is Brain's to design.
+ *
+ * Folding still folds in the reading view. That belongs to the surface and is untouched here.
+ */
 export function documentText(blocks: readonly CanvasBlock[]): string {
   return blocks
-    .filter((block) => !block.collapsed && !block.known)
     .map((block) => (block.type === "heading" ? `\n## ${block.content}` : block.content))
     .join("\n\n")
     .trim();
