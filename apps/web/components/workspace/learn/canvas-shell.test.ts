@@ -200,3 +200,28 @@ test("the task surface reserves room for the floating composer", () => {
   // `h-full` sitting inside `min-h-full` and the assertion inverts itself.
   assert.ok(!/(^|\s)h-full(\s|$)/.test(regions), `use min-h-full so the task can grow: ${regions}`);
 });
+
+test("🔴 every Canvas upload door accepts exactly the same material", () => {
+  // Integration found this live: the Sources panel took `.xlsx`/`.csv` and the composer's "Add
+  // material" refused them, so a learner was told their spreadsheet was unsupported by one control
+  // and supported by another. UX brief §2 names a spreadsheet explicitly among what the composer
+  // must take; §15's one-component rule makes a per-door capability list exactly the drift it
+  // exists to prevent.
+  //
+  // 🔴 THE CHECK IS "THEY REFERENCE ONE CONSTANT", NOT "THE STRINGS MATCH". Three equal literals
+  // are how this drifted in the first place — they were equal once too. A shared constant cannot
+  // be edited in one place.
+  for (const door of ["canvas-composer.tsx", "canvas-home.tsx", "canvas-controls.tsx"]) {
+    const source = read(door);
+    assert.match(
+      source,
+      /accept=\{ACCEPTED_MATERIAL\}/,
+      `${door} declares its own accept list — the three doors have to promise the same thing, because the list is a claim about what the extractor can read`,
+    );
+    assert.equal(
+      /accept="\./.test(source),
+      false,
+      `${door} still carries a literal accept list somewhere`,
+    );
+  }
+});

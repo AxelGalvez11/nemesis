@@ -47,7 +47,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
-import { ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
@@ -133,8 +133,15 @@ interface CanvasComposerProps {
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
    * 🔴 SEND IS THE TRIGGER, NEVER ATTACH — that is the whole of §2, and it is why this is a
-   * separate route rather than something `attachFiles` does on arrival. The learner may attach,
-   * change their mind, add a second file, type an instruction, and only then commit.
+   * separate route rather than something `attachFiles` does on arrival. The learner may add a
+   * second file, type an instruction, and only then commit.
+   *
+   * 🔴 THE CHIP CONFIRMS AN INGEST; IT DOES NOT STAGE ONE, and the difference is worth being
+   * exact about. `pendingSources` is `canvas.sources` — the file has already been read by
+   * `attachFiles` by the time a chip appears — so the chips carry no remove control, unlike the
+   * shared chat composer's, whose files really are staged in component state until submit. What
+   * has not happened yet is the canvas BEGINNING. Saying otherwise here would promise an undo
+   * this surface does not offer.
    *
    * 🔴 AND IT ACCEPTS AN EMPTY STRING (§3). Sending with material and nothing typed means *"learn
    * this material with me"*; the caller infers it rather than making the learner say it. The
@@ -395,8 +402,15 @@ export function CanvasComposer({
               out of the tab order and out of the accessibility tree. It sits outside the
               conditional below so that a menu closing mid-pick cannot unmount the element the
               browser is holding a file dialog open against. */}
+          {/* 🔴 `.xlsx,.csv` ADDED — THE COMPOSER WAS THE ONLY DOOR REFUSING SPREADSHEETS. The
+              Sources panel (`canvas-controls.tsx`) and the front door (`canvas-home.tsx`) both
+              accepted them; this list did not, so a learner was told by one control that their
+              spreadsheet was unsupported and by another that it was fine. §2 names a spreadsheet
+              explicitly among what the composer must take, and §15's one-component rule makes a
+              per-door capability list exactly the kind of drift it exists to prevent.
+              `canvas-shell.test.ts` now pins the three lists equal. */}
           <input
-            accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+            accept={ACCEPTED_MATERIAL}
             className="sr-only"
             multiple
             onChange={(event) => {

@@ -71,25 +71,54 @@ test("🔴 no NEW token is declared in the retired crimson", async () => {
   );
 });
 
-test("🔴 the light ground is neutral — no channel may outrun another", async () => {
+/**
+ * Tokens in the light `:root` that are allowed to carry a hue, each with the reason.
+ *
+ * 🔴 THE STATUS COLOURS ARE OBVIOUS; THE OTHERS ARE DEBT, AND NAMING THEM IS THE POINT. The first
+ * version of this guard read a SINGLE LINE — the one declaring `--bg` — and so it could not see
+ * `--rail-bg`, which is on its own line and which I had left blue while neutralising everything
+ * around it. Scanning the whole block is what turned that from a thing nobody would notice into a
+ * line in this list.
+ */
+const HUE_ALLOWED: Readonly<Record<string, string>> = {
+  warn: "a status colour; meant to be amber",
+  danger: "a status colour; meant to be red",
+  info: "a status colour; meant to be blue",
+  success: "a status colour; meant to be green",
+  // 🔴 REPORTED, NOT CHANGED. These are the retired crimson surviving as a tint, and they belong
+  // to the Chat surface rather than the Canvas — changing them is a visible change to a surface
+  // this pass did not look at. Filed on #505 with the two shadcn tokens.
+  "user-bubble": "pink residue of the retired palette — Chat's surface, owner's call, see #505",
+  "user-bubble-border": "pairs with --user-bubble",
+  // 🔴 ALSO REPORTED, NOT CHANGED. Cool greys (spread 14). The owner flagged the GROUND, not the
+  // text, and shifting body-text colour is a legibility change rather than a palette tidy-up.
+  "text-2": "cool grey; the owner flagged the ground, not the text — see #505",
+  "text-3": "cool grey; pairs with --text-2",
+};
+
+test("🔴 every light SURFACE is neutral — no channel may outrun another", async () => {
   // §27.3: "--bg #f8faff — blue-tinted white; ChatGPT's ground is neutral." `--bg` is painted on
   // <body>, so the tint shows in the overscroll gutter and anywhere the workspace's own neutral
   // surface does not reach. Measured before the fix: body `rgb(248,250,255)` under a workspace
-  // element at `srgb(0.996 0.996 0.996)`.
+  // element at `srgb(0.996 0.996 0.996)`; after, `rgb(250,250,250)`.
   //
-  // 🔴 THE WHOLE LADDER, NOT JUST `--bg`. Neutralising the ground alone would leave the surfaces
-  // above it blue, which reads worse than a consistent tint — the step between two surfaces is
-  // what carries depth, and a hue shift across that step is visible where a uniform one is not.
+  // 🔴 THE WHOLE LADDER, NOT JUST `--bg`. Neutralising the ground alone leaves the surfaces above
+  // it blue, which reads WORSE than a consistent tint — the step between two surfaces is what
+  // carries depth, and a hue shift across that step is visible where a uniform one is not. That is
+  // not hypothetical: this guard's first version missed `--rail-bg` and I shipped exactly that
+  // defect for the length of one commit.
   const css = await CSS;
-  const root = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
-  const line = root.split("\n").find((l) => l.includes("--bg:"));
-  assert.ok(line, "the light surface ladder moved — re-point this guard");
-  for (const [, name, hex] of line.matchAll(/--([a-z0-9-]+):\s*#([0-9a-f]{6})/gi)) {
+  const root = css.slice(css.indexOf(":root {"), css.indexOf("\n}", css.indexOf(":root {")));
+  const tinted: string[] = [];
+  for (const [, name, hex] of root.matchAll(/--([a-z0-9-]+):\s*#([0-9a-f]{6})/gi)) {
     const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex!.slice(i, i + 2), 16));
-    assert.equal(
-      r === g && g === b,
-      true,
-      `--${name} is #${hex}, which is tinted (r${r} g${g} b${b}). The light ground is neutral; if a tint is ever wanted again it is a product decision, not a palette tweak.`,
-    );
+    if (r === g && g === b) continue;
+    if (name! in HUE_ALLOWED) continue;
+    tinted.push(`--${name} #${hex} (r${r} g${g} b${b})`);
   }
+  assert.deepEqual(
+    tinted,
+    [],
+    `tinted light token(s): ${tinted.join(", ")}. The light ground is neutral. If a tint is genuinely wanted, add the token to HUE_ALLOWED with the reason — do not widen the check.`,
+  );
 });
