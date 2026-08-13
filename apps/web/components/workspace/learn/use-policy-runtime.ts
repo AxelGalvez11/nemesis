@@ -92,6 +92,16 @@ export interface PolicyRuntime {
   feedback: { evaluation: ResponseEvaluation; answer: string } | null;
   judging: boolean;
   /**
+   * This answer's evidence is written but not yet read back — do not decide the next prompt yet.
+   *
+   * 🔴 GATE AUTO-ADVANCE ON THIS, NOT ON A TIMER. `judging` is already `false` when the write
+   * starts, so it cannot be used for this. While `recording` is true, `evidence` still lacks the row
+   * this answer just produced, and any next-prompt decision computed from it can re-ask the question
+   * that was just answered — with its answer on screen. `acknowledge()` refuses while it is true, so
+   * forgetting costs a missed advance rather than a fabricated demonstration.
+   */
+  recording: boolean;
+  /**
    * The step currently running, or null when nothing is.
    *
    * 🔴 SET BY THE STEP ITSELF. Nothing advances this on a timer, and there is no ordered list it
@@ -162,6 +172,24 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   const [prompt, setPrompt] = useState<RetrievalPrompt | null>(null);
   const [feedback, setFeedback] = useState<PolicyRuntime["feedback"]>(null);
   const [judging, setJudging] = useState(false);
+  /**
+   * This answer's evidence is written but not yet read back.
+   *
+   * 🔴 A DIFFERENT QUESTION FROM `judging`, AND THE GAP BETWEEN THEM WAS THE BUG. `judging` covers
+   * the evaluator call and is already `false` when the write begins, so between the verdict
+   * appearing and the re-read landing there was NO signal at all — and in exactly that window,
+   * `evidence` still lacks the row this very answer produced.
+   *
+   * 🔴 WHY IT IS NOT A FLICKER. `task` is null while feedback is on screen, so the learner cannot
+   * answer anything — until `acknowledge()` clears it. If that runs inside this window, the next
+   * task is built from a `decision` computed WITHOUT the answer just given. Because `actedOn`
+   * reorders and never filters, that resolves to the same objective whenever it is the only one
+   * still owed something. The learner is told they were right and immediately asked the identical
+   * question with the answer on screen — and nothing stops them answering it. That submission is
+   * real: it writes a durable demonstration of working memory against a prompt whose answer was
+   * visible. §M3's echo, arriving through a race rather than through a policy.
+   */
+  const [recording, setRecording] = useState(false);
   const [phase, setPhase] = useState<ThinkingPhase | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Bumped when the learner reads a correction, so the same state can produce a fresh prompt. */
@@ -330,25 +358,34 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       // re-reading would be a round trip that can only tell us what we already know.
       if (built.length === 0) return;
 
-      let written = true;
-      for (const row of built) {
-        // Sequential rather than concurrent: they conflict on the same index, and a burst of
-        // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
-        // race rather than the no-op it is meant to be.
-        if (!(await recordEvidence(uid, row))) written = false;
+      // 🔴 RAISED BEFORE THE FIRST WRITE, LOWERED ONLY AFTER THE RE-READ — see `recording`. It spans
+      // the whole window in which `evidence` disagrees with what the learner just did, and it is a
+      // `finally` because the failure paths are part of that window too: a flag left raised would
+      // freeze the surface, and one dropped early would reopen the race it exists to close.
+      setRecording(true);
+      try {
+        let written = true;
+        for (const row of built) {
+          // Sequential rather than concurrent: they conflict on the same index, and a burst of
+          // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
+          // race rather than the no-op it is meant to be.
+          if (!(await recordEvidence(uid, row))) written = false;
+        }
+        if (!written) {
+          setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
+          // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
+          // a half-written performance, teaching from a learner model that is missing exactly the
+          // rows the write dropped.
+          return;
+        }
+        // 🔴 THE POLICY RUNS AGAIN FROM RE-READ EVIDENCE, NOT FROM WHAT WE JUST SENT. Applying the
+        // new row to local state would work right up until a write was rejected, and then the canvas
+        // would teach from a learner model the database does not hold. Reading it back is what makes
+        // "the log is the truth" true at runtime and not only in the type comments.
+        await refresh(supported.map((entry) => entry.objective));
+      } finally {
+        setRecording(false);
       }
-      if (!written) {
-        setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
-        // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
-        // a half-written performance, teaching from a learner model that is missing exactly the
-        // rows the write dropped.
-        return;
-      }
-      // 🔴 THE POLICY RUNS AGAIN FROM RE-READ EVIDENCE, NOT FROM WHAT WE JUST SENT. Applying the
-      // new row to local state would work right up until a write was rejected, and then the canvas
-      // would teach from a learner model the database does not hold. Reading it back is what makes
-      // "the log is the truth" true at runtime and not only in the type comments.
-      await refresh(supported.map((entry) => entry.objective));
     },
     [refresh, supported, uid],
   );
@@ -468,12 +505,24 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   }, [admitNothing, judging]);
 
   const acknowledge = useCallback(() => {
+    // 🔴 REFUSED WHILE THE ANSWER IS STILL SETTLING, AND THE DIRECTION OF ERROR IS DELIBERATE.
+    //
+    // A caller is expected to wait for `recording` to clear — but this must not depend on every
+    // caller remembering, because the cost of forgetting is not symmetric. Acknowledging early
+    // clears the feedback and lets a task be built from a `decision` that predates this answer,
+    // which can put the same question back with its answer on screen and record the echo as a
+    // demonstration: invisible, durable, and a false claim about a learner.
+    //
+    // Refusing costs an auto-advance that does not happen — visible, recoverable, and immediately
+    // obvious to whoever is testing. A missed advance is a much smaller failure than a fabricated
+    // demonstration, so the guard lives here as well as in the caller.
+    if (recording) return;
     const seen = decision?.objective.identityKey;
     setFeedback(null);
     setRound((current) => current + 1);
     if (seen) setActedOn((current) => new Set(current).add(seen));
     setDecidedAt(new Date());
-  }, [decision]);
+  }, [decision, recording]);
 
   // 🔴 THE ONLY THING THAT DECIDES WHETHER AN INDICATOR APPEARS IS HOW LONG THE WORK ACTUALLY TOOK.
   // Everything in the recall path normally finishes well inside this window, so a learner drilling
@@ -530,6 +579,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     ownership: knowledge.ownership,
     phase,
     prompt,
+    recording,
     setFocus,
     status,
     submit,
