@@ -13,6 +13,22 @@
 // HAVE — nothing selects a difficulty, and nothing generates a next step; the policy chooses one
 // action from stored state and the canvas renders it. They belong here on the day that work exists
 // and can report itself, and not one commit earlier.
+//
+// 🔴 ASKED FOR AGAIN ON 2026-08-13 AND REFUSED AGAIN, SO NOBODY RE-LITIGATES IT. §K of the v1
+// acceptance doc asked for four richer captions. Two of them describe steps that exist and were
+// taken — `finding_gap` and `reading_answer` below now say what they actually do. The other two
+// were dropped:
+//
+//   "Connecting this to the previous concept…"   needs relations BETWEEN knowledge objects.
+//                                                There are no prerequisite edges. Nothing connects.
+//   "Building from what you already understand…" needs scaffolding selection. Nothing selects one.
+//
+// Both are the same shape as the two refused above, and §K7 is what makes it binding: a caption is
+// a CLAIM ABOUT WHAT NEMESIS IS DOING. A vocabulary that cycles plausible stages is indistinguishable
+// from a working system right up until it narrates a step that never ran — and then it has been
+// lying the whole time. Better words for real steps is the whole of what this file allows.
+//
+// The captions are written and waiting. They land the day the capability does.
 
 /** A step that is really executing. Added only when something can emit it. */
 export type ThinkingPhase =
@@ -31,9 +47,9 @@ export type ThinkingPhase =
  * code, and neither is "Loading…", which tells someone only that software exists.
  */
 export const THINKING_COPY: Record<ThinkingPhase, string> = {
-  finding_gap: "Finding the next gap",
+  finding_gap: "Looking for the weak point…",
   mapping_knowledge: "Mapping what you know",
-  reading_answer: "Reading your answer",
+  reading_answer: "Checking your reasoning…",
   reading_source: "Reading your material",
 };
 
