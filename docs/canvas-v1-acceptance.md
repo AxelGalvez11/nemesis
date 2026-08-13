@@ -93,9 +93,16 @@ no evidence written at all*. That is rotation, and a naive before/after diff rea
 1. **A negative control.** Capture the decision twice with **no submission in between**, exercising
    the same non-evidence interactions the real run performs. If it moves on its own, the comparison
    is void — and that instability is itself a P0 finding.
-2. **Compare the decision INPUTS, not only the output.** Report `state.evidenceCount`, the
-   session-local rotation state (`actedOn`, `round`) and the chosen objective for both captures.
-   The difference must be attributable to evidence with rotation state held equal.
+2. **Hold the real inputs equal and vary only evidence.** `decideNext` takes exactly four inputs —
+   `objectives`, `evidence`, `now`, `actedOn` (`policy-runtime.ts:41-44`) — and is verifiably pure:
+   no `await`, no `supabase`, no `Date.now`, no `Math.random`. So C3 is a **replay**, not an
+   observation: hold `objectives`, `now` and `actedOn` byte-identical and vary `evidence` alone.
+
+   🔴 **The confound channel is `actedOn`, not `round`.** `round` is **not an input to
+   `decideNext`** — it only feeds the memo guard that decides *when* a prompt is minted. An earlier
+   version of this document said to hold `round` equal, which would have aimed the control at the
+   wrong variable and let `actedOn` move underneath it. `actedOn` is the one that reorders the
+   queue when a correction is acknowledged.
 3. Only then does a post-submission difference count.
 
 §G says *"inputs identical apart from the new evidence"* — that is a counterfactual by construction.
@@ -180,6 +187,17 @@ identical apart from the new evidence.
 | I4 | 🔴 No UI claim of mastery may be derived from missing parser coverage |
 
 ---
+
+## 🔴 Two traps for whoever runs the trace
+
+**`ensureKnowledgeForCanvas` WRITES.** Once the trust gate opens it calls `saveKnowledge`, so it is
+**not a safe read-twice probe**. Knowledge rows appearing during a run are the application working
+normally — they are **not** the loop closing, and must not be reported as evidence of it.
+
+**Line numbers are not locations in this codebase.** The Canvas files move between worktrees while
+work is in flight — `saveKnowledge` was read at `:164` and then `:199` within minutes of the same
+session. **Pin a sha** in any runbook, finding or citation, or a successor will read a different
+function than the one you meant.
 
 ## 🔴 What actually remains — the post-P0 sequence, decided in advance
 
