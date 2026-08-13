@@ -26,11 +26,50 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
  * composer."* A constant rather than three literals, so the next person adding an auth path
  * inherits that answer instead of copying whichever neighbour they happened to read.
  *
- * 🔴 IT IS ONLY A FALLBACK. An explicit `?next=` always wins, which is what keeps the shipped
- * extension's `/library?import=coursework` working — `sanitizeNextPath` returns `search` along with
- * the pathname, so the import parameter survives whenever one is supplied.
+ * 🔴 IT IS ONLY A FALLBACK. An explicit `?next=` always wins — `sanitizeNextPath` returns `search`
+ * along with the pathname, so a supplied parameter survives.
+ *
+ * 🔴 AND THAT SENTENCE USED TO CLAIM MORE THAN IT COULD. It said this "is what keeps the shipped
+ * extension's `/library?import=coursework` working." That was true only for a learner who is ALREADY
+ * SIGNED IN — who never passes the auth gate at all. For the signed-OUT learner, who is the entire
+ * person that sentence was about, it was false: the gate built `next` from `usePathname()`, which
+ * excludes the query by definition, so `import=coursework` was gone before `sanitizeNextPath` ever
+ * saw it. Preserving the query at the consumer is worthless if the producer never sends one. See
+ * `signInRedirect`.
  */
 export const DEFAULT_LANDING_PATH = "/learn";
+
+/**
+ * Where the auth gate sends a signed-out visitor, so that signing in returns them to the page they
+ * actually asked for — **including its query string**.
+ *
+ * 🔴 THE QUERY IS PART OF THE DESTINATION, NOT DECORATION. Three gates built this from
+ * `usePathname()` alone, which never contains the query, and the two live consequences were:
+ *
+ * ```
+ * /library?import=coursework  ->  /sign-in?next=%2Flibrary   import=coursework GONE
+ * /learn?canvas=<uuid>        ->  /sign-in?next=%2Flearn     the canvas id GONE
+ * ```
+ *
+ * A student installs the browser extension, clicks "import my coursework" while logged out, signs
+ * in, and arrives at a bare Library with nothing importing. Anyone opening a shared canvas link
+ * while logged out lands on the front door instead of the canvas. Both surfaces looked like they
+ * worked, because the person testing them was signed in.
+ *
+ * One function rather than a fix repeated three times: the next person adding a gated surface
+ * inherits the answer instead of copying whichever neighbour they happened to read — the same
+ * reason `DEFAULT_LANDING_PATH` exists.
+ *
+ * `search` is passed in rather than read from `window` so this stays pure and testable; callers on
+ * the client hand it `useSearchParams()` or `window.location.search`.
+ */
+export function signInRedirect(pathname: string, search = ""): string {
+  const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  // Tolerate both shapes a caller may hold: `useSearchParams().toString()` has no leading "?",
+  // `window.location.search` does. An empty string must stay empty rather than become a bare "?".
+  const query = !search || search === "?" ? "" : search.startsWith("?") ? search : `?${search}`;
+  return `/sign-in?next=${encodeURIComponent(`${path}${query}`)}`;
+}
 
 /** Restrict post-auth navigation to a same-origin relative path. Repeated decoding catches payloads
  * such as %252f%252fevil.example before a router/browser gets a chance to normalize them. */

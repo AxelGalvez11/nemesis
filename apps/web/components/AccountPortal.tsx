@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import type { EntitlementSnapshot } from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
-import { DEFAULT_LANDING_PATH } from "@/lib/auth-redirect";
+import { DEFAULT_LANDING_PATH, signInRedirect } from "@/lib/auth-redirect";
 import { landingUrl } from "@/lib/env";
 import { planLabel } from "@/lib/billing-contract";
 
@@ -26,7 +26,8 @@ export function AccountPortal() {
 
   useEffect(() => {
     if (!loading && !session) {
-      router.replace(`/sign-in?next=${encodeURIComponent(pathname)}`);
+      // The query is part of the destination — see `signInRedirect`. `usePathname()` drops it.
+      router.replace(signInRedirect(pathname, window.location.search));
     }
   }, [loading, pathname, router, session]);
 
