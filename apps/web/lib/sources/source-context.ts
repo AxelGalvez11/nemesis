@@ -16,12 +16,14 @@
 // was just fixed — and this codebase has discarded a computed document model at a boundary three
 // times already.
 
-import { blockToText, readStructureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { blockToText, readCoverage, readStructureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
 import {
   capabilitiesOfStored,
   deriveCapabilities,
+  deriveContentIntegrity,
   parseQuality,
+  type ContentIntegrity,
   type ParseQuality,
   type SourceCapabilities,
 } from "./source-capabilities";
@@ -244,6 +246,10 @@ export interface SourceContext {
   sourceKind: string;
   capabilities: SourceCapabilities;
   quality: ParseQuality;
+  /** Whether the recovered TEXT can be trusted for semantic extraction. See
+   *  `deriveContentIntegrity` — a different question from `quality` above,
+   *  answered from `parsed_documents.coverage`, not from `structure`. */
+  contentIntegrity: ContentIntegrity;
   title: string | null;
   /** When the material was delivered, when known — a lecture's date, a syllabus's upload.
    *  🔴 The anchor a relative date like "next Friday" is resolved against; without it
@@ -303,6 +309,10 @@ export function buildSourceContext(input: {
   sourceKind: string;
   /** The raw `parsed_documents.structure` column. */
   structure: unknown;
+  /** The raw `parsed_documents.coverage` column. Optional because not every
+   *  caller has selected it yet — absence yields `contentIntegrity: "unknown"`,
+   *  never a guessed `"intact"`. See `ContentIntegrity`. */
+  coverage?: unknown;
   capturedAt?: string;
 }): SourceContext {
   const envelope = readStructureEnvelope(input.structure);
@@ -311,6 +321,7 @@ export function buildSourceContext(input: {
     capabilities,
     capturedAt: input.capturedAt,
     quality: parseQuality({ capabilities, sourceKind: input.sourceKind }),
+    contentIntegrity: deriveContentIntegrity({ capabilities, coverage: readCoverage(input.coverage) }),
     sourceId: input.sourceId,
     sourceKind: input.sourceKind,
     title: envelope?.title ?? null,
@@ -363,6 +374,10 @@ export function sourceContextFromModel(input: {
     capabilities,
     capturedAt: input.capturedAt,
     quality: parseQuality({ capabilities, sourceKind: input.sourceKind }),
+    // No stored coverage exists for a model that has not been written yet —
+    // "unknown", never a guessed "intact". See `buildSourceContext`'s docstring
+    // on why this path is not a substitute for the stored parse.
+    contentIntegrity: deriveContentIntegrity({ capabilities, coverage: null }),
     sourceId: input.sourceId,
     sourceKind: input.sourceKind,
     title: input.model.title,

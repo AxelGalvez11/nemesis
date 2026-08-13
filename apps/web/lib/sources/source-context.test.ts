@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildDocument, structureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { buildCoverage, buildDocument, structureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
 import { capabilitiesOfStored, deriveCapabilities, parsedPageCount, parseQuality } from "./source-capabilities";
 import {
   anchorInUnit,
   buildSourceContext,
   cellAtRef,
+  sourceContextFromModel,
   unitContent,
   quoteAnchor,
   readableUnits,
@@ -144,6 +145,152 @@ test("🔴 the same capability set is healthy for a note and a regression for a 
   assert.equal(parseQuality({ capabilities: flat, sourceKind: "txt" }), "full");
   assert.equal(parseQuality({ capabilities: flat, sourceKind: "transcript" }), "full");
   assert.equal(parseQuality({ capabilities: capabilitiesOfStored(null), sourceKind: "txt" }), "failed");
+});
+
+// ── PARSER-001: content integrity crosses the boundary as a value ──────────
+//
+// 🔴 THE ACTUAL BOUNDARY. `SourceContext.quality` is derived from `structure`
+// alone; `contentIntegrity` is the field that also needs `coverage`, a
+// DIFFERENT stored column `buildSourceContext` did not receive before this.
+// Every test below builds `coverage` the way `buildCoverage` actually
+// produces it and round-trips it through JSON, the way `canvas-sources.ts`'s
+// Supabase select hands the raw jsonb column to this function — a
+// hand-assembled `ExtractionCoverage` object would not exercise the same
+// `readCoverage` parse that a real stored row goes through.
+
+/** A coverage record exactly as `parsed_documents.coverage` stores it. */
+function storedCoverage(input: Parameters<typeof buildCoverage>[0]): unknown {
+  const built = buildCoverage(input);
+  if (typeof built === "string") throw new Error(`test fixture coverage does not add up: ${built}`);
+  return JSON.parse(JSON.stringify(built));
+}
+
+test("no coverage column selected yields 'unknown', never a guessed-healthy verdict", () => {
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(model([block({ id: "p1" })])) });
+  assert.equal(context.contentIntegrity, "unknown");
+});
+
+test("a clean parse with real text and nothing lost is 'intact'", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "Ordinary prose." })])),
+    coverage: storedCoverage({ unitKind: "page", units: 1, unitsNative: 1 }),
+  });
+  assert.equal(context.contentIntegrity, "intact");
+});
+
+test("🔴 unreadableRegions makes an otherwise-fine parse 'lossy' — the fragment-table case", () => {
+  // The shape Brain measured: a workbook read fine (text exists, units resolve) but
+  // a region the parser saw could not be turned into content. The text that DID
+  // come through may be a fragment, not a sentence — "we could not reliably read
+  // this" must stay visible even though `capabilities.text` is true.
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "xlsx",
+    structure: stored(model([block({ id: "p1", text: "31" })])),
+    coverage: storedCoverage({
+      unitKind: "sheet",
+      units: 1,
+      unitsNative: 1,
+      unreadableKinds: [{ count: 1, kind: "unsupported-number-format" }],
+    }),
+  });
+  assert.equal(context.contentIntegrity, "lossy");
+});
+
+test("an unread unit makes the parse 'lossy', but an unexamined figure does NOT", () => {
+  // The exact exclusion `parseQuality` already documents and this function must
+  // repeat: a figure nobody looked at does not corrupt the TEXT next to it.
+  const lossy = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "Some of it." })])),
+    coverage: storedCoverage({ unitKind: "page", units: 2, unitsNative: 1, unitsUnread: 1 }),
+  });
+  assert.equal(lossy.contentIntegrity, "lossy");
+
+  const figureOnly = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "Complete prose." })])),
+    coverage: storedCoverage({
+      unitKind: "page",
+      units: 1,
+      unitsNative: 1,
+      figures: { described: 0, found: 3, reasons: { "not-examined": 3 }, skipped: 3 },
+    }),
+  });
+  assert.equal(figureOnly.contentIntegrity, "intact", "an undescribed figure does not make the surrounding text unreliable");
+
+  // The exclusion is total, not just the one reason exercised above — the
+  // function never reads `coverage.figures` at all, whatever the reason says.
+  const everyReason = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "Complete prose." })])),
+    coverage: storedCoverage({
+      unitKind: "page",
+      units: 1,
+      unitsNative: 1,
+      figures: {
+        described: 0,
+        found: 4,
+        reasons: { "over-cap": 1, "unreadable-format": 1, "vision-unavailable": 1, "examined-empty": 1 },
+        skipped: 4,
+      },
+    }),
+  });
+  assert.equal(everyReason.contentIntegrity, "intact", "no figure-loss reason downgrades this verdict, only region/unit/truncation loss does");
+});
+
+test("a page read by vision instead of its text layer is not treated as loss", () => {
+  // unitsVision/unitsBoth mean the text was recovered by a different method, not
+  // that it is incomplete. Only unitsUnread (nothing came back either way) counts.
+  const visionRead = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "What vision read off the scan." })])),
+    coverage: storedCoverage({ unitKind: "page", units: 3, unitsBoth: 1, unitsNative: 1, unitsVision: 1 }),
+  });
+  assert.equal(visionRead.contentIntegrity, "intact");
+});
+
+test("no text at all is 'unreadable', regardless of what coverage says", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(undefined, ""),
+    coverage: storedCoverage({ unitKind: "page", units: 3, unitsNative: 0, unitsUnread: 3 }),
+  });
+  assert.equal(context.contentIntegrity, "unreadable");
+});
+
+test("text cut at extraction is 'lossy' even with every unit accounted for", () => {
+  const context = buildSourceContext({
+    sourceId: "s1",
+    sourceKind: "pdf",
+    structure: stored(model([block({ id: "p1", text: "What made it through." })])),
+    coverage: storedCoverage({
+      unitKind: "page",
+      units: 1,
+      unitsNative: 1,
+      truncation: [{ dropped: 500, kept: 1000, limit: 1000, stage: "extract" }],
+    }),
+  });
+  assert.equal(context.contentIntegrity, "lossy");
+});
+
+test("the in-memory fallback path never claims 'intact' — it has no coverage to check", () => {
+  // 🔴 `sourceContextFromModel` exists for a model that has not been written yet, so
+  // there is no `parsed_documents.coverage` row to read. Landing on "intact" here
+  // would be exactly the collapse Brain warned about: "we have not checked" must
+  // not read the same as "we checked and it's fine".
+  const context = sourceContextFromModel({ sourceId: "s1", sourceKind: "pdf", model: model([block({ id: "p1", text: "Prose." })]) });
+  assert.equal(context.contentIntegrity, "unknown");
+
+  const empty = sourceContextFromModel({ sourceId: "s1", sourceKind: "pdf", model: model([block({ id: "p1", text: "" })]) });
+  assert.equal(empty.contentIntegrity, "unreadable", "no text is knowable without coverage at all");
 });
 
 test("structure survives the boundary as units, not as one re-flattened string", () => {

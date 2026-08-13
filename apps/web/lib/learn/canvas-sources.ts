@@ -54,7 +54,7 @@ export type CanonicalLoad =
  *  other code in this repo comments that it always is one — but measured against production on
  *  2026-08-11 this particular embed comes back as a bare OBJECT. Whichever a caller assumes, the
  *  other one silently yields `undefined`, every source looks degraded, and nothing fails loudly. */
-type ParsedEmbed = { structure?: unknown; doc_kind?: string | null };
+type ParsedEmbed = { structure?: unknown; doc_kind?: string | null; coverage?: unknown };
 
 function firstEmbed(value: ParsedEmbed[] | ParsedEmbed | null | undefined): ParsedEmbed | null {
   if (!value) return null;
@@ -71,7 +71,7 @@ function firstEmbed(value: ParsedEmbed[] | ParsedEmbed | null | undefined): Pars
 export async function loadCanonicalSource(librarySourceId: string): Promise<CanonicalLoad> {
   const { data, error } = await supabase
     .from("library_sources")
-    .select("id,mime_type,created_at,parsed_document_id,parsed_documents(structure,doc_kind)")
+    .select("id,mime_type,created_at,parsed_document_id,parsed_documents(structure,doc_kind,coverage)")
     .eq("id", librarySourceId)
     .maybeSingle();
 
@@ -91,6 +91,11 @@ export async function loadCanonicalSource(librarySourceId: string): Promise<Cano
     sourceId: librarySourceId,
     sourceKind: parsed.doc_kind ?? "unknown",
     structure: parsed.structure,
+    // 🔴 SELECTED ALONGSIDE structure, ON PURPOSE. This is the one production door onto
+    // `contentIntegrity` (see source-context.ts): omitting this column here is indistinguishable
+    // from a row that genuinely has no coverage yet, and both read back as "unknown" rather than a
+    // guessed-healthy verdict — but only the second one is honest.
+    coverage: parsed.coverage,
     ...(row.created_at ? { capturedAt: row.created_at } : {}),
   });
 
