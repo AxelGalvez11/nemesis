@@ -613,14 +613,56 @@ export function CanvasDiagnosis({
 
 // ---------------------------------------------------------------- completion
 
+/** 🔴 THE GLOBAL INVARIANT (owner, 2026-08-13): every claim the UI makes about the learner must
+ *  trace to learner evidence; every claim it makes about the SOURCE must trace to source
+ *  capability. "Mastered" used to print unconditionally the instant `canvas.state === "complete"`
+ *  — a canvas finished over a source the parser could only partly read, or over no source at all,
+ *  told the learner they had mastered the material anyway. Same defect UI-001 fixed one screen
+ *  over (`canvas-policy-view.tsx`'s empty state), reached through a different door: completion,
+ *  not "nothing left to ask".
+ *
+ *  Two ways a completion can outrun what Nemesis can actually back, checked in order:
+ *  1. No source was ever attached — the lesson is general knowledge, not the learner's material,
+ *     so there is nothing to check it against at all. (canStart() allows a topic-only canvas by
+ *     design; that is not the defect. Calling it "Mastered" is.)
+ *  2. A source was attached but Nemesis could only partly read it (`coverageNote`, the same
+ *     field the Sources panel already surfaces for this exact reason).
+ *
+ *  Neither case goes silent — a source gap is not a reason to say nothing, it is a reason to say
+ *  which gap. Real evidence (concepts understood, weak areas corrected, minutes) stays visible in
+ *  both cases: that part IS traceable to what the learner actually answered. */
+export function completionClaim(
+  canvas: Pick<LearningCanvas, "sources">,
+): { headline: string; note: string | null } {
+  if (canvas.sources.length === 0) {
+    return {
+      headline: "You've answered everything asked",
+      note: "Nothing was uploaded for this one, so the lesson came from Nemesis's general knowledge — real answers, but nothing of yours to check them against.",
+    };
+  }
+
+  const unread = canvas.sources.filter((source) => source.coverageNote);
+  if (unread.length > 0) {
+    return {
+      headline: "You've covered what could be read",
+      note: `${unread.length === 1 ? "One source" : `${unread.length} sources`} couldn't be fully read, so this reflects only what came through — a gap in Nemesis's reading, not in what you know.`,
+    };
+  }
+
+  return { headline: "Mastered", note: null };
+}
+
 export function CanvasComplete({ canvas, onReset }: { canvas: LearningCanvas; onReset: () => void }) {
   const summary = summariseCompletion(canvas);
+  const claim = completionClaim(canvas);
 
   return (
     <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-[26rem]">
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">{canvas.title}</p>
-        <h2 className="mt-1 text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Mastered</h2>
+        <h2 className="mt-1 text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
+          {claim.headline}
+        </h2>
         <dl className="mt-8 space-y-2 text-[0.9375rem] text-(--ui-text-secondary)">
           <div>
             {summary.conceptsUnderstood} concept{summary.conceptsUnderstood === 1 ? "" : "s"} understood
@@ -630,6 +672,11 @@ export function CanvasComplete({ canvas, onReset }: { canvas: LearningCanvas; on
           </div>
           <div>{summary.activeMinutes} min active learning</div>
         </dl>
+        {claim.note && (
+          <p className="mt-5 max-w-[22rem] text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">
+            {claim.note}
+          </p>
+        )}
         <button
           className="mt-10 text-[0.8125rem] text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
           onClick={onReset}
