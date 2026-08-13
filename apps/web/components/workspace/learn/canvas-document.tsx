@@ -6,10 +6,12 @@
 // the command bar what the next instruction is about. That is the whole editing philosophy
 // (§16) — the learner directs Nemesis, they do not typeset.
 
+import { Undo2 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
+import { isRewritten } from "@/lib/learn/canvas-ops";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,8 @@ interface CanvasDocumentProps {
   selectedIds: string[];
   onSelect: (ids: string[]) => void;
   busyBlockIds: string[];
+  /** §11 — restore one passage to the wording it had before the learner rewrote it. */
+  onRestore: (blockId: string) => void;
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
@@ -53,6 +57,7 @@ export function CanvasDocument({
   selectedIds,
   onSelect,
   busyBlockIds,
+  onRestore,
   aside,
   onDismissAside,
   onToggleCollapsed,
@@ -114,6 +119,7 @@ export function CanvasDocument({
           aside={aside?.blockId === block.id ? aside.text : null}
           block={block}
           busy={busyBlockIds.includes(block.id)}
+          onRestore={() => onRestore(block.id)}
           canvas={canvas}
           key={block.id}
           onDismissAside={onDismissAside}
@@ -154,6 +160,8 @@ interface BlockViewProps {
   canvas: LearningCanvas;
   selected: boolean;
   busy: boolean;
+  /** §11 — put this passage back the way it was written. */
+  onRestore: () => void;
   aside: string | null;
   sourceOpen: boolean;
   onDismissAside: () => void;
@@ -167,6 +175,7 @@ function BlockView({
   canvas,
   selected,
   busy,
+  onRestore,
   aside,
   sourceOpen,
   onDismissAside,
@@ -182,7 +191,12 @@ function BlockView({
         // browser's own highlight now shows the exact words — and painting the whole paragraph
         // grey underneath a toolbar that says "these two words" tells the learner two different
         // things about what they just selected. The composer's chip still names the wider scope.
-        busy && "animate-pulse",
+        // 🔴 §11: THE PASSAGE ITSELF ENTERS THE PROCESSING STATE, and it does it in the product's
+        // one motion language. `animate-pulse` was a whole-element opacity throb — a "wait"
+        // signal, which §20 rules out in favour of "information forming from left to right". A
+        // paragraph being rewritten is information being formed, so it gets the same travelling
+        // band the thinking preview uses. See globals.css for why it carries no fill.
+        busy && "canvas-rewriting",
       )}
       data-block-id={block.id}
       data-selected={selected ? "true" : undefined}
@@ -197,7 +211,30 @@ function BlockView({
           {block.content.slice(0, 90)}…
         </button>
       ) : (
+        <>
         <BlockBody block={block} canvas={canvas} onTerm={onTerm} onToggleSource={onToggleSource} sourceOpen={sourceOpen} />
+        {/* §11 — *"Keep the old version internally so it can be restored."* The rewrite happened in
+            place and there is exactly ONE explanation on screen; this is the way back to the other
+            one, and it is deliberately not a second copy of the text sitting underneath.
+            🔴 QUIET, AND ONLY ON BLOCKS THE LEARNER CHANGED. The teaching loop rewrites blocks too,
+            through the same op — `applyRewrite` is what keeps those out of this, so nobody is
+            offered an undo for something they did not do. */}
+        {!busy && isRewritten(block) && (
+          <button
+            // 🔴 DRAWN AT REST, NOT ON HOVER — and I wrote it the other way first. #578 spent a
+            // whole section on exactly this spelling in the Library, where 62 of 62 row controls
+            // were `opacity-0` until the pointer crossed them and had no affordance at all on a
+            // touch screen. The argument does not stop applying because this surface is quieter.
+            // Restraint is the COLOUR and the SIZE here, not the visibility.
+            className="mt-1 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[0.75rem] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
+            onClick={onRestore}
+            type="button"
+          >
+            <Undo2 size={12} strokeWidth={1.7} />
+            Show how this was written
+          </button>
+        )}
+        </>
       )}
 
       {block.note && !block.collapsed && (

@@ -392,3 +392,65 @@ export function applyOps(canvas: LearningCanvas, ops: readonly CanvasOp[]): Lear
   if (blocks === canvas.blocks && state === canvas.state) return canvas;
   return { ...canvas, blocks, state, updatedAt: new Date().toISOString() };
 }
+
+// ── §11: rewrite in place, reversibly ────────────────────────────────────────────────────────
+//
+// 🔴 THESE ARE SEPARATE FROM `applyOps` ON PURPOSE. Every `replace_block` goes through `applyOps`,
+// including the teaching loop's own rewrites. If recording the previous wording lived in there,
+// blocks the learner never touched would grow a restore control offering to undo something they
+// did not do — and worse, the teaching loop's ordinary rewriting would look to the learner like a
+// change they could reverse. §11 is about the learner asking for a rewrite; only that path is
+// reversible, so only that path records anything.
+//
+// Pure, so the "restore still resolves after a round trip" claim is a test rather than a promise.
+
+/**
+ * Apply a learner-requested rewrite, keeping the wording it replaced.
+ *
+ * 🔴 `before` IS ONLY RECORDED THE FIRST TIME. Simplify a block twice and this keeps what it said
+ * before the learner touched it at all — not the once-simplified middle version. See the note on
+ * `CanvasBlock.previousContent` for why "the original" is the version worth keeping.
+ */
+export function applyRewrite(
+  canvas: LearningCanvas,
+  rewrite: { readonly ops: readonly CanvasOp[]; readonly blockId: string; readonly before: string },
+): LearningCanvas {
+  const applied = applyOps(canvas, rewrite.ops);
+  return {
+    ...applied,
+    blocks: applied.blocks.map((block) => {
+      if (block.id !== rewrite.blockId) return block;
+      // Nothing actually changed: recording a "previous" version identical to the current one would
+      // offer a restore that visibly does nothing, which reads as a broken control.
+      if (block.content === rewrite.before) return block;
+      if (block.previousContent !== undefined) return block;
+      return { ...block, previousContent: rewrite.before };
+    }),
+  };
+}
+
+/**
+ * Put a rewritten block back the way it was, and stop offering to.
+ *
+ * 🔴 `previousContent` IS CLEARED, NOT LEFT BEHIND. A block holding a "previous" version identical
+ * to what is now on screen would keep its restore control forever, and pressing it would do
+ * nothing — the same broken-control failure `applyRewrite` guards against from the other side.
+ *
+ * A block with nothing to restore is returned unchanged rather than treated as an error: the
+ * control should not exist in that state, and if it somehow does, doing nothing beats throwing.
+ */
+export function restoreBlock(canvas: LearningCanvas, blockId: string): LearningCanvas {
+  return {
+    ...canvas,
+    blocks: canvas.blocks.map((block) => {
+      if (block.id !== blockId || block.previousContent === undefined) return block;
+      const { previousContent, ...rest } = block;
+      return { ...rest, content: previousContent };
+    }),
+  };
+}
+
+/** Whether this block is offering to go back to how it was written (§11). */
+export function isRewritten(block: { previousContent?: string }): boolean {
+  return typeof block.previousContent === "string" && block.previousContent.length > 0;
+}

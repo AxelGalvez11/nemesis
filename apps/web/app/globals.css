@@ -694,6 +694,34 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   animation: canvas-forming 1900ms linear infinite;
 }
 
+/* §11 — a passage rewriting itself IN PLACE. Same left-to-right band as
+   `.canvas-forming`, and deliberately the same 1900ms, so a paragraph being
+   rewritten and a question being formed read as one system doing one kind of
+   work rather than two effects that happen to coexist.
+   🔴 NO `background-color`, WHICH IS THE WHOLE DIFFERENCE FROM `.canvas-forming`.
+   That class paints a solid bar because it stands in for text that does not
+   exist yet. Here the text is right there and the learner is reading it — §11
+   asks for the EXISTING passage to enter a processing state, so the words stay
+   legible and the band travels behind them.
+   🔴 IT REPLACES `animate-pulse` ON THIS ONE PATH. A whole-element opacity throb
+   says "wait"; §20 asks for information forming from left to right, and a
+   paragraph about to be rewritten is exactly information being formed. */
+@keyframes canvas-rewriting { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.canvas-rewriting {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ui-text-quaternary) 16%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: canvas-rewriting 1900ms linear infinite;
+}
+/* The wording on its way out reads as provisional while the new one is made. Not
+   hidden: the learner asked for THIS paragraph to change and needs to keep
+   seeing which one it is. */
+.canvas-rewriting > * { opacity: 0.55; transition: opacity 200ms ease-out; }
+
 /* 🔴 REDUCED MOTION COVERS THE UTILITIES TOO, WHICH IS THE PART THAT GETS MISSED.
    Hand-written animations in this file were already guarded; `animate-pulse` is a
    Tailwind utility and was not, so a scoped paragraph kept breathing for someone
@@ -703,6 +731,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-swap,
   .canvas-phrase,
   .canvas-forming,
+  .canvas-rewriting,
   [data-workspace] .animate-pulse {
     animation: none;
   }
@@ -713,4 +742,8 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-forming { background-image: none; }
   /* Still has to read as "this region is busy" — it simply stops moving. */
   [data-workspace] .animate-pulse { opacity: 0.6; }
+  /* Same rule as `.canvas-forming`: the sweep stops, the state remains legible.
+     The dimmed wording is what says "this paragraph is being rewritten", and it
+     is not motion, so it stays. */
+  .canvas-rewriting { background-image: none; }
 }

@@ -32,6 +32,10 @@ export type LearningEventType =
   | "definition_opened"
   | "explanation_requested"
   | "simplification_requested"
+  // §11 — the learner put a rewritten passage back the way it was written. Worth recording
+  // separately from the request: a simplification that gets restored is a signal the rewrite made
+  // the material WORSE for this learner, which a request count alone cannot tell you.
+  | "simplification_restored"
   | "example_requested"
   | "why_requested"
   | "source_opened"

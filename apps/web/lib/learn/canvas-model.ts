@@ -165,6 +165,26 @@ export interface CanvasBlock {
   collapsed?: boolean;
   /** Marked known by the learner. Excluded from recall and test generation. */
   known?: boolean;
+  /**
+   * The wording this block had before the learner asked for it to be rewritten (§11).
+   *
+   * 🔴 §11 IS "REWRITE IN PLACE", NOT "APPEND ANOTHER EXPLANATION" — and the second half of that
+   * sentence is what this field is for: *"Keep the old version internally so it can be restored.
+   * Visually there is normally one active explanation, never competing versions stacked."* One
+   * active explanation is what the reader sees; this is the internal copy that makes the rewrite
+   * reversible rather than destructive.
+   *
+   * 🔴 THE ORIGINAL, NOT THE PREVIOUS ONE. Asked to simplify twice, this keeps what the block said
+   * BEFORE the learner touched it, rather than the once-simplified middle version. "Restore" means
+   * "put back the material as it was written", which is the only version the learner did not ask
+   * for and therefore the only one they cannot reproduce. Keeping a stack instead would be a
+   * revision history, which is a different feature and one §11 does not ask for.
+   *
+   * 🔴 SET ONLY BY A LEARNER-REQUESTED REWRITE. The teaching loop rewrites blocks too, through the
+   * same `replace_block` op; those must NOT become restorable, or a block the learner never
+   * touched grows a control offering to undo something they did not do. See `applyRewrite`.
+   */
+  previousContent?: string;
   /** Terms this block introduces that the learner probably has not met yet, named by the model
    *  that wrote the block.
    *
