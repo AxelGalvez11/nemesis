@@ -181,6 +181,39 @@ identical apart from the new evidence.
 
 ---
 
+## 🔴 What actually remains — the post-P0 sequence, decided in advance
+
+**Assessed 2026-08-12 by Brain against `main` `f75ef698`, so the order after the loop is proven does
+not have to be re-derived.** Nothing here authorises starting any of it early.
+
+| Section | Remaining work | Owner |
+|---|---|---|
+| **A** source perception | under audit by Parser | Parser |
+| **B** knowledge → task | **`RUNTIME-005` delivers all three** | Runtime |
+| **C** the evidence loop | **`INTEGRATION-001` proves it** once B is deployed | Integration |
+| **D** rapid associative cognition | mostly already built — see the D1 risk below | — |
+| **E** richer cognitive structure | 🔴 **NOT BUILT.** `objectivesForKnowledge(causal)` returns `[]`. This is `BRAIN-003`. | Brain |
+| **F** multi-objective responses | F1–F4 land with `RUNTIME-003` (#508); **F5 is `RUNTIME-006`** | Runtime |
+| **G** adaptation | same evidence as C3 — the counterfactual | Integration |
+| **H** Minimap v1 | 🔴 **NOT BUILT**, and blocked on Brain knowledge-state semantics | Brain → UI |
+| **I** UI | under audit by Canvas UI | Canvas UI |
+
+**So after `INTEGRATION-001` passes, three rocks remain: `RUNTIME-006` (F5), `BRAIN-003` (E), and
+the Minimap (H).** In that order — F5 is a precondition of E, and H needs the knowledge-state
+semantics that E produces.
+
+### 🔴 A verification risk worth knowing about now, not at the end
+
+**D1 requires dictated production to be exercised, and the browser pane blocks the microphone.**
+The capability exists — `canvas-composer.tsx:143` distinguishes `spoken` from `typed` and carries it
+through to evidence — but **an agent driving a browser pane cannot verify it**, and any claim that it
+works from that surface would be unfounded.
+
+Integration must not report D1 as proven from a browser-pane session. Acceptable outcomes: exercise
+it on a real device, or **record D1 as `implemented but not agent-verifiable` and say so plainly in
+the review packet.** Silently passing it is the failure mode this whole envelope exists to prevent —
+a claim with no evidence behind it, indistinguishable from a verified one.
+
 ## Escalation — the only five things worth the owner
 
 ```
