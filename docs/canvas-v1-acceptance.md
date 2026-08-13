@@ -167,7 +167,56 @@ step behind it, it does not exist.
 | A1 | Supported source material can enter Canvas | a real source, uploaded through the ordinary path, reaching a canvas |
 | A2 | Known parser loss stays explicit | a document with loss reports it; the loss is readable at the consumer, not re-derived |
 | A3 | Trustworthy source structure becomes knowledge | knowledge objects extracted from a real production source |
-| A4 | 🔴 Inability to perceive never masquerades as absence of knowledge | a degraded source and a clean source with nothing to say return **different** verdicts |
+| A4 | 🔴 Inability to perceive never masquerades as absence of knowledge | a degraded source and a clean source with nothing to say are **distinguishable by the learner** — see the surface ruling below |
+
+### 🔴 A4 — WHICH SURFACE OWNS "WE COULD NOT READ THIS". Decided 2026-08-13.
+
+**It cannot be `CanvasPolicyView`, and that is now proved rather than observed.** Parser established
+that the mount condition and the empty-state condition are exact logical complements:
+
+```
+MOUNT   policyPresenting = status === "ready" && (feedback !== null || decision !== null)
+EMPTY   reached only when feedback is falsy AND decision === null
+```
+
+`feedback` is typed `| null` and initialised `null`, so *falsy* **is** `=== null`. The empty state
+therefore requires exactly `policyPresenting === false` — which is *not mounted*. Both are computed
+from the same object in the **same render pass**, so no frame exists where the child renders with
+both null.
+
+🔴 **The entire `if (!decision)` block is dead code, and always has been** — including
+*"Nemesis couldn't read this material"*, which predates #509. **All three messages have never been
+shown to a learner in any form.** That also retires the earlier "latent mastery-claim" framing:
+there is no latent wrong message, because there is no message.
+
+**`RUNTIME-005` moves the component from *not mounted* to *mounted showing a question*. It never
+produces *mounted showing an empty state*.** No amount of copy fixes this where it sits.
+
+**THE RULING — two surfaces, two different jobs:**
+
+**1. Nemesis says it, in the conversation.** Under §K the learner sees the material and the
+intelligence; the intelligence *speaks*. When the policy has nothing to contribute **because the
+source was degraded**, that is what Nemesis says next — not a banner, not a card, not an empty-state
+component. It arrives the same way any other turn arrives, and it is the moment the learner actually
+needs it. **This satisfies §K by construction: it is not chrome, it is the conversation.**
+
+**2. The source carries the durable fact.** A source with a known reading gap is marked *where
+sources live*, inspectable — the same shape as provenance (§J3): **a claim about a source, attached
+to that source.** The conversational message is momentary; this is the record.
+
+**Why not a banner:** §K forbids chrome, and a banner would assert the fact permanently at the top of
+a surface whose whole point is that the material owns the centre.
+
+**#509's copy is not wasted and must not be reverted.** *"A gap in Nemesis's reading, not in what you
+know"* is the right sentence; it simply belongs wherever the verdict lands rather than in a block
+that cannot render.
+
+**The distinction A4 actually tests is in the WORDS, not in the presence of a component:** *"I could
+not read parts of this"* · *"I read this fine and it asserts nothing teachable"* · *"I have not asked
+you yet"* must be three different things a learner can tell apart.
+
+**SEQUENCED behind the two live UI specs (compact session mode, and §K).** The decision is made so it
+stops blocking; the work queues.
 
 **A4 is the load-bearing one.** If it fails, Canvas eventually tells a student they are weak on
 material the parser could not read — invisible, and it blames the learner.
