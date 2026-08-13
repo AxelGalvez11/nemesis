@@ -26,6 +26,7 @@ import { offersAdvance } from "./canvas-progression";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
@@ -337,6 +338,13 @@ export function LearningCanvas({
       <CanvasHeader
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
+        // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10). `policy.territories` is
+        // the resolved supported knowledge for this canvas — the same list the focus picker is
+        // built from — so a non-empty one means knowledge genuinely exists rather than being
+        // assumed from the canvas being sourceless. The predicate lives in `canvas-provenance.ts`
+        // with the reasoning for the durability test, which is the runtime's own branch condition
+        // and not `sources.length`.
+        modelKnowledge={modelKnowledgeDisclosed(canvas.sources, policy.territories.length)}
         onDelete={() => {
           void session.remove().then(() => router.push("/sessions"));
         }}

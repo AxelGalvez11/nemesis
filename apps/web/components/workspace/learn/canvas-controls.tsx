@@ -66,9 +66,13 @@ const PANEL =
  *  merging them now would be the hard thing to undo later. */
 export function SourcesControl({
   canvas,
+  modelKnowledge = false,
   onFiles,
 }: {
   canvas: LearningCanvas;
+  /** Whether this canvas holds knowledge that provably came from the model rather than from
+   *  attached material. See `canvas-provenance.ts` for why it is not simply "no sources". */
+  modelKnowledge?: boolean;
   onFiles: (files: FileList | File[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +94,9 @@ export function SourcesControl({
         <Codicon name="library" size="0.8125rem" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
-        {canvas.sources.length > 0 && (
+        {/* Model knowledge counts here too. The dot means "there is something in this panel",
+            and a canvas taught entirely from model knowledge has something in it. */}
+        {(canvas.sources.length > 0 || modelKnowledge) && (
           <span className="absolute right-[5px] top-[5px] h-[5px] w-[5px] rounded-full bg-(--ui-text-quaternary)" />
         )}
       </button>
@@ -117,8 +123,31 @@ export function SourcesControl({
 
           {tab === "sources" ? (
             <>
+              {/* 🔴 WHERE THE KNOWLEDGE CAME FROM, WHEN THERE IS NO FILE TO POINT AT (N10).
+                  A canvas started by typing a topic holds no sources and a great deal of
+                  knowledge. This panel used to report only the files, so it said "Nothing
+                  attached yet." while fifty model-minted facts sat behind it — true about
+                  attachments, false about provenance, on the one surface a learner opens to ask
+                  where something came from.
+
+                  It sits in the list, in the same shape as a source row, because it IS one of
+                  the things this canvas was built from. It carries NO count: the territory
+                  rebuilds on open and does not yet converge, so any number here would grow every
+                  time the learner looked at it. A sparse line that is always true beats a rich
+                  one that is sometimes wrong. */}
+              {modelKnowledge && (
+                <div className="px-2 py-1.5">
+                  <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">Nemesis knowledge</p>
+                  <p className="text-[0.6875rem] text-(--ui-text-quaternary)">Generated from model knowledge</p>
+                </div>
+              )}
+
               {canvas.sources.length === 0 ? (
-                <p className="px-2 py-3 text-[0.8125rem] text-(--ui-text-quaternary)">Nothing attached yet.</p>
+                // Guarded by `modelKnowledge`, and that guard is the whole fix: this sentence is
+                // only honest when there is genuinely nothing behind the canvas at all.
+                !modelKnowledge && (
+                  <p className="px-2 py-3 text-[0.8125rem] text-(--ui-text-quaternary)">Nothing attached yet.</p>
+                )
               ) : (
                 canvas.sources.map((source) => (
                   <div className="px-2 py-1.5" key={source.id}>
