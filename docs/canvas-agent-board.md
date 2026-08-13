@@ -50,18 +50,41 @@ runs as a native Claude Code Agent Team; live coordination is the shared task li
 durable roadmap, issue #505 is the durable recovery log, and `docs/canvas-v1-acceptance.md` is the
 stop condition.
 
-### 🔴 The critical path — everything else is downstream
+### 🔴 The critical path — one thing left, and it is not code
 
 | Task | Owner | Status |
 |---|---|---|
-| `RUNTIME-005` gate objective **production** on trust, not coverage | Runtime | 🔴 **P0 — the only thing that matters** |
-| *a real production deployment containing it* | — | ⛔ **BLOCKED: Vercel daily cap.** No production deployment attempted since 18:04 CDT |
-| `INTEGRATION-001` re-run, unchanged | Integration | **WAITING ON THE ALIAS** — not on the merge |
+| `RUNTIME-005` gate production on trust | Runtime | ✅ **MERGED** `ed4dfbe8` — executed: 0 → 4 objectives on real canvas `796a6045` |
+| *a production deployment containing it* | — | ⛔ **THE ONLY BLOCKER.** Vercel cap; alias frozen at `60b1365e` since 17:49 CDT |
+| `INTEGRATION-001` re-run, unchanged | Integration | **ARMED AND HOLDING** — gate correctly refuses |
+
+**Everything the loop needs is merged. Nothing is waiting on engineering.**
 
 ### Everything else
 
-| Task | Owner | Status | Blocks |
-|---|---|---|---|
+| Task | Owner | Status |
+|---|---|---|
+| `RUNTIME-006` judged / not-judged split | Runtime | **IN PROGRESS** — required before `BRAIN-003` |
+| `UI-J` remove check + fold, redesign provenance | Canvas UI | **ASSIGNED** — owner correction, §J |
+| `UI-MASTERED` "Mastered." claimed without evidence | Canvas UI | 🔴 **LIVE AND UNWALKED** — reachable, ungated, no canvas has walked there yet |
+| `UI-KEBAB` remove the three-dots control | Canvas UI | **ASSIGNED** — rename re-homing is a named follow-up cost |
+| `RUNTIME-003` · `UI-001` · `PARSER-001/002/003` | — | ✅ **MERGED**, none deployed |
+| `BRAIN-003` causal cognition · `UI-002` Minimap | Brain, UI | 🅿️ **PARKED** behind a proven loop |
+
+🔴 **Seven merges tonight, zero deployments.** `merged ≠ deployed ≠ served`.
+
+### What the lanes corrected in Brain, recorded because the pattern is the lesson
+
+Four contract defects, all caught by the lane that had to implement against them:
+
+1. **The lead was unreachable** — teammates were told to message `brain`; the address is `main`. Messages were silently lost. *(Parser)*
+2. **C3 aimed at the wrong variable** — `round` is not an input to `decideNext`; `actedOn` is. A control built on `round` would have let the confound move underneath it. *(Integration)*
+3. **J1 failed against accepted behaviour** — *"must not change what the policy decides next"* is false by design, since `acknowledge()` feeds `actedOn`. Split into mastery-claim (fully inert) vs exposure-acknowledgement (may rotate). *(Integration)*
+4. **J3 could not be proven on the trace canvas** — the trace writes evidence there, so a later "Mastered." would have evidence behind it and prove nothing. Two required criteria were competing for one canvas in an order that silently disarms the second. Moved to `8c49587e`, which has zero sources and therefore *cannot* back a mastery claim. *(Integration)*
+
+**A contract that does not survive contact with the implementation is a Brain defect.** Four of them did not, and the board is better for each.
+
+---|---|---|---|
 | `RUNTIME-003` a task targeting a SET of objectives | Runtime | ✅ **ACCEPTED** (#508) — reconciling merge state only | — |
 | `RUNTIME-006` judged / not-judged must be different values | Runtime | **READY** — required before `BRAIN-003` | BRAIN-003 |
 | `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after 005 and 003 | — |
