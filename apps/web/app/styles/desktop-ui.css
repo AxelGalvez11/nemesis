@@ -246,9 +246,22 @@
        focus outline, the ring on a selected passage. It carries a GLYPH, so its
        contrast against --ui-bg-editor is a hard requirement, and because the
        glyph colour IS the editor background the light and dark values sit on
-       opposite sides of the lightness midpoint. Default is today's graphite:
-       until the owner picks a hue, nothing changes. */
-    --ui-action: var(--theme-midground);
+       opposite sides of the lightness midpoint.
+
+       THE VALUE: a restrained muted green (owner 2026-08-13). The owner ruled
+       against a distinctive SaaS accent entirely — Nemesis's identity comes
+       from typography, spacing, the bead mark, motion and the adaptive Canvas,
+       not from a brand hue. So this is deliberately LOW CHROMA (oklch C 0.061
+       against the success green's 0.110) and appears only where an accent is
+       genuinely needed: active submit, selected navigation, small status marks,
+       minimal check feedback, focus. NOT on every interactive element, no large
+       coloured panels, no gradients. The Canvas stays overwhelmingly neutral so
+       attention goes to the content.
+
+       Measured glyph-on-fill against the RESOLVED --ui-bg-editor: 6.95:1 light,
+       9.54:1 dark. Both clear WCAG AA, and both fix the graphite dark button,
+       which measured 3.58:1 and did not. */
+    --ui-action: #37614a;
     --ui-warm: var(--theme-warm);
     --ui-red: #cf2d56;
     --ui-orange: #db704b;
@@ -530,8 +543,11 @@
     --ui-cyan: #6f9ba6;
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
-       glyph. Same inversion the graphite pair already makes (#404040 → #6e6e6e). */
-    --ui-action: var(--theme-midground);
+       glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).
+       The same restrained green, lifted to sit on a near-black background:
+       9.54:1 glyph-on-fill, and still low chroma (0.050) so it reads as a quiet
+       accent rather than a success state. */
+    --ui-action: #9fc4ae;
 
     --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;
