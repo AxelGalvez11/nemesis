@@ -412,6 +412,37 @@ export async function applyTeachingAction(
 
 // --------------------------------------------------------- targeted relearn
 
+/**
+ * 🔴 UNREACHABLE AT THIS COMMIT, AND KEPT AS THE COUNTER-EXAMPLE IT IS. MEASURED, NOT ASSUMED.
+ *
+ * This function computes a scoped selection and then throws it away:
+ *
+ *     blocksForConcepts(canvas.blocks, weakConceptIds)   →  fed to the prompt as context
+ *     ops.filter(op => op.operation === "replace_canvas") →  every other op DISCARDED below
+ *
+ * So it regenerates the WHOLE page for a weakness in one concept — the exact behaviour
+ * `applyTeachingAction` says its scope exists to prevent ("fixing one paragraph fixes one
+ * paragraph"), and a direct violation of the interaction model's §K: do not regenerate unrelated
+ * material merely because generation is cheap.
+ *
+ * 🔴 IT CANNOT FIRE. Its only caller is `session.relearn()`, reached solely from the stage-advance
+ * control, and the two conditions are disjoint:
+ *
+ *     nextAction().to === "targeted_relearn"   ONLY in state `diagnose`
+ *     the advance control renders              ONLY in states `learn` and `targeted_relearn`
+ *
+ * `composeSurface({ canvasState: "diagnose" }).document` is `false` under both
+ * `policyPresenting` values, so `CanvasDocument` — which owns `onAdvance` — is never mounted in
+ * `diagnose` at all. The composer's own `onAdvance` is wired to `policy.acknowledge` or to `null`
+ * and never calls the stage advance. Separately, `canTransition(*, "diagnose")` is permitted from
+ * NO state, so the validated route in is closed too; `diagnose` is only ever set by a direct
+ * assignment in `finishTest`, which is itself unreachable for the same reason.
+ *
+ * 🔴 SO DO NOT "FIX" THE FILTER BELOW WITHOUT FIRST MAKING THIS REACHABLE. Repairing dead code
+ * produces a scoped rewrite nobody can run and a green diff that proves nothing. If this arm is
+ * ever revived, the one-line fix is to stop filtering to `replace_canvas` and let the scoped ops
+ * through — and the scope is already computed for you.
+ */
 export async function generateRelearn(
   uid: string,
   canvas: LearningCanvas,
