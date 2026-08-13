@@ -142,9 +142,20 @@ export async function ensureKnowledgeForCanvas(
      * bypassed is which runtime got the surface, not what counts as having learned something.
      */
     bypassOwnership?: boolean;
+    /**
+     * Cancels the model call this may make.
+     *
+     * 🔴 IT EXISTS SO A WAIT CANNOT BE UNBOUNDED. A construction is one `fetch` with no timeout of
+     * its own, so without a signal a connection that never answers leaves this promise pending for
+     * ever — no error, no rejection, nothing for a caller to catch. The learner sees "Mapping what
+     * you know" and nothing else, for as long as the tab is open. See `use-policy-runtime.ts`,
+     * where the deadline lives: the caller owns how long is too long, and this owns being
+     * interruptible at all.
+     */
+    signal?: AbortSignal;
   } = {},
 ): Promise<CanvasKnowledge> {
-  const { bypassOwnership = false, onPhase } = options;
+  const { bypassOwnership = false, onPhase, signal } = options;
   // 🔴 DURABLE SOURCES ONLY. An ephemeral source has no library row, so anchors minted from it
   // point at something no later canvas can resolve — knowledge that cannot outlive its session is
   // exactly what this layer exists to stop producing.
@@ -185,7 +196,7 @@ export async function ensureKnowledgeForCanvas(
   // reading facts back out of it would launder model output into something shaped like source
   // material, which §M forbids. `parseTerritory` returns `KnowledgeObject[]` and cannot write a
   // block, so that pipeline is unrepresentable here rather than merely discouraged.
-  if (sourceIds.length === 0) return topicTerritory(userId, canvas, onPhase);
+  if (sourceIds.length === 0) return topicTerritory(userId, canvas, onPhase, signal);
 
   // 🔴 AND A CANVAS HOLDING ANY SOURCE THIS LAYER CANNOT READ IS ALREADY UNOWNABLE, so it is
   // answered before a single round trip. This is not only an optimisation: it is the check that
@@ -345,7 +356,16 @@ export async function ensureKnowledgeForCanvas(
   // error is deliberately in the under-claiming direction: a canvas may hold knowledge that
   // coverage does not credit, and it must never be the other way round.
   if (extracted.length === 0 && carried.length === 0) {
-    const grounded = await groundedTerritory({ canvas, coverage, onPhase, outcome, ownership, sourceIds, userId });
+    const grounded = await groundedTerritory({
+      canvas,
+      coverage,
+      onPhase,
+      outcome,
+      ownership,
+      signal,
+      sourceIds,
+      userId,
+    });
     if (grounded) return grounded;
   }
 
@@ -400,6 +420,7 @@ async function topicTerritory(
   userId: string,
   canvas: LearningCanvas,
   onPhase?: (phase: ThinkingPhase) => void,
+  signal?: AbortSignal,
 ): Promise<CanvasKnowledge> {
   const coverage = emptyCoverage(0);
   const answer = (outcome: ExtractionOutcome | "no-durable-source", objectives: ResolvedObjective[] = []) => ({
@@ -453,7 +474,7 @@ async function topicTerritory(
   // `onlyOnceAtATime` dedupes what is IN FLIGHT and remembers nothing once it settles.
   return onlyOnceAtATime(`topic:${userId}:${canvas.id}:${topic}`, async () => {
   onPhase?.("mapping_knowledge");
-  const { value } = await constructTerritory(userId, topic, TERRITORY_TARGET);
+  const { value } = await constructTerritory(userId, topic, TERRITORY_TARGET, { signal });
 
   // 🔴 THE TRUST DECISION FOR MODEL KNOWLEDGE HAPPENS BEFORE THIS LINE, AND NOTHING IS WRITTEN UNTIL
   // IT HAS. There is no source to have read reliably, so `knowledgeProductionFor` has nothing to
@@ -579,10 +600,11 @@ async function groundedTerritory(input: {
   onPhase?: (phase: ThinkingPhase) => void;
   outcome: ExtractionOutcome;
   ownership: OwnershipDecision;
+  signal?: AbortSignal;
   sourceIds: readonly string[];
   userId: string;
 }): Promise<CanvasKnowledge | null> {
-  const { canvas, coverage, onPhase, outcome, ownership, sourceIds, userId } = input;
+  const { canvas, coverage, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
   const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
 
   // 🔴 A LABEL ON THE MARKER, NOT A KEY ANYTHING COMPARES. `CanvasTerritory.topic` must be a
@@ -599,6 +621,7 @@ async function groundedTerritory(input: {
   return onlyOnceAtATime(`grounded:${userId}:${canvas.id}:${subject}`, async () => {
   onPhase?.("mapping_knowledge");
   const { value } = await constructTerritory(userId, canvas.title, TERRITORY_TARGET, {
+    signal,
     sources: canvas.sources,
   });
   if (!value || value.objects.length === 0) return null;

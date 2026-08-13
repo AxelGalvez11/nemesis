@@ -48,6 +48,25 @@ export const THINKING_COPY: Record<ThinkingPhase, string> = {
 export const THINKING_VISIBLE_AFTER_MS = 600;
 
 /**
+ * How long mapping a canvas's knowledge may take before it is reported as a failure.
+ *
+ * 🔴 THE OWNER'S REQUIREMENT IS A CONSTRUCTION RULE, NOT A NUMBER: "ninety seconds with no
+ * transition or failure state should never be REPRESENTABLE." This is what makes that true — the
+ * pipeline has exactly three ends (ready, nothing to ask, failed) and cannot sit between them.
+ *
+ * 🔴 SET UNDER NINETY DELIBERATELY, AND NOT MUCH UNDER. A real build is one model call over up to
+ * 120,000 characters; production measured a topic territory resolving in about 18 seconds, and a
+ * lecture is a larger input. A tight bound would abort work that was about to succeed and report a
+ * failure the learner did not have. Sixty seconds is comfortably above every measured success and
+ * comfortably inside the window the owner says must never be silent.
+ *
+ * 🔴 IT IS A CEILING ON THE WAIT, NOT A BUDGET TO SPEND. Nothing waits for it in the ordinary case:
+ * the promise settles when the work does. What it removes is the case where the work never settles
+ * at all, which no `catch` can reach because nothing ever rejects.
+ */
+export const KNOWLEDGE_DEADLINE_MS = 60_000;
+
+/**
  * The same idea for the composer's own activity dot, but sooner.
  *
  * Shorter than the ambient state because it is smaller and closer to what the learner just did:

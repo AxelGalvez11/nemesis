@@ -45,7 +45,11 @@ import {
 } from "@/lib/learn/objective-task";
 import { decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
 import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
-import { THINKING_VISIBLE_AFTER_MS, type ThinkingPhase } from "@/lib/learn/thinking-phases";
+import {
+  KNOWLEDGE_DEADLINE_MS,
+  THINKING_VISIBLE_AFTER_MS,
+  type ThinkingPhase,
+} from "@/lib/learn/thinking-phases";
 
 import { useDelayedFlag } from "./use-delayed-flag";
 
@@ -255,13 +259,58 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     }
     let live = true;
     setStatus("loading");
+    setError(null);
+    // 🔴 NINETY SECONDS WITH NO TRANSITION AND NO FAILURE MUST NOT BE REPRESENTABLE — owner, §33.
+    //
+    // The owner's own canvas `8c49587e` is sitting in exactly that state right now: "Mapping what
+    // you know", for ever, territory NULL, zero rows, and NO CONSOLE ERROR. There were two ways in
+    // and this effect had neither closed.
+    //
+    //   1. A THROW. This IIFE had no `catch`. Anything rejecting inside `ensureKnowledgeForCanvas` —
+    //      a network blip, a Supabase error, a malformed response — skipped every `setPhase(null)`
+    //      and `setStatus(...)` below it, leaving `loading` and the caption on screen for ever.
+    //   2. A PROMISE THAT NEVER SETTLES. A construction is one `fetch` with no timeout of its own,
+    //      so a connection that is accepted and never answered produces no error to catch at all.
+    //      No `catch` in the world reaches that one; only a deadline does.
+    //
+    // 🔴 THE DEADLINE ABORTS THE WORK, IT DOES NOT JUST STOP WAITING FOR IT. A timeout that raced a
+    // promise and moved on would leave the request running, still billable, and still able to
+    // resolve later and write knowledge for a canvas the learner has given up on. The signal is
+    // threaded all the way to the model call, so "we stopped waiting" and "it stopped" are the same
+    // event.
+    const deadline = new AbortController();
+    const expiry = setTimeout(() => deadline.abort(), KNOWLEDGE_DEADLINE_MS);
     void (async () => {
-      const resolved = await ensureKnowledgeForCanvas(uid, canvas, {
-        bypassOwnership: forced,
-        onPhase: (step) => {
-          if (live) setPhase(step);
-        },
-      });
+      let resolved: Awaited<ReturnType<typeof ensureKnowledgeForCanvas>>;
+      try {
+        resolved = await ensureKnowledgeForCanvas(uid, canvas, {
+          bypassOwnership: forced,
+          onPhase: (step) => {
+            if (live) setPhase(step);
+          },
+          signal: deadline.signal,
+        });
+      } catch (cause) {
+        // 🔴 A FAILURE THE LEARNER CAN SEE AND ACT ON, WHICH IS THE WHOLE REQUIREMENT. Not a silent
+        // return, and not a retry loop: reloading is a thing they can already do, and a caption
+        // that never changes is the one outcome that leaves them with nothing.
+        //
+        // It says the canvas is not lost, because it is not. Every earlier open's knowledge is
+        // durable and unaffected; what failed is this attempt to add to it.
+        if (!live) return;
+        clearTimeout(expiry);
+        setPhase(null);
+        setStatus("unavailable");
+        setError(
+          deadline.signal.aborted
+            ? "Nemesis is taking too long to map this material. Your canvas is safe. Reload to try again."
+            : cause instanceof Error && cause.message
+              ? `Nemesis could not map this material: ${cause.message}`
+              : "Nemesis could not map this material. Your canvas is safe. Reload to try again.",
+        );
+        return;
+      }
+      clearTimeout(expiry);
       if (!live) return;
       setKnowledge(resolved);
       const supported = supportedObjectives(resolved.objectives);
@@ -296,6 +345,9 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     })();
     return () => {
       live = false;
+      // The timer is cleared here as well as on both settled paths: unmounting mid-construction
+      // must not leave a timer that fires into a component nobody is looking at.
+      clearTimeout(expiry);
     };
     // 🔴 Keyed on the KNOWLEDGE INPUTS, not on `canvas`. The canvas object is replaced on every
     // block edit and on every keystroke of a rename draft; depending on it would re-resolve
