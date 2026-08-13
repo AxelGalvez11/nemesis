@@ -6,7 +6,7 @@ import { CONFIDENCE_WHEN_UNSTATED, TRUSTED_ENOUGH_TO_UPDATE_STATE, verdictIsTrus
 import { projectLearnerState, type LearnerEvidence } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import { objectivesForKnowledge } from "./learning-objective";
-import { chooseNextTeachingAction } from "./teaching-policy";
+import { ACT_AGAIN_AFTER_MS, chooseNextTeachingAction } from "./teaching-policy";
 
 // An uncertain judgement is not a judgement.
 //
@@ -158,14 +158,24 @@ test("🔴 an uncertain verdict lands on ASK AGAIN, never on a correction", () =
   // The whole point, and the reason this waited on D6. An uncertain reading of a CORRECT answer must
   // not send the learner into a correction — that teaches them something they may already know, and
   // before D6 it was a screen with no answer box that they could never leave.
-  const action = chooseNextTeachingAction({
-    knowledgeObject: KNOWLEDGE,
-    learnerState: state([ev("e1", ago(60_000), "understood", UNSURE)]),
-    now: NOW,
-    objective: OBJECTIVE!,
-    recentEvidence: [],
-  });
-  assert.equal(action.type, "retrieve", "asking is the only honest move when we could not read the answer");
+  //
+  // 🔴 "AGAIN" IS THE LOAD-BEARING WORD AND THIS TEST USED TO DENY IT. It asserted `retrieve` sixty
+  // seconds after the attempt — i.e. ask again NOW — which reads as intentional and is the same
+  // mistake as the four tests that pinned D6: a well-meant assertion naming the behaviour it was
+  // meant to prevent. What must hold is that the destination is never a correction; WHEN the next
+  // attempt comes is the churn guard's business.
+  const decide = (sinceMs: number) =>
+    chooseNextTeachingAction({
+      knowledgeObject: KNOWLEDGE,
+      learnerState: state([ev("e1", ago(sinceMs), "understood", UNSURE)]),
+      now: NOW,
+      objective: OBJECTIVE!,
+      recentEvidence: [],
+    });
+
+  assert.notEqual(decide(60_000).type, "show_correction", "never corrected for an answer we could not read");
+  assert.equal(decide(60_000).type, "defer", "and not re-asked one minute later either");
+  assert.equal(decide(ACT_AGAIN_AFTER_MS + 60_000).type, "retrieve", "asking is what is owed, later");
 });
 
 test("a confident wrong answer still gets its correction — the gate did not disarm teaching", () => {
@@ -196,4 +206,65 @@ test("🔴 nothing about trust is written to the database — the decision stays
     /TRUSTED_ENOUGH_TO_UPDATE_STATE/,
     "the threshold is consulted where state is READ, which is what makes it revisable",
   );
+});
+
+// ── 🔴 the loop this opened, which is D6 pointed the other way ──────────────
+
+test("🔴 an uncertain answer is NOT re-asked instantly — `unknown` stopped meaning `never asked`", () => {
+  // The regression this gate introduced, caught before it shipped. `case "unknown"` returned
+  // `retrieve` unconditionally, and that was safe only because zero evidence meant nobody had
+  // touched the objective. Once an uncertain judgement can leave a learner at `unknown` WITH
+  // evidence, a learner whose answers keep being read uncertainly gets the identical question back
+  // instantly, for ever — the correction dead end pointed the other way. Measured before the fix:
+  // three uncertain answers, the last one SECOND ago, still returned `retrieve`.
+  const evidence = [
+    ev("e1", ago(3 * 60_000), "understood", UNSURE),
+    ev("e2", ago(1_000), "understood", UNSURE),
+  ];
+  const s = state(evidence);
+  assert.equal(s.status, "unknown", "the gate is doing its job");
+  assert.equal(s.evidenceCount, 2, "and the attempts are still on the record");
+
+  const action = chooseNextTeachingAction({
+    knowledgeObject: KNOWLEDGE,
+    learnerState: s,
+    now: NOW,
+    objective: OBJECTIVE!,
+    recentEvidence: evidence,
+  });
+  assert.equal(action.type, "defer", "asking again one second later measures nothing");
+});
+
+test("🔴 a genuinely never-asked objective is still asked immediately", () => {
+  // Deferring here would delay the one thing this branch exists to do — prefer a task that reveals
+  // the learner over a question about them. 🔴 IT HOLDS WITHOUT AN EXPLICIT CLAUSE, and that is
+  // recorded rather than assumed: `msSince` returns POSITIVE_INFINITY when there is no evidence, so
+  // an untouched objective can never be "just acted on". An `evidenceCount > 0` guard was written
+  // here, calibration showed removing it turned nothing red, and it was deleted — a condition that
+  // cannot fail reads as protection the next person does not actually have.
+  const action = chooseNextTeachingAction({
+    knowledgeObject: KNOWLEDGE,
+    learnerState: state([]),
+    now: NOW,
+    objective: OBJECTIVE!,
+    recentEvidence: [],
+  });
+  assert.equal(action.type, "retrieve");
+  assert.match(action.because, /no evidence exists/);
+});
+
+test("🔴 the reason given to the learner stops claiming no evidence exists when there is some", () => {
+  // These strings are the answer to "why did Nemesis ask me this?". "No evidence exists" would be a
+  // plain falsehood to exactly the people it is shown to.
+  const evidence = [ev("e1", ago(5 * 3600_000), "understood", UNSURE)];
+  const action = chooseNextTeachingAction({
+    knowledgeObject: KNOWLEDGE,
+    learnerState: state(evidence),
+    now: NOW,
+    objective: OBJECTIVE!,
+    recentEvidence: evidence,
+  });
+  assert.equal(action.type, "retrieve", "long enough ago that asking is right again");
+  assert.equal(/no evidence exists/.test(action.because), false, "they have attempted this");
+  assert.match(action.because, /nothing conclusive/i);
 });
