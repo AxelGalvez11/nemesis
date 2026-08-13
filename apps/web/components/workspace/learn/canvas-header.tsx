@@ -1,21 +1,20 @@
 "use client";
 
-// The canvas's top controls.
+// The canvas's top controls, MINUS the exit.
 //
-// 🔴 THIS IS NOT A HEADER BAR, and it must never become one again. It is a transparent layer
-// of controls floating ON the canvas: no container, no background of its own, no border-bottom,
-// no shadow beneath it, no backdrop-filter. The whole surface is one uninterrupted sheet from
-// the top of the viewport to the composer, and the title is navigational context sitting on
-// that sheet — not the top edge of a page component.
+// 🔴 THE `×` LEFT THIS FILE ON PURPOSE (UX brief §38.2) — it now lives in `canvas-surface.tsx`,
+// above the render branch, and the floating `<header>` element went with it. The reason is not
+// tidiness: §38.1 takes the navigation rail off screen inside a canvas, which makes the `×` the
+// only way out, and an exit that lives here is an exit only the branches that render this
+// component have. One of them did not, and that state (resolving the canvas's knowledge) painted a
+// page with nothing on it to leave by. See the note at the top of canvas-surface.tsx.
 //
-// The regression this replaced was measurable: a full-width `border-b` painted a 1px line
-// across every one of the viewport's pixels at y≈54, which is exactly what makes a workspace
-// read as "an app page with a header" instead of a document. `canvas-shell.test.ts` asserts the
-// class list still carries no border/background utility, and the browser check in the PR walks
-// every element in the top 120px looking for a full-width painted edge.
+// What is left is genuinely optional chrome: the canvas's name and the two panels. All of it
+// legitimately disappears during a retrieval (`minimal`), which is exactly why the exit must not
+// be able to travel with it.
 //
-// The layer is also deliberately `pointer-events-none` with only its children re-enabled, so
-// the invisible strip cannot swallow clicks on the content underneath it.
+// 🔴 STILL NOT A HEADER BAR. No container, no background, no border, no shadow, no backdrop —
+// those assertions moved to canvas-surface.tsx along with the element that carries them.
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
@@ -25,7 +24,6 @@ import { ObjectivesControl, SourcesControl } from "./canvas-controls";
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
   onFiles: (files: FileList | File[]) => void;
-  onExit: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** The card or question being answered right now, so the objectives panel can say which one
@@ -49,7 +47,6 @@ interface CanvasHeaderProps {
 export function CanvasHeader({
   canvas,
   onFiles,
-  onExit,
   onRename,
   onDelete,
   activeTaskId,
@@ -57,28 +54,7 @@ export function CanvasHeader({
   modelKnowledge = false,
 }: CanvasHeaderProps) {
   return (
-    // 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
-    // owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;
-    // not measured against anything external, this row has no ChatGPT equivalent to match.
-    // 🔴 THE LEFT EDGE IS NOT A CONSTANT. When the nav rail is collapsed the shell floats a reopen
-    // toggle at the viewport's top-left, in exactly this corner, and the two printed on top of each
-    // other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever the toggle is not
-    // showing, so the header returns to a flush 12px on its own rather than carrying a permanent gap
-    // for a control that is not there.
-    <header
-      className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5"
-      style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
-    >
-      <button
-        aria-label="Leave the canvas"
-        className="pointer-events-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-        onClick={onExit}
-        title="Leave the canvas"
-        type="button"
-      >
-        <Codicon name="arrow-left" size="0.875rem" />
-      </button>
-
+    <>
       {/* Navigational context, not the page's heading — the lesson supplies its own hierarchy
           and a second large title on the same screen competes with it.
           🔴 Stays `pointer-events-none` (inherited). It is `flex-1`, so making it clickable
@@ -92,7 +68,7 @@ export function CanvasHeader({
 
       {/* §1: two compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
-          🔴 ABSENT DURING A RETRIEVAL, and the back arrow is deliberately the only thing left. The
+          🔴 ABSENT DURING A RETRIEVAL, and the `×` is deliberately the only thing left. The
           controls are not removed from the product — they are the session's, and the session is
           where they belong; this is the one second inside it where the learner is producing an
           answer and every glyph on screen is competition.
@@ -108,6 +84,6 @@ export function CanvasHeader({
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
         </>
       )}
-    </header>
+    </>
   );
 }

@@ -38,6 +38,7 @@ import { Suspense } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasHome } from "@/components/workspace/learn/canvas-home";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
+import { learnEntryFrom, learnSurface } from "@/lib/learn/learn-entry";
 import { policyOverrideFrom } from "@/lib/learn/policy-override";
 
 function LearnSurface() {
@@ -52,8 +53,14 @@ function LearnSurface() {
   // and, usefully, that behaviour no longer depends on the pathname, so a future `/learn/[id]`
   // would inherit it correctly rather than breaking it.
   const params = useSearchParams();
-  const canvasId = params.get("c");
-  const ask = params.get("ask");
+  // 🔴 WHICH SURFACE THIS IS, AS A VALUE — see lib/learn/learn-entry.ts. Two separate features now
+  // hang off the same answer (§38.1 hides the rail inside a canvas, §38.2 makes the `×` the only
+  // way out of one), and as inline conditions here neither could be enumerated over the entry
+  // paths a learner actually arrives by.
+  const entry = learnEntryFrom(params);
+  const surface = learnSurface(entry);
+  const canvasId = entry.c;
+  const ask = entry.ask;
   // What the URL is still allowed to say about the teaching-policy runtime: stop it, or bypass
   // ownership deliberately. Neither is an opt-in — see policy-override.ts, where the rules live and
   // are tested, rather than as an expression here that nothing could assert.
@@ -68,12 +75,15 @@ function LearnSurface() {
   // It carries no id because there is nothing to carry yet: `useCanvasSession(null)` mints the
   // canvas, and the files are claimed from the handoff once it exists. Without this the router
   // would land back on the landing page and the files would sit unclaimed until something else
-  // took them.
-  const startingNew = params.get("new") === "1";
+  // took them. (`learnSurface` reads it; the constant lives with the other entry parameters.)
 
   // No canvas named, nothing asked and nothing started: this is the landing surface.
-  if (!canvasId && !ask && !startingNew)
+  if (surface === "home")
     return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
+  // 🔴 EVERY OTHER ENTRY PATH LANDS HERE, AND `LearningCanvas` RENDERS `CanvasSurface`, WHICH
+  // RENDERS THE `×` WITH NO CONDITION AROUND IT. That chain is what makes §38.2 true for a deep
+  // link, a hard refresh, a return from sign-in, a topic, dropped material and the processing
+  // state alike — rather than six places each remembering to include an exit.
   return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyOverride={policyOverride} />;
 }
 
