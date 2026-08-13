@@ -16,6 +16,7 @@ import {
   type RecallCard,
   type RecallResult,
 } from "@/lib/learn/canvas-model";
+import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import { cn } from "@/lib/utils";
 
 import { selectableRegion } from "./use-canvas-selection";
@@ -248,7 +249,7 @@ function RecallOutcome({
   judging: boolean;
   onNext: () => void;
 }) {
-  if (judging) return <p className="mt-6 text-center text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>;
+  if (judging) return <p className="mt-6 text-center text-[0.875rem] text-(--ui-text-tertiary)">{THINKING_COPY.reading_answer}</p>;
   if (!result) return null;
 
   return (
@@ -358,7 +359,7 @@ export function CanvasTest({
         )}
 
         {question.format === "free" && judging === question.id && (
-          <p className="mt-6 text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>
+          <p className="mt-6 text-[0.875rem] text-(--ui-text-tertiary)">{THINKING_COPY.reading_answer}</p>
         )}
 
         {question.format === "free" && responded && (
@@ -467,7 +468,7 @@ function Judged({
         <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">{response.text}</p>
       </div>
 
-      {judging && <p className="text-[0.875rem] text-(--ui-text-tertiary)">Reading your answer…</p>}
+      {judging && <p className="text-[0.875rem] text-(--ui-text-tertiary)">{THINKING_COPY.reading_answer}</p>}
 
       {!judging && !evaluation && (
         // Not framed as the learner's failure: they answered, we could not read it. The answer

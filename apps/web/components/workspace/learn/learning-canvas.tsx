@@ -16,6 +16,7 @@ import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import { nextAction } from "@/lib/learn/canvas-state";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
+import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { CanvasComposer } from "./canvas-composer";
@@ -492,7 +493,7 @@ export function LearningCanvas({
       {showComposer && (
         <CanvasComposer
           busy={sink.kind === "policy" ? policy.judging : busy.kind === "command"}
-          busyLabel={sink.kind === "policy" ? "Reading your answer" : busy.label}
+          busyLabel={sink.kind === "policy" ? THINKING_COPY.reading_answer : busy.label}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.
