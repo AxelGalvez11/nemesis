@@ -85,8 +85,29 @@ export function decideNext(input: {
     };
   });
 
+  const owed = decisions.filter(
+    (decision) => decision.action.type !== "advance" && decision.action.type !== "defer",
+  );
+
+  // 🔴 NEVER-ESTABLISHED OUTRANKS DUE-FOR-REVIEW, AND THIS TIER IS LOAD-BEARING.
+  //
+  // Before objectives could become eligible again, this was free: `correct` produced `advance`,
+  // `advance` was unselectable, and nothing demonstrated could compete with anything unasked. Making
+  // demonstrated objectives askable again removed that accident — and without a tier, a review that
+  // came due two hours ago would beat an objective NOBODY HAS EVER BEEN ASKED, decided by nothing
+  // more principled than which identity key sorts first.
+  //
+  // That is the exact defect the reverse-direction acceptance case exists to catch: demonstrate
+  // "losartan → Cozaar" and the next question must be "Cozaar → ?", not the same direction again
+  // because its review interval happened to elapse. A learner would be re-asked what they just
+  // showed while a fact they have never seen waits behind it.
+  //
+  // 🔴 IT IS A PRECEDENCE RULE, NOT A SECOND INTERVAL. There is no number here and nothing to tune —
+  // exactly one value governs tempo (`RETRIEVAL_ELIGIBLE_AFTER_MS`) and this does not touch it.
+  // Within each tier the existing positional order still decides, so nothing else changes.
   return (
-    decisions.find((decision) => decision.action.type !== "advance" && decision.action.type !== "defer") ??
+    owed.find((decision) => decision.state.status !== "correct") ??
+    owed[0] ??
     decisions.find((decision) => decision.action.type === "defer") ??
     null
   );
