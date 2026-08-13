@@ -29,3 +29,13 @@ export const RECALL_PLACEHOLDER = "Answer…";
 
 /** What the composer says when nothing is being asked. */
 export const ASK_PLACEHOLDER = "Ask Nemesis or change how you're learning…";
+
+/**
+ * Material is attached and the canvas has not begun.
+ *
+ * 🔴 IT NAMES THE OPTION, NOT THE OBLIGATION — UX brief §3, *"uploading without a prompt must
+ * work"*. "Add an instruction" would read as a required field on a screen whose entire point is
+ * that nothing more is needed; "or just send" is what makes the empty case obviously legitimate
+ * rather than something the learner has to work out is allowed.
+ */
+export const START_WITH_MATERIAL_PLACEHOLDER = "Tell Nemesis how to work through this, or just send…";

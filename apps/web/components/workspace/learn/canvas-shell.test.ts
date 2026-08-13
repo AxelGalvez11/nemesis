@@ -65,9 +65,19 @@ test("the shell reserves clearance with padding rather than a header element", (
   // (12px inset + 28px control + 24px breathing room, was 16+32+24).
   assert.match(shell, /overflow-y-auto pt-\[64px\]/);
   // Two measurements of two different things, both taken off the references: the reading
-  // column is 680, the composer pill is 770. Neither is a rounding of the other.
+  // column is 680, the composer pill is 768. Neither is a rounding of the other.
+  //
+  // 🔴 768, WAS 770 — MEASURED, NOT TIDIED (UX brief §27.2). The owner measured ChatGPT's composer
+  // form at exactly 768px wide in their own browser at a 1440px viewport, against our 770. Two
+  // pixels is invisible; the reason to move is that 770 was a number nobody could point at, and a
+  // spec written from a measurement should hold the measured value so the next person comparing
+  // the two surfaces finds them equal rather than nearly equal.
+  //
+  // 🔴 AND IT IS WRITTEN IN PX, WHICH IS LOAD-BEARING HERE. `apps/web`'s root is 112.5%, so any
+  // rem-expressed width would render 12.5% larger than its number — 42rem, the shared chat
+  // composer's max width, is 756px and not 672. See canvas-composer.tsx's header.
   assert.match(shell, /"--canvas-column" as string\]: "680px"/);
-  assert.match(read("canvas-composer.tsx"), /max-w-\[770px\]/);
+  assert.match(read("canvas-composer.tsx"), /max-w-\[768px\]/);
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
   assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);

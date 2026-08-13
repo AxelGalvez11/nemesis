@@ -636,6 +636,33 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
 .canvas-phrase { animation: canvas-phrase-in 260ms ease-out both; }
 
+/* Material being read, concepts being mapped, a first question being chosen —
+   shown as content FORMING rather than as a wait (UX brief §5, §20, §21).
+   🔴 LEFT TO RIGHT, AND THAT DIRECTION IS THE PRODUCT'S ONE MOTION SYSTEM. §20:
+   "information forming from left to right". A spinner says WAIT; a line being
+   written says SOMETHING IS BEING MADE, which is the whole distinction the brief
+   draws.
+   🔴 THE HIGHLIGHT IS THE ONLY THING THAT MOVES. The bar does not slide, grow,
+   fade in and out, or change height — `background-position` travels across a
+   stationary element, so nothing reflows and the line keeps the exact geometry
+   the text that replaces it will occupy.
+   🔴 LOW CONTRAST BY CONSTRUCTION. The resting colour is the tertiary surface and
+   the travelling band is one step up it — not white, not the accent. §5 asks for
+   subtle and §19 for an interface that almost disappears; a bright sweep on a
+   quiet page becomes the most interesting thing on screen. */
+@keyframes canvas-forming { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.canvas-forming {
+  background-color: var(--ui-bg-tertiary);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ui-text-quaternary) 22%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: canvas-forming 1900ms linear infinite;
+}
+
 /* 🔴 REDUCED MOTION COVERS THE UTILITIES TOO, WHICH IS THE PART THAT GETS MISSED.
    Hand-written animations in this file were already guarded; `animate-pulse` is a
    Tailwind utility and was not, so a scoped paragraph kept breathing for someone
@@ -644,9 +671,15 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @media (prefers-reduced-motion: reduce) {
   .canvas-swap,
   .canvas-phrase,
+  .canvas-forming,
   [data-workspace] .animate-pulse {
     animation: none;
   }
+  /* 🔴 THE LINES STAY, THE SWEEP STOPS — they must not vanish. Someone who asked
+     the system to stop moving still has to be able to see that this region is
+     busy, so the placeholder holds its resting contrast and only the travelling
+     highlight is removed. Same principle as `animate-pulse` below. */
+  .canvas-forming { background-image: none; }
   /* Still has to read as "this region is busy" — it simply stops moving. */
   [data-workspace] .animate-pulse { opacity: 0.6; }
 }
