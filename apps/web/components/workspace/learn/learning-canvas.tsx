@@ -32,6 +32,7 @@ import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
 import { continueBelongsTo, continueOwner, declaredCognitiveMode, readingRequirementOf } from "@/lib/learn/canvas-continue";
+import { routeComposerText } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
 import { useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
@@ -256,10 +257,61 @@ export function LearningCanvas({
         await session.askAbout(only, text);
         return;
       }
+      // §11 + brief §15 — *"Make this simpler"* typed into the composer rewrites the passage IN
+      // PLACE, exactly as the selection toolbar's "Simpler" does. Until now only a selection could
+      // do it and typing the phrase appended another explanation underneath, which is the precise
+      // behaviour §11 exists to prevent.
+      //
+      // 🔴 THE REFERENT IS READ, NEVER GUESSED — see canvas-phrases.ts. "Most recent block" and
+      // "nearest the viewport" are inventions about time and gaze; the active reading region is
+      // derived from Continue presses the learner made themselves.
+      const routing = routeComposerText(text, {
+        awaitingDemonstration:
+          policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback,
+        hasReadingMaterial: canvas.blocks.length > 0,
+        selectedBlockId: only?.id ?? null,
+        unreadBlockIds: unreadChunk(canvas.blocks).map((block) => block.id),
+      });
+
+      if (routing.kind === "rewrite") {
+        const block = canvas.blocks.find((candidate) => candidate.id === routing.blockId);
+        if (block) {
+          // The same path the toolbar takes, so there is one rewrite implementation rather than
+          // two that drift. `rewritable` is true because a document block is exactly where a
+          // rewrite has somewhere to land.
+          await session.askAboutSelection(
+            {
+              anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
+              blockId: block.id,
+              endOffset: block.content.length,
+              regionId: block.id,
+              rewritable: true,
+              selectedText: block.content,
+              startOffset: 0,
+              surroundingText: block.content,
+            },
+            "simpler",
+          );
+          clearSelection();
+          return;
+        }
+      }
+
+      // 🔴 A REFUSAL IS SAID OUT LOUD. Silence here is indistinguishable from the feature being
+      // broken — the learner typed an instruction and would be left wondering whether Nemesis
+      // heard it. The message names the action that resolves the ambiguity rather than reporting
+      // an internal state.
+      if (routing.kind === "refused") {
+        session.showNotice(routing.message);
+        return;
+      }
+
+      // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
+      // request (§33), which is the policy's to answer, not a rewrite.
       await session.command(text, selected);
       clearSelection();
     },
-    [canvas, clearSelection, selected, session],
+    [canvas, clearSelection, policy.decision, policy.feedback, policy.prompt, selected, session],
   );
 
   // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
