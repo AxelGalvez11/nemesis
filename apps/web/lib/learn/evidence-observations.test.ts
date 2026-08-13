@@ -9,6 +9,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import {
   UNSUPPORTED_RETRIEVAL,
   evidenceForSubmission,
+  judgementOf,
   outcomeFor,
   retrievalPromptFor,
   unobtainedEvidence,
@@ -70,7 +71,7 @@ function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: numb
   return evidenceForSubmission({
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: [outcomeFor(OBJECTIVE, EVALUATION)],
+    judgement: judgementOf([outcomeFor(OBJECTIVE, EVALUATION)]),
     prompt: PROMPT,
     responseText: response.text,
     ...(response.tookMs !== undefined ? { tookMs: response.tookMs } : {}),

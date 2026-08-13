@@ -36,6 +36,7 @@ import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
   evidenceForSubmission,
+  judgementOf,
   objectiveAsTask,
   outcomeFor,
   retrievalPromptFor,
@@ -316,7 +317,20 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    */
   const record = useCallback(
     async (built: readonly Parameters<typeof recordEvidence>[1][]) => {
-      let written = built.length > 0;
+      // 🔴 NOTHING TO WRITE IS NOT A FAILURE TO WRITE, AND RUNTIME-006 MADE THIS REACHABLE.
+      //
+      // `written` used to start as `built.length > 0`, so an empty array fell straight into the
+      // error below and told the learner *"That answer was judged, but Nemesis could not save it"* —
+      // both halves false when the judge was never reached. It was unreachable before, because
+      // every path returned one row per target. `noJudgement()` now legitimately produces zero rows
+      // for any prompt, and it is a value a caller is invited to construct and hand down here.
+      //
+      // So the guard lives at the writer rather than at the one call site that currently avoids it:
+      // an outage writes nothing AND claims nothing. No error, and no refresh — nothing changed, so
+      // re-reading would be a round trip that can only tell us what we already know.
+      if (built.length === 0) return;
+
+      let written = true;
       for (const row of built) {
         // Sequential rather than concurrent: they conflict on the same index, and a burst of
         // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
@@ -397,6 +411,13 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
         // here would charge someone for our outage — the same absence-as-evidence defect the whole
         // design exists to avoid — so nothing is recorded and the prompt stays put for another go.
         // The cost is honest and bounded: a flaky judge means no progress, never wrong progress.
+        //
+        // 🔴 THIS BRANCH IS `noJudgement()` — AND IT IS NO LONGER THE ONLY THING HOLDING THE LINE.
+        // Until RUNTIME-006 the invariant lived entirely in this early return: pass `[]` further
+        // down and every target would have been written as "asked, showed nothing". `Judgement` now
+        // carries the distinction, so a future caller that deletes this guard cannot silently get
+        // the wrong behaviour — it has to say which case it is in. The return stays because the
+        // UI differs too: `record()` reports a save failure, which is not what happened here.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
         // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
         // ends "Your response was saved" — true on the six-stage path, where the answer is written
@@ -424,7 +445,11 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
           // a multi-objective judge exists it returns one of these per objective it actually
           // assessed, and the fan-out routes them unchanged — nothing here has to spread a verdict
           // across a set, which is the one thing that would record demonstrations nobody made.
-          outcomes: [outcomeFor(decision.objective, evaluation)],
+          //
+          // 🔴 `judged(...)` RATHER THAN A BARE ARRAY — RUNTIME-006. Reaching this line is itself
+          // the claim that we have an account of the performance. The unreachable-judge case is
+          // `noJudgement()` and writes nothing; it is handled above, before anything is built.
+          judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
           prompt: active,
           responseText: said,
           ...(tookMs !== undefined ? { tookMs } : {}),

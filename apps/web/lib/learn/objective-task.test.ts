@@ -8,6 +8,8 @@ import { objectivesForKnowledge, type LearningObjective } from "./learning-objec
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 import {
   evidenceForSubmission,
+  judgementOf,
+  noJudgement,
   objectiveAsTask,
   objectivePromptText,
   outcomeFor,
@@ -49,7 +51,7 @@ function judged(input: {
   return evidenceForSubmission({
     canvasId: "c1",
     occurredAt: input.occurredAt ?? "2026-08-11T12:00:00.000Z",
-    outcomes: [outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)],
+    judgement: judgementOf([outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)]),
     prompt: input.prompt,
     responseText: input.text ?? "Cozaar",
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
@@ -245,7 +247,7 @@ test("🔴 responseId identifies the ANSWER, never the objective", () => {
   const rows = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: [outcomeFor(GENERIC_TO_BRAND, EVALUATION), outcomeFor(BRAND_TO_GENERIC, EVALUATION)],
+    judgement: judgementOf([outcomeFor(GENERIC_TO_BRAND, EVALUATION), outcomeFor(BRAND_TO_GENERIC, EVALUATION)]),
     prompt,
     responseText: "Cozaar",
     tookMs: 4200,
@@ -323,7 +325,7 @@ test("🔴 acceptance 1+2: one submission across three objectives is ONE perform
   const rows = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
     tookMs: 20_000,
@@ -346,7 +348,7 @@ test("🔴 acceptance 3: an objective the answer did not address is NOT demonstr
   const rows = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: [outcomeFor(CHAIN[0]!, EVALUATION), outcomeFor(CHAIN[1]!, EVALUATION)],
+    judgement: judgementOf([outcomeFor(CHAIN[0]!, EVALUATION), outcomeFor(CHAIN[1]!, EVALUATION)]),
     prompt: CHAIN_PROMPT,
     responseText: "the first two links",
     tookMs: 12_000,
@@ -367,7 +369,7 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
   const first = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });
@@ -376,7 +378,7 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
     // A later clock, because the second arrival really is later. It must change nothing that the
     // index conflicts on.
     occurredAt: "2026-08-12T00:00:07.000Z",
-    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });
@@ -399,10 +401,10 @@ test("🔴 a judged outcome for an objective the task did not target writes NO r
   const rows = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: [
+    judgement: judgementOf([
       outcomeFor(GENERIC_TO_BRAND, EVALUATION),
       { objectiveIdentityKey: "association:v2:never-asked", verdict: "incorrect" },
-    ],
+    ]),
     prompt: retrievalPromptFor(GENERIC_TO_BRAND, "answer-1"),
     responseText: "Cozaar, and also something nobody asked about",
   });
@@ -436,9 +438,129 @@ test("🔴 the operation is the TASK'S, identical on every row it writes", () =>
   const rows = evidenceForSubmission({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: CHAIN.map((objective) => outcomeFor(objective, EVALUATION)),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });
   assert.deepEqual(new Set(rows.map((row) => row.operation)), new Set(["explain"]));
+});
+
+// ── RUNTIME-006: "nothing was demonstrated" and "we never got a judgement" ───────────────────────
+//
+// 🔴 THE DEFECT THESE EXIST FOR IS INVISIBLE AT THE TYPE LEVEL AND SILENT AT RUNTIME. Before the
+// split, `evidenceForSubmission` took a bare `outcomes` array, and a `catch` or a failed parse
+// produces an empty one naturally. That empty array fanned out into a row per target saying
+// "we asked and they showed nothing" — a durable false claim about a person, authored by our own
+// outage, with nothing broken anywhere for a test to catch. It was sound only because `submit`
+// happened to return early one layer up.
+//
+// So these assert BEHAVIOUR — how many rows get written, and what they say — not the shape of a
+// type. Each is calibrated by collapsing `judged: false` back into an empty outcomes array, which
+// turns them red by WRITING ROWS THAT SHOULD NOT EXIST rather than by failing to compile.
+
+/**
+ * The rows that would reach `recordEvidence`, one call each.
+ *
+ * 🔴 STATED PRECISELY RATHER THAN GRANDLY: this is not a fake database and it does not simulate
+ * `record()`. It relies on one true fact — `record()` in `use-policy-runtime.ts` loops the array it
+ * is handed and calls `recordEvidence` once per element — so a row here is a write there, and a
+ * count here is a count of durable claims. That is what makes these assertions behavioural rather
+ * than structural: they fail by PRODUCING ROWS THAT WOULD BE WRITTEN, not by failing to compile.
+ */
+function writesFrom(rows: readonly EvidenceToRecord[]): readonly EvidenceToRecord[] {
+  return rows;
+}
+
+test("🔴 RUNTIME-006: a judge that could not be reached writes NOTHING, for any target", () => {
+  const written = writesFrom(
+    evidenceForSubmission({
+      canvasId: "c1",
+      judgement: noJudgement(),
+      occurredAt: "2026-08-12T00:00:00.000Z",
+      prompt: CHAIN_PROMPT,
+      responseText: "a real answer that never reached a judge",
+      tookMs: 20_000,
+    }),
+  );
+
+  // Three targets were put to the learner and the database must still learn nothing about any of
+  // them. An outage is not a learner failure.
+  assert.equal(written.length, 0, "an unreachable judge must not write a single row");
+});
+
+test("🔴 RUNTIME-006: a judge that RAN and established nothing writes a row per target", () => {
+  const written = writesFrom(
+    evidenceForSubmission({
+      canvasId: "c1",
+      judgement: judgementOf([]),
+      occurredAt: "2026-08-12T00:00:00.000Z",
+      prompt: CHAIN_PROMPT,
+      responseText: "something that showed nothing",
+      tookMs: 20_000,
+    }),
+  );
+
+  assert.equal(written.length, CHAIN.length, "every target that was asked about gets its record");
+  for (const row of written) {
+    assert.equal(row.demonstrationObtained, false);
+    // 🔴 NOT `incorrect`. Nothing was shown about this objective; the learner was not contradicted.
+    assert.equal(row.verdict, null);
+  }
+});
+
+test("🔴 RUNTIME-006: the two emptinesses produce OPPOSITE writes — that is the whole point", () => {
+  const shared = {
+    canvasId: "c1",
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt: CHAIN_PROMPT,
+    responseText: "same answer, same targets, same everything else",
+  } as const;
+
+  const ranAndFoundNothing = writesFrom(evidenceForSubmission({ ...shared, judgement: judgementOf([]) }));
+  const neverGotAJudgement = writesFrom(evidenceForSubmission({ ...shared, judgement: noJudgement() }));
+
+  // Identical inputs in every respect except which emptiness they carry, and the durable
+  // consequences must not be the same value. A bare array made these indistinguishable.
+  assert.equal(ranAndFoundNothing.length, 3);
+  assert.equal(neverGotAJudgement.length, 0);
+  assert.notEqual(ranAndFoundNothing.length, neverGotAJudgement.length);
+});
+
+test("🔴 RUNTIME-006: an admission is an ACCOUNT, not an outage — it still writes", () => {
+  // "I don't know" never goes near an evaluator, so the tempting reading is that there is no
+  // judgement. There is: the opportunity was given and nothing was demonstrated, which is a fact
+  // worth keeping about every target that was asked. Routing it through `noJudgement()` would
+  // silently delete the record of someone telling us they did not know.
+  const written = writesFrom(
+    unobtainedEvidence({
+      canvasId: "c1",
+      occurredAt: "2026-08-12T00:00:00.000Z",
+      prompt: CHAIN_PROMPT,
+      responseText: "I don't know",
+      tookMs: 4_000,
+    }),
+  );
+
+  assert.equal(written.length, CHAIN.length);
+  for (const row of written) {
+    assert.equal(row.demonstrationObtained, false);
+    assert.equal(row.verdict, null);
+    // The attempt was still watched: absent latency and a measured one are different observations.
+    assert.equal(row.responseLatencyMs, 4_000);
+  }
+});
+
+test("🔴 RUNTIME-006: an unreached judge does not even mint a performance", () => {
+  // `performancesIn` groups the log by response identity. A refusal that wrote rows would show up
+  // here as a performance the learner never completed, and `demonstrationCount` is what the policy
+  // reads to decide whether something has been practised.
+  const rows = evidenceForSubmission({
+    canvasId: "c1",
+    judgement: noJudgement(),
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    prompt: CHAIN_PROMPT,
+    responseText: "unjudged",
+  });
+  const log = rows.map((row, index) => ({ ...row, id: `row-${index}` }) as unknown as LearnerEvidence);
+  assert.equal(performancesIn(log).size, 0, "no rows, so no performance — the attempt is not counted");
 });

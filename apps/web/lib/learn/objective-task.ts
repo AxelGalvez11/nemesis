@@ -76,6 +76,64 @@ export interface SubmissionOutcome {
 }
 
 /**
+ * Whether we have an account of this performance at all — and, if we do, what it established.
+ *
+ * 🔴 THE TWO EMPTINESSES ARE OPPOSITE OBLIGATIONS, AND A BARE ARRAY CANNOT TELL THEM APART.
+ *
+ *   | empty because                                   | required behaviour                        |
+ *   |-------------------------------------------------|-------------------------------------------|
+ *   | we asked, and nothing was shown                 | a row per target: obtained false, verdict null |
+ *   | the judge was unreachable or unparseable        | NO ROWS AT ALL, for any target            |
+ *
+ * A `catch` or a failed parse naturally produces an empty array. With `outcomes: readonly T[]` as
+ * the parameter, that empty array walks straight into the fan-out and writes *"we asked and they
+ * showed nothing"* across every target — a durable false claim, authored by an outage, charging a
+ * learner for our failure. No test catches it, because nothing is broken: it is a REPRESENTATION
+ * GAP, and the code does exactly what it says.
+ *
+ * 🔴 AND THE OLD ARRANGEMENT WAS SOUND ONLY BY LUCK OF THE CALLER. `submit` returned early on
+ * `!result.value`, so the bad value never reached here — the invariant lived in an early return one
+ * layer up rather than in the type. That holds exactly as long as a judge's failure is
+ * distinguishable from its silence, and it stops the moment a multi-objective judge returns a SHORT
+ * list for a partial judgement and NOTHING for a failed one. Then both look like `[]` at the call
+ * site and the caller has nothing left to branch on.
+ *
+ * So the distinction moves into the type, the way `AnswerSink` made two answer surfaces
+ * unrepresentable rather than merely unlikely.
+ *
+ * 🔴 `judged: true` MEANS "WE HAVE AN ACCOUNT", NOT "A MODEL RAN". A learner who says *"I don't
+ * know"* was never sent to an evaluator, and that is still a complete account of the performance:
+ * the opportunity was given and nothing was demonstrated. It is `judged: true` with no outcomes —
+ * see `unobtainedEvidence`. The false case is reserved for *we do not know what happened*.
+ */
+export type Judgement =
+  | { judged: true; outcomes: readonly SubmissionOutcome[] }
+  | { judged: false };
+
+/**
+ * What the judge established. Use for any account of a performance, including "nothing was shown".
+ *
+ * 🔴 THE EMPTY CASE IS MEANINGFUL AND MUST STAY REACHABLE. `judgementOf([])` is not a degenerate
+ * call — it is the honest record of an opportunity that produced no demonstration, and it writes a
+ * row per target saying so. Collapsing it into `noJudgement()` would delete the difference between
+ * "we asked and learned nothing" and "we never found out", which is the whole point of this type.
+ */
+export function judgementOf(outcomes: readonly SubmissionOutcome[]): Judgement {
+  return { judged: true, outcomes };
+}
+
+/**
+ * No account of this performance exists. Writes NOTHING, for any target.
+ *
+ * 🔴 AN OUTAGE IS NOT A LEARNER FAILURE. A judge we could not reach says nothing about the person
+ * who answered, so the durable record must stay silent rather than record a `not_demonstrated` they
+ * did not earn. The cost is honest and bounded: a flaky judge means no progress, never wrong progress.
+ */
+export function noJudgement(): Judgement {
+  return { judged: false };
+}
+
+/**
  * The one thing the learner is being asked right now.
  *
  * `id` is minted by the caller ONCE per policy decision and is the idempotency key for whatever
@@ -259,7 +317,8 @@ export function evidenceForSubmission(input: {
    */
   tookMs?: number;
   /**
-   * What the judge established, per objective. Judged elsewhere; routed here.
+   * Whether there is an account of this performance, and what it established per objective.
+   * Judged elsewhere; routed here.
    *
    * 🔴 AN OUTCOME NAMING AN OBJECTIVE THE PROMPT DID NOT TARGET IS DISCARDED. That is evidence
    * about a question nobody was asked — the same defect as the judge's `alsoWeakConceptIds`
@@ -267,13 +326,21 @@ export function evidenceForSubmission(input: {
    * learner asserted is telling us something true and possibly valuable, but it is not a
    * demonstration of anything this task put to them, and storing it here would put a claim in the
    * durable record that no prompt supports.
+   *
+   * 🔴 AND `{ judged: false }` WRITES NOTHING AT ALL — see `Judgement`. It is not "no outcomes".
    */
-  outcomes: readonly SubmissionOutcome[];
+  judgement: Judgement;
   canvasId: string | null;
   occurredAt: string;
 }): EvidenceToRecord[] {
-  const { outcomes, prompt } = input;
-  const judged = new Map(outcomes.map((outcome) => [outcome.objectiveIdentityKey, outcome]));
+  const { judgement, prompt } = input;
+
+  // 🔴 THE FIRST THING, AND IT RETURNS RATHER THAN FALLING THROUGH. No account of the performance
+  // exists, so there is nothing true to write about any target. Every line below this would author
+  // a claim about a learner from our own failure to reach a judge.
+  if (!judgement.judged) return [];
+
+  const byKey = new Map(judgement.outcomes.map((outcome) => [outcome.objectiveIdentityKey, outcome]));
   // 🔴 TOTAL OVER THE TARGETS, NOT OVER THE OUTCOMES, AND THAT ASYMMETRY IS THE DESIGN. Iterating
   // the judge's list would write a row only where it happened to speak, so an objective it stayed
   // silent about would leave NO row — indistinguishable from never having been asked. Every
@@ -283,7 +350,7 @@ export function evidenceForSubmission(input: {
     rowForTarget({
       canvasId: input.canvasId,
       occurredAt: input.occurredAt,
-      outcome: judged.get(target.identityKey) ?? null,
+      outcome: byKey.get(target.identityKey) ?? null,
       prompt,
       responseText: input.responseText,
       target,
@@ -409,10 +476,17 @@ export function unobtainedEvidence(input: {
   // different teaching, which is the distinction the two columns exist to keep.
   //
   // It is the same fan-out as a judged answer with no outcomes at all, which is exactly what it is.
+  //
+  // 🔴 `judgementOf([])`, NOT `noJudgement()`, AND THE DIFFERENCE IS THE WHOLE OF RUNTIME-006. Nobody
+  // sent this to an evaluator, so "judged" reads oddly — but we have a COMPLETE account of what
+  // happened: the opportunity was given and nothing was demonstrated. That is a fact about the
+  // performance and it is worth recording against every target. `noJudgement()` means the opposite,
+  // that we do not know what happened, and using it here would silently delete the record of
+  // someone telling us they did not know.
   return evidenceForSubmission({
     canvasId: input.canvasId,
+    judgement: judgementOf([]),
     occurredAt: input.occurredAt,
-    outcomes: [],
     prompt: input.prompt,
     responseText: input.responseText,
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
