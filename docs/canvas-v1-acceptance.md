@@ -376,6 +376,70 @@ unrelated to evidence is not adaptive either, and is the easier of the two to mi
 **D4 and D5 are hard invariants.** Viewing is not evidence. Continue is not evidence.
 Acknowledgement is not evidence.
 
+## 🔴 M. A CORRECT RETRIEVAL IS NOT TERMINAL — REQUIRED
+
+**Owner runtime invariant, 2026-08-13:**
+
+> **A successful retrieval suppresses immediate repetition; it does not suppress future retrieval.
+> Every answer writes evidence, updates the learner model, and reschedules the knowledge object for
+> future eligibility.**
+
+**Two separate decisions follow every answer, and conflating them is the defect this guards against:**
+
+| Decision | Correct | Partial / wrong |
+|---|---|---|
+| **UI transition** — what happens *now* | **auto-advance**, no Continue | show the correction long enough to absorb, then continue |
+| **Memory scheduling** — when eligible *again* | fast + confident → longer interval · slow / hesitant → shorter, possibly again this session | partial → soon · incorrect → **delayed re-retrieval after intervening material** |
+
+Repeated correct retrievals → progressively longer intervals.
+
+🔴 **Auto-advance must NEVER mutate an item into "done forever." It means only: not the very next prompt.**
+
+| # | Criterion |
+|---|---|
+| M1 | 🔴 A correct answer removes the objective from the **next** prompt, never from **future** eligibility. A named test goes red if `correct` ever becomes terminal. |
+| M2 | Every answer writes evidence, updates the learner model, and **reschedules** the object. |
+| M3 | 🔴 **After a correction, the same objective may not be the immediate next prompt.** Intervening retrievals come first — otherwise the learner echoes working memory and the re-ask measures nothing. |
+| M4 | Repeated correct retrievals across time lengthen the interval. |
+
+### The associative lane
+
+> **Associative facts are cheap to present and cheap to answer. Prefer rapid, repeated retrieval with
+> spacing and interleaving. A correct response advances instantly, but the fact remains active until
+> the memory model has sufficient repeated evidence across time.**
+
+```
+Valsartan belongs to what class? → ARB  ✓  [next appears immediately]
+   … 3–10 items later, or when the scheduler thinks useful …
+Give me an example of an ARB.  → valsartan  ✓  [next]
+   … then hours or days later, per the memory estimate …
+```
+
+### 🔴 M3 IN FULL, BECAUSE THE WRONG VERSION LOOKS RIGHT
+
+```
+FORBIDDEN                              REQUIRED
+What is an ARB?  → wrong               What is an ARB?  → wrong
+Correction: valsartan                  Correction: valsartan   [absorb]
+What is an ARB?  → "valsartan"         … 2–5 other retrievals …
+                                       Name an ARB.  → valsartan
+```
+
+**The forbidden version measures working memory, not learning.** The learner echoes a word still on
+screen and the system records a demonstration that proves nothing. This is the same class as
+`D6` — *a correction requires later independent re-demonstration*.
+
+🔴 **`actedOn` moves an objective to the back of the queue — but the back of a two-item queue is the
+next item.** Reordering is not spacing. With four objectives on the acceptance canvas this is live,
+not theoretical.
+
+### Sequencing note
+
+**Evidence first, scheduling derived.** `docs/canvas-cognitive-runtime.md` places FSRS downstream of
+evidence, and `response → 1-4 → that IS learner state` remains forbidden. If proper spacing requires
+a scheduling capability that does not exist, **it is named and sequenced — not improvised inside the
+runtime.**
+
 ## E. At least one richer cognitive structure — REQUIRED
 
 Causal knowledge is the current candidate. For `A → B → C → D`, Canvas must distinguish
