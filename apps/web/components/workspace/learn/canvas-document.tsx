@@ -12,6 +12,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { isRewritten } from "@/lib/learn/canvas-ops";
+import { isRead, offersContinue } from "@/lib/learn/canvas-reading";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,10 @@ interface CanvasDocumentProps {
   busyBlockIds: string[];
   /** §11 — restore one passage to the wording it had before the learner rewrote it. */
   onRestore: (blockId: string) => void;
+  /** §12 — the learner says they have finished the chunk on screen. */
+  onFinishReading: () => void;
+  /** A retrieval prompt is up and unanswered, so §12's control must not offer a way past it. */
+  awaitingDemonstration: boolean;
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
@@ -58,6 +63,8 @@ export function CanvasDocument({
   onSelect,
   busyBlockIds,
   onRestore,
+  onFinishReading,
+  awaitingDemonstration,
   aside,
   onDismissAside,
   onToggleCollapsed,
@@ -119,6 +126,7 @@ export function CanvasDocument({
           aside={aside?.blockId === block.id ? aside.text : null}
           block={block}
           busy={busyBlockIds.includes(block.id)}
+          read={isRead(block)}
           onRestore={() => onRestore(block.id)}
           canvas={canvas}
           key={block.id}
@@ -133,13 +141,50 @@ export function CanvasDocument({
         />
       ))}
 
-      {/* 🔴 QUIETER, NOT REMOVED (compact-UI pass, owner spec). The exposure acknowledgment is
-          still a real, legitimate signal -- it rotates the recall queue -- but a solid-filled
-          pill reading like the page's one purchase button overstated it. An outline reads as
-          "the move forward exists here" without competing with the content above it. */}
+      {/* §12 — "There should be a 'continue' button once user finishes reading, at the bottom of
+          the paragraph chunk."
+
+          🔴 THIS IS THE CONTROL THAT WAS ALREADY HERE, REPOINTED. `nextAction` still offers
+          `{ to: "recall", label: "I've read this" }` for a reading canvas — the same position, the
+          same meaning — and then refuses it, because `recall` is an evidence stage and the
+          six-stage retirement closed every entrance to those. Measured, not assumed: `nextAction`
+          on a `learn` canvas holding one block returns `null`, so nothing has rendered here for
+          weeks. The control was right; its DESTINATION was the problem.
+
+          🔴 ONE CONTROL AT THE END OF THE MATERIAL, NEVER ONE PER BLOCK. A real import stored 197
+          blocks; a per-block Continue would be 197 presses with 196 paragraphs still visible
+          underneath. §12's "bottom of the paragraph chunk" is the chunk Nemesis presented.
+
+          🔴 AND IT CANNOT APPEAR WHILE AN ANSWER IS OWED. §17 forbids a Continue after an answer,
+          but the reason it is IMPOSSIBLE rather than merely absent is N3: a control that moves the
+          learner on while a demonstration is owed is a way to press past the question. The
+          predicate lives in canvas-reading.ts beside the composer's equivalent, so the two doors
+          cannot disagree.
+
+          Restrained per §19 and §12: an inline control ending a passage, not a call to action. It
+          keeps the outline the previous control earned — "the move forward exists here" without
+          competing with the content above it. */}
+      {offersContinue({
+        awaitingDemonstration,
+        busy,
+        hasUnreadMaterial: visible.some((block) => !isRead(block)),
+      }) && (
+        <button
+          className="mt-10 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          onClick={onFinishReading}
+          type="button"
+        >
+          Continue
+        </button>
+      )}
+
+      {/* 🔴 THE LEGACY MOVE IS STILL RENDERED WHERE IT IS STILL REACHABLE, AND THAT IS NOT DEAD
+          CODE. `nextAction` returns null for `learn` — the case §12 replaces — but
+          `targeted_relearn` is reading material rather than an evidence stage and still offers a
+          move. Deleting this would take that path's only control with it. */}
       {next && (
         <button
-          className="mt-10 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
+          className="mt-10 ml-3 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
           disabled={busy}
           onClick={onAdvance}
           type="button"
@@ -160,6 +205,8 @@ interface BlockViewProps {
   canvas: LearningCanvas;
   selected: boolean;
   busy: boolean;
+  /** §12 — the learner has said they finished reading this chunk. */
+  read: boolean;
   /** §11 — put this passage back the way it was written. */
   onRestore: () => void;
   aside: string | null;
@@ -175,6 +222,7 @@ function BlockView({
   canvas,
   selected,
   busy,
+  read,
   onRestore,
   aside,
   sourceOpen,
@@ -197,6 +245,13 @@ function BlockView({
         // paragraph being rewritten is information being formed, so it gets the same travelling
         // band the thinking preview uses. See globals.css for why it carries no fill.
         busy && "canvas-rewriting",
+        // §12 / §7 — "resolved history stays accessible but recedes". Material the learner has
+        // said they finished goes quieter and STAYS WHERE IT IS, at full length.
+        // 🔴 NOT `collapsed`, AND NOT HIDDEN. J1 removed a one-click control from this very
+        // surface that filtered blocks out of the document on a learner's own claim; folding a
+        // passage to a one-line chevron on a reading click rebuilds that with a nicer label.
+        // Opacity only — nothing moves, nothing reflows, and scrolling back reads it normally.
+        read && !busy && "opacity-60 transition-opacity duration-500",
       )}
       data-block-id={block.id}
       data-selected={selected ? "true" : undefined}

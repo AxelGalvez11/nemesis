@@ -36,6 +36,12 @@ export type LearningEventType =
   // separately from the request: a simplification that gets restored is a signal the rewrite made
   // the material WORSE for this learner, which a request count alone cannot tell you.
   | "simplification_restored"
+  // §12 — the learner said they had finished reading the chunk on screen.
+  // 🔴 A PACING SIGNAL, NOT A CLAIM ABOUT KNOWLEDGE (R3). It is here rather than in evidence
+  // precisely because this store provably cannot reach a verdict. Its `activeElapsedMs` is the
+  // part §25 expects to become useful later — how long a chunk took is a difficulty signal, and
+  // difficulty is not the same question as mastery.
+  | "reading_finished"
   | "example_requested"
   | "why_requested"
   | "source_opened"
