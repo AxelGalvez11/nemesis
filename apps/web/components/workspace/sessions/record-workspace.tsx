@@ -50,6 +50,10 @@ interface RecordWorkspaceProps {
   onBusyChange?: (busy: boolean) => void;
   /** Hands pause/resume up on mount and null on unmount. */
   registerControls?: (controls: RecordControls | null) => void;
+  /** A caller that brings its own destination for the finished audio, instead of the durable
+   *  /sessions job pipeline. The Canvas uses this to make a lecture a source on the canvas it was
+   *  recorded from — see `lib/workspace/canvas-recording.ts`. Absent, nothing changes. */
+  deliver?: (blob: Blob, seconds: number, silenceSkipped: string | null) => Promise<void>;
 }
 
 
@@ -60,6 +64,7 @@ export function RecordWorkspace({
   accessToken = null,
   active = false,
   className,
+  deliver,
   discard = false,
   uid = null,
   onDiscarded,
@@ -73,6 +78,7 @@ export function RecordWorkspace({
   const recording = useRecordingSession({
     accessToken,
     active,
+    deliver,
     discard,
     onComplete: onFinished,
     onDiscarded,

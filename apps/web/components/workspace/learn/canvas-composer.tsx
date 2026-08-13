@@ -65,6 +65,17 @@ interface CanvasComposerProps {
   /** Adding material belongs here as well as in the sources panel: it is the one control the
    *  learner reaches for mid-lesson, and hunting for it inside a drawer is friction. */
   onFiles: (files: FileList | File[]) => void;
+  /**
+   * Start recording a lecture. Absent means this surface cannot record, and the `+` stays the plain
+   * file control it has always been.
+   *
+   * 🔴 IT LIVES UNDER `+`, NOT AS A SECOND MICROPHONE. The mic beside the text is DICTATION —
+   * speaking instead of typing, an answer or a question. Recording is capturing a lecture, which is
+   * MATERIAL, and `+` is already labelled "Add material". Two mic glyphs side by side would make the
+   * learner guess which one keeps their lecture, and §L groups the five composer behaviours exactly
+   * this way: upload and record are both ways of bringing material in.
+   */
+  onRecord?: (() => void) | null;
   /** What the canvas is asking for, or null while reading. */
   task: ActiveTask | null;
   busy: boolean;
@@ -112,6 +123,7 @@ export function CanvasComposer({
   onAsk,
   onAnswer,
   onFiles,
+  onRecord = null,
   task,
   busy,
   busyLabel,
@@ -120,13 +132,36 @@ export function CanvasComposer({
   advanceBusy = false,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
+  /** The file input is triggered from a menu item now, so it needs a handle rather than a wrapping
+   *  label. It stays `sr-only` rather than `hidden` — a hidden input is out of the accessibility
+   *  tree entirely. */
+  const filePicker = useRef<HTMLInputElement>(null);
+  const addMenu = useRef<HTMLDivElement>(null);
   const dictation = useCanvasDictation();
   /** Set the moment the microphone is used, because §23 reads elapsed time differently for
    *  speech and typing and a mislabelled answer is read against the wrong baseline. */
   const spoke = useRef(false);
   /** When the current prompt appeared, for response latency. Reset per prompt, not per render. */
   const startedAt = useRef(Date.now());
+
+  // The menu closes on a press anywhere else and on Escape. Without the first, a learner who
+  // changed their mind has to find the `+` again to dismiss it; without the second it is a trap for
+  // anyone on a keyboard.
+  useEffect(() => {
+    if (!addOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!addMenu.current?.contains(event.target as Node)) setAddOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAddOpen(false); };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [addOpen]);
   /** Text typed before dictation started, so switching between talking and the keyboard
    *  mid-answer throws away neither half. */
   const typedBefore = useRef("");
@@ -285,34 +320,76 @@ export function CanvasComposer({
           {/* Stays put through every state, including dictation: spatial continuity is the
               reason there is one composer at all. Subdued, not moved, while listening.
               🔴 Absent once a session is underway — see `inSession`. */}
+          {/* 🔴 ONE INPUT, TRIGGERED FROM TWO PLACES. `sr-only`, NOT `hidden` — a hidden input is
+              out of the tab order and out of the accessibility tree. It sits outside the
+              conditional below so that a menu closing mid-pick cannot unmount the element the
+              browser is holding a file dialog open against. */}
+          <input
+            accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+            className="sr-only"
+            multiple
+            onChange={(event) => {
+              if (event.target.files?.length) onFiles(event.target.files);
+              event.target.value = "";
+            }}
+            ref={filePicker}
+            tabIndex={-1}
+            type="file"
+          />
+
           {!inSession && (
-          <label
-            aria-label="Add material"
-            className={cn(
-              // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
-              // every icon button on their composer uses, ours included now.
-              "flex h-[36px] w-[36px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
-              "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-action)",
-              listening
-                ? "text-(--ui-text-quaternary)"
-                : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+          <div className="relative shrink-0" ref={addMenu}>
+            <button
+              aria-expanded={onRecord ? addOpen : undefined}
+              aria-haspopup={onRecord ? "menu" : undefined}
+              aria-label="Add material"
+              className={cn(
+                // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
+                // every icon button on their composer uses, ours included now.
+                "flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)",
+                listening
+                  ? "text-(--ui-text-quaternary)"
+                  : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+              )}
+              // 🔴 WITH NOTHING TO CHOOSE BETWEEN, THERE IS NO MENU. A surface that cannot record
+              // opens the file picker on the first press, exactly as it always did — a one-item
+              // menu is a second click charged for nothing.
+              onClick={() => (onRecord ? setAddOpen((open) => !open) : filePicker.current?.click())}
+              title="Add material"
+              type="button"
+            >
+              <Codicon name="add" size="20px" />
+            </button>
+
+            {onRecord && addOpen && (
+              <div
+                className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                role="menu"
+              >
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
+                  Upload material
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); onRecord(); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  {/* A filled circle, not a microphone. The mic on the right of this composer is
+                      dictation; these two must never look like the same offer. */}
+                  <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
+                  Record a lecture
+                </button>
+              </div>
             )}
-            title="Add material"
-          >
-            <Codicon name="add" size="20px" />
-            {/* 🔴 `sr-only`, NOT `hidden`. A hidden input is out of the tab order and out of the
-                accessibility tree, so the label around it becomes unreachable by keyboard. */}
-            <input
-              accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
-              className="sr-only"
-              multiple
-              onChange={(event) => {
-                if (event.target.files?.length) onFiles(event.target.files);
-                event.target.value = "";
-              }}
-              type="file"
-            />
-          </label>
+          </div>
           )}
 
           {listening ? (

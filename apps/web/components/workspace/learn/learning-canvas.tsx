@@ -22,6 +22,7 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import { CanvasComposer } from "./canvas-composer";
+import { CanvasRecorder } from "./canvas-recorder";
 import { offersAdvance } from "./canvas-progression";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
@@ -59,6 +60,9 @@ export function LearningCanvas({
   const { canvas, busy, error } = session;
   const policy = usePolicyRuntime(canvas, policyOverride);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
+   *  that is not recording must carry no trace of it. */
+  const [recording, setRecording] = useState(false);
 
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
@@ -483,7 +487,24 @@ export function LearningCanvas({
         />
       )}
 
-      {showComposer && (
+      {/* 🔴 THE RECORDER TAKES THE COMPOSER'S PLACE RATHER THAN SITTING ON TOP OF IT. While a lecture
+          is being captured there is exactly one thing to do, and leaving the text box live beneath a
+          recording panel offers a second one. Same position, same width — the surface transforms,
+          it does not gain a layer. */}
+      {showComposer && recording && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent">
+          <div className="pointer-events-auto w-full">
+            <CanvasRecorder
+              // The canvas's ordinary attach path — the identical one a dropped file takes, which is
+              // what makes a recorded lecture a real source rather than a fourth kind of thing.
+              attach={async (files) => { await session.attachFiles(files); }}
+              onClose={() => setRecording(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {showComposer && !recording && (
         <CanvasComposer
           busy={sink.kind === "policy" ? policy.judging : busy.kind === "command"}
           busyLabel={sink.kind === "policy" ? THINKING_COPY.reading_answer : busy.label}
@@ -533,6 +554,7 @@ export function LearningCanvas({
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
+          onRecord={() => setRecording(true)}
           selected={selected}
           task={sink.kind === "none" ? null : sink.task}
         />
