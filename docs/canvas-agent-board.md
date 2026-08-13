@@ -50,41 +50,51 @@ runs as a native Claude Code Agent Team; live coordination is the shared task li
 durable roadmap, issue #505 is the durable recovery log, and `docs/canvas-v1-acceptance.md` is the
 stop condition.
 
-### 🔴 The critical path — the block is lifted
+### 🟢🟢 THE LOOP CLOSED — 2026-08-13
 
-**The owner upgraded Vercel to Pro on 2026-08-13.** The daily deployment cap that froze production
-for three hours is gone. This commit exists partly to produce the deployment: no push had happened
-since the upgrade, and Vercel deploys on push.
+**`INTEGRATION-001` PASSED.** Canvas's adaptive evidence loop is proven end-to-end in production,
+on serving commit `a02d6063`, with **no `?policy=force`**.
+
+```
+source → knowledge → objective → task → answer → evaluation
+      → evidence → readback → a DIFFERENT next decision, BECAUSE of the evidence
+```
+
+**C3 was proven by counterfactual, not by observation.** `decideNext` is pure, so it was replayed
+from the **serving commit's own worktree** with `objectives`/`now`/`actedOn` byte-identical and only
+`evidence` varying. **Run A (no evidence) re-asked the SAME objective** — so without the evidence the
+policy had no reason to move at all, and **the rotation hypothesis is dead rather than unlikely.**
+**Run B reproduced what production actually presented**, which proves the captured inputs were
+faithful rather than convenient.
+
+**Proven:** `A1` · `C1` · `C2` · `C3`/`G` · `D2` · `RUNTIME-005` 5/5 on **two independent canvases**,
+knowledge converging not duplicating. And `response_id === task_id === the prompt id captured
+BEFORE the answer existed` — `RUNTIME-002` observed in production.
+
+**The test row was DELETED.** An agent typed it, not the account holder, so it was a durable claim
+that the owner demonstrated knowledge they were never asked for. Brain's own *"genuine attempts
+stay"* rule would have left it. **The proof is the observation, never the row.**
+
+### What is NOT proven, stated plainly
+
+- **`D5`/`J1b` were vacuous** — a system writing nothing satisfies every *"must not write"* rule
+  trivially. **Re-run required now that writing works.**
+- Proven on **one canvas, one durable single-unit source.** Not across the library.
+- **`D1` dictation is not agent-verifiable** — no agent can produce speech into a microphone.
+- 🔴 **No ordinary path back from the six-stage arm.** `reset` builds a *new* canvas and is reachable
+  only from `complete`, itself an evidence stage. **The legacy machine permanently displaces the
+  compositional runtime on any canvas it captures.** `796a6045` is parked at `recall` 2-of-8 as the
+  production specimen. Filed, unfixed.
+
+### The critical path now
 
 | Task | Owner | Status |
 |---|---|---|
-| `RUNTIME-005` gate production on trust | Runtime | ✅ **MERGED** `ed4dfbe8` — executed: 0 → 4 objectives on `796a6045` |
-| *a production deployment containing it* | — | 🟡 **IN FLIGHT** — was blocked 18:04–21:0x CDT |
-| `INTEGRATION-001` re-run, unchanged | Integration | **ARMED** — pre-registered prediction below |
-
-### 🔴 THE PRE-REGISTERED PREDICTION — written before the run, by Runtime
-
-On `796a6045` with **no** `?policy=force`, once a deployment containing `ed4dfbe8` holds the alias:
-
-```
-outcome:        complete
-unrepresented:  4
-owns:           false
-objectives:     4 recall
-use-policy-runtime.ts:214  →  does NOT refuse
-```
-
-**`owns: false` is NOT a failure signal.** `owns: false` *together with* `objectives: 4` **is** the
-thesis of `RUNTIME-005` — trust gates, coverage discloses. What would falsify it is `objectives: 0`
-beside that same `owns: false`. Both the prediction and its reading were fixed in advance, so
-neither can be reshaped to fit the result.
-
-### 🔴 THE FALSE-FAIL GUARD — the most likely way a working fix gets reported broken
-
-**Any canvas other than `796a6045` will show nothing, and that is `RUNTIME-004`, not a failed fix.**
-Five of six die at `canvas-knowledge.ts:111` — the durable-source clause — **before ownership or
-trust is ever consulted.** Do not test the fix on a second canvas "to be sure": it will show
-nothing, and that nothing means something else.
+| **§M verification** — is `correct` terminal, or only immediately suppressed? | Runtime | 🔴 **IN PROGRESS** — *"not representable"* is a complete result |
+| **§J** — self-report never substitutes for demonstration | Integration | **IN PROGRESS** |
+| **§K / §L / compact UI** — three owner specs | Canvas UI | **IN PROGRESS**, sequenced |
+| `recording` signal so auto-advance cannot fire mid-write | Runtime | queued behind §M |
+| **`BRAIN-003`** causal cognition · **`UI-002`** Minimap | Brain, UI | 🅿️ still parked |
 
 ### Everything else
 
