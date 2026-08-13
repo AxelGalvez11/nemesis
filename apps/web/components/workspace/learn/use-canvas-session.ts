@@ -104,6 +104,9 @@ export interface CanvasSession {
   judging: string | null;
   ready: boolean;
   dismissError: () => void;
+  /** A short, true, non-failure message for the learner. See the implementation for why it shares
+   *  the error strip. */
+  showNotice: (message: string) => void;
   /** §11 — restore a passage the learner had rewritten, from the copy kept on the block. */
   restoreRewritten: (blockId: string) => void;
   /** §12 — record that the learner finished reading the chunk on screen. Writes no evidence. */
@@ -1132,6 +1135,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     judging,
     ready,
     dismissError: () => setError(null),
+    /**
+     * Say something short and true to the learner that is NOT a failure.
+     *
+     * 🔴 IT SHARES THE ERROR STRIP DELIBERATELY, AND THAT IS A DESIGN DECISION RATHER THAN REUSE.
+     * The alternative is a second floating notice surface, which means two things can be on screen
+     * saying two things, and §19 asks for an interface that almost disappears. The strip is already
+     * neutral rather than red — bordered, secondary text — so it reads as a notice, and it is
+     * dismissible by the same control.
+     *
+     * The one thing this must never become is a place to report internal state. A refusal here
+     * names the action that resolves it; "ambiguous referent" is not the learner's problem.
+     */
+    showNotice: (message: string) => setError(message),
     restoreRewritten,
     finishReadingChunk,
     dismissAside: () => setAside(null),

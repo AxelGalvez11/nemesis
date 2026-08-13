@@ -407,6 +407,17 @@ export function applyOps(canvas: LearningCanvas, ops: readonly CanvasOp[]): Lear
 /**
  * Apply a learner-requested rewrite, keeping the wording it replaced.
  *
+ * 🔴 A REWRITE IS A READING REQUIREMENT (§39), SO `readAt` IS CLEARED. This was a real defect in
+ * what §12 shipped, and it is silent: the learner presses Continue, marks the chunk finished, then
+ * asks for a passage to be simplified — and gets NEW WORDING they have never read with no Continue
+ * under it, because the block was still stamped as read. Asking for something simpler cost them
+ * their pacing control. Measured before fixing: `unreadChunk` returned 0 on a freshly rewritten
+ * block.
+ *
+ * The general form is worth more than the instance: `readAt` is a claim about CONTENT the learner
+ * has seen, so any operation that replaces that content invalidates it. It is not a claim about
+ * the block's identity.
+ *
  * 🔴 `before` IS ONLY RECORDED THE FIRST TIME. Simplify a block twice and this keeps what it said
  * before the learner touched it at all — not the once-simplified middle version. See the note on
  * `CanvasBlock.previousContent` for why "the original" is the version worth keeping.
@@ -423,8 +434,8 @@ export function applyRewrite(
       // Nothing actually changed: recording a "previous" version identical to the current one would
       // offer a restore that visibly does nothing, which reads as a broken control.
       if (block.content === rewrite.before) return block;
-      if (block.previousContent !== undefined) return block;
-      return { ...block, previousContent: rewrite.before };
+      if (block.previousContent !== undefined) return { ...block, readAt: undefined };
+      return { ...block, previousContent: rewrite.before, readAt: undefined };
     }),
   };
 }
