@@ -70,7 +70,25 @@ determine what matters → expose only enough to encode it → require productio
 
 | # | Criterion | Why |
 |---|---|---|
-| J1 | 🔴 **No self-report control may substitute for demonstration.** *"I already know this"* is removed. | A learner claiming knowledge is not a demonstration. If it hides material, **self-report is changing the curriculum without evidence** — and Nemesis believes what the learner demonstrates, not what they claim. |
+| J1a | 🔴 **A MASTERY CLAIM must be fully inert.** *"I already know this"* is removed; if any such affordance exists it writes no evidence, changes no estimate, **and has no sequencing effect either.** | A learner claiming knowledge is not a demonstration. **Acting on it at all — including by reordering — is treating self-report as demonstration.** If it hides material, self-report is changing the curriculum without evidence. |
+| J1b | **An EXPOSURE ACKNOWLEDGEMENT may rotate the queue, and nothing more.** *"I've read this"* writes no evidence and changes no estimate of what the learner knows; moving that objective to the back of the queue is legitimate. | *"Don't repeat this immediately"* is not *"I know it."* |
+
+**🔴 The line between J1a and J1b is what the learner actually asserted, and Integration found it —
+the single rule I first wrote failed against merged, accepted behaviour.**
+
+`acknowledge()` adds the objective to `actedOn`, and `actedOn` **is** an input to `decideNext`
+(`policy-runtime.ts:41`). So an acknowledgement *does* change the next decision, deliberately, and
+the code says so: *"SESSION STATE, AND DELIBERATELY NOT LEARNER STATE."* A rule demanding that no
+self-report change what the policy decides next would have failed a design nobody thinks is broken.
+
+| The learner asserts | True? | May it affect anything? |
+|---|---|---|
+| *"I have read this"* — **exposure** | **yes, observably** — they did | **sequencing only.** Never the estimate. |
+| *"I know this"* — **knowledge** | **unknown; we have no evidence** | **nothing at all.** |
+
+Exposure is a fact about what happened. Knowledge is a claim we cannot support. **An
+acknowledgement of what happened may affect sequencing; a claim about what the learner knows may
+affect nothing.**
 | J2 | 🔴 **No manual per-block fold/expand in the primary Canvas.** | **Brain decides resolution**, from learner state: strong evidence → compress · weak or partial → expand · missing relation → expose that relation · re-demonstration → compress again. Manual folding is not the adaptive mechanism; it is a document-reader remnant. |
 | J3 | **Provenance survives; the toolbar does not.** | *"Where did this come from?"* is legitimately useful. It should read as **evidence behind the Canvas** — a quiet citation marker, or answering the learner's own question — not as document-editing chrome. Exact presentation is UI's. |
 | J4 | 🔴 **Uploaded material is not automatically rewritten into a mini-textbook.** | Exposition is **a cognitive strategy used when needed, not the default surface.** For an arbitrary association (`losartan ↔ Cozaar`), go straight to production. Expand only when evidence says the learner lacks the distinction. For causal material, expose only enough structure to build a model, then immediately require explanation, prediction or reconstruction. |
