@@ -40,6 +40,10 @@ interface CanvasHeaderProps {
    * Management actions belong to the session, not to the moment inside it.
    */
   minimal?: boolean;
+  /** Whether this canvas holds knowledge that provably came from the model rather than from
+   *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
+   *  "Nothing attached yet" while it teaches from model knowledge (N10). */
+  modelKnowledge?: boolean;
 }
 
 export function CanvasHeader({
@@ -50,6 +54,7 @@ export function CanvasHeader({
   onDelete,
   activeTaskId,
   minimal = false,
+  modelKnowledge = false,
 }: CanvasHeaderProps) {
   return (
     // 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
@@ -99,7 +104,7 @@ export function CanvasHeader({
           per-row delete already reaches the same `deleteCanvas` this control called. */}
       {!minimal && (
         <>
-          <SourcesControl canvas={canvas} onFiles={onFiles} />
+          <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} />
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
         </>
       )}
