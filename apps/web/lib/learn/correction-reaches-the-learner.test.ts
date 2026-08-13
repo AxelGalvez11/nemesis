@@ -216,6 +216,38 @@ test("🔴 and the answer is shown ONCE, not on a loop", () => {
 
 // ── each fix is necessary, and neither is sufficient ────────────────────────
 
+test("🔴 a CONTRAST outranks a fresh question too, not only a correction", () => {
+  // 🔴 FOUND BY CALIBRATION: dropping `contrast` from the precedence rule changed behaviour and
+  // nothing went red. A misconception's explanation is an exposition Nemesis has already decided to
+  // put in front of the learner — §39's one unconditional **Yes** — and it loses to an unasked
+  // objective by exactly the same route a correction did.
+  const wrongAt = new Date("2026-08-13T11:59:00Z");
+  const evidence: LearnerEvidence[] = [
+    {
+      demonstrationObtained: true,
+      id: "e0",
+      misconceptions: ["valsartan"],
+      objectiveIdentityKey: X!.identityKey,
+      occurredAt: wrongAt.toISOString(),
+      verdict: "misconception",
+    },
+  ];
+  const decision = decideNext({
+    // The learner has just acted on X, so `actedOn` puts it behind the never-asked Y.
+    actedOn: [X!.identityKey],
+    correctionsShown: new Set(),
+    evidence,
+    now: new Date("2026-08-13T12:00:00Z"),
+    objectives: OBJECTIVES,
+  });
+  assert.equal(decision?.action.type, "contrast");
+  assert.equal(
+    decision?.objective.identityKey,
+    X!.identityKey,
+    "the explanation replacing a wrong model must not wait behind a question never asked",
+  );
+});
+
 test("🔴 the ORDERING fix alone would not have restored it", () => {
   // With the gate still reading the queued action, acknowledging the verdict marks the correction
   // shown before it has been painted — and no amount of precedence can surface something the
