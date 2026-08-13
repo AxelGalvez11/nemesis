@@ -132,7 +132,11 @@ test("a demonstrated objective is never re-tested to fill a stage", () => {
 // ── correction outranks a fresh question, holding outranks nothing ──────────
 
 test("a wrong answer is corrected before another objective is opened", () => {
-  const evidence = [ev("e1", RESOLVED[0]!.objective.identityKey, ago(2 * 3600_000), "incorrect")];
+  // 🔴 DATED TO THE MOMENT IT TESTS. This used to place the wrong answer two hours back, where the
+  // answer is no longer what is owed — the correction belongs to the moment the attempt fell short.
+  // What the test is for is the ARBITRATION: a learner who has just got something wrong is dealt
+  // with before an untouched objective is opened. That is unchanged.
+  const evidence = [ev("e1", RESOLVED[0]!.objective.identityKey, ago(60_000), "incorrect")];
   const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
   assert.equal(decision?.action.type, "show_correction");
   assert.equal(decision?.objective.identityKey, RESOLVED[0]!.objective.identityKey);
@@ -141,12 +145,21 @@ test("a wrong answer is corrected before another objective is opened", () => {
 test("🔴 an objective being held does not block one that is actually owed something", () => {
   // `defer` means "not this, not now". Returning it while another objective has never been asked
   // would stall the session on a technicality.
+  //
+  // 🔴 THE HOLD IS NOW CAUSED BY WHAT ACTUALLY CAUSES IT. Reaching `defer` used to depend on the
+  // objective having more than one piece of evidence, which was standing in for "they have been
+  // shown the answer". `correctionsShown` says it directly.
   const held = RESOLVED[0]!.objective.identityKey;
   const evidence = [
     ev("e1", held, ago(5 * 3600_000), "incorrect"),
     ev("e2", held, ago(60_000), "incorrect"),
   ];
-  const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
+  const decision = decideNext({
+    correctionsShown: new Set([held]),
+    evidence,
+    now: NOW,
+    objectives: RESOLVED,
+  });
   assert.equal(decision?.action.type, "retrieve");
   assert.notEqual(decision?.objective.identityKey, held);
 });
@@ -154,12 +167,30 @@ test("🔴 an objective being held does not block one that is actually owed some
 test("when everything is held, holding is what is reported", () => {
   const [a, b] = [RESOLVED[0]!.objective.identityKey, RESOLVED[1]!.objective.identityKey];
   const evidence = [
-    ev("e1", a, ago(5 * 3600_000), "incorrect"),
-    ev("e2", a, ago(60_000), "incorrect"),
-    ev("e3", b, ago(5 * 3600_000), "incorrect"),
-    ev("e4", b, ago(90_000), "incorrect"),
+    ev("e1", a!, ago(5 * 3600_000), "incorrect"),
+    ev("e2", a!, ago(60_000), "incorrect"),
+    ev("e3", b!, ago(5 * 3600_000), "incorrect"),
+    ev("e4", b!, ago(90_000), "incorrect"),
   ];
-  assert.equal(decideNext({ evidence, now: NOW, objectives: RESOLVED })?.action.type, "defer");
+  assert.equal(
+    decideNext({ correctionsShown: new Set([a!, b!]), evidence, now: NOW, objectives: RESOLVED })?.action.type,
+    "defer",
+  );
+});
+
+test("🔴 a correction shown for ONE objective does not hold a different one", () => {
+  // The set is per objective, and a set consulted with the wrong key would silently hold everything
+  // the moment any single correction had been read.
+  const [a, b] = [RESOLVED[0]!.objective.identityKey, RESOLVED[1]!.objective.identityKey];
+  const evidence = [ev("e1", a!, ago(60_000), "incorrect"), ev("e2", b!, ago(60_000), "incorrect")];
+  const decision = decideNext({
+    correctionsShown: new Set([a!]),
+    evidence,
+    now: NOW,
+    objectives: RESOLVED,
+  });
+  assert.equal(decision?.action.type, "show_correction");
+  assert.equal(decision?.objective.identityKey, b, "the objective whose correction has NOT been shown");
 });
 
 // ── order comes from identity, not from arrival ─────────────────────────────

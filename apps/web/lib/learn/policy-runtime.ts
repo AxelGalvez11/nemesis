@@ -55,8 +55,23 @@ export function decideNext(input: {
    * is a much smaller failure than a surface with nothing on it.
    */
   actedOn?: ReadonlySet<string>;
+  /**
+   * Objectives whose CORRECTION has already been displayed in this session.
+   *
+   * 🔴 A DIFFERENT SET FROM `actedOn`, AND CONFUSING THE TWO INVERTS THE FIX THEY SERVE.
+   * `acknowledge()` adds an objective to `actedOn` when the learner clears the FEEDBACK screen
+   * after answering — which happens BEFORE any correction is displayed. A policy reading `actedOn`
+   * to mean "they have seen the answer" would therefore defer at the exact moment the correction is
+   * owed, and someone who got a question wrong would never be shown the answer at all.
+   *
+   * 🔴 SESSION STATE AND NEVER LEARNER STATE, for the same reason `actedOn` is: receiving a
+   * correction is not a demonstration, so it must not become evidence. That is precisely why the
+   * policy cannot recover this from the log and has to be told.
+   */
+  correctionsShown?: ReadonlySet<string>;
 }): PolicyDecision | null {
   const acted = input.actedOn ?? new Set<string>();
+  const corrected = input.correctionsShown ?? new Set<string>();
   // Stable: identity order is preserved inside each group, so this only moves already-seen
   // objectives behind unseen ones and never shuffles the rest.
   const ordered = [
@@ -72,6 +87,7 @@ export function decideNext(input: {
     const state = projectLearnerState(objective.identityKey, mine);
     return {
       action: chooseNextTeachingAction({
+        correctionAlreadyShown: corrected.has(objective.identityKey),
         knowledgeObject: knowledge,
         learnerState: state,
         now: input.now,
