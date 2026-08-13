@@ -75,11 +75,75 @@ function errorType(value: unknown): ErrorType | undefined {
     : undefined;
 }
 
-/** Missing or unusable confidence becomes 0.5 rather than 0 or 1. Both extremes are assertions
- *  we have no basis for, and 0 in particular would read downstream as "certainly nothing". */
+/**
+ * What a missing or unusable confidence becomes. Both extremes are assertions we have no basis
+ * for, and 0 in particular would read downstream as "certainly nothing".
+ *
+ * 🔴 EXPORTED BECAUSE THE TRUST GATE BELOW IS DEFINED AGAINST IT, NOT AS A FACT WORTH PUBLISHING.
+ * A gate at or above this number would silently reclassify every evaluation that simply OMITTED the
+ * field as "no demonstration obtained" — turning a formatting habit of the model into a claim about
+ * a learner. Absence of a confidence signal is not evidence of uncertainty.
+ */
+export const CONFIDENCE_WHEN_UNSTATED = 0.5;
+
 function confidence(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 0.5;
+  if (typeof value !== "number" || !Number.isFinite(value)) return CONFIDENCE_WHEN_UNSTATED;
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Below this, the judge is telling us it could not really tell — so its verdict may not move what
+ * Nemesis believes about the learner.
+ *
+ * 🔴 CONFIDENCE IS A FACT ABOUT THE JUDGEMENT, NEVER A MEASURE OF THE LEARNER. Its job is to decide
+ * whether a verdict counts at all. It must never weight how WELL someone did: that would mean a
+ * learner who explains their reasoning accumulates systematically weaker evidence than one typing
+ * bare tokens — measured, on identical objectives:
+ *
+ *     "valsartan"                                        confidence 0.95
+ *     "that would be valsartan, the ARB it is sold as"   confidence 0.50   <- the better answer
+ *
+ * That inverts the north star's own worked example, where only the causal answer demonstrates
+ * structure and must therefore be the STRONGER evidence. Strength of demonstration comes from what
+ * the answer CONTAINED — depth, completeness, latency relative to the operation — and those are
+ * recorded raw on the evidence row for a layer that can revise its mind about them.
+ *
+ * 🔴 SYMMETRIC, ACROSS ALL VERDICTS, AND THAT IS THE POINT RATHER THAN A SIMPLIFICATION. An
+ * uncertain "correct" is exactly as unreliable as an uncertain "wrong". Gating only the verdicts
+ * that would move a learner DOWN would mean believing the judge when it flatters and doubting it
+ * when it does not, which is not a confidence gate — it is a thumb on the scale.
+ *
+ * 🔴 A STATED DEFAULT, NOT A TUNED ONE. There is no measurement behind the exact number and
+ * pretending otherwise would be worse than saying so: it means "the model actively reported less
+ * than 40% settled", and it is deliberately conservative, because refusing a verdict costs evidence
+ * while trusting a bad one costs the learner a wrong belief about their own understanding.
+ *
+ * 🔴 WHAT IS NOT FREE IS THE CEILING, AND IT IS ENFORCED RATHER THAN REMEMBERED — see the assertion
+ * below. Whoever revises this number may move it; they may not move it to where an unstated
+ * confidence starts failing the gate.
+ */
+export const TRUSTED_ENOUGH_TO_UPDATE_STATE = 0.4;
+
+// 🔴 ASSERTED AT MODULE SCOPE, THE WAY `retrieval-eligibility.ts` pins its own floor. A bound that
+// lives only in a comment is a bound that a later edit steps over without noticing, and the failure
+// it prevents is invisible from the outside: every evaluation that omitted `confidence` would
+// quietly become "an opportunity passed and nothing was demonstrated", for every learner at once.
+if (TRUSTED_ENOUGH_TO_UPDATE_STATE >= CONFIDENCE_WHEN_UNSTATED) {
+  throw new Error(
+    `the trust gate (${TRUSTED_ENOUGH_TO_UPDATE_STATE}) must sit strictly below the unstated-confidence default (${CONFIDENCE_WHEN_UNSTATED}), or an evaluation that simply omitted the field is read as a learner who demonstrated nothing`,
+  );
+}
+
+/**
+ * Is this judgement sure enough of itself to change what Nemesis believes about a learner?
+ *
+ * 🔴 THIS IS EVIDENCE INVARIANT 9 ONE STEP FURTHER IN. "A judge we could not reach is not a learner
+ * who failed" — and a judge that reached but could not tell is much closer to unreachable than to a
+ * verdict. The difference is that an outage writes nothing at all, while this writes the
+ * observation and withholds only the claim.
+ */
+export function verdictIsTrustworthy(evaluation: { confidence: number }): boolean {
+  return evaluation.confidence >= TRUSTED_ENOUGH_TO_UPDATE_STATE;
 }
 
 /** Check an evaluation the model produced, and return it only if every part of it holds up. */

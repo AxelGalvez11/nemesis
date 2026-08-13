@@ -118,8 +118,39 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
     // the learner's attention on material they may already hold. Asking costs seconds and settles
     // it. This is "prefer a task that reveals the learner over a question about them", executed.
     case "unknown":
+      // 🔴 `unknown` NO LONGER IMPLIES "NEVER ASKED", AND THIS BRANCH WAS BUILT WHEN IT DID. It used
+      // to return `retrieve` unconditionally, which was safe only because zero evidence meant nobody
+      // had touched the objective — "have we just asked this?" answered itself. Once an uncertain
+      // judgement can leave a learner at `unknown` WITH evidence, that assumption is gone, and
+      // without this guard someone whose answers keep being read uncertainly gets the identical
+      // question back instantly, for ever. That is the correction dead end pointed the other way:
+      // there the learner could not answer their way out, here the answer never resolves anything.
+      //
+      // 🔴 `actedJustNow` ALONE, AND THE REDUNDANT HALF WAS REMOVED RATHER THAN LEFT LOOKING
+      // LOAD-BEARING. The obvious form of this is `state.evidenceCount > 0 && actedJustNow`, to keep
+      // a never-asked objective from being deferred. It is unnecessary: `msSince` returns
+      // POSITIVE_INFINITY when `lastEvidenceAt` is null, so an objective nobody has touched can
+      // never be "just acted on". Calibration proved it — deleting that clause turned no test red,
+      // which is the tell that a condition is decoration. A guard that cannot fail is worse than no
+      // guard, because the next reader budgets for protection that is not there.
+      //
+      // What makes this work is that `lastEvidenceAt` counts EVERY row, including the ones whose
+      // verdict was too uncertain to conclude from. The attempt happened; only the conclusion is
+      // missing. That is exactly why the projection keeps it as an observation.
+      if (actedJustNow) {
+        return {
+          because: `this was just attempted and the reading settled nothing — another go should follow some intervening work`,
+          objectiveId: id,
+          type: "defer",
+        };
+      }
       return {
-        because: `no evidence exists for "${objective.label}" — asking settles it, and telling would assert something unobserved`,
+        because: state.evidenceCount > 0
+          // 🔴 SAYS WHAT IS TRUE OF THIS LEARNER. Evidence exists; what is missing is a reading we
+          // would stand behind. These strings are the answer to "why did Nemesis ask me this?", and
+          // "no evidence exists" would be a plain falsehood to exactly the people it is shown to.
+          ? `"${objective.label}" has been attempted, but nothing conclusive came back — asking again is the only way to settle it`
+          : `no evidence exists for "${objective.label}" — asking settles it, and telling would assert something unobserved`,
         objectiveId: id,
         type: "retrieve",
       };
