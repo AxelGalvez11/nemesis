@@ -248,6 +248,34 @@ test("🔴 every stand-in presence has a branch in the canvas that renders it", 
   }
 });
 
+test("🔴 the recovery goes to THIS canvas, by a full load", async () => {
+  const source = await code;
+
+  // 🔴 TWO WAYS TO GET THIS WRONG, AND BOTH LOOK FINE IN REVIEW.
+  //
+  // 1. `window.location.reload()`. Material dropped on the front door arrives at `/learn?new=1`
+  //    and NOTHING ever rewrites that URL — `useCanvasSession` mints the canvas and never touches
+  //    the router. Reloading `?new=1` re-mounts with no id, mints a SECOND empty canvas, and finds
+  //    the pending files already claimed. The learner loses the canvas they were looking at, on
+  //    the exact entry path this defect was reported on — a worse dead end than the blank page.
+  // 2. `router.push`. A client-side navigation re-renders with the same sources, so the knowledge
+  //    key is unchanged and the policy does not look again. The button would appear to work and
+  //    change nothing. Re-mounting is the whole mechanism by which reopening from the Library
+  //    recovered, and only a document load does it.
+  const retry = /onRetry=\{[\s\S]*?\}\}/.exec(source);
+  assert.ok(retry, "the quiet state no longer offers a way forward");
+  assert.match(
+    retry[0],
+    /canvas\.id/,
+    "the recovery does not carry this canvas's id — on the `?new=1` entry path it would strand the learner on a fresh, empty canvas",
+  );
+  assert.match(
+    retry[0],
+    /location\.assign|location\.href\s*=/,
+    "the recovery is not a full document load — a client-side navigation leaves the knowledge key unchanged, so the policy never looks again and the control does nothing",
+  );
+});
+
 test("🔴 the canvas derives what it paints, rather than re-deciding it", async () => {
   const source = await SOURCE;
 

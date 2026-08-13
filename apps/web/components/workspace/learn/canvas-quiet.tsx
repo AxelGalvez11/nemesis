@@ -28,7 +28,7 @@
  *  Matches `CanvasThinkingPreview`, which is the state this most often follows. */
 const TOP_INSET = "18vh";
 
-export function CanvasQuiet({ onReload }: { onReload: () => void }) {
+export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       aria-live="polite"
@@ -47,7 +47,7 @@ export function CanvasQuiet({ onReload }: { onReload: () => void }) {
       </p>
       <button
         className="mt-5 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-        onClick={onReload}
+        onClick={onRetry}
         type="button"
       >
         Try again
