@@ -580,7 +580,22 @@ export function LearningCanvas({
             mounts, so a canvas whose material became readable after this one resolved will find it
             on the next open. That is the same recovery a learner stumbled into by leaving and
             reopening from the Library — made a control instead of a discovery. */}
-        {presence === "quiet" && <CanvasQuiet onReload={() => window.location.reload()} />}
+        {/* 🔴 IT NAVIGATES TO THIS CANVAS'S OWN ADDRESS, AND `window.location.reload()` WOULD HAVE
+            BEEN A WORSE DEAD END THAN THE BLANK PAGE — on the exact entry path the defect was
+            reported on. Material dropped on the front door arrives at `/learn?new=1`, and nothing
+            ever rewrites that URL: `useCanvasSession` mints the canvas and never touches the
+            router. So reloading `?new=1` re-mounts with no id, mints a SECOND empty canvas, and
+            finds the pending files already claimed — the learner loses the canvas they were
+            looking at. `?c=<id>` loads theirs; every update funnels through `persist`, so it has
+            been saved since long before this screen could appear.
+
+            🔴 AND IT IS A FULL DOCUMENT LOAD, NOT `router.push`. A client-side navigation would
+            re-render with the same sources, so the knowledge key would be unchanged and the policy
+            would NOT look again — the button would appear to work and change nothing. Re-mounting
+            is the whole mechanism by which reopening from the Library recovered. */}
+        {presence === "quiet" && (
+          <CanvasQuiet onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)} />
+        )}
 
         {regions.document && (
           <>
