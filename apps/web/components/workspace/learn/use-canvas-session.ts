@@ -421,6 +421,28 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return;
       if (level) update((current) => ({ ...current, level }));
       setError(null);
+
+      // 🔴 A TOPIC DOES NOT EXPAND INTO A LESSON — §M, AND IT IS THE FRONT DOOR. Someone who types
+      // "teach me the top 35 drugs" used to get 64 generated paragraphs and nothing to do: the
+      // policy could not own the canvas, so there was material to read and no task. Nemesis now
+      // builds a knowledge territory from the topic instead, and opens by ASKING.
+      //
+      // 🔴 THIS REPLACES THE LESSON CALL RATHER THAN ADDING TO IT. Generating both would pay twice
+      // to produce a document §M forbids showing — and would put the mini-textbook back on screen
+      // beside the question, which is the exact failure being removed.
+      //
+      // Material-first is untouched: a canvas with durable sources still gets its lesson, because
+      // there the blocks are a reading of the learner's OWN material rather than model prose
+      // wearing a document's clothes.
+      const durable = latest.current.sources.some((source) => source.librarySourceId);
+      if (!durable) {
+        // The territory itself is built by `ensureKnowledgeForCanvas`, which the policy runtime
+        // already calls on every canvas — so there is nothing to await here and no second path to
+        // keep in step. Moving out of `empty` is the whole state change: the canvas has begun.
+        update((current) => ({ ...current, state: "learn" }));
+        return;
+      }
+
       setBusy({ kind: "lesson", label: "Writing your lesson" });
       const startedAt = Date.now();
       const result = await generateLesson(id, {

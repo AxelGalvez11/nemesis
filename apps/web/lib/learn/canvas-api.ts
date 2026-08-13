@@ -45,10 +45,12 @@ import {
   selectionMessages,
   simplifyMessages,
   teachingMessages,
+  territoryMessages,
   testMessages,
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
+import { parseTerritory, type TerritoryResult } from "./knowledge-territory";
 import type { CanvasSelection, SelectionAction } from "./canvas-selection";
 import type {
   CanvasBlock,
@@ -196,6 +198,40 @@ export async function generateRecall(
   return cards.length
     ? { value: cards, error: null }
     : { value: null, error: "Nemesis couldn't write recall prompts from this lesson." };
+}
+
+// ----------------------------------------------------------------- territory
+
+/**
+ * A topic, turned into knowledge the policy can teach from — the front door.
+ *
+ * 🔴 IT REPLACES `generateLesson` FOR A TOPIC-FIRST CANVAS RATHER THAN RUNNING BESIDE IT. That is
+ * the spend argument and also the product one: generating 64 paragraphs AND a territory would pay
+ * twice to produce a document §M forbids showing.
+ *
+ * 🔴 IT RETURNS REFUSALS ALONGSIDE THE OBJECTS, AND THE CALLER MUST NOT DISCARD THEM. "We asked for
+ * 35 and kept 9" is the difference between a topic that is genuinely thin and a parser quietly
+ * dropping everything — and a count nobody reports is exactly how a degraded result passes for a
+ * complete one.
+ */
+export async function constructTerritory(
+  uid: string,
+  topic: string,
+  count: number,
+  signal?: AbortSignal,
+): Promise<CanvasCallResult<TerritoryResult>> {
+  const { text, error } = await ask(uid, territoryMessages({ count, topic }), signal);
+  if (error) return { value: null, error };
+  const territory = text ? parseTerritory({ text, topic }) : null;
+  return territory && territory.objects.length
+    ? { value: territory, error: null }
+    : {
+        value: null,
+        // 🔴 NAMES THE TOPIC AS THE THING THAT DID NOT WORK, NOT THE LEARNER. A topic Nemesis cannot
+        // turn into checkable facts is a real answer — the honest move is to say so and let them
+        // narrow it, never to invent pairs so the surface has something on it.
+        error: "Nemesis couldn't turn that topic into anything specific enough to ask about. Try naming it more narrowly.",
+      };
 }
 
 // ---------------------------------------------------------------------- test

@@ -21,6 +21,7 @@
 // real document, and the two have separate homes now: `knowledge-production.ts` and
 // `knowledge-coverage.ts`. Neither can see the other's input.
 
+import { constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import type { LearningCanvas } from "./canvas-model";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
@@ -123,9 +124,30 @@ export async function ensureKnowledgeForCanvas(
     };
   };
 
-  // Nothing durable at all, or nobody to store it for: there is nothing to read and nothing to
-  // decide from. A bypass cannot help — it changes what is written, not what exists.
-  if (!userId || sourceIds.length === 0) return nothingToRead();
+  // Nobody to store knowledge for. A bypass cannot help — it changes what is written, not whether
+  // there is anyone to write it for.
+  if (!userId) return nothingToRead();
+
+  // 🔴 THE FRONT DOOR. This is the line that used to read `|| sourceIds.length === 0`, and it closed
+  // the product's PRIMARY entrance: someone who typed a topic instead of uploading a file got
+  // material with nothing to do, because a canvas with no durable source was refused here before
+  // anything else ran.
+  //
+  // 🔴 THE CLAUSE CONFLATED IDENTITY WITH PROVENANCE. Its stated reason is sound and is not being
+  // weakened — an anchor minted from an ephemeral source points at something no later canvas can
+  // resolve. But that is an argument about ANCHORS, and it was being applied to KNOWLEDGE.
+  // `knowledgeIdentityKey` hashes only type, relation kind and the pair: no source, no anchor. So a
+  // topic-first fact is perfectly resolvable by a later canvas — it simply has no source, and the
+  // refusal treated those as the same thing.
+  //
+  // So the refusal moves from "no source" to "no honest provenance". A topic has one: model
+  // knowledge, stated as such, carrying no anchor and therefore no citation marker it cannot honour.
+  //
+  // 🔴 AND IT CONSTRUCTS KNOWLEDGE DIRECTLY, NEVER A LESSON TO EXTRACT FROM. Generating prose and
+  // reading facts back out of it would launder model output into something shaped like source
+  // material, which §M forbids. `parseTerritory` returns `KnowledgeObject[]` and cannot write a
+  // block, so that pipeline is unrepresentable here rather than merely discouraged.
+  if (sourceIds.length === 0) return topicTerritory(userId, canvas, onPhase);
 
   // 🔴 AND A CANVAS HOLDING ANY SOURCE THIS LAYER CANNOT READ IS ALREADY UNOWNABLE, so it is
   // answered before a single round trip. This is not only an optimisation: it is the check that
@@ -232,4 +254,78 @@ export async function ensureKnowledgeForCanvas(
   // not encode what should be learned first. A real ordering is a later, separate decision.
   resolved.sort((a, b) => a.objective.identityKey.localeCompare(b.objective.identityKey));
   return { coverage, objectives: resolved, outcome, ownership };
+}
+
+// ----------------------------------------------------------------- topic-first
+
+/**
+ * How many pairs to ask a topic for.
+ *
+ * Not tuned, and deliberately not derived from the topic. A ceiling on one request, never a quota to
+ * fill: the prompt says fewer is better than padded and `parseTerritory` drops anything failing a
+ * rule, so the number that survives is routinely lower and that is the intended shape.
+ */
+const TERRITORY_TARGET = 24;
+
+/**
+ * A topic-first canvas, turned into knowledge the policy can act on.
+ *
+ * 🔴 DEFINED BELOW `ensureKnowledgeForCanvas` ON PURPOSE, AND MOVING IT UP BREAKS A REAL GUARD.
+ * `knowledge-coverage.test.ts` asserts the SOURCE path's ordering — read, then decide trust, then
+ * gate, then write — by first occurrence in this file. This function names several of the same
+ * calls, so defining it above would shift those positions and silently retarget an assertion that
+ * has been protecting the write path since `RUNTIME-005`. Hoisting means the call site above still
+ * works; the position is what matters.
+ *
+ * 🔴 EVERY OBJECT IT PRODUCES CARRIES `unanchoredProvenance: ["model"]` AND NO ANCHOR, so nothing
+ * downstream can render a citation for it. The quiet marker promises an excerpt, and there is none.
+ *
+ * 🔴 AND ITS IDENTITY IS THE ORDINARY ONE, WHICH IS THE WHOLE PAYOFF. These objects are keyed by the
+ * same content-derived `identityKey` as document-extracted ones, so a pair minted from a typed topic
+ * and the same pair later extracted from an uploaded lecture are ONE object. Upload the lecture
+ * afterwards and it lands on knowledge the topic already created, with the learner's demonstrations
+ * still attached. Nothing special was done to get that; it falls out of identity not depending on
+ * provenance.
+ */
+async function topicTerritory(
+  userId: string,
+  canvas: LearningCanvas,
+  onPhase?: (phase: ThinkingPhase) => void,
+): Promise<CanvasKnowledge> {
+  const coverage = emptyCoverage(0);
+  const answer = (outcome: ExtractionOutcome | "no-durable-source", objectives: ResolvedObjective[] = []) => ({
+    coverage,
+    objectives,
+    outcome,
+    ownership: policyOwnsCanvas({ coverage, outcome }),
+  });
+
+  const topic = canvas.title.trim();
+  // No material and no topic is genuinely nothing to work from — an empty canvas, not a refusal.
+  if (!topic) return answer("no-durable-source");
+
+  onPhase?.("mapping_knowledge");
+  const { value } = await constructTerritory(userId, topic, TERRITORY_TARGET);
+
+  // 🔴 THE TRUST DECISION FOR MODEL KNOWLEDGE HAPPENS BEFORE THIS LINE, AND NOTHING IS WRITTEN UNTIL
+  // IT HAS. There is no source to have read reliably, so `knowledgeProductionFor` has nothing to
+  // judge; what stands in its place is `parseTerritory`'s validation rules, which drop every
+  // candidate that fails one. A territory where nothing survived writes NO rows — the same
+  // protection as the source path, decided by rules rather than by a parse outcome.
+  //
+  // `failed`, not `no-durable-source`: a topic Nemesis could not turn into checkable facts is a
+  // different thing from a canvas with nothing on it, and reporting them as one hides the case worth
+  // knowing about — the surface can say "name it more narrowly" only if it can tell them apart.
+  if (!value || value.objects.length === 0) return answer("failed");
+
+  const resolved: ResolvedObjective[] = [];
+  for (const knowledge of value.objects) {
+    const stored = await saveKnowledge(userId, knowledge);
+    for (const objective of stored) resolved.push({ knowledge, objective });
+  }
+
+  // Ordered by identity for the same reason the source path is: which question is asked first must
+  // not depend on the order rows came back in.
+  resolved.sort((a, b) => a.objective.identityKey.localeCompare(b.objective.identityKey));
+  return answer("complete", resolved);
 }

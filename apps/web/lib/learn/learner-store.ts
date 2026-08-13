@@ -82,6 +82,13 @@ export function knowledgeFromRow(row: {
   const { anchors, ...rest } = (row.payload ?? {}) as Record<string, unknown>;
   return {
     ...(rest as Partial<KnowledgeObject>),
+    // 🔴 A ROW WRITTEN BEFORE THIS FIELD EXISTED HAS NO UNANCHORED WAYS OF KNOWING, AND THAT IS
+    // PROVABLE RATHER THAN A GUESS. Until the provenance contract, the ONLY path that minted
+    // knowledge was `extractKnowledgeObjects(context: SourceContext)`, which cannot run without a
+    // durable library source — `canvas-knowledge.ts` returned before reaching it otherwise. So every
+    // pre-existing row is anchored by construction, and its ways of knowing are already in
+    // `anchors`. An empty list is the accurate reading of those rows, not a fallback.
+    unanchoredProvenance: Array.isArray(rest.unanchoredProvenance) ? rest.unanchoredProvenance : [],
     id: typeof rest.id === "string" ? rest.id : row.identity_key,
     identityKey: row.identity_key,
     sourceAnchors: (anchors as KnowledgeObject["sourceAnchors"]) ?? [],
