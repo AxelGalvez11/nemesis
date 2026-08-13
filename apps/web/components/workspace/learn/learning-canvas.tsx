@@ -370,13 +370,14 @@ export function LearningCanvas({
       <CanvasHeader
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
-        // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10). `policy.territories` is
-        // the resolved supported knowledge for this canvas — the same list the focus picker is
-        // built from — so a non-empty one means knowledge genuinely exists rather than being
-        // assumed from the canvas being sourceless. The predicate lives in `canvas-provenance.ts`
-        // with the reasoning for the durability test, which is the runtime's own branch condition
-        // and not `sources.length`.
-        modelKnowledge={modelKnowledgeDisclosed(canvas.sources, policy.territories.length)}
+        // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10), AND IT ASKS THE CLAIMS
+        // RATHER THAN THE ATTACHMENTS. This used to read `(canvas.sources, territories.length)`, so
+        // the disclosure disappeared the moment any durable source arrived — while every
+        // model-written claim stayed on screen underneath it. That is the laundering: attaching a
+        // spreadsheet made it look like the origin of everything on the page. `policy.claims` is
+        // the canvas's actual knowledge, and each object now carries whether a source really states
+        // it. The predicate lives in `canvas-provenance.ts` with the reasoning.
+        modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onDelete={() => {
           void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
         }}

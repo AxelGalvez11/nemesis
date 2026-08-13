@@ -31,6 +31,7 @@ import {
 } from "@/lib/learn/canvas-focus";
 import { tempoFor, type HostedTask } from "@/lib/learn/canvas-hosting";
 import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
+import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
@@ -89,6 +90,27 @@ export interface PolicyRuntime {
   setFocus: (scope: FocusScope) => void;
   /** What the learner could focus on, built from knowledge this canvas actually holds. */
   territories: readonly { label: string; identityKeys: readonly string[] }[];
+  /**
+   * Every claim this canvas holds, so the Sources panel can say where each one came from.
+   *
+   * 🔴 TAKEN FROM `knowledge.objectives` RATHER THAN FROM `supported`, WHICH IS THE WIDER OF THE
+   * TWO — but not by as much as it looks, and the difference is worth stating exactly rather than
+   * overclaimed. `supportedObjectives` filters to association + recall. Today that filter removes
+   * nothing: `objectivesForKnowledge` returns `[]` for every type except `association` and
+   * hardcodes `recall`, so a knowledge object of any other kind resolves no objective and never
+   * reaches this list either. The two sets are currently identical.
+   *
+   * 🔴 SO THIS IS NOT YET THE GUARANTEE IT WILL NEED TO BE. Whoever widens
+   * `objectivesForKnowledge` should know that the disclosure still only sees claims that MINTED AN
+   * OBJECTIVE — a knowledge object nobody can be asked about would stay invisible here whatever its
+   * provenance. Reading it off the knowledge objects rather than off the resolved objectives is the
+   * fix, and it is cheap; it is not made now because there is nothing to observe it with while five
+   * of the six kinds mint nothing (contract R4). Filed, not fudged.
+   *
+   * What it does buy today is real: `supported` is a filter someone may reasonably narrow, and a
+   * provenance statement must not quietly narrow with it.
+   */
+  claims: readonly KnowledgeObject[];
   decision: PolicyDecision | null;
   /** The question on screen, when the policy asked for one. */
   prompt: RetrievalPrompt | null;
@@ -700,10 +722,12 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   }, [decision, feedback, prompt, status]);
 
   const territories = useMemo(() => availableTerritories(supported), [supported]);
+  const claims = useMemo(() => knowledge.objectives.map((entry) => entry.knowledge), [knowledge]);
 
   return {
     acknowledge,
     admitUnknown,
+    claims,
     coverage: knowledge.coverage,
     decision,
     error,
