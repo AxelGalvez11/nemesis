@@ -433,7 +433,62 @@ screen and the system records a demonstration that proves nothing. This is the s
 next item.** Reordering is not spacing. With four objectives on the acceptance canvas this is live,
 not theoretical.
 
+### 🔴 THREE RECURRENCE PROBLEMS, AND THEY MUST NOT COLLAPSE INTO `actedOn`
+
+| | Problem | Home |
+|---|---|---|
+| **1** | **Immediate suppression** — do not re-show the identical retrieval right after a correct answer | `actedOn` / reordering can plausibly do this |
+| **2** | **Within-session spacing** — eligible again only after enough intervening cognition | 🔴 **reordering is INSUFFICIENT** — needs an explicit eligibility constraint |
+| **3** | **Across-session memory scheduling** — correct today ≠ completed | **FSRS, and only here** |
+
+```
+answer → semantic evaluation → evidence written → learner state updated
+      → immediate next-item selection
+             ├─ session spacing / eligibility
+             └─ longer-term FSRS scheduling
+```
+
+🔴 **With ONE objective, reordering does nothing at all. There is no back.** Layer 2 cannot be solved
+by ordering. Candidate concepts — explicitly **not** a full FSRS: `notBeforeTurn` ·
+`interveningRetrievals` · `recentlyCorrected` · `sessionEligibility`.
+
+### The four behaviours that decide whether M1–M4 hold
+
+```
+CORRECT      A → correct
+             next: A suppressed · later same session: A eligible again · future session: still scheduled
+
+INCORRECT    A → incorrect, correction shown
+             next: NOT A · after meaningful interference: A eligible again
+
+SMALL SET    only A exists
+             cannot be solved by "put A at the back" — needs a temporary eligibility constraint,
+             or a different activity (read / explanation) before testing A again
+
+REPEATED     A correct … A correct … A correct
+             progressively LESS FREQUENT, not disappeared because evidence > 0
+```
+
+### 🔴 "PREFER WHAT'S UNESTABLISHED" IS A PRIORITY HEURISTIC, NOT A DEFINITION OF MASTERY
+
+Given `A: 1 correct` and `B, C, D: no evidence`, going `B → C → D` before returning to `A` is right.
+**But once those are established, `A` must re-enter consideration on memory uncertainty** — otherwise
+**every objective has a one-shot lifecycle** and a single correct answer retires it forever.
+
+The selection policy eventually thinks:
+
+```
+priority = learning_value × memory_risk × objective_importance × uncertainty × session_eligibility
+```
+
+**not** `hasEvidence ? lowPriority : highPriority`.
+
 ### Sequencing note
+
+🔴 **"NOT REPRESENTABLE" IS A COMPLETE AND SUCCESSFUL VERIFICATION RESULT.** If the runtime lacks
+within-session delayed eligibility, the correct outcome is *"M3 is not currently representable; a
+small session-spacing capability is needed first"* — **not** a second pseudo-FSRS improvised inside
+Canvas policy.
 
 **Evidence first, scheduling derived.** `docs/canvas-cognitive-runtime.md` places FSRS downstream of
 evidence, and `response → 1-4 → that IS learner state` remains forbidden. If proper spacing requires
