@@ -183,7 +183,25 @@ worse". See `parser-repairs-before-after.md`.
 
 ### Currency — do these numbers still describe `main`?
 
-**Yes, as of `a3ef845e`, verified by dependency diff rather than a rerun.**
+**Yes, as of `8caeeb17`, verified by dependency diff rather than a rerun.**
+
+🔴 **AND THIS SHA IS THE CLAIM, SO RE-CHECK IT RATHER THAN TRUSTING IT.** The
+first version of this section said `a3ef845e` — a ref fetched a few hours
+earlier, which `main` had already moved past by the time the section was written.
+It happened to still hold. **A currency claim pinned to a stale ref is the exact
+failure the top of this section is about**, committed inside the paragraph
+correcting it. The boundary is one command, so verify it instead of believing it:
+
+```bash
+git fetch origin && git diff --stat 8caeeb17 origin/main -- \
+  bench/parsebench apps/web/scripts/parsebench-parse.mts \
+  apps/web/lib/pdf/parsebench-output.ts apps/web/lib/pdf \
+  apps/web/lib/notebooks/parse-document.ts packages/shared/src/document-model.ts \
+  apps/web/package.json packages/shared/package.json
+```
+
+**Empty output: the numbers below still describe `main`, and you may move the SHA
+forward. Any output: a rerun is owed, and name what moved.**
 `main` moved 104 commits after the #485 measurement. Every module the benchmark
 actually reads is byte-identical across that span:
 
