@@ -20,6 +20,7 @@ import {
   type ScaffoldRung,
 } from "./scaffold-rung";
 import { projectLearnerState, satisfies, type LearnerEvidence } from "./learner-evidence";
+import { isMissingTable } from "./learner-store";
 import {
   evidenceForSubmission,
   judgementOf,
@@ -123,6 +124,50 @@ test("🔴 a demonstration with no recorded rung satisfies NOTHING", () => {
   assert.equal(state.demonstrationCount, 1, "the demonstration is real and still counted");
   assert.equal(state.demonstratedAt, null, "but at what demand is genuinely unknown");
   assert.equal(satisfies(state, "recognition"), false, "so it establishes nothing on the ladder");
+});
+
+test("🔴 A WRONG ANSWER AT A HIGH RUNG ESTABLISHES NOTHING AT THAT RUNG", () => {
+  // 🔴 THE BUG THIS CAUGHT, WHICH WAS LIVE IN MY OWN FIRST PASS. `demonstrationObtained` is
+  // `outcome !== null` — true whenever the judge SPOKE about the objective, including to say the
+  // learner was wrong. Folding the rung over that set meant an unaided WRONG answer recorded
+  // `demonstratedAt: "independent"`, and `satisfies(state, "independent")` then returned true for
+  // someone who had only ever answered unaided and incorrectly.
+  //
+  // It bites exactly where the ladder is meant to protect: wrong at independent, then a later
+  // sweep ✓ at recognition, and §31.2 sees production already on record and advances.
+  const state = projectLearnerState("obj-1", [
+    row({ id: "e1", scaffoldRung: "independent", verdict: "incorrect" }),
+  ]);
+  assert.equal(state.demonstratedAt, null, "answering wrong is not a demonstration at any demand");
+  assert.equal(satisfies(state, "independent"), false);
+  assert.equal(satisfies(state, "recognition"), false);
+});
+
+test("🔴 a misconception at a high rung establishes nothing either", () => {
+  const state = projectLearnerState("obj-1", [
+    row({ id: "e1", scaffoldRung: "independent", verdict: "misconception" }),
+  ]);
+  assert.equal(state.demonstratedAt, null);
+});
+
+test("a PARTIAL answer does not establish the objective at its rung", () => {
+  // Part of an objective shown at a demand is not that objective shown at that demand. `partial`
+  // projects to its own status, and the policy acts on that; it must not also credit the rung.
+  const state = projectLearnerState("obj-1", [
+    row({ id: "e1", scaffoldRung: "independent", verdict: "partial" }),
+  ]);
+  assert.equal(state.demonstratedAt, null);
+});
+
+test("a wrong attempt does not erase a real demonstration that came before it", () => {
+  // The other direction: `demonstratedAt` is the highest ever REACHED, so a later failure changes
+  // the status without deleting the fact that they once produced it.
+  const state = projectLearnerState("obj-1", [
+    row({ id: "e1", scaffoldRung: "independent" }),
+    row({ id: "e2", occurredAt: LATER, scaffoldRung: "independent", verdict: "incorrect" }),
+  ]);
+  assert.equal(state.demonstratedAt, "independent");
+  assert.equal(state.status, "incorrect", "but the current status follows the most recent answer");
 });
 
 test("no evidence at all satisfies nothing, and says so as `unknown`", () => {
@@ -320,6 +365,31 @@ test("🔴 a contradicted objective is recorded as contradicted, not as silence"
     responseText: "Calcium enters the cell.",
   });
   assert.equal(written?.objectiveEvidence, "contradicted");
+});
+
+// ── shipping this ahead of its migration must FAIL LOUDLY ───────────────────
+
+test("🔴 A MISSING COLUMN IS NOT A MISSING TABLE — the silent-degradation trap", () => {
+  // 🔴 WHY THIS GUARD EXISTS AT ALL. `EVIDENCE_SELECT` now names two columns added by migration,
+  // and PostgREST rejects the WHOLE select if either is absent. Postgres words both errors
+  // `... does not exist`, so the message fallback in `isMissingTable` classified a missing COLUMN
+  // as a missing TABLE — and every caller treats a missing table as an ordinary deployment state
+  // and returns `[]` without even warning.
+  //
+  // Shipped ahead of its migration that means: `loadEvidence` returns `[]` for every learner,
+  // `projectLearnerState` answers `unknown` for everything, and the policy re-asks the entire
+  // territory from scratch — with nothing in the console. DEGRADED ≠ COMPLETE, exactly.
+  assert.equal(
+    isMissingTable({ code: "42703", message: 'column learner_evidence.scaffold_rung does not exist' }),
+    false,
+    "a missing column on a table that exists is a BROKEN DEPLOY and must be reported",
+  );
+
+  // Calibration: the case it legitimately swallows still works, or this guard would be satisfied by
+  // a function that simply always returns false.
+  assert.equal(isMissingTable({ code: "42P01", message: 'relation "learner_evidence" does not exist' }), true);
+  assert.equal(isMissingTable({ message: 'relation "learner_evidence" does not exist' }), true);
+  assert.equal(isMissingTable(null), false);
 });
 
 // ── the shape makes the ambiguous question unaskable ────────────────────────

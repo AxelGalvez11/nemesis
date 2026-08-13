@@ -17,8 +17,23 @@ import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapabilit
 import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 
-/** A table that does not exist yet is a deployment state, not a bug worth shouting about. */
-function isMissingTable(error: { code?: string; message?: string } | null): boolean {
+/**
+ * A table that does not exist yet is a deployment state, not a bug worth shouting about.
+ *
+ * 🔴 A MISSING **COLUMN** IS THE OPPOSITE, AND THIS USED TO SWALLOW IT. Postgres reports both as
+ * `... does not exist`, so the message fallback below classified `42703` (undefined_column) as a
+ * missing table and every caller then failed silently — no warning, no error, an empty array.
+ *
+ * That is not hypothetical here: `EVIDENCE_SELECT` names columns added by migration, and PostgREST
+ * rejects the WHOLE select if one is absent. Merging a release ahead of its migration would
+ * therefore make `loadEvidence` return `[]` for every learner, `projectLearnerState` answer
+ * `unknown` for everything, and the policy re-ask the entire territory from scratch — with nothing
+ * in the console. A missing table is a deployment state; a missing column on a table that exists is
+ * a BROKEN deploy, and the two must not read the same.
+ */
+export function isMissingTable(error: { code?: string; message?: string } | null): boolean {
+  // Checked before the message fallback, because the message alone cannot tell them apart.
+  if (error?.code === "42703") return false;
   return error?.code === "42P01" || (error?.message ?? "").includes("does not exist");
 }
 

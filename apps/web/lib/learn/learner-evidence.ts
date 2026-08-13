@@ -356,10 +356,31 @@ export function projectLearnerState(
   const demonstrations = believable.filter((e) => e.demonstrationObtained && e.verdict);
   const latestDemonstration = demonstrations[demonstrations.length - 1] ?? null;
 
-  // 🔴 THE HIGHEST RUNG EVER REACHED, FOLDED OVER EVERY DEMONSTRATION. Rows with no rung contribute
-  // nothing rather than a default — see `demonstratedAt`.
+  // 🔴 THE HIGHEST RUNG AT WHICH THE OBJECTIVE WAS ACTUALLY DEMONSTRATED — NOT MERELY ATTEMPTED.
+  //
+  // 🔴 `demonstrations` IS THE WRONG SET TO FOLD, AND USING IT WAS A REAL BUG. It filters on
+  // `demonstrationObtained && verdict`, and `rowForTarget` sets `demonstrationObtained: outcome
+  // !== null` — true whenever the judge SPOKE about this objective, including to say `incorrect` or
+  // `misconception`. So an unaided WRONG answer folded in as `independent`, and `satisfies(state,
+  // "independent")` then returned true for a learner who had only ever answered unaided and wrong.
+  //
+  // That bites precisely where the rung is supposed to protect: wrong at `independent`, then a
+  // later sweep ✓ at `recognition`, and §31.2's provisional check sees production already on record
+  // and advances as though they had produced it. The exact false ✓ the ladder exists to prevent,
+  // arriving through the field built to prevent it.
+  //
+  // So the fold asks what the response ESTABLISHED. `strong` and `understood` are the two verdicts
+  // `statusFor` maps to `correct`; `partial` deliberately does not count, because part of an
+  // objective shown at a demand is not that objective shown at that demand.
+  //
+  // Rows with no rung contribute nothing rather than a default — see `demonstratedAt`.
   const demonstratedAt = demonstrations.reduce<ScaffoldRung | null>(
-    (best, e) => (e.scaffoldRung ? (best ? higherRung(best, e.scaffoldRung) : e.scaffoldRung) : best),
+    (best, e) =>
+      e.scaffoldRung && (e.verdict === "strong" || e.verdict === "understood")
+        ? best
+          ? higherRung(best, e.scaffoldRung)
+          : e.scaffoldRung
+        : best,
     null,
   );
 
