@@ -284,6 +284,11 @@ test("only recall is minted, because only recall has a task behind it", () => {
 });
 
 test("a non-association yields no objectives rather than a guessed one", () => {
-  const causal: KnowledgeObject = { id: "k1", statement: "Resistance up, current down.", type: "causal" };
+  const causal: KnowledgeObject = {
+    id: "k1",
+    statement: "Resistance up, current down.",
+    type: "causal",
+    unanchoredProvenance: [],
+  };
   assert.deepEqual(objectivesForKnowledge(causal), []);
 });

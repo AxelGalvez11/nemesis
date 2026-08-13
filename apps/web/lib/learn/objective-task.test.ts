@@ -28,6 +28,7 @@ const KNOWLEDGE: KnowledgeObject = {
   relationKind: "brand|generic",
   statement: "losartan — Cozaar",
   type: "association",
+  unanchoredProvenance: [],
 };
 /** An objective as it exists once stored — which is the only state one can be asked about, because
  *  `learner_evidence.objective_id` is a foreign key. */

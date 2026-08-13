@@ -195,6 +195,7 @@ test("🔴 a causal knowledge object counts as no coverage at all", () => {
       sourceAnchors: [{ sourceId: "lib-1", unitId: "t1" }],
       statement: "ACE inhibition lowers aldosterone",
       type: "causal",
+      unanchoredProvenance: [],
     },
   ];
 

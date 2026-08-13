@@ -30,6 +30,7 @@ const KNOWLEDGE: KnowledgeObject = {
   relationKind: "brand|generic",
   statement: "losartan — Cozaar",
   type: "association",
+  unanchoredProvenance: [],
 };
 const [RESOLVED] = objectivesForKnowledge(KNOWLEDGE);
 /** As it exists once stored — the only state an objective can be asked about. */

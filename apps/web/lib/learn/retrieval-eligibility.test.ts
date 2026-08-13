@@ -17,6 +17,7 @@ const KNOWLEDGE: KnowledgeObject = {
   relationKind: "brand|generic",
   statement: "losartan — Cozaar",
   type: "association",
+  unanchoredProvenance: [],
 };
 
 const NOW = new Date("2026-08-13T12:00:00Z");

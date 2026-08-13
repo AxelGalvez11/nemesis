@@ -161,10 +161,16 @@ test("🔴 every verdict is given a colour deliberately, and success is not the 
   const rendered = stripComments(await SOURCE);
   // A pass is green, partial amber, and both failures red. `not_demonstrated` never reaches this
   // screen — it has no evaluation — so it is absent by construction rather than by omission.
-  for (const [verdict, tone] of [
+  //
+  // 🔴 TYPED AS PAIRS, NOT INFERRED. Written as a bare array literal this is `string[][]`, and
+  // `noUncheckedIndexedAccess` then hands the destructuring `string | undefined` — which compiles
+  // as a test (nothing dereferences it) and fails `tsc --noEmit` for the whole app. A tuple type
+  // has a known length, so its elements are exempt and the destructuring is exact.
+  const TONES: readonly (readonly [verdict: string, tone: string])[] = [
     ["strong", "--ui-green"], ["understood", "--ui-green"],
     ["partial", "--ui-yellow"], ["incorrect", "--ui-red"], ["misconception", "--ui-red"],
-  ]) {
+  ];
+  for (const [verdict, tone] of TONES) {
     assert.match(rendered, new RegExp(`${verdict}:\\s*"text-\\(${escapeRegExp(tone)}\\)"`), `${verdict} lost its colour`);
   }
   // 🔴 Success must never be painted with --ui-action. The accent is a MUTED green used for

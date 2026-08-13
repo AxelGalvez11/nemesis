@@ -289,6 +289,70 @@ export interface ExtractionProvenance {
   schemaVersion?: string;
 }
 
+/**
+ * Where a claim CAME FROM. **A value, never a precondition** — Brain contract, §M, 2026-08-13.
+ *
+ * 🔴 THIS IS NOT THE SAME QUESTION AS IDENTITY, AND CONFLATING THEM CLOSED THE PRODUCT'S FRONT DOOR.
+ *
+ *   IDENTITY    what is this knowledge ABOUT?     `identityKey`, content-derived, per learner
+ *   PROVENANCE  where did this claim COME FROM?   this field
+ *
+ * `canvas-knowledge.ts` refused every canvas holding no durable source, as though a claim without a
+ * source had no identity either. It has one: `knowledgeIdentityKey` hashes only type, relation kind
+ * and the pair — **no source, no anchor, no provenance** — so `losartan → Cozaar` is the same object
+ * whichever way a learner met it, and a topic-first canvas produces knowledge a later canvas can
+ * resolve. What it lacks is a SOURCE, and the refusal moves accordingly: from *"no source"* to
+ * **"no honest provenance"**.
+ *
+ * 🔴 AND CHANGING IT MUST NEVER CHANGE IDENTITY. A grounding pass that minted a second object would
+ * leave the learner's demonstrations attached to the abandoned one — someone who proved they knew a
+ * fact would be asked it again as though for the first time, their history orphaned by an
+ * improvement. Enrich the existing object; never create a rival. That this is currently SAFE is a
+ * property of the signature above, not of anyone remembering.
+ *
+ * 🔴 NOT NAMED `provenance`, AND THE COLLISION IS THE REASON. `KnowledgeObject` ALREADY has a
+ * `provenance?: ExtractionProvenance` meaning *which extractor, lane, model and schema produced this
+ * object* — generation lineage, explicitly "never learner cognition". That is a different question
+ * from *does this claim trace to a source at all*: a table read by a model out of an uploaded PDF is
+ * anchored with a model LANE, while a topic-minted object has no document anywhere. Both facts are
+ * needed and neither substitutes for the other.
+ *
+ * Overloading the existing name would put two meanings under one word at the exact boundary this
+ * codebase has lost six fields to. Renaming the OLD one was the other option and is worse: payloads
+ * persist field-by-field and subtractively, so `provenance` → `extractionProvenance` would make
+ * every stored row read back with its generation record silently gone.
+ *
+ * 🔴 IT IS A SET, NOT A LABEL, AND SCALAR WAS THE FIRST DESIGN AND THE WRONG ONE. Nemesis may know
+ * one fact from model knowledge AND from the learner's Lecture 4 AND from an OpenStax chapter. A
+ * scalar forces a precedence rule between them and throws the rest away; grounding a model claim
+ * would OVERWRITE the fact that Nemesis also knew it independently. Enrichment **adds a way of
+ * knowing**. It never replaces one.
+ *
+ * 🔴 AND THE SET IS SPLIT ACROSS TWO FIELDS ON PURPOSE, WHICH IS THE ONE SURPRISING THING HERE.
+ * Anchored ways of knowing already have a home: `sourceAnchors`, which is already an accumulating
+ * set. Storing them a second time in a parallel list would create two collections describing the
+ * same facts, free to disagree — an anchor with no record, a record with no anchor — which is the
+ * two-hand-maintained-lists failure this codebase keeps paying for.
+ *
+ * So `sourceAnchors` stays the single authority for anything anchorable, and this field holds only
+ * the ways of knowing that CANNOT carry an anchor. The two are disjoint by construction, so drift
+ * is unrepresentable rather than something a test has to remember to check. Ask `waysOfKnowing()`
+ * for the whole set and `hasGroundableAnchor()` for what the citation marker is allowed to promise.
+ */
+export type UnanchoredProvenance =
+  /**
+   * Nemesis knows this from model knowledge, with no external source behind it.
+   *
+   * 🔴 NEVER RENDERS AS A CITATION. The quiet `¹` promises "here is the excerpt this came from", and
+   * model knowledge has no excerpt. A fabricated source is worse than no marker.
+   *
+   * 🔴 AND NOT PERMANENT, AND NOT EXCLUSIVE. When source context is later acquired, the SAME object
+   * gains an anchor and the marker starts working — same identity, same evidence, same objective.
+   * This entry stays: that Nemesis also knew it independently remains true, and deleting it would
+   * be rewriting history to make the present tidier.
+   */
+  "model";
+
 /** One learnable thing, of one type.
  *
  *  Sits BETWEEN the canvas's coarse objectives (`CanvasConcept`) and the prompts that test them:
@@ -297,6 +361,13 @@ export interface ExtractionProvenance {
 export interface KnowledgeObject {
   id: string;
   type: KnowledgeType;
+  /**
+   * 🔴 REQUIRED, DELIBERATELY, AND THIS IS THE FIELD MOST LIKELY TO BE MADE OPTIONAL BY SOMEONE IN A
+   * HURRY. Six structural fields have already died at this codebase's boundaries by being optional
+   * and quietly absent. An unset provenance is not "unknown" — it is a claim whose origin nobody
+   * stated, which is exactly what the contract forbids presenting to a learner.
+   */
+  unanchoredProvenance: readonly UnanchoredProvenance[];
   /** One line naming what is to be known. Always present, whatever the type — it is what the
    *  objectives map and any diagnosis can show without understanding the payload. */
   statement: string;
