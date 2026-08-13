@@ -93,6 +93,37 @@ affect nothing.**
 | J3 | **Provenance survives; the toolbar does not.** | *"Where did this come from?"* is legitimately useful. It should read as **evidence behind the Canvas** — a quiet citation marker, or answering the learner's own question — not as document-editing chrome. Exact presentation is UI's. |
 | J4 | 🔴 **Uploaded material is not automatically rewritten into a mini-textbook.** | Exposition is **a cognitive strategy used when needed, not the default surface.** For an arbitrary association (`losartan ↔ Cozaar`), go straight to production. Expand only when evidence says the learner lacks the distinction. For causal material, expose only enough structure to build a model, then immediately require explanation, prediction or reconstruction. |
 
+### 🔴 J2 EXTENDS TO EXPANDING — ruling 2026-08-13, and it reverses a wrong one
+
+Integration asked whether a control that only reveals **more**, and stores nothing about the learner,
+violates a criterion written to stop controls that **hide** material. Brain first ruled it permitted:
+*"expanding asserts 'show me more', which is a request for information, not a claim about knowledge,
+and it cannot hide anything."* **Every clause is true and the conclusion is wrong.**
+
+**J2's harm was never only concealment.** The owner's own words, below:
+
+> *"…appear, disappear, compress, **expand**, or change representation because Brain's estimate of
+> the learner changed."*
+
+`expand` is in that list. J2 is a rule about **who decides resolution**, not about which direction
+the block moves. A manual expand is the learner managing AI-generated blocks — the named
+prohibition.
+
+**The resolution is not "no agency". It is where the agency lives**, and §K5 already decides it:
+*navigation is scrolling; the control surface is the composer.*
+
+| | |
+|---|---|
+| *"explain that properly"*, *"go deeper"* — **through the composer** | ✅ the learner states intent; **Brain** changes resolution |
+| a per-block expand control | ❌ document-reader chrome; the learner edits the document directly |
+
+Same capability, different seam. One produces intent the policy can act on and record; the other
+bypasses the policy entirely. **This is the standing rule: remove the control, never the feature.**
+
+🔴 **Unreachable is not compliant.** The click-to-reopen path cannot currently be triggered — 0 of 73
+production blocks carry `collapsed` — but an affordance nobody can reach today is *undetonated*, not
+absent. It fails J2 and it is removed, not left in place because nothing hits it.
+
 **The principle, in the owner's words:**
 
 > The learner should not manage AI-generated blocks. **The blocks themselves should appear,
