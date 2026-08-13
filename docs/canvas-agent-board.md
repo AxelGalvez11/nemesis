@@ -380,14 +380,61 @@ lives, and how ownership continues to be reported. All Runtime's.
 
 ## RUNTIME-004 — canvas sources attached without a durable id
 
-**STATUS** P2 — filed 2026-08-12 from Integration's `[QUESTION]`. **Do not start before
-`RUNTIME-005` and `RUNTIME-003`.**
+**STATUS** 🔴 **THE ENTRY BELOW WAS WRONG, AND IT WAS BRAIN'S.** Investigated read-only by Runtime
+2026-08-13; nothing built, no production data touched.
 
-*Community IPPE Exam Prep* holds 4 sources with **0** durable — `librarySourceId` null on all four,
-so the knowledge layer cannot address any of them and the canvas dies at `canvas-knowledge.ts:111`
-before ownership is even consulted. The attach path is `use-canvas-session.ts:341`
-(`durability: extracted.librarySourceId ? "durable" : "ephemeral"`). Whether an ephemeral attach is
-ever correct is the question; Brain has not decided and does not need to before RUNTIME-005 lands.
+### The board blamed code that did not write those rows
+
+The durability line this task named — `use-canvas-session.ts:341` — **landed 2026-08-11 in #474.**
+Canvas `186d0749` was created **2026-08-08, three days earlier.** All four of its sources carry
+`durability` **absent**, not `"ephemeral"` — the signature of a writer that predates the field.
+
+**And the only canvas created after #474 that has sources is `796a6045`, at 1 durable of 1.** The
+single production sample of the *current* attach path produced a durable source. **There is no
+evidence the live path is broken.**
+
+So this is **legacy data plus a latent path**, not the live product failure the entry described.
+Brain wrote that diagnosis from a symptom without checking whether the code it named existed yet.
+
+### The owner's material is NOT lost
+
+**136 excerpts survive inside the canvas document** (1 + 45 + 45 + 45). **Addressability was lost,
+not content.** `s2`, `s3` and `s4` are the same document attached three times.
+
+### 🔴 DO NOT RELINK — it would accomplish nothing
+
+`s1` is a confident 4-of-4 token match to `IPPE_Community_Exam_Prep_Instructions.pdf` (`3262f236`),
+parsed, uploaded the day before the canvas. **Relinking it anyway changes nothing**, because
+`canvas-knowledge.ts:111` requires **all** sources durable, not some:
+
+```ts
+if (sourceIds.length !== canvas.sources.length && !bypassOwnership) return nothingToRead();
+```
+
+1 durable of 4 → `1 !== 4` → `nothingToRead()`. **Identical outcome, one write to the owner's real
+data, zero benefit.** `s2`–`s4` have no convincing candidate (best 2 of 7) and **must not be
+guessed** — a wrong relink attaches the owner's coursework to an unrelated document, which is worse
+than leaving it broken, because it would be broken *and* wrong.
+
+### 🔴 The real defect: a silent, size-asymmetric filing failure
+
+`extractFile` files best-effort, then picks a lane from the **outcome**:
+
+- **small file whose filing failed** → the inline lane still extracts and returns text with **no
+  `librarySourceId`** — silently ephemeral, permanently unteachable, **no error**
+- **large file** → retries and throws
+
+**The learner sees their material attached and readable while Nemesis can never teach from it, and
+nothing says so. Degraded presented as complete** — this board's founding failure mode, arriving
+through an upload path nobody was watching.
+
+**BRAIN'S RULING, so it does not need re-litigating:** allow the ephemeral attach, **disclose it**,
+and offer relink. Failing the upload loudly would cost a learner their work over a bookkeeping
+failure — a source gap becoming the learner's loss. **The silence is the defect; the ephemerality is
+not.** One flag currently serves both reading and teaching, and that is what has to stop.
+
+**DO NOT BUILD IT YET.** The live path shows no evidence of the defect and `INTEGRATION-001` is
+still unproven. Diagnosis preserved read-only on `probe/runtime-004-diagnosis`.
 
 ---
 
