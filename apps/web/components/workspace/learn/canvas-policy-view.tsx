@@ -11,9 +11,34 @@
 // canvas; a retrieval prompt that grew its own textarea would put two of them on screen, which is
 // the exact thing the composer's own header says it exists to prevent.
 
-import { VERDICT_HEADLINE } from "@/lib/learn/canvas-judge";
+import { useEffect, useRef, useState } from "react";
+
+import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
+
+/** `Verdict` is declared but not exported by canvas-judge, and that file is Runtime's — so the
+ *  type is derived from the exported map rather than reaching across a lane boundary to add an
+ *  export. It also means a new verdict cannot be added there without this map failing to compile,
+ *  which is the behaviour I want: every verdict must be given a colour deliberately. */
+type Verdict = keyof typeof VERDICT_HEADLINE;
+
+/** What colour the learner's own words take once they have been read.
+ *
+ *  🔴 THE COLOUR IS THE FEEDBACK, which is why a pass needs no sentence. Green means it landed,
+ *  amber means part of it did, red means it did not.
+ *
+ *  🔴 THIS IS NOT `--ui-action`. The accent is a MUTED green (oklch chroma ~0.06); success here is
+ *  `--ui-green` at ~0.11, nearly twice the chroma, and it appears as TEXT rather than as a filled
+ *  control. They are deliberately not the same green: one means "press this", the other means "you
+ *  were right", and a learner should never have to work out which. */
+const VERDICT_TONE: Record<Verdict, string> = {
+  strong: "text-(--ui-green)",
+  understood: "text-(--ui-green)",
+  partial: "text-(--ui-yellow)",
+  incorrect: "text-(--ui-red)",
+  misconception: "text-(--ui-red)",
+};
 
 /**
  * What is on screen right now, as one value.
@@ -99,46 +124,15 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   // before being asked the next thing, even though the policy has already moved on underneath.
   if (feedback) {
     return (
-      <Frame sharing={sharing}>
-        {/* 🔴 THE WORDS STAY, THE ATTRIBUTION GOES (§K, Brain 2026-08-13). This line used to open
-            with a two-word attribution naming the speaker before the quotation marks — one of the
-            four §K literals, and the only one that lived in the policy arm rather than the legacy
-            six-stage one, so deleting that arm would have left it standing.
-
-            THE QUOTE STAYS because it is doing real work: the verdict below is ABOUT these words,
-            and feedback that names a wrong model earns its space by naming it, so detached from
-            the sentence that produced it the learner has to reconstruct what was judged. Removing
-            the whole line would be `minimal` mistaken for `contextless`.
-
-            THE ATTRIBUTION WENT because it tells the learner something they already know, in a
-            voice that exists only to stage the exchange. A label must carry information the
-            learner needs and must never narrate the machine, and narration is what makes a
-            surface read as a transcript even when nothing accumulates. The quotation marks
-            already carry the attribution.
-
-            🔴 A §K guard in `canvas-policy-view.test.ts` holds this. It strips comments before
-            checking, precisely so prose like this paragraph cannot trip it — the first version
-            grepped raw source and failed on THIS FILE'S OWN header, which names the stage
-            sequence in order to say the page does not have one. A guard that cannot tell rendered
-            copy from a comment about rendered copy gets "fixed" by deleting the explanation. The
-            banned phrase is still not spelled out here anyway, which costs nothing. */}
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">“{feedback.answer}”</p>
-        <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
-          {VERDICT_HEADLINE[feedback.evaluation.verdict]}
-        </h2>
-        <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">
-          {feedback.evaluation.feedback}
-        </p>
-        <button
-          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
-          onClick={runtime.acknowledge}
-          type="button"
-        >
-          Continue
-        </button>
-      </Frame>
+      <FeedbackScreen
+        feedback={feedback}
+        onAcknowledge={runtime.acknowledge}
+        recording={runtime.recording}
+        sharing={sharing}
+      />
     );
   }
+
 
   if (!decision) {
     // 🔴 THE HONEST EMPTY STATE, AND IT SAYS WHICH EMPTY IT IS. "Nothing is owed here", "we could
@@ -276,6 +270,98 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
         You've just worked through everything here. Asking again this soon wouldn't tell either of us
         anything new.
       </p>
+    </Frame>
+  );
+}
+
+/** How long a passed retrieval holds its verdict before it is even eligible to move on by itself.
+ *
+ *  🔴 A READABILITY FLOOR, NOT A CORRECTNESS GATE. What decides when it is SAFE to advance is
+ *  `recording`; this only decides how long the answer is guaranteed to sit still when the write
+ *  happens to be fast, so a pass never flashes and vanishes. Advancing waits for the LATER of the
+ *  two. */
+const MIN_VERDICT_READ_MS = 2000;
+
+/** The verdict, worn by the learner's own words.
+ *
+ *  🔴 GREEN IS THE PUNCTUATION. A correct answer used to print "That's it." above the quote. That
+ *  is a score rendered as a sentence: it carries no information the learner does not already have,
+ *  and the colour already says it (`canvas-interaction-model.md` §G — the colour selects the
+ *  intensity). So on a pass the words turn green and NOTHING ELSE APPEARS.
+ *
+ *  🔴 SILENCE IS FOR `correct` ONLY. `partial`, `incorrect` and `misconception` keep their
+ *  headline and their feedback, because there they carry something the learner does not have.
+ *  Flattening all four into the same silence would be minimal mistaken for contextless.
+ *
+ *  🔴 AND A PASS DOES NOT WAIT FOR A CLICK. A "Continue" button passed the §K vocabulary check —
+ *  the banned literal is "Next" — while failing the behaviour the rule exists for. The next thing
+ *  materialises on its own. A correction keeps its button: that is a passage the learner needs
+ *  time with, and `show_correction`/`contrast` wrote no evidence, so the click is the only thing
+ *  stopping the same card being served again.
+ *
+ *  🔴 THE RACE IS CLOSED ON BOTH SIDES. `submit()` sets feedback BEFORE the evidence write
+ *  finishes, so a timer alone could advance mid-write — and the learner could answer again with
+ *  the answer still on screen, recording that echo as a real demonstration. `recording` is true
+ *  for the whole span in which evidence disagrees with what the learner just did. `acknowledge()`
+ *  also refuses outright while recording, so a bug in this gate costs a missed advance, never a
+ *  fabricated one. The ref (not the callback) is in the deps: `acknowledge` is keyed on `decision`,
+ *  which legitimately changes while this screen is up. */
+function FeedbackScreen({
+  feedback,
+  sharing,
+  onAcknowledge,
+  recording,
+}: {
+  feedback: NonNullable<PolicyRuntime["feedback"]>;
+  sharing: boolean;
+  onAcknowledge: () => void;
+  recording: boolean;
+}) {
+  const verdict = feedback.evaluation.verdict;
+  const passed = verdictIsPass(verdict);
+
+  const latestAcknowledge = useRef(onAcknowledge);
+  latestAcknowledge.current = onAcknowledge;
+
+  const [minReadDone, setMinReadDone] = useState(false);
+  useEffect(() => {
+    if (!passed) return;
+    setMinReadDone(false);
+    const timer = window.setTimeout(() => setMinReadDone(true), MIN_VERDICT_READ_MS);
+    return () => window.clearTimeout(timer);
+  }, [passed]);
+
+  useEffect(() => {
+    if (!passed || !minReadDone || recording) return;
+    latestAcknowledge.current();
+  }, [minReadDone, passed, recording]);
+
+  return (
+    <Frame sharing={sharing}>
+      {/* The learner's own words, in the verdict's colour. The quote stays — the verdict is ABOUT
+          these words — but the attribution in front of it does not (§K): it tells the learner
+          something they already know, in a voice that exists only to stage the exchange.
+          🔴 A §K guard in canvas-policy-view.test.ts strips comments before checking, so prose
+          like this cannot trip it; an earlier version grepped raw source and failed on this file's
+          own header. A guard that cannot tell rendered copy from a comment about it gets "fixed"
+          by deleting the explanation. */}
+      <p className={`text-[1.375rem] font-medium leading-snug ${VERDICT_TONE[verdict]}`}>“{feedback.answer}”</p>
+
+      {!passed && (
+        <>
+          <h2 className="mt-4 text-[1.125rem] font-medium leading-snug text-(--ui-text-primary)">
+            {VERDICT_HEADLINE[verdict]}
+          </h2>
+          <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
+          <button
+            className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
+            onClick={onAcknowledge}
+            type="button"
+          >
+            Continue
+          </button>
+        </>
+      )}
     </Frame>
   );
 }

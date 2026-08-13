@@ -22,7 +22,7 @@ that is a fact about the parser's architecture rather than a gap in the harness.
 |---|---|---|
 | OmniDocBench | 984 jpg + 673 png, **zero PDFs** | **No** |
 | PubTables-1M (structure) | cropped table jpgs + XML | **Only via recovered source PDFs** |
-| ParseBench | **2,037 single-page PDFs** | Yes — audited, not run |
+| ParseBench | **2,037 single-page PDFs** | Yes — **run twice**, see §4 |
 
 Nemesis reads a PDF's **native text runs and its vector rulings**. Neither
 exists in a photograph of a page. Scoring it on rasterised pages would measure
@@ -123,25 +123,94 @@ downstream as a blank document?
 **50/50 correctly reported as carrying no readable text. 0 crashes. 0 pages
 returned text that is not in the file.**
 
-## 4. ParseBench — **NOT RUN**
+## 4. ParseBench — **RUN TWICE**
 
-Audited only. It is the **most relevant** of the three to what Nemesis actually
-needs — whether parsed structure stays useful to an agent — and it is the one
-benchmark here that ships real PDFs.
+🔴 **THIS SECTION SAID "NOT RUN" UNTIL 2026-08-13, AND IT WAS FALSE FOR A DAY.**
+The benchmark was run on 2026-08-11 and again on 2026-08-12. The sentence stayed
+because the *run* landed on **#485 (merged)** while the *baseline record* —
+`docs/parsebench-baseline.md` — lives on **#483, which is still open.** For a
+day this file and `parser-repairs-before-after.md`, sitting beside it in the same
+directory, contradicted each other, and a team lead read this one and repeated
+it to the owner as fact.
+
+**A document is an instrument, and a stale one answers confidently.** If you
+find a claim here you cannot trace to a committed result file, distrust this
+file before you distrust the parser.
+
+🔴 **AND DO NOT DECIDE WHETHER WORK SHIPPED WITH `git branch --contains`.** This
+repo squash-merges, so a merged PR's branch tip is *never* an ancestor of `main`.
+`bench/rerun-after-fixes` looks unmerged by that test and is not. Use
+`gh pr view <n> --json mergedAt`.
 
 - Dataset `llamaindex/ParseBench`: **2,037 single-page PDFs** + 5 rule files
-  (503 table rules, 16,325 layout, 141,322 text-content).
-- Evaluation is **deterministic and rule-based** — no LLM judge, so no API cost
-  or nondeterminism.
-- Apache-2.0.
+  (503 table rules, 16,325 layout, 141,322 text-content). 2,036 scored.
+- Evaluation is **deterministic and rule-based**. The one LLM component —
+  `LLAMACLOUD_BENCH_LLM_NORMALIZATION`, which defaults to `judge` and calls Haiku
+  to fuzzy-match chart labels — was set to `off` for both runs. **No API spend,
+  and chart scores are therefore not leaderboard-comparable.**
+- Vision lane **off** (no key configured), so these are **native-lane** numbers:
+  what the parser recovers from real text runs and vector rulings, never OCR.
+- Apache-2.0. Harness: `bench/parsebench/`.
 
-**What it would take:** `uv sync --extra runners`, plus a provider shim
-implementing their `InferenceRequest`/`InferenceResult` contract — Nemesis is
-TypeScript, so the shim must shell out to a Node entry point and render
-`DocumentModel` into their expected markup. That is the "substantial unrelated
-infrastructure" this task was told not to block on.
+### Results
 
-**Recommended as the next parser-quality benchmark.**
+| dimension | #483 baseline | #485 after four repairs |
+|---|--:|--:|
+| Tables | 12.73 | 12.73 |
+| Charts | 0.83 | 0.83 |
+| Content Faithfulness | 62.06 | 61.55 |
+| Semantic Formatting | 11.70 | 12.20 |
+| Visual Grounding | 42.05 | **48.90** |
+| — localization (af1) | 85.64 | **90.83** |
+| — classification | 23.62 | **28.30** |
+| — no hallucinated sentence | 44.48 | **52.98** |
+
+**The two columns are comparable and that was checked, not assumed.** The
+instrument — `bench/parsebench/`, `apps/web/lib/pdf/parsebench-output.ts` and
+`apps/web/scripts/parsebench-parse.mts` — is byte-identical between the two
+branches. Same metric set, same serializer, same ontology.
+
+🔴 **NEVER RECORD A SINGLE "NEMESIS PARSEBENCH SCORE."** The five dimensions
+measure different capabilities and ParseBench's own Overall is leaderboard-weighted,
+not an average. Averaging a 90.83 with a 0.83 describes no parser that exists.
+
+🔴 **AND THE ONE MEAN HERE HIDES A BIMODAL RESULT.** Content Faithfulness
+"−0.51" is **222 documents better, 92 worse, 192 unchanged.** Every large gain is
+a multi-column document; every large drop is a scanned one that stopped emitting
+`[Figure — not examined]` as though it were prose. The parser got **much better
+where it can read and honest where it cannot** — and the mean says "slightly
+worse". See `parser-repairs-before-after.md`.
+
+### Currency — do these numbers still describe `main`?
+
+**Yes, as of `a3ef845e`, verified by dependency diff rather than a rerun.**
+`main` moved 104 commits after the #485 measurement. Every module the benchmark
+actually reads is byte-identical across that span:
+
+```
+bench/parsebench/**                        IDENTICAL   harness, provider, layout adapter
+apps/web/scripts/parsebench-parse.mts      IDENTICAL   the CLI
+apps/web/lib/pdf/parsebench-output.ts      IDENTICAL   the serializer
+blockToText                                IDENTICAL   (md5 equal)
+DocBlockKind union                         IDENTICAL   the label vocabulary
+apps/web/package.json, shared/package.json IDENTICAL   no dependency bump
+```
+
+The parser-owned files that *did* change are off this path or additive:
+`structure.ts` adds `tableRegionsUnreadByUnit` — a per-page breakdown whose sum
+is arithmetically the old total, with `assemble(pages)` untouched;
+`document-model.ts` and `parse-document.ts` add XLSX/CSV, and ParseBench is 100%
+PDF on four of five dimensions; `extraction-coverage.ts` and `source-*.ts` are
+coverage reporting the serializer does not import.
+
+The one behavioural change on the PDF path is **#486's fix**: an image-only
+document now returns `no-text` carrying its model, where it used to return a bare
+`empty`. **Both are `ok: false`, and the CLI emits `pages: []`, `layout_pages: []`,
+`markdown: ""` for either** — so the benchmark's input is byte-identical and the
+scores cannot have moved. Only our internal reason label changed.
+
+**Re-run when any file in that block changes.** Until then a rerun would spend
+hours to reproduce numbers that provably cannot have moved.
 
 ---
 
@@ -169,6 +238,57 @@ different from zero.
 | **PERFORMANCE** — ms/page | Nemesis corpus | **13.5** |
 | **PERFORMANCE** — peak RSS | Nemesis corpus | 845 MB |
 | **PERFORMANCE** — artifacts required | — | **none** (no model, no native addon on this lane) |
+| **EXTERNAL** — table structure | ParseBench, 2,036 | **12.73** |
+| **EXTERNAL** — chart data | ParseBench, 2,036 | **0.83** (extracts none) |
+| **EXTERNAL** — content faithfulness | ParseBench, 2,036 | **61.55** |
+| **EXTERNAL** — semantic formatting | ParseBench, 2,036 | **12.20** |
+| **EXTERNAL** — visual grounding | ParseBench, 2,036 | **48.90** |
+| **EXTERNAL** — · finding the region | ParseBench, af1 | **90.83** |
+| **EXTERNAL** — · naming the region | ParseBench, classification | **28.30** |
+
+### Where that sits against other parsers
+
+🔴 **PROVENANCE, BECAUSE THIS REPO HAS WITHDRAWN FOUR COMPETITOR CLAIMS (#451).**
+Every row except Nemesis is **ParseBench's own published leaderboard figure**. We
+did **not** run those parsers ourselves and must not say we did. Only the Nemesis
+row is our measurement.
+
+```
+parser                                 Tbl   Chrt  Faith    Fmt   Grnd   $/page
+► Nemesis (native, local)             12.7    0.8   61.6   12.2   48.9    0.00
+Docling-models                        66.4   52.8   66.9    1.0   66.1     n/a
+Firecrawl                             55.9    0.0   74.4   25.2    0.0    0.90
+Google Cloud Document AI              55.1    1.4   83.7   50.5   61.3    1.00
+AWS Textract                          84.6    6.0   74.8    3.7   70.4    1.50
+Azure Document Intelligence (Layout)  86.0    1.6   84.9   51.9   73.8    1.00
+Datalab Fast                          85.1   57.6   82.8   39.1   74.5    0.40
+LlamaParse Cost Effective             81.4   70.2   90.9   68.8   72.6    0.38
+LlamaParse Agentic                    90.7   78.1   89.7   85.2   80.6    1.25
+```
+
+🔴 **NOT LIKE-FOR-LIKE, AND THAT IS THE POINT.** Every other row reads **rendered
+pages with a vision model or a paid API**. Nemesis reads native text runs and
+vector rulings, locally, at **no per-page cost**. It should be expected to lose
+wherever the answer exists only in pixels.
+
+🔴 **And it is still behind on dimensions where that excuse does not apply.**
+Tables and Semantic Formatting are recoverable from native text and rulings
+alone. Docling scores **1.03** on Semantic Formatting, so a weak score there is
+characteristic of native parsers — but Google DocAI (50.5) and Mistral (66.4)
+show it is not inherent to the problem. **Do not soften this.**
+
+**The cost column is not decoration.** At $1.25/page a single 300-page textbook
+costs $375 to parse once. Nemesis's unit economics already have one unmetered
+model primitive; adopting a per-page paid parser as the default lane is a
+different business, not a quality upgrade. Any "catch up to LlamaParse" proposal
+has to carry that number with it.
+
+🔴 **THE SHAPE OF THE RESULT IS THE FINDING, NOT THE RANKING.** Localization
+**90.83** against classification **28.30** on the same blocks means the parser
+**finds the right rectangle and gives it the wrong name.** Per-class F1:
+Picture 36.2 · Section 15.1 · Table 10.9 · Text 8.8 · **Page-header 0.0 ·
+Page-footer 0.0.** That is one missing classifier over geometry that already
+works — a far cheaper gap to close than a geometry gap would have been.
 
 ## 6. Parser limitations, concretely
 
@@ -221,7 +341,9 @@ region, no rejection and no signal of any kind.
 - the full 164-PDF corpus gate (**hard gate: zero content lost, zero duplicated**)
 - the frozen 360-table PubTables sample (**regression gate: GriTS-Top must not fall**)
 - the 50-page refusal check (**hard gate: 50/50**)
-- ParseBench, once integrated
+- ParseBench (integrated; `bench/parsebench/`) — **re-run only when a file in the
+  §4 currency block changes.** A rerun that cannot move is hours spent to restate
+  a number.
 
 Nothing here needs to run on an ordinary frontend PR.
 
@@ -238,3 +360,54 @@ make it.
 regions.** That re-opens the failure `structure.ts` documents refusing: a grid
 asserted over prose relabels every value in it. The corpus gate that currently
 reads zero destructive claims is what would pay for it.
+
+---
+
+## 10. "Is the parser top tier?" — the answer, and why half of it is a scope question
+
+Asked by the owner, 2026-08-13. Answered here so it is not re-derived.
+
+**No.** On the one external suite this parser can be scored on, it is behind
+LlamaParse Agentic and Docling on all five dimensions (§5). That is measured, by
+us, against a public benchmark we did not design and did not tune to.
+
+**But the gap is two different gaps, and they have different answers.**
+
+| | what it is | what closes it |
+|---|---|---|
+| **Naming** — classification 28.3 while localization is 90.8; Page-header/footer F1 **0.00** | the parser finds the right rectangle and calls it the wrong thing | a classifier over geometry that already works. **An engineering gap.** |
+| **Reading pixels** — Charts 0.83, scanned pages refused | there is no text layer and no ruling to read | OCR / a vision lane. **A product scope decision, not a quality gap.** |
+
+🔴 **"Top tier" as the field measures it is partly unanswerable by construction.**
+Two of the three standard suites ship **photographs of pages** (§0). A parser that
+reads native text runs and vector rulings scores zero on a photograph — not
+because it is bad, but because there is nothing there for it to read. Until
+someone decides whether Nemesis should read images at all, no honest total exists.
+**Do not let anyone produce one by averaging.**
+
+🔴 **And "top tier at parsing" is not obviously the goal.** These benchmarks score
+fidelity to a page. Nemesis's question is whether a learner can be taught from
+what survived — which is why **coverage honesty** (`ExtractionCoverage`, the trust
+verdict, per-unit loss) is load-bearing in a way a leaderboard place is not. A
+parser that silently mis-reads a table at 90 is worse for a student than one that
+refuses it at 12, because the first tells a learner they are weak on material the
+parser got wrong. **A source gap is not a learner gap**, and that invariant is
+worth more here than five points of Semantic Formatting.
+
+**Ranked by measured evidence, if quality work resumes:**
+
+1. **Page-header / page-footer classification** — 0.00 F1, and `is_footer` fails
+   100%. 🔴 Both stayed 0.00 after the repairs *as predicted*: all 458 layout
+   documents are single-page and furniture is detected from repetition **across**
+   pages. The position-only rule that would have moved the number was measured and
+   **refused** — it relabels headings as furniture. Moving this needs multi-page
+   evidence, not a threshold.
+2. **Block granularity** — when a ground-truth element goes unmatched, mean IoU is
+   **0.001** against mean IoA **0.840**: our blocks *cover* the element and are far
+   coarser than it. This is the dominant remaining classification limit.
+3. **Borderless tables** — no vertical rules means no region is proposed, so there
+   is no rejection and **no signal of any kind**. Dominates scientific publishing.
+   🔴 See §9 before reaching for the obvious fix.
+4. **Merged cells** — `DocTable` has no span field; one merge costs ~0.17 GriTS-Top.
+
+**Frozen and untouched:** charts, OCR, inline formatting.
