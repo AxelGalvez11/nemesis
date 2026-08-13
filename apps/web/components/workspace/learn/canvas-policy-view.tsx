@@ -85,7 +85,7 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
   return (
     <div className="pointer-events-none sticky top-0 z-30 flex justify-center pt-1">
       <p className="rounded-full bg-(--ui-bg-warning,#3a2f14) px-3 py-1 text-[0.6875rem] text-(--ui-text-tertiary)">
-        Ownership bypassed —{" "}
+        Ownership bypassed:{" "}
         {unrepresented === 1 ? "1 part of this canvas is" : `${unrepresented} parts of this canvas are`} hidden
       </p>
     </div>
@@ -141,9 +141,9 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
         </h2>
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
           {nothingReadable
-            ? "The file is attached and safe — this is about our reading of it, not about your material."
+            ? "The file is attached and safe. This is about our reading of it, not about your material."
             : partlyReadable
-              ? "What came through is covered here. The rest wasn't read clearly enough to ask about — that's a gap in our reading, not a gap in what you know."
+              ? "What came through is covered here. The rest wasn't read clearly enough to ask about. That's a gap in our reading, not a gap in what you know."
               : "You've shown everything this material asks for. Add more material, or come back to it later."}
         </p>
       </Frame>
@@ -195,7 +195,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
           {said === "partial"
             ? "You had part of this."
             : said === "not_demonstrated"
-              ? "No attempt came back on this one — here it is."
+              ? "No attempt came back on this one. Here it is."
               : "Here's the one to fix."}
         </p>
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">

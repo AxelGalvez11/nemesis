@@ -156,7 +156,7 @@ export function SourcesControl({
             // Says what this is for rather than pretending to be broken. Nothing generates
             // outputs yet; the tab exists because the distinction is architectural (§4).
             <p className="px-2 py-3 text-[0.8125rem] leading-relaxed text-(--ui-text-quaternary)">
-              Things Nemesis makes for you — a summary, slides, a document — will be kept here.
+              Things Nemesis makes for you, like a summary, slides or a document, will be kept here.
             </p>
           ) : (
             outputs.map((output) => (

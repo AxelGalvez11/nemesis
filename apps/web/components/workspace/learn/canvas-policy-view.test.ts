@@ -54,7 +54,7 @@ test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their
   // block comment above it) — but each must still say something different, because
   // not_demonstrated must never read as "you got this wrong" (UI-001).
   assert.match(source, /"You had part of this\."/);
-  assert.match(source, /"No attempt came back on this one — here it is\."/);
+  assert.match(source, /"No attempt came back on this one\. Here it is\."/);
   assert.match(source, /"Here's the one to fix\."/);
 });
 
