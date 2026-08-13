@@ -22,6 +22,7 @@
 import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence";
 import type { LearningObjective } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
+import { eligibleForRetrieval } from "./retrieval-eligibility";
 
 /**
  * A single thing to do. An ACTION, never a STAGE.
@@ -157,16 +158,35 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
         type: "show_correction",
       };
 
-    // 🔴 DEMONSTRATED. Move on. Nothing here requires a separate Test stage to re-verify what was
-    // just shown to work — that is the fixed sequence this architecture removes. The objective can
-    // come back later on its own merits, once forgetting is modelled; it does not come back now
-    // because a session template says there are more steps left.
-    case "correct":
+    // 🔴 DEMONSTRATED. Move on — for now, and ONLY for now. Nothing here requires a separate Test
+    // stage to re-verify what was just shown to work; that is the fixed sequence this architecture
+    // removes. It does not come back because a session template says there are more steps left.
+    //
+    // 🔴 BUT "MOVE ON" USED TO MEAN "FOR EVER", AND THAT WAS THE DEFECT. Both branches returned
+    // `advance`, `decideNext` never selects an `advance`, and `projectLearnerState` has no clock —
+    // so a demonstrated objective was not deprioritised, it was EXCLUDED. Measured: answered
+    // correctly a year ago, still `null`. The comment above used to promise it would "come back
+    // later on its own merits, once forgetting is modelled"; nothing had checked whether that day
+    // had arrived, and it had not.
+    case "correct": {
+      // 🔴 SUPPRESSION FIRST, AND IT IS INDEPENDENT OF THE INTERVAL BY CONSTRUCTION. Layer 1 —
+      // never re-ask the thing just answered — must keep holding whatever tempo the owner later
+      // sets. Checking `actedJustNow` before eligibility means even an interval of zero could not
+      // reopen the immediate repeat: the two guards compose rather than compete. This is a door
+      // being added, not a lock being removed.
+      if (!actedJustNow && eligibleForRetrieval({ lastEvidenceAt: state.lastEvidenceAt, now: input.now })) {
+        return {
+          because: `demonstrated before, and long enough ago that asking again measures memory rather than the last few minutes`,
+          objectiveId: id,
+          type: "retrieve",
+        };
+      }
       return {
         because: actedJustNow
           ? `just demonstrated — asking again now would measure working memory rather than learning`
-          : `already demonstrated, and nothing has contradicted it since`,
+          : `already demonstrated, and not yet due for another retrieval`,
         type: "advance",
       };
+    }
   }
 }

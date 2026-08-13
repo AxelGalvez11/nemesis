@@ -68,12 +68,23 @@ test("🔴 a demonstrated objective advances rather than being re-tested", () =>
   assert.equal(action.type, "advance");
 });
 
-test("a demonstration from long ago still advances — no `strong` state was invented", () => {
-  // 🔴 Step 5 projects six states and this policy adds none. Distinguishing "one fresh correct" from
-  // "repeated delayed correct" needs retention data that does not exist yet; inventing a seventh
-  // state inside the policy would put a fact about the learner somewhere nothing else can read.
-  const action = decide([ev("e1", ago(90 * 24 * 3600_000), "strong")]);
-  assert.equal(action.type, "advance");
+test("🔴 a demonstration from long ago becomes ASKABLE again — without inventing a state", () => {
+  // 🔴 THIS TEST USED TO ASSERT `advance`, AND THAT ASSERTION WAS THE DEFECT WRITTEN DOWN. Ninety
+  // days after a correct answer the policy still refused to ask, and because `decideNext` never
+  // selects an `advance`, the objective was not deprioritised — it was excluded, permanently.
+  //
+  // Its real concern survives untouched and is now asserted directly: the policy invents NO seventh
+  // learner state. `projectLearnerState` still says `correct`, still takes no clock, and is
+  // unchanged by any of this. Status is a fact about what the learner did; eligibility is a policy
+  // over that fact. Keeping them separate is the whole design — a projection that decayed its own
+  // status would be `response → 1-4 → that IS learner state` by another road.
+  const evidence = [ev("e1", ago(90 * 24 * 3600_000), "strong")];
+
+  const state = projectLearnerState(GENERIC_TO_BRAND!.identityKey, evidence);
+  assert.equal(state.status, "correct", "the learner DID demonstrate it; time does not make that untrue");
+  assert.equal(state.demonstrationCount, 1);
+
+  assert.equal(decide(evidence).type, "retrieve", "and after ninety days it may be asked again");
 });
 
 // ── a reveal is not a wrong answer ──────────────────────────────────────────
@@ -166,7 +177,12 @@ test("the action depends only on the state, not on the order evidence arrives in
 test("🔴 demonstrating one direction leaves the other UNKNOWN", () => {
   // The strongest acceptance case for the whole architecture: a global learner model that collapsed
   // a fact into one vague "known" would answer `advance` for both.
-  const evidence = [ev("e1", ago(2 * 3600_000), "understood")];
+  // 🔴 THE GAP IS DELIBERATELY INSIDE THE SUPPRESSION WINDOW. At two hours both directions would now
+  // answer `retrieve` — the demonstrated one because its review came due, the other because it was
+  // never asked — and this test would pass while having lost the very thing it exists to detect. A
+  // collapsed "knows losartan/Cozaar" model must still be distinguishable here, so the demonstration
+  // is recent enough that the two directions give DIFFERENT answers.
+  const evidence = [ev("e1", ago(10 * 60_000), "understood")];
   const forward = decide(evidence);
   const reverse = chooseNextTeachingAction({
     knowledgeObject: KNOWLEDGE,

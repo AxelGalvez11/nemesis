@@ -66,18 +66,38 @@ test("🔴 evidence is matched by objective, never merely 'this canvas has evide
   assert.equal(decision?.evidence.length, 0, "the reverse objective has no evidence of its own");
 });
 
-test("both directions demonstrated means nothing is owed", () => {
+test("both directions demonstrated means nothing is owed — while the demonstrations are recent", () => {
+  // 🔴 THE CLOCK IN THIS FIXTURE IS NOW LOAD-BEARING. It used to read 1-2 hours, which was safe only
+  // because a demonstrated objective never came back at all. Now that one can become eligible again,
+  // "nothing is owed" is a claim about a WINDOW, and the fixture has to sit inside it or it is
+  // asserting the absence of a feature rather than the presence of suppression.
   const evidence = [
-    ev("e1", FORWARD!.identityKey, ago(2 * 3600_000), "understood"),
-    ev("e2", REVERSE!.identityKey, ago(1 * 3600_000), "understood"),
+    ev("e1", FORWARD!.identityKey, ago(10 * 60_000), "understood"),
+    ev("e2", REVERSE!.identityKey, ago(5 * 60_000), "understood"),
   ];
   assert.equal(decideNext({ evidence, now: NOW, objectives: RESOLVED }), null);
 });
 
-test("a demonstrated objective is never re-tested to fill a stage", () => {
+test("🔴 …and once they are no longer recent, the SAME log owes a retrieval again", () => {
+  // The other half, and the one that would have caught the original defect. Identical evidence,
+  // identical objectives — only the age differs. A canvas whose every objective was demonstrated
+  // long ago must not be permanently empty, which is exactly what it was.
   const evidence = [
-    ev("e1", FORWARD!.identityKey, ago(2 * 3600_000), "understood"),
-    ev("e2", REVERSE!.identityKey, ago(1 * 3600_000), "understood"),
+    ev("e1", FORWARD!.identityKey, ago(30 * 24 * 3600_000), "understood"),
+    ev("e2", REVERSE!.identityKey, ago(30 * 24 * 3600_000), "understood"),
+  ];
+  const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
+  assert.notEqual(decision, null, "a month later this canvas still had nothing to ask — that was the defect");
+  assert.equal(decision?.action.type, "retrieve");
+  assert.equal(decision?.state.status, "correct", "eligible again WITHOUT its status being rewritten");
+});
+
+test("a demonstrated objective is never re-tested to fill a stage", () => {
+  // Recent, for the same reason as above: this is about `advance` not being an ACTION, not about
+  // whether a review ever comes due.
+  const evidence = [
+    ev("e1", FORWARD!.identityKey, ago(10 * 60_000), "understood"),
+    ev("e2", REVERSE!.identityKey, ago(5 * 60_000), "understood"),
   ];
   const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
   assert.equal(decision, null, "advance is the absence of a next action, not an action");
