@@ -184,11 +184,21 @@ export function composeSurface(input: {
     //      six-stage machine is a run the learner started and is partway through; interrupting it
     //      to ask a policy question would discard answers already given to it."
     //
-    // The premise is false. **The legacy arm has never written a `learner_evidence` row.**
-    // `recordEvidence` has exactly one caller and it is in the policy arm, so a legacy run
-    // accumulates answers in `canvas.document` and nothing durable is ever produced from them.
-    // Verified in production, not inferred: `learner_evidence` holds ZERO rows, while
-    // `knowledge_objects` and `learning_objectives` hold rows written by the policy path.
+    // The premise is false. **The legacy arm has never written a `learner_evidence` row.** That is
+    // established from the CALL GRAPH: `recordEvidence` has exactly one caller and it is in the
+    // policy arm, so a legacy run accumulates answers in `canvas.document` and nothing durable is
+    // ever produced from them.
+    //
+    // 🔴 IT IS NOT ESTABLISHED BY THE EMPTY TABLE, AND THAT DISTINCTION IS LEFT HERE BECAUSE I GOT
+    // IT WRONG FIRST. `learner_evidence` reads zero rows, which looks like corroboration and is
+    // not. A real row WAS written from the live policy canvas on 2026-08-13 — the table went 0 → 1,
+    // observed with the service role — and was then deliberately deleted by id, because a row
+    // claiming the account holder demonstrated something they were never asked is a durable false
+    // claim about a person. **The table is empty because cleanup worked.**
+    //
+    // The general form, which is worth more than this instance: an empty table is not evidence that
+    // a write path is dead. It is evidence of nothing until you check whether the upstream activity
+    // ever happened — and here it did.
     //
     // So the precedence was protecting a run whose output was never recorded — it gave the surface
     // to the arm that cannot learn anything about the learner, and kept it there. That is exactly
