@@ -178,10 +178,20 @@ export function CanvasDocument({
         </button>
       )}
 
-      {/* 🔴 THE LEGACY MOVE IS STILL RENDERED WHERE IT IS STILL REACHABLE, AND THAT IS NOT DEAD
-          CODE. `nextAction` returns null for `learn` — the case §12 replaces — but
-          `targeted_relearn` is reading material rather than an evidence stage and still offers a
-          move. Deleting this would take that path's only control with it. */}
+      {/* 🔴 CORRECTION — THIS IS DEAD IN EVERY CASE, AND #584 SAID OTHERWISE.
+          That comment claimed `targeted_relearn` "is reading material rather than an evidence
+          stage and still offers a move". The first half is true and the second is false: its only
+          move goes to `retest`, which IS retired, so `nextAction` refuses it exactly as it refuses
+          `learn`. The mistake came from reading a true statement about the STATE in
+          canvas-state.ts as a statement about the CONTROL.
+
+          Measured across every state a canvas can be observed in — evidence stages excluded,
+          because `normaliseCanvas` coerces those to `learn` on read — `nextAction` returns null
+          for ALL of them. See canvas-dead-controls.test.ts, which pins it.
+
+          🔴 LEFT IN PLACE ANYWAY, DELIBERATELY. Removing it is a separate decision: it would take
+          six session methods with it, and whether any of that machinery should come back is the
+          owner's call, not a cleanup. The audit reports; it does not delete. */}
       {next && (
         <button
           className="mt-10 ml-3 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
