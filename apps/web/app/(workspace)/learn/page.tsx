@@ -41,9 +41,16 @@ import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
 import { policyOverrideFrom } from "@/lib/learn/policy-override";
 
 function LearnSurface() {
-  // A canvas is addressable by `?c=<id>` rather than by path segment, because the shell's
-  // immersive-route check compares the pathname by exact string — a /learn/[id] route would
-  // silently get the sidebar back.
+  // A canvas is addressable by `?c=<id>` rather than by path segment. The original reason is now
+  // stale and is recorded rather than deleted, because the shape of it still applies: the shell
+  // used to suppress the nav rail on an exact-pathname match, so `/learn/[id]` "would silently get
+  // the sidebar back".
+  //
+  // 🔴 `/learn` IS NO LONGER AN IMMERSIVE ROUTE. Suppressing the rail also suppressed its reopen
+  // toggle, so the Canvas offered no way to reach Library, Calendar or Stats at all. The rail now
+  // starts COLLAPSED everywhere instead, which is quiet in the same way without being a dead end —
+  // and, usefully, that behaviour no longer depends on the pathname, so a future `/learn/[id]`
+  // would inherit it correctly rather than breaking it.
   const params = useSearchParams();
   const canvasId = params.get("c");
   const ask = params.get("ask");

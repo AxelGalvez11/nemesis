@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
-  INITIAL_SIDEBAR_STATE,
   encodeSidebarPreference,
+  initialSidebarState,
   isSidebarOpen,
   onNarrowViewport,
   withSidebarOpen,
@@ -28,12 +28,23 @@ import {
  * asked for. The write happens inside setOpen (a user action), not in an
  * effect, so there is no mount-time write that could clobber storage — the
  * exact landmine the calendar page once had.
+ *
+ * `defaultWideOpen` is what a learner with NOTHING STORED gets. It defaults to open, which is what
+ * every existing call site meant; the workspace nav rail passes false (§L: navigation is secondary,
+ * and a new user starts collapsed). A stored preference always wins over it — the default is the
+ * first impression, not a policy.
  */
-export function useResponsiveSidebar(narrowViewport: boolean, storageKey?: string): {
+export function useResponsiveSidebar(
+  narrowViewport: boolean,
+  storageKey?: string,
+  defaultWideOpen = true,
+): {
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
 } {
-  const [state, setState] = useState(INITIAL_SIDEBAR_STATE);
+  // 🔴 A LAZY INITIALISER, so the seed is not rebuilt on every render. It is read once; changing
+  // `defaultWideOpen` afterwards would not (and must not) reopen a rail the learner has closed.
+  const [state, setState] = useState(() => initialSidebarState(defaultWideOpen));
 
   useEffect(() => {
     if (!storageKey) return;

@@ -55,7 +55,15 @@ export function CanvasHeader({
     // 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
     // owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;
     // not measured against anything external, this row has no ChatGPT equivalent to match.
-    <header className="pointer-events-none absolute inset-x-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5">
+    // 🔴 THE LEFT EDGE IS NOT A CONSTANT. When the nav rail is collapsed the shell floats a reopen
+    // toggle at the viewport's top-left, in exactly this corner, and the two printed on top of each
+    // other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever the toggle is not
+    // showing, so the header returns to a flush 12px on its own rather than carrying a permanent gap
+    // for a control that is not there.
+    <header
+      className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5"
+      style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
+    >
       <button
         aria-label="Leave the canvas"
         className="pointer-events-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"

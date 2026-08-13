@@ -18,6 +18,20 @@ export interface SidebarState {
 
 export const INITIAL_SIDEBAR_STATE: SidebarState = { narrowOpen: false, wideOpen: true };
 
+/**
+ * A starting state whose WIDE default the call site chooses.
+ *
+ * 🔴 A PARAMETER, NOT A NEW GLOBAL DEFAULT. The workspace nav rail must start collapsed for a new
+ * learner (§L: "a new user starts collapsed"), and the obvious edit — flipping `wideOpen` on the
+ * constant above — would also collapse `/library/classic`'s own sidebar, which is a different
+ * surface with a different key and was not part of that decision. The narrow side is never a
+ * default anyone gets to choose: an overlay that appears unbidden is the bug this module exists to
+ * prevent.
+ */
+export function initialSidebarState(wideOpen: boolean): SidebarState {
+  return { narrowOpen: false, wideOpen };
+}
+
 /** Whether the sidebar shows at the current width. */
 export function isSidebarOpen(state: SidebarState, narrowViewport: boolean): boolean {
   return narrowViewport ? state.narrowOpen : state.wideOpen;
