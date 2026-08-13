@@ -246,7 +246,11 @@ test("🔴 EVERY DocFormat survives the envelope — the Set and the union are t
   // `DocFormat` gained "xlsx" and `FORMATS` had to gain it in the same change.
   // This test is what makes forgetting that a red build instead of a silent
   // whole-document loss the first time a spreadsheet is stored.
-  const formats: DocFormat[] = ["pdf", "docx", "pptx", "image", "xlsx"];
+  // 🔴 THIS LIST IS ITSELF HAND-WRITTEN AND IT HAD ALREADY DRIFTED. `DocFormat` gained "csv" and
+  // this array did not, so the test that exists to keep two hand-written lists honest was quietly
+  // covering five of six members. The guard needs a guard: if you add a format, add it here, and
+  // read this comment as evidence that "someone will remember" is not a mechanism.
+  const formats: DocFormat[] = ["pdf", "docx", "pptx", "image", "xlsx", "csv", "text"];
   for (const format of formats) {
     const model = buildDocument({
       blocks: [{ headingPath: [], kind: "paragraph", text: "x", unit: 0 }],

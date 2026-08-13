@@ -62,7 +62,7 @@ export type DocUnitKind = "page" | "slide" | "sheet" | "body" | "image";
  * nothing. `document-envelope.test.ts` round-trips every member of this union
  * for exactly that reason; keep the two in step by making that test fail.
  */
-export type DocFormat = "pdf" | "docx" | "pptx" | "image" | "xlsx" | "csv";
+export type DocFormat = "pdf" | "docx" | "pptx" | "image" | "xlsx" | "csv" | "text";
 
 /**
  * A rectangle in UNIT-RELATIVE coordinates, every value in 0..1.

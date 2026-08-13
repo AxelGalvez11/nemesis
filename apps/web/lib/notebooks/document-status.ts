@@ -76,7 +76,20 @@ export type DocumentStatus =
   | { kind: "pending"; attempts: number }
   | { kind: "parsing"; attempts: number }
   | { kind: "retrying"; attempts: number; nextAttemptAt: string }
-  | { kind: "failed"; attempts: number; message: string; stage: string | null }
+  /**
+   * 🔴 `message` IS FOR THE STUDENT. `detail` IS THE TECHNICAL CAUSE, AND THEY MUST NOT SWAP.
+   *
+   * They used to be one field, and the field held the raw exception: `fail()` always writes
+   * `sanitizeError(cause)`, so `parsed.error` was never null, so the friendly fallback beside it
+   * was **unreachable** and a learner was shown a developer's error text spliced into a sentence.
+   * Every other branch of `documentStatusLine` is plain English written for a student; this was
+   * the only one that was not, and the only one that had never run — nothing in production has
+   * ever failed a parse, so nobody had seen it.
+   *
+   * Splitting them makes the friendly message reachable BY CONSTRUCTION rather than by a `??`
+   * that a writer upstream can quietly defeat.
+   */
+  | { kind: "failed"; attempts: number; message: string; detail: string | null; stage: string | null }
   // ── owned by parsed_documents: an artifact exists ──
   | { kind: "partially_parsed"; units: number; unitsUnread: number }
   | { kind: "parsed" }
@@ -86,6 +99,48 @@ export type DocumentStatus =
   | { kind: "ready" };
 
 const INDEXING_STATES = new Set(["chunking", "chunked", "embedding"]);
+
+/**
+ * A recorded failure, said to the student.
+ *
+ * 🔴 THE RAW CAUSE NEVER REACHES THIS RETURN VALUE. `sanitizeError` redacts URLs and tokens, which
+ * makes the string safe to STORE — it does not make it something to show a person. This maps the
+ * causes we raise ourselves onto prose, and answers everything else with the honest generic rather
+ * than passing the exception through.
+ *
+ * 🔴 AND AN OUTAGE IS NEVER PHRASED AS THE STUDENT'S FAULT. A timeout, a memory ceiling and a
+ * missing worker are ours; the wording says so, and offers no action they cannot take. The same
+ * rule the evaluator follows when a judge could not be reached.
+ *
+ * Matched on OUR OWN messages — the ones raised in the parse worker and the refusals
+ * `isRetryable` already keys on. It is not a general error taxonomy and must not grow into one:
+ * an unmatched cause is not a gap, it is the default doing its job. PURE.
+ */
+export function failureMessage(raw: string | null): string {
+  const text = (raw ?? "").toLowerCase();
+  if (!text) return "We could not read this file.";
+  if (/password|encrypted/.test(text)) {
+    return "This file is password-protected, so Nemesis could not open it. Remove the password and upload it again.";
+  }
+  // 🔴 `invalid pdf structure` IS HERE BECAUSE A REAL FAILURE WAS FORCED AND THAT IS WHAT CAME
+  // BACK. It is pdf.js's wording for a truncated or damaged file, it matched none of the patterns
+  // written from our own `throw` sites, and it is the single most likely real failure in this
+  // product. Written from an observation, not from imagining what a parser might say.
+  if (/corrupt|not a (pdf|zip)|damaged|invalid pdf/.test(text)) {
+    return "This file looks damaged, so Nemesis could not open it. Try downloading or exporting it again, then re-upload.";
+  }
+  if (/too-large|too large/.test(text)) {
+    return "This file is too large for Nemesis to read.";
+  }
+  if (/unsupported/.test(text)) {
+    return "Nemesis cannot read this kind of file yet.";
+  }
+  // Ours, not theirs — no instruction to the student, because there is nothing for them to fix.
+  if (/ran past \d+s|more memory than|worker is not installed|timed out/.test(text)) {
+    return "Nemesis could not finish reading this file. That is a problem on our side, not with your document.";
+  }
+  return "We could not finish reading this file.";
+}
 
 /**
  * Derive the one true status from both records.
@@ -107,8 +162,9 @@ export function describeDocument(
     if (parsed.state === "failed") {
       return {
         attempts: source.parseAttempts,
+        detail: parsed.error,
         kind: "failed",
-        message: parsed.error ?? "We could not finish reading this file.",
+        message: failureMessage(parsed.error),
         stage: parsed.failedStage,
       };
     }
@@ -130,8 +186,9 @@ export function describeDocument(
   if (source.parseFailedAt) {
     return {
       attempts: source.parseAttempts,
+      detail: source.parseError,
       kind: "failed",
-      message: source.parseError ?? "We could not read this file.",
+      message: failureMessage(source.parseError),
       // No artifact was ever produced, so the failure is by definition in the
       // fetch/hash/parse leg. There is no chunk or embed stage to blame yet.
       stage: "parse",
@@ -209,6 +266,9 @@ export function documentStatusLine(status: DocumentStatus): string {
     case "ready":
       return "Read and searchable.";
     case "failed":
+      // 🔴 `message`, NEVER `detail`. The technical cause is carried on the status for logs and
+      // support; putting it here is the defect this branch had. The separator is explicit because
+      // a stored message with no trailing stop used to run straight into the next sentence.
       return `${status.message} We tried ${status.attempts} times and have stopped. You can retry it yourself.`;
   }
 }

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   describeDocument,
   documentStatusLine,
+  failureMessage,
   isInFlight,
   isWholeDocument,
   type DocumentStatus,
@@ -218,7 +219,7 @@ test("every status produces a line that never claims more than it knows", () => 
     { kind: "parsed" },
     { kind: "indexing", stage: "chunking" },
     { kind: "ready" },
-    { attempts: 5, kind: "failed", message: "Nope.", stage: "parse" },
+    { attempts: 5, detail: null, kind: "failed", message: "Nope.", stage: "parse" },
   ];
   for (const c of cases) {
     const line = documentStatusLine(c);
@@ -228,4 +229,75 @@ test("every status produces a line that never claims more than it knows", () => 
       assert.doesNotMatch(line, /\bsearchable\b/, `${c.kind} must not claim searchable`);
     }
   }
+});
+
+// ─────────────────────────────── the failure branch, calibrated by forcing a REAL failure
+
+test("🔴 a REAL parse failure never shows the learner its exception text", async () => {
+  // 🔴 THE STRING BELOW IS NOT INVENTED. A file that claims to be a PDF and is not was pushed
+  // through `readPdfStructure`, the thrown error was caught and passed through the production
+  // `sanitizeError`, and this is verbatim what came out. It is also the most likely real failure
+  // this product has — a truncated download.
+  //
+  // Before this change the learner was shown, literally:
+  //     "Invalid PDF structure. We tried 5 times and have stopped. You can retry it yourself."
+  const { readPdfStructure } = await import("@/lib/pdf/structure");
+  const { sanitizeError } = await import("./parse-worker");
+
+  let recorded: string | null = null;
+  try {
+    await readPdfStructure(new Uint8Array(Buffer.from("%PDF-1.4\nnot actually a pdf\n")), {} as never);
+  } catch (cause) {
+    recorded = sanitizeError(cause);
+  }
+  assert.ok(recorded, "the forced failure really did throw — otherwise this test proves nothing");
+  assert.match(recorded, /Invalid PDF structure/i, "and this is the exception a learner would have seen");
+
+  const status = describeDocument(
+    src({ parseAttempts: 5, parseError: recorded, parseFailedAt: "2026-08-13T00:00:00.000Z" }),
+    null,
+  );
+  assert.equal(status.kind, "failed");
+  if (status.kind !== "failed") return;
+
+  // The technical cause is kept — for logs and support, not for the student.
+  assert.equal(status.detail, recorded);
+
+  const line = documentStatusLine(status);
+  assert.ok(!line.includes("Invalid PDF structure"), "🔴 the exception must not reach the student");
+  assert.ok(line.startsWith("This file looks damaged"), "they are told something they can act on");
+  assert.ok(line.includes("You can retry it yourself."), "and the retry offer, which genuinely works, stays");
+});
+
+test("🔴 the friendly message is REACHABLE — it no longer depends on a null nobody writes", () => {
+  // The old code was `parsed.error ?? "We could not finish reading this file."`, and `fail()`
+  // always writes a message, so the right-hand side could never be reached. Now the prose is
+  // produced from the cause rather than instead of it, so an unrecognised cause still yields
+  // prose — the case that used to be dead.
+  const status = describeDocument(
+    src({ parseAttempts: 3, parseError: "ECONNRESET reading upstream chunk 41", parseFailedAt: "2026-08-13T00:00:00.000Z" }),
+    null,
+  );
+  assert.equal(status.kind, "failed");
+  if (status.kind !== "failed") return;
+  assert.equal(status.message, "We could not finish reading this file.");
+  assert.equal(status.detail, "ECONNRESET reading upstream chunk 41");
+  assert.ok(!documentStatusLine(status).includes("ECONNRESET"));
+});
+
+test("an outage is never phrased as the student's fault", () => {
+  for (const cause of [
+    "the parse ran past 55s and was stopped",
+    "the parse needed more memory than one job may hold (900 MB)",
+    "the document worker is not installed on this deployment",
+  ]) {
+    const line = failureMessage(cause);
+    assert.ok(line.includes("on our side"), `"${cause}" must not read as the learner's mistake`);
+  }
+});
+
+test("causes we raise ourselves map to something the student can act on", () => {
+  assert.match(failureMessage("unsupported: the source has no stored file"), /cannot read this kind of file/i);
+  assert.match(failureMessage("too-large"), /too large/i);
+  assert.match(failureMessage("PasswordException: No password given"), /password-protected/i);
 });

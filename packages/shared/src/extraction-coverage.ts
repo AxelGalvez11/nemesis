@@ -43,7 +43,7 @@ export const EXTRACTION_COVERAGE_VERSION = 1;
  * Not a package version: extraction quality does not move with the app's
  * release number, and tying them would reparse the world on every deploy.
  */
-export const PARSER_VERSION = "extract-2026-08-06";
+export const PARSER_VERSION = "extract-2026-08-13";
 
 /** What the document divides into. `document` is the honest answer for a file
  *  with no meaningful subdivision — better than inventing "page 1 of 1". */

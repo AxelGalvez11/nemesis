@@ -171,7 +171,7 @@ export function storedDocumentModel(value: unknown): DocumentModel | null {
  *  in the type and missing here reads back as `null` for the entire document —
  *  the same silent whole-model loss `BLOCK_KINDS` caused. The every-member
  *  round-trip in the test file is what keeps the two honest. */
-const FORMATS = new Set(["pdf", "docx", "pptx", "image", "xlsx", "csv"]);
+const FORMATS = new Set(["pdf", "docx", "pptx", "image", "xlsx", "csv", "text"]);
 const UNIT_KINDS = new Set(["page", "slide", "sheet", "body", "image"]);
 /**
  * 🔴 THIS LIST IS A BOUNDARY, AND AN UNKNOWN KIND KILLS THE WHOLE MODEL.
