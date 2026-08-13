@@ -46,6 +46,7 @@ import {
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
 import { decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
+import type { TeachingAction } from "@/lib/learn/teaching-policy";
 import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
 import {
   KNOWLEDGE_DEADLINE_MS,
@@ -447,6 +448,37 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   );
 
   /**
+   * WHAT THE LEARNER IS ACTUALLY LOOKING AT — one value, one precedence, read by everything.
+   *
+   * 🔴🔴 THIS EXISTS BECAUSE ASKING `decision.action.type` "WHAT IS ON SCREEN?" GETS THE WRONG
+   * ANSWER, AND THAT COST THE PRODUCT ITS CORRECTIONS. `decision` is what the policy has decided to
+   * do NEXT; the renderer shows the verdict on top of it. After a wrong answer the two disagree —
+   * the verdict is on screen while `decision.action.type` is already `show_correction`.
+   *
+   * `acknowledge` asked the decision that question, and its own comment described the consequence
+   * exactly: *"recording that as 'the answer has been shown' would make the policy defer at the
+   * exact moment the correction is owed — a learner who got something wrong would never be shown
+   * the answer at all."* The author knew the hazard and believed the gate excluded the verdict
+   * screen. It could not. **Measured end to end: the correction never painted, ever, in a twelve-
+   * step session.** Found by Canvas UI reading the code; reproduced here against the real
+   * `decideNext` before a line was changed.
+   *
+   * 🔴 SO THE PRECEDENCE IS WRITTEN ONCE AND CONSUMED, NEVER RE-DERIVED. `exposition` and the
+   * correction gate previously each applied their own copy of "feedback outranks the decision", and
+   * one of them was right. A single value cannot disagree with itself.
+   *
+   * 🔴 AND THIS IS THE SEAM FUSION CHANGES. When a verdict is fused with the correction it queues
+   * (§39's `Valsartan → Losartan` in one glance), the fused screen genuinely IS showing the
+   * correction, and this is the one place that has to say so. Nothing downstream needs editing.
+   */
+  const presenting: { kind: "verdict"; exposition: Exposition } | { kind: TeachingAction["type"] } | { kind: "nothing" } =
+    feedback
+      ? { exposition: feedback.exposition, kind: "verdict" }
+      : decision
+        ? { kind: decision.action.type }
+        : { kind: "nothing" };
+
+  /**
    * What is on screen for the learner to take in, right now — the authoritative §39 value.
    *
    * 🔴 SEPARATE FROM `decision` BECAUSE A VERDICT CAN OUTLIVE ONE. Answer the last objective on a
@@ -458,8 +490,8 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    * still agrees with this wherever a decision exists — it is kept so the consumer written before
    * this property landed did not need editing — but it cannot see the case above.
    */
-  const exposition: Exposition = feedback
-    ? feedback.exposition
+  const exposition: Exposition = presenting.kind === "verdict"
+    ? presenting.exposition
     : (decision?.exposition ?? NO_EXPOSITION);
 
   // ── One prompt per decision ────────────────────────────────────────────────
@@ -756,12 +788,27 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     // "since the LAST time this was acted on" answerable. Deduplicating here would silently freeze
     // the working-memory window at whatever the first visit's position was.
     if (seen) setActedOn((current) => [...current, seen]);
-    // 🔴 ONLY WHEN WHAT WAS ACKNOWLEDGED WAS THE CORRECTION ITSELF. This runs for the feedback
-    // screen too, and recording that as "the answer has been shown" would make the policy defer at
-    // the exact moment the correction is owed — a learner who got something wrong would never be
-    // shown the answer at all. The action that was on screen is the only thing that distinguishes
-    // them, and it is right here.
-    if (seen && decision?.action.type === "show_correction") {
+    // 🔴🔴 ONLY WHEN WHAT WAS ACKNOWLEDGED WAS THE CORRECTION ITSELF — AND THIS LINE USED TO GET
+    // THAT WRONG IN THE ONE CASE IT WAS WRITTEN TO EXCLUDE.
+    //
+    // It read `decision?.action.type === "show_correction"`, under a comment that named the exact
+    // failure: *"this runs for the feedback screen too, and recording that as 'the answer has been
+    // shown' would make the policy defer at the exact moment the correction is owed — a learner who
+    // got something wrong would never be shown the answer at all."*
+    //
+    // The hazard was understood; the test for it was wrong. `decision` is the QUEUED action, and
+    // after a wrong answer it is ALREADY `show_correction` while the verdict is still painted. So
+    // acknowledging the verdict — by Continue or by auto-advance, both call this — recorded the
+    // correction as shown before it had ever been on screen, and the policy then deferred it.
+    //
+    //     answer wrongly -> verdict -> acknowledge -> correction suppressed -> next question
+    //
+    // Measured against the real `decideNext`, twelve steps, two objectives: **the correction never
+    // painted at all.** Confirmed identical on `79bf80ad`, so it predates the auto-advance work.
+    //
+    // 🔴 `presenting`, NOT A SECOND COPY OF THE PRECEDENCE. The bug was two places each deciding
+    // "what is on screen" and one of them being wrong. There is now one answer and both read it.
+    if (seen && presenting.kind === "show_correction") {
       setCorrectionsShown((current) => new Set(current).add(seen));
     }
     setDecidedAt(new Date());

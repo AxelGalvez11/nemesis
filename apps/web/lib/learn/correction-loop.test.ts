@@ -159,10 +159,35 @@ test("🔴 the correction is NOT suppressed by the acknowledgement that precedes
   assert.ok(ackAt !== -1, "the acknowledgement must be findable for this guard to mean anything");
   const at_ = runtime.indexOf("setCorrectionsShown", ackAt);
   assert.ok(at_ !== -1, "the runtime must record corrections at all");
+  // 🔴🔴 THIS GUARD USED TO PIN THE DEFECT ITSELF, AND IT IS THE SHARPEST EXAMPLE OF THE PATTERN
+  // THIS REPO KEEPS PAYING FOR. It required the literal `decision?.action.type === "show_correction"`
+  // — and `decision` is the QUEUED action, which after a wrong answer is ALREADY `show_correction`
+  // while the VERDICT is on screen. So acknowledging the verdict recorded the correction as shown
+  // before it had ever been painted, the policy deferred it, and the learner never saw the answer:
+  // exactly the failure the comment above describes, certified green by the guard written to prevent
+  // it.
+  //
+  // The guard asserted the MECHANISM the author believed in. The mechanism was wrong, so the guard
+  // held the bug in place and made removing it look like a regression.
+  //
+  // It now asserts the PROPERTY — the gate must read what is PAINTED — and names the old expression
+  // so its return is caught rather than re-certified. The behaviour itself is measured end to end in
+  // correction-reaches-the-learner.test.ts, which is where a guard like this should have started.
+  const gate = runtime
+    .slice(Math.max(0, at_ - 400), at_)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
   assert.match(
-    runtime.slice(Math.max(0, at_ - 260), at_),
-    /decision\?\.action\.type === "show_correction"/,
-    "recording a correction must be conditional on a correction having been the thing on screen",
+    gate,
+    /presenting\.kind === "show_correction"/,
+    "recording a correction must be conditional on the correction being what is PAINTED",
+  );
+  assert.equal(
+    /decision\?\.action\.type === "show_correction"/.test(gate),
+    false,
+    "the gate is back on the QUEUED action, which is show_correction while the verdict is still up",
   );
 });
 

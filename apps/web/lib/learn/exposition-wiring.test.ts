@@ -223,8 +223,15 @@ test("🔴 the verdict on screen declares its OWN mode, not the next action's", 
   );
   assert.match(
     source,
-    /const exposition: Exposition =\s*feedback\s*\?\s*feedback\.exposition/,
+    /const exposition: Exposition = presenting\.kind === "verdict"\s*\?\s*presenting\.exposition/,
     "the authoritative exposition must prefer the verdict while one is on screen",
+  );
+  // 🔴 AND IT MUST READ THE SHARED `presenting`, NOT ITS OWN COPY OF THE PRECEDENCE. Two places each
+  // deciding "what is on screen" is what let the correction gate be wrong while this one was right.
+  assert.equal(
+    (source.match(/feedback\s*\?\s*\{ exposition: feedback\.exposition, kind: "verdict" \}/g) ?? []).length,
+    1,
+    "the precedence is defined once and consumed",
   );
 });
 

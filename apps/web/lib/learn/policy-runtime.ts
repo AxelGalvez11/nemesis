@@ -165,7 +165,35 @@ export function decideNext(input: {
   // 🔴 AND IT IS A PRECEDENCE RULE, NOT A SECOND INTERVAL. There is no number here and nothing to
   // tune — exactly one value governs tempo (`RETRIEVAL_ELIGIBLE_AFTER_MS`) and this does not touch
   // it. Within each tier the existing positional order still decides, so nothing else changes.
+  // 🔴🔴 SOMETHING NEMESIS HAS ALREADY DECIDED TO TELL THE LEARNER OUTRANKS ANYTHING IT WANTS TO
+  // ASK THEM. §39: `retrieve → fail → EXPOSE ANSWER → move on → later retrieve again`. The exposure
+  // is the second half of the interaction the learner is in the middle of; a fresh question starts a
+  // different one.
+  //
+  // 🔴 THIS IS THE SECOND OF TWO BREAKS THAT TOGETHER DELETED CORRECTIONS FROM THE PRODUCT, AND
+  // FIXING THE OTHER ONE ALONE DID NOT RESTORE THEM. Measured: with the `acknowledge` gate repaired
+  // so the correction is no longer wrongly marked shown, the correction STILL never painted —
+  // because `actedOn` had moved the just-failed objective to the back of `ordered`, and any
+  // objective that had never been asked won the `status !== "correct"` tier ahead of it. By the time
+  // the failed one came round again, other material had intervened, so the working-memory window had
+  // cleared and it was owed a `retrieve` rather than the exposition it never got.
+  //
+  //     answer X wrongly -> [gate fixed] -> asked Y -> asked X again -> still never told the answer
+  //
+  // 🔴 IT IS A PRECEDENCE RULE, NOT A CURRICULUM AND NOT AN INTERVAL. Same shape as the tier below
+  // it: no number, no per-objective adjustment, nothing to tune. Nor can it starve retrieval —
+  // `correctionsShown` means each objective owes at most one exposition per session, so the supply
+  // is bounded by the failures the learner actually produced.
+  //
+  // 🔴 AND `actedOn` KEEPS ITS MEANING. It still reorders and still never filters (§34 invariant 4).
+  // What changed is that a reordering intended to stop the same QUESTION being asked twice in a row
+  // no longer also postpones an ANSWER the learner is owed.
+  const exposition = owed.find(
+    (decision) => decision.action.type === "show_correction" || decision.action.type === "contrast",
+  );
+
   return (
+    exposition ??
     owed.find((decision) => decision.state.status !== "correct") ??
     owed[0] ??
     decisions.find((decision) => decision.action.type === "defer") ??
