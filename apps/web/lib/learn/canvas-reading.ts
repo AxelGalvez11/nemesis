@@ -58,12 +58,26 @@ export function unreadChunk(blocks: readonly CanvasBlock[]): readonly CanvasBloc
 /**
  * Whether the Continue control renders.
  *
- * 🔴 `awaitingDemonstration` IS THE PRODUCTION GUARD, NOT A TIDINESS RULE. §12 scopes Continue to
- * reading chunks and §17 forbids it after an answer, but the reason it must be impossible while a
- * retrieval is unanswered is N3: a control that moves the learner on while a demonstration is owed
- * is a way to press past the question. The composer's `✓` is refused in exactly this state for
- * exactly this reason — see `offersAdvance` — and the two must not disagree, or the surface offers
- * through one door what it refuses through the other.
+ * 🔴 SUPERSEDED, AND NOTHING IN PRODUCTION CALLS THIS ANY MORE. §38 replaced every per-region
+ * predicate with a single owner — `continueOwner` in canvas-continue.ts — which asks the question
+ * once for the whole surface and returns at most one region. This is kept, recorded and pinned by
+ * `progression-doors.test.ts` rather than deleted: #585's standard is that a silent removal takes
+ * things with it that were never part of what was retired, so reviving or deleting it should be a
+ * decision someone makes on purpose. That test goes red the moment anything calls this again.
+ *
+ * 🔴 `awaitingDemonstration` IS THE PRODUCTION GUARD, NOT A TIDINESS RULE, AND IT MOVED RATHER THAN
+ * LAPSING. §12 scopes Continue to reading chunks and §17 forbids it after an answer, but the reason
+ * it must be impossible while a retrieval is unanswered is N3: a control that moves the learner on
+ * while a demonstration is owed is a way to press past the question. `continueOwner` refuses on
+ * exactly this before it looks at any region, and has its own test for it.
+ *
+ * 🔴 THE SENTENCE THAT USED TO SIT HERE IS WHY THIS PARAGRAPH EXISTS. It read *"the composer's `✓`
+ * is refused in exactly this state for exactly this reason — see `offersAdvance` — and the two must
+ * not disagree, or the surface offers through one door what it refuses through the other."* The
+ * invariant is still exactly right; the landmark it named stopped running, and a correct rule
+ * pointing at dead code is how the next reader budgets for protection that is not there. Canvas UI
+ * then found a live violation of that very invariant — a Continue rendered on a screen that was
+ * auto-advancing underneath it. The comment could not have caught it. The audit can.
  */
 export function offersContinue(state: {
   /** There is material on screen the learner has not marked as read. */
