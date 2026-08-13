@@ -119,7 +119,14 @@ test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as beha
   assert.ok(feedback, "FeedbackScreen is gone");
 
   // Every control in this component must sit inside the not-passed branch.
-  const gate = feedback.indexOf("{!passed && (");
+  // 🔴 THE FIRST `!passed` GUARD IN ANY SPELLING, NOT THE LITERAL `"{!passed && ("`.
+  // Calibration caught this: moving the headline back inside a `{!passed && <h2 …>}` — the exact
+  // defect this test names — left the guard green, because that is a different string and the
+  // search still found the ORIGINAL block further down. A guard anchored to one formatting of the
+  // thing it is measuring silently stops measuring it the moment someone reformats.
+  const gateMatch = /\{\s*!passed\s*&&/.exec(feedback);
+  assert.ok(gateMatch, "expected a not-passed branch in the feedback screen");
+  const gate = gateMatch.index;
   assert.notEqual(gate, -1, "the pass/not-pass split is gone — a pass could regain a control");
   for (const control of [...feedback.matchAll(/<button/g)]) {
     assert.ok(
@@ -135,48 +142,85 @@ test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as beha
   assert.match(rendered, /recording=\{runtime\.recording\}/, "the runtime's own recording flag must be passed in, not guessed locally");
 });
 
-test("🔴 K4: only a CORRECT answer is silent — the other verdicts keep their words", async () => {
+test("🔴 §35.1: Nemesis's verdict is a SENTENCE, on every outcome including a pass", async () => {
   const rendered = stripComments(await SOURCE);
   const feedback = rendered.slice(rendered.indexOf("function FeedbackScreen"));
-  const gate = feedback.indexOf("{!passed && (");
+  // 🔴 THE FIRST `!passed` GUARD IN ANY SPELLING, NOT THE LITERAL `"{!passed && ("`.
+  // Calibration caught this: moving the headline back inside a `{!passed && <h2 …>}` — the exact
+  // defect this test names — left the guard green, because that is a different string and the
+  // search still found the ORIGINAL block further down. A guard anchored to one formatting of the
+  // thing it is measuring silently stops measuring it the moment someone reformats.
+  const gateMatch = /\{\s*!passed\s*&&/.exec(feedback);
+  assert.ok(gateMatch, "expected a not-passed branch in the feedback screen");
+  const gate = gateMatch.index;
 
-  // "That's it." is a score rendered as a sentence: a correct answer carries no information the
-  // learner does not already have, and the colour says it. So the headline must be inside the
-  // not-passed branch.
+  // 🔴 THIS TEST WAS REVERSED, DELIBERATELY, AND THE OLD VERSION IS WORTH RECORDING. It used to
+  // assert the headline renders ONLY inside the not-passed branch, on the reasoning that
+  // *"'That's it.' is a score rendered as a sentence… the colour says it"*. That premise was the
+  // learner's own words turning green — which §35.1 forbids, because it makes their sentence carry
+  // a grade. Remove the colour and the argument inverts: the sentence stops being redundant and
+  // becomes the only thing that can carry the verdict.
+  //
+  // 🔴 THE COST OF GETTING THIS WRONG IS NOT COSMETIC. Nemesis judges by MEANING, so a learner
+  // answering in their own words cannot otherwise tell whether they were understood. If a pass
+  // produced nothing, silence would be the signal for success — and silence is also what a broken
+  // system produces.
   const headline = feedback.indexOf("VERDICT_HEADLINE[verdict]");
-  assert.notEqual(headline, -1, "the headline stopped being rendered at all — partial/incorrect need their words");
-  assert.ok(headline > gate, "the verdict headline renders on a PASS — 'That's it.' is a score in a sentence");
+  assert.notEqual(headline, -1, "the verdict headline stopped being rendered at all");
+  assert.ok(headline < gate, "the headline must render on a PASS too — it is now the only pass signal");
 
+  // The PROSE stays on misses only. Intensity scales with information value: a pass carries three
+  // words, a miss carries the most and keeps both.
   const body = feedback.indexOf("feedback.evaluation.feedback");
-  assert.ok(body > gate, "the feedback body renders on a pass — nothing else may appear beside the green words");
+  assert.ok(body > gate, "the feedback body must stay inside the not-passed branch");
 
-  // 🔴 And the learner's own words must STILL be rendered, or this passes by deleting the context
-  // rather than the announcement — the wrong fix, and the one the ruling explicitly warned about.
+  // And the learner's own words must still be rendered, or this passes by deleting the context.
   const quote = feedback.indexOf("{feedback.answer}");
   assert.notEqual(quote, -1, "the learner's own words stopped being shown");
-  assert.ok(quote < gate, "the learner's words must show on a pass too — they are what turns green");
+  assert.ok(quote < gate, "the learner's words show on every outcome — they are theirs");
 });
 
-test("🔴 every verdict is given a colour deliberately, and success is not the accent", async () => {
+test("🔴 §35.1: the learner's words are BLUE in every case — blue is authorship, never a grade", async () => {
   const rendered = stripComments(await SOURCE);
-  // A pass is green, partial amber, and both failures red. `not_demonstrated` never reaches this
-  // screen — it has no evaluation — so it is absent by construction rather than by omission.
+
+  // > "Blue means: this came from you. It does NOT mean correct. Keep that semantic stable."
   //
-  // 🔴 TYPED AS PAIRS, NOT INFERRED. Written as a bare array literal this is `string[][]`, and
-  // `noUncheckedIndexedAccess` then hands the destructuring `string | undefined` — which compiles
-  // as a test (nothing dereferences it) and fails `tsc --noEmit` for the whole app. A tuple type
-  // has a known length, so its elements are exempt and the destructuring is exact.
-  const TONES: readonly (readonly [verdict: string, tone: string])[] = [
-    ["strong", "--ui-green"], ["understood", "--ui-green"],
-    ["partial", "--ui-yellow"], ["incorrect", "--ui-red"], ["misconception", "--ui-red"],
-  ];
-  for (const [verdict, tone] of TONES) {
-    assert.match(rendered, new RegExp(`${verdict}:\\s*"text-\\(${escapeRegExp(tone)}\\)"`), `${verdict} lost its colour`);
+  // 🔴 THE DEFECT THIS REPLACES WAS SHIPPED AND EXPLICIT. A `VERDICT_TONE` map painted the
+  // learner's own answer green / amber / red by verdict, under a comment reading "THE COLOUR IS
+  // THE FEEDBACK". Their sentence and Nemesis's judgement of it were the same object.
+  assert.match(rendered, /const LEARNER_VOICE = "text-\(--ui-learner\)"/);
+  assert.match(rendered, /\{feedback\.answer\}/);
+  const quoteLine = /<p className=\{`[^`]*\$\{LEARNER_VOICE\}`\}>[^<]*\{feedback\.answer\}/.exec(rendered);
+  assert.ok(quoteLine, "the learner's quote must take the ownership colour");
+
+  // 🔴 NO VERDICT-KEYED COLOUR MAY EXIST ON THIS SURFACE AT ALL. Asserting only "the quote is
+  // blue" would stay green if someone reintroduced the map and applied it somewhere else on the
+  // learner's material — which is the same defect one element over.
+  for (const tone of ["--ui-green", "--ui-yellow", "--ui-red"]) {
+    assert.doesNotMatch(
+      rendered,
+      new RegExp(`(strong|understood|partial|incorrect|misconception):\\s*"text-\\(${escapeRegExp(tone)}\\)"`),
+      `a verdict-keyed colour map is back: ${tone}`,
+    );
   }
-  // 🔴 Success must never be painted with --ui-action. The accent is a MUTED green used for
-  // "press this"; success is a saturated green meaning "you were right". A learner should not
-  // have to work out which green they are looking at.
-  assert.doesNotMatch(rendered, /VERDICT_TONE[\s\S]*?--ui-action/, "success must not borrow the action accent");
+
+  // 🔴 AND BLUE ON WRONG ANSWERS TOO — the half that must not soften. If a miss kept red while a
+  // pass went blue, blue would mean "correct" by contrast and the grade would be back through the
+  // side door. So the colour cannot be conditional on the verdict in any form.
+  // 🔴 SCOPED TO THE QUOTE'S OWN className, NOT A PROXIMITY WINDOW. My first version looked for a
+  // ternary within 80 characters of the answer and went red on the `<h2>` beneath it — which
+  // branches on `passed` CORRECTLY, because Nemesis's annotation is exactly the thing that should
+  // change with the verdict. A guard that cannot tell the learner's element from Nemesis's would
+  // have been "fixed" by making the annotation unconditional, destroying the point of the change.
+  assert.ok(
+    !/\?/.test(quoteLine[0]),
+    `the learner's colour must not branch on the outcome: ${quoteLine[0]}`,
+  );
+  assert.doesNotMatch(
+    rendered,
+    /(passed|verdict)\s*\?[^;\n]{0,120}--ui-learner/,
+    "ownership is not a spectrum: either the learner wrote it or they did not",
+  );
 });
 
 function escapeRegExp(literal: string): string {

@@ -269,6 +269,20 @@
     --ui-green: #1f8a65;
     --ui-cyan: #4c7f8c;
     --ui-blue: #0053fd;
+    /* 🔴 THE LEARNER'S OWN WORK (contract §35.1). "Blue means: this came from you. It
+       does NOT mean correct. Keep that semantic stable."
+
+       A NAMED TOKEN RATHER THAN `--ui-blue`, and the name is the point. §35.1's whole
+       risk is the meaning drifting into "right" — which is exactly what happened to the
+       colour this replaces. A token called `--ui-learner` cannot be reached for to mean
+       "good" without the author noticing they are lying, and repurposing the generic
+       blue would also have dragged the Calendar's assignment chip along with it.
+
+       Measured against the RESOLVED --ui-bg-editor, not eyeballed: 5.08:1 here, 6.58:1
+       dark. Both clear WCAG AA for body text, and both sit in the same weight band as
+       the existing semantic pair (--ui-red 4.96 light / --ui-green 6.17 dark) so the
+       learner's words do not read as louder than Nemesis's own annotations. */
+    --ui-learner: #2563eb;
     --ui-purple: #9e94d5;
     --context-usage-system: color-mix(in srgb, var(--ui-base) 55%, transparent);
     --context-usage-tools: var(--ui-purple);
@@ -541,6 +555,11 @@
     --ui-red: #e75e78;
     --ui-green: #55a583;
     --ui-cyan: #6f9ba6;
+    /* 🔴 DARK NEEDS ITS OWN, AND `--ui-blue` NEVER GOT ONE. The palette above redefines
+       red, green and cyan for dark and stops — so #0053fd carries onto a near-black
+       ground at 3.18:1, which fails AA for text and is the trap any new blue would have
+       walked into. Lifted to 6.58:1, same hue family, still unmistakably blue. */
+    --ui-learner: #5b9bff;
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).
