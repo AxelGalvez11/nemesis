@@ -22,24 +22,36 @@ import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
 import { useMediaQuery } from "./use-media-query";
+import { shellNavigation } from "@/lib/workspace/shell-navigation";
+
 import { useResponsiveSidebar } from "./use-responsive-sidebar";
 
 // SIDEBAR_COLLAPSE_BREAKPOINT_PX = 768 (desktop app/layout-constants.ts).
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
-// Focus-mode surfaces own the left rail: the workspace nav is suppressed so the
-// surface's own sidebar stands alone, and that sidebar carries the Back control
-// that leaves the surface. No floating nav-reopen control is offered here —
-// leaving the route is the only way back, which keeps the exit unambiguous.
-const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set([
-  "/library",
-  "/library/classic",
-  "/dev-preview/workspace/library",
-  "/dev-preview/workspace/library-classic",
-]);
-// /learn is the Learning Canvas pilot: the canvas has to dominate the screen, and it carries
-// its own back control in its header. Matched by exact pathname, which is why a canvas is
-// addressed as /learn?c=<id> rather than /learn/<id>.
-const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides", "/learn", "/dev-preview/learn"]);
+// 🔴 WHICH ROUTES HIDE THE RAIL NOW LIVES IN lib/workspace/shell-navigation.ts, WITH A TEST.
+//
+// `/learn` used to be immersive, and immersive means the rail is suppressed AND no reopen control
+// is offered — the surface is expected to carry its own way out. The Canvas's way out is a Back
+// arrow to the previous canvas, which is not navigation. Measured at 1280x800 on the canvas route,
+// from a browser profile with nothing stored:
+//
+//   data-shell-focus   "true"     the rail is suppressed, not merely collapsed
+//   toggle element     ABSENT     `button[aria-label="Toggle sidebar"]` did not exist
+//
+// 🔴 THE TOGGLE'S ABSENCE IS THE PROOF, not a link count. Counting `a[href]` also returns zero
+// AFTER the fix, because the rail's destinations are buttons that call the router rather than
+// anchors — so that number cannot tell the two states apart and must not be cited as if it could.
+// What changes is whether any control exists that reaches navigation at all.
+//
+// No Library, no Calendar, no Stats, from the front door or from any active session — which made
+// the four destinations shipped in #549 invisible exactly where they mattered.
+//
+// §L asks for the opposite of suppression: "collapsed by default", "a small toggle stays
+// available", "must not reduce the usable learning surface unless the learner explicitly opens
+// it". Collapsed-with-a-toggle is all three; immersive is only the third. So the Canvas gets its
+// quiet from the collapsed DEFAULT below, not from having navigation taken away.
+/** Width the floating nav toggle occupies, for surfaces that also paint in the top-left corner. */
+const NAV_TOGGLE_INSET_PX = 30;
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
   ["--titlebar-height" as string]: "0px",
@@ -47,7 +59,12 @@ const SHELL_VARS: React.CSSProperties = {
   // TITLEBAR_EDGE_INSET = 14px / TITLEBAR_CONTROLS_TOP = 6px — the browser tab
   // has no traffic lights, so the fallback edge inset applies.
   ["--titlebar-controls-left" as string]: "14px",
-  ["--titlebar-controls-top" as string]: "6px",
+  // 🔴 14px, NOT 6px — the toggle now sits BESIDE things. While it only ever appeared on surfaces
+  // with an empty top-left corner, its exact height did not matter. On the Canvas it stands next to
+  // the Back arrow, and at 6px the two were 7.5px out of vertical alignment: measured centres 20.5
+  // and 28. With the component's own `translate-y-0.5` this lands it on 28.5, which reads as one
+  // row. Nothing else consumes this variable — TitlebarControls is its only reader.
+  ["--titlebar-controls-top" as string]: "14px",
   ["--titlebar-tools-right" as string]: "0.75rem",
   ["--titlebar-tools-width" as string]: "0px",
   ["--right-rail-top-inset" as string]: "0px",
@@ -80,13 +97,25 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // which would leave no visible exit once the nav rail is suppressed too.
   // Settings → General can opt out entirely ("Keep Nemesis sidebar").
   const { libraryFullScreen } = useTheme();
-  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
-  const focusMode =
-    IMMERSIVE_ROUTES.has(normalizedPathname) ||
-    (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(normalizedPathname));
 
-  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport, "nemesis.web.nav-rail");
-  const sidebarVisible = sidebarOpen && !focusMode;
+  // 🔴 STARTS COLLAPSED (§L). Navigation is "lightweight and secondary"; the first impression of
+  // the front door is meant to be the composer, not a rail. A stored preference still wins, so a
+  // learner who opens it keeps it open — the default decides the FIRST visit only.
+  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(
+    narrowViewport,
+    "nemesis.web.nav-rail",
+    false,
+  );
+
+  // 🔴 THE DECISION IS A VALUE, NOT A CONDITION HERE — see lib/workspace/shell-navigation.ts. As
+  // JSX conditions, "the rail is hidden" and "the learner has no way to reach it" were the same
+  // expression, so the second could not be asserted and went unnoticed on `/learn`.
+  const { focusMode, navToggleShowing, sidebarVisible } = shellNavigation({
+    libraryFullScreen,
+    narrowViewport,
+    pathname,
+    sidebarOpen,
+  });
 
   useEffect(() => {
     const addHoverDescriptions = (root: ParentNode) => {
@@ -115,12 +144,18 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       style={{
         ...SHELL_VARS,
         ["--pane-chat-sidebar-width" as string]: sidebarVisible ? (narrowViewport ? "min(84vw, 18rem)" : "256px") : "0px",
+        // 🔴 SPACE THE FLOATING TOGGLE CLAIMS, PUBLISHED SO SURFACES CAN AVOID IT. `TitlebarControls`
+        // is `fixed` at the viewport's top-left; the Canvas header is `absolute` at its own top-left.
+        // With the rail collapsed the two occupy the same corner and the toggle prints straight over
+        // the Back arrow. A surface that paints up there pads by this instead of hardcoding a number
+        // that would be wrong the moment the toggle is not showing.
+        ["--nav-toggle-inset" as string]: navToggleShowing ? `${NAV_TOGGLE_INSET_PX}px` : "0px",
         height: "100dvh",
         width: "100%",
       }}
     >
       <SettingsModalProvider>
-      {!sidebarVisible && !focusMode && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
+      {navToggleShowing && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
           className="relative grid h-full min-h-0"

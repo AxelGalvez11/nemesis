@@ -58,8 +58,28 @@ interface NavItem {
   action?: "new-session";
 }
 
-// TWO SURFACES. Canvas is "what am I learning or doing"; Calendar is "when does it matter".
-// Everything else is a capability inside one of them.
+// 🔴 THE SIDEBAR REPRESENTS DESTINATIONS, NOT CONTENT (owner 2026-08-13, §L). It is almost
+// static, and that is the design rather than an unfinished state.
+//
+// No `Recent`. No folder tree. No canvas names. No growing list. The owner's reason is the
+// constraint, not a preference: "eventually the sidebar becomes a giant chronological dump.
+// Nemesis users aren't primarily trying to recover a conversation from three weeks ago. They're
+// managing BODIES OF KNOWLEDGE." A rail that grows with history optimises for the wrong verb.
+//
+// The mental model each row answers:
+//
+//   New canvas  →  learn                                    (the front door)
+//   Library     →  find and organise what you have learned
+//   Calendar    →  when things happen / when reviews are due
+//   Stats       →  what Nemesis knows about your cognition
+//
+// 🔴 LIBRARY IS BACK WITH A DIFFERENT MEANING. The two-surface retirement removed it as a FILE
+// manager. It returns as a CANVAS manager, which is a different object: Library's primary
+// objects are canvases, and a Folder organises CANVASES, not files. Restoring the row is not
+// undoing that decision.
+//
+// Superseded: "TWO SURFACES. Canvas is what am I learning or doing; Calendar is when does it
+// matter." That model had no home for managing bodies of knowledge, which is what this adds.
 //
 // 🔴 THE OLD LIST WAS THE OLD MENTAL MODEL (owner 2026-08-10). New chat / Study / Library /
 // Calendar / Chill said "Nemesis is a suite of five tools", and made the learner's first
@@ -82,8 +102,14 @@ interface NavItem {
 // Notebooks was retired the same way on 2026-07-23 and is still serving
 // /api/notebooks/extract/* today, which is the precedent this follows.
 const SIDEBAR_NAV: NavItem[] = [
-  { id: "canvas", label: "Canvas", codicon: "layout", route: "/learn" },
+  // The front door. `/learn` IS the minimal composer — "What do you want to learn?" with upload,
+  // record and dictate — and the canvas is created automatically once the learner starts, landing
+  // in `Unfiled` for them to file later. It is deliberately not a "new session" action: nothing is
+  // created by pressing this, only by beginning.
+  { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
+  { id: "library", label: "Library", codicon: "library", route: "/library" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
+  { id: "stats", label: "Stats", codicon: "graph", route: "/stats" },
 ];
 
 interface ChatSidebarProps {

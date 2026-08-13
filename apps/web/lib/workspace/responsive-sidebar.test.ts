@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   INITIAL_SIDEBAR_STATE,
+  initialSidebarState,
   isSidebarOpen,
   onNarrowViewport,
   withSidebarOpen,
+  withStoredSidebar,
 } from "./responsive-sidebar";
 
 const WIDE = false;
@@ -13,6 +15,30 @@ const NARROW = true;
 // A window that starts wide shows the sidebar; one that starts narrow does not.
 assert.equal(isSidebarOpen(INITIAL_SIDEBAR_STATE, WIDE), true, "wide viewports open the sidebar by default");
 assert.equal(isSidebarOpen(INITIAL_SIDEBAR_STATE, NARROW), false, "narrow viewports keep the overlay closed by default");
+
+// The workspace nav rail starts COLLAPSED for a learner with nothing stored (§L). Chosen per call
+// site rather than globally: /library/classic keeps its own sidebar open, and a shared flip would
+// have quietly changed that surface too.
+{
+  const collapsedDefault = initialSidebarState(false);
+  assert.equal(isSidebarOpen(collapsedDefault, WIDE), false, "the nav rail starts collapsed on a wide viewport");
+  assert.equal(isSidebarOpen(collapsedDefault, NARROW), false, "a collapsed default never opens the narrow overlay");
+  assert.equal(isSidebarOpen(initialSidebarState(true), WIDE), true, "the open default still opens");
+
+  // 🔴 THE DEFAULT IS THE FIRST IMPRESSION, NOT A POLICY. A learner who opens the rail must find it
+  // open next time — otherwise "collapsed by default" reads as "collapses itself", which is the
+  // auto-collapse bug this module was written to kill, wearing a different hat.
+  assert.equal(
+    isSidebarOpen(withStoredSidebar(collapsedDefault, "open"), WIDE),
+    true,
+    "a stored preference beats the collapsed default",
+  );
+  assert.equal(
+    isSidebarOpen(withStoredSidebar(initialSidebarState(true), "closed"), WIDE),
+    false,
+    "a stored collapse beats the open default",
+  );
+}
 
 // THE BUG: a sidebar auto-collapsed by a narrow window stayed collapsed forever
 // once the window grew back, because one flag stored both meanings.

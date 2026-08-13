@@ -17,11 +17,18 @@ import { test } from "node:test";
 
 const read = (file: string) => readFileSync(join(import.meta.dirname, file), "utf8");
 
-/** The class list of the first element of the given tag. */
+/** The class list of the first element of the given tag.
+ *
+ *  🔴 ANY WHITESPACE AFTER THE TAG NAME, NOT A LITERAL SPACE. This looked for `"<header "` and so
+ *  stopped finding the element the moment its attributes were split across lines — which is what a
+ *  formatter does as soon as a second attribute is added. The failure was `no <header> in the
+ *  source`, i.e. it read as "the header was deleted" rather than "my parser cannot see it", and the
+ *  obvious way to make that green again is to weaken the assertions underneath. A guard that
+ *  misreports its own blindness as a product defect is worse than no guard. */
 function classesOf(source: string, tag: string): string {
-  const open = source.indexOf(`<${tag} `);
-  assert.notEqual(open, -1, `no <${tag}> in the source`);
-  const match = /className="([^"]+)"/.exec(source.slice(open, open + 600));
+  const open = new RegExp(`<${tag}\\s`).exec(source);
+  assert.ok(open, `no <${tag}> in the source`);
+  const match = /className="([^"]+)"/.exec(source.slice(open.index, open.index + 600));
   assert.ok(match?.[1], `<${tag}> has no literal className`);
   return match[1];
 }

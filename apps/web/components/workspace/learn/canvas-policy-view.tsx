@@ -220,13 +220,11 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
           {decision.knowledge.statement}
         </p>
-        <button
-          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
-          onClick={runtime.acknowledge}
-          type="button"
-        >
-          Got it
-        </button>
+        {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
+            introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
+            not lost: this screen wrote no evidence, and something still has to say the learner has
+            read it, which is exactly what `✓` means. What is lost is a second control competing
+            with the composer for the same job. */}
       </Frame>
     );
   }
@@ -250,13 +248,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
             </li>
           ))}
         </ul>
-        <button
-          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
-          onClick={runtime.acknowledge}
-          type="button"
-        >
-          Got it
-        </button>
+        {/* Its "Got it" is gone for the same reason as `show_correction`'s — see there. */}
       </Frame>
     );
   }
@@ -353,13 +345,10 @@ function FeedbackScreen({
             {VERDICT_HEADLINE[verdict]}
           </h2>
           <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
-          <button
-            className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
-            onClick={onAcknowledge}
-            type="button"
-          >
-            Continue
-          </button>
+          {/* 🔴 THE "Continue" BUTTON IS GONE — §I. It is worth naming what it was: renaming `Next`
+              to `Continue` once satisfied §K's banned-word list while leaving the prohibited
+              behaviour — a control the learner must press to proceed — completely intact. Deleting
+              the word was never the fix. Moving the job to the composer's `✓` is. */}
         </>
       )}
     </Frame>
