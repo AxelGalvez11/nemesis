@@ -310,12 +310,20 @@ export function causalKnowledgeFrom(input: {
     derivation: "model-prose",
     extractionVersion: CAUSAL_EXTRACTION_VERSION,
     id: `${input.unitId}:c${input.index + 1}`,
+    // 🔴 TWO DIFFERENT PROVENANCES, BOTH CORRECT, AND THIS IS THE CLEAREST PLACE TO SEE WHY THEY
+    // ARE NOT ONE FIELD. `provenance.lane` is `model-prose`: a MODEL read this relation out of the
+    // document. `sourceProvenance` is `sourced`: the claim nonetheless traces to a real library
+    // source, and its anchors resolve into that source's text.
+    //
+    // Collapsing them would mislabel every model-read claim as model KNOWLEDGE and suppress a
+    // citation that genuinely has an excerpt behind it.
     provenance: {
       extractor: CAUSAL_EXTRACTION_VERSION,
       lane: "model-prose",
       model: input.model,
       schemaVersion: CAUSAL_SCHEMA_VERSION,
     },
+    unanchoredProvenance: [],
     relation,
     sourceAnchors: input.anchors,
     // Presentation only — never part of identity. See `identityBasis`.

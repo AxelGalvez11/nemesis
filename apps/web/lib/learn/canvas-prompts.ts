@@ -208,6 +208,45 @@ export function recallMessages(input: {
   ];
 }
 
+// ------------------------------------------------------------------ territory
+
+/**
+ * A topic, turned into the knowledge Nemesis can teach from.
+ *
+ * 🔴 THIS ASKS FOR KNOWLEDGE, NOT FOR A LESSON, AND THAT IS THE ENTIRE POINT. Typing a topic used to
+ * produce a mini-textbook the policy could not own, so the learner got 64 paragraphs and nothing to
+ * do. Asking a model to write prose and then extracting facts back out of that prose would launder
+ * generated text into something that looks like source material, which §M forbids outright.
+ *
+ * 🔴 FIELD-AGNOSTIC BY CONSTRUCTION, AND CHECKED AGAINST THE HOUSE TEST: would this work for a law
+ * student and a mechanical engineering student? There is not one subject-matter example in the
+ * prompt. Naming drugs here would quietly teach the model that Nemesis is a pharmacy product, and
+ * the same instruction has to serve case-and-holding, part-and-tolerance, and verb-and-conjugation.
+ * The roles are asked for in the subject's own vocabulary rather than chosen from a fixed list.
+ */
+export function territoryMessages(input: { topic: string; count: number }): WireMsg[] {
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `Someone wants to learn: "${input.topic}".\n\n` +
+        "Name the specific, checkable facts that topic turns on, as PAIRS. Do not write a lesson, an " +
+        "introduction, an explanation, or any prose. Return only the pairs.\n\n" +
+        "Each pair is two things standing in a stated relationship, where someone who knows the subject " +
+        "could be shown one side and asked to produce the other. Say what each side IS, using the words " +
+        "that subject uses for them, and say how the two are related.\n\n" +
+        'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…"}]}\n\n' +
+        `Aim for about ${input.count}, but fewer is better than padded. ` +
+        "OMIT ANYTHING YOU ARE NOT SURE OF. A short list you are confident in is worth more than a long " +
+        "one containing guesses: everything here becomes a question a real learner is asked and graded on, " +
+        "so an invented pair is recorded as that person's own gap. Leave it out instead.\n\n" +
+        "Omit anything that is not a pair, such as narrative, history, or advice that cannot be checked. " +
+        "Do not restate the topic itself as a fact. Keep each side to a term or a short phrase, never a sentence.",
+      role: "user",
+    },
+  ];
+}
+
 // ---------------------------------------------------------------------- test
 
 /** The free-response formats, described by what they ask the learner to DO.

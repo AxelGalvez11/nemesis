@@ -217,6 +217,11 @@ function pairsFromTable(
       derivation: "table-row",
       extractionVersion: EXTRACTION_VERSION,
       id: pairId,
+      // 🔴 EMPTY BY CONSTRUCTION, NOT BY OMISSION. This function's only input is a `SourceContext`
+      // — a durable library source already read — so every way of knowing it can produce is
+      // anchored, and anchored ways live in `sourceAnchors`. An empty list here is the positive
+      // statement "nothing unanchored", not a field nobody filled in.
+      unanchoredProvenance: [],
       pair: {
         id: pairId,
         left,

@@ -50,6 +50,7 @@ const CAUSAL: KnowledgeObject = {
   ],
   statement: "Incorporation of a stop codon — causes — premature termination",
   type: "causal",
+  unanchoredProvenance: [],
 };
 
 function roundTrip(object: KnowledgeObject): KnowledgeObject {
@@ -141,6 +142,7 @@ const ASSOCIATION: KnowledgeObject = {
   sourceAnchors: [{ sourceId: "lib-1", unitId: "t1" }],
   statement: "losartan — Cozaar",
   type: "association",
+  unanchoredProvenance: [],
 };
 
 test("🔴 the association payload keeps the shape production rows already have", () => {

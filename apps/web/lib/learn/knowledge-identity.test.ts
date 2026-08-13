@@ -18,6 +18,7 @@ function association(left: string, right: string, over: Partial<KnowledgeObject>
     pair: { id: "p1", left, right },
     statement: `${left} — ${right}`,
     type: "association",
+    unanchoredProvenance: [],
     ...over,
   };
 }
@@ -93,12 +94,32 @@ test("a type with no payload of its own still keys on its statement", () => {
   // 🔴 A CAUSAL OBJECT CARRYING NO RELATION IS THE DEGENERATE CASE, not the normal one. The
   // extractor always mints a relation; this path exists so an object holding only a sentence still
   // gets a stable key rather than none.
-  const a: KnowledgeObject = { id: "k1", statement: "Increasing resistance decreases current.", type: "causal" };
-  const b: KnowledgeObject = { id: "k2", statement: "increasing resistance decreases current", type: "causal" };
+  const a: KnowledgeObject = {
+    id: "k1",
+    statement: "Increasing resistance decreases current.",
+    type: "causal",
+    unanchoredProvenance: [],
+  };
+  const b: KnowledgeObject = {
+    id: "k2",
+    statement: "increasing resistance decreases current",
+    type: "causal",
+    unanchoredProvenance: [],
+  };
   assert.equal(isSameKnowledge(a, b), true);
 
-  const c: KnowledgeObject = { id: "k3", statement: "Ohm's law in words", type: "conceptual_system" };
-  const d: KnowledgeObject = { id: "k4", statement: "ohm's law in words", type: "conceptual_system" };
+  const c: KnowledgeObject = {
+    id: "k3",
+    statement: "Ohm's law in words",
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  };
+  const d: KnowledgeObject = {
+    id: "k4",
+    statement: "ohm's law in words",
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  };
   assert.equal(isSameKnowledge(c, d), true);
   assert.equal(identityIsStructural("conceptual_system"), false);
 });
@@ -113,8 +134,18 @@ test("association and causal both have structural identity; the rest do not", ()
 });
 
 test("the same words as two different KINDS of knowledge stay distinct", () => {
-  const asCausal: KnowledgeObject = { id: "k1", statement: "Ohm's law", type: "causal" };
-  const asAssociation: KnowledgeObject = { id: "k2", statement: "Ohm's law", type: "conceptual_system" };
+  const asCausal: KnowledgeObject = {
+    id: "k1",
+    statement: "Ohm's law",
+    type: "causal",
+    unanchoredProvenance: [],
+  };
+  const asAssociation: KnowledgeObject = {
+    id: "k2",
+    statement: "Ohm's law",
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  };
   assert.equal(isSameKnowledge(asCausal, asAssociation), false);
 });
 
