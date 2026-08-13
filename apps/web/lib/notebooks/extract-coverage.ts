@@ -64,7 +64,16 @@ export function extractCut(limit: number, kept: number, original: number): Trunc
  */
 export function pdfCoverage(input: {
   pageTexts: readonly string[];
-  /** 1-based page numbers vision actually returned text for. */
+  /**
+   * 0-based page indexes vision actually returned text for — the same basis as
+   * `pageTexts`, because this set is `readPdfPagesWithVision`'s own keys and
+   * those are the indexes it was given.
+   *
+   * 🔴 THIS SAID "1-BASED" AND THE LOOP BELOW DUTIFULLY ADDED ONE, so a page
+   * vision HAD read was counted unread and filed in `lostUnits`. That is the
+   * worst available direction for this record: it understates what was
+   * recovered and reports real, present content as missing.
+   */
   readByVision: ReadonlySet<number>;
   truncation?: readonly TruncationRecord[];
   /**
@@ -127,7 +136,7 @@ export function pdfCoverage(input: {
   const unreadIndexes: number[] = [];
   for (let index = 0; index < input.pageTexts.length; index += 1) {
     const hasOwnText = pageTextLength(input.pageTexts[index] ?? "") >= THIN_PAGE_CHARS;
-    const wasRead = input.readByVision.has(index + 1);
+    const wasRead = input.readByVision.has(index);
     if (hasOwnText && wasRead) both += 1;
     else if (hasOwnText) native += 1;
     else if (wasRead) vision += 1;
