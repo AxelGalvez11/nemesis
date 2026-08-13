@@ -8,7 +8,8 @@ import { objectivesForKnowledge } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
 import {
   UNSUPPORTED_RETRIEVAL,
-  evidenceFromEvaluation,
+  evidenceForSubmission,
+  outcomeFor,
   retrievalPromptFor,
   unobtainedEvidence,
 } from "./objective-task";
@@ -29,8 +30,10 @@ const KNOWLEDGE: KnowledgeObject = {
   statement: "losartan — Cozaar",
   type: "association",
 };
-const [OBJECTIVE] = objectivesForKnowledge(KNOWLEDGE);
-const PROMPT = retrievalPromptFor(OBJECTIVE!, "prompt-1");
+const [RESOLVED] = objectivesForKnowledge(KNOWLEDGE);
+/** As it exists once stored — the only state an objective can be asked about. */
+const OBJECTIVE = { ...RESOLVED!, rowId: "row-1" };
+const PROMPT = retrievalPromptFor(OBJECTIVE, "prompt-1");
 
 const EVALUATION = {
   confidence: 0.9,
@@ -62,15 +65,16 @@ const RECORD_FOR_COLUMNS = {
   verdict: "strong" as const,
 };
 
+/** The one row a single-objective judged answer produces. */
 function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: number }) {
-  return evidenceFromEvaluation({
+  return evidenceForSubmission({
     canvasId: null,
-    evaluation: EVALUATION,
-    objectiveRowId: "row-1",
     occurredAt: "2026-08-12T00:00:00.000Z",
+    outcomes: [outcomeFor(OBJECTIVE, EVALUATION)],
     prompt: PROMPT,
-    response,
-  });
+    responseText: response.text,
+    ...(response.tookMs !== undefined ? { tookMs: response.tookMs } : {}),
+  })[0]!;
 }
 
 // ── 1. the measurement survives ─────────────────────────────────────────────
@@ -132,7 +136,7 @@ test("🔴 operation comes from the objective, so it cannot silently stay 'recal
   assert.equal(PROMPT.operation, "recall");
   assert.equal(judged({ text: "Cozaar", tookMs: 900, via: "typed" }).operation, "recall");
 
-  const explain = retrievalPromptFor({ ...OBJECTIVE!, capability: "explain" }, "prompt-2");
+  const explain = retrievalPromptFor({ ...OBJECTIVE, capability: "explain" }, "prompt-2");
   assert.equal(explain.operation, "explain", "the prompt must read the objective, not a literal");
 });
 
@@ -146,12 +150,11 @@ test("scaffolding records what was offered — one state, and it is observed rat
 test("🔴 'I don't know' records the same observations and still is not a wrong answer", () => {
   const built = unobtainedEvidence({
     canvasId: null,
-    objectiveRowId: "row-1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: PROMPT,
     responseText: "I don't know",
     tookMs: 4_100,
-  });
+  })[0]!;
 
   // The observations are identical in kind to a judged attempt...
   assert.equal(built.responseLatencyMs, 4_100);
@@ -167,11 +170,10 @@ test("🔴 a reveal with nothing typed leaves latency ABSENT rather than 0", () 
   // absence-as-negative-evidence wearing a different hat.
   const built = unobtainedEvidence({
     canvasId: null,
-    objectiveRowId: "row-1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: PROMPT,
     responseText: null,
-  });
+  })[0]!;
   assert.equal(built.responseLatencyMs, undefined);
   assert.equal("responseLatencyMs" in built && built.responseLatencyMs !== undefined, false);
 });

@@ -35,8 +35,9 @@ import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/po
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
-  evidenceFromEvaluation,
+  evidenceForSubmission,
   objectiveAsTask,
+  outcomeFor,
   retrievalPromptFor,
   unobtainedEvidence,
   type RetrievalPrompt,
@@ -256,6 +257,23 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   // to decide whether something has been shown repeatedly, so the learner would be credited with
   // practice they never did. A fresh random id per decision is also why a genuinely new attempt
   // after a reload lands rather than being swallowed as a duplicate.
+  //
+  // 🔴 THIS IS NOW THE LAST PLACE "ONE SUBMISSION → ONE PROMPT" CAN BREAK, AND IT IS THE ONE PLACE
+  // NO TEST CAN SEE IT. The fan-out below holds the other half by construction: a prompt carries a
+  // SET of targets, so however many objectives one answer touches, they share its id because they
+  // share its prompt.
+  //
+  // What is not structural is up here. `decideNext` returns exactly one objective today, so one
+  // decision is one key and one key is one prompt. The moment a `PolicyDecision` carries a set —
+  // which is what `BRAIN-003` exists to make possible — the tempting edit is to build a key per
+  // objective, and that mints a prompt per objective, and each prompt gets its own
+  // `crypto.randomUUID()`. One 20-second explanation is then four performances of 20 seconds each.
+  //
+  // That failure arrives from ABOVE the layer that guards against it, so nothing in
+  // `objective-task.ts` can catch it and no test asserts on it — there is no multi-objective
+  // decision to test with yet. THE KEY MUST IDENTIFY THE SUBMISSION, NEVER AN OBJECTIVE WITHIN IT:
+  // a decision covering four objectives is ONE key, and `retrievalPromptFor` gives way to
+  // `promptTargeting` with all four targets on the single prompt it returns.
   const decisionKey = decision
     ? `${decision.objective.identityKey}:${decision.action.type}:${decision.state.evidenceCount}:${round}`
     : null;
@@ -281,11 +299,35 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     [uid],
   );
 
+  /**
+   * Write everything one submission produced, then re-read.
+   *
+   * 🔴 IT TAKES THE WHOLE PERFORMANCE, NOT A ROW. One answer covering four objectives is four rows
+   * sharing one response identity, and they succeed or fail as one thing as far as the learner is
+   * concerned — so the error is reported once, about the answer, rather than four times about rows
+   * they never knew existed.
+   *
+   * 🔴 THE WRITES ARE SEQUENTIAL AND NOT ATOMIC, WHICH IS A REAL AND ACCEPTED LIMITATION. A failure
+   * partway leaves the earlier rows written. That never over-claims — the rows that landed are
+   * things the judge genuinely established — and because every row's `(objective, responseId)` pair
+   * is stable, re-submitting the same answer re-attempts all of them and the ones already stored
+   * are no-ops, so a retry converges rather than duplicating. The clean fix is a batched upsert in
+   * `learner-store.ts`, which is Brain's file; requested rather than reached into.
+   */
   const record = useCallback(
-    async (built: Parameters<typeof recordEvidence>[1]) => {
-      const written = await recordEvidence(uid, built);
+    async (built: readonly Parameters<typeof recordEvidence>[1][]) => {
+      let written = built.length > 0;
+      for (const row of built) {
+        // Sequential rather than concurrent: they conflict on the same index, and a burst of
+        // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
+        // race rather than the no-op it is meant to be.
+        if (!(await recordEvidence(uid, row))) written = false;
+      }
       if (!written) {
         setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
+        // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
+        // a half-written performance, teaching from a learner model that is missing exactly the
+        // rows the write dropped.
         return;
       }
       // 🔴 THE POLICY RUNS AGAIN FROM RE-READ EVIDENCE, NOT FROM WHAT WE JUST SENT. Applying the
@@ -311,7 +353,6 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       await record(
         unobtainedEvidence({
           canvasId: canvas.id || null,
-          objectiveRowId: decision.objective.rowId,
           occurredAt: new Date().toISOString(),
           prompt: active,
           responseText: said,
@@ -375,13 +416,18 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
         via,
       });
       await record(
-        evidenceFromEvaluation({
+        evidenceForSubmission({
           canvasId: canvas.id || null,
-          evaluation,
-          objectiveRowId: decision.objective.rowId,
           occurredAt: new Date().toISOString(),
+          // 🔴 THE JUDGE ASSESSED THE OBJECTIVE IT WAS ASKED ABOUT, AND THAT IS WHAT IS NAMED HERE.
+          // This surface stages one objective per question, so one verdict covers one target. When
+          // a multi-objective judge exists it returns one of these per objective it actually
+          // assessed, and the fan-out routes them unchanged — nothing here has to spread a verdict
+          // across a set, which is the one thing that would record demonstrations nobody made.
+          outcomes: [outcomeFor(decision.objective, evaluation)],
           prompt: active,
-          response,
+          responseText: said,
+          ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
