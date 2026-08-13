@@ -133,17 +133,44 @@ export interface PolicyRuntime {
   acknowledge: () => void;
 }
 
-/** The sources this canvas can produce durable knowledge from. Used as an effect dependency so
- *  attaching material re-resolves, and re-rendering does not. */
 /** A canvas with no sources at all, before anything has been read. Nothing is owned from here. */
 const EMPTY_COVERAGE = emptyCoverage(0);
 
-function durableSignature(canvas: LearningCanvas): string {
-  return canvas.sources
+/**
+ * EVERY INPUT `ensureKnowledgeForCanvas` READS, AS ONE KEY.
+ *
+ * 🔴 THIS SHUT THE FRONT DOOR, AND THE MECHANISM IS WORTH STATING EXACTLY. The key used to be the
+ * durable sources alone, which was complete while sources were the only thing knowledge could come
+ * from. The topic-first constructor added a SECOND input — `canvas.title` — and did not extend the
+ * key. For a canvas with no sources the old key is `""` on mount and `""` for ever after, so:
+ *
+ *     mount, title still empty   → resolve → `topicTerritory` returns at `if (!topic)` → 0 objectives
+ *     the title arrives          → key UNCHANGED → the effect never runs again
+ *     forever                    → nothing to ask, no lesson either, and no error anywhere
+ *
+ * A learner typing a topic got a blank canvas. It reproduces on a full reload too, because the
+ * canvas loads asynchronously and the effect has already run against the empty one by then.
+ *
+ * 🔴 AND IT IS SILENT BY CONSTRUCTION, WHICH IS WHY NOTHING CAUGHT IT. The title check sits ABOVE
+ * `onPhase("mapping_knowledge")`, so no thinking caption appears; it returns before
+ * `constructTerritory`, so no model call, no network request and no spend; and "no objectives" is a
+ * legitimate outcome, so no error. Every instrument pointed at it saw a system doing nothing wrong.
+ *
+ * 🔴 THE TITLE IS DELIBERATELY NOT PART OF THE KEY WHEN SOURCES EXIST. There, knowledge is a reading
+ * of the learner's own material and the title is a label on it — re-resolving a document canvas
+ * because someone renamed it would repeat the whole extraction for a cosmetic edit.
+ *
+ * Spend is bounded on the topic side because a rename COMMITS rather than streaming: `SessionControl`
+ * holds a local draft and calls `onRename` once, with a trimmed and genuinely changed value. So this
+ * changes when the topic changes, which is exactly when the territory should be rebuilt.
+ */
+export function knowledgeSignature(canvas: LearningCanvas): string {
+  const durable = canvas.sources
     .map((source) => source.librarySourceId)
     .filter(Boolean)
     .sort()
     .join(",");
+  return durable ? `sources:${durable}` : `topic:${canvas.title.trim()}`;
 }
 
 /**
@@ -219,7 +246,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    *  could not tell it from evidence. */
   const [focus, setFocus] = useState<FocusScope>(WHOLE_CANVAS);
 
-  const sources = durableSignature(canvas);
+  const knowledgeInputs = knowledgeSignature(canvas);
 
   useEffect(() => {
     if (!enabled || !uid) {
@@ -270,10 +297,13 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     return () => {
       live = false;
     };
-    // 🔴 Keyed on the SOURCES, not on `canvas`. The canvas object is replaced on every keystroke of
-    // a rename and on every block edit; depending on it would re-resolve knowledge continuously.
+    // 🔴 Keyed on the KNOWLEDGE INPUTS, not on `canvas`. The canvas object is replaced on every
+    // block edit and on every keystroke of a rename draft; depending on it would re-resolve
+    // knowledge continuously. Keying on the sources ALONE is what shut the front door — see
+    // `knowledgeSignature`: a topic is an input too, and a key that could not see it meant a
+    // topic-first canvas resolved once, against a title that had not arrived yet, and never again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, forced, sources, uid]);
+  }, [enabled, forced, knowledgeInputs, uid]);
 
   const supported = useMemo(() => supportedObjectives(knowledge.objectives), [knowledge]);
 
