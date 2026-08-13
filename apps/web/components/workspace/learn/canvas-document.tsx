@@ -316,11 +316,17 @@ function BlockBody({
     </>
   );
 
+  // 🔴 EVERY SIZE BELOW IS SMALLER THAN THE PREVIOUS PASS -- compact-UI spec, point 1 ("reduce
+  // visual scale of body text/headings/labels in session mode"). Design judgement, not measured:
+  // this is the reading column, which has no ChatGPT equivalent to read a number off. Kept
+  // conservative -- one step down, not two -- because this is the thing being read for minutes
+  // at a stretch, not a label glanced at once; the composer's input text has its own, unrelated
+  // 16px floor (see canvas-composer.tsx) that this reduction does not touch or approach.
   switch (block.type) {
     case "heading":
       return (
         <h2
-          className="mt-10 text-[1.375rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
+          className="mt-8 text-[1.25rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
           {...mark}
         >
           {body}
@@ -328,8 +334,8 @@ function BlockBody({
       );
     case "concept":
       return (
-        <div className="my-3 border-l-2 border-(--ui-accent) py-1 pl-4">
-          <p className="text-[1.0625rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
+        <div className="my-2.5 border-l-2 border-(--ui-accent) py-1 pl-4">
+          <p className="text-[1rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
             {body}
           </p>
         </div>
@@ -338,27 +344,27 @@ function BlockBody({
       // Emphasis by rule and indent, not by filling a rectangle. A page of tinted panels reads
       // as a dashboard; the point of this surface is that it reads as something written.
       return (
-        <div className="my-3 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
-          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+        <div className="my-2.5 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
+          <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
             {body}
           </p>
         </div>
       );
     case "example":
       return (
-        <p className="my-2.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+        <p className="my-2 pl-4 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
           {body}
         </p>
       );
     case "citation":
       return (
-        <p className="my-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
+        <p className="my-1.5 text-[0.75rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
           {body}
         </p>
       );
     default:
       return (
-        <p className="my-2.5 text-[1rem] leading-[1.7] text-(--ui-text-primary)" {...mark}>
+        <p className="my-2 text-[0.9375rem] leading-[1.65] text-(--ui-text-primary)" {...mark}>
           {body}
         </p>
       );
