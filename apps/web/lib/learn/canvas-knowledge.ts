@@ -87,6 +87,12 @@ export async function ensureKnowledgeForCanvas(
     /**
      * Store this canvas's knowledge even though the policy does not own it.
      *
+     * 🔴 IT BYPASSES OWNERSHIP. IT DOES NOT — AND CANNOT — BYPASS TRUST. Ownership is a judgement
+     * about presentation ("should the policy take this page?") and overriding it writes nothing
+     * untrue. Whether the source was actually read is a FACT, and a flag that overrode it would
+     * mint knowledge from a parse we know was flattened, into a real learner's tables, with no
+     * marker distinguishing it from a true one ever after. See the gate below.
+     *
      * 🔴 IT CHANGES WHAT IS WRITTEN, NEVER WHAT IS DECIDED. `ownership` in the result still says
      * `owns: false` and still names the refusal, so a caller running a forced session can — and
      * must — disclose it. A bypass that rewrote the verdict would delete the only record that this
@@ -187,12 +193,31 @@ export async function ensureKnowledgeForCanvas(
   // 🔴 THE CONCERN IN THE OLD COMMENT SURVIVES AND IS SPLIT IN TWO. "Rows produced by opening a
   // document rather than by learning anything from it" was two worries wearing one gate. The first
   // — do not mint knowledge we cannot trust — is exactly what `outcome` answers, and better than
-  // coverage did. The second — do not mint knowledge nobody will be asked about — is a COST
-  // concern, not a correctness one, and its honest fix is writing when a canvas is STUDIED rather
-  // than when it is OPENED. That distinction does not exist yet; it is filed rather than proxied,
-  // because a coverage gate standing in for it is what this change exists to remove.
+  // coverage did. The second — do not mint knowledge nobody will be asked about — turned out not to
+  // be a real trade-off: extraction here is DETERMINISTIC AND MODEL-FREE (see the header of
+  // `knowledge-extraction.ts`), so minting on open costs a database upsert and nothing more, and
+  // both upserts ignore duplicates on identity, so re-opening the same canvas is free. Writing on
+  // open is correct for v1; there is no "studied" concept to build and no spend to weigh.
+  //
+  // 🔴 AND THIS GATE IS NOT BYPASSABLE — DELIBERATELY, AND IT IS THE ONE GATE THAT IS NOT.
+  //
+  // `bypassOwnership` skips OWNERSHIP, which is a judgement about presentation: should the policy
+  // take this page? Reasonable to override, and overriding it writes nothing untrue. Trust is a
+  // different kind of claim — it is a FACT about whether the source was read — and overriding a
+  // fact stores a falsehood.
+  //
+  // What makes it unrecoverable is durability and provenance. `saveKnowledge` upserts on
+  // `(user_id, identity_key)`, so a knowledge object minted from a flattened parse under
+  // `?policy=force` lands in a REAL learner's table, carries no forced marker, and converges with
+  // genuine extractions of the same identity — indistinguishable from a true one forever. From
+  // there a false knowledge object becomes a false objective becomes a question about something the
+  // source never said, and the learner's wrong answer is recorded as THEIR gap. A source gap
+  // becoming a learner gap, introduced by a query parameter.
+  //
+  // So the bypass's own contract — "it changes what is WRITTEN, never what is DECIDED" — is exactly
+  // why it must stop here: this is the case where writing IS the decision.
   const production = knowledgeProductionFor({ outcome });
-  if (!production.produce && !bypassOwnership) return { coverage, objectives: [], outcome, ownership };
+  if (!production.produce) return { coverage, objectives: [], outcome, ownership };
 
   const resolved: ResolvedObjective[] = [];
   for (const knowledge of extracted) {

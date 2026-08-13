@@ -172,6 +172,7 @@ async function main() {
   }
 
   let three: boolean | null = null;
+  let forced: boolean | null = null;
   if (!degradedId) {
     console.log(`\n⚠ acceptance 3 SKIPPED — no production source extracts to "degraded" any more.`);
   } else {
@@ -185,6 +186,21 @@ async function main() {
     console.log(`  outcome           : ${mixedResult.outcome}`);
     console.log(`  objectives.length : ${mixedResult.objectives.length}   (2 knowledge objects ARE extractable from the clean source)`);
     three = mixedResult.outcome === "degraded" && mixedResult.objectives.length === 0;
+
+    // 🔴 AND THE SAME CANVAS UNDER `?policy=force` — TRUST IS NOT BYPASSABLE.
+    //
+    // `bypassOwnership` skips ownership, which is a judgement about presentation. It must NOT skip
+    // trust, which is a fact about whether the source was read. `saveKnowledge` upserts on
+    // `(user_id, identity_key)` with no forced-session marker, so knowledge minted from a flattened
+    // parse under a query parameter would be indistinguishable from a genuine one forever — and
+    // downstream it becomes a question about something the source never said, with the learner's
+    // wrong answer recorded as their gap. Executed rather than asserted, because this one WRITES if
+    // it is wrong.
+    console.log(`\nrunning the SAME degraded canvas WITH bypassOwnership: true  (?policy=force) …`);
+    const forcedResult = await ensureKnowledgeForCanvas(userId, mixed, { bypassOwnership: true });
+    console.log(`  outcome           : ${forcedResult.outcome}`);
+    console.log(`  objectives.length : ${forcedResult.objectives.length}   ← must be 0: a flag may not override a FACT`);
+    forced = forcedResult.objectives.length === 0;
   }
 
   console.log(`\n═══ ACCEPTANCE ═══`);
@@ -197,7 +213,9 @@ async function main() {
   console.log(`     The production alias has been frozen since 18:04. Not approximated here.`);
   console.log(`  3. a canvas with outcome "degraded" still produces nothing ................. ${three === null ? "⚠ SKIPPED" : three ? "🟢 PASS" : "🔴 FAIL"}  (clean + degraded, 2 objects extractable, 0 produced)`);
 
-  if (!one || three === false) process.exitCode = 1;
+  console.log(`  5. ?policy=force may NOT bypass the trust gate (Brain, 2026-08-12) ......... ${forced === null ? "⚠ SKIPPED" : forced ? "🟢 PASS" : "🔴 FAIL"}  (degraded canvas, forced, 0 produced)`);
+
+  if (!one || three === false || forced === false) process.exitCode = 1;
 }
 
 main().catch((cause) => {

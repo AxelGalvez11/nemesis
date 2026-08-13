@@ -336,6 +336,45 @@ test("🔴 the PRODUCTION gate cannot read coverage — that is what RUNTIME-005
   assert.equal(ruleCode.includes("unrepresented"), false, "nor what it failed to represent");
 });
 
+test("🔴 NO FLAG can mint knowledge from an extraction we could not trust", () => {
+  // 🔴 THE ONE GATE ON THIS PATH THAT IS NOT BYPASSABLE, AND IT IS NOT AN OVERSIGHT.
+  //
+  // `bypassOwnership` may skip OWNERSHIP — that is a judgement about presentation, and overriding
+  // it writes nothing untrue. Trust is a FACT about whether the source was read, and a flag that
+  // overrode a fact would store a falsehood in a real learner's tables.
+  //
+  // What makes it unrecoverable is provenance: `saveKnowledge` upserts on `(user_id, identity_key)`
+  // and there is NO forced-session marker, so knowledge minted from a flattened parse under
+  // `?policy=force` converges with genuine extractions of the same identity and is indistinguishable
+  // from a true one ever after. Downstream it becomes a question about something the source never
+  // said, and the learner's wrong answer is recorded as THEIR gap — a source gap turned into a
+  // learner gap by a query parameter.
+  const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  const gate = code.indexOf("if (!production.produce");
+  const write = code.indexOf("await saveKnowledge(");
+  assert.notEqual(gate, -1);
+  assert.notEqual(write, -1);
+
+  const gateLine = code.slice(gate).split("\n")[0]!;
+  const condition = gateLine.slice(0, gateLine.indexOf(") return"));
+  for (const escape of ["bypass", "force", "override"]) {
+    assert.equal(
+      condition.includes(escape),
+      false,
+      `trust must not be conditional on "${escape}" — overriding whether we READ something writes a falsehood`,
+    );
+  }
+
+  // And nothing between the refusal and the write may re-admit a canvas the gate turned away.
+  assert.equal(
+    code.slice(gate, write).includes("bypass"),
+    false,
+    "no bypass may re-enter the path between the trust gate and the write",
+  );
+});
+
 test("🔴 the bypass changes what is WRITTEN, never what is DECIDED", () => {
   // A forced session must still report `owns: false` and its refusal, because that is the only
   // record that it was not the ordinary path — and the surface reads it to say so on screen. If
