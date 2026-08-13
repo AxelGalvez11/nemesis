@@ -93,11 +93,22 @@ export interface PolicyRuntime {
   /**
    * Every claim this canvas holds, so the Sources panel can say where each one came from.
    *
-   * 🔴 THE WHOLE SET, NOT `supported`. `supportedObjectives` filters to association + recall — the
-   * subset the policy can currently ASK about — and a disclosure built on that would go quiet about
-   * model-written claims of every other kind. What may be taught and where something came from are
-   * different questions, and answering the second with the first's filter is how a provenance
-   * statement silently narrows to whatever the runtime happens to support this month.
+   * 🔴 TAKEN FROM `knowledge.objectives` RATHER THAN FROM `supported`, WHICH IS THE WIDER OF THE
+   * TWO — but not by as much as it looks, and the difference is worth stating exactly rather than
+   * overclaimed. `supportedObjectives` filters to association + recall. Today that filter removes
+   * nothing: `objectivesForKnowledge` returns `[]` for every type except `association` and
+   * hardcodes `recall`, so a knowledge object of any other kind resolves no objective and never
+   * reaches this list either. The two sets are currently identical.
+   *
+   * 🔴 SO THIS IS NOT YET THE GUARANTEE IT WILL NEED TO BE. Whoever widens
+   * `objectivesForKnowledge` should know that the disclosure still only sees claims that MINTED AN
+   * OBJECTIVE — a knowledge object nobody can be asked about would stay invisible here whatever its
+   * provenance. Reading it off the knowledge objects rather than off the resolved objectives is the
+   * fix, and it is cheap; it is not made now because there is nothing to observe it with while five
+   * of the six kinds mint nothing (contract R4). Filed, not fudged.
+   *
+   * What it does buy today is real: `supported` is a filter someone may reasonably narrow, and a
+   * provenance statement must not quietly narrow with it.
    */
   claims: readonly KnowledgeObject[];
   decision: PolicyDecision | null;
