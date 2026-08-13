@@ -62,6 +62,31 @@ export interface TeachingPolicyInput {
   recentEvidence: readonly LearnerEvidence[];
   /** Injected so every decision is reproducible in a test rather than depending on the clock. */
   now: Date;
+  /**
+   * Has this objective's correction already been put in front of the learner in this session?
+   *
+   * 🔴 THE ONE FACT THE EVIDENCE LOG CANNOT HOLD, AND THAT IS NOT AN OVERSIGHT. Receiving a
+   * correction is not a demonstration — "viewing is not evidence" is a hard invariant, and writing
+   * a row when someone reads an answer would be exactly the absence-as-evidence defect this whole
+   * model refuses. So the log is silent about it by design, which leaves the policy unable to tell
+   * "they have just been told" from "they have never been told", and it answered both the same way
+   * for ever. `decideNext` already names the gap: *"showing a correction produces no new evidence,
+   * so the state that asked for it is unchanged, so it asks again."*
+   *
+   * 🔴 SESSION STATE, PASSED IN, NEVER ACCUMULATED HERE. The policy stays a pure function of its
+   * inputs — same inputs, same action — and this is an input like `now` and `recentEvidence`. It is
+   * a fact about what the RUNTIME has already displayed, never a claim about the learner, and
+   * nothing durable is written from it.
+   *
+   * 🔴 AND IT IS SPECIFICALLY "A CORRECTION WAS SHOWN", NOT `actedOn`. They are not the same set
+   * and using the wrong one inverts this fix: `acknowledge()` adds an objective to `actedOn` when
+   * the learner clears the FEEDBACK screen after answering — which happens BEFORE the correction is
+   * ever displayed. Reading `actedOn` here would defer at the exact moment the correction is owed,
+   * and a learner who got something wrong would never be shown the answer at all.
+   *
+   * Absent means not shown, which is the honest reading for a caller that does not track it.
+   */
+  correctionAlreadyShown?: boolean;
 }
 
 /**
@@ -122,41 +147,65 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
 
     // Wrong, or right about only part of it. Both want the answer stated plainly and another
     // attempt later — 🔴 NOT the identical question a millisecond afterwards, which tests nothing.
+    //
+    // 🔴 "LATER" HAD NEVER BEEN BUILT, AND THE INTENT WAS WRITTEN DOWN IN THIS FUNCTION'S OWN
+    // REASONS. They said the answer is worth stating "before another attempt" and "before asking
+    // again" — and there was no again. Every route into this branch returned `show_correction`, at
+    // every elapsed time out to a year, and the correction screen has no answer box. Evidence only
+    // changes by answering, so status could never leave `incorrect`: get something wrong once and
+    // Nemesis showed you the answer, then showed you the same answer every time that objective came
+    // round, for ever, and never asked you again. **The one thing that would fix their state was the
+    // one thing they were never offered.** Someone wrote the sequence correctly and built the first
+    // half of it.
     case "incorrect":
     case "partial":
-      if (actedJustNow && state.evidenceCount > 1) {
+    // 🔴 AN OPPORTUNITY PASSED AND NOTHING CAME BACK — revealed, gave up, unreadable, or a
+    // judgement too uncertain to be one. They did not give a wrong answer, so they must not be told
+    // they were wrong; the renderer keeps that distinction. But the shape of what is owed is
+    // identical to the two states above — state it, then come back and ask — so the routing is
+    // shared rather than duplicated, and the three cannot drift apart.
+    case "not_demonstrated": {
+      // 🔴 THE CORRECTION BELONGS TO THE MOMENT THE ATTEMPT FELL SHORT, NOT TO THE OBJECTIVE FOR
+      // EVER. Once the churn window has passed, showing the same answer a second time teaches
+      // nothing that showing it once did not — what is owed then is the attempt the correction was
+      // stated in aid of. This is the ONLY guard on this branch and it is the existing one: no new
+      // interval, no second knob, nothing to tune. `ACT_AGAIN_AFTER_MS` already asks exactly the
+      // right question here — "have we just touched this?" — and its answer simply had no bearing
+      // on the outcome before.
+      if (!actedJustNow) {
         return {
-          because: `this was just corrected, so another attempt should come after some intervening work`,
+          because: state.latestVerdict
+            ? `this fell short a while ago and the answer has already been stated — asking is what is owed now, not stating it again`
+            : `an opportunity passed a while ago with nothing demonstrated, so the next thing owed here is a real attempt`,
+          objectiveId: id,
+          type: "retrieve",
+        };
+      }
+
+      // Inside the window, and they have already read it. Repeating the card is the loop that looks
+      // like teaching and is not — 🔴 and the condition that used to sit here was `state.evidenceCount
+      // > 1`, so a learner who got something wrong ONCE never even reached this line. Whether they
+      // have been shown the answer is the question; how many times they have been assessed is not.
+      if (input.correctionAlreadyShown) {
+        return {
+          because: `the answer has just been shown, so the next attempt should follow some intervening work`,
           objectiveId: id,
           type: "defer",
         };
       }
+
       return {
         because: state.status === "partial"
           ? `part of this was demonstrated and part was missing — the answer is worth stating plainly before asking again`
-          : `the last attempt contradicted this objective, so the correct answer is worth stating before another attempt`,
+          : state.status === "incorrect"
+            ? `the last attempt contradicted this objective, so the correct answer is worth stating before another attempt`
+            : state.latestVerdict
+              ? `no retrieval was obtained this time, though this was demonstrated before — showing it beats asking again immediately`
+              : `an opportunity passed with no usable demonstration, so the answer is worth showing before asking again`,
         objectiveId: id,
         type: "show_correction",
       };
-
-    // 🔴 AN OPPORTUNITY PASSED AND NOTHING CAME BACK — revealed, gave up, or unreadable. They did
-    // not give a wrong answer, so they must not be told they were wrong. Show the association, and
-    // let the loop bring it back for a real attempt later.
-    case "not_demonstrated":
-      if (actedJustNow && state.evidenceCount > 1) {
-        return {
-          because: `the answer was just shown, so the next retrieval should follow some intervening work`,
-          objectiveId: id,
-          type: "defer",
-        };
-      }
-      return {
-        because: state.latestVerdict
-          ? `no retrieval was obtained this time, though this was demonstrated before — showing it beats asking again immediately`
-          : `an opportunity passed with no usable demonstration, so the answer is worth showing before asking again`,
-        objectiveId: id,
-        type: "show_correction",
-      };
+    }
 
     // 🔴 DEMONSTRATED. Move on — for now, and ONLY for now. Nothing here requires a separate Test
     // stage to re-verify what was just shown to work; that is the fixed sequence this architecture

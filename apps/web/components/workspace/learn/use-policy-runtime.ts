@@ -198,6 +198,19 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    *  can now do, so it is not evidence and must not be stored as any. It exists only to stop the
    *  same card being served twice in a row — see `decideNext`'s `actedOn`. */
   const [actedOn, setActedOn] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * Objectives whose CORRECTION has actually been put on the screen this session.
+   *
+   * 🔴 SESSION-LOCAL, NEVER PERSISTED, for the same reason as `actedOn`: receiving a correction is
+   * not a demonstration, so it must never be written as evidence.
+   *
+   * 🔴 AND IT IS NOT `actedOn`, THOUGH BOTH ARE FILLED IN THE SAME PLACE. `acknowledge()` runs when
+   * the learner clears the FEEDBACK screen after answering, which is before any correction has been
+   * displayed — so `actedOn` is already set at the moment the correction is first owed. This set is
+   * added to ONLY when the thing being acknowledged was the correction itself, which is what makes
+   * it able to answer "have they been told?" rather than "have we been here?".
+   */
+  const [correctionsShown, setCorrectionsShown] = useState<ReadonlySet<string>>(() => new Set());
   /** Frozen per evidence change rather than read per render: the policy takes `now`, and a clock
    *  that moved on every render would make the decision unstable for no reason. */
   const [decidedAt, setDecidedAt] = useState(() => new Date());
@@ -273,9 +286,9 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   const decision = useMemo(
     () =>
       status === "ready"
-        ? decideNext({ actedOn, evidence, now: decidedAt, objectives: inFocus })
+        ? decideNext({ actedOn, correctionsShown, evidence, now: decidedAt, objectives: inFocus })
         : null,
-    [actedOn, decidedAt, evidence, inFocus, status],
+    [actedOn, correctionsShown, decidedAt, evidence, inFocus, status],
   );
 
   // ── One prompt per decision ────────────────────────────────────────────────
@@ -556,6 +569,14 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     setFeedback(null);
     setRound((current) => current + 1);
     if (seen) setActedOn((current) => new Set(current).add(seen));
+    // 🔴 ONLY WHEN WHAT WAS ACKNOWLEDGED WAS THE CORRECTION ITSELF. This runs for the feedback
+    // screen too, and recording that as "the answer has been shown" would make the policy defer at
+    // the exact moment the correction is owed — a learner who got something wrong would never be
+    // shown the answer at all. The action that was on screen is the only thing that distinguishes
+    // them, and it is right here.
+    if (seen && decision?.action.type === "show_correction") {
+      setCorrectionsShown((current) => new Set(current).add(seen));
+    }
     setDecidedAt(new Date());
   }, [decision, recording]);
 
