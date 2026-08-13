@@ -317,7 +317,20 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    */
   const record = useCallback(
     async (built: readonly Parameters<typeof recordEvidence>[1][]) => {
-      let written = built.length > 0;
+      // 🔴 NOTHING TO WRITE IS NOT A FAILURE TO WRITE, AND RUNTIME-006 MADE THIS REACHABLE.
+      //
+      // `written` used to start as `built.length > 0`, so an empty array fell straight into the
+      // error below and told the learner *"That answer was judged, but Nemesis could not save it"* —
+      // both halves false when the judge was never reached. It was unreachable before, because
+      // every path returned one row per target. `noJudgement()` now legitimately produces zero rows
+      // for any prompt, and it is a value a caller is invited to construct and hand down here.
+      //
+      // So the guard lives at the writer rather than at the one call site that currently avoids it:
+      // an outage writes nothing AND claims nothing. No error, and no refresh — nothing changed, so
+      // re-reading would be a round trip that can only tell us what we already know.
+      if (built.length === 0) return;
+
+      let written = true;
       for (const row of built) {
         // Sequential rather than concurrent: they conflict on the same index, and a burst of
         // parallel upserts for one answer is exactly the shape that makes a duplicate look like a

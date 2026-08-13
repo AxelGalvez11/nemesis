@@ -458,11 +458,17 @@ test("🔴 the operation is the TASK'S, identical on every row it writes", () =>
 // type. Each is calibrated by collapsing `judged: false` back into an empty outcomes array, which
 // turns them red by WRITING ROWS THAT SHOULD NOT EXIST rather than by failing to compile.
 
-/** Stands in for `record()` in use-policy-runtime.ts: the thing that actually reaches the database. */
-function writesFrom(rows: readonly EvidenceToRecord[]): EvidenceToRecord[] {
-  const written: EvidenceToRecord[] = [];
-  for (const row of rows) written.push(row);
-  return written;
+/**
+ * The rows that would reach `recordEvidence`, one call each.
+ *
+ * 🔴 STATED PRECISELY RATHER THAN GRANDLY: this is not a fake database and it does not simulate
+ * `record()`. It relies on one true fact — `record()` in `use-policy-runtime.ts` loops the array it
+ * is handed and calls `recordEvidence` once per element — so a row here is a write there, and a
+ * count here is a count of durable claims. That is what makes these assertions behavioural rather
+ * than structural: they fail by PRODUCING ROWS THAT WOULD BE WRITTEN, not by failing to compile.
+ */
+function writesFrom(rows: readonly EvidenceToRecord[]): readonly EvidenceToRecord[] {
+  return rows;
 }
 
 test("🔴 RUNTIME-006: a judge that could not be reached writes NOTHING, for any target", () => {
