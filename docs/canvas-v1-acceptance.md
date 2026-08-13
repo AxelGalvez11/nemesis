@@ -160,6 +160,87 @@ actually looking for a weak point.
 **Never drive them from a timer, a fixed sequence, or a random pick from a list.** If a phase has no
 step behind it, it does not exist.
 
+## 🔴 L. CANONICAL NAVIGATION ARCHITECTURE — REQUIRED
+
+**Owner decision, 2026-08-13. This is the canonical navigation model and it supersedes the
+sidebar's current behaviour.**
+
+**The sidebar represents DESTINATIONS, not content.** It is almost static:
+
+```
+nemesis
+＋  New canvas
+▤  Library
+□  Calendar
+◉  Stats
+```
+
+**No `Recent`. No folder tree. No canvas names. No growing list.** That is the failure mode being
+avoided by construction: *"eventually the sidebar becomes a giant chronological dump. Nemesis users
+aren't primarily trying to recover a conversation from three weeks ago. They're managing **bodies of
+knowledge**."*
+
+**Collapsed by default on the Canvas landing page**, because the composer is the primary action.
+
+### The three-object model — the distinction that makes the rest follow
+
+| Object | Is |
+|---|---|
+| **Canvas** | a learning workspace / session |
+| **Source** | material attached to a canvas |
+| **Folder** | organisation applied to **canvases** |
+
+**Library's primary objects are CANVASES, not raw files.** It is the canvas manager:
+
+```
+Library          Search canvases…                    + New folder
+All · Folders · Recent · Archived
+
+Name                        Sources   Last opened
+📁 Fall 2026
+📁 Pharmacology
+Hypertension                      8   Today
+Diabetes pharmacotherapy         14   Yesterday
+```
+
+**Folders are entirely user-created**, arbitrarily nested (`Fall 2026 / PHCY 2105 / Hypertension`),
+with an `Unfiled` default.
+
+🔴 **Nemesis does not impose a one-lecture-per-canvas structure.** A canvas may hold a semester's
+worth of material if the learner wants. Nemesis **may gently suggest** splitting one once it becomes
+cognitively unwieldy — **organisation remains the learner's decision.** That is territory, and §H6
+already says the learner chooses territory while Nemesis chooses cognitive strategy.
+
+### The mental model, and it is the whole point
+
+```
+New canvas  →  learn
+Library     →  find and organise what you have learned
+Calendar    →  when things happen / when reviews are due
+Stats       →  what Nemesis knows about your cognition
+```
+
+**New canvas is the front door** — straight to the minimal composer, *"What do you want to learn?"*,
+with upload / record / dictate. **Nemesis creates the canvas automatically once they start**; it
+appears under `Unfiled` and the learner files it later.
+
+### 🔴 What this changes about earlier decisions
+
+**Library is REINSTATED, with a different meaning.** The two-surface retirement removed Library as a
+*file* manager and `/library` currently redirects to `/learn` — `learn/page.tsx` says so: *"THE HOME
+IS ALSO THE LIBRARY. There is no /library navigation item any more."* **That comment is now stale.**
+Library returns as a **canvas** manager, which is a different object.
+
+**`Stats` is a new destination** and it is where aggregate progress lives — the surface §K sends
+learner-facing progress to, for learners who deliberately ask.
+
+### 🔴 CROSS-SURFACE HAZARD — check before shipping
+
+`/library/classic` and `/library/source/[sourceId]` still exist as routes, and **the shipped browser
+extension is recorded as hardcoding `/library?import=coursework`**. Changing what `/library` means
+can silently change where an already-shipped extension lands. **Verify the extension's actual link
+target before repointing `/library`** — a shipped client cannot be updated by this repo.
+
 ## A. Source perception — REQUIRED
 
 | # | Criterion | Evidence required |
