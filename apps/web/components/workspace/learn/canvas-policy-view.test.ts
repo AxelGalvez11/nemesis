@@ -136,8 +136,25 @@ test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as beha
   }
 
   // And the advance must actually happen, gated on the write landing rather than a timer alone.
-  assert.match(feedback, /if \(!passed \|\| !minReadDone \|\| recording\) return;/,
-    "the auto-advance gate must wait for BOTH the readability floor and the real evidence write");
+  //
+  // 🔴 RE-POINTED FOR §39, AND THE INVARIANT IS NARROWER THAN IT LOOKS. This asserted
+  // `if (!passed || !minReadDone || recording) return;` — advancement keyed on CORRECTNESS. §39
+  // reverses that: *"Correctness does not determine advancement; cognitive mode does."* The gate is
+  // now `selfAdvancing`, which comes from the policy's declared exposition and cannot see a verdict.
+  //
+  // 🔴 WHAT THIS TEST STILL OWNS is the half that did not change: the advance waits for the LATER
+  // of the readability floor and the real evidence write. Dropping `recording` would let a timer
+  // advance mid-write, and the learner could answer again with the answer still on screen — an echo
+  // recorded as a real demonstration. A bug here must cost a missed advance, never a fabricated one.
+  assert.match(feedback, /if \(!selfAdvancing \|\| !minReadDone \|\| recording\) return;/,
+    "the auto-advance gate must wait for BOTH the exposure window and the real evidence write");
+  // 🔴 AND THE VERDICT MUST NOT LEAK BACK INTO THE GATE. This is the specific regression: someone
+  // restores `passed` to the advance condition because a wrong answer auto-advancing looks like a
+  // bug. It is not — it is §39's transient correction, and `cognitive-mode.ts` records that Canvas
+  // UI came within one commit of shipping the opposite.
+  const gateLine = /if \([^)]*\) return;\n\s*latestAcknowledge/.exec(feedback)?.[0] ?? "";
+  assert.equal(gateLine.includes("passed"), false,
+    "correctness is back in the advance gate — §39 says cognitive mode decides advancement, and a verdict must not reach this condition");
   assert.match(feedback, /latestAcknowledge\.current\(\)/, "the advance must call the CURRENT acknowledge, not a stale closure");
   assert.match(rendered, /recording=\{runtime\.recording\}/, "the runtime's own recording flag must be passed in, not guessed locally");
 });
@@ -232,3 +249,46 @@ function escapeRegExp(literal: string): string {
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[^\S\n]*\/\/.*$/gm, "");
 }
+
+// ── §39: the exposure window is the policy's, and it is spent once ───────────
+
+test("🔴 §39: the hold comes from the POLICY's exposition, never a number this file picked", async () => {
+  // 🔴 THIS GUARD EXISTS BECAUSE CALIBRATION FOUND NOTHING GUARDING IT. Replacing
+  // `exposition.exposureMs` with a hard-coded `2000` — restoring the exact constant §39 removed —
+  // left the whole suite green. The renderer supplying its own duration is the defect
+  // `cognitive-mode.ts` shapes its union to make impossible ("a number nobody picked applied to
+  // material nobody sized"), so the type prevents the accidental version and this prevents the
+  // deliberate one.
+  const rendered = stripComments(await SOURCE);
+  const feedback = rendered.slice(rendered.indexOf("function FeedbackScreen"));
+  const hold = /const holdMs =[^;]+;/.exec(feedback);
+  assert.ok(hold, "the exposure hold is gone or was renamed — re-point this guard");
+  assert.match(hold[0], /exposition\.exposureMs/,
+    "the hold must read the policy's declared duration");
+  // Any bare millisecond literal here is a duration nobody ruled. `0` is the one legitimate
+  // number — it is not a duration, it is "this screen spends none of the budget".
+  const literals = [...hold[0].matchAll(/\b(\d+)\b/g)].map((m) => m[1]);
+  assert.deepEqual(literals.filter((n) => n !== "0"), [],
+    "a millisecond literal is back in the renderer — the duration belongs to the policy, which is the only thing that knows how much there is to take in");
+});
+
+test("🔴 §39: a verdict with a correction queued behind it spends NO window", async () => {
+  // 🔴 ALSO UNGUARDED UNTIL CALIBRATION SAID SO. Deleting `correctionQueued` from the hold left
+  // every test green while restoring the exact shape §39 bans.
+  //
+  // MEASURED, not assumed: `decideNext` with one associative objective and a recorded miss returns
+  // `show_correction` carrying its own `{ mode: "transient", exposureMs: 1500 }`. So a miss is two
+  // screens, and if both spend the window it is three seconds and two fades —
+  // `retrieve → fail → mini-lecture → Continue → retrieve`, which is the shape the contract names
+  // and rejects. `TRANSIENT_EXPOSURE_MS` is documented as the budget for the WHOLE emission.
+  const rendered = stripComments(await SOURCE);
+  const feedback = rendered.slice(rendered.indexOf("function FeedbackScreen"));
+  const hold = /const holdMs =[^;]+;/.exec(feedback);
+  assert.ok(hold, "the exposure hold is gone or was renamed — re-point this guard");
+  assert.match(hold[0], /correctionQueued/,
+    "the verdict no longer yields its window to a queued correction — an association miss is back to two windows and three seconds");
+  // And the flag has to be the runtime's own action, not re-derived here from the verdict or the
+  // knowledge type — the same rule the mode itself follows.
+  assert.match(rendered, /correctionQueued=\{decision\?\.action\.type === "show_correction"\}/,
+    "the queued-correction flag must come from the decision's action, not be inferred");
+});

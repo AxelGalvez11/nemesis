@@ -231,3 +231,27 @@ test("🔴 every Canvas upload door accepts exactly the same material", () => {
     );
   }
 });
+
+test("🔴 §39: the Continue owner reads the RUNTIME's exposition, not the decision's", () => {
+  // 🔴 A REACHABLE DISAGREEMENT BETWEEN TWO DOORS, MEASURED BY CALLING THE FUNCTIONS.
+  //
+  //   answer the LAST objective on a canvas -> `decideNext` returns null while the verdict is up
+  //     via the decision   declaredCognitiveMode(null) -> null -> requiresReading TRUE -> Continue
+  //     via the runtime    the verdict's own transient exposition        -> the screen auto-advances
+  //
+  // The learner was offered a button on a screen already moving on underneath it. `use-policy-
+  // runtime` exposes `exposition` precisely because a verdict can outlive the decision that
+  // produced it, and its own comment records that `declaredCognitiveMode` "cannot see the case
+  // above" — so reading the decision here is not a style choice, it is the defect.
+  const shell = read("learning-canvas.tsx");
+  assert.match(
+    shell,
+    /readingRequirementOf\(policy\.exposition\.mode\)/,
+    "the Continue owner is reading the decision again — a verdict outliving its decision reads as 'we were not told', which puts a Continue on a screen that auto-advances",
+  );
+  assert.equal(
+    /readingRequirementOf\(declaredCognitiveMode\(/.test(shell),
+    false,
+    "declaredCognitiveMode is back in the Continue owner; it cannot see a verdict that outlived its decision",
+  );
+});

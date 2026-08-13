@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
+import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
 
@@ -142,6 +143,14 @@ function PolicyScreen({
   if (feedback) {
     return (
       <FeedbackScreen
+        // 🔴 THE ACTION SURVIVES THE MASK, THE EXPOSITION DOES NOT — and this reads the one that
+        // is still true. While a verdict is up, `use-policy-runtime` deliberately overwrites
+        // `decision.exposition` with the VERDICT's, so the queued correction's own mode is not
+        // legible from here. `decision.action` is untouched by that spread, so "is a correction
+        // waiting?" is answerable and "how long would it hold?" is not — which is exactly why the
+        // budget is handed over rather than split.
+        correctionQueued={decision?.action.type === "show_correction"}
+        exposition={runtime.exposition}
         onContinue={onContinue}
         feedback={feedback}
         onAcknowledge={runtime.acknowledge}
@@ -284,13 +293,6 @@ function PolicyScreen({
   );
 }
 
-/** How long a passed retrieval holds its verdict before it is even eligible to move on by itself.
- *
- *  🔴 A READABILITY FLOOR, NOT A CORRECTNESS GATE. What decides when it is SAFE to advance is
- *  `recording`; this only decides how long the answer is guaranteed to sit still when the write
- *  happens to be fast, so a pass never flashes and vanishes. Advancing waits for the LATER of the
- *  two. */
-const MIN_VERDICT_READ_MS = 2000;
 
 /** The verdict, worn by the learner's own words.
  *
@@ -317,12 +319,20 @@ const MIN_VERDICT_READ_MS = 2000;
  *  fabricated one. The ref (not the callback) is in the deps: `acknowledge` is keyed on `decision`,
  *  which legitimately changes while this screen is up. */
 function FeedbackScreen({
+  correctionQueued,
+  exposition,
   feedback,
   sharing,
   onAcknowledge,
   onContinue,
   recording,
 }: {
+  /** The policy has a `show_correction` ready for the moment this verdict is acknowledged, so the
+   *  emission's exposure budget belongs to that screen rather than to this one. */
+  correctionQueued: boolean;
+  /** What is on screen to take in, and for how long — the runtime's §39 property, never derived
+   *  here from the verdict, the action type or the length of the text. */
+  exposition: Exposition;
   feedback: NonNullable<PolicyRuntime["feedback"]>;
   sharing: boolean;
   onAcknowledge: () => void;
@@ -330,23 +340,75 @@ function FeedbackScreen({
   recording: boolean;
 }) {
   const verdict = feedback.evaluation.verdict;
+  // 🔴 `passed` NOW DECIDES ONLY WHAT IS SHOWN, NEVER WHETHER THE SCREEN MOVES ON (§39). It still
+  // selects the headline weight and whether the judge's prose renders, because those genuinely
+  // depend on whether the answer was right. Advancement is `exposition` and nothing else.
   const passed = verdictIsPass(verdict);
 
   const latestAcknowledge = useRef(onAcknowledge);
   latestAcknowledge.current = onAcknowledge;
 
+  // ── §39: cognitive mode advances the screen, correctness does not ───────────
+  //
+  // 🔴 THIS INVERTS THE OLD RULE, IN BOTH DIRECTIONS. It used to be `passed` — a correct answer
+  // moved on by itself and a wrong one waited for a press. §39: *"Correctness does not determine
+  // advancement; cognitive mode does."* So a **deliberate** screen now waits even when the answer
+  // was right (a correct association whose explanation is worth reading), and a **transient** one
+  // advances even when it was wrong (`Valsartan → Losartan` — one word, about a second).
+  //
+  // 🔴 READ FROM `exposition`, NOT FROM `declaredCognitiveMode(decision)`. There is one case only
+  // the runtime property can see: answer the last objective on a canvas and `decideNext` returns
+  // null while the verdict is still up. Through the decision that reads as "the policy said
+  // nothing" — which resolves to *requires reading* and puts a Continue on a passed association.
+  //
+  // 🔴 AND THE DURATION IS THE POLICY'S, WHICH IS WHY IT IS READ OFF THE UNION RATHER THAN
+  // DEFAULTED. `exposureMs` exists only on the transient member, so there is no branch in which
+  // this component could supply a number nobody chose. The old `MIN_VERDICT_READ_MS = 2000` was
+  // this file's own constant and is deliberately gone.
+  const selfAdvancing = advancesItself(exposition);
+
+  /**
+   * How long this screen holds before it is eligible to move on.
+   *
+   * 🔴 ZERO WHEN A TRANSIENT CORRECTION IS ALREADY QUEUED, AND THAT IS THE WHOLE POINT.
+   * `TRANSIENT_EXPOSURE_MS` is documented as *"the window for the WHOLE transient emission, not
+   * per screen"*. A miss produces TWO screens — this verdict, then `show_correction` — and that is
+   * measured rather than assumed: `decideNext` with one associative objective and a recorded miss
+   * returns `show_correction` carrying its own `{ mode: "transient", exposureMs: 1500 }`. If both
+   * spent it, an association miss would be three seconds and two fades, which is not "roughly 1–2
+   * seconds" and is the exact `mini-lecture → Continue → retrieve` shape §39 bans.
+   *
+   * 🔴 THE BUDGET IS SPENT BY THE SCREEN CARRYING THE ANSWER, WHICH IS THE CORRECTION, NOT THIS
+   * ONE. This screen shows the learner their own words back; the correction shows `cue → answer`.
+   * The learner already knows what they typed, so holding it is the half of the emission worth
+   * dropping. Zero is not "instant" in practice either — `recording` still gates the advance, and
+   * that is a real wait on a real evidence write rather than an invented one.
+   *
+   * 🔴 IT IS NOT A FIX FOR THE FUSED SHAPE, AND SHOULD NOT BE MISTAKEN FOR ONE. Two screens with
+   * one budget still fades twice. Rendering the verdict and the correction as ONE emission is the
+   * better answer and is a content decision — what to drop when the judge's prose and
+   * `knowledge.statement` both want the same beat — so it is Brain's, not this file's. Recorded on
+   * #505 rather than quietly approximated here.
+   */
+  const holdMs = exposition.mode === "transient" ? (correctionQueued ? 0 : exposition.exposureMs) : null;
+
   const [minReadDone, setMinReadDone] = useState(false);
   useEffect(() => {
-    if (!passed) return;
+    if (holdMs === null) return;
     setMinReadDone(false);
-    const timer = window.setTimeout(() => setMinReadDone(true), MIN_VERDICT_READ_MS);
+    const timer = window.setTimeout(() => setMinReadDone(true), holdMs);
     return () => window.clearTimeout(timer);
-  }, [passed]);
+  }, [holdMs]);
 
+  // 🔴 `recording` STAYS IN THE GATE, AND DROPPING IT WOULD INVERT THE SAFE FAILURE. `submit()`
+  // sets feedback BEFORE the evidence write finishes, so a timer alone could advance mid-write and
+  // the learner could answer again with the answer still on screen — recording that echo as a real
+  // demonstration. Advancing waits for the LATER of the two, so a bug here costs a missed advance,
+  // never a fabricated one.
   useEffect(() => {
-    if (!passed || !minReadDone || recording) return;
+    if (!selfAdvancing || !minReadDone || recording) return;
     latestAcknowledge.current();
-  }, [minReadDone, passed, recording]);
+  }, [minReadDone, recording, selfAdvancing]);
 
   return (
     <Frame onContinue={onContinue} sharing={sharing}>

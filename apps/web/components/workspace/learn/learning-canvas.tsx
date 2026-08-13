@@ -18,11 +18,9 @@ import type { PolicyOverride } from "@/lib/learn/policy-override";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
-import { verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import { CanvasComposer } from "./canvas-composer";
 import { CanvasRecorder } from "./canvas-recorder";
-import { offersAdvance } from "./canvas-progression";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
@@ -31,7 +29,7 @@ import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
-import { continueBelongsTo, continueOwner, declaredCognitiveMode, readingRequirementOf } from "@/lib/learn/canvas-continue";
+import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/learn/canvas-continue";
 import { routeComposerText } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
 import { useCanvasSelection } from "./use-canvas-selection";
@@ -425,15 +423,26 @@ export function LearningCanvas({
         // keys on whether the verdict passed — precisely the inference §39 forbids, and it would
         // have shipped a Continue that meant "you got it wrong".
         //
-        // 🔴 THE PROPERTY DOES NOT EXIST YET, AND ITS ABSENCE IS TREATED AS A DEFECT RATHER THAN A
-        // DEFAULT. Runtime is dispatched to emit it. Until then every decision reads `null`, which
-        // `readingRequirementOf` resolves to "requires reading" — the asymmetric safe side, since
-        // a wrong deliberate costs one press and a wrong transient advances past material the
-        // learner was meant to read. The `unknown` flag rides along so nobody can mistake "we were
-        // not told" for "we were told transient".
+        // 🔴 READ FROM `policy.exposition`, NOT FROM THE DECISION — AND THAT IS A BUG FIX, NOT A
+        // TIDY-UP. The property now exists, and the stopgap this replaces (`declaredCognitiveMode(
+        // policy.decision)`, resolving `null` to "requires reading") had a reachable case where the
+        // two doors disagreed. Measured by calling the functions, not reasoned:
+        //
+        //   answer the LAST objective on a canvas -> decideNext returns null while the verdict is
+        //   still on screen
+        //     door 1  declaredCognitiveMode(null) -> null -> requiresReading TRUE  -> a Continue
+        //     door 2  runtime.exposition          -> the verdict's own transient   -> auto-advance
+        //
+        // So the learner was offered a button on a screen that was moving on underneath it. The
+        // runtime exposes `exposition` precisely because a verdict can outlive the decision that
+        // produced it, and `declaredCognitiveMode` cannot see that case by construction.
+        //
+        // 🔴 `readingRequirementOf` IS KEPT, ONLY ITS INPUT MOVES. Its semantics are still the ones
+        // that matter — `"none"` means the policy answered "nothing is being read", and `null`
+        // still means a defect resolved to the asymmetric safe side (a wrong `deliberate` costs one
+        // press; a wrong `transient` advances past material the learner was meant to read).
         requiresReading:
-          regions.policy &&
-          readingRequirementOf(declaredCognitiveMode(policy.decision)).requiresReading,
+          regions.policy && readingRequirementOf(policy.exposition.mode).requiresReading,
       },
       {
         id: "document",
