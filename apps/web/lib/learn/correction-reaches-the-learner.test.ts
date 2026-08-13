@@ -163,37 +163,77 @@ test("🔴 EVERY objective the learner fails gets its answer shown, not just the
   assert.equal(answered.size, 2, "both objectives were exercised");
 });
 
-test("REPORTED, NOT ASSERTED — a SECOND failure in the same session is not answered again", () => {
-  // 🔴 FOUND BY THE TEST ABOVE OVER-CLAIMING, AND LEFT AS AN OBSERVATION RATHER THAN A FIX.
-  // `correctionsShown` is session-wide, so once an objective's answer has been shown the policy will
-  // not show it again however many times the learner fails it afterwards — they are re-asked instead.
+test("🔴 KNOWN VIOLATION OF §34 INVARIANT 2 — a second failure is re-asked, not taught", () => {
+  // 🔴 THIS IS A RECORDED CONTRACT VIOLATION, NOT AN OPEN QUESTION, AND MY FIRST WRITE-UP OF IT WAS
+  // WRONG IN A WAY WORTH LEAVING ON THE PAGE. I filed it as *"a policy question §39 does not
+  // settle"*, offering two candidate answers — re-show the same line, or show nothing. **Both are
+  // wrong**, and the contract already said so somewhere I had not looked:
   //
-  // Whether that is right is a POLICY question, not a wiring one: §39 says the answer is exposed and
-  // the objective returns later, and it does not say what happens when the learner misses it twice.
-  // Re-showing the same one-line answer may teach nothing; never re-showing it may leave someone
-  // stuck. That is Brain's to rule, and inventing an answer here would be a curriculum decision
-  // smuggled into a bug fix. Pinned so the current behaviour is a recorded choice, not an accident.
-  const session = new Session();
-  const asked = session.screen().objective;
-  session.answerWrongly(asked);
-  session.acknowledge();
-  assert.equal(session.screen().screen, "show_correction", "first failure: answered");
-  session.acknowledge();
-  // Work the other objective so the working-memory window clears, then fail the first one again.
-  const other = session.screen().objective;
-  session.answerWrongly(other);
-  session.acknowledge();
-  session.acknowledge();
-  const back = session.screen();
-  if (back.objective === asked && back.screen === "retrieve") {
-    session.answerWrongly(asked);
-    session.acknowledge();
-    assert.notEqual(
-      session.screen().screen,
-      "show_correction",
-      "if this ever starts passing, the session-wide correction record has changed meaning",
-    );
-  }
+  //     §34 invariant 2:  "Do not ask the same question repeatedly after failure —
+  //                        INCREASE SCAFFOLDING, or TEACH."
+  //     §7's ladder:      generation → guided generation → discrimination → recognition → teaching
+  //                       a struggling learner moves DOWN it
+  //
+  // So a second miss is not the same event as the first: the response ESCALATES DOWN THE LADDER.
+  // Never a repeat, never silence. What happens today is neither — measured:
+  //
+  //     second miss, nothing intervened  ->  retrieve (the other objective)
+  //     second miss, Y intervened        ->  retrieve (X, the one they keep missing)
+  //
+  // which is literally "ask the same question repeatedly after failure".
+  //
+  // 🔴 AND IT IS BLOCKED ON A SHAPE, NOT ON A DECISION — WHICH IS WHY IT IS PINNED RATHER THAN
+  // FIXED. `correctionsShown` is a `Set`: one boolean per objective. Escalation needs to know HOW
+  // MUCH SUPPORT THE LEARNER GOT LAST TIME, and a boolean cannot carry a rung. Nothing stages a task
+  // below `independent` yet either, so there is no lower rung to escalate to. Papering over it with
+  // a repeat would satisfy the letter of "they saw the answer" while breaking the invariant that
+  // says a repeat is the wrong move.
+  //
+  // Pinned so today's behaviour is a recorded violation with a named cause, not an accident — and so
+  // whoever builds the scaffold ladder finds the requirement here instead of re-deriving it.
+  //
+  // 🔴 IT GETS WORSE UNDER FUSION, WHICH IS NOT OBVIOUS AND IS CANVAS UI'S OBSERVATION. Today the
+  // second miss at least paints a verdict screen carrying the judge's prose. When the verdict and
+  // the answer become ONE screen (§39's `Valsartan → Losartan` in a glance), a suppressed correction
+  // means the second miss shows nothing but the learner's own wrong words. Same rule, strictly worse
+  // surface — so this must be settled before the fused shape ships, not after.
+  // 🔴 UNCONDITIONAL, BECAUSE THE FIRST VERSION OF THIS PIN WAS WRAPPED IN AN `if` THAT COULD
+  // SIMPLY NOT RUN. A guard whose assertion is reachable only when the session happens to arrive in
+  // one arrangement is a guard that reports green on a session that never got there — the same
+  // family as an ordering assertion standing in for a data-flow one. The state is built directly.
+  const twiceMissed: LearnerEvidence[] = [
+    {
+      demonstrationObtained: true,
+      id: "first-miss",
+      objectiveIdentityKey: X!.identityKey,
+      occurredAt: new Date("2026-08-13T11:50:00Z").toISOString(),
+      verdict: "incorrect",
+    },
+    {
+      demonstrationObtained: true,
+      id: "second-miss",
+      objectiveIdentityKey: X!.identityKey,
+      occurredAt: new Date("2026-08-13T11:59:55Z").toISOString(),
+      verdict: "incorrect",
+    },
+  ];
+  const afterSecondMiss = decideNext({
+    // Y has intervened, so the working-memory window has cleared and X is askable again.
+    actedOn: [X!.identityKey, Y!.identityKey],
+    correctionsShown: new Set([X!.identityKey]),
+    evidence: twiceMissed,
+    now: new Date("2026-08-13T12:00:00Z"),
+    objectives: OBJECTIVES,
+  });
+  assert.equal(afterSecondMiss?.objective.identityKey, X!.identityKey);
+  assert.equal(
+    afterSecondMiss?.action.type,
+    "retrieve",
+    "TODAY'S BEHAVIOUR, pinned as a violation: the learner is asked the identical question they " +
+      "have now missed twice. §34 invariant 2 requires increased scaffolding or teaching instead. " +
+      "If this goes red because the action changed, check it escalated DOWN the ladder rather than " +
+      "repeating the correction — a repeat satisfies neither the invariant nor §7.",
+  );
 });
 
 test("🔴 and the answer is shown ONCE, not on a loop", () => {
