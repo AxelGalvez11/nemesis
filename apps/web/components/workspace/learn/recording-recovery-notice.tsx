@@ -98,7 +98,7 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
       // on the Canvas home, so that filed the lecture on a surface the sidebar does not even list.
       // It now takes the identical door a recording finished on this surface takes — see
       // `canvas-recording.ts`.
-      const result = await transcribeStoredRecordingToCanvas(
+      await transcribeStoredRecordingToCanvas(
         body.storagePath,
         // Clamped to the pipeline's own ceiling. This estimate is derived from the part cadence, so
         // a lecture that ran a little past three hours would otherwise be refused at the very last
@@ -119,13 +119,11 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
         },
       );
 
-      // The local record is dropped only AFTER the transcript landed. Dropping it earlier would
-      // retire the recovery record for a recording whose transcription then failed — the one moment
-      // those parts are worth the most.
-      if (!result.attached) {
-        setPhase("failed");
-        return;
-      }
+      // 🔴 THE LOCAL RECORD IS DROPPED ONLY ONCE THE TRANSCRIPT HAS LANDED. Dropping it earlier
+      // retires the recovery record for a recording whose transcription then failed — the one
+      // moment those parts are worth the most. `transcribeStoredRecordingToCanvas` throws on every
+      // unhappy outcome, including a transcript that came back empty, precisely so that this line
+      // is unreachable unless something actually arrived.
       forgetManifest(manifest.sessionId);
       setPhase("saved");
     } catch (caught) {

@@ -12,10 +12,13 @@
 // gate and pause all come from the panel Sessions already uses, because that behaviour was hard to
 // get right and every surface should get it. What is new here is only where the recording GOES.
 //
-// 🔴 AND THE LIMIT IS STATED, NOT DISCOVERED. Unlike /sessions, the finish is client-driven: the
-// audio is safe the moment it is uploaded, but the transcript is made while this page is open. The
-// learner is told that in the sentence under the panel, in the terms it will actually bite them —
-// not as "transcription may fail".
+// 🔴 AND THE LIMIT IS STATED, NOT DISCOVERED. Unlike /sessions, the finish is client-driven, and
+// this file first told the learner "your audio is saved either way". THAT WAS FALSE:
+// `nemesis-transcribe` deletes the assembled audio inside `submit` on its synchronous provider and
+// hands the transcript over exactly once before clearing it, so between stopping and the source
+// appearing there is one copy and it is in this tab. The sentence under the panel now says that
+// plainly instead of reassuring — see `limitLine`, and `lib/workspace/canvas-recording.ts` for the
+// two lines of the function that make it true.
 
 import { useCallback, useMemo, useState } from "react";
 
@@ -50,7 +53,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
   const deliver = useCallback(async (blob: Blob, seconds: number) => {
     if (!accessToken || !uid) throw new Error("Sign in to save this recording.");
     try {
-      const result = await deliverRecordingToCanvas(blob, seconds, {
+      await deliverRecordingToCanvas(blob, seconds, {
         accessToken,
         attach: async (file) => { await attach([file]); },
         onPhase: (step) => setPhase({ kind: "working", step }),
@@ -66,19 +69,18 @@ export function CanvasRecorder({ attach, onClose }: Props) {
         upload: async (path, audio, contentType) =>
           await supabase.storage.from("recordings").upload(path, audio, { contentType, upsert: false }),
       });
-      if (!result.attached) {
-        // Heard nothing. Naming it is the whole point: a muted microphone and a quiet room are
-        // indistinguishable to the gate, and an empty source on the canvas would read as Nemesis
-        // failing to understand the lecture rather than as there being nothing to understand.
-        setPhase({ kind: "error", message: "Nemesis did not hear anything in that recording, so nothing was added." });
-        return;
-      }
       onClose();
     } catch (caught) {
-      // 🔴 THE PANEL STAYS UP ON FAILURE. `onClose` here would take the sentence away with it, and
-      // the learner would be left with a canvas that silently gained nothing after they recorded a
-      // whole lecture. The audio is still in storage either way.
+      // 🔴 NOTED AND RE-THROWN — NEVER SWALLOWED. This originally caught the error and returned
+      // normally, which was a real loss: `useRecordingSession` treats a resolved `deliver` as
+      // success and calls `discard()`, forgetting the recovery manifest. The parts stay in the
+      // bucket but become unreachable, and this repo's own recovery notice says that state is,
+      // from the student's side, exactly the same as lost.
+      //
+      // Re-throwing hands it to the hook's catch, which sets the error status, prints the sentence
+      // in the panel, honours `.quota` — and, decisively, does NOT discard.
       setPhase({ kind: "error", message: (caught as Error)?.message || "That recording could not be added to this canvas." });
+      throw caught;
     }
   }, [accessToken, attach, onClose, uid]);
 
@@ -93,10 +95,15 @@ export function CanvasRecorder({ attach, onClose }: Props) {
   const failed = phase.kind === "error";
 
   const limitLine = useMemo(() => (
-    // 🔴 WHAT ACTUALLY HAPPENS, NOT A HEDGE. "Transcription may fail" would tell them nothing they
-    // could act on. This names the one action that loses the transcript, and says in the same
-    // breath what is NOT lost, because "keep this tab open" with no reason reads as superstition.
-    "Keep this tab open until it finishes — your audio is saved either way, but the writing-up happens here."
+    // 🔴 WHAT ACTUALLY HAPPENS, NOT A HEDGE — AND NOT THE REASSURANCE THIS FIRST CARRIED. It read
+    // "your audio is saved either way, but the writing-up happens here." That was FALSE: the
+    // transcription function deletes the assembled audio inside `submit` on its synchronous
+    // provider, and hands the text over exactly once before clearing it. Between stopping and the
+    // source appearing there is genuinely only one copy, and it is in this tab.
+    //
+    // So the sentence promises nothing and names the cost plainly. A promise the product cannot
+    // keep is worse than an absent feature.
+    "Keep this tab open until it finishes — if you close it now, this recording is lost."
   ), []);
 
   return (
@@ -115,7 +122,11 @@ export function CanvasRecorder({ attach, onClose }: Props) {
       <div className="mt-3 flex items-center gap-3">
         {failed ? (
           <>
-            <p className="min-w-0 flex-1 text-[0.8125rem] text-(--ui-text-secondary)">{phase.message}</p>
+            {/* The sentence itself is inside the panel, printed by RecordWorkspace's error branch —
+                repeating it here would say the same thing twice in two type sizes. */}
+            <p className="min-w-0 flex-1 text-[0.75rem] text-(--ui-text-quaternary)">
+              Your recording is still here — you can try again.
+            </p>
             <button
               className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3.5 py-1.5 text-[0.8125rem] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary)"
               onClick={onClose}

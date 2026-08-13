@@ -59,9 +59,8 @@ function harness(statuses: unknown[], overrides: Partial<DeliverDeps> = {}): { d
 
 test("a recorded lecture lands as a source on THIS canvas", async () => {
   const { deps, log } = harness([{ status: "processing" }, { status: "ready", transcript: "  The mitochondrion is the powerhouse.  " }]);
-  const result = await deliverRecordingToCanvas(audio(), 90, deps);
+  await deliverRecordingToCanvas(audio(), 90, deps);
 
-  assert.deepEqual(result, { attached: true });
   // The audio went to the recordings bucket, under this user's own uid — the bucket's RLS is
   // `(storage.foldername(name))[1] = auth.uid()`, so a path that does not start with the uid is
   // refused outright.
@@ -93,11 +92,40 @@ test("🔴 CONTROL — nothing here ever posts to the durable job route", async 
   assert.deepEqual(log.posts.map((p) => p.url), ["/api/transcription/submit", "/api/transcription/status"]);
 });
 
-test("a silent room attaches nothing rather than an empty source", async () => {
+test("🔴 a silent room attaches nothing AND does not resolve — losing the parts is unrecoverable", async () => {
+  // The second half is the load-bearing one. `useRecordingSession` treats a RESOLVED `deliver` as
+  // success and calls `discard()`, which forgets the recovery manifest — so returning quietly here
+  // would take away the lecture and the only route back to its uploaded parts at the same time.
+  // "Ready with no transcript" is also what /status answers for a job whose transcript was already
+  // handed out once, so this branch cannot tell a silent room from a transcript that was lost.
   const { deps, log } = harness([{ status: "ready", transcript: "   " }]);
-  const result = await deliverRecordingToCanvas(audio(), 30, deps);
-  assert.deepEqual(result, { attached: false, reason: "silent" });
+  await assert.rejects(() => deliverRecordingToCanvas(audio(), 30, deps), /did not hear anything/i);
   assert.equal(log.attached.length, 0, "an empty source reads as 'Nemesis could not understand my lecture'");
+});
+
+test("🔴 REGRESSION — a failure to ATTACH must reach the caller, never be swallowed", async () => {
+  // This shipped as a swallowed catch and was a real loss: the transcript exists only in the fetch
+  // response by this point (nemesis-transcribe deletes the audio inside `submit` on its synchronous
+  // provider and clears the stored text on first read), so a resolved `deliver` here discarded the
+  // recovery manifest for a lecture that no longer existed anywhere else.
+  const { deps } = harness([{ status: "ready", transcript: "the whole lecture" }], {
+    attach: async () => { throw new Error("the canvas refused it"); },
+  });
+  await assert.rejects(() => deliverRecordingToCanvas(audio(), 30, deps), /refused/i);
+});
+
+test("🔴 quota is TAGGED, not just worded — the plans link depends on it", async () => {
+  // useRecordingSession reads `.quota` to pick the "quota" status, which is the only thing that
+  // renders "View plans". An untagged 429 reads as a generic failure.
+  const { deps } = harness([], {
+    post: async (url) => url.endsWith("/submit")
+      ? { body: { error: "You have reached this month's transcription limit." }, ok: false, status: 429 }
+      : { body: {}, ok: true, status: 200 },
+  });
+  await assert.rejects(
+    () => deliverRecordingToCanvas(audio(), 30, deps),
+    (error: Error & { quota?: boolean }) => error.quota === true,
+  );
 });
 
 test("polling stops on a finished-but-empty job instead of spinning forever", async () => {

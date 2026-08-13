@@ -18,11 +18,22 @@
 // the identical path a dropped .txt takes. That is what makes it a real `library_sources` row and
 // a real `CanvasSource`, rather than a fourth thing that happens to look like one.
 //
-// 🔴 WHAT THIS DELIBERATELY DOES NOT DO. It does not survive the tab closing while the transcript
-// is still being made. The audio is safe — the durable part-upload layer is untouched and the
-// recovery notice can still offer it back — but the FINISH is client-driven here, where the
-// /sessions pipeline's is server-driven. That limit is stated to the learner in
-// `canvas-recorder.tsx` rather than left for them to discover.
+// 🔴 WHAT THIS DELIBERATELY DOES NOT DO, AND THE CLAIM THAT HAD TO BE WITHDRAWN. It does not
+// survive the tab closing between stopping and the transcript landing. This file first said "the
+// audio is safe either way". IT IS NOT, and the code says so:
+//
+//   nemesis-transcribe /submit  →  removeObject(storagePath)   on the xAI and Groq paths
+//   nemesis-transcribe /status  →  hands the transcript over ONCE, then patches it to null
+//
+// The primary provider answers synchronously, deletes the assembled audio inside `submit`, and the
+// database copy of the text is cleared the first time it is read. So once this client holds the
+// transcript, THE FETCH RESPONSE IS THE ONLY COPY IN EXISTENCE. That is precisely why the /sessions
+// worker writes its artifact row before anything else.
+//
+// The consequence for every failure path below: NOTHING may be swallowed. `useRecordingSession`
+// treats a resolved `deliver` as success and calls `discard()`, which forgets the recovery
+// manifest — so a swallowed error would take away the recording AND the only route back to its
+// parts. Errors propagate; the hook's own catch leaves the manifest alone.
 
 import { describeRecordingBlob, recordingStoragePath, RECORDING_MAX_BYTES } from "./recording-capture";
 
@@ -137,7 +148,7 @@ export async function deliverRecordingToCanvas(
   blob: Blob,
   seconds: number,
   deps: DeliverDeps,
-): Promise<{ attached: true } | { attached: false; reason: "silent" }> {
+): Promise<void> {
   const newId = deps.newId ?? (() => crypto.randomUUID());
 
   const oversize = rejectOversizeRecording(blob.size);
@@ -169,7 +180,7 @@ export async function transcribeStoredRecordingToCanvas(
   path: string,
   seconds: number,
   deps: TranscribeDeps,
-): Promise<{ attached: true } | { attached: false; reason: "silent" }> {
+): Promise<void> {
   const now = deps.now ?? (() => Date.now());
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const makeFile = deps.makeFile
@@ -179,7 +190,12 @@ export async function transcribeStoredRecordingToCanvas(
   const submitted = await deps.post("/api/transcription/submit", { seconds, storagePath: path }, deps.accessToken);
   const submitBody = submitted.body as { jobId?: string; error?: string } | null;
   if (submitted.status === 429) {
-    throw new Error(submitBody?.error ?? "You have reached this month's transcription limit.");
+    // 🔴 TAGGED, NOT JUST WORDED. `useRecordingSession` reads `.quota` to choose the "quota" status,
+    // which is the only thing that renders the "View plans" link. An untagged 429 reads as a
+    // generic failure and sends someone looking for a network problem they do not have.
+    const quota = new Error(submitBody?.error ?? "You have reached this month's transcription limit.") as Error & { quota?: boolean };
+    quota.quota = true;
+    throw quota;
   }
   if (!submitted.ok || !submitBody?.jobId) {
     throw new Error(submitBody?.error ?? "That recording could not be sent for transcription. Try again in a moment.");
@@ -203,11 +219,19 @@ export async function transcribeStoredRecordingToCanvas(
     await sleep(TRANSCRIPT_POLL_MS);
   }
 
-  // Heard nothing. Nothing is attached, and the caller says so rather than putting an empty source
-  // on the canvas that reads as a failure to understand the lecture.
-  if (!usableTranscript(transcript)) return { attached: false, reason: "silent" };
+  // Heard nothing. Nothing is attached — an empty source on the canvas reads as Nemesis failing to
+  // understand the lecture rather than as there being nothing to understand.
+  //
+  // 🔴 IT THROWS RATHER THAN RETURNING QUIETLY, and the reason is not cosmetic. A normal return
+  // resolves `deliver`, which makes the hook call `discard()` and forget the recovery manifest.
+  // "Ready with no transcript" is ALSO what `/status` answers for a job whose transcript was
+  // already handed out once — so this branch cannot tell a genuinely silent room from a transcript
+  // that was collected and then lost. Discarding the parts on that ambiguity is unrecoverable;
+  // keeping them costs nothing.
+  if (!usableTranscript(transcript)) {
+    throw new Error("Nemesis did not hear anything in that recording, so nothing was added to this canvas.");
+  }
 
   deps.onPhase?.("attaching");
   await deps.attach(makeFile(transcript, recordedSourceName()));
-  return { attached: true };
 }
