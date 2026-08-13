@@ -9,7 +9,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { conceptLabel, type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
+import { type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
@@ -174,8 +174,6 @@ function BlockView({
   onToggleSource,
   onTerm,
 }: BlockViewProps) {
-  const concepts = (block.conceptIds ?? []).map((id) => conceptLabel(canvas, id)).filter(Boolean);
-
   return (
     <section
       className={cn(
@@ -208,15 +206,20 @@ function BlockView({
         </p>
       )}
 
-      {/* Concept labels are NOT printed under every block. They were, and consecutive blocks
-          on the same idea repeated the same line — clutter on a page whose whole argument is
-          that the content is the interface. Concepts are what the diagnosis speaks in; they
-          surface there, and on hover here. */}
+      {/* Concept labels are NOT printed here at all — not under every block, and no longer on
+          hover either (owner 2026-08-13). They were printed once, and consecutive blocks on the
+          same idea repeated the same line: clutter on a page whose whole argument is that the
+          content is the interface. The hover version was quieter but had the same problem and a
+          worse one — a concept id is Nemesis's internal name for an object, so putting it on the
+          primary Canvas is the lesson engine showing through the material.
+          Concepts are what the diagnosis speaks in. They surface THERE, and nowhere else. */}
 
-      {/* 🔴 NO PROVENANCE HERE ANY MORE (J3, owner 2026-08-13). The floating hover toolbar used
-          to carry a "where this came from" button and a "where did this come from?" button
-          alongside the concept label — both are gone; only the label stays, because it is
-          information, not editing chrome. Provenance survives as two DIFFERENT, quieter things:
+      {/* 🔴 NOTHING HOVERS OVER A BLOCK ANY MORE (J3, owner 2026-08-13). The floating hover
+          toolbar carried a "where this came from" button, a "where did this come from?" button
+          and a concept label. The two buttons went with J3; the label went when the owner ruled
+          on it the same day. There is no hover layer on a block left to add to — if something
+          ever needs one again, that is a new decision, not a slot standing open.
+          Provenance survives as two DIFFERENT, quieter things:
           a citation marker inline with cited text (see `BlockBody`/`BlockText`'s `onToggleSource`
           below — it reads as a footnote, not a control the learner operates on the block) and,
           for uncited content, the existing capability to select text and ask — `learning-
@@ -224,14 +227,6 @@ function BlockView({
           source" to `session.askAbout`, so nothing needed adding for that half; a dedicated
           per-block button for it would have been the toolbar shape J3 asks to retire, not the
           capability. */}
-      {!block.collapsed && concepts.length > 0 && (
-        <div className="pointer-events-none absolute -top-1 right-2 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-          <span className="max-w-[16rem] truncate text-[0.6875rem] text-(--ui-text-quaternary)">
-            {concepts.join(" · ")}
-          </span>
-        </div>
-      )}
-
       {/* The popover itself no longer renders here -- see `CanvasSourcePreview`, rendered once
           at the `CanvasDocument` level so it can float free of this block's own stacking
           context, the same way `CanvasSelectionMenu` already does for the term-lookup popover. */}
