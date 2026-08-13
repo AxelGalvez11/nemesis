@@ -117,7 +117,6 @@ export interface CanvasSession {
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
-  startRecall: () => Promise<void>;
   gradeRecall: (
     cardId: string,
     grade: "again" | "hard" | "good" | "easy",
@@ -132,13 +131,9 @@ export interface CanvasSession {
   attemptRecall: (cardId: string, text: string, via: "typed" | "spoken") => Promise<void>;
   /** They asked to see the answer: recorded as a retrieval we did not obtain. */
   revealRecall: (cardId: string) => Promise<void>;
-  startTest: () => Promise<void>;
-  /** Multiple choice on request only — exam simulation, not the default (§18). */
-  startChoiceTest: () => Promise<void>;
   answer: (questionId: string, picked: number) => void;
   /** Records the learner's own words and asks the judge what they show. */
   respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
-  finishTest: () => void;
   /** What the canvas is asking for right now — null while reading. */
   activeTask: ActiveTask | null;
   /** Move to the next prompt of the round, or off the end of it. */
@@ -164,9 +159,6 @@ export interface CanvasSession {
   selectionBusy: boolean;
   selectionError: string | null;
   clearSelectionAnswer: () => void;
-  relearn: () => Promise<void>;
-  startRetest: () => Promise<void>;
-  finish: () => void;
   reset: () => void;
 }
 
@@ -599,58 +591,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   // ------------------------------------------------------------------- recall
 
-  // 🔴 THE STAGE STARTERS NOW ASK THE STATE MACHINE FIRST, AND THAT IS A REAL GAP BEING CLOSED
-  // RATHER THAN A FORMALITY. These wrote `state` straight through `save`, so `canTransition` — the
-  // guard the ops validator consults before it lets the model move the page anywhere — was never
-  // consulted on the path a LEARNER actually takes. The model was held to a rule the UI was not.
+  // 🔴 THE SIX-STAGE ENTRY POINTS ARE DELETED (owner, §38): startRecall, startTest, startRetest,
+  // startChoiceTest, finishTest, relearn and finish. Each had exactly ONE call site, all inside the
+  // handler behind "Retest me" / "Fix my weak spots" / "I've read this" — controls #585 proved
+  // unreachable in every observable state, and which the owner has now ruled out by description:
+  // "The only button should be 'continue' below reading passages, thats it."
   //
-  // It also makes the six-stage retirement hold everywhere instead of only on the advance button.
-  // `nextAction` no longer OFFERS a move into an evidence stage, but it is not the only entrance:
-  // `CanvasRecall`'s `onDone` calls `startTest()` directly off the last card, so a canvas already
-  // in `recall` would have walked itself into `test` with no button involved. Closing the offer
-  // alone would have looked closed and not been.
-  //
-  // A caller that now does nothing is dead UI, which Canvas UI removes with the stage components.
-  // 🔴 That deletion must come AFTER this: a canvas in an evidence stage with no stage component
-  // and no policy objectives paints nothing at all.
-  const startRecall = useCallback(async () => {
-    if (!canTransition(latest.current.state, "recall")) return;
-    const id = requireUid();
-    if (!id) return;
-    setError(null);
-    setBusy({ kind: "recall", label: "Preparing recall" });
-    const result = await generateRecall(id, latest.current, RECALL_CARDS);
-    if (!result.value) {
-      setBusy({ kind: null });
-      setError(result.error);
-      canvasCapture("canvas_generation_failed", latest.current, { stage: "recall" });
-      return;
-    }
-
-    // Write through to the real study tables so these are genuine Nemesis flashcards, on the
-    // production scheduler, visible in Study afterwards. Best-effort: recall still runs if
-    // this fails, it just does not outlive the canvas.
-    let cards = result.value;
-    const deckId = await ensureCanvasDeck(id, latest.current.title, latest.current.studyDeckId);
-    if (deckId) {
-      const written = await writeRecallCards(id, deckId, cards, latest.current.concepts);
-      cards = cards.map((card) => {
-        const studyCardId = written.get(card.id);
-        return studyCardId ? { ...card, studyCardId } : card;
-      });
-    }
-
-    setBusy({ kind: null });
-    captureStateChange(latest.current, "recall");
-    setCursor(0);
-    update((current) => ({
-      ...current,
-      recall: cards,
-      recallResults: [],
-      state: "recall",
-      ...(deckId ? { studyDeckId: deckId } : {}),
-    }));
-  }, [requireUid, update]);
+  // Nothing routes to them any more. The reading-pace half came back as `Continue` (§38/§39); the
+  // rest are behaviours the system owes automatically — §18 makes re-testing its job and objective
+  // ordering already targets weak spots — so a button for either was the learner managing the
+  // learning system (§26).
 
   const gradeRecall = useCallback(
     async (
@@ -823,13 +773,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [requireUid, update],
   );
 
-  // Free response is the default everywhere, including at the exam level: §35-36 are explicit
-  // that even under time pressure the canvas prefers explaining to recognising. Multiple choice
-  // stays reachable as a deliberate request ("test me the way the exam will"), never as the
-  // thing that happens when nobody chose.
-  const startTest = useCallback(() => runTest("test"), [runTest]);
-  const startRetest = useCallback(() => runTest("retest"), [runTest]);
-  const startChoiceTest = useCallback(() => runTest("test", "choice"), [runTest]);
 
   const answer = useCallback(
     (questionId: string, picked: number) => {
@@ -1001,110 +944,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordEvent, requireUid, update],
   );
 
-  const finishTest = useCallback(() => {
-    const result = diagnose(latest.current);
-    const wasRetest = latest.current.state === "retest";
-    canvasCapture(wasRetest ? "canvas_retest_completed" : "canvas_test_completed", latest.current, {
-      correct: result.score.correct,
-      total: result.score.total,
-      weak: result.weak.length,
-    });
-    update((current) => ({
-      ...current,
-      weakConceptIds: result.weak.map((concept) => concept.id),
-      // A concept that WAS weak and is no longer is a correction earned, and the completion
-      // state counts those rather than counting concepts that were never wrong.
-      correctedConceptIds: wasRetest
-        ? Array.from(
-            new Set([
-              ...current.correctedConceptIds,
-              ...current.weakConceptIds.filter((id) => !result.weak.some((concept) => concept.id === id)),
-            ]),
-          )
-        : current.correctedConceptIds,
-      state: "diagnose",
-    }));
-    canvasCapture("canvas_diagnosis_viewed", latest.current);
-  }, [update]);
 
   // ---------------------------------------------------------------- relearn
 
-  const relearn = useCallback(async () => {
-    const id = requireUid();
-    if (!id) return;
-    setError(null);
-    setBusy({ kind: "relearn", label: "Focusing on your weak spots" });
 
-    const current = latest.current;
-    const relevant = blocksForConcepts(current.blocks, current.weakConceptIds);
-    // What they actually got wrong, in words — so the rewrite addresses the misunderstanding
-    // instead of repeating the original explanation more loudly.
-    const choiceMisses: RelearnMiss[] = current.answers
-      .filter((entry) => !entry.correct)
-      .map((entry) => {
-        const question = current.questions.find((candidate) => candidate.id === entry.questionId);
-        if (!question || question.format !== "choice") return null;
-        return {
-          kind: "choice" as const,
-          question: question.q,
-          picked: question.options[entry.picked] ?? "",
-          correct: question.options[question.answer] ?? "",
-          why: question.why,
-        };
-      })
-      .filter((miss): miss is Extract<RelearnMiss, { kind: "choice" }> => miss !== null);
-
-    // The free-response misses are the richer half: the rewrite is told what the learner
-    // actually said and precisely which point was absent, so it can address the gap instead of
-    // restating the original explanation more loudly.
-    const freeMisses: RelearnMiss[] = current.responses
-      .filter((entry) => entry.evaluation && !verdictIsPass(entry.evaluation.verdict))
-      .map((entry) => {
-        const question = current.questions.find((candidate) => candidate.id === entry.questionId);
-        if (!question || question.format !== "free") return null;
-        return {
-          kind: "free" as const,
-          question: question.q,
-          said: entry.text,
-          missing: entry.evaluation?.missing ?? [],
-          ...(entry.evaluation?.misconceptions?.length
-            ? { misconception: entry.evaluation.misconceptions.join("; ") }
-            : {}),
-        };
-      })
-      .filter((miss): miss is Extract<RelearnMiss, { kind: "free" }> => miss !== null);
-
-    const misses = [...freeMisses, ...choiceMisses];
-
-    const result = await generateRelearn(
-      id,
-      current,
-      relevant.length > 0 ? relevant : current.blocks,
-      misses,
-    );
-    setBusy({ kind: null });
-    if (!result.value) {
-      setError(result.error);
-      return;
-    }
-    // Not captureStateChange here: it maps "targeted_relearn" onto the same event name, and
-    // firing both double-counted every relearn in the funnel.
-    update((existing) => ({ ...applyOps(existing, result.value ?? []), state: "targeted_relearn" }));
-    canvasCapture("canvas_weakspots_relearned", latest.current, {
-      concepts: current.weakConceptIds.map((cid) => conceptLabel(current, cid)),
-      blocksBefore: current.blocks.length,
-      blocksAfter: latest.current.blocks.length,
-    });
-  }, [requireUid, update]);
-
-  const finish = useCallback(() => {
-    canvasCapture("canvas_completed", latest.current, {
-      concepts: latest.current.concepts.length,
-      corrected: latest.current.correctedConceptIds.length,
-      activeMs: latest.current.activeMs,
-    });
-    update((current) => ({ ...current, state: "complete" }));
-  }, [update]);
 
   const reset = useCallback(() => {
     const fresh = newCanvas();
@@ -1298,15 +1141,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     askAbout,
     markKnown,
     toggleCollapsed,
-    startRecall,
     gradeRecall,
     attemptRecall,
     revealRecall,
-    startTest,
-    startChoiceTest,
     answer,
     respond,
-    finishTest,
     activeTask,
     advanceTask,
     answerActiveTask,
@@ -1323,9 +1162,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     selectionBusy,
     selectionError,
     clearSelectionAnswer: () => setSelectionError(null),
-    relearn,
-    startRetest,
-    finish,
     reset,
   };
 }

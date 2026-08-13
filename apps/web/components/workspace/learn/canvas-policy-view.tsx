@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -73,9 +74,14 @@ function screenKey(runtime: PolicyRuntime): string {
 export function CanvasPolicyView({
   runtime,
   sharing = false,
+  onContinue = null,
 }: {
   runtime: PolicyRuntime;
   sharing?: boolean;
+  /** §38 — non-null when THIS region is the one carrying a reading requirement right now. Decided
+   *  by `continueOwner` for the whole surface, never here: a correction and an unread passage can
+   *  legitimately be on screen together, and only one of them may offer a way on. */
+  onContinue?: (() => void) | null;
 }) {
   return (
     <>
@@ -85,7 +91,7 @@ export function CanvasPolicyView({
           surface and make retrieval feel like an interface being waited on rather than a question
           being answered. */}
       <div className={sharing ? "canvas-swap" : "canvas-swap min-h-full"} key={screenKey(runtime)}>
-        <PolicyScreen runtime={runtime} sharing={sharing} />
+        <PolicyScreen onContinue={onContinue} runtime={runtime} sharing={sharing} />
       </div>
     </>
   );
@@ -120,7 +126,15 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
   );
 }
 
-function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: boolean }) {
+function PolicyScreen({
+  onContinue,
+  runtime,
+  sharing,
+}: {
+  onContinue: (() => void) | null;
+  runtime: PolicyRuntime;
+  sharing: boolean;
+}) {
   const { decision, feedback, prompt } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
@@ -128,6 +142,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   if (feedback) {
     return (
       <FeedbackScreen
+        onContinue={onContinue}
         feedback={feedback}
         onAcknowledge={runtime.acknowledge}
         recording={runtime.recording}
@@ -150,7 +165,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
     const nothingReadable = runtime.outcome === "failed";
     const partlyReadable = runtime.outcome === "degraded";
     return (
-      <Frame sharing={sharing}>
+      <Frame onContinue={onContinue} sharing={sharing}>
         <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">
           {nothingReadable
             ? "Nemesis couldn't read this material"
@@ -209,7 +224,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
     // teaching; sharing a first renderer is not the same as merging the states.
     const said = decision.state.status;
     return (
-      <Frame sharing={sharing}>
+      <Frame onContinue={onContinue} sharing={sharing}>
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
           {said === "partial"
             ? "You had part of this."
@@ -234,7 +249,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
 
   if (decision.action.type === "contrast") {
     return (
-      <Frame sharing={sharing}>
+      <Frame onContinue={onContinue} sharing={sharing}>
         <p className="text-[0.8125rem] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
         <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
@@ -259,7 +274,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   // `defer` — everything here was acted on moments ago, and asking again now would measure working
   // memory rather than learning.
   return (
-    <Frame sharing={sharing}>
+    <Frame onContinue={onContinue} sharing={sharing}>
       <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">Come back to this shortly</h2>
       <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
         You've just worked through everything here. Asking again this soon wouldn't tell either of us
@@ -305,11 +320,13 @@ function FeedbackScreen({
   feedback,
   sharing,
   onAcknowledge,
+  onContinue,
   recording,
 }: {
   feedback: NonNullable<PolicyRuntime["feedback"]>;
   sharing: boolean;
   onAcknowledge: () => void;
+  onContinue: (() => void) | null;
   recording: boolean;
 }) {
   const verdict = feedback.evaluation.verdict;
@@ -332,7 +349,7 @@ function FeedbackScreen({
   }, [minReadDone, passed, recording]);
 
   return (
-    <Frame sharing={sharing}>
+    <Frame onContinue={onContinue} sharing={sharing}>
       {/* The learner's own words, in the verdict's colour. The quote stays — the verdict is ABOUT
           these words — but the attribution in front of it does not (§K): it tells the learner
           something they already know, in a voice that exists only to stage the exchange.
@@ -387,10 +404,36 @@ function FeedbackScreen({
 
 /** The single measure the rest of the canvas is set to, so the policy's page reads as the same
  *  column as the document and the composer rather than a fourth centred thing. */
-function Frame({ children, sharing = false }: { children: React.ReactNode; sharing?: boolean }) {
+function Frame({
+  children,
+  sharing = false,
+  onContinue = null,
+}: {
+  children: React.ReactNode;
+  sharing?: boolean;
+  /** §38 — the one button, when this screen is what the learner was asked to process. Null
+   *  otherwise, and the decision is NOT made here: `continueTarget` answers it once for the whole
+   *  surface, so the reading passage and the correction can never both offer one. */
+  onContinue?: (() => void) | null;
+}) {
   return (
     <div className={`flex ${regionHeight(sharing)} items-center justify-center px-6`}>
-      <div className="w-full max-w-(--canvas-column)">{children}</div>
+      <div className="w-full max-w-(--canvas-column)">
+        {children}
+        {/* §38 — below the material, exactly as it sits below a reading passage. Same word, same
+            shape, same meaning: "I have finished processing this." The `✓` that used to carry this
+            job lived in the composer; it moved here so there is ONE control with ONE label rather
+            than a tick in one place and a word in another. */}
+        {onContinue && (
+          <button
+            className="mt-8 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            onClick={onContinue}
+            type="button"
+          >
+            {CONTINUE_LABEL}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

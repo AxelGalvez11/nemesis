@@ -91,11 +91,19 @@ test("🔴 a task sharing the surface does not push the document off it", async 
   // document starts one full viewport below the fold, and the learner sees exactly what they saw
   // before: one thing. "Coexisting" would be true of the DOM and false of the experience.
   const source = await SOURCE;
-  assert.match(
-    source,
-    /<CanvasPolicyView runtime=\{policy\} sharing=\{regions\.sharing\} \/>/,
-    "the policy's region is not told whether it is sharing the surface",
-  );
+  // 🔴 THE PROPERTY, NOT THE SPELLING. This asserted the whole element verbatim —
+  // `<CanvasPolicyView runtime={policy} sharing={regions.sharing} />` — and went red the moment a
+  // FOURTH prop was added, which is a formatting change and not a defect. Same family as the
+  // `"{!passed && ("` guard that missed a reformatted defect: a guard anchored to one spelling
+  // stops measuring the property the moment someone reformats, and here it reported a false
+  // failure instead of a false pass. What matters is that the region is TOLD it is sharing.
+  // 🔴 AND THE CODE, NOT THE PROSE — the second way this same guard misread itself in one sitting.
+  // learning-canvas.tsx explains 7b with the literal `<CanvasPolicyView/>` inside a comment, and
+  // the first fix matched THAT, reporting the explanation as the defect.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const element = /<CanvasPolicyView[\s\S]*?\/>/.exec(code);
+  assert.ok(element, "the policy region must still be rendered");
+  assert.match(element[0], /sharing=\{regions\.sharing\}/, "the policy's region is not told whether it is sharing the surface");
   const view = await readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
   // 🔴 NO UNCONDITIONAL FULL-HEIGHT CLAIM ANYWHERE IN THE REGION. Calibrated by reverting
   // `regionHeight` to a bare "min-h-full pb-40": that goes red here while leaving all 2,271 other

@@ -14,7 +14,6 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { answerSink, composeSurface } from "@/lib/learn/canvas-hosting";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
-import { nextAction } from "@/lib/learn/canvas-state";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
@@ -32,6 +31,8 @@ import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
+import { continueBelongsTo, continueOwner, declaredCognitiveMode, readingRequirementOf } from "@/lib/learn/canvas-continue";
+import { unreadChunk } from "@/lib/learn/canvas-reading";
 import { useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
@@ -269,16 +270,10 @@ export function LearningCanvas({
   // content has no natural end control, so the document prints it after the last block; recall
   // and the test advance themselves off their last card, and the diagnosis and completion
   // screens already own theirs.
-  const next = nextAction(canvas);
-  const advance = useCallback(() => {
-    if (!next) return;
-    if (next.to === "recall") void session.startRecall();
-    else if (next.to === "test") void session.startTest();
-    else if (next.to === "diagnose") session.finishTest();
-    else if (next.to === "targeted_relearn") void session.relearn();
-    else if (next.to === "retest") void session.startRetest();
-    else if (next.to === "complete") session.finish();
-  }, [next, session]);
+  // 🔴 `nextAction` AND ITS HANDLER ARE DELETED (owner, §38). They drove "Retest me" and "Fix my
+  // weak spots", which #585 proved unreachable in every state a canvas can be observed in, and
+  // which the owner has now said should not come back: *"The only button should be 'continue'
+  // below reading passages, thats it."* The six session methods they called went with them.
 
   // 🔴 `loading` IS WAITED FOR, NOT TREATED AS "NO". Resolving this canvas's knowledge is a round
   // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
@@ -360,6 +355,43 @@ export function LearningCanvas({
   // those should be able to talk to Nemesis like any other.
   const showComposer = regions.policy || canvas.state !== "complete";
 
+  // 🔴 §38 — ONE QUESTION, ASKED ONCE, FOR THE WHOLE SURFACE. A correction and an unread passage
+  // can legitimately be on screen together (`composeSurface` allows it by design), so asking each
+  // component separately puts two buttons saying the same word in one viewport. `continueOwner`
+  // reads each region's `requiresReading` property and returns at most one owner — the property is
+  // the trigger, the control follows from it, and a future surface that asks the learner to read
+  // gets one without anyone remembering to add it.
+  const awaitingDemonstration =
+    policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback;
+  const continueRegion = continueOwner(
+    [
+      {
+        id: "policy",
+        placement: "policy",
+        // 🔴 §39 — THE POLICY'S DECLARED MODE, NEVER THE VERDICT. "Correctness does not determine
+        // advancement; cognitive mode does." An earlier draft of this used `offersAdvance`, which
+        // keys on whether the verdict passed — precisely the inference §39 forbids, and it would
+        // have shipped a Continue that meant "you got it wrong".
+        //
+        // 🔴 THE PROPERTY DOES NOT EXIST YET, AND ITS ABSENCE IS TREATED AS A DEFECT RATHER THAN A
+        // DEFAULT. Runtime is dispatched to emit it. Until then every decision reads `null`, which
+        // `readingRequirementOf` resolves to "requires reading" — the asymmetric safe side, since
+        // a wrong deliberate costs one press and a wrong transient advances past material the
+        // learner was meant to read. The `unknown` flag rides along so nobody can mistake "we were
+        // not told" for "we were told transient".
+        requiresReading:
+          regions.policy &&
+          readingRequirementOf(declaredCognitiveMode(policy.decision)).requiresReading,
+      },
+      {
+        id: "document",
+        placement: "document",
+        requiresReading: regions.document && unreadChunk(canvas.blocks).length > 0,
+      },
+    ],
+    { awaitingDemonstration, busy: busy.kind !== null || policy.recording },
+  );
+
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it —
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
@@ -413,7 +445,7 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && <CanvasPolicyView runtime={policy} sharing={regions.sharing} />}
+        {regions.policy && <CanvasPolicyView onContinue={continueBelongsTo(continueRegion, "policy") ? policy.acknowledge : null} runtime={policy} sharing={regions.sharing} />}
 
         {regions.document && (
           <>
@@ -435,20 +467,13 @@ export function LearningCanvas({
             busy={busy.kind !== null}
             busyBlockIds={busy.blockIds ?? []}
             canvas={canvas}
-            next={next}
-            onAdvance={advance}
             onDismissAside={session.dismissAside}
+            showContinue={continueBelongsTo(continueRegion, "document")}
             // §11 — free and local: the previous wording is already on the block, so this is a
             // state change rather than a request, and it cannot fail.
             onRestore={session.restoreRewritten}
-            // §12 — the learner sets the reading pace. Writes no evidence; see the handler.
+            // §38 — the learner sets the reading pace. Writes no evidence; see the handler.
             onFinishReading={session.finishReadingChunk}
-            // 🔴 THE SAME PREDICATE THE COMPOSER'S `✓` IS REFUSED BY, PASSED DOWN RATHER THAN
-            // RECOMPUTED. N3 requires that a required demonstration offer no way past it; two
-            // controls deciding that separately is how one of them ends up disagreeing.
-            awaitingDemonstration={
-              policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback
-            }
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
@@ -563,36 +588,10 @@ export function LearningCanvas({
               : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
           }
           inSession={sink.kind === "policy"}
-          // §I — the composer is the only progression control. `✓` appears only where the policy is
-          // presenting something the learner reads and then moves past, and NEVER while a
-          // demonstration is required. The predicate is in canvas-progression.ts with its own test,
-          // because "which states may be skipped" is exactly the kind of condition that drifts.
-          //
-          // 🔴 IT IS WIRED TO `acknowledge`, WHICH WRITES NO LEARNER EVIDENCE (N1). It clears the
-          // feedback, bumps the round and records that this objective was acted on. Nothing about
-          // it touches `learner_evidence` — and the proof of that is measuring the table across the
-          // press, not reading this line.
-          onAdvance={
-            regions.policy && offersAdvance({
-              actionType: policy.decision?.action.type ?? null,
-              // 🔴 GATED ON THE ACTION TYPE, NOT ON `prompt` ALONE. `prompt` is cleared by an
-              // EFFECT when the action stops being `retrieve` (use-policy-runtime.ts:313), so there
-              // is one render in which a correction screen still holds the previous question's
-              // prompt. Keyed on `prompt` alone, that render would report a demonstration in
-              // progress, withhold the `✓`, and leave the learner on a screen with no control at
-              // all — a one-frame flicker at best, and the only way forward at worst.
-              awaitingDemonstration:
-                policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback,
-              feedbackPassed: policy.feedback ? verdictIsPass(policy.feedback.evaluation.verdict) : false,
-              hasFeedback: policy.feedback !== null,
-            })
-              ? policy.acknowledge
-              : null
-          }
-          // 🔴 The press is refused while the last answer's evidence is still being written
-          // (`acknowledge` returns early), so the control has to say it is working rather than
-          // ignore the learner. Now that this is the only way forward, a dead press blocks them.
-          advanceBusy={policy.recording}
+          // 🔴 THE COMPOSER NO LONGER CARRIES PROGRESSION (§38/§39). `✓` was the one control that
+          // moved the learner past material; it is a `Continue` below that material now, because
+          // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
+          // mode rather than anything the composer can observe.
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}

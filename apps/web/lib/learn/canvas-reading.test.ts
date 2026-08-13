@@ -12,7 +12,6 @@ import test from "node:test";
 import { appendEvent } from "./canvas-events";
 import type { CanvasBlock, LearningCanvas } from "./canvas-model";
 import { finishReading, isRead, offersContinue, reopenReading, unreadChunk } from "./canvas-reading";
-import { nextAction } from "./canvas-state";
 import { canvasFromRow, canvasToRow } from "./canvas-store";
 
 const AT = "2026-08-13T12:00:00.000Z";
@@ -36,15 +35,10 @@ function at(c: LearningCanvas, index: number): CanvasBlock {
   return found;
 }
 
-test("🔴 the control §12 asks for existed and was DEAD — this is what made it a repoint", () => {
-  // The legacy machine still offers it for a reading canvas…
-  const reading = canvas([block("b1")]);
-  // …and `nextAction` refuses, because its destination is a retired evidence stage. So the bottom
-  // of every reading canvas has been empty. If this ever returns a move again, the new Continue
-  // and the old one would render side by side, which §17 and §23 both rule out.
-  assert.equal(nextAction(reading), null, "a reading canvas must offer no legacy move");
-  assert.equal(nextAction(canvas([])), null, "and nothing to read offers nothing either");
-});
+// 🔴 THE "IT EXISTED AND WAS DEAD" PROOF LIVED HERE AND HAS MOVED TO canvas-dead-controls.test.ts,
+// because `nextAction` is now DELETED (owner §38) and there is nothing left to call. What it
+// established stands: the control §12 asked for was already in the codebase, in the right place,
+// refused by the six-stage retirement because its destination was an evidence stage.
 
 test("Continue renders while there is unread material, and not otherwise", () => {
   const base = { awaitingDemonstration: false, busy: false, hasUnreadMaterial: true };

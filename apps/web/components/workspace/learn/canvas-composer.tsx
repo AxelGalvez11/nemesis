@@ -103,7 +103,6 @@ interface CanvasComposerProps {
    * this". It is progression telemetry. The proof is the evidence table measured ACROSS the press,
    * not this comment and not the handler.
    */
-  onAdvance?: (() => void) | null;
   /**
    * Advancing is momentarily refused — the evidence from the last answer is still being written.
    *
@@ -165,7 +164,6 @@ export function CanvasComposer({
   busy,
   busyLabel,
   inSession = false,
-  onAdvance = null,
   advanceBusy = false,
   pendingSources = [],
   onStart = null,
@@ -318,16 +316,14 @@ export function CanvasComposer({
   // Integration measures the element, not its `disabled` attribute.
   // 🔴 ONE VALUE, NOT TWO BOOLEANS — see canvas-progression.ts. A pair of flags can be true at
   // once; this cannot, so "never both" is a property of the type rather than of remembering.
+  // 🔴 THE `✓` LEFT THIS COMPONENT (owner, §38/§39). Moving on is now a `Continue` rendered below
+  // the material that asks to be read — a passage or a correction — because §38 says there is ONE
+  // button and §39 says what triggers it is the COGNITIVE MODE the policy declares, not anything
+  // the composer can see. What is left here is what the composer was always for: sending.
   const control = composerControl({
-    // 🔴 `!answering` IS A BELT-AND-BRACES SECOND GUARD, NOT THE TEST. The caller already refuses
-    // to pass `onAdvance` during a demonstration (that is where the decision lives, with its own
-    // test). This repeats it locally because the cost of the two disagreeing is that retrieval
-    // becomes skippable, which is silent — every screen still looks right.
-    advanceAvailable: Boolean(onAdvance) && !answering,
     hasResponse: Boolean(text.trim()),
     hasAttachment: canStartFromAttachment,
   });
-  const showAdvance = control === "advance";
   const showSend = control === "send";
 
   return (
@@ -597,29 +593,6 @@ export function CanvasComposer({
                 </button>
               )}
 
-              {/* 🔴 THE SAME SLOT THE SEND BUTTON USES, AND NEVER BOTH AT ONCE. Same size, same
-                  position, same accent — what changes is the glyph and what it means. `✓` reads as
-                  "I have finished with this", which is why §I insists it is not an agreement
-                  control: it carries no claim about understanding and writes nothing.
-
-                  It is styled like the primary action rather than as a quiet glyph because it IS
-                  the primary action in this state — a grey tick would read as disabled on the one
-                  control the learner needs. */}
-              {showAdvance && (
-                <button
-                  aria-label="I've finished with this"
-                  className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-                  disabled={busy || advanceBusy}
-                  onClick={() => onAdvance?.()}
-                  title="I've finished with this"
-                  type="button"
-                >
-                  {/* 🔴 ONE LINE ON PURPOSE. `canvas-motion.test.ts` checks line by line that a
-                      `loading` glyph carries `spinning`, and splitting this across lines hid it
-                      from that check — which is how a frozen glyph got shipped the first time. */}
-                  <Codicon name={busy || advanceBusy ? "loading" : "check"} size="20px" spinning={busy || advanceBusy} />
-                </button>
-              )}
             </>
           )}
         </div>

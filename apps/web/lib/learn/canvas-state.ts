@@ -74,74 +74,18 @@ export function canStart(
   return { ok: false, reason: "Add material, or say what you want to learn." };
 }
 
-export interface NextAction {
-  to: CanvasState;
-  label: string;
-}
 
-/** The single move the canvas offers next, or null when there is nothing to offer.
- *
- *  🔴 An unfinished stage offers NOTHING. This used to hand out "See where I stand" while the
- *  learner was still on question one, so a single stray click ended the test and produced a
- *  diagnosis from one answer — which would then name weak concepts for everything that had
- *  simply not been asked yet. A move forward has to mean the stage is actually done. */
-export function nextAction(canvas: NextActionInput): NextAction | null {
-  const move = offeredMove(canvas);
+// 🔴 `nextAction` AND `offeredMove` ARE DELETED (owner, §38): *"The only button should be
+// 'continue' below reading passages, thats it."*
+//
+// They existed to offer the six-stage machine's moves — "I've read this", "Test me", "Retest me",
+// "Fix my weak spots", "Finish" — and #585 proved every one of them unreachable in every state a
+// canvas can be observed in, because each destination was an evidence stage and the retirement
+// refuses those. The reading-pace control among them came back as `Continue` (§38); the rest are
+// gone, because re-testing is the system's job under §18 and weak-spot targeting is what objective
+// ordering already does. A button for either is the learner managing the learning system (§26).
+//
+// `canTransition` and `canStart` are UNTOUCHED and still guard writes — the entrance refusal was
+// never the same thing as the control that offered it.
 
-  // 🔴 NO CANVAS MAY NEWLY ENTER AN EVIDENCE STAGE. This is the retirement of the six-stage machine,
-  // expressed as one rule in one place rather than as six deletions.
-  //
-  // The owner met a fixed run of six questions on their own canvas — counter, revealed answer, an
-  // explanation of what they had just demonstrated — and it wrote no evidence at all. The multiple
-  // choice in that screenshot was stale stored data, but that was the smaller half: a canvas started
-  // today gets the identical machine with a different input widget. So the entrance is closed, not
-  // the widget.
-  //
-  // 🔴 DERIVED FROM `isEvidenceStage`, NEVER A HAND-WRITTEN LIST. A list here would drift from the
-  // one in `canvas-hosting.ts` that decides what paints, and the two disagreeing is precisely how a
-  // learner ends up offered a move into a surface that no longer exists.
-  //
-  // Note what is NOT closed: `targeted_relearn` is reading material, not an evidence stage, so it
-  // is still reachable. Retirement is of the fixed assessment run, not of everything the legacy
-  // states could express.
-  if (move && isEvidenceStage(move.to)) return null;
-  return move;
-}
 
-type NextActionInput = Pick<
-  LearningCanvas,
-  "state" | "blocks" | "weakConceptIds" | "recall" | "recallResults" | "questions" | "answers"
->;
-
-/** The move the legacy state machine would offer, before retirement is applied.
- *
- *  Kept whole rather than edited branch-by-branch: what each legacy state considered "done" is the
- *  record of how that machine worked, and `nextAction` above is the single place that now refuses. */
-function offeredMove(canvas: NextActionInput): NextAction | null {
-  switch (canvas.state) {
-    case "learn":
-      // Nothing to have read yet means nothing to move on from.
-      return canvas.blocks.length > 0 ? { to: "recall", label: "I've read this" } : null;
-    case "recall":
-      return canvas.recall.length > 0 && canvas.recallResults.length >= canvas.recall.length
-        ? { to: "test", label: "Test me" }
-        : null;
-    case "test":
-      return canvas.questions.length > 0 && canvas.answers.length >= canvas.questions.length
-        ? { to: "diagnose", label: "See where I stand" }
-        : null;
-    case "diagnose":
-      return canvas.weakConceptIds.length > 0
-        ? { to: "targeted_relearn", label: "Fix my weak spots" }
-        : { to: "complete", label: "Finish" };
-    case "targeted_relearn":
-      return { to: "retest", label: "Retest me" };
-    case "retest":
-      // A retest ends on the same rule as a test: every question answered, then a verdict.
-      return canvas.questions.length > 0 && canvas.answers.length >= canvas.questions.length
-        ? { to: "diagnose", label: "See where I stand" }
-        : null;
-    default:
-      return null;
-  }
-}

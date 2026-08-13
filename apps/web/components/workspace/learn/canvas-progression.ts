@@ -33,7 +33,13 @@ export interface ProgressionInput {
 }
 
 /**
- * Does this state offer `✓`?
+ * Does this state require the learner to READ something and move past it?
+ *
+ * 🔴 RENAMED IN MEANING, NOT IN SHAPE. This used to answer "does the composer show a `✓`?" and now
+ * answers the §38 question — does this region carry a reading requirement — which is the property
+ * `continueOwner` reads. Same predicate, same three states, one fewer indirection: a correction,
+ * a contrast and a failed verdict are exactly the things the learner is asked to read and move on
+ * from.
  *
  * Exposition — the learner is reading something and pressing on is the next move:
  *   `show_correction` · `contrast` · a verdict that did NOT pass
@@ -55,16 +61,23 @@ export function offersAdvance(state: ProgressionInput): boolean {
 /**
  * Which single control the composer shows.
  *
- * 🔴 A UNION, SO "BOTH AT ONCE" CANNOT BE EXPRESSED. §I's rule is *"there is never both a `✓` and a
- * send button — one location, one primary action, determined by state"*. Written as two booleans
- * that rule is a convention someone has to keep; written as one value it is arithmetic. This is the
- * same reasoning `AnswerSink` uses in canvas-hosting.ts, for the same class of defect.
+ * 🔴 THE `✓` IS GONE FROM THE COMPOSER (owner, §38), AND THIS UNION NO LONGER GUARANTEES WHAT IT
+ * USED TO. It said: *"there is never both a `✓` and a send button — one location, one primary
+ * action"*, and that held BECAUSE both lived in this one control. The acknowledgment now renders
+ * below the correction, as `Continue`, so a union here cannot prevent a send button and a Continue
+ * being on screen together — a different type would still be satisfied while two controls painted.
+ *
+ * What prevents it now is `continueOwner`, which returns AT MOST ONE region for the whole surface
+ * and is suppressed outright while a demonstration is owed. The guarantee moved with the control;
+ * it did not evaporate, and this comment is here so nobody reads the old promise off the type.
+ *
+ * What this union still decides is real and unchanged: whether the composer offers to SEND.
  *
  * 🔴 `"none"` IS A REAL ANSWER, NOT AN OVERSIGHT. In a production state with an empty composer the
  * control is ABSENT — not present-and-disabled. A disabled control still advertises that pressing
  * on is an option; N3 requires that it not be there at all.
  */
-export type ComposerControl = "send" | "advance" | "none";
+export type ComposerControl = "send" | "none";
 
 export function composerControl(input: {
   /** The composer holds something the learner could submit. */
@@ -84,15 +97,13 @@ export function composerControl(input: {
    * yields `"none"` if nothing is typed, because the caller cannot be in both at once.
    */
   readonly hasAttachment?: boolean;
-  /** This state offers `✓` — the result of `offersAdvance`, passed in rather than recomputed. */
-  readonly advanceAvailable: boolean;
 }): ComposerControl {
   // A response outranks everything: the moment one begins, the same control becomes send. That
   // holds in BOTH exposition and production, which is why it is tested first and only once.
   if (input.hasResponse) return "send";
-  // 🔴 BEFORE `advanceAvailable`, DELIBERATELY. The two cannot legitimately co-occur, and if they
-  // ever did, sending the material the learner explicitly attached is the honest reading of their
-  // intent — `✓` would silently discard it.
   if (input.hasAttachment) return "send";
-  return input.advanceAvailable ? "advance" : "none";
+  // 🔴 `"none"` IS STILL A REAL ANSWER AND N3 STILL DEPENDS ON IT. In a production state with an
+  // empty composer the control is ABSENT — not present-and-disabled — so retrieval cannot be
+  // pressed past. Removing the `✓` narrowed this union; it did not soften that.
+  return "none";
 }
