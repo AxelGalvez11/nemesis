@@ -38,6 +38,67 @@ git merge-base --is-ancestor <fix-sha> <serving-sha> # containment, not adjacenc
 
 ---
 
+## 🔴 THE GLOBAL INVARIANT — owner, 2026-08-12
+
+> **Every claim the UI makes about the learner must be traceable to learner evidence.
+> Every claim it makes about the source must be traceable to source capability.**
+
+This one sentence would have prevented both defects found tonight: the *"I already know this"*
+control, and the completion screen headlining **"Mastered."** unconditionally. Neither was caught by
+a test, because neither is a bug — both are designs that were acceptable until this was written down.
+
+Apply it to anything the surface asserts. If you cannot name the evidence behind a claim, the
+surface may not make it.
+
+## 🔴 J. CANVAS IS NOT A DOCUMENT READER — REQUIRED
+
+**Owner architectural correction, 2026-08-12, after seeing the live surface.** The per-block hover
+toolbar was the visible symptom; the interaction *model* is the defect.
+
+What the surface does today:
+
+```
+generated lesson → paragraphs → hover a block → manually hide / mark known / collapse
+```
+
+What Canvas is:
+
+```
+determine what matters → expose only enough to encode it → require production
+→ diagnose → adapt the surface → repeat
+```
+
+| # | Criterion | Why |
+|---|---|---|
+| J1 | 🔴 **No self-report control may substitute for demonstration.** *"I already know this"* is removed. | A learner claiming knowledge is not a demonstration. If it hides material, **self-report is changing the curriculum without evidence** — and Nemesis believes what the learner demonstrates, not what they claim. |
+| J2 | 🔴 **No manual per-block fold/expand in the primary Canvas.** | **Brain decides resolution**, from learner state: strong evidence → compress · weak or partial → expand · missing relation → expose that relation · re-demonstration → compress again. Manual folding is not the adaptive mechanism; it is a document-reader remnant. |
+| J3 | **Provenance survives; the toolbar does not.** | *"Where did this come from?"* is legitimately useful. It should read as **evidence behind the Canvas** — a quiet citation marker, or answering the learner's own question — not as document-editing chrome. Exact presentation is UI's. |
+| J4 | 🔴 **Uploaded material is not automatically rewritten into a mini-textbook.** | Exposition is **a cognitive strategy used when needed, not the default surface.** For an arbitrary association (`losartan ↔ Cozaar`), go straight to production. Expand only when evidence says the learner lacks the distinction. For causal material, expose only enough structure to build a model, then immediately require explanation, prediction or reconstruction. |
+
+**The principle, in the owner's words:**
+
+> The learner should not manage AI-generated blocks. **The blocks themselves should appear,
+> disappear, compress, expand, or change representation because Brain's estimate of the learner
+> changed.**
+
+**Worked example of the target, for the same material now on screen.** Instead of several paragraphs
+explaining what generic and brand names are:
+
+```
+LOSARTAN
+What brand name is it sold under?     → "Cozaar" → move on
+
+DIOVAN
+Generic?                              → move on
+```
+
+…and only if the learner repeatedly misses the *distinction* does Canvas expand to explain it — then
+immediately requires another demonstration. The same Canvas moves from rapid recall to causal and
+quantitative reasoning **without the learner changing modes**.
+
+**Sequencing: this runs as independent UI cleanup alongside the P0. It must not derail
+`RUNTIME-005` or the first evidence-loop proof.**
+
 ## A. Source perception — REQUIRED
 
 | # | Criterion | Evidence required |
