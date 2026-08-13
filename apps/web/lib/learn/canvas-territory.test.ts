@@ -1,14 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import {
-  frozenTopic,
-  groundedReuse,
-  materialSubject,
-  readTerritory,
-  territoryReuse,
-  type CanvasTerritory,
-} from "./canvas-territory";
+import { frozenTopic, materialSubject, readTerritory, territoryReuse, type CanvasTerritory } from "./canvas-territory";
 import type { KnowledgeObject } from "./knowledge-types";
 
 // The territory was rebuilt on every open, and it never converged.
@@ -173,52 +167,33 @@ test("🔴 the same rules serve a law student and a mechanical engineer", () => 
   }
 });
 
-// ── grounded territories: the same build-once guarantee, over material ───────────────────────────
+// ── the label a grounded territory is filed under ───────────────────────────────────────────────
 
-test("🔴 a document canvas builds its territory ONCE, for the same measured reason", () => {
-  // A model reading a lecture samples it differently every time, exactly as it does a topic — over
-  // a larger and more expensive input. Without this, every open re-reads the whole document.
-  const stored: CanvasTerritory = {
-    identityVersion: VERSION,
-    objects: [object("beta cells — insulin", "k-1")],
-    topic: materialSubject(["lib-a"]),
-  };
-
-  assert.deepEqual(groundedReuse({ identityVersion: VERSION, stored, subject: materialSubject(["lib-a"]) }), {
-    objects: stored.objects,
-    reuse: true,
-  });
-  assert.deepEqual(groundedReuse({ identityVersion: VERSION, stored: null, subject: materialSubject(["lib-a"]) }), {
-    miss: "never-built",
-    reuse: false,
-  });
-  assert.deepEqual(groundedReuse({ identityVersion: VERSION + 1, stored, subject: materialSubject(["lib-a"]) }), {
-    miss: "identity-version-changed",
-    reuse: false,
-  });
+test("🔴 material names a subject the same way whatever order it was attached in", () => {
+  // The marker needs a non-empty string or `readTerritory` rejects the row, and for a document
+  // canvas the honest value is the material it was built from. Durable ids, never the title: every
+  // canvas calls its first attachment "s1", and a title is a label a learner may change.
+  assert.equal(materialSubject(["lib-b", "lib-a"]), materialSubject(["lib-a", "lib-b"]));
+  assert.match(materialSubject(["lib-a"]), /^sources:/);
 });
 
-test("🔴 attaching a SECOND lecture rebuilds, and this is where the two lanes diverge on purpose", () => {
-  // 🔴 `territoryReuse` DELIBERATELY IGNORES THE TOPIC and this one deliberately does not, and the
-  // difference is not an inconsistency. On a topic canvas the subject IS the title, and renaming is
-  // a filing action whose intent cannot be read — so re-topicking on a rename would silently change
-  // what a learner is taught because they tidied their shelf. Material carries no such ambiguity:
-  // attaching a lecture is not filing, it is new material, and a canvas that kept teaching only the
-  // first document would ignore what the learner just handed it.
-  const stored: CanvasTerritory = {
-    identityVersion: VERSION,
-    objects: [object("beta cells — insulin", "k-1")],
-    topic: materialSubject(["lib-a"]),
-  };
+test("🔴 build-once for a document canvas is enforced by the CALLER, not by a gate in the builder", () => {
+  // 🔴 THIS TEST REPLACES ONE THAT WAS GREEN ON A BRANCH NOTHING COULD REACH.
+  //
+  // There was a `groundedReuse` here that compared the stored subject against the current material
+  // and reported `material-changed`, and a test asserting that "attaching a SECOND lecture
+  // rebuilds". Both passed. Neither was reachable: `ensureKnowledgeForCanvas` replays any stored
+  // territory BEFORE calling the grounded builder and only calls it when that replay produced
+  // nothing, so a canvas with a stored territory never arrives there and the comparison never runs.
+  //
+  // A dead branch that reads like a freshness check is worse than no check, because it documents a
+  // behaviour the product does not have. It is deleted, and the real rule is asserted where it
+  // actually lives — see `canvas-knowledge.test.ts`, "the fallback does not run when the canvas
+  // already has a territory to carry".
+  const territory = readFileSync(new URL("./canvas-territory.ts", import.meta.url), "utf8");
+  const knowledge = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
 
-  assert.deepEqual(groundedReuse({ identityVersion: VERSION, stored, subject: materialSubject(["lib-a", "lib-b"]) }), {
-    miss: "material-changed",
-    reuse: false,
-  });
-
-  // And the ORDER the learner attached them in is not a different subject.
-  assert.equal(materialSubject(["lib-b", "lib-a"]), materialSubject(["lib-a", "lib-b"]));
-
-  // The topic lane keeps its own rule, unchanged: a rename never rebuilds.
-  assert.equal(territoryReuse({ identityVersion: VERSION, stored }).reuse, true);
+  assert.doesNotMatch(territory, /groundedReuse/, "no unreachable second reuse rule may come back");
+  assert.doesNotMatch(territory, /material-changed/, "nor a miss reason nothing can report");
+  assert.match(knowledge, /carried\.length === 0/, "the real gate is the caller's carried territory");
 });

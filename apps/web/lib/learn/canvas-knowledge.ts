@@ -24,7 +24,7 @@
 import { constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { frozenTopic, groundedReuse, materialSubject, territoryReuse } from "./canvas-territory";
+import { frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
@@ -552,9 +552,22 @@ async function carriedTerritory(userId: string, canvas: LearningCanvas): Promise
  * the learner's lecture and asserting something it cannot point at has left the document, and that
  * is refused rather than stored with a hopeful marker.
  *
- * 🔴 BUILD ONCE. A model samples a subject differently every time it is asked — production measured
- * a topic canvas growing 2 → 26 → 50 objects over two opens — and a lecture is a bigger and more
- * expensive input than a topic. Without the marker, every open re-reads the whole document.
+ * 🔴 BUILD ONCE, AND `carriedTerritory` IS WHAT ENFORCES IT — NOT A GATE IN HERE. A model samples a
+ * subject differently every time it is asked; production measured a topic canvas growing
+ * 2 → 26 → 50 objects over two opens, and a lecture is a bigger and more expensive input. The
+ * caller replays any stored territory BEFORE reaching this, and calls this only when that replay
+ * produced nothing — so a canvas that has already been given a territory never arrives here at all.
+ *
+ * 🔴 THE HONEST CONSEQUENCE, WHICH IS A REAL GAP AND IS NOT A ROUNDING ERROR. "Already has a
+ * territory" is a fact about the CANVAS, not about the MATERIAL. So attaching a SECOND lecture to a
+ * canvas that already built one does not bring us back here: the new document contributes only what
+ * the deterministic grid lane can read from it, and this lane never sees it.
+ *
+ * That is deliberate rather than overlooked. The marker is the canvas's ONE territory column, so
+ * building here for new material would overwrite the subject the canvas was started from and
+ * re-topic it to its own filenames — "renaming must never re-teach", through the back door. Making
+ * it right needs the marker to hold an accumulating set of subjects, which is a data-shape change,
+ * and doing that under a hotfix is how the shape gets decided badly. Filed, not fudged.
  *
  * Returns null when nothing usable came back, so the caller reports the outcome the SOURCE READ
  * produced. "We read your document fine and found no pairs in it" and "we could not read your
@@ -572,16 +585,13 @@ async function groundedTerritory(input: {
   const { canvas, coverage, onPhase, outcome, ownership, sourceIds, userId } = input;
   const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
 
+  // 🔴 A LABEL ON THE MARKER, NOT A KEY ANYTHING COMPARES. `CanvasTerritory.topic` must be a
+  // non-empty string or `readTerritory` rejects the row, and for a document canvas the honest value
+  // is the material it was built from. An earlier version compared it on the way back in; that
+  // comparison was unreachable, because the caller's replay means a canvas with a stored territory
+  // never reaches this function. A dead branch that looks like a freshness check is worse than no
+  // check: it reads as though new material rebuilds, and nothing does.
   const subject = materialSubject(sourceIds);
-  const stored = await loadCanvasTerritory(userId, canvas.id);
-  const reuse = groundedReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored, subject });
-  if (reuse.reuse) {
-    const replayed = await storeTerritory(userId, reuse.objects);
-    if (replayed.length > 0) return answer(replayed);
-    // A replay that resolves nothing means the write path failed, not that the document is empty.
-    // Returning here would leave the marker in place and the canvas blank on every open for ever —
-    // the shape of the front-door bug this codebase has already paid for once. Fall through.
-  }
 
   // 🔴 SHARED WITH ANY CONSTRUCTION ALREADY RUNNING FOR THIS CANVAS AND THIS MATERIAL. Attaching a
   // file fires this from two places at once — see `onlyOnceAtATime` — and the build-once marker is
