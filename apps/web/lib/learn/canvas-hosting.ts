@@ -157,8 +157,27 @@ export function composeSurface(input: {
   canvasState: CanvasState;
   /** The policy has something to present — a question, a correction, or a verdict. */
   policyPresenting: boolean;
+  /**
+   * The canvas actually holds reading material right now.
+   *
+   * 🔴 IT IS NOT DERIVABLE FROM THE STATE ANY MORE, AND §24 IS WHY. `learn` used to imply blocks,
+   * because reaching it meant `generateLesson` had run — so "a reading state" and "there is
+   * something to read" were the same question and one input answered both. Opening a document no
+   * longer writes anything to read, so a canvas sits in `learn` with zero blocks as the ORDINARY
+   * case, and the two questions have come apart.
+   *
+   * 🔴 THE DEFECT THIS PREVENTS IS ALREADY DOCUMENTED IN THIS FILE, ONE STATE OVER. `sharing` told
+   * a hosted task to shrink and leave room for reading material; on `sources_attached` that made a
+   * question float at the top of an empty surface. Without this input, `learn` with no blocks
+   * reproduces exactly that — the same bug arriving through the door §24 just opened.
+   *
+   * Optional, and absent means "assume there is", which is the pre-§24 reading. Nothing outside
+   * this app calls it, but a caller that forgets should degrade to the old layout rather than to a
+   * task that has quietly stopped making room for a document that IS there.
+   */
+  hasReadingMaterial?: boolean;
 }): CanvasRegions {
-  const { canvasState, policyPresenting } = input;
+  const { canvasState, hasReadingMaterial = true, policyPresenting } = input;
   const evidenceStage = isEvidenceStage(canvasState);
   const reading = READING_STATES.includes(canvasState);
   const policy = policyPresenting;
@@ -205,8 +224,9 @@ export function composeSurface(input: {
     // backwards, and it is why the owner met a fixed six-question quiz on their own canvas.
     policy,
     // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
-    // for a placeholder that is itself waiting for one.
-    sharing: policy && reading,
+    // for a placeholder that is itself waiting for one, and it does not make room for a reading
+    // state that is empty because nothing was generated into it (§24).
+    sharing: policy && reading && hasReadingMaterial,
   };
 }
 

@@ -24,7 +24,7 @@
 import { constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { frozenTopic, territoryReuse } from "./canvas-territory";
+import { frozenTopic, groundedReuse, materialSubject, territoryReuse } from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
@@ -244,6 +244,30 @@ export async function ensureKnowledgeForCanvas(
   const production = knowledgeProductionFor({ outcome });
   if (!production.produce) return { coverage, objectives: [], outcome, ownership };
 
+  // 🔴 THE GRID LANE FOUND NOTHING, AND THAT IS THE ORDINARY CASE FOR A LECTURE — §24's real
+  // blocker, measured rather than assumed.
+  //
+  // `extractKnowledgeObjects` is the structured-TABLE lane and says so in its own header. The
+  // document the owner uploaded on 2026-08-13 is a 15-page PDF whose stored parse reports
+  // `table_count: 0`, so it produced zero objects, zero objectives and nothing for the policy to
+  // ask. That is why opening a document still had to write a summary: it was the only thing that
+  // could be shown. Removing the summary without this would have opened the owner's own lecture on
+  // a blank page.
+  //
+  // 🔴 A FALLBACK, NEVER A REPLACEMENT. The grid lane is deterministic, model-free, re-derivable by
+  // reading the document, and free to re-run. It stays first and stays untouched, because "refusing
+  // to guess is a feature of the lane; do not weaken it to raise a count." This runs only where it
+  // found nothing at all.
+  //
+  // 🔴 AND IT DOES NOT TOUCH COVERAGE. `coverage` still reports what the deterministic lane
+  // accounted for, so these objects never make a document look more represented than it is. The
+  // error is deliberately in the under-claiming direction: a canvas may hold knowledge that
+  // coverage does not credit, and it must never be the other way round.
+  if (extracted.length === 0) {
+    const grounded = await groundedTerritory({ canvas, coverage, onPhase, outcome, ownership, sourceIds, userId });
+    if (grounded) return grounded;
+  }
+
   const resolved: ResolvedObjective[] = [];
   for (const knowledge of extracted) {
     const stored = await saveKnowledge(userId, knowledge);
@@ -373,6 +397,71 @@ async function topicTerritory(
     topic,
   });
   return answer("complete", resolved);
+}
+
+// -------------------------------------------------------------- grounded territory
+
+/**
+ * A document the grid lane could not read pairs from, turned into knowledge by READING IT.
+ *
+ * 🔴 IT IS THE SAME CONSTRUCTOR THE TOPIC LANE USES, AND THAT IS §18 RATHER THAN A SHORTCUT. "A
+ * prompt, a document, several sources, a recording and a webpage all converge on one runtime." A
+ * second constructor for documents would be a second product with its own drift.
+ *
+ * 🔴 THE STRICTER RULE IS IN THE PARSER, NOT HERE. Given material, every surviving pair must name an
+ * excerpt that resolves to something we actually showed the model — so what comes back is anchored,
+ * citable, and distinguishable for ever from a pair the model knew independently. A model holding
+ * the learner's lecture and asserting something it cannot point at has left the document, and that
+ * is refused rather than stored with a hopeful marker.
+ *
+ * 🔴 BUILD ONCE. A model samples a subject differently every time it is asked — production measured
+ * a topic canvas growing 2 → 26 → 50 objects over two opens — and a lecture is a bigger and more
+ * expensive input than a topic. Without the marker, every open re-reads the whole document.
+ *
+ * Returns null when nothing usable came back, so the caller reports the outcome the SOURCE READ
+ * produced. "We read your document fine and found no pairs in it" and "we could not read your
+ * document" are different facts, and this lane must not overwrite the second with the first.
+ */
+async function groundedTerritory(input: {
+  canvas: LearningCanvas;
+  coverage: CanvasCoverage;
+  onPhase?: (phase: ThinkingPhase) => void;
+  outcome: ExtractionOutcome;
+  ownership: OwnershipDecision;
+  sourceIds: readonly string[];
+  userId: string;
+}): Promise<CanvasKnowledge | null> {
+  const { canvas, coverage, onPhase, outcome, ownership, sourceIds, userId } = input;
+  const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
+
+  const subject = materialSubject(sourceIds);
+  const stored = await loadCanvasTerritory(userId, canvas.id);
+  const reuse = groundedReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored, subject });
+  if (reuse.reuse) {
+    const replayed = await storeTerritory(userId, reuse.objects);
+    if (replayed.length > 0) return answer(replayed);
+    // A replay that resolves nothing means the write path failed, not that the document is empty.
+    // Returning here would leave the marker in place and the canvas blank on every open for ever —
+    // the shape of the front-door bug this codebase has already paid for once. Fall through.
+  }
+
+  onPhase?.("mapping_knowledge");
+  const { value } = await constructTerritory(userId, canvas.title, TERRITORY_TARGET, {
+    sources: canvas.sources,
+  });
+  if (!value || value.objects.length === 0) return null;
+
+  const resolved = await storeTerritory(userId, value.objects);
+  if (resolved.length === 0) return null;
+
+  // Written last and only on a complete build, so a tab closed mid-construction marks nothing and
+  // the next open rebuilds rather than locking the learner at half a map.
+  await saveCanvasTerritory(userId, canvas, {
+    identityVersion: KNOWLEDGE_IDENTITY_VERSION,
+    objects: value.objects,
+    topic: subject,
+  });
+  return answer(resolved);
 }
 
 /**

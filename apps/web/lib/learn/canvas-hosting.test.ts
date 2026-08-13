@@ -221,3 +221,49 @@ test("🔴 a multi-objective task is still exactly ONE answer surface", () => {
   assert.equal(sink.kind, "policy");
   assert.equal(sink.kind === "policy" && sink.task.id, "multi-objective");
 });
+
+// ── §24: a reading state is no longer a promise that there is anything to read ───────────────────
+
+test("🔴 an EMPTY reading state is not shared with — the same defect, through the door §24 opened", () => {
+  // 🔴 THE ASSUMPTION THAT JUST EXPIRED. `learn` used to imply blocks, because reaching it meant
+  // `generateLesson` had run. Since §24 removed the opening summary, a document canvas sits in
+  // `learn` with ZERO blocks as the ordinary case — so "a reading state" and "there is something to
+  // read" have come apart, and only the second one may make a task shrink.
+  //
+  // Left unfixed this reproduces, exactly, the bug this file already records one state over: the
+  // question floats at the top of an empty surface instead of sitting where the learner is looking.
+  const emptyLearn = composeSurface({
+    canvasState: "learn",
+    hasReadingMaterial: false,
+    policyPresenting: true,
+  });
+  assert.equal(emptyLearn.policy, true, "the question is still presented");
+  assert.equal(emptyLearn.document, true, "the region still paints, so material attached later appears");
+  assert.equal(emptyLearn.sharing, false, "🔴 but there is nothing to make room for");
+
+  const withBlocks = composeSurface({
+    canvasState: "learn",
+    hasReadingMaterial: true,
+    policyPresenting: true,
+  });
+  assert.equal(withBlocks.sharing, true, "and real material is still made room for");
+});
+
+test("🔴 the reading material question NEVER overrides the pre-content rule", () => {
+  // Two independent reasons a task must not shrink, and neither may cancel the other out. A
+  // `sources_attached` canvas paints a placeholder; claiming it holds reading material must not
+  // resurrect the layout that rule was written to prevent.
+  const pre = composeSurface({
+    canvasState: "sources_attached",
+    hasReadingMaterial: true,
+    policyPresenting: true,
+  });
+  assert.equal(pre.sharing, false, "a placeholder is not reading material, whatever it is told");
+});
+
+test("🔴 an unstated reading question reads as the PRE-§24 layout, never as an empty page", () => {
+  // Absent must degrade to "assume there is material", which is what every caller meant before this
+  // input existed. The opposite default would silently stop a task making room for a document that
+  // IS there — a regression that looks like nothing and is invisible in a screenshot.
+  assert.equal(composeSurface({ canvasState: "learn", policyPresenting: true }).sharing, true);
+});

@@ -13,10 +13,9 @@ import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { extractFile } from "@/lib/workspace/chat-attachments";
-import { canvasCapture, captureLessonGenerated, captureStateChange } from "@/lib/learn/canvas-analytics";
+import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
-  generateLesson,
   generateRelearn,
   generateRecall,
   generateTest,
@@ -422,10 +421,33 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   // ------------------------------------------------------------------- lesson
 
   /**
-   * Generate the canvas's opening from the material.
+   * Open the canvas.
    *
-   * `level` is optional and is only ever a level the learner actually expressed. It is no longer
-   * asked for, and when it is absent the prompt is told so rather than being handed a middle value.
+   * 🔴 IT GENERATES NOTHING TO READ — §24, AND IT IS THE WHOLE POINT OF THIS FUNCTION NOW.
+   *
+   *     "Source ingestion is not source summarization."
+   *     "The first generated artifact is normally a diagnostic, not a document overview."
+   *
+   * Uploading a lecture used to call `generateLesson`, which wrote 8-25 headed paragraphs, and the
+   * owner's own canvas opened on a heading reading "What this document covers" followed by a
+   * summary of material they had just handed us. Nemesis was telling a learner what was in their
+   * document before finding out what they already understood.
+   *
+   * Both ways in now do the same thing here: move out of the pre-content state and let the policy
+   * runtime ask. `ensureKnowledgeForCanvas` runs on every canvas already, so there is nothing to
+   * await and no second path to keep in step.
+   *
+   * 🔴 REMOVING THIS CALL ALONE WOULD HAVE SHIPPED A BLANK PAGE, WHICH IS WHY THE KNOWLEDGE CHANGE
+   * IS IN THE SAME PR. `extractKnowledgeObjects` is a structured-table lane; the owner's 15-page
+   * lecture has `table_count: 0` in its stored parse, so it minted zero objectives and the policy
+   * had nothing to ask. `canvas-knowledge.ts` now reads such a document with the same constructor
+   * the topic lane uses, so there is a question waiting where the summary used to be.
+   *
+   * 🔴 "SUMMARIZE THIS" IS UNAFFECTED AND MUST STAY THAT WAY. §24 keeps that path explicitly. It
+   * runs through `command()` below, which asks for the summary the learner actually requested,
+   * grounded in their sources. What is gone is producing one nobody asked for.
+   *
+   * `level` is optional and is only ever a level the learner actually expressed.
    */
   const openCanvas = useCallback(
     async (level?: CanvasLevel) => {
@@ -433,56 +455,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return;
       if (level) update((current) => ({ ...current, level }));
       setError(null);
-
-      // 🔴 A TOPIC DOES NOT EXPAND INTO A LESSON — §M, AND IT IS THE FRONT DOOR. Someone who types
-      // "teach me the top 35 drugs" used to get 64 generated paragraphs and nothing to do: the
-      // policy could not own the canvas, so there was material to read and no task. Nemesis now
-      // builds a knowledge territory from the topic instead, and opens by ASKING.
-      //
-      // 🔴 THIS REPLACES THE LESSON CALL RATHER THAN ADDING TO IT. Generating both would pay twice
-      // to produce a document §M forbids showing — and would put the mini-textbook back on screen
-      // beside the question, which is the exact failure being removed.
-      //
-      // Material-first is untouched: a canvas with durable sources still gets its lesson, because
-      // there the blocks are a reading of the learner's OWN material rather than model prose
-      // wearing a document's clothes.
-      const durable = latest.current.sources.some((source) => source.librarySourceId);
-      if (!durable) {
-        // The territory itself is built by `ensureKnowledgeForCanvas`, which the policy runtime
-        // already calls on every canvas — so there is nothing to await here and no second path to
-        // keep in step. Moving out of `empty` is the whole state change: the canvas has begun.
-        update((current) => ({ ...current, state: "learn" }));
-        return;
-      }
-
-      setBusy({ kind: "lesson", label: "Writing your lesson" });
-      const startedAt = Date.now();
-      const result = await generateLesson(id, {
-        topic: latest.current.title,
-        level: level ?? latest.current.level,
-        sources: latest.current.sources,
-      });
-      setBusy({ kind: null });
-      if (!result.value) {
-        setError(result.error);
-        canvasCapture("canvas_generation_failed", latest.current, { stage: "lesson" });
-        return;
-      }
-      const lesson = result.value;
-      update((current) => ({
-        ...current,
-        title: current.title || lesson.title,
-        concepts: lesson.concepts,
-        blocks: lesson.blocks,
-        state: "learn",
-      }));
-      captureLessonGenerated(latest.current, {
-        ms: Date.now() - startedAt,
-        blocks: lesson.blocks.length,
-        concepts: lesson.concepts.length,
-        sources: latest.current.sources.length,
-        grounded: lesson.blocks.some((block) => (block.sourceRefs?.length ?? 0) > 0),
-      });
+      update((current) => ({ ...current, state: "learn" }));
     },
     [requireUid, update],
   );

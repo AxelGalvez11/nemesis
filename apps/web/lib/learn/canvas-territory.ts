@@ -62,7 +62,11 @@ export type TerritoryMiss =
   /** Nothing has been built for this canvas yet — the ordinary first open. */
   | "never-built"
   /** Built under older identity rules, so replaying it would write keys that no longer converge. */
-  | "identity-version-changed";
+  | "identity-version-changed"
+  /** Grounded territories only: the canvas holds different material than the one that was built
+   *  from. See `groundedReuse` for why this exists on that side and must not exist on the topic
+   *  side. */
+  | "material-changed";
 
 export type TerritoryReuse =
   | { reuse: true; objects: readonly KnowledgeObject[] }
@@ -111,6 +115,45 @@ export function territoryReuse(input: {
   const { identityVersion, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
+  return { objects: stored.objects, reuse: true };
+}
+
+/**
+ * What a GROUNDED territory was built over — the material itself, named durably.
+ *
+ * 🔴 THE DURABLE IDS, SORTED, NEVER THE TITLE. A document canvas's subject is the document, and
+ * `librarySourceId` is the same string for every canvas that holds it. Sorting means the order the
+ * learner happened to attach two files in does not read as a different subject.
+ */
+export function materialSubject(librarySourceIds: readonly string[]): string {
+  return `sources:${[...librarySourceIds].sort().join(",")}`;
+}
+
+/**
+ * May a canvas reuse a territory that was built by READING ITS MATERIAL?
+ *
+ * 🔴 SAME BUILD-ONCE GUARANTEE AS THE TOPIC LANE, FOR THE SAME MEASURED REASON. Opening a topic
+ * canvas twice grew it 2 → 26 → 50 knowledge objects, all identity keys distinct, because a model
+ * samples a subject differently every time it is asked. A model reading a lecture does exactly the
+ * same thing, over a larger and more expensive input. Without this, every open of a document canvas
+ * re-reads the whole document and pays for it.
+ *
+ * 🔴 AND THIS ONE DOES COMPARE THE SUBJECT, WHICH IS THE ONE PLACE THE TWO LANES DIVERGE ON PURPOSE.
+ * `territoryReuse` deliberately ignores the topic, because on a topic canvas the subject IS the
+ * title and renaming is a filing action whose intent cannot be read. Material carries no such
+ * ambiguity: attaching a second lecture is not a filing action, it is new material, and a canvas
+ * that kept teaching only the first document would silently ignore what the learner just added.
+ * There is nothing to misread, so the comparison is safe here and unsafe there.
+ */
+export function groundedReuse(input: {
+  stored: CanvasTerritory | null;
+  identityVersion: number;
+  subject: string;
+}): TerritoryReuse {
+  const { identityVersion, stored, subject } = input;
+  if (!stored) return { miss: "never-built", reuse: false };
+  if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
+  if (stored.topic !== subject) return { miss: "material-changed", reuse: false };
   return { objects: stored.objects, reuse: true };
 }
 

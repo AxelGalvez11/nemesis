@@ -158,12 +158,22 @@ export function commandMessages(input: {
     .map((block) => `${block.id} [${block.type}] ${block.content}`)
     .join("\n\n");
 
+  // 🔴 AN EMPTY CANVAS IS ITS OWN CASE NOW, AND §24 IS THE REASON. Opening a document no longer
+  // writes anything to read, so a learner who asks for something to read is asking for the FIRST
+  // blocks rather than an edit to existing ones — and every other operation names a block that does
+  // not exist. This is the path "Summarize this" travels, which §24 keeps explicitly.
+  const empty = !scoped && input.blocks.length === 0;
+
   const allowed = scoped
     ? `You may ONLY change these blocks: ${input.selected.map((block) => block.id).join(", ")}. ` +
       "Permitted operations: replace_block, insert_before, insert_after, delete_block, annotate_block, collapse_block. " +
       "You may insert new blocks next to the selected ones. Any operation naming another block will be discarded."
-    : "Permitted operations: replace_block, insert_before, insert_after, delete_block, annotate_block, collapse_block. " +
-      "Change as little as possible — edit the blocks the request is about and leave the rest alone.";
+    : empty
+      ? "This canvas has no content yet, so write what they asked for as a new page. " +
+        'Permitted operation: replace_canvas ({"operation":"replace_canvas","blocks":[…]}). ' +
+        "Write only what was asked for, at the length it deserves, and nothing else."
+      : "Permitted operations: replace_block, insert_before, insert_after, delete_block, annotate_block, collapse_block. " +
+        "Change as little as possible — edit the blocks the request is about and leave the rest alone.";
 
   return [
     { content: CANVAS_SYSTEM, role: "system" },
@@ -171,12 +181,14 @@ export function commandMessages(input: {
       content:
         `The learner is reading "${input.canvasTitle}"${input.level ? ` at the "${input.level}" level` : ""} and said:\n\n"${input.command}"\n\n` +
         (scoped ? `They have highlighted this:\n\n${selection}\n\n` : "") +
-        `Document outline (id, type, opening):\n${outline}\n\n` +
+        (empty ? "" : `Document outline (id, type, opening):\n${outline}\n\n`) +
         `Concepts: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ") || "none"}\n\n` +
         `${allowed}\n\n${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
-        'Return JSON: {"operations":[{"operation":"replace_block","blockId":"…","content":"…","conceptIds":[…],"sourceRefs":[…]}]}\n' +
-        'Use annotate_block ({"operation":"annotate_block","blockId":"…","note":"…"}) when the learner wants a clarification ' +
-        "beside the text rather than a rewrite of it.\n\n" +
+        (empty
+          ? 'Return JSON: {"operations":[{"operation":"replace_canvas","blocks":[{"type":"heading","content":"…","sourceRefs":[…]}]}]}\n\n'
+          : 'Return JSON: {"operations":[{"operation":"replace_block","blockId":"…","content":"…","conceptIds":[…],"sourceRefs":[…]}]}\n' +
+            'Use annotate_block ({"operation":"annotate_block","blockId":"…","note":"…"}) when the learner wants a clarification ' +
+            "beside the text rather than a rewrite of it.\n\n") +
         materialSection(input.sources, input.canvasTitle),
       role: "user",
     },
@@ -224,24 +236,56 @@ export function recallMessages(input: {
  * the same instruction has to serve case-and-holding, part-and-tolerance, and verb-and-conjugation.
  * The roles are asked for in the subject's own vocabulary rather than chosen from a fixed list.
  */
-export function territoryMessages(input: { topic: string; count: number }): WireMsg[] {
+export function territoryMessages(input: {
+  topic: string;
+  count: number;
+  /**
+   * The learner's own material, when they attached any.
+   *
+   * 🔴 THE SAME CONSTRUCTOR FOR BOTH WAYS IN, WHICH IS §18 EXECUTED RATHER THAN RESTATED. A typed
+   * topic and an uploaded lecture converge on ONE runtime: the only difference is whether there is
+   * material to read the pairs OUT of, or only the subject to draw them from. A second, nearly
+   * identical prompt for documents is how the two would drift apart into two products.
+   *
+   * 🔴 AND IT IS STILL NOT A LESSON. The instruction below is the same one that stops the topic
+   * lane writing prose. Reading knowledge out of the learner's document is the opposite of writing
+   * a document about it, and §24 turns on that distinction: ingestion is not summarization.
+   */
+  sources?: readonly CanvasSource[];
+}): WireMsg[] {
+  const grounded = (input.sources?.length ?? 0) > 0;
   return [
     { content: CANVAS_SYSTEM, role: "system" },
     {
       content:
-        `Someone wants to learn: "${input.topic}".\n\n` +
-        "Name the specific, checkable facts that topic turns on, as PAIRS. Do not write a lesson, an " +
-        "introduction, an explanation, or any prose. Return only the pairs.\n\n" +
+        (grounded
+          ? "Read the material below and name the specific, checkable facts IT teaches, as PAIRS. " +
+            "Take only what the material actually states. Do not add facts from your own knowledge of the " +
+            "subject, however certain you are of them: this is a reading of one learner's own document, and " +
+            "a fact it does not contain would be asked of them as though their lecture had said it.\n\n"
+          : `Someone wants to learn: "${input.topic}".\n\n` +
+            "Name the specific, checkable facts that topic turns on, as PAIRS. ") +
+        "Do not write a lesson, an introduction, an explanation, or any prose. Return only the pairs.\n\n" +
         "Each pair is two things standing in a stated relationship, where someone who knows the subject " +
         "could be shown one side and asked to produce the other. Say what each side IS, using the words " +
         "that subject uses for them, and say how the two are related.\n\n" +
-        'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…"}]}\n\n' +
+        (grounded
+          ? '"excerptId" MUST be the id of the excerpt the pair was read from, exactly as it is bracketed in ' +
+            "the material below. Use only ids that appear there. If you cannot point at the excerpt a pair " +
+            "came from, leave the pair out.\n\n" +
+            'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…","excerptId":"…"}]}\n\n'
+          : 'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…"}]}\n\n') +
         `Aim for about ${input.count}, but fewer is better than padded. ` +
         "OMIT ANYTHING YOU ARE NOT SURE OF. A short list you are confident in is worth more than a long " +
         "one containing guesses: everything here becomes a question a real learner is asked and graded on, " +
         "so an invented pair is recorded as that person's own gap. Leave it out instead.\n\n" +
         "Omit anything that is not a pair, such as narrative, history, or advice that cannot be checked. " +
-        "Do not restate the topic itself as a fact. Keep each side to a term or a short phrase, never a sentence.",
+        (grounded
+          ? "Ignore anything that is about the course rather than the subject, such as room numbers, dates, " +
+            "office hours, grading bands and links. "
+          : "Do not restate the topic itself as a fact. ") +
+        "Keep each side to a term or a short phrase, never a sentence." +
+        (grounded ? `\n\n${materialSection(input.sources ?? [], input.topic)}` : ""),
       role: "user",
     },
   ];
