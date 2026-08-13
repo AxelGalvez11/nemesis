@@ -117,6 +117,49 @@ quantitative reasoning **without the learner changing modes**.
 **Sequencing: this runs as independent UI cleanup alongside the P0. It must not derail
 `RUNTIME-005` or the first evidence-loop proof.**
 
+## 🔴 K. THE LEARNER DOES NOT SEE THE LESSON ENGINE — REQUIRED
+
+**Owner architectural rule, 2026-08-13.** The design rule, in their words:
+
+> **The learner sees the material and Nemesis's intelligence. They do not see Nemesis's lesson
+> engine.**
+
+Internally Nemesis may know the learner is on retrieval opportunity 2 of 8, that the last response
+scored partial understanding, that FSRS says a concept needs reinforcement, and that the next node is
+a transfer question. **None of that belongs in the primary Canvas.** Aggregate progress lives in the
+Minimap and stats surfaces, for learners who deliberately ask.
+
+Canvas should read as **a continuous intelligent conversation happening inside the material** —
+closer to ChatGPT or Claude than to a quiz app.
+
+| # | Criterion |
+|---|---|
+| K1 | 🔴 **No lesson-engine vocabulary on the primary surface.** No *"Recall 2 of 8"*, *"You wrote"*, *"Next"*, *"Question"*, *"Feedback"*, *"Correct"* banners. |
+| K2 | **No answer card and no `"You wrote:"` wrapper.** The learner's answer does not get framed and returned to them. |
+| K3 | **No explicit Next control.** The next thing materialises when Nemesis has determined what the learner needs. |
+| K4 | **Correctness is not announced unless there is a reason** — emphasise a misconception, not a score. |
+| K5 | **Navigation is scrolling; the control surface is the composer.** Remove explicit in-sequence navigation. The learner may type or dictate *"keep going"*, *"explain that"*, *"I don't understand preload"*, or simply answer. |
+| K6 | **Temporary states are ephemeral thinking previews, not permanent chrome** — *"Checking your reasoning…"*, *"Connecting this to the previous concept…"*, *"Looking for the weak point…"*, *"Building from what you already understand…"*. They fade in and disappear as content streams. Ingestion uses the same language: *"Reading the lecture…" → "Identifying the main concepts…" → "Ready."* No progress workflow unless the work genuinely takes long enough for progress to matter. |
+
+### 🔴 K7 — THE ONE THAT CAN GO WRONG QUIETLY, AND THE EXISTING INVARIANT THAT PREVENTS IT
+
+**A thinking caption must describe work that actually ran.**
+
+`use-policy-runtime.ts` already holds this and it is not negotiable under the new direction:
+
+> *"SET BY THE STEP ITSELF. Nothing advances this on a timer, and there is no ordered list it walks —
+> if a phase is skipped or repeated, that is because the work was. A caption that cycled through
+> plausible stages would be indistinguishable from a working system right up until it described
+> something that never ran."*
+
+The owner is asking for **more** of these captions and a richer vocabulary. That is right — and it is
+exactly the change that makes theatre cheap. **A caption is a claim about what Nemesis is doing**, so
+the global invariant covers it: *"Looking for the weak point…"* may only appear while something is
+actually looking for a weak point.
+
+**Never drive them from a timer, a fixed sequence, or a random pick from a list.** If a phase has no
+step behind it, it does not exist.
+
 ## A. Source perception — REQUIRED
 
 | # | Criterion | Evidence required |
