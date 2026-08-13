@@ -106,10 +106,13 @@ test("🔴 a legacy run does NOT keep the surface — the policy takes it", () =
   //     "The learner is partway through the six-stage machine and has given it answers. Painting a
   //      policy question over it would strand those."
   //
-  // The premise is false. **The legacy arm has never written a `learner_evidence` row.** Verified
-  // in production rather than argued: that table holds ZERO rows, while `knowledge_objects` and
-  // `learning_objectives` — written by the policy path — hold rows. Answers given to a legacy run
-  // accumulate in `canvas.document` and produce nothing durable about the learner.
+  // The premise is false. **The legacy arm has never written a `learner_evidence` row** — from the
+  // call graph: `recordEvidence` has exactly one caller and it is in the policy arm. Answers given
+  // to a legacy run accumulate in `canvas.document` and produce nothing durable about the learner.
+  //
+  // 🔴 NOT from that table being empty, which I first cited and which proves nothing: a real row
+  // was written from the live policy canvas and deliberately deleted afterwards, so the zero is
+  // successful cleanup rather than a dead write path. See `canvas-hosting.ts` for the full note.
   //
   // So the precedence handed the surface to the arm that cannot learn anything, and kept it there.
   // That is how the owner met a fixed six-question quiz on their own canvas.
