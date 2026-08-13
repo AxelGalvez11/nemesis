@@ -208,10 +208,19 @@ This is the shape the round-trip rule exists to catch, and it is the shape the
 standing contract names: a source gap that becomes invisible is how the system
 eventually blames a student for material it failed to file correctly.
 
-**Not fixed here.** A one-line change to production parsing does not belong on a
-benchmark branch, where it would confound what this branch is for. Filed for
-sequencing; the reproduction is `scripts/vision-arm.mts stub` against either
-control PDF, and it costs nothing.
+**Fixed in #589**, deliberately as its own change rather than on this benchmark
+branch, where a production parsing fix would confound what the branch is for.
+That PR also found a **second** instance of the same misreading running the other
+way: `extract-coverage.ts` asked `readByVision.has(index + 1)` against the same
+0-based set, so a page vision *had* read was counted **unread** and filed among
+the material we failed to recover — understating what we recovered and reporting
+present content as missing.
+
+This is the exact family `docs/canvas-product-contract.md` §2 names — *"document
+understanding is core infrastructure, not an upload utility"*, and *"if
+confidence is low, preserve uncertainty."* Here there was **no uncertainty to
+preserve**: the text was successfully recovered and then discarded, while the
+record went on claiming the page had been read.
 
 ## What this does and does not settle
 
@@ -227,6 +236,11 @@ different experiment — a new prompt, a new response parser, and a scoring path
 which is new code rather than a measurement of existing code. It should be
 commissioned deliberately if the roadmap wants it, and its result must never be
 reported as "Nemesis with vision", because it would not be Nemesis.
+
+🔴 **And the one sentence anyone proposing that should read first:** where vision
+is the only reader today, it emits **one box covering the whole page**. Leaning
+harder on the vision lane does not begin with a bigger model — it begins with
+building the path that asks for boxes at all, because the path does not exist.
 
 ## Reproducing it
 
