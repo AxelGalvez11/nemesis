@@ -24,17 +24,40 @@
  * 🔴 THE KEY IS NEVER PRINTED. It is read from an absolute path, handed to the
  * child environment, and reported only as the boolean `keyPresent`.
  *
+ * 🔴 THERE ARE TWO PRODUCTION SHAPES, NOT ONE, AND ONLY ONE OF THEM CAN SPEND
+ * ON A PAGE THAT ALREADY HAS TEXT. `parse-thread.ts:88` — the background worker
+ * — passes `{ lookAtFigures: true }`; the synchronous upload route deliberately
+ * does not, and says why in its own comment. `--figures` selects the worker
+ * shape. Running only the default shape would report "vision never fires" about
+ * a lane that does fire, on a different trigger, in the lane where the student
+ * is not waiting.
+ *
  * Usage (from apps/web):
- *   npx tsx scripts/vision-arm.mts <off|stub|live> <file.pdf>
+ *   npx tsx scripts/vision-arm.mts <off|stub|live> <file.pdf> [--figures] [--out <path>]
  * Prints one JSON object on stdout. Diagnostics go to stderr.
+ *
+ * `--out` writes that same object to a file the moment the document finishes.
+ * The runner skips a document whose file already exists, so a run killed at
+ * document 15 resumes at 16 rather than paying for 1..15 again.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
-const mode = process.argv[2];
-const file = process.argv[3];
+const argv = process.argv.slice(2);
+const positional: string[] = [];
+let outPath: string | undefined;
+let lookAtFigures = false;
+for (let i = 0; i < argv.length; i += 1) {
+  const arg = argv[i]!;
+  if (arg === "--figures") lookAtFigures = true;
+  else if (arg === "--out") outPath = argv[++i];
+  else positional.push(arg);
+}
+const mode = positional[0];
+const file = positional[1];
 if (!file || !["off", "stub", "live"].includes(mode ?? "")) {
-  console.error("usage: vision-arm.mts <off|stub|live> <file.pdf>");
+  console.error("usage: vision-arm.mts <off|stub|live> <file.pdf> [--figures] [--out <path>]");
   process.exit(2);
 }
 
@@ -62,22 +85,31 @@ if (mode === "off") {
 }
 
 /** What the model would have said. Shaped like a real `generateContent` reply so
- *  the production parser walks the same branches it walks on a live answer. */
-const STUB_REPLY = JSON.stringify({
-  candidates: [
-    {
-      content: {
-        parts: [
-          {
-            text:
-              "[[page 1]]\nSTUB VISION TEXT — this line was produced by the dry run, not by a model.\n" +
-              "It exists to prove the vision branch executed and its text reached the document model.",
-          },
-        ],
-      },
-    },
-  ],
-});
+ *  the production parser walks the same branches it walks on a live answer.
+ *
+ *  🔴 IT ANSWERS THE PROMPT IT WAS ACTUALLY SENT. The page lane wants
+ *  `[[page N]]` markers and the figure lane wants a numbered list exactly as long
+ *  as the batch — `parsePageTranscripts` and `parseFigureDescriptions` both
+ *  DISCARD a reply of the wrong shape, so a single generic stub would exercise
+ *  the two rejection paths and none of the success paths, and the dry run would
+ *  prove the opposite of what it is for. The prompt and the image count are read
+ *  out of the request body rather than guessed. */
+function stubReply(body: unknown): string {
+  const parsed = typeof body === "string" ? (JSON.parse(body) as Record<string, unknown>) : {};
+  const parts = ((parsed.contents as { parts?: unknown[] }[] | undefined)?.[0]?.parts ?? []) as Record<string, unknown>[];
+  const prompt = parts.map((p) => (typeof p.text === "string" ? p.text : "")).join(" ");
+  const images = parts.filter((p) => p.inline_data).length;
+  let text: string;
+  if (prompt.includes("These are figures taken from")) {
+    // One entry per image, or the whole batch is thrown away.
+    text = Array.from({ length: images }, (_, i) => `${i + 1}. STUB FIGURE DESCRIPTION ${i + 1} — written by the dry run, not by a model.`).join("\n");
+  } else if (prompt.includes("[[page N]]")) {
+    text = "[[page 1]]\nSTUB PAGE TRANSCRIPT — written by the dry run, not by a model.";
+  } else {
+    text = "STUB WHOLE-DOCUMENT TRANSCRIPT — written by the dry run, not by a model.";
+  }
+  return JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] });
+}
 
 let visionCalls = 0;
 let visionHttpOk = 0;
@@ -96,7 +128,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (model) modelsSeen.add(model);
   if (mode === "stub") {
     visionHttpOk += 1;
-    return new Response(STUB_REPLY, { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(stubReply(init?.body), { status: 200, headers: { "content-type": "application/json" } });
   }
   const response = await realFetch(input, init);
   if (response.ok) {
@@ -125,49 +157,58 @@ const started = Date.now();
 const name = file.split("/").pop() ?? "document.pdf";
 const common = {
   arm: mode,
+  shape: lookAtFigures ? "worker" : "upload",
   file: name,
   keyPresent: Boolean(process.env.GEMINI_API_KEY?.trim()),
   visionConfigured: visionConfigured(),
 };
 
+/** 🔴 WRITTEN THE MOMENT THIS DOCUMENT FINISHES, never accumulated for the end.
+ *  Two agent sessions have died mid-run on a watchdog; whatever was paid for
+ *  before the death has to still be on disk afterwards. */
+function emit(record: unknown): void {
+  const json = JSON.stringify(record);
+  process.stdout.write(json);
+  if (outPath) {
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, `${json}\n`);
+  }
+}
+
 try {
-  const outcome = await parseDocument(new Uint8Array(readFileSync(file)), name, "application/pdf");
+  const outcome = await parseDocument(new Uint8Array(readFileSync(file)), name, "application/pdf", {
+    lookAtFigures,
+  });
   const done = () => ({ ...common, visionCalls, visionHttpOk, usage, models: [...modelsSeen], ms: Date.now() - started });
 
   if (!outcome.ok) {
-    process.stdout.write(JSON.stringify({ ...done(), ok: true, empty: true, reason: outcome.reason, layout_pages: [] }));
+    emit({ ...done(), ok: true, empty: true, reason: outcome.reason, layout_pages: [] });
   } else if (!outcome.document.model) {
-    process.stdout.write(
-      JSON.stringify({ ...done(), ok: true, structural: false, textLength: outcome.document.text.length, layout_pages: [] }),
-    );
+    emit({ ...done(), ok: true, structural: false, textLength: outcome.document.text.length, layout_pages: [] });
   } else {
     const rendered = toParseBench(outcome.document.model);
-    process.stdout.write(
-      JSON.stringify({
-        ...done(),
-        ok: true,
-        structural: true,
-        readBy: outcome.document.readBy ?? null,
-        coverageState: outcome.document.coverage.state,
-        units: outcome.document.model.units.length,
-        blocks: outcome.document.model.blocks.length,
-        textLength: outcome.document.text.length,
-        ...rendered,
-      }),
-    );
+    emit({
+      ...done(),
+      ok: true,
+      structural: true,
+      readBy: outcome.document.readBy ?? null,
+      coverageState: outcome.document.coverage.state,
+      units: outcome.document.model.units.length,
+      blocks: outcome.document.model.blocks.length,
+      textLength: outcome.document.text.length,
+      ...rendered,
+    });
   }
 } catch (cause) {
-  process.stdout.write(
-    JSON.stringify({
-      ...common,
-      ok: false,
-      reason: "parser-crash",
-      detail: cause instanceof Error ? `${cause.name}: ${cause.message.slice(0, 300)}` : String(cause).slice(0, 300),
-      visionCalls,
-      visionHttpOk,
-      usage,
-      models: [...modelsSeen],
-      ms: Date.now() - started,
-    }),
-  );
+  emit({
+    ...common,
+    ok: false,
+    reason: "parser-crash",
+    detail: cause instanceof Error ? `${cause.name}: ${cause.message.slice(0, 300)}` : String(cause).slice(0, 300),
+    visionCalls,
+    visionHttpOk,
+    usage,
+    models: [...modelsSeen],
+    ms: Date.now() - started,
+  });
 }
