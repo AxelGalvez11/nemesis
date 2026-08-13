@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { canvasFromRow, canvasToRow, isMissingTableError, mergeSourceIntoCanvas } from "./canvas-store";
-import { emptyCanvas, type CanvasSource, type LearningCanvas } from "./canvas-model";
+import { quotedExcerpt } from "./canvas-grounding";
+import { emptyCanvas, type CanvasSource, type LearningCanvas, type SourceRef } from "./canvas-model";
 
 const NOW = "2026-08-06T00:00:00.000Z";
 
@@ -209,6 +210,138 @@ test("attaching never mutates the canvas it was given", () => {
   const snapshot = JSON.stringify(before);
   mergeSourceIntoCanvas(before, SOURCE);
   assert.equal(JSON.stringify(before), snapshot);
+});
+
+// ------------------------------ the duplicate a REAL caller produces (canvas 186d0749)
+//
+// 🔴 THE TEST ABOVE — "attaching the same source twice replaces it" — PASSES FOR A REASON
+// THAT NEVER HAPPENS IN PRODUCTION. It hands `mergeSourceIntoCanvas` the same `id`, and the
+// only caller never does: `use-canvas-session.ts` mints `s${sources.length + 1}`, a fresh
+// ordinal on every attach. So the guard below it —
+//
+//     canvas.sources.findIndex((candidate) => candidate.id === source.id)
+//
+// — could never fire, and a test asserted the opposite by supplying the one input the caller
+// cannot produce. That is a guard calibrated against itself.
+//
+// Measured in production: canvas `186d0749` holds ONE document three times, as `s2`/`s3`/`s4`.
+// The cost is not merely a repeated card. `emptyCoverage(canvas.sources.length)` sizes the
+// coverage denominator from this array, and coverage is DISCLOSED TO THE LEARNER — so a
+// document attached twice tells a student we understood a smaller fraction of their material
+// than we did. A source-accounting error becomes a claim about them.
+
+const DURABLE: CanvasSource = {
+  id: "s1",
+  title: "Top 300 drugs.pdf",
+  kind: "pdf",
+  excerpts: [
+    { id: "s1:e1", label: null, text: "atenolol" },
+    { id: "s1:e2", label: null, text: "losartan" },
+  ],
+  durability: "durable",
+  librarySourceId: "lib-aaa",
+};
+
+/** The SAME document, as the caller actually re-offers it: a new ordinal, excerpts re-keyed to it. */
+const AGAIN: CanvasSource = {
+  ...DURABLE,
+  id: "s2",
+  excerpts: [
+    { id: "s2:e1", label: null, text: "atenolol" },
+    { id: "s2:e2", label: null, text: "losartan" },
+  ],
+};
+
+test("🔴 one document attached twice is ONE source, not two", () => {
+  const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), DURABLE);
+  const after = mergeSourceIntoCanvas(first, AGAIN);
+  assert.equal(after.sources.length, 1, "the same library row must not occupy two slots");
+  assert.equal(after.sources[0]?.librarySourceId, "lib-aaa");
+});
+
+test("🔴 ...and every citation into it still resolves — the half that costs a learner", () => {
+  // 🔴 DEDUPING AND ORPHANING AN ANCHOR WOULD PASS THE TEST ABOVE. The canvas-local id is what
+  // `quotedExcerpt` matches, so a merge that keeps the INCOMING entry silently invalidates every
+  // citation already written against the surviving one. The merge must keep the id the existing
+  // anchors use and re-key the arriving excerpts onto it.
+  const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), DURABLE);
+  const cited: SourceRef = { sourceId: "s1", excerptId: "s1:e2" };
+  assert.ok(quotedExcerpt(first.sources, cited), "precondition: the citation resolves before the merge");
+
+  const after = mergeSourceIntoCanvas(first, AGAIN);
+
+  // 🔴 THE PRECONDITION IS PART OF THE TEST, NOT SCENERY. Without it every assertion below
+  // passes on the UNFIXED code — the duplicate is simply appended, so the original `s1` sits
+  // untouched at index 0 and its anchors resolve perfectly. A test that cannot fail before the
+  // fix cannot witness the fix. With it, this also fails on the plausible WRONG fix: replacing
+  // the existing entry with the arriving one dedupes correctly and orphans every anchor.
+  assert.equal(after.sources.length, 1, "precondition: the duplicate was actually merged");
+
+  const resolved = quotedExcerpt(after.sources, cited);
+  assert.ok(resolved, "a citation written before the duplicate arrived must still resolve");
+  assert.equal(resolved.excerpt.text, "losartan", "and it must resolve to the SAME text, not a neighbour");
+  assert.equal(after.sources[0]?.id, "s1", "the surviving source keeps the id anchors already point at");
+  assert.ok(
+    after.sources[0]?.excerpts.every((e) => e.id.startsWith("s1:")),
+    "arriving excerpts are re-keyed onto the surviving id",
+  );
+});
+
+test("a re-attach still REFRESHES what we know about the document", () => {
+  // Deduping must not mean ignoring. A second read that recovered more is the better record.
+  const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), { ...DURABLE, parseQuality: "degraded" });
+  const after = mergeSourceIntoCanvas(first, { ...AGAIN, parseQuality: "full" });
+  assert.equal(after.sources[0]?.parseQuality, "full");
+});
+
+test("🔴 a re-attach whose parse CHANGED never re-points an existing citation at other text", () => {
+  // 🔴 THE HAZARD IN THE OBVIOUS FIX. Re-keying arriving excerpts by position onto the surviving
+  // id is sound only while the two lists agree. If the stored parse changed between attaches —
+  // different boundaries, a recovered table, a page that finally read — then `s1:e2` would still
+  // RESOLVE and would resolve to different words. A dangling citation is visible and fixable; a
+  // silently redirected one is a false claim about what the source says.
+  const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), DURABLE);
+  const reparsed: CanvasSource = {
+    ...AGAIN,
+    excerpts: [
+      { id: "s2:e1", label: null, text: "atenolol" },
+      { id: "s2:e2", label: null, text: "SOMETHING ELSE ENTIRELY" },
+    ],
+  };
+  const after = mergeSourceIntoCanvas(first, reparsed);
+
+  assert.equal(after.sources.length, 1);
+  const resolved = quotedExcerpt(after.sources, { sourceId: "s1", excerptId: "s1:e2" });
+  assert.equal(resolved?.excerpt.text, "losartan", "the cited text must survive a divergent re-read");
+});
+
+test("an entry with nothing cited against it DOES take the arriving text", () => {
+  // Nothing can point at an empty excerpt list, so there is nothing to protect and the arriving
+  // text is strictly better. The re-key must land on the surviving id, not the arriving one.
+  const bare = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), { ...DURABLE, excerpts: [] });
+  const after = mergeSourceIntoCanvas(bare, AGAIN);
+  assert.equal(after.sources.length, 1);
+  assert.deepEqual(
+    after.sources[0]?.excerpts.map((e) => e.id),
+    ["s1:e1", "s1:e2"],
+  );
+  assert.ok(quotedExcerpt(after.sources, { sourceId: "s1", excerptId: "s1:e1" }));
+});
+
+test("🔴 two DIFFERENT documents are never merged", () => {
+  // Calibration in the other direction: a fix that over-merges would delete a learner's material.
+  const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), DURABLE);
+  const other = { ...DURABLE, id: "s2", title: "Syllabus.pdf", librarySourceId: "lib-bbb" };
+  assert.equal(mergeSourceIntoCanvas(first, other).sources.length, 2);
+});
+
+test("🔴 two ephemeral sources stay separate — absent is UNKNOWN, never 'the same thing'", () => {
+  // Neither has a library row, so nothing identifies them as one document. Collapsing them on
+  // shared absence would silently drop a file the learner attached.
+  const a: CanvasSource = { id: "s1", title: "Notes A.md", kind: "text", excerpts: [], durability: "ephemeral" };
+  const b: CanvasSource = { id: "s2", title: "Notes B.md", kind: "text", excerpts: [], durability: "ephemeral" };
+  const after = mergeSourceIntoCanvas(mergeSourceIntoCanvas(emptyCanvas("c1", NOW), a), b);
+  assert.equal(after.sources.length, 2);
 });
 
 // ------------------------------------------- shape changes and stored canvases

@@ -302,6 +302,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
           // dropped into a conversation should not silently become a permanent document.
           const extracted = await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+          // 🔴 A SLOT NUMBER, NOT A DOCUMENT IDENTITY — AND IT IS ONLY UNIQUE BECAUSE NOTHING
+          // REMOVES A SOURCE. This mints a fresh ordinal on every attach, which is why the
+          // duplicate guard in `mergeSourceIntoCanvas` used to compare `id` and could never
+          // fire: production canvas `186d0749` holds one document three times, as s2/s3/s4.
+          // Deduplication now happens there, on `librarySourceId`, which names the DOCUMENT.
+          //
+          // 🔴 IF YOU EVER ADD "remove this source", THIS LINE BECOMES A BUG. With one of three
+          // sources removed the next attach mints `s3` again, collides with the survivor, and
+          // the id branch of `isSameDocument` overwrites a DIFFERENT document. Deriving from a
+          // count is safe only while the count never goes down. Make it monotonic then — not
+          // now, because renaming ids is a migration for every stored canvas and every anchor
+          // already written against one.
           const sourceId = `s${latest.current.sources.length + 1}`;
           const note = coverageNote(extracted.coverage);
 
