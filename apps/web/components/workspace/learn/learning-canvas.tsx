@@ -376,7 +376,6 @@ export function LearningCanvas({
             onAdvance={advance}
             onAskSource={(block: CanvasBlock) => void session.askAbout(block, "Where in my material did this come from?")}
             onDismissAside={session.dismissAside}
-            onMarkKnown={session.markKnown}
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}

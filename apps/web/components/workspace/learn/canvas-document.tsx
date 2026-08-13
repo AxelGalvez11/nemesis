@@ -25,7 +25,6 @@ interface CanvasDocumentProps {
   busyBlockIds: string[];
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
-  onMarkKnown: (blockId: string, known: boolean) => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
   onAskSource: (block: CanvasBlock) => void;
   /** A marked vocabulary term was clicked. Handled above rather than here because the answer
@@ -46,7 +45,6 @@ export function CanvasDocument({
   busyBlockIds,
   aside,
   onDismissAside,
-  onMarkKnown,
   onToggleCollapsed,
   onAskSource,
   onTerm,
@@ -90,7 +88,14 @@ export function CanvasDocument({
     return () => document.removeEventListener("selectionchange", readSelection);
   }, [readSelection]);
 
-  const visible = canvas.blocks.filter((block) => !block.known);
+  // 🔴 NO SELF-REPORT HIDING (J1, owner 2026-08-13). This used to filter the list down by a
+  // per-block field the learner set with a one-click mastery-claim button, plus a bulk control
+  // that reversed it. Both are gone, deliberately, not merely unreachable: a learner CLAIMING
+  // knowledge is not a demonstration of it, and hiding material on that claim was changing the
+  // curriculum without evidence. Nemesis believes what the learner demonstrates, not what they
+  // say. (The underlying field, and what reads it elsewhere, is not this file's concern —
+  // Runtime owns that boundary.)
+  const visible = canvas.blocks;
 
   return (
     <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40" ref={root}>
@@ -103,7 +108,6 @@ export function CanvasDocument({
           key={block.id}
           onAskSource={() => onAskSource(block)}
           onDismissAside={onDismissAside}
-          onMarkKnown={() => onMarkKnown(block.id, true)}
           onToggleCollapsed={() => onToggleCollapsed(block.id, !block.collapsed)}
           onTerm={onTerm}
           onToggleSource={() => setOpenSource((current) => (current === block.id ? null : block.id))}
@@ -111,17 +115,6 @@ export function CanvasDocument({
           sourceOpen={openSource === block.id}
         />
       ))}
-
-      {canvas.blocks.some((block) => block.known) && (
-        <button
-          className="mt-8 block text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-          onClick={() => canvas.blocks.filter((b) => b.known).forEach((b) => onMarkKnown(b.id, false))}
-          type="button"
-        >
-          {canvas.blocks.filter((block) => block.known).length} section
-          {canvas.blocks.filter((block) => block.known).length === 1 ? "" : "s"} hidden as already known — show again
-        </button>
-      )}
 
       {next && (
         <button
@@ -145,7 +138,6 @@ interface BlockViewProps {
   aside: string | null;
   sourceOpen: boolean;
   onDismissAside: () => void;
-  onMarkKnown: () => void;
   onToggleCollapsed: () => void;
   onToggleSource: () => void;
   onAskSource: () => void;
@@ -160,7 +152,6 @@ function BlockView({
   aside,
   sourceOpen,
   onDismissAside,
-  onMarkKnown,
   onToggleCollapsed,
   onToggleSource,
   onAskSource,
@@ -206,7 +197,15 @@ function BlockView({
           surface there, and on hover here. */}
 
       {/* Controls stay hidden until the block is hovered or selected. The content is the
-          interface; the affordances are not. */}
+          interface; the affordances are not.
+          🔴 ONLY PROVENANCE LIVES HERE NOW (J1/J2, owner 2026-08-13). "I already know this" and
+          the manual fold are gone: the learner should not manage which AI-generated paragraphs
+          are necessary — that is Brain's job, decided from evidence, not a document-reader
+          affordance. Provenance survives because it answers a real question ("where did this
+          come from?") rather than editing what is shown; the three-button toolbar shape does
+          not — see J3 for what replaces it. `onToggleCollapsed` stays wired below (the
+          click-to-reopen branch further down) because collapsing here can still be MODEL-driven
+          (`collapse_block` in canvas-ops.ts) — only the learner's manual trigger is gone. */}
       {!block.collapsed && (
         <div className="pointer-events-none absolute -top-1 right-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
           {concepts.length > 0 && (
@@ -220,8 +219,6 @@ function BlockView({
           {(block.sourceRefs?.length ?? 0) === 0 && canvas.sources.length > 0 && (
             <BlockControl icon="question" label="Where did this come from?" onClick={onAskSource} />
           )}
-          <BlockControl icon="check" label="I already know this" onClick={onMarkKnown} />
-          <BlockControl icon="fold" label="Hide this detail" onClick={onToggleCollapsed} />
         </div>
       )}
 
