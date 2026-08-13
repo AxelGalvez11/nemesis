@@ -44,7 +44,7 @@ import {
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
 import { decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
-import { isAdmissionOfNotKnowing } from "@/lib/learn/response-admission";
+import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
 import { THINKING_VISIBLE_AFTER_MS, type ThinkingPhase } from "@/lib/learn/thinking-phases";
 
 import { useDelayedFlag } from "./use-delayed-flag";
@@ -396,10 +396,23 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
    *  and that is an observation about the attempt worth keeping — dropping it here would make the
    *  admission look like an opportunity nobody watched. It stays absent when nothing typed it. */
   const admitNothing = useCallback(
-    async (said: string | null, tookMs?: number) => {
+    async (
+      said: string | null,
+      tookMs?: number,
+      /**
+       * Which kind of non-attempt this was, for analytics only.
+       *
+       * 🔴 THE EVIDENCE IS IDENTICAL AND THE EVENT MUST NOT BE. An opportunity that produced no
+       * demonstration is one durable fact however it came about — that is the whole point of
+       * `unobtainedEvidence`. But someone who ECHOED the cue did not tell us they did not know, and
+       * filing them under `canvas_unknown_admitted` would put a statement in the analytics that the
+       * learner never made. Same row, different account of how we got there.
+       */
+      event: "canvas_unknown_admitted" | "canvas_cue_echoed" = "canvas_unknown_admitted",
+    ) => {
       const active = prompt;
       if (!active || !decision || !uid) return;
-      canvasCapture("canvas_unknown_admitted", canvas, { objective: decision.objective.identityKey });
+      canvasCapture(event, canvas, { objective: decision.objective.identityKey });
       setFeedback(null);
       await record(
         unobtainedEvidence({
@@ -429,6 +442,28 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       // path as the old button: an opportunity given, no demonstration obtained, no verdict.
       if (isAdmissionOfNotKnowing(said)) {
         await admitNothing(said, tookMs);
+        return;
+      }
+
+      // 🔴 GIVING BACK THE CUE IS NOT AN ATTEMPT EITHER, AND THE JUDGE CANNOT SEE IT. Asked "what is
+      // the brand for losartan?" and answered `losartan`, the learner produced the side they were
+      // HANDED and asserted nothing about the direction they were asked. Measured in production, the
+      // real judge read that as `partial`, confidence 0.30 — and it was not wrong to: the answer has
+      // maximum lexical overlap with the question, because the token is literally inside it. Every
+      // string, substring and embedding comparison scores it highly.
+      //
+      // The judge is asked "how good is this answer". The question nobody asked is whether an ATTEMPT
+      // was made at all — which is structural, so it belongs here, before the judge, beside the other
+      // non-attempt. Recorded as `partial` it becomes a durable claim that someone partly knows
+      // something they showed nothing about: absence of evidence stored as evidence.
+      if (
+        isEchoOfTheCue({
+          cue: decision.objective.cue,
+          expectedAnswer: active.expectedAnswer,
+          response: said,
+        })
+      ) {
+        await admitNothing(said, tookMs, "canvas_cue_echoed");
         return;
       }
 

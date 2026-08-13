@@ -38,6 +38,15 @@ export type CanvasEvent =
   // state; what that means for the concept is decided by combining it with performance evidence,
   // never by this event on its own.
   | "canvas_unknown_admitted"
+  // 🔴 THE OTHER NON-ATTEMPT, AND DELIBERATELY NOT THE SAME EVENT. The learner gave back the cue
+  // they were handed — asked for the brand for X, they answered X. Identical durable evidence to an
+  // admission (an opportunity passed, nothing demonstrated) and a DIFFERENT account of how we got
+  // there: they never told us they did not know, so filing them under `canvas_unknown_admitted`
+  // would put a statement in the record that the learner never made.
+  //
+  // Worth counting separately for a second reason: a rising rate here is a signal about the
+  // QUESTION, not the person. It means the prompt is inviting its own answer back.
+  | "canvas_cue_echoed"
   | "canvas_diagnosis_viewed"
   | "canvas_weakspots_relearned"
   | "canvas_retest_completed"
