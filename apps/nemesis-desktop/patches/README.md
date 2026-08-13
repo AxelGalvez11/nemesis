@@ -1,9 +1,10 @@
 # Nemesis fork patches
 
 Durable copies of the Nemesis fork commits (today they live in the
-`nemesis-desktop-public` repo; the original `~/.hermes/hermes-agent` checkout was
-retired 2026-07-14 to reclaim disk). Apply onto a fresh hermes-agent clone with
-`git am <patch>`.
+`nemesis-desktop-public` repo; the local chassis checkout these were built
+against was retired 2026-07-14 to reclaim disk — historical reference only,
+the path no longer resolves). Apply onto a fresh checkout of the upstream
+chassis with `git am <patch>`.
 
 - Commit 1 (brand reskin, mono default) is NOT stored here — it's fully regenerable:
   run `../reskin/apply-nemesis-reskin.mjs --hermes <checkout>`.

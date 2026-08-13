@@ -22,7 +22,7 @@ weeks by the stale compiled-.js shadow):
 - model-options + onboarding: explicit-providers change (37a4cf9000c) added
   request params the tests never learned.
 - fallback-model: hostnameOf intentionally includes the pathname.
-- streaming: Hermes→Nemesis loading-status string.
+- streaming: loading-status string now reads Nemesis.
 - attachments / pane-shell / use-preview-routing: latent test bugs (throwing
   getByTestId, missing resizable prop, persist-subscriber always writes '{}').
 - artifacts / preview / right-sidebar / panes: student-build product decisions

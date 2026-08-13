@@ -1,10 +1,10 @@
 # Nemesis — the "one go" build run (2026-07-09)
 
 *Owner: "do all of these in one go with verifications until all done." This is the execution plan of
-record for that run. Companion docs: [product shaping plan](nemesis-product-reskin-plan-2026-07.md)
-(anchors) · [study-pages research](../research/nemesis-study-pages-oss-2026-07.md) (stack choices).
-All work lands as sequential commits on the `nemesis/study-v1` branch of `~/.hermes/hermes-agent`,
-with patches archived in `apps/nemesis-desktop/patches/` after each stage.*
+record for that run. Companion doc: [study-pages research](../research/nemesis-study-pages-oss-2026-07.md)
+(stack choices). All work landed as sequential commits on the `nemesis/study-v1` branch of the local
+chassis checkout (since retired 2026-07-14), with patches archived in `apps/nemesis-desktop/patches/`
+after each stage.*
 
 ## Scope (what "all of these" means)
 1. **Student cuts** — hide Capabilities + Messaging pages, trim Settings to a student allow-list,

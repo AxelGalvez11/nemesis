@@ -11,7 +11,7 @@ I’d borrow Library’s calm shell: near-white editor surface, 1px dividers, co
 
 ## Today
 
-File: [apps/desktop/src/app/today/index.tsx](/Users/axelgalvez/.hermes/hermes-agent/apps/desktop/src/app/today/index.tsx)
+File: `apps/desktop/src/app/today/index.tsx` (chassis source — local checkout since retired)
 
 ### 1. Purpose and current shortcomings
 
@@ -160,9 +160,9 @@ It uses data the page already computes, gives immediate spatial understanding, a
 
 ## Study
 
-File: [apps/desktop/src/app/study/index.tsx](/Users/axelgalvez/.hermes/hermes-agent/apps/desktop/src/app/study/index.tsx)
+File: `apps/desktop/src/app/study/index.tsx` (chassis source — local checkout since retired)
 
-Supporting logic: [retention.ts](/Users/axelgalvez/.hermes/hermes-agent/apps/desktop/src/app/study/retention.ts), [model.ts](/Users/axelgalvez/.hermes/hermes-agent/apps/desktop/src/app/study/model.ts), [extras.ts](/Users/axelgalvez/.hermes/hermes-agent/apps/desktop/src/app/study/extras.ts)
+Supporting logic: `retention.ts`, `model.ts`, `extras.ts` (same directory)
 
 ### 1. Purpose and current shortcomings
 

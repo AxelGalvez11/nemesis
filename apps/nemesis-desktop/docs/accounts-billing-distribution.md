@@ -44,7 +44,9 @@ at that proxy. Until that lands, distribute builds only to trusted testers.
 ## Distribution (shipped except Apple credentials)
 
 - `npm run dist:mac:dmg` in `hermes-agent/apps/desktop` produces
-  `release/Nemesis-<version>-mac-arm64.dmg` (+ `.zip`).
+  `release/Nemesis-<version>-mac-arm64.dmg` (+ `.zip`). (`hermes-agent` here is the literal
+  directory name of the forked build checkout — the command needs the real name to run; it
+  isn't a product reference.)
 - App category is Education; the DMG has the drag-to-Applications window; microphone
   usage descriptions and the hardened-runtime `audio-input` entitlement are in place;
   the dormant update-feed config still needs a verified Nemesis-owned host before

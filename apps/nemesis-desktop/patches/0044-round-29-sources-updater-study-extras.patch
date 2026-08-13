@@ -9,9 +9,9 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 - About page (student): git-pull self-updater UNREACHABLE — replaced with
-  'updates ship with Nemesis releases' (the updater tracks upstream Hermes
-  main and rebuilds stock over the Nemesis fork; it reset this repo twice
-  today). updates.json pinned to nemesis/study-v1 as a belt.
+  'updates ship with Nemesis releases' (the updater tracks the upstream
+  chassis's main branch and rebuilds stock over the Nemesis fork; it reset
+  this repo twice today). updates.json pinned to nemesis/study-v1 as a belt.
 - Thinking preview: live one-line activity phrases (activity-phrase.ts,
   22 tests) with cross-fade, student-gated.
 - Graph controls: rotationSpeed slider (0–3), showNames + neighborGlow

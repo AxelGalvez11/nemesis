@@ -21,7 +21,7 @@ launched product is aggressively student-focused (Nemesis Academic).
   résumé evidence transition into job search / interview prep / workplace) is the real
   long-term differentiator — "the agent that grows from school into your career."
 - **Two layers, already reflected in the codebase:** the `NEMESIS_STUDENT_BUILD` flag IS
-  the Core/Academic boundary today. Nemesis Core = the modified-Hermes foundation (memory,
+  the Core/Academic boundary today. Nemesis Core = the modified agent-runtime foundation (memory,
   browser automation, connectors, tasks, scheduling, permissions, approval, audit ledger,
   local+cloud, skills/subagents). Nemesis Academic = what customers see (course model,
   syllabus parser, LMS skills, lecture pipeline, concept graph, mastery, planner,

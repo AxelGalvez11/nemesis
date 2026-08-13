@@ -2,7 +2,7 @@ From 8bbc0908cf2dcc12cc89e96b8675a189cc0d5555 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Sun, 12 Jul 2026 18:08:24 -0500
 Subject: [PATCH 69/70] fix(nemesis): graph connectivity-heatmap colors +
- fit-once framing; rebrand remaining 'Hermes' UI strings to Nemesis
+ fit-once framing; rebrand remaining UI strings to Nemesis
 
 Graph (apps/desktop/src/app/graph/index.tsx):
 - Node color is now a connectivity heatmap: unconnected/ghost nodes render light
