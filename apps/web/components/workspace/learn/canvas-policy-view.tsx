@@ -11,19 +11,24 @@
 // canvas; a retrieval prompt that grew its own textarea would put two of them on screen, which is
 // the exact thing the composer's own header says it exists to prevent.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
 
-/** How long a passed retrieval holds its verdict before moving on by itself.
+/** How long a passed retrieval holds its verdict on screen at minimum, before it is even
+ *  eligible to move on by itself.
  *
- *  🔴 LONG ENOUGH TO READ A SHORT SENTENCE, SHORT ENOUGH TO STILL FEEL LIKE RETRIEVAL. The owner's
- *  rule (compact-UI pass): "there should only be buttons for passages to be read, not for recall —
- *  that makes retrieval not feel quick." A correct answer has nothing left to acknowledge — the
- *  learner already produced it — so the verdict is read, not acted on. */
-const PASS_ADVANCE_MS = 2000;
+ *  🔴 A READABILITY FLOOR, NOT A CORRECTNESS GATE — that distinction is the whole reason this
+ *  number used to be dangerous and now is not. The gate that actually decides WHEN it is safe to
+ *  advance is `runtime.recording` (see below); this constant only decides how long the verdict is
+ *  guaranteed to sit still even if the write finishes instantly. Long enough to read a short
+ *  sentence, short enough to still feel like retrieval — the owner's rule (compact-UI pass):
+ *  "there should only be buttons for passages to be read, not for recall — that makes retrieval
+ *  not feel quick." A correct answer has nothing left to acknowledge — the learner already
+ *  produced it — so the verdict is read, not acted on. */
+const MIN_VERDICT_READ_MS = 2000;
 
 /**
  * What is on screen right now, as one value.
@@ -108,7 +113,14 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
   if (feedback) {
-    return <FeedbackScreen feedback={feedback} onAcknowledge={runtime.acknowledge} sharing={sharing} />;
+    return (
+      <FeedbackScreen
+        feedback={feedback}
+        onAcknowledge={runtime.acknowledge}
+        recording={runtime.recording}
+        sharing={sharing}
+      />
+    );
   }
 
   if (!decision) {
@@ -257,47 +269,55 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
  *  objective) actedOn entry. Only the trigger changes, from a click to a timer; nothing that
  *  depends on acknowledge()'s effects loses them.
  *
- *  🔴 THE REF, NOT THE CALLBACK, IN THE EFFECT'S DEPENDENCIES. `runtime.acknowledge` is a
- *  `useCallback` keyed on `decision`, and `decision` can legitimately change while this screen is
- *  up (`record()` re-reads evidence and moves `decidedAt` moments after the answer lands, well
- *  before the timer fires). Depending on the callback directly would either use a stale `decision`
- *  closure or restart the timer every time evidence refreshed; the ref always calls the current
- *  function without resetting how long the verdict has been on screen.
+ *  🔴 THE REF, NOT THE CALLBACK, IN THE SECOND EFFECT'S DEPENDENCIES. `runtime.acknowledge` is a
+ *  `useCallback` keyed on `decision`, and `decision` legitimately changes while this screen is up
+ *  (`record()` re-reads evidence and moves `decidedAt` once the write lands). Depending on the
+ *  callback directly would risk a stale `decision` closure at the exact moment it fires; the ref
+ *  always calls the current function.
  *
- *  🔴 A KNOWN, NARROW RACE — REPORTED TO BRAIN, NOT WORKED AROUND, BECAUSE THE FIX ISN'T MINE TO
- *  MAKE. `use-policy-runtime.ts`'s `submit()` calls `setFeedback(...)` — which mounts this screen
- *  and starts the timer — BEFORE `await record(...)` finishes writing evidence and refreshing it.
- *  If the write is slower than `PASS_ADVANCE_MS`, `acknowledge()` can fire while `record()` is
- *  still in flight, so `decideNext` recomputes from evidence that does not yet include this
- *  answer. Traced against `decideNext` itself (policy-runtime.ts): `actedOn` only REORDERS
- *  objectives, it never filters them out, so this only matters when the objective just answered
- *  is the sole one left with anything owed — every other case picks a different, correctly-
- *  evaluated objective first. In that one case the learner could see a fresh prompt for the thing
- *  they just answered correctly, which self-corrects a moment later once `refresh()` lands and
- *  `decision` recomputes. No evidence is ever written wrong — `record()` still completes and
- *  writes the real row regardless of what this screen shows in the meantime — the risk is a
- *  transient display flicker, not a data-correctness one. There is no signal exposed on
- *  `PolicyRuntime` this effect could gate on instead (`judging` is already false by the time
- *  `record()` starts); the clean fix is Runtime exposing something like a `recording` flag so this
- *  effect can wait for `!recording` rather than a blind timer. */
+ *  🔴 THE RACE THIS ORIGINALLY SHIPPED WITH IS CLOSED, NOT PAPERED OVER, AND HERE IS THE SHAPE OF
+ *  THE FIX. The first version gated purely on a timer: `submit()` calls `setFeedback(...)` before
+ *  `await record(...)` finishes writing evidence, so a timer alone could fire while a write was
+ *  still in flight — and worse than the display flicker first assessed, the learner could answer
+ *  AGAIN during that window, with the correct answer still visible, and have that echo recorded as
+ *  a real demonstration (Brain's override, and the owner's independently-documented §M3, arriving
+ *  at the same failure by different routes). `runtime.recording` is the real signal: true for the
+ *  whole span in which `evidence` disagrees with what the learner just did, false only once the
+ *  write and its re-read both land. `MIN_VERDICT_READ_MS` is still here, but it no longer decides
+ *  correctness — it only holds the verdict on screen a little longer when the write happens to be
+ *  fast, so a pass never flashes and vanishes. Advancing waits for the LATER of the two. And
+ *  `acknowledge()` itself now refuses outright while `recording` is true (see use-policy-
+ *  runtime.ts), so a bug in this gate costs a missed auto-advance, never a fabricated one. */
 function FeedbackScreen({
   feedback,
   sharing,
   onAcknowledge,
+  recording,
 }: {
   feedback: NonNullable<PolicyRuntime["feedback"]>;
   sharing: boolean;
   onAcknowledge: () => void;
+  recording: boolean;
 }) {
   const passed = verdictIsPass(feedback.evaluation.verdict);
   const latestAcknowledge = useRef(onAcknowledge);
   latestAcknowledge.current = onAcknowledge;
 
+  // The pure-readability half: guarantees a floor even if the write finishes instantly. Does not
+  // by itself decide when it is safe to advance -- see the second effect.
+  const [minReadDone, setMinReadDone] = useState(false);
   useEffect(() => {
     if (!passed) return;
-    const timer = window.setTimeout(() => latestAcknowledge.current(), PASS_ADVANCE_MS);
+    setMinReadDone(false);
+    const timer = window.setTimeout(() => setMinReadDone(true), MIN_VERDICT_READ_MS);
     return () => window.clearTimeout(timer);
   }, [passed]);
+
+  // The correctness half: only fires once the write this answer produced has actually landed.
+  useEffect(() => {
+    if (!passed || !minReadDone || recording) return;
+    latestAcknowledge.current();
+  }, [minReadDone, passed, recording]);
 
   return (
     <Frame sharing={sharing}>

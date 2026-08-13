@@ -65,24 +65,36 @@ test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their
 test("🔴 a passed retrieval gets no button and advances itself", async () => {
   const source = await SOURCE;
   assert.match(source, /const passed = verdictIsPass\(feedback\.evaluation\.verdict\)/);
-  assert.match(source, /if \(!passed\) return;/, "the auto-advance must be skipped on anything but a pass");
-  assert.match(
-    source,
-    /window\.setTimeout\(\(\) => latestAcknowledge\.current\(\), PASS_ADVANCE_MS\)/,
-    "must still call the real acknowledge() -- same feedback-clear, round bump and actedOn entry a click would have produced",
-  );
   assert.match(source, /\{!passed && \(/, "the Continue button must be conditional on NOT having passed");
 });
 
-test("🔴 the timer calls the CURRENT acknowledge, not a stale one, and never resets on evidence refresh", async () => {
+// The original 2000ms-timer design raced record()'s in-flight evidence write: a fast answer could
+// re-appear, with its own answer still on screen, before the write that proved it correct had
+// landed -- and answering again in that window would record the echo as a fabricated
+// demonstration. Runtime's `recording` flag closes this; these tests pin the closed version, not
+// the timer-only one that shipped it.
+test("🔴 advancing waits for BOTH the readability floor and the real write to land", async () => {
+  const source = await SOURCE;
+  assert.match(source, /if \(!passed \|\| !minReadDone \|\| recording\) return;/);
+  assert.match(source, /latestAcknowledge\.current\(\);/);
+  // The floor is real (guards against a flash-and-vanish verdict on a fast write) but must not be
+  // the thing deciding correctness by itself -- `recording` has to appear in the gate too.
+  assert.match(source, /setTimeout\(\(\) => setMinReadDone\(true\), MIN_VERDICT_READ_MS\)/);
+});
+
+test("🔴 the recording prop actually flows from the runtime, not a local guess", async () => {
+  const source = await SOURCE;
+  assert.match(source, /recording: boolean/, "FeedbackScreen must accept the real flag as a prop");
+  assert.match(source, /recording=\{runtime\.recording\}/, "and the call site must pass the runtime's own value");
+});
+
+test("🔴 the advance effect calls the CURRENT acknowledge, not a stale one", async () => {
   const source = await SOURCE;
   // `runtime.acknowledge` is keyed on `decision`, which can change while this screen is up (the
-  // answer's evidence re-read happens moments after the verdict lands, before the timer fires). A
-  // bare callback dependency would either close over a stale `decision` or restart the countdown
-  // every time evidence refreshed; the ref does neither.
+  // answer's evidence re-read moves `decidedAt` once the write lands). A bare callback dependency
+  // would risk a stale `decision` closure at the exact moment it fires; the ref does not.
   assert.match(source, /const latestAcknowledge = useRef\(onAcknowledge\)/);
   assert.match(source, /latestAcknowledge\.current = onAcknowledge/);
-  assert.match(source, /\}, \[passed\]\);/, "the effect must key on the verdict only, not on the callback identity");
 });
 
 test("🔴 a correction still waits for a click -- both other acknowledge sites keep their button", async () => {
