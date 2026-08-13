@@ -140,6 +140,25 @@ closer to ChatGPT or Claude than to a quiz app.
 | K4 | **Correctness is not announced unless there is a reason** — emphasise a misconception, not a score. |
 | K5 | **Navigation is scrolling; the control surface is the composer.** Remove explicit in-sequence navigation. The learner may type or dictate *"keep going"*, *"explain that"*, *"I don't understand preload"*, or simply answer. |
 | K6 | **Temporary states are ephemeral thinking previews, not permanent chrome** — *"Checking your reasoning…"*, *"Connecting this to the previous concept…"*, *"Looking for the weak point…"*, *"Building from what you already understand…"*. They fade in and disappear as content streams. Ingestion uses the same language: *"Reading the lecture…" → "Identifying the main concepts…" → "Ready."* No progress workflow unless the work genuinely takes long enough for progress to matter. |
+| K8 | 🔴 **The surface may remove, not only append.** A Canvas obeying every rule above can still be a chat log: no labels, no counters, and an ever-growing column of alternating turns. Prior interactions are *evidence*, and evidence lives in `learner_evidence`; they need not remain visible. Once an interaction has served its purpose it may collapse, fade, or leave the primary surface. See [`canvas-interaction-model.md` §A](./canvas-interaction-model.md#a-the-canvas-is-a-surface-not-a-transcript) — **including the precondition, which is that removing an element from the DOM must destroy nothing.** |
+
+### 🔴 K1 IS A BAN ON CEREMONY, NOT A BAN ON WORDS — reconciliation, 2026-08-13
+
+K1 forbids *"Correct"* banners; K4 says correctness is not announced without reason. The owner's
+interaction-model specification permits a **minimal** correctness signal — `✓`, or the word
+*Correct* — plus a subtle visual state change, and requires explicit `Partial` and `Misconception`
+labels where a wrong *model* must be named. **That is not a contradiction, and it must not be
+resolved by guessing.** The resolving principle:
+
+> A label must carry **information the learner needs**. It must never **narrate the machine.**
+
+A *"Correct"* banner after every right answer is machine narration — it tells the learner what they
+already knew, with ceremony proportional to nothing. A `✓` sized to be skipped past is punctuation.
+By the same rule, *"Partial"* and *"Misconception"* are **permitted under K1**: what kind of wrong
+this is is exactly the information the learner needs, and nothing else conveys it.
+
+Full four-tier contract:
+[`canvas-interaction-model.md` §G](./canvas-interaction-model.md#g-feedback-intensity-scales-with-information-value).
 
 ### 🔴 K7 — THE ONE THAT CAN GO WRONG QUIETLY, AND THE EXISTING INVARIANT THAT PREVENTS IT
 

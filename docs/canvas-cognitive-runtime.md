@@ -387,6 +387,17 @@ thinking Canvas wants the learner to perform:
 | Clinical application | Case simulation |
 | Conceptual system | A model that expands and collapses as needed |
 
+### 🔴 This table is Canvas choosing a surface. It is not the learner choosing a modality.
+
+Everything above describes surfaces **Canvas generates because the cognition calls for them.** The
+owner's interaction-model specification adds the opposite direction, and the two are easy to
+conflate: **type · dictate · draw are available to the learner in the composer regardless of what
+Canvas presented.** A learner facing a prose question may answer with a sketch because that is how
+they think.
+
+Both capabilities are required and neither substitutes for the other. See
+[`canvas-interaction-model.md` §E](./canvas-interaction-model.md#e-drawing-is-a-first-class-answer-modality).
+
 ---
 
 ## 11. Time horizon
@@ -583,6 +594,10 @@ Explicit prohibitions. Each one is a mistake that would look like progress.
 
 ## Related
 
+- [`canvas-interaction-model.md`](./canvas-interaction-model.md) — **how this reaches and returns
+  from a learner.** Additive to this document, owner spec 2026-08-13. This document is cognition;
+  that one is interaction. Its opening table marks which of its rules are new and which restate
+  something already written here — read that before implementing from it.
 - [`document-intelligence.md`](./document-intelligence.md) — what Nemesis can read
 - [`document-graph.md`](./document-graph.md) — the canonical document model
 - [`learning-canvas-pilot.md`](./learning-canvas-pilot.md) — the surface's own history
