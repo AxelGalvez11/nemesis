@@ -46,7 +46,7 @@ import {
   type RetrievalFormat,
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
-import { applyOps } from "@/lib/learn/canvas-ops";
+import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
 import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
@@ -79,7 +79,15 @@ export interface ActiveTask {
 /** Which part of the page is working. Local rather than global so §21 holds: simplifying one
  *  paragraph must light up that paragraph, not blank the document. */
 export interface BusyState {
-  kind: "lesson" | "command" | "recall" | "test" | "relearn" | "source" | null;
+  /**
+   * 🔴 `"rewrite"` IS NOT `"command"`, AND THE DIFFERENCE IS THE WHOLE POINT OF §11. Both scope to
+   * a block, but `"command"` also puts the COMPOSER into its busy state — which is right when the
+   * learner typed something and is waiting on it, and wrong when they asked a paragraph to rewrite
+   * itself. §11 says *"the existing passage enters a subtle processing state"*: the passage, not
+   * the page, and not the place they type. Reusing `"command"` here would have lit up the one
+   * control that has nothing to do with what is happening.
+   */
+  kind: "lesson" | "command" | "rewrite" | "recall" | "test" | "relearn" | "source" | null;
   /** The block a scoped command is working on, so only it shows as busy. */
   blockIds?: string[];
   label?: string;
@@ -95,6 +103,8 @@ export interface CanvasSession {
   judging: string | null;
   ready: boolean;
   dismissError: () => void;
+  /** §11 — restore a passage the learner had rewritten, from the copy kept on the block. */
+  restoreRewritten: (blockId: string) => void;
   dismissAside: () => void;
   attachFiles: (files: FileList | File[]) => Promise<void>;
   /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
@@ -1206,13 +1216,24 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       });
 
       if (action === "simpler") {
+        // 🔴 THE PASSAGE SHOWS THE WORK, NOT THE POPOVER (§11). `setSelectionBusy` drives the
+        // toolbar the learner just clicked; on its own it left the paragraph — the thing actually
+        // being rewritten — looking untouched until the new wording appeared out of nowhere.
+        if (selection.blockId) setBusy({ blockIds: [selection.blockId], kind: "rewrite" });
         const result = await simplifySelection(id, latest.current, selection);
         setSelectionBusy(false);
+        setBusy({ kind: null });
         if (!result.value) {
           setSelectionError(result.error);
           return null;
         }
-        update((current) => applyOps(current, result.value!.ops));
+        // 🔴 `applyRewrite`, NOT `applyOps` — and the difference is a field that already existed
+        // and was being thrown away. `simplifySelection` has always returned `before`, captured at
+        // the moment of the write with the comment *"once the ops are applied the original wording
+        // is gone and no later step can reconstruct it"*. Nothing read it. §11's *"keep the old
+        // version internally so it can be restored"* was one assignment away the whole time.
+        const rewrite = result.value;
+        update((current) => applyRewrite(current, rewrite));
         return null;
       }
 
@@ -1227,6 +1248,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordEvent, requireUid, update],
   );
 
+  /** §11 — put a rewritten passage back the way it was written. Local, immediate and free: the
+   *  previous wording is already on the block, so this costs no model call and cannot fail. */
+  const restoreRewritten = useCallback(
+    (blockId: string) => {
+      recordEvent({ blockId, type: "simplification_restored" });
+      update((current) => restoreBlock(current, blockId));
+    },
+    [recordEvent, update],
+  );
+
   return {
     canvas,
     busy,
@@ -1235,6 +1266,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     judging,
     ready,
     dismissError: () => setError(null),
+    restoreRewritten,
     dismissAside: () => setAside(null),
     attachFiles,
     begin,

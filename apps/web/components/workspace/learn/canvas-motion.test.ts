@@ -226,3 +226,64 @@ test("🔴 neither deleted pre-content screen can come back (§1)", async () => 
     assert.equal(code.includes(gone), false, `${gone} is back — §1 deleted it, and the composer is the entry point now`);
   }
 });
+
+test("§11 — a passage being rewritten forms left to right, it does not throb", async () => {
+  const document_ = await read("./canvas-document.tsx");
+  // 🔴 THE SPECIFIC REGRESSION: `busy && "animate-pulse"`. A whole-element opacity throb is a WAIT
+  // signal; §20 asks for one motion system, "information forming from left to right", and a
+  // paragraph being rewritten is information being formed. The band is shared with the thinking
+  // preview so the two read as one system rather than two effects.
+  assert.match(document_, /busy && "canvas-rewriting"/);
+  assert.ok(
+    !/busy && "animate-pulse"/.test(document_),
+    "a rewriting passage must not fall back to the pulse it replaced",
+  );
+
+  const css = await read("../../../app/globals.css");
+  assert.match(css, /@keyframes canvas-rewriting \{ from \{ background-position: 200% 0; \}/);
+  // 🔴 NO FILL, WHICH IS THE DIFFERENCE FROM `.canvas-forming`. That class paints a solid bar
+  // because it stands in for text that does not exist yet. §11's text is on screen and being read,
+  // so the band travels BEHIND the words rather than covering them.
+  const rule = /\.canvas-rewriting \{([\s\S]*?)\}/.exec(css);
+  assert.ok(rule?.[1], "expected the .canvas-rewriting rule");
+  assert.ok(!/background-color/.test(rule[1]), "the existing passage must stay legible while it rewrites");
+
+  // Reduced motion: the sweep stops, the state stays visible. Someone who asked the system to stop
+  // moving still has to be able to see which paragraph is busy.
+  const reduced = css.slice(css.indexOf("prefers-reduced-motion"));
+  assert.match(reduced, /\.canvas-rewriting,/, "the new animation must be listed in the reduced-motion block");
+  assert.match(reduced, /\.canvas-rewriting \{ background-image: none; \}/);
+});
+
+test("§11 — the way back to the original is drawn at rest, and only where the learner rewrote something", async () => {
+  const document_ = await read("./canvas-document.tsx");
+  // Located by its own label rather than by a shape, so the guard cannot quietly start reading a
+  // different button — which is exactly what it did on the first run, and it reported the OTHER
+  // button's `opacity-0` as this one's defect.
+  const label = document_.indexOf("Show how this was written");
+  assert.ok(label > 0, "expected the restore control");
+  const open = document_.lastIndexOf("<button", label);
+  // 🔴 AND THE CODE, NOT THE COMMENT — the second way this same guard misread itself. The control
+  // carries a note explaining that it must NOT be `opacity-0`, and reading raw source found that
+  // phrase and reported it as the defect. A guard that fails on the sentence documenting the rule
+  // gets "fixed" by deleting the explanation.
+  const control = [
+    document_
+      .slice(open, document_.indexOf("</button>", label))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1"),
+  ];
+  // 🔴 THE SAME RULE #578 SPENT A SECTION ON, APPLIED TO MY OWN CODE. I wrote this with
+  // `opacity-0 group-hover:opacity-100` first — the exact spelling that left 62 of 62 Library row
+  // controls invisible at rest and absent entirely on a touch screen. Restraint here is the colour
+  // and the size, never the visibility.
+  const markup = control[0] ?? "";
+  assert.ok(markup.length > 0, "expected markup for the restore control");
+  assert.ok(!/opacity-0/.test(markup), "the restore control must not be invisible until hover");
+  assert.ok(!/group-hover:opacity/.test(markup), "hover cannot be the only thing that draws it");
+  assert.match(markup, /text-\(--ui-text-quaternary\)/, "quiet, though (§19)");
+
+  // Only on blocks the LEARNER rewrote. The teaching loop replaces blocks through the same op, and
+  // offering an undo for a change nobody asked for is worse than offering none.
+  assert.match(document_, /!busy && isRewritten\(block\)/);
+});

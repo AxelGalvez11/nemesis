@@ -437,6 +437,9 @@ export function LearningCanvas({
             next={next}
             onAdvance={advance}
             onDismissAside={session.dismissAside}
+            // §11 — free and local: the previous wording is already on the block, so this is a
+            // state change rather than a request, and it cannot fail.
+            onRestore={session.restoreRewritten}
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
