@@ -11,6 +11,36 @@
 // evidence. Moving a canvas into a folder is a fact about the learner's shelf, not about the
 // learner.
 //
+// 🔴 EVERY FUNCTION HERE DRAWS SOMETHING (§38.3, owner 2026-08-13). Measured on the live Library
+// and reproduced in `/dev-preview/library` at 1280x800:
+//
+//     rows in the list                        62
+//     row-action buttons with opacity 0       62      ← ALL of them, at rest
+//     <svg> elements anywhere in the list      0
+//
+// The owner's words were *"make sure that all library functions have UI decoration"*, and the
+// finding underneath them is precise: **the functions were not missing, they were invisible**.
+// Rename, move, pin and delete all lived behind a control that painted nothing until the pointer
+// crossed its row, so a canvas manager read as a bare list of text — and on a touch screen, where
+// there is no hover, the actions had no affordance at all.
+//
+// 🔴 THE `<svg>` COUNT IS A SEPARATE POINT, AND NOT THE ONE THAT MATTERED. The glyphs here were
+// `Codicon`s — `<i class="codicon …">` styled by a webfont — which is why a count of `<svg>` came
+// back zero even where an icon was drawn. Checked rather than assumed: `document.fonts.check('16px
+// codicon')` is TRUE in this app and the glyphs measured 18x18, so the font was not broken. They
+// are lucide SVGs now for two reasons that are both real but neither dramatic: the owner
+// re-verifies by counting `<svg>`, and an icon font that fails to load leaves a control that
+// measures, takes clicks and draws nothing — which is exactly the failure this section is about.
+//
+// 🔴 DECORATION MEANS "YOU CAN SEE THE CONTROL EXISTS", NOT "THE LIST IS ORNAMENTED" (§19). Quiet
+// glyphs, hover states, subtle borders. No cards, no badges, no colour, no progress, no counts.
+// The reference register is ChatGPT, not a study app.
+//
+// 🔴 AND NOTHING HERE IS DERIVED FROM DATA THAT DOES NOT EXIST. "What distinguishes one canvas
+// from another at a glance" is answered by its KIND (folder vs canvas) and by the pin the learner
+// set themselves. A source count or a preview would be a confident false claim — see the note
+// directly below, which is the reason.
+//
 // 🔴 NO PREVIEW, AND NO SOURCE COUNT. §L's mock shows a `Sources` column; it does not ship, and
 // not for cost reasons. `canvas_sources` is empty in production while canvases carry their
 // sources inside `document`, so a count over that table would render `0` on a canvas with
@@ -19,8 +49,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ArrowUpDown,
+  Ellipsis,
+  Folder as FolderIcon,
+  FolderPlus,
+  Inbox,
+  Layers,
+  Pencil,
+  Pin,
+  PinOff,
+  PanelsTopLeft,
+  Search,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 
-import { Codicon } from "@/components/desktop-ui/codicon";
 import {
   createFolder,
   deleteCanvas,
@@ -186,10 +230,10 @@ export function CanvasManager({
         <h1 className="mr-auto text-[20px] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Library</h1>
 
         <div className="relative">
-          <Codicon
+          <Search
             className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
-            name="search"
-            size="12px"
+            size={13}
+            strokeWidth={1.7}
           />
           <input
             aria-label="Search canvases"
@@ -200,25 +244,36 @@ export function CanvasManager({
           />
         </div>
 
-        <select
-          aria-label="Sort canvases"
-          className="rounded-lg bg-(--ui-bg-tertiary) px-[8px] py-[6px] text-[13px] text-(--ui-text-secondary) outline-none"
-          onChange={(event) => setSort(event.target.value as CanvasSort)}
-          value={sort}
-        >
-          <option value="recent">Last opened</option>
-          <option value="name">Name</option>
-        </select>
+        {/* 🔴 A GLYPH ON THE LEFT, AND DELIBERATELY NO CHEVRON. This is a native <select>, so the
+            browser already draws its own arrow on the right — a second one would say "menu" twice
+            and say nothing about what the menu is for. The sort icon is the missing half: at rest
+            the control read as the words "Last opened" with no indication they were a choice. */}
+        <div className="relative">
+          <ArrowUpDown
+            className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
+            size={13}
+            strokeWidth={1.7}
+          />
+          <select
+            aria-label="Sort canvases"
+            className="cursor-pointer rounded-lg bg-(--ui-bg-tertiary) py-[6px] pl-[27px] pr-[6px] text-[13px] text-(--ui-text-secondary) outline-none hover:text-(--ui-text-primary)"
+            onChange={(event) => setSort(event.target.value as CanvasSort)}
+            value={sort}
+          >
+            <option value="recent">Last opened</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
 
         <button
-          className="flex items-center gap-1.5 rounded-lg px-[10px] py-[6px] text-[13px] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          className="flex items-center gap-1.5 rounded-lg px-[10px] py-[6px] text-[13px] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={async () => {
             const name = window.prompt(current ? `New folder inside ${current.name}` : "New folder");
             if (name?.trim()) await act(createFolder(userId, name.trim(), current?.id ?? null));
           }}
           type="button"
         >
-          <Codicon name="new-folder" size="12px" />
+          <FolderPlus size={13} strokeWidth={1.7} />
           New folder
         </button>
       </div>
@@ -229,48 +284,56 @@ export function CanvasManager({
           <span>Searching every canvas</span>
         ) : (
           <>
-            <button
-              className={cn("rounded px-1", scope === undefined ? "text-(--ui-text-primary)" : "hover:text-(--ui-text-secondary)")}
-              onClick={() => open(undefined)}
-              type="button"
-            >
-              All canvases
-            </button>
+            {/* 🔴 THE TWO FILTERS NOW LOOK LIKE CONTROLS (§38.3). They were bare words in the
+                breadcrumb's own grey, so "All canvases" and "Unfiled" read as a label rather than
+                as the two views they switch between — and which one you were in was carried by a
+                text colour alone. A glyph plus a quiet selected fill is a segmented control, which
+                is chrome; it is not a card or a badge (§19). */}
+            <ScopeTab active={scope === undefined} icon={Layers} label="All canvases" onClick={() => open(undefined)} />
+            {/* 🔴 GOING BACK UP IS A LIBRARY FUNCTION TOO (§38.3), and it was the least visible one
+                on the surface: a bare word in the breadcrumb's own grey, changing colour only on
+                hover, which is nothing at all on a touch screen. It reads as a control now — a
+                folder glyph and the same hover fill every other control here uses. It only renders
+                inside a nested folder, which is why the top-level screenshots never showed it. */}
             {current?.parentId && (
               <>
-                <span>/</span>
+                <span aria-hidden="true">/</span>
                 <button
-                  className="rounded px-1 hover:text-(--ui-text-secondary)"
+                  aria-label={`Back to ${folders.find((entry) => entry.id === current.parentId)?.name ?? "the parent folder"}`}
+                  className="flex items-center gap-1.5 rounded-lg px-[8px] py-[4px] transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
                   onClick={() => {
                     const parent = folders.find((entry) => entry.id === current.parentId);
                     if (parent) open(parent);
                   }}
                   type="button"
                 >
+                  <FolderIcon size={13} strokeWidth={1.7} />
                   {folders.find((entry) => entry.id === current.parentId)?.name ?? "…"}
                 </button>
               </>
             )}
+            {/* Where you are, which is a statement rather than a control — so it is marked with the
+                same glyph but deliberately gets no hover, no fill and no button. */}
             {current && (
               <>
-                <span>/</span>
-                <span className="px-1 text-(--ui-text-primary)">{current.name}</span>
+                <span aria-hidden="true">/</span>
+                <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
+                  <FolderIcon size={13} strokeWidth={1.7} />
+                  {current.name}
+                </span>
               </>
             )}
             {scope === null && (
               <>
-                <span>/</span>
-                <span className="px-1 text-(--ui-text-primary)">Unfiled</span>
+                <span aria-hidden="true">/</span>
+                <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
+                  <Inbox size={13} strokeWidth={1.7} />
+                  Unfiled
+                </span>
               </>
             )}
             {scope === undefined && (
-              <button
-                className="ml-2 rounded px-1 hover:text-(--ui-text-secondary)"
-                onClick={() => open(null)}
-                type="button"
-              >
-                Unfiled
-              </button>
+              <ScopeTab active={false} icon={Inbox} label="Unfiled" onClick={() => open(null)} />
             )}
           </>
         )}
@@ -309,16 +372,17 @@ export function CanvasManager({
               />
             ) : (
               <button className="flex flex-1 items-center gap-2 text-left" onClick={() => open(folder)} type="button">
-                <Codicon className="text-(--ui-text-quaternary)" name="folder" size="13px" />
+                <FolderIcon className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={1.7} />
                 <span className="truncate text-[14px] text-(--ui-text-primary)">{folder.name}</span>
               </button>
             )}
             <span className="w-[110px] shrink-0" />
             <RowMenu
               actions={[
-                { label: "Rename", run: () => setEditing({ id: folder.id, kind: "folder", value: folder.name }) },
-                { label: "Delete folder", run: () => setConfirming(folder) },
+                { icon: Pencil, label: "Rename", run: () => setEditing({ id: folder.id, kind: "folder", value: folder.name }) },
+                { danger: true, icon: Trash2, label: "Delete folder", run: () => setConfirming(folder) },
               ]}
+              name={folder.name}
             />
           </div>
         ))}
@@ -346,8 +410,18 @@ export function CanvasManager({
                 onClick={() => router.push(`/learn?c=${canvas.id}`)}
                 type="button"
               >
-                {canvas.pinnedAt && <Codicon className="text-(--ui-text-quaternary)" name="pinned" size="11px" />}
+                {/* 🔴 A CANVAS ROW HAD NO GLYPH AT ALL, so a folder was marked and a canvas was
+                    bare — the list read as "two folders, then some text". This says only what is
+                    certainly true: this row is a canvas. 🔴 A PLAIN SQUARE WAS THE FIRST TRY AND IT
+                    READ AS AN EMPTY CHECKBOX — 62 of them down the left edge invite a selection
+                    this surface does not have. A panelled workspace glyph cannot be mistaken for one.
+                    Nothing here is derived from the canvas's CONTENTS, because `canvas_sources` is
+                    empty in production and a count over it would render 0 on a canvas that has
+                    material attached (see the header note). */}
+                <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={13} strokeWidth={1.7} />
                 <span className="truncate text-[14px] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
+                {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
+                {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={1.8} />}
               </button>
             )}
             <span className="w-[110px] shrink-0 text-right text-[13px] text-(--ui-text-quaternary)">
@@ -355,8 +429,9 @@ export function CanvasManager({
             </span>
             <RowMenu
               actions={[
-                { label: "Rename", run: () => setEditing({ id: canvas.id, kind: "canvas", value: canvas.title }) },
+                { icon: Pencil, label: "Rename", run: () => setEditing({ id: canvas.id, kind: "canvas", value: canvas.title }) },
                 {
+                  icon: canvas.pinnedAt ? PinOff : Pin,
                   label: canvas.pinnedAt ? "Unpin" : "Pin",
                   run: () =>
                     void fileAndVerify(
@@ -368,6 +443,7 @@ export function CanvasManager({
                 ...(canvas.folderId
                   ? [
                       {
+                        icon: Inbox,
                         label: "Move to Unfiled",
                         run: () =>
                           void fileAndVerify(
@@ -381,6 +457,7 @@ export function CanvasManager({
                 ...folders
                   .filter((folder) => folder.id !== canvas.folderId)
                   .map((folder) => ({
+                    icon: FolderIcon,
                     label: `Move to ${folder.name}`,
                     run: () =>
                       void fileAndVerify(
@@ -391,6 +468,7 @@ export function CanvasManager({
                   })),
                 {
                   danger: true,
+                  icon: Trash2,
                   label: "Delete canvas",
                   run: () => {
                     // Soft delete — the row is flagged, never removed, and the learner's
@@ -402,6 +480,7 @@ export function CanvasManager({
                   },
                 },
               ]}
+              name={canvas.title || "Untitled canvas"}
             />
           </div>
         ))}
@@ -484,8 +563,45 @@ export function CanvasManager({
   );
 }
 
+/** One of the two views the list can be in. A control, not a word (§38.3). */
+function ScopeTab({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg px-[8px] py-[4px] text-[13px] transition-colors",
+        active
+          ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
+          : "text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon size={13} strokeWidth={1.7} />
+      {label}
+    </button>
+  );
+}
+
+interface RowAction {
+  label: string;
+  run: () => void;
+  icon: LucideIcon;
+  danger?: boolean;
+}
+
 /** The per-row overflow. Small, and only ever filing actions — never a learning action (§48). */
-function RowMenu({ actions }: { actions: { label: string; run: () => void; danger?: boolean }[] }) {
+function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -497,23 +613,39 @@ function RowMenu({ actions }: { actions: { label: string; run: () => void; dange
 
   return (
     <div className="relative w-[24px] shrink-0">
+      {/* 🔴 THE ONE MEASURED DEFECT §38.3 IS ABOUT. This carried `opacity-0` with
+          `group-hover:opacity-100`, so EVERY row's rename, move, pin and delete lived behind a
+          control that painted nothing until the pointer crossed it — 62 of 62 rows measured at
+          `opacity: 0` at rest. On a touch screen, where there is no hover at all, they had no
+          affordance whatsoever.
+
+          It is drawn now and it is still quiet: the faintest text colour in the system, no
+          border, no fill, stepping up to the ordinary hover treatment the rest of the surface
+          uses. Visible ≠ loud (§19).
+
+          🔴 AND IT SAYS WHICH ROW IT BELONGS TO. "Canvas actions" repeated 62 times is one label
+          for 62 different controls, which is unusable with a screen reader and was also why the
+          owner's own probe could only report that a button existed. The visible name is in the
+          row beside it, so this is `aria-label` only. */}
       <button
-        aria-label="Canvas actions"
-        className="flex h-[24px] w-[24px] items-center justify-center rounded text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:opacity-100 group-hover:opacity-100"
+        aria-label={`Actions for ${name}`}
+        className="flex h-[24px] w-[24px] items-center justify-center rounded-md text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:bg-(--ui-bg-tertiary) focus-visible:text-(--ui-text-primary)"
         onClick={(event) => {
           event.stopPropagation();
           setOpen((value) => !value);
         }}
         type="button"
       >
-        <Codicon name="ellipsis" size="12px" />
+        <Ellipsis size={14} strokeWidth={1.8} />
       </button>
       {open && (
         <div className="absolute right-0 top-full z-40 mt-1 max-h-[260px] w-[190px] overflow-y-auto rounded-xl bg-(--ui-bg-elevated) p-1 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)">
+          {/* Every item in the menu is named AND drawn: §38.3 is "all library functions", and the
+              menu is where rename, pin, move and delete actually live. */}
           {actions.map((action) => (
             <button
               className={cn(
-                "block w-full truncate rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-(--ui-bg-tertiary)",
+                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-(--ui-bg-tertiary)",
                 action.danger ? "text-red-500" : "text-(--ui-text-secondary)",
               )}
               key={action.label}
@@ -524,7 +656,8 @@ function RowMenu({ actions }: { actions: { label: string; run: () => void; dange
               }}
               type="button"
             >
-              {action.label}
+              <action.icon className="shrink-0 opacity-70" size={13} strokeWidth={1.7} />
+              <span className="truncate">{action.label}</span>
             </button>
           ))}
         </div>

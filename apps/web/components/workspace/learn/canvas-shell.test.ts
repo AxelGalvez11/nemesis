@@ -34,7 +34,11 @@ function classesOf(source: string, tag: string): string {
 }
 
 test("the top controls are a transparent layer, never a header bar", () => {
-  const header = classesOf(read("canvas-header.tsx"), "header");
+  // 🔴 REPOINTED TO canvas-surface.tsx, WHERE THE ELEMENT NOW LIVES — not weakened. §38.2 makes the
+  // `×` the only way out of a canvas, so the floating strip and the exit inside it were hoisted
+  // above `learning-canvas.tsx`'s render branches, where no branch can omit them. The property
+  // being guarded is unchanged: no border, no background, no shadow, no backdrop.
+  const header = classesOf(read("canvas-surface.tsx"), "header");
 
   // The measured defect: a full-width painted edge under the controls.
   assert.ok(!/\bborder(-[btxy])?\b/.test(header), `header must not carry a border: ${header}`);
@@ -76,7 +80,9 @@ test("the shell reserves clearance with padding rather than a header element", (
   // 🔴 AND IT IS WRITTEN IN PX, WHICH IS LOAD-BEARING HERE. `apps/web`'s root is 112.5%, so any
   // rem-expressed width would render 12.5% larger than its number — 42rem, the shared chat
   // composer's max width, is 756px and not 672. See canvas-composer.tsx's header.
-  assert.match(shell, /"--canvas-column" as string\]: "680px"/);
+  // The sheet and its measure moved to canvas-surface.tsx with the <main> the exit had to sit on.
+  assert.match(read("canvas-surface.tsx"), /"--canvas-column" as string\]: CANVAS_COLUMN_PX/);
+  assert.match(read("canvas-surface.tsx"), /CANVAS_COLUMN_PX = "680px"/);
   assert.match(read("canvas-composer.tsx"), /max-w-\[768px\]/);
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
@@ -156,7 +162,7 @@ test("nothing offers a one-key reveal of the answer", () => {
 });
 
 test("the top scrim fades to nothing, so it draws no edge", () => {
-  const shell = read("learning-canvas.tsx");
+  const shell = read("canvas-surface.tsx");
   const scrim = /className="pointer-events-none absolute inset-x-0 top-0 [^"]*bg-gradient-to-b ([^"]+)"/.exec(shell);
   assert.ok(scrim?.[1], "expected a top scrim on the canvas");
   // A gradient terminating in a colour would put a step at its lower edge — which is a divider

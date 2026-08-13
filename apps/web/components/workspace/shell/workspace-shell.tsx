@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
+import { ImmersiveSurfaceProvider, useImmersiveClaimed } from "./immersive-surface";
 import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
@@ -70,7 +71,20 @@ const SHELL_VARS: React.CSSProperties = {
   ["--right-rail-top-inset" as string]: "0px",
 };
 
+/**
+ * 🔴 THE PROVIDER HAS TO SIT ABOVE THE THING THAT READS IT, so the shell proper is one component
+ * down. A surface inside `children` claims the viewport (§38.1) and `WorkspaceChrome` reads the
+ * claim — both need the same context, and a provider cannot read its own value.
+ */
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+  return (
+    <ImmersiveSurfaceProvider>
+      <WorkspaceChrome>{children}</WorkspaceChrome>
+    </ImmersiveSurfaceProvider>
+  );
+}
+
+function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   const preview = useWorkspacePreview();
   const { session } = useAuth();
   const router = useRouter();
@@ -110,7 +124,12 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // 🔴 THE DECISION IS A VALUE, NOT A CONDITION HERE — see lib/workspace/shell-navigation.ts. As
   // JSX conditions, "the rail is hidden" and "the learner has no way to reach it" were the same
   // expression, so the second could not be asserted and went unnoticed on `/learn`.
+  // 🔴 §38.1 — INSIDE A CANVAS THERE IS NO RAIL AT ALL, not a collapsed one with a toggle. The
+  // claim comes from `CanvasSurface`, which is also what guarantees the `×` that replaces it; see
+  // immersive-surface.tsx for why this is a declaration rather than a route or a query read.
+  const immersiveClaimed = useImmersiveClaimed();
   const { focusMode, navToggleShowing, sidebarVisible } = shellNavigation({
+    immersiveClaimed,
     libraryFullScreen,
     narrowViewport,
     pathname,

@@ -31,10 +31,23 @@ import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
+import { CanvasSurface } from "./canvas-surface";
 import { useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
+
+/**
+ * Where the `×` puts the learner down.
+ *
+ * 🔴 `/learn`, WAS `/sessions` — a deliberate change, called out here so it can be reversed in one
+ * line. `/sessions` is the CHAT surface; it is not where canvases live. That was tolerable while
+ * the nav rail was one click away from every canvas, because a learner who landed somewhere odd
+ * could simply navigate. §38.1 removes the rail from inside a canvas and §38.2 makes this control
+ * the only way out — so the one place it leads had better be the front door, which is `/learn`:
+ * the composer, with the learner's own canvases listed beneath it.
+ */
+const CANVAS_EXIT_ROUTE = "/learn";
 
 export function LearningCanvas({
   canvasId,
@@ -56,6 +69,10 @@ export function LearningCanvas({
   policyOverride?: PolicyOverride;
 }) {
   const router = useRouter();
+  // 🔴 DEFINED BEFORE THE EARLY RETURN, so both render branches use the same one. The processing
+  // branch below returns before most of this component exists; anything the exit needs has to be
+  // above it, and a second inline handler down in the JSX is how the two would drift apart.
+  const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
   const policy = usePolicyRuntime(canvas, policyOverride);
@@ -266,15 +283,24 @@ export function LearningCanvas({
   // 🔴 `loading` IS WAITED FOR, NOT TREATED AS "NO". Resolving this canvas's knowledge is a round
   // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
   // machine's own effects would start generating a lesson for a canvas the policy is about to own.
+  //
+  // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
+  // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
+  // still floated a rail toggle in the corner; under §38.1, which takes the rail away inside a
+  // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
+  // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
+  // branch, so this state cannot be reached without one.
   if (!session.ready || policy.status === "loading") {
     return (
-      <main className="relative flex h-full items-center justify-center bg-(--ui-bg-editor)">
-        {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally finishes
-            far inside the threshold, and a caption that appeared and vanished in 200ms would be a
-            flicker rather than information. It surfaces only when a step has genuinely been running
-            long enough to be worth naming — and it names the step that IS running. */}
-        {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
-      </main>
+      <CanvasSurface onExit={leave}>
+        <div className="flex h-full items-center justify-center">
+          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally
+              finishes far inside the threshold, and a caption that appeared and vanished in 200ms
+              would be a flicker rather than information. It surfaces only when a step has genuinely
+              been running long enough to be worth naming — and it names the step that IS running. */}
+          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+        </div>
+      </CanvasSurface>
     );
   }
 
@@ -335,22 +361,12 @@ export function LearningCanvas({
   const showComposer = regions.policy || canvas.state !== "complete";
 
   return (
-    // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
-    // `--canvas-column` is the single measure every part of the surface is set to — document,
-    // question, diagnosis and composer — so the page reads as one column rather than four
-    // things that happen to be centred.
-    <main
-      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
-      style={{ ["--canvas-column" as string]: "680px" }}
-    >
-      {/* A scrim, NOT a header. Without it, scrolled paragraphs print straight through the
-          floating title and neither is readable. It is the page's own colour fading to nothing
-          over 88px — the same device the composer already uses at the bottom — so it draws no
-          line, no rectangle and no edge: there is no row where the colour steps. The acceptance
-          check measures exactly that (the largest colour change between adjacent rows), because
-          "is there a divider" is a question about steps, not about whether anything is painted. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[88px] bg-gradient-to-b from-(--ui-bg-editor) via-(--ui-bg-editor)/90 to-transparent" />
-
+    // One uninterrupted sheet. The controls and the composer float on it; nothing divides it —
+    // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
+    // owns them so that no render branch can omit the exit. See the note at the top of that file.
+    <CanvasSurface
+      onExit={leave}
+      chrome={
       <CanvasHeader
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
@@ -362,9 +378,8 @@ export function LearningCanvas({
         // and not `sources.length`.
         modelKnowledge={modelKnowledgeDisclosed(canvas.sources, policy.territories.length)}
         onDelete={() => {
-          void session.remove().then(() => router.push("/sessions"));
+          void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
         }}
-        onExit={() => router.push("/sessions")}
         // 🔴 The whole policy runtime, not only the instant a question is on screen. Flipping the
         // title and the controls back on for the feedback beat and off again for the next question
         // would put a flicker of chrome between every answer and the next — more distracting than
@@ -385,7 +400,8 @@ export function LearningCanvas({
         onFiles={(files) => void session.attachFiles(files)}
         onRename={session.rename}
       />
-
+      }
+    >
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 24px breathing room,
@@ -587,6 +603,6 @@ export function LearningCanvas({
           task={sink.kind === "none" ? null : sink.task}
         />
       )}
-    </main>
+    </CanvasSurface>
   );
 }

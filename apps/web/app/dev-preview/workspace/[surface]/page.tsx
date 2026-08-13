@@ -15,6 +15,7 @@ import { sessionsStore, type WorkspaceSession } from "@/lib/workspace/sessions-s
 
 import CalendarPage from "../../../(workspace)/calendar/page";
 import GraphPage from "../../../(workspace)/graph/page";
+import LearnPage from "../../../(workspace)/learn/page";
 import LibraryPage from "../../../(workspace)/library/page";
 import LibraryClassicPage from "../../../(workspace)/library/classic/page";
 import NotebooksPage from "../../../(workspace)/notebooks/page";
@@ -24,6 +25,12 @@ import SettingsPage from "../../../(workspace)/settings/page";
 import StudyPage from "../../../(workspace)/study/page";
 
 const SURFACES = {
+  // 🔴 THE CANVAS HAD NO PREVIEW AT ALL, which is why every visual claim about it has needed the
+  // owner's own signed-in browser. It reads its state from the query exactly as the real route
+  // does, so `?c=<id>` here renders the canvas surface — and, with no session behind it, the
+  // PROCESSING state, which is the one §38.2 cares most about because it is where a deep link, a
+  // hard refresh and a return from sign-in all land first.
+  learn: LearnPage,
   sessions: SessionsPage,
   library: LibraryPage,
   "library-classic": LibraryClassicPage,

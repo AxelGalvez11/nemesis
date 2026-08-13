@@ -20,6 +20,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { Ellipsis, Folder as FolderIcon, Inbox, PanelsTopLeft, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
+
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
   createFolder,
@@ -527,18 +529,30 @@ function SessionRow({
 
   return (
     <div className="group relative -mx-3 flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-(--ui-bg-tertiary)/60">
-      <button className="min-w-0 flex-1 text-left" onClick={onOpen} type="button">
-        <p className="truncate text-[0.9375rem] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
-        <p className="text-[0.75rem] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
+      <button className="flex min-w-0 flex-1 items-center gap-2.5 text-left" onClick={onOpen} type="button">
+        {/* Same pairing as the Library's list (§38.3): a row says what kind of thing it is, and
+            nothing that would have to be derived from data this app does not reliably hold. */}
+        <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={1.7} />
+        <span className="min-w-0 flex-1">
+          <p className="truncate text-[0.9375rem] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
+          <p className="text-[0.75rem] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
+        </span>
+        {pinned && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={1.8} />}
       </button>
 
+      {/* 🔴 THE SAME DEFECT THE LIBRARY HAD, ON THE SURFACE THE LEARNER ACTUALLY LANDS ON (§38.3).
+          This carried `opacity-0` with `group-hover:opacity-100`, so pin, move and delete were
+          invisible until the pointer crossed the row — and absent entirely on a touch screen. The
+          Library's list was measured and fixed first; this is the same list of the same objects,
+          one surface earlier, and fixing only one would have left the owner looking at the
+          unfixed one. The label names ITS row rather than being the same words on every row. */}
       <button
-        aria-label="Session options"
-        className="shrink-0 rounded-md p-1 text-(--ui-text-quaternary) opacity-0 transition-opacity hover:text-(--ui-text-primary) group-hover:opacity-100 focus-visible:opacity-100"
+        aria-label={`Actions for ${session.title || "New canvas"}`}
+        className="shrink-0 rounded-md p-1 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:bg-(--ui-bg-tertiary) focus-visible:text-(--ui-text-primary)"
         onClick={() => setMenu((current) => !current)}
         type="button"
       >
-        <Codicon name="kebab-vertical" size="0.75rem" />
+        <Ellipsis size={14} strokeWidth={1.8} />
       </button>
 
       {menu && (
@@ -546,6 +560,7 @@ function SessionRow({
           <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
           <div className="absolute right-2 top-9 z-40 w-[13rem] rounded-xl bg-(--ui-bg-elevated) p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
             <RowAction
+              icon={pinned ? PinOff : Pin}
               label={pinned ? "Unpin" : "Pin to top"}
               onClick={() => {
                 setMenu(false);
@@ -554,6 +569,7 @@ function SessionRow({
             />
             {folders.map((folder) => (
               <RowAction
+                icon={FolderIcon}
                 key={folder.id}
                 label={`Move to ${folder.name}`}
                 onClick={() => {
@@ -564,6 +580,7 @@ function SessionRow({
             ))}
             {session.folderId && (
               <RowAction
+                icon={Inbox}
                 label="Remove from folder"
                 onClick={() => {
                   setMenu(false);
@@ -573,6 +590,7 @@ function SessionRow({
             )}
             <RowAction
               danger
+              icon={Trash2}
               label="Delete"
               onClick={() => {
                 setMenu(false);
@@ -586,17 +604,30 @@ function SessionRow({
   );
 }
 
-function RowAction({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+/** 🔴 `icon` IS REQUIRED, NOT OPTIONAL (§38.3). An optional one is an action that can go
+ *  undecorated, which is how this menu came to be four lines of plain text. */
+function RowAction({
+  danger,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  danger?: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       className={cn(
-        "w-full truncate rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] hover:bg-(--ui-bg-tertiary)",
+        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] transition-colors hover:bg-(--ui-bg-tertiary)",
         danger ? "text-(--ui-text-tertiary) hover:text-red-500" : "text-(--ui-text-secondary)",
       )}
       onClick={onClick}
       type="button"
     >
-      {label}
+      <Icon className="shrink-0 opacity-70" size={13} strokeWidth={1.7} />
+      <span className="truncate">{label}</span>
     </button>
   );
 }

@@ -5,9 +5,10 @@
 // only the preview-rail toggle there, and the rail is out of scope for v1).
 // No drag regions / traffic-light insets — a browser tab has no window chrome.
 
+import { PanelLeft } from "lucide-react";
+
 import { Button } from "@/components/desktop-ui/button";
 import { Tip } from "@/components/desktop-ui/tooltip";
-import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
 const titlebarButtonClass = "text-muted-foreground/85 hover:bg-(--ui-control-hover-background) hover:text-foreground";
 
@@ -28,7 +29,12 @@ export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
         size="icon-titlebar"
         variant="ghost"
       >
-        <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
+        {/* 🔴 THE PANEL-LEFT GLYPH THE OWNER SUPPLIED (UX brief §27.1) — a rounded square with a
+            filled left rail, and THE sidebar icon wherever this control appears. It replaces
+            tabler's sidebar-with-an-arrow, which drew a second meaning ("expand") onto a control
+            whose meaning is "the sidebar". Under §38.1 this toggle no longer appears inside a
+            canvas at all; it is still the rail's icon everywhere the rail can be reached. */}
+        <PanelLeft size={14} strokeWidth={1.7} />
       </Button>
     </div>
   );
