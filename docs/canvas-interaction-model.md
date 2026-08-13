@@ -12,6 +12,11 @@ canvas-interaction-model.md   how that reaches and returns from a learner  INTER
 canvas-v1-acceptance.md       what must be independently proven            EVIDENCE
 ```
 
+🔴 **Section letters in this document are its own.** `canvas-v1-acceptance.md` also has a §J, §K, §L
+and §M, and they are **different sections about different things**. Always name the document when
+citing a letter — *"interaction-model §J"*, not *"§J"*. Two lanes have already lost time to a
+mis-cited location in this area.
+
 ---
 
 ## The organising claim
@@ -544,6 +549,208 @@ tempo governs cognition; the speed invariant governs everything that is not cogn
 
 ---
 
+## I. The composer is the only progression control
+
+**Owner specification, 2026-08-13.** Canvas introduces **no** separate `Next`, `Continue`,
+`Done reading` or equivalent. The persistent composer is the primary interaction surface, and the
+same control means different things in different states.
+
+### Exposition state — an empty composer offers `✓`
+
+When Canvas is showing material the learner needs to inspect before another cognitive operation:
+
+```
+[ Ask something…                                    ✓ ]
+```
+
+🔴 **`✓` means exactly one thing:**
+
+> *I am finished inspecting this state and am ready for Canvas to continue.*
+
+It does **not** mean *I understand this* · *I know this* · *I mastered this* · *mark this complete*.
+
+**Therefore `✓` writes no learner evidence and creates no mastery inference. It is progression
+telemetry only.** This is evidence invariant 3 (*clicking Continue is not evidence*) applied to a
+control that looks more like agreement than Continue did — which is exactly why it needs saying.
+
+### The moment a response begins, the same control becomes send
+
+```
+[ Why does aldosterone increase potassium?          ↑ ]
+```
+
+🔴 **There is never both a `✓` and a send button.** One location, one primary action, determined by
+state. Clearing the composer while still in an exposition state may return it to `✓`.
+
+**Voice follows the same semantics.** Dictation creates a response, so it moves the composer into
+submission behaviour exactly as typing does.
+
+### Production state — there is no escape hatch
+
+When Canvas is explicitly requiring a demonstration:
+
+```
+Why does AT1 blockade increase serum potassium?
+[ Type or speak your answer…                          ]
+```
+
+**No `✓`.** Send becomes available only when there is a response to submit.
+
+> 🔴 **A learner must not be able to bypass retrieval, explanation, reconstruction, calculation,
+> drawing, application, or any other required cognitive operation by pressing Continue.**
+
+The whole rule in four lines:
+
+```
+exposition   empty composer  →  ✓            response begins  →  send
+production   empty composer  →  NO control   response exists  →  send
+```
+
+**The compact composer requirement stands.** It remains visually subordinate to the Canvas content
+and must not become a large ChatGPT-style hero element inside an active session.
+
+---
+
+## J. A question rewrites the Canvas
+
+**Owner specification, 2026-08-13, and it is the most architecturally demanding item in this
+document.**
+
+When a learner asks about material currently on screen, **do not default to appending a chatbot
+answer underneath the passage.**
+
+> **The question is evidence about what representation is currently insufficient.**
+
+Brain decides whether the right response is to clarify inline, rewrite a local block, reconstruct a
+connected conceptual region, or reconstruct most of the page. The governing principle:
+
+> **Rewrite the smallest semantic region sufficient to repair the learner's mental model.**
+
+🔴 **Rewrite scope follows knowledge dependency, not visual boundaries.** A paragraph and a page are
+layout facts. What must change is decided by what depends on the missing model.
+
+### Rewrite radius
+
+| Radius | Use when | Example |
+|---|---|---|
+| **0 — inline clarification** | a word, phrase, acronym, or tiny factual uncertainty | *"What does depolarization mean here?"* |
+| **1 — local concept rewrite** | one concept is represented poorly **for this learner** — change language, analogy, diagram, or level of detail | *"Why does sodium enter the cell?"* |
+| **2 — connected-region reconstruction** | the gap spans a causal chain, mechanism, sequence or comparison | *"I don't understand how blocking AT1 increases potassium."* |
+| **3 — page-level reconstruction** | the learner lacks the **organizing schema** needed to interpret most of the screen. **Rare.** | a nephron page of segment detail, and the learner asks *"what is the kidney actually trying to accomplish?"* |
+
+At radius 2, rather than adding another explanatory paragraph beneath several disconnected ones,
+Canvas replaces the region with a representation that makes the dependency structure legible:
+
+```
+AT1 blockade  →  aldosterone ↓  →  potassium secretion ↓  →  serum potassium ↑
+```
+
+At radius 3, Canvas may temporarily reconstruct the page around a simpler organizing model, then
+progressively restore detail. **Fixing one paragraph is insufficient when the learner lacks the model
+that gives the whole page meaning.**
+
+### The decision test
+
+> **If I repair only this local representation, will the surrounding material now make sense?**
+
+**Yes** → stay local. **No** → identify which connected concepts depend on the missing model, and
+widen the radius to cover them.
+
+Whole-page reconstruction happens only when the missing model **materially changes the usefulness or
+interpretation of most of the current surface.**
+
+### A question may interrupt the planned trajectory
+
+The learner may ask at essentially any appropriate point, and **a question in the composer is not a
+separate chat thread** — it is an input to the current Canvas state. Brain may answer directly,
+rewrite the representation, expose a prerequisite, narrow or broaden scope, change modality, or
+scaffold, and then resume or adapt the cognitive trajectory.
+
+🔴 **Do not preserve an artificial distinction between "lesson content" and "chat answer"** when
+restructuring the Canvas is the better response.
+
+### How this composes with [§A](#a-the-canvas-is-a-surface-not-a-transcript)
+
+A question and its response need not persist as `USER → question → NEMESIS → answer`. The durable
+record retains the interaction; the rendered Canvas holds whatever is still useful.
+
+```
+original passage
+   ↓  the question reveals a missing mechanism
+passage TRANSFORMS into a causal representation
+   ↓
+the question itself may leave the screen
+   ↓
+the repaired representation remains only as long as it is useful
+   ↓
+retrieval follows
+```
+
+🔴 **Do not turn Canvas into chat history with disappearing CSS. The workspace itself changes
+representation.** Fading a transcript is still a transcript.
+
+---
+
+## K. Preserve spatial stability unless cognition requires change
+
+> **Preserve unaffected Canvas content whenever possible. Adapt aggressively where learner cognition
+> requires it, while minimizing unnecessary spatial instability.**
+
+**Adaptation is not gratuitous regeneration.** If one mechanism is misunderstood, do not regenerate
+unrelated material merely because generation is cheap. The learner needs enough stable spatial
+context to stay oriented.
+
+This is the counterweight to [§J](#j-a-question-rewrites-the-canvas), and the two are load-bearing
+together: §J says rewrite as widely as the dependency requires; §K says **not one block wider.**
+
+---
+
+## L. A rewritten explanation is scaffolding, not evidence
+
+🔴 **This is the one in this batch most likely to be violated by accident, because a good rewrite
+feels like progress.**
+
+If a learner asks a question and Canvas rewrites the passage far better, **reading that new
+representation proves nothing about whether they now understand it.**
+
+```
+learner question
+   → infer the representation or model gap
+   → rewrite the appropriate semantic region
+   → learner inspects the scaffold
+   → the scaffold eventually compresses or leaves
+   → LATER INDEPENDENT PRODUCTION
+   → evaluate the demonstration
+   → update learner state
+```
+
+**No mastery evidence may be written from:** opening an explanation · reading rewritten content ·
+pressing `✓` · asking a clarifying question.
+
+Those are **observations that may influence policy.** They are not demonstrations of knowledge. This
+is evidence invariants 1–4 restated for a surface that did not exist when they were written.
+
+---
+
+## Ownership — Runtime provides mechanism, Brain decides meaning
+
+🔴 **Runtime must not infer these semantics from UI events.**
+
+| Runtime provides the mechanism for | Brain owns the decision |
+|---|---|
+| semantic-region replacement | the **rewrite radius** |
+| preserving unaffected blocks | whether a rewrite is needed **at all** |
+| retiring rendered state without losing durable state | which knowledge dependencies are implicated |
+| composer progression events that create **no evidence** | what representation is cognitively appropriate |
+| learner-message interruption | what subsequent demonstration should verify the repair |
+| transition back into adaptive cognition | |
+
+The failure this partition prevents: a runtime that watches a click and concludes *"they must have
+understood, so compress"* has invented a learner-state inference from a UI event, which is
+`response → 1-4 → that IS learner state` wearing different clothes.
+
+---
+
 ## The intended feeling
 
 Nemesis should not feel like:
@@ -579,6 +786,11 @@ Derived from the 🟢 and 🟡 rows only. **Not sequenced here** — sequencing 
 | Recognition formats permitted on alignment | Runtime | [§F](#f-the-interaction-must-measure-the-operation). Widens what the policy may choose |
 | `misconception` as a tier distinct from `incorrect` | Runtime | [§G](#g-feedback-intensity-scales-with-information-value). 🔴 Touches the evidence schema — north star non-goal 10 applies: **do not add the field before something can observe it** |
 | §K1 read with the reconciliation attached | Canvas UI | [§G](#g-feedback-intensity-scales-with-information-value) |
+| Composer `✓` in exposition, send on input, neither in production | Canvas UI | [§I](#i-the-composer-is-the-only-progression-control). 🔴 `✓` writes no evidence — the control must not be wired to anything that does |
+| Semantic-region replacement | Runtime | [§J](#j-a-question-rewrites-the-canvas). Mechanism only — **radius is Brain's** |
+| Preserve unaffected blocks across a rewrite | Runtime | [§K](#k-preserve-spatial-stability-unless-cognition-requires-change) |
+| Rewrite-radius decision | **Brain** | [§J](#j-a-question-rewrites-the-canvas). Not delegable to a lane that sees only UI events |
+| A question is an input to Canvas state, not a chat turn | Runtime + Canvas UI | [§J](#a-question-may-interrupt-the-planned-trajectory) |
 
 ### 🔴 One item that is a schema decision, not a UI one
 

@@ -652,6 +652,44 @@ identical apart from the new evidence.
 
 ---
 
+## 🔴 N. COMPOSER PROGRESSION AND CANVAS REWRITE — REQUIRED
+
+**Owner specification, 2026-08-13.** Contracts in
+[`canvas-interaction-model.md` §I–§L](./canvas-interaction-model.md#i-the-composer-is-the-only-progression-control).
+🔴 Those are *interaction-model* letters and are **not** this file's §I–§L.
+
+| # | Criterion | The proof |
+|---|---|---|
+| N1 | **Reading progression.** An empty exposition composer shows `✓`. Pressing it advances **and writes no learner evidence.** | the advance, and `learner_evidence` unchanged across it |
+| N2 | **Question interruption.** Typing during exposition turns `✓` into send. The submitted question is handled **without requiring a separate `Next`.** | one control, two states, observed |
+| N3 | 🔴 **Production protection.** During a required demonstration **no `✓` exists**, so retrieval cannot be bypassed. | the absence, in a production state |
+| N4 | **Local rewrite.** A question about one term or mechanism changes **only the necessary semantic region**; unrelated material stays spatially stable. | before/after of the same surface |
+| N5 | **Broader reconstruction.** A question revealing a missing organizing model produces a **reconstruction**, not an appended chatbot explanation. | the reconstructed region |
+| N6 | 🔴 **Scaffold is not mastery.** A learner reads a rewritten explanation and advances. **No positive evidence exists** until later independent production. | zero rows across the read; a row only after production |
+| N7 | **Durable state.** A question, response or explanation leaves the visible Canvas while the recorded interaction **still affects a later Brain decision.** | C4's method — counterfactual, not sequence |
+
+### 🔴 The two that can pass while being wrong
+
+**N1 and N6 are the same failure in two places, and both look like success.** A `✓` wired to
+anything that touches learner state, or a rewrite that records "explanation delivered" as progress,
+would produce a Canvas that *appears* to adapt while writing claims about a learner who has
+demonstrated nothing.
+
+**Prove them by absence measured across the action, not by reading the handler.** The handler is
+where the intention lives; the table is where the truth is.
+
+**N7 is C4 generalised** — the same counterfactual discipline applies, and a page reload remains the
+degenerate pass.
+
+### What N does NOT require
+
+**N does not require the rewrite radius to be correct.** Whether Brain chose radius 1 over radius 2
+is a judgement about cognition, not a criterion Integration can settle. N4 and N5 ask only whether
+the mechanism can express a *local* and a *wider* rewrite, and whether unaffected material survives.
+🔴 **Do not fail N on a disagreement about how wide a rewrite should have been.**
+
+---
+
 ## 🔴 Two traps for whoever runs the trace
 
 **`ensureKnowledgeForCanvas` WRITES.** Once the trust gate opens it calls `saveKnowledge`, so it is
