@@ -73,7 +73,13 @@ test("🔴 the region rule is DERIVED, never re-decided in the component", async
   // !policy.task` would drift from the module on the first edit, and the drift is invisible —
   // both versions look correct read on their own.
   const source = await SOURCE;
-  assert.match(source, /composeSurface\(\{/, "the component no longer derives its regions");
+  // 🔴 RE-POINTED, NOT WEAKENED — AND THE MOVE MADE THE PROPERTY STRICTER. This matched
+  // `composeSurface({` directly. The component now goes through `canvasPresentation`, which calls
+  // `composeSurface` itself and additionally answers the question `composeSurface` cannot: is
+  // there anything on this surface at all? The direct call site is what omitted the optional
+  // `hasReadingMaterial` input, so "derives its regions" is now satisfied by a function that
+  // CANNOT omit it. `canvas-presence.test.ts` asserts the direct call has not returned.
+  assert.match(source, /canvasPresentation\(\{/, "the component no longer derives its regions");
   assert.match(source, /answerSink\(\{/, "the component no longer derives its answer route");
   // 🔴 And the whole-page flag must not come back under any name. This is the specific regression
   // the migration is most likely to suffer: someone reintroduces a single boolean because one
@@ -124,10 +130,11 @@ test("🔴 a canvas whose knowledge is still resolving paints NEITHER runtime", 
   const guard = source.indexOf('policy.status === "loading"');
   assert.notEqual(guard, -1, "the loading state is no longer waited for");
   // 🔴 RE-POINTED FROM THE DELETED BRANCH TO THE COMPOSITION THAT REPLACED IT. The property is
-  // identical — nothing may render before the wait — and `composeSurface` is now the first thing
-  // that decides what renders, so it is the correct landmark.
+  // identical — nothing may render before the wait — and the landmark follows whatever is now the
+  // first thing that decides what renders. That was `composeSurface`; it is `canvasPresentation`,
+  // which subsumes it.
   assert.ok(
-    guard < source.indexOf("composeSurface({"),
+    guard < source.indexOf("canvasPresentation({"),
     "the wait must come before anything renders",
   );
 });
