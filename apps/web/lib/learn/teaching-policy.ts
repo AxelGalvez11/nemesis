@@ -23,6 +23,7 @@ import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence"
 import type { LearningObjective } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
 import { eligibleForRetrieval } from "./retrieval-eligibility";
+import { entails } from "./scaffold-rung";
 
 /**
  * A single thing to do. An ACTION, never a STAGE.
@@ -249,6 +250,47 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
     // later on its own merits, once forgetting is modelled"; nothing had checked whether that day
     // had arrived, and it had not.
     case "correct": {
+      // 🔴 §31.2 — A ✓ THAT WAS ONLY RECOGNISED IS PROVISIONAL, AND OWES A PRODUCTION PROBE BEFORE
+      // IT COUNTS. This is the asymmetry, and it is the whole reason §33's ladder was built:
+      //
+      //     sweep ✕  →  act immediately         the branches above already do this
+      //     sweep ✓  →  PROVISIONAL             a production probe before it counts
+      //
+      // A false ✕ costs re-teaching something known — annoying, and self-correcting. A false ✓
+      // costs skipping something unknown — invisible, and compounding under §22 scheduling. The
+      // asymmetry also makes the probes cheap: production is spent ONLY on what looked strong.
+      //
+      // 🔴 IT FALLS OUT OF THE RUNG RATHER THAN BEING A SECOND MECHANISM. There is no `provisional`
+      // flag to set, clear, or forget to clear: the evidence already records that the learner
+      // discriminated rather than produced, so "has this been shown at production level?" is
+      // answerable from the log alone. A boolean would have been session state that a reload loses.
+      //
+      // 🔴 AND IT IS DELIBERATELY NOT `!satisfies(state, "independent")`, WHICH WOULD BE THE
+      // OBVIOUS LINE AND WOULD BE WRONG HERE. `satisfies` refuses a rungless demonstration, because
+      // what may be CLAIMED must under-claim. What to DO is a different question, and the fact on
+      // the ground settles it: this runtime has only ever staged unaided retrieval, so every
+      // pre-§33 row IS an independent production that simply predates the label. Probing them all
+      // would re-ask hundreds of genuinely demonstrated objectives to relabel history. So the probe
+      // is owed only where the rung is KNOWN and known to be below production.
+      const provisional = state.demonstratedAt !== null && !entails(state.demonstratedAt, "independent");
+      if (provisional) {
+        // Invariant 3 — never ask a question whose answer is still visible. The churn guard is the
+        // right one here rather than the eligibility window: confirming a recognition is not a
+        // scheduling decision about forgetting, so it must not wait for a spacing interval.
+        if (actedJustNow) {
+          return {
+            because: `this was recognised a moment ago and the answer is still on screen — the confirming attempt should follow some intervening work`,
+            objectiveId: id,
+            type: "defer",
+          };
+        }
+        return {
+          because: `this was recognised rather than produced, so what it establishes is that the learner can pick it out — asking them to produce it is what would settle whether they know it`,
+          objectiveId: id,
+          type: "retrieve",
+        };
+      }
+
       // 🔴 EXACTLY ONE INTERVAL GOVERNS TEMPO HERE, AND THE CONJUNCTION THAT USED TO SIT ON THIS
       // LINE IS WHY THAT SENTENCE HAS TO BE WRITTEN DOWN. This read `!actedJustNow &&
       // eligibleForRetrieval(...)`. `actedJustNow` is measured against `ACT_AGAIN_AFTER_MS`, so a
