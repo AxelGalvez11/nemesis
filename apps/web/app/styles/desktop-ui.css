@@ -229,6 +229,26 @@
     --ui-base: var(--theme-foreground);
     --ui-accent: var(--theme-midground);
     --ui-accent-secondary: var(--theme-primary);
+    /* --ui-action: THE PRODUCT'S ACCENT. Deliberately NOT --ui-accent, for two
+       reasons that are easy to rediscover the hard way:
+
+       1. --ui-accent is the CHROME TINT, not an accent. It feeds every fill
+          (--ui-bg-primary..quinary), all four strokes, row hover/active and
+          control hover/active. A hue there tints the whole workspace — see the
+          comment above about #cc1f33 and the faint pink.
+       2. --ui-accent is a USER PREFERENCE. theme-provider.tsx writes
+          --theme-midground as an inline style on :root from the Settings accent
+          picker, which beats @layer base. Anything branded put there is erased
+          the moment someone picks Blue.
+
+       So --ui-action is a separate, un-tinted, un-overridden token used only
+       where Nemesis invites or registers an action: the filled send button, the
+       focus outline, the ring on a selected passage. It carries a GLYPH, so its
+       contrast against --ui-bg-editor is a hard requirement, and because the
+       glyph colour IS the editor background the light and dark values sit on
+       opposite sides of the lightness midpoint. Default is today's graphite:
+       until the owner picks a hue, nothing changes. */
+    --ui-action: var(--theme-midground);
     --ui-warm: var(--theme-warm);
     --ui-red: #cf2d56;
     --ui-orange: #db704b;
@@ -508,6 +528,10 @@
     --ui-red: #e75e78;
     --ui-green: #55a583;
     --ui-cyan: #6f9ba6;
+    /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
+       it is --ui-bg-editor, which is near-black here, so the fill carries a dark
+       glyph. Same inversion the graphite pair already makes (#404040 → #6e6e6e). */
+    --ui-action: var(--theme-midground);
 
     --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;

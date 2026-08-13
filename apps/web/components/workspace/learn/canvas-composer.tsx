@@ -228,7 +228,7 @@ export function CanvasComposer({
             // transforms, it does not become a bigger thing.
             "flex min-h-[52px] items-center gap-0 rounded-[26px] bg-(--ui-bg-elevated) px-[12px]",
             "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
-            selected.length > 0 && !listening && "ring-(--ui-accent)/50",
+            selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
           {/* Stays put through every state, including dictation: spatial continuity is the
@@ -241,7 +241,7 @@ export function CanvasComposer({
               // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
               // every icon button on their composer uses, ours included now.
               "flex h-[36px] w-[36px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
-              "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)",
+              "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-action)",
               listening
                 ? "text-(--ui-text-quaternary)"
                 : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
@@ -284,7 +284,7 @@ export function CanvasComposer({
                   copying their exact hue. See the send button below for the other half. */}
               <button
                 aria-label="Finish dictation"
-                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-accent) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
                 onClick={acceptDictation}
                 title="Finish dictation"
                 type="button"
@@ -365,7 +365,7 @@ export function CanvasComposer({
                   ready to send) stay visibly different without a colour swap between them. */}
               <button
                 aria-label={answering ? "Submit answer" : "Send"}
-                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-accent) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
                 disabled={busy || !text.trim()}
                 onClick={submit}
                 type="button"
