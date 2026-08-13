@@ -7,9 +7,12 @@ import {
   describeCoverage,
   deriveState,
   EXTRACTION_COVERAGE_VERSION,
+  lossOnUnit,
   lostFigures,
   readCoverage,
   unitsRead,
+  unlocatedRegions,
+  unlocatedUnreadUnits,
   withTruncation,
   type ExtractionCoverage,
 } from "./extraction-coverage.ts";
@@ -385,4 +388,147 @@ test("🔴 readCoverage re-derives unreadableRegions when a malformed kind entry
     unreadableKinds: [{ kind: "chart", count: 1 }, { kind: "unsupported-number-format", count: 4 }],
   });
   assert.equal(raised?.unreadableRegions, 5);
+});
+
+// ---------------------------------------------------------------------------
+// lostUnits — WHERE the loss happened, for the losses that can be placed.
+// ---------------------------------------------------------------------------
+
+test("lostUnits places a loss on the unit it happened on, and survives a round trip", () => {
+  const coverage = built({
+    unitKind: "page", units: 4, unitsNative: 3, unitsUnread: 1,
+    unreadableRegions: 2,
+    lostUnits: [{ unit: 2, unread: true }, { unit: 0, unreadableRegions: 2 }],
+  });
+  assert.equal(coverage.state, "partial");
+  assert.deepEqual(lossOnUnit(coverage, 2), { unit: 2, unread: true });
+  assert.deepEqual(lossOnUnit(coverage, 0), { unit: 0, unreadableRegions: 2 });
+  assert.equal(lossOnUnit(coverage, 1), null, "a unit with nothing recorded against it has no entry");
+
+  const parsed = readCoverage(JSON.parse(JSON.stringify(coverage)));
+  assert.deepEqual(parsed?.lostUnits, coverage.lostUnits, "locality must survive storage, not just construction");
+});
+
+test("🔴 the totals are NEVER derived from lostUnits — unplaceable loss stays visible", () => {
+  // The failure this field would otherwise introduce. Three regions were lost;
+  // the parser could place only one. If `lostUnits` set the total, the other two
+  // would cease to exist and every unit would read clean — parser incapacity
+  // dressed up as absence of loss.
+  const coverage = built({
+    unitKind: "page", units: 5, unitsNative: 4, unitsUnread: 1,
+    unreadableRegions: 3,
+    lostUnits: [{ unit: 1, unreadableRegions: 1 }],
+  });
+  assert.equal(coverage.unreadableRegions, 3, "the authoritative total is untouched by how much of it could be placed");
+  assert.equal(unlocatedRegions(coverage), 2, "the two regions nobody could place are still countable");
+  assert.equal(unlocatedUnreadUnits(coverage), 1, "an unread unit nobody could name is still countable");
+});
+
+test("🔴 a document whose loss is fully placed reports nothing unlocated — the only case per-unit is honest", () => {
+  const coverage = built({
+    unitKind: "slide", units: 3, unitsNative: 2, unitsUnread: 1,
+    unreadableRegions: 2,
+    lostUnits: [{ unit: 0, unreadableRegions: 2 }, { unit: 2, unread: true }],
+  });
+  assert.equal(unlocatedRegions(coverage), 0);
+  assert.equal(unlocatedUnreadUnits(coverage), 0);
+});
+
+test("a record with no lostUnits reports ALL of its loss as unlocated, never as absent", () => {
+  // Every row written before this field existed. "We did not record where" must
+  // read as "we do not know where", not as "there was nowhere".
+  const coverage = built({ unitKind: "page", units: 24, unitsNative: 23, unitsUnread: 1, unreadableRegions: 4 });
+  assert.equal("lostUnits" in coverage, false, "absent means not observed — an empty array would imply we looked");
+  assert.equal(unlocatedRegions(coverage), 4);
+  assert.equal(unlocatedUnreadUnits(coverage), 1);
+});
+
+test("a clean document has nothing located and nothing unlocated", () => {
+  const coverage = built({ unitKind: "page", units: 9, unitsNative: 9 });
+  assert.equal(unlocatedRegions(coverage), 0);
+  assert.equal(unlocatedUnreadUnits(coverage), 0);
+  assert.equal(lossOnUnit(coverage, 0), null);
+});
+
+test("buildCoverage refuses a breakdown that claims MORE loss than the totals admit", () => {
+  const tooManyRegions = buildCoverage({
+    unitKind: "page", units: 3, unitsNative: 3,
+    unreadableRegions: 1,
+    lostUnits: [{ unit: 0, unreadableRegions: 2 }],
+  });
+  assert.equal(typeof tooManyRegions, "string");
+  assert.match(String(tooManyRegions), /2 regions located, but unreadableRegions is 1/);
+
+  const tooManyUnread = buildCoverage({
+    unitKind: "page", units: 3, unitsNative: 2, unitsUnread: 1,
+    lostUnits: [{ unit: 0, unread: true }, { unit: 1, unread: true }],
+  });
+  assert.equal(typeof tooManyUnread, "string");
+  assert.match(String(tooManyUnread), /2 units marked unread, but unitsUnread is 1/);
+});
+
+test("buildCoverage refuses a unit index that is not an index into this document", () => {
+  for (const unit of [3, -1, 1.5]) {
+    const result = buildCoverage({
+      unitKind: "page", units: 3, unitsNative: 2, unitsUnread: 1,
+      lostUnits: [{ unit, unread: true }],
+    });
+    assert.equal(typeof result, "string", `unit ${unit} must be refused`);
+    assert.match(String(result), /is not an index into this document's 3 units/);
+  }
+});
+
+test("buildCoverage refuses a duplicate unit and an entry that records no loss", () => {
+  const duplicate = buildCoverage({
+    unitKind: "page", units: 2, unitsNative: 2, unreadableRegions: 2,
+    lostUnits: [{ unit: 0, unreadableRegions: 1 }, { unit: 0, unreadableRegions: 1 }],
+  });
+  assert.match(String(duplicate), /unit 0 appears twice/);
+
+  // 🔴 An entry asserting neither kind of loss would read as "we looked at this
+  // unit and it is fine" — a claim this field is not entitled to make. A clean
+  // unit is expressed by omission.
+  const empty = buildCoverage({
+    unitKind: "page", units: 2, unitsNative: 2,
+    lostUnits: [{ unit: 1 }],
+  });
+  assert.match(String(empty), /unit 1 records no loss/);
+});
+
+test("🔴 readCoverage drops a malformed entry, and that RAISES what is unlocated rather than hiding it", () => {
+  // The mirror of the `unreadableKinds` re-derivation above, and it needs no
+  // re-derivation for the same reason it is safe: no total depends on this
+  // field, so losing an entry can only ever move confidence in the cautious
+  // direction. Two of the three placements are unusable; the total stays 3 and
+  // the unlocated count rises from 0 to 2.
+  const parsed = readCoverage({
+    unitKind: "page", units: 4, unitsNative: 4, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, state: "partial",
+    unreadableRegions: 3,
+    lostUnits: [
+      { unit: 0, unreadableRegions: 1 },
+      { unit: 99, unreadableRegions: 1 },
+      { unit: 2, unreadableRegions: 0 },
+      { unit: "one", unreadableRegions: 1 },
+    ],
+  });
+  assert.equal(parsed?.unreadableRegions, 3, "the total is not touched by filtering");
+  assert.deepEqual(parsed?.lostUnits, [{ unit: 0, unreadableRegions: 1 }]);
+  assert.equal(unlocatedRegions(parsed!), 2);
+});
+
+test("🔴 CALIBRATION: deriving the total from lostUnits makes unplaceable loss vanish", () => {
+  // The mutation this whole field is shaped to prevent, written out so the guard
+  // above is known to have teeth. `derived` is what `unreadableRegions` would be
+  // if the breakdown set it (the way `unreadableKinds` legitimately does); the
+  // real record keeps the measured total instead.
+  const coverage = built({
+    unitKind: "page", units: 6, unitsNative: 5, unitsUnread: 1,
+    unreadableRegions: 9,
+    lostUnits: [{ unit: 3, unreadableRegions: 1 }],
+  });
+  const derived = (coverage.lostUnits ?? []).reduce((total, loss) => total + (loss.unreadableRegions ?? 0), 0);
+  assert.equal(derived, 1, "the breakdown accounts for exactly one region");
+  assert.equal(coverage.unreadableRegions, 9, "and the record still knows nine were lost");
+  assert.notEqual(derived, coverage.unreadableRegions, "if these were ever equal, eight losses would have been erased");
+  assert.equal(unlocatedRegions(coverage), 8);
 });
