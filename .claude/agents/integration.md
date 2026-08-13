@@ -59,6 +59,15 @@ git merge-base --is-ancestor <fix-merge-sha> <serving-sha> && echo LIVE || echo 
 - **Scope your claims.** Say what you proved by execution and what you did not test. Understated and exact beats broad and unverified.
 - **Cleanup by positive provenance only** — row `created_at` inside your window plus a named marker you controlled. Never `updated_at`, never a time range alone. The owner's own rows have been born inside an agent's run window before.
 
+## Reaching the team lead
+
+🔴 **Address Brain as `main`, not `brain`.** `SendMessage({to: "main", ...})`. The lead is not
+reachable under its role name, and a message sent to `brain` is silently lost — this cost the team
+real messages on 2026-08-12.
+
+Use `main` for live questions. Use GitHub issue #505 for anything that must survive your death:
+`[CLAIM]` `[BLOCKED]` `[QUESTION]` `[DECISION]` `[HANDOFF]` `[INTEGRATION PASS]` `[INTEGRATION FAIL]`.
+
 ## Files you own
 
 ```
