@@ -43,6 +43,7 @@ import {
 } from "./extract-coverage";
 import { csvToModel } from "./csv-model";
 import { readCsv } from "./csv-structure";
+import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
@@ -62,7 +63,7 @@ import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_
  * Adding a format means visiting all four; `document-envelope.test.ts` fails
  * loudly for the pair that can lose a whole document.
  */
-export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "image";
+export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "image" | "text";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -76,8 +77,30 @@ export function kindFor(name: string, type: string): DocumentKind | null {
   if (lower.endsWith(".pptx") || type === PPTX_MIME) return "pptx";
   if (lower.endsWith(".xlsx") || type === XLSX_MIME) return "xlsx";
   if (lower.endsWith(".csv") || type === "text/csv") return "csv";
+  // 🔴 CHECKED AFTER `.csv`, BECAUSE A CSV IS ALSO TEXT. The more specific claim wins: a file
+  // that says it is a grid is read as a grid, and only what is left is read as prose.
+  //
+  // These two extensions were offered by every upload control, accepted by the storage bucket
+  // and allowed by the `doc_kind` CHECK — and had no branch here, so `parseDocument` returned
+  // `unsupported`. A student's own notes were stored and never read. Four markdown files and one
+  // text file sat in production with zero parses between them.
+  if (lower.endsWith(".md") || lower.endsWith(".markdown") || type === "text/markdown") return "text";
+  if (lower.endsWith(".txt") || type === "text/plain") return "text";
   if (visionMime(name, type)) return "image";
   return null;
+}
+
+/**
+ * Is this text file written in Markdown?
+ *
+ * 🔴 FROM THE FILE'S OWN CLAIM, NEVER FROM ITS CONTENT. A `.txt` containing `# Notes` is someone
+ * writing a hash character, not a heading, and sniffing for markup would turn their prose into a
+ * structure they did not write. The extension and the declared type are the only evidence a text
+ * file offers about which it is, exactly as `chooseDelimiter` refuses to guess a CSV separator.
+ */
+export function isMarkdown(name: string, type: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".markdown") || type === "text/markdown";
 }
 
 /**
@@ -282,6 +305,21 @@ export async function parseDocument(
       // evidence either way. The kinds ride along instead of being summed away.
       unsupported: grid.unsupported,
     });
+  } else if (kind === "text") {
+    // 🔴 A STUDENT'S OWN NOTES. This lane was a door with nothing behind it until now: offered by
+    // every upload control, accepted by storage, allowed by the database — and refused here.
+    //
+    // Deterministic, and the two formats are read differently on purpose. Markdown STATES its
+    // structure, so `#` becomes a heading; plain text states nothing, so nothing is inferred and
+    // every paragraph stays a paragraph. See `text-structure.ts`.
+    const read = readTextDocument(bytes, { markdown: isMarkdown(fileName, mimeType) });
+    model = read.model;
+    text = documentToText(model);
+    title = read.title;
+    // One unit, read natively and completely. There is no partial case here: either the bytes
+    // decoded or the file is empty, and an empty file is caught by the `!text` verdict below —
+    // which is why this is `singleUnitCoverage` and not a bespoke text coverage shape.
+    coverage = singleUnitCoverage({ method: "native", read: text.trim().length > 0 });
   } else {
     const deck = readPptxSlides(bytes);
     const figures = deck.media.images.length

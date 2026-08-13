@@ -170,7 +170,7 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     coverage: null,
     // terminal — the fixtures cover every state on purpose, so the
     // preview harness is where a status style is reviewed.
-    status: { attempts: 5, kind: "failed", message: "That file could not be opened.", stage: "parse" },
+    status: { attempts: 5, detail: null, kind: "failed", message: "That file could not be opened.", stage: "parse" },
   },
   {
     id: "preview-src-deck",

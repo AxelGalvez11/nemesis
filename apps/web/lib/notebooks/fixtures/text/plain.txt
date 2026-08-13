@@ -1,0 +1,5 @@
+﻿Lecture 4 shorthand
+
+# not a heading, I just type hashes
+
+Second paragraph after a blank line.
