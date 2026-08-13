@@ -24,7 +24,7 @@
 import { constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { territoryReuse } from "./canvas-territory";
+import { frozenTopic, territoryReuse } from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
@@ -303,10 +303,6 @@ async function topicTerritory(
     ownership: policyOwnsCanvas({ coverage, outcome }),
   });
 
-  const topic = canvas.title.trim();
-  // No material and no topic is genuinely nothing to work from — an empty canvas, not a refusal.
-  if (!topic) return answer("no-durable-source");
-
   // 🔴 BUILD ONCE. THIS IS THE GATE, AND IT IS ON THE CONSTRUCTOR RATHER THAN ON THE EFFECT.
   //
   // Without it, every open of a topic canvas built a WHOLE NEW TERRITORY: production measured
@@ -325,7 +321,16 @@ async function topicTerritory(
   // has exactly one caller — the line below. `ensureKnowledgeForCanvas` has two (open, and attaching
   // a source), so a gate up there is bypassed by the next caller anyone adds.
   const stored = await loadCanvasTerritory(userId, canvas.id);
-  const reuse = territoryReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored, topic });
+
+  // 🔴 THE TOPIC IS FROZEN AT THE FIRST BUILD, AND THE TITLE IS A LABEL AFTER THAT. The Library
+  // lets a learner rename a canvas to tidy their shelf; on a topic-first canvas the title IS the
+  // topic, so reading it fresh each time would let a filing action silently re-topic what Nemesis
+  // teaches. See `frozenTopic` — it also decides which subject an identity-version rebuild uses.
+  const topic = frozenTopic({ stored, title: canvas.title });
+  // No material and no topic is genuinely nothing to work from — an empty canvas, not a refusal.
+  if (!topic) return answer("no-durable-source");
+
+  const reuse = territoryReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored });
   if (reuse.reuse) {
     const replayed = await storeTerritory(userId, reuse.objects);
     if (replayed.length > 0) return answer("complete", replayed);
