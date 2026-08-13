@@ -20,7 +20,7 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
-import { ObjectivesControl, SessionControl, SourcesControl } from "./canvas-controls";
+import { ObjectivesControl, SourcesControl } from "./canvas-controls";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
@@ -74,17 +74,22 @@ export function CanvasHeader({
         </span>
       )}
 
-      {/* §1: three compact controls, floating. Not a toolbar — see the note at the top of
+      {/* §1: two compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
           🔴 ABSENT DURING A RETRIEVAL, and the back arrow is deliberately the only thing left. The
           controls are not removed from the product — they are the session's, and the session is
           where they belong; this is the one second inside it where the learner is producing an
-          answer and every glyph on screen is competition. */}
+          answer and every glyph on screen is competition.
+          🔴 THE SESSION (⋯) CONTROL IS GONE, DELIBERATELY — owner call, 2026-08-13. `SessionControl`
+          in canvas-controls.tsx is untouched and still exports rename + delete; it is simply not
+          rendered here any more. Rename has no other UI path today (tracked as a follow-up: give
+          canvas-home's SessionRow, which already has pin/move/delete, a rename affordance too) —
+          an accepted, named cost, not a silent one. Delete is unaffected: canvas-home's own
+          per-row delete already reaches the same `deleteCanvas` this control called. */}
       {!minimal && (
         <>
           <SourcesControl canvas={canvas} onFiles={onFiles} />
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
-          <SessionControl canvas={canvas} onDelete={onDelete} onRename={onRename} />
         </>
       )}
     </header>
