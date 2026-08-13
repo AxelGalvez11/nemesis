@@ -346,8 +346,9 @@ export function LearningCanvas({
 
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
-          starts below where the controls sit (16px inset + 32px control + 24px breathing room). */}
-      <div className="relative h-full overflow-y-auto pt-[72px]">
+          starts below where the controls sit (12px inset + 28px control + 24px breathing room,
+          compact-UI pass -- was 16+32+24=72, tightened alongside the header it clears). */}
+      <div className="relative h-full overflow-y-auto pt-[64px]">
         {/* 🔴 THE POLICY'S CONTRIBUTION COMES FIRST IN THE FLOW, NOT OVER THE TOP OF THE DOCUMENT.
             An overlay would hide the very material 7b exists to keep visible, and a learner who
             wanted to look something up would have to dismiss the question to do it. It sits above

@@ -54,12 +54,16 @@ test("the canvas title is a label, not a full-width click target", () => {
 test("the shell reserves clearance with padding rather than a header element", () => {
   const shell = read("learning-canvas.tsx");
   // Padding on the scroller, not a sized box above it.
-  assert.match(shell, /overflow-y-auto pt-\[72px\]/);
+  // 64px, down from 72 -- compact-UI pass, tightened alongside the header this padding clears
+  // (12px inset + 28px control + 24px breathing room, was 16+32+24).
+  assert.match(shell, /overflow-y-auto pt-\[64px\]/);
   // Two measurements of two different things, both taken off the references: the reading
   // column is 680, the composer pill is 770. Neither is a rounding of the other.
   assert.match(shell, /"--canvas-column" as string\]: "680px"/);
   assert.match(read("canvas-composer.tsx"), /max-w-\[770px\]/);
-  assert.match(read("canvas-composer.tsx"), /min-h-\[54px\][^"]*rounded-\[27px\]/);
+  // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
+  // already) -- see the sizing note at the top of canvas-composer.tsx.
+  assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);
 });
 
 test("there is exactly one answer surface on the canvas", () => {

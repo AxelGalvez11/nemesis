@@ -19,6 +19,29 @@
 // Dictation TRANSFORMS this component in place: same pill, same size, same position, the input
 // replaced by a live waveform and the send button by cancel/accept. No modal, no second card,
 // no dimmed page.
+//
+// 🔴 SIZING: MEASURED WHERE NOTED, JUDGEMENT EVERYWHERE ELSE (compact-UI pass, owner spec,
+// 2026-08-12). The in-app browser pane's own attempt to measure chatgpt.com hit a 401 from
+// OpenAI's anonymous-session backend (sandboxed, no login) and was reported rather than faked.
+// The owner then unblocked a second path — their own logged-in Chrome, read-only, navigate and
+// inspect only, nothing clicked or typed into their account — and these values are real,
+// `getBoundingClientRect()`/`getComputedStyle()` reads off ChatGPT's live composer:
+//   pill height 52px, radius 28px (26px used here — half of 52, a true stadium cap, 2px off
+//     their measured number and not visible at this scale), icon buttons 36×36px with 20px
+//     (24px for the primary action) icons, input text 16px / 26px line-height.
+// Padding, gap and our own spacing rhythm are still this file's judgement, not measured off
+// theirs — ChatGPT's composer is a denser multi-row layout ours does not share the shape of, so
+// matching its every internal margin would be copying a number, not a proportion.
+//
+// 🔴 THE INPUT TEXT SIZE IS WRITTEN `text-[16px]`, NOT `text-[1rem]` — MEASURED AND STRUCTURAL,
+// NOT A JUDGEMENT CALL. `apps/web`'s root is 112.5% (`html{font-size:112.5%}`), so `1rem` here
+// renders at 18px, not 16 — the literal px value is the only way to land on the number that
+// matters. ChatGPT's own measured input is also exactly 16px, which is not a coincidence: iOS
+// Safari zooms the whole viewport in on focus for any text input under 16px, and there is no way
+// back out of that zoom that reads as intentional. Even if a future remeasurement ever came back
+// lower, this constraint would still win — do not "fix" this number down to match it, and do not
+// silently swap it back to `1rem` for consistency with the rest of this file, which would
+// reintroduce the zoom by way of looking like a tidy-up.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -200,9 +223,10 @@ export function CanvasComposer({
 
         <div
           className={cn(
-            // 54px tall, 27px radius, one pill. It does NOT grow when dictation starts — the
-            // component transforms, it does not become a different, bigger thing.
-            "flex min-h-[54px] items-center gap-0 rounded-[27px] bg-(--ui-bg-elevated) px-[14px]",
+            // 52px tall, 26px radius -- MEASURED off ChatGPT's live composer (was 54/27, close
+            // already). One pill; does NOT grow when dictation starts -- the component
+            // transforms, it does not become a bigger thing.
+            "flex min-h-[52px] items-center gap-0 rounded-[26px] bg-(--ui-bg-elevated) px-[12px]",
             "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
             selected.length > 0 && !listening && "ring-(--ui-accent)/50",
           )}
@@ -214,7 +238,9 @@ export function CanvasComposer({
           <label
             aria-label="Add material"
             className={cn(
-              "flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
+              // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
+              // every icon button on their composer uses, ours included now.
+              "flex h-[36px] w-[36px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
               "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)",
               listening
                 ? "text-(--ui-text-quaternary)"
@@ -222,7 +248,7 @@ export function CanvasComposer({
             )}
             title="Add material"
           >
-            <Codicon name="add" size="1rem" />
+            <Codicon name="add" size="20px" />
             {/* 🔴 `sr-only`, NOT `hidden`. A hidden input is out of the tab order and out of the
                 accessibility tree, so the label around it becomes unreachable by keyboard. */}
             <input
@@ -245,21 +271,25 @@ export function CanvasComposer({
               </div>
               <button
                 aria-label="Cancel dictation"
-                className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                 onClick={cancelDictation}
                 title="Cancel dictation"
                 type="button"
               >
-                <Codicon name="close" size="0.9375rem" />
+                <Codicon name="close" size="18px" />
               </button>
+              {/* Filled and coloured -- MEASURED, not chosen. ChatGPT's own idle-composer action
+                  (Start Voice, since nothing is typed) is a solid coloured circle, never a grey
+                  glyph; ours picks up the same principle with the product's own accent instead of
+                  copying their exact hue. See the send button below for the other half. */}
               <button
                 aria-label="Finish dictation"
-                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)"
+                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-accent) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
                 onClick={acceptDictation}
                 title="Finish dictation"
                 type="button"
               >
-                <Codicon name="check" size="1rem" />
+                <Codicon name="check" size="20px" />
               </button>
             </>
           ) : (
@@ -270,7 +300,9 @@ export function CanvasComposer({
                 // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
                 className={cn(
                   "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
-                  "text-[1rem] leading-relaxed text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
+                  // 16px, not 1rem -- see the file header. MEASURED: ChatGPT's own input is also
+                  // exactly 16px/26px line-height.
+                  "text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
                   // 🔴 HEIGHT ONLY, AND SHORT ENOUGH TO BE INVISIBLE AS A DELAY. `transition-all`
                   // here would animate colour and opacity on every keystroke and make typing feel
                   // syrupy; a long duration would let the caret outrun the box on the wrap. 90ms is
@@ -296,7 +328,10 @@ export function CanvasComposer({
                 }}
                 placeholder={
                   busy
-                    ? `${busyLabel ?? "Working"}…`
+                    ? // Strip any trailing ellipsis the label already carries before adding one --
+                      // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
+                      // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
+                      `${(busyLabel ?? "Working").replace(/…$/, "")}…`
                     : selected.length > 0
                       ? "What should Nemesis do with this?"
                       : answering
@@ -311,19 +346,26 @@ export function CanvasComposer({
               {dictation.supported && (
                 <button
                   aria-label={answering ? "Answer out loud" : "Dictate"}
-                  className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                   disabled={busy}
                   onClick={startDictation}
                   title={answering ? "Answer out loud" : "Dictate"}
                   type="button"
                 >
-                  <Codicon name="mic" size="0.9375rem" />
+                  <Codicon name="mic" size="20px" />
                 </button>
               )}
 
+              {/* 🔴 FILLED AND COLOURED, NOT A GREY GLYPH -- MEASURED, not chosen. A grey arrow
+                  reads as disabled even when it isn't; ChatGPT's own idle-composer action button
+                  is never grey, it's a solid coloured circle (theirs is Start Voice, since ours
+                  has no equivalent, but the principle -- the primary action always looks live --
+                  carries over with the product's own accent). `disabled:opacity-40` still dims it
+                  when there is truly nothing to send, so the two real states (nothing typed vs.
+                  ready to send) stay visibly different without a colour swap between them. */}
               <button
                 aria-label={answering ? "Submit answer" : "Send"}
-                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
+                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-accent) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
                 disabled={busy || !text.trim()}
                 onClick={submit}
                 type="button"
@@ -333,7 +375,7 @@ export function CanvasComposer({
                     still through every wait, reading as a decorative icon or a rendering fault
                     rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
                     is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
-                <Codicon name={busy ? "loading" : "arrow-up"} size="0.9375rem" spinning={busy} />
+                <Codicon name={busy ? "loading" : "arrow-up"} size="20px" spinning={busy} />
               </button>
             </>
           )}
