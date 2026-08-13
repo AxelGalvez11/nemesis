@@ -23,22 +23,25 @@ import type { PolicyRuntime } from "./use-policy-runtime";
  *  which is the behaviour I want: every verdict must be given a colour deliberately. */
 type Verdict = keyof typeof VERDICT_HEADLINE;
 
-/** What colour the learner's own words take once they have been read.
+/**
+ * 🔴 THE LEARNER'S OWN WORDS ARE BLUE, IN EVERY CASE — contract §35.1.
  *
- *  🔴 THE COLOUR IS THE FEEDBACK, which is why a pass needs no sentence. Green means it landed,
- *  amber means part of it did, red means it did not.
+ * > "Blue means: this came from you. It does NOT mean correct. Keep that semantic stable."
  *
- *  🔴 THIS IS NOT `--ui-action`. The accent is a MUTED green (oklch chroma ~0.06); success here is
- *  `--ui-green` at ~0.11, nearly twice the chroma, and it appears as TEXT rather than as a filled
- *  control. They are deliberately not the same green: one means "press this", the other means "you
- *  were right", and a learner should never have to work out which. */
-const VERDICT_TONE: Record<Verdict, string> = {
-  strong: "text-(--ui-green)",
-  understood: "text-(--ui-green)",
-  partial: "text-(--ui-yellow)",
-  incorrect: "text-(--ui-red)",
-  misconception: "text-(--ui-red)",
-};
+ * This replaces a `VERDICT_TONE` map that coloured the learner's answer by verdict — green when
+ * right, amber when partial, red when wrong — under a comment that said, in as many words,
+ * *"THE COLOUR IS THE FEEDBACK"*. That is the exact trap §35.1 exists to close: a grade painted
+ * onto the learner's own sentence, so their words and Nemesis's judgement of them could not be
+ * told apart.
+ *
+ * 🔴 AND IT IS BLUE ON WRONG ANSWERS TOO, WHICH IS THE HALF THAT MUST NOT SOFTEN. If a miss kept
+ * red while a pass went blue, blue would mean "correct" by contrast and the grade would be back
+ * through the side door. Ownership is not a spectrum: either the learner wrote it or they did not.
+ *
+ * The verdict now lives entirely in Nemesis's own annotation — the headline and, on a miss, the
+ * prose beneath it. §35.1: preserve the learner's work, *then annotate it*.
+ */
+const LEARNER_VOICE = "text-(--ui-learner)";
 
 /**
  * What is on screen right now, as one value.
@@ -337,13 +340,40 @@ function FeedbackScreen({
           like this cannot trip it; an earlier version grepped raw source and failed on this file's
           own header. A guard that cannot tell rendered copy from a comment about it gets "fixed"
           by deleting the explanation. */}
-      <p className={`text-[1.375rem] font-medium leading-snug ${VERDICT_TONE[verdict]}`}>“{feedback.answer}”</p>
+      <p className={`text-[1.375rem] font-medium leading-snug ${LEARNER_VOICE}`}>“{feedback.answer}”</p>
+
+      {/* 🔴 NEMESIS'S VERDICT, AS A SENTENCE, ON EVERY OUTCOME INCLUDING A PASS.
+          It used to render only on a miss, because the colour on the quote above carried the
+          result — and the old comment said so: *"a score rendered as a sentence… the colour already
+          says it"*. THAT ARGUMENT INVERTS ONCE THE COLOUR IS GONE. With blue meaning authorship,
+          this is the only thing left that can carry the verdict, so it stops being redundant and
+          becomes the entire signal.
+          🔴 AND SILENCE WOULD BE AMBIGUOUS HERE IN A WAY IT IS NOT ELSEWHERE. Nemesis judges by
+          MEANING, so a learner answering in their own informal words genuinely cannot tell whether
+          they were understood. If a partial answer produced a headline and a pass produced nothing,
+          silence would be the signal for success — and silence is also what a broken system
+          produces. The learner could not tell "right" from "that didn't register".
+          🔴 NOT A `✓`. That glyph already means two things (dictation's confirm, §12's Continue);
+          a third would make it mean nothing. §17 licenses "a small ✓, a subtle state change, or
+          simply the next thing" — this is the middle option, and it mints nothing new.
+          🔴 NOT A CONTROL. It is read, not pressed. A pass still advances on its own after the
+          readability floor; §17's ban is on the button, never on the sentence. */}
+      <h2
+        className={
+          passed
+            ? // Quieter on a pass, and that ordering is the contract's rather than a preference:
+              // feedback intensity scales with information value. A pass carries little — three
+              // words — so it is set at the secondary weight and does not compete with the answer
+              // it is confirming. A miss carries the most and keeps its full weight and prose.
+              "mt-4 text-[0.9375rem] font-normal leading-snug text-(--ui-text-tertiary)"
+            : "mt-4 text-[1.125rem] font-medium leading-snug text-(--ui-text-primary)"
+        }
+      >
+        {VERDICT_HEADLINE[verdict]}
+      </h2>
 
       {!passed && (
         <>
-          <h2 className="mt-4 text-[1.125rem] font-medium leading-snug text-(--ui-text-primary)">
-            {VERDICT_HEADLINE[verdict]}
-          </h2>
           <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
           {/* 🔴 THE "Continue" BUTTON IS GONE — §I. It is worth naming what it was: renaming `Next`
               to `Continue` once satisfied §K's banned-word list while leaving the prohibited
