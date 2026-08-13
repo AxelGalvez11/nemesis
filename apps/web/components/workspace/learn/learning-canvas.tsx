@@ -440,6 +440,14 @@ export function LearningCanvas({
             // §11 — free and local: the previous wording is already on the block, so this is a
             // state change rather than a request, and it cannot fail.
             onRestore={session.restoreRewritten}
+            // §12 — the learner sets the reading pace. Writes no evidence; see the handler.
+            onFinishReading={session.finishReadingChunk}
+            // 🔴 THE SAME PREDICATE THE COMPOSER'S `✓` IS REFUSED BY, PASSED DOWN RATHER THAN
+            // RECOMPUTED. N3 requires that a required demonstration offer no way past it; two
+            // controls deciding that separately is how one of them ends up disagreeing.
+            awaitingDemonstration={
+              policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback
+            }
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}

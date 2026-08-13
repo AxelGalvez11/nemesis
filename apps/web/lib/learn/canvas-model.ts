@@ -166,6 +166,23 @@ export interface CanvasBlock {
   /** Marked known by the learner. Excluded from recall and test generation. */
   known?: boolean;
   /**
+   * When the learner said they had finished reading this (contract §12).
+   *
+   * 🔴 A PACING SIGNAL, NOT EVIDENCE, AND THE NAME IS LOAD-BEARING. §28's lifecycle reaches
+   * RESOLVED when *"the learner demonstrates understanding"*; pressing Continue demonstrates
+   * nothing, and R3 says reading is not evidence of knowledge. Calling this `resolvedAt` would
+   * invite the next person to wire demonstration-driven compression to a reading click — storing a
+   * claim about the learner they never made. §28's RESOLVED is a different state and is not
+   * buildable yet: it needs per-objective verdicts, which do not exist.
+   *
+   * 🔴 IT MUST NOT HIDE ANYTHING. See `canvas-reading.ts` for the J1 precedent — a one-click
+   * control that filtered material out of the document on a learner's own claim was removed from
+   * this surface as a defect. Read material recedes; it does not collapse and it does not leave.
+   *
+   * Absent on every block written before §12.
+   */
+  readAt?: string;
+  /**
    * The wording this block had before the learner asked for it to be rewritten (§11).
    *
    * 🔴 §11 IS "REWRITE IN PLACE", NOT "APPEND ANOTHER EXPLANATION" — and the second half of that

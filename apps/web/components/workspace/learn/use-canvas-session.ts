@@ -47,6 +47,7 @@ import {
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
+import { finishReading } from "@/lib/learn/canvas-reading";
 import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
@@ -105,6 +106,8 @@ export interface CanvasSession {
   dismissError: () => void;
   /** §11 — restore a passage the learner had rewritten, from the copy kept on the block. */
   restoreRewritten: (blockId: string) => void;
+  /** §12 — record that the learner finished reading the chunk on screen. Writes no evidence. */
+  finishReadingChunk: () => void;
   dismissAside: () => void;
   attachFiles: (files: FileList | File[]) => Promise<void>;
   /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
@@ -1248,6 +1251,26 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordEvent, requireUid, update],
   );
 
+  /**
+   * §12 — the learner says they have finished the chunk on screen.
+   *
+   * 🔴 TWO STORES, KEPT APART FROM THE FIRST LINE. The STATE (which material has been read) goes
+   * on the block; the TIMING goes in the interaction log and nowhere else. §25 says the timing may
+   * later be useful evidence about difficulty, and R3 says the reading itself is not evidence of
+   * knowledge — so the timing must land somewhere that provably cannot become a verdict.
+   * `canvas-events.ts` is exactly that place: it carries `activeElapsedMs` already (active time,
+   * not wall clock, so walking away for 25 minutes does not read as deep thought), and
+   * `canvas-events.test.ts` appends fifty events and asserts `diagnose()` is unchanged. Nothing
+   * here can reach a judgement, and that is enforced rather than intended.
+   *
+   * 🔴 IT WRITES NO `learner_evidence`. Reading is not demonstration. `recordEvent` and
+   * `recordEvidence` are different functions with different stores, and this calls the first.
+   */
+  const finishReadingChunk = useCallback(() => {
+    recordEvent({ type: "reading_finished" });
+    update((current) => finishReading(current, new Date().toISOString()));
+  }, [recordEvent, update]);
+
   /** §11 — put a rewritten passage back the way it was written. Local, immediate and free: the
    *  previous wording is already on the block, so this costs no model call and cannot fail. */
   const restoreRewritten = useCallback(
@@ -1267,6 +1290,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     ready,
     dismissError: () => setError(null),
     restoreRewritten,
+    finishReadingChunk,
     dismissAside: () => setAside(null),
     attachFiles,
     begin,
