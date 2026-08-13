@@ -48,12 +48,15 @@ const argv = process.argv.slice(2);
 const positional: string[] = [];
 let outPath: string | undefined;
 let lookAtFigures = false;
+let capture = false;
 for (let i = 0; i < argv.length; i += 1) {
   const arg = argv[i]!;
   if (arg === "--figures") lookAtFigures = true;
+  else if (arg === "--capture") capture = true;
   else if (arg === "--out") outPath = argv[++i];
   else positional.push(arg);
 }
+const replies: { promptKind: string; imagesSent: number; finishReason: unknown; text: string }[] = [];
 const mode = positional[0];
 const file = positional[1];
 if (!file || !["off", "stub", "live"].includes(mode ?? "")) {
@@ -135,11 +138,26 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     visionHttpOk += 1;
     // A CLONE: the caller still needs to read this body.
     try {
-      const meta = (await response.clone().json())?.usageMetadata;
+      const payload = await response.clone().json();
+      const meta = payload?.usageMetadata;
       if (meta) {
         usage.promptTokens += meta.promptTokenCount ?? 0;
         usage.outputTokens += (meta.candidatesTokenCount ?? 0) + (meta.thoughtsTokenCount ?? 0);
         usage.totalTokens += meta.totalTokenCount ?? 0;
+      }
+      // 🔴 THE PROVIDER'S OWN WORDS, KEPT ONLY WHEN ASKED FOR. A paid call whose
+      // answer changes nothing downstream is indistinguishable from a call that
+      // was never made, unless the answer itself is on the record. This holds no
+      // credential: it is the model's reply text and the token counts.
+      if (capture) {
+        replies.push({
+          promptKind: /These are figures taken from/.test(String(init?.body ?? "")) ? "figures" : "pages",
+          imagesSent: (JSON.parse(String(init?.body ?? "{}")).contents?.[0]?.parts ?? []).filter(
+            (p: Record<string, unknown>) => p.inline_data,
+          ).length,
+          finishReason: payload?.candidates?.[0]?.finishReason ?? null,
+          text: String(payload?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? ""),
+        });
       }
     } catch {
       // Accounting must never break the parse it is measuring.
@@ -179,7 +197,15 @@ try {
   const outcome = await parseDocument(new Uint8Array(readFileSync(file)), name, "application/pdf", {
     lookAtFigures,
   });
-  const done = () => ({ ...common, visionCalls, visionHttpOk, usage, models: [...modelsSeen], ms: Date.now() - started });
+  const done = () => ({
+    ...common,
+    visionCalls,
+    visionHttpOk,
+    usage,
+    models: [...modelsSeen],
+    ms: Date.now() - started,
+    ...(capture ? { replies } : {}),
+  });
 
   if (!outcome.ok) {
     emit({ ...done(), ok: true, empty: true, reason: outcome.reason, layout_pages: [] });
