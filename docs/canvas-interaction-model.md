@@ -978,6 +978,63 @@ model     generated from model knowledge; NO source anchor; must never be presen
    traceable to source capability.* Model knowledge **is** a capability, just a different one — so
    **the answer is to label it, never to hide it.**
 
+### 🔴 THE INVARIANT THAT MAKES GROUNDING SAFE — owner, 2026-08-13
+
+> **Changing provenance must not change knowledge identity, learner evidence history, or objective
+> continuity.**
+
+**Without this, a later grounding pass looks like discovering brand-new facts.** Nemesis would mint
+duplicate knowledge objects, the learner's demonstrations would attach to the abandoned ones, and
+somebody who had proven they knew `losartan → Cozaar` would be asked it again as though for the
+first time — **their history silently orphaned by an improvement.**
+
+**Enrich the existing object. Never create a second one.**
+
+```
+model-sourced claim  →  later grounded in an uploaded lecture
+                     →  SAME knowledge object, now carrying a source anchor
+                     →  same identity · same evidence · same objective · same learner state
+```
+
+### The five consequences, all binding
+
+1. **Knowledge identity survives provenance changes.** Grounding is enrichment, not creation.
+2. 🔴 **Citation UI requires an actual anchor.** No page, excerpt, URL or source span → **no `¹`.**
+   The marker is a promise that something can be shown.
+3. **Model provenance is visible but QUIET.** *"Generated from model knowledge"* in the
+   source/details surface — **not a warning beside every sentence.** The learner should be able to
+   find it, not be nagged by it.
+4. 🔴 **Topic-first creates structured knowledge DIRECTLY.** It does not generate prose in order to
+   manufacture something that looks like a source.
+5. **Grounding can happen later.** When support is found, the source preview becomes available and
+   the citation affordance appears naturally.
+
+### 🔴 The pipeline this forbids, named so nobody rebuilds it
+
+```
+✅  topic → construct knowledge territory → knowledge objects (provenance = model)
+        → Brain chooses a probe → Canvas interaction
+        → optional grounding → THE SAME objects gain source anchors
+
+❌  topic → generate a fake textbook → treat the textbook as a source
+        → extract knowledge back out of it → ask questions
+```
+
+The second is **wasteful and conceptually backwards** — it round-trips through a document that
+exists only to satisfy a clause, and then mistakes its own output for evidence. It is also,
+precisely, what production does today.
+
+### The learner-facing surface stays minimal
+
+```
+Sources
+  Nemesis knowledge        Generated from model knowledge
+  Lecture 4.pdf            12 claims grounded
+```
+
+A claim with a real source gets the small `¹` pill. A claim without one simply has no marker. **No
+badge, no banner, no per-sentence disclaimer.**
+
 ### 🔴 What this contract does NOT authorise
 
 - **Not** weakening the durable-source rule for canvases that *do* have sources. A source that

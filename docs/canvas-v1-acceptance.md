@@ -668,6 +668,29 @@ identical apart from the new evidence.
 | N6 | 🔴 **Scaffold is not mastery.** A learner reads a rewritten explanation and advances. **No positive evidence exists** until later independent production. | zero rows across the read; a row only after production |
 | N7 | **Durable state.** A question, response or explanation leaves the visible Canvas while the recorded interaction **still affects a later Brain decision.** | C4's method — counterfactual, not sequence |
 
+### 🔴 N8–N11 — TOPIC-FIRST AND PROVENANCE
+
+Owner cases, 2026-08-13. Contract:
+[`canvas-interaction-model.md` §M](./canvas-interaction-model.md#-the-provenance-contract--the-thing-that-actually-blocks-the-front-door).
+
+| # | Criterion | The proof |
+|---|---|---|
+| N8 | **A topic-only canvas produces knowledge and questions with no upload.** | a task on a canvas with zero sources, reached the ordinary way |
+| N9 | **Model-sourced claims show NO citation marker.** | the absence, on a claim with no anchor |
+| N10 | **The UI exposes that the material is model-generated, somewhere accessible.** | the Sources surface — 🔴 and **not** a per-sentence disclaimer, which fails this criterion by over-satisfying it |
+| N11 | 🔴 **Later grounding attaches a real source to the EXISTING knowledge object** — no duplicate, no reset of learner state. | same `identityKey` before and after · evidence rows still attached · objective continuity unbroken |
+
+**N11 is the one that can destroy data, and it is the reason the contract exists.** If grounding
+mints a second knowledge object, the learner's demonstrations stay attached to the abandoned one and
+someone who proved they knew a fact is asked it again as though for the first time — **their history
+silently orphaned by an improvement.** Prove identity continuity across the provenance change, not
+merely that a source got attached.
+
+**N9 and N10 pull in opposite directions on purpose.** N9 forbids a marker where there is no anchor;
+N10 requires the model origin be discoverable. **A per-sentence "generated" badge would satisfy
+neither** — it is not a citation and it is not quiet. The passing shape is: nothing beside the
+sentence, and one line in the Sources surface.
+
 ### 🔴 The two that can pass while being wrong
 
 **N1 and N6 are the same failure in two places, and both look like success.** A `✓` wired to
