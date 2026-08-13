@@ -50,6 +50,7 @@ import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { ASK_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 
+import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
 import type { ActiveTask } from "./use-canvas-session";
@@ -77,6 +78,29 @@ interface CanvasComposerProps {
    * canvas starts — the control lives on the home and pre-session composer, where it is the point.
    */
   inSession?: boolean;
+  /**
+   * The Canvas is showing something the learner is meant to READ, and pressing on is the next
+   * move. `null` when there is nothing to advance past.
+   *
+   * 🔴 A POSITIVE SIGNAL, NEVER `!answering`. The negation of "a question is being asked" also
+   * covers the landing page, a plain document with no task, and the empty state — a `✓` on any of
+   * those is a control wired to nothing, which is worse than no control. Only the caller knows
+   * whether the policy is presenting something acknowledgeable, so only the caller may say so.
+   *
+   * 🔴 AND PRESSING IT WRITES NO LEARNER EVIDENCE (interaction-model §I, acceptance N1). `✓` means
+   * exactly "I am finished inspecting this state" — never "I understand this", never "I know
+   * this". It is progression telemetry. The proof is the evidence table measured ACROSS the press,
+   * not this comment and not the handler.
+   */
+  onAdvance?: (() => void) | null;
+  /**
+   * Advancing is momentarily refused — the evidence from the last answer is still being written.
+   *
+   * 🔴 THE CONTROL STAYS, AND SAYS SO. `acknowledge()` returns early while recording, so a `✓`
+   * wired straight to it would be a dead press: nothing happens, nothing explains why. Now that
+   * the composer is the ONLY way forward, a dead press is the learner's whole path blocked.
+   */
+  advanceBusy?: boolean;
 }
 
 /** Grows to about six lines, then stops. Beyond that the box would eat the question. */
@@ -92,6 +116,8 @@ export function CanvasComposer({
   busy,
   busyLabel,
   inSession = false,
+  onAdvance = null,
+  advanceBusy = false,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
@@ -188,6 +214,31 @@ export function CanvasComposer({
   const acceptDictation = () => dictation.stop();
 
   const listening = dictation.listening;
+
+  // ── §I: the composer is the only progression control ────────────────────────
+  //
+  //   exposition   empty composer  ->  ✓            response begins  ->  send
+  //   production   empty composer  ->  NO CONTROL   response exists  ->  send
+  //
+  // 🔴 THERE IS NEVER BOTH A `✓` AND A SEND. One location, one primary action, decided by state.
+  //
+  // 🔴 AND IN A PRODUCTION STATE THE CONTROL IS ABSENT, NOT DISABLED. It used to render disabled
+  // whenever nothing was typed. Disabled and absent look similar and mean different things: N3's
+  // proof is *the absence*, because a greyed control still advertises that pressing on is an
+  // option, and the whole point of a required demonstration is that bypassing it is not one.
+  // Integration measures the element, not its `disabled` attribute.
+  // 🔴 ONE VALUE, NOT TWO BOOLEANS — see canvas-progression.ts. A pair of flags can be true at
+  // once; this cannot, so "never both" is a property of the type rather than of remembering.
+  const control = composerControl({
+    // 🔴 `!answering` IS A BELT-AND-BRACES SECOND GUARD, NOT THE TEST. The caller already refuses
+    // to pass `onAdvance` during a demonstration (that is where the decision lives, with its own
+    // test). This repeats it locally because the cost of the two disagreeing is that retrieval
+    // becomes skippable, which is silent — every screen still looks right.
+    advanceAvailable: Boolean(onAdvance) && !answering,
+    hasResponse: Boolean(text.trim()),
+  });
+  const showAdvance = control === "advance";
+  const showSend = control === "send";
 
   return (
     // The pill FLOATS: no footer container, no top border, canvas visible all around it. The
@@ -363,20 +414,46 @@ export function CanvasComposer({
                   carries over with the product's own accent). `disabled:opacity-40` still dims it
                   when there is truly nothing to send, so the two real states (nothing typed vs.
                   ready to send) stay visibly different without a colour swap between them. */}
-              <button
-                aria-label={answering ? "Submit answer" : "Send"}
-                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-                disabled={busy || !text.trim()}
-                onClick={submit}
-                type="button"
-              >
-                {/* 🔴 `spinning` IS NOT OPTIONAL ON A LOADING GLYPH. Without the modifier the
-                    codicon renders a static broken circle — it had been sitting there perfectly
-                    still through every wait, reading as a decorative icon or a rendering fault
-                    rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
-                    is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
-                <Codicon name={busy ? "loading" : "arrow-up"} size="20px" spinning={busy} />
-              </button>
+              {showSend && (
+                <button
+                  aria-label={answering ? "Submit answer" : "Send"}
+                  className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
+                  disabled={busy}
+                  onClick={submit}
+                  type="button"
+                >
+                  {/* 🔴 `spinning` IS NOT OPTIONAL ON A LOADING GLYPH. Without the modifier the
+                      codicon renders a static broken circle — it had been sitting there perfectly
+                      still through every wait, reading as a decorative icon or a rendering fault
+                      rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
+                      is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
+                  <Codicon name={busy ? "loading" : "arrow-up"} size="20px" spinning={busy} />
+                </button>
+              )}
+
+              {/* 🔴 THE SAME SLOT THE SEND BUTTON USES, AND NEVER BOTH AT ONCE. Same size, same
+                  position, same accent — what changes is the glyph and what it means. `✓` reads as
+                  "I have finished with this", which is why §I insists it is not an agreement
+                  control: it carries no claim about understanding and writes nothing.
+
+                  It is styled like the primary action rather than as a quiet glyph because it IS
+                  the primary action in this state — a grey tick would read as disabled on the one
+                  control the learner needs. */}
+              {showAdvance && (
+                <button
+                  aria-label="I've finished with this"
+                  className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
+                  disabled={busy || advanceBusy}
+                  onClick={() => onAdvance?.()}
+                  title="I've finished with this"
+                  type="button"
+                >
+                  {/* 🔴 ONE LINE ON PURPOSE. `canvas-motion.test.ts` checks line by line that a
+                      `loading` glyph carries `spinning`, and splitting this across lines hid it
+                      from that check — which is how a frozen glyph got shipped the first time. */}
+                  <Codicon name={busy || advanceBusy ? "loading" : "check"} size="20px" spinning={busy || advanceBusy} />
+                </button>
+              )}
             </>
           )}
         </div>

@@ -184,7 +184,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           {/* Space the morphing composer occupies while it is centred. */}
           <div className="h-[54px] w-full max-w-[770px]" />
           <p className="mt-6 text-[0.8125rem] text-(--ui-text-quaternary)">
-            Type it, drop a file in, or record a lecture.
+            {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
+                used to read "Type it, drop a file in, or record a lecture." Recording is started by
+                `RecordWorkspace`, which is hosted only on /sessions and /notebooks — the Canvas has
+                no path to it. `recording-recovery-notice.tsx` sits on this very page and says so in
+                its own header: it can only offer back a capture that already happened.
+
+                Two of those three were also untrue until this pass: the `+` did nothing and there
+                was no dictation. Those are now real, so the copy describes four things this
+                composer genuinely does. Wording is my call; the constraint is that it not name a
+                capability the front door does not have. */}
+            Type a topic, ask a question, dictate it, or drop your material in.
           </p>
         </section>
 

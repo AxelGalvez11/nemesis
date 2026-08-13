@@ -19,7 +19,10 @@ import type { PolicyOverride } from "@/lib/learn/policy-override";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
+import { verdictIsPass } from "@/lib/learn/canvas-judge";
+
 import { CanvasComposer } from "./canvas-composer";
+import { offersAdvance } from "./canvas-progression";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
@@ -489,6 +492,36 @@ export function LearningCanvas({
               : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
           }
           inSession={sink.kind === "policy"}
+          // §I — the composer is the only progression control. `✓` appears only where the policy is
+          // presenting something the learner reads and then moves past, and NEVER while a
+          // demonstration is required. The predicate is in canvas-progression.ts with its own test,
+          // because "which states may be skipped" is exactly the kind of condition that drifts.
+          //
+          // 🔴 IT IS WIRED TO `acknowledge`, WHICH WRITES NO LEARNER EVIDENCE (N1). It clears the
+          // feedback, bumps the round and records that this objective was acted on. Nothing about
+          // it touches `learner_evidence` — and the proof of that is measuring the table across the
+          // press, not reading this line.
+          onAdvance={
+            regions.policy && offersAdvance({
+              actionType: policy.decision?.action.type ?? null,
+              // 🔴 GATED ON THE ACTION TYPE, NOT ON `prompt` ALONE. `prompt` is cleared by an
+              // EFFECT when the action stops being `retrieve` (use-policy-runtime.ts:313), so there
+              // is one render in which a correction screen still holds the previous question's
+              // prompt. Keyed on `prompt` alone, that render would report a demonstration in
+              // progress, withhold the `✓`, and leave the learner on a screen with no control at
+              // all — a one-frame flicker at best, and the only way forward at worst.
+              awaitingDemonstration:
+                policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback,
+              feedbackPassed: policy.feedback ? verdictIsPass(policy.feedback.evaluation.verdict) : false,
+              hasFeedback: policy.feedback !== null,
+            })
+              ? policy.acknowledge
+              : null
+          }
+          // 🔴 The press is refused while the last answer's evidence is still being written
+          // (`acknowledge` returns early), so the control has to say it is working rather than
+          // ignore the learner. Now that this is the only way forward, a dead press blocks them.
+          advanceBusy={policy.recording}
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
