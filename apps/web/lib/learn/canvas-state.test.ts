@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { emptyCanvas, type LearningCanvas } from "./canvas-model";
-import { canStart, canTransition, nextAction, stateAfterSourceAttached } from "./canvas-state";
+import { canStart, canTransition, stateAfterSourceAttached } from "./canvas-state";
+
+// 🔴 THE `nextAction` TESTS ARE DELETED WITH THE FUNCTION (owner, §38), NOT WEAKENED. They asserted
+// that it offered no move into an evidence stage — true, and the reason every one of those controls
+// was invisible (#585). The owner has since ruled the controls out by description, so the function
+// they guarded is gone and `canvas-dead-controls.test.ts` now asserts it stays gone. What those
+// tests actually protected — that nothing may WRITE a canvas into a retired stage — is
+// `canTransition`, which is untouched and still tested below.
 
 function canvasIn(state: LearningCanvas["state"], patch: Partial<LearningCanvas> = {}): LearningCanvas {
   return { ...emptyCanvas("c1", "2026-08-06T00:00:00.000Z"), state, ...patch };
@@ -120,64 +127,11 @@ const QUESTION = {
   conceptId: "k1",
 };
 
-test("🔴 nextAction OFFERS no move into an evidence stage", () => {
-  // 🔴 THIS ENCODED THE MACHINE'S ADVANCE TABLE: learn→recall, recall→test, test→diagnose. Every
-  // one is an entrance into the retired arm, so the canvas now offers nothing there.
-  //
-  // Closing the OFFER as well as the transition is not redundancy. A button that still appeared and
-  // then did nothing is worse than no button: the learner would read it as broken rather than as
-  // absent, and "I've read this" is exactly the control that handed the canvas to the legacy
-  // runtime in the first place.
-  assert.equal(nextAction(canvasIn("learn", { blocks: [{ id: "b1", type: "paragraph", content: "x" }] })), null);
-  assert.equal(
-    nextAction(canvasIn("recall", { recall: [CARD], recallResults: [{ cardId: "r1", conceptId: "k1", grade: "good" }] })),
-    null,
-  );
-  assert.equal(
-    nextAction(canvasIn("test", { questions: [QUESTION], answers: [{ questionId: "q1", picked: 0, correct: true }] })),
-    null,
-  );
-  assert.equal(nextAction(canvasIn("complete")), null);
-});
 
-test("a test still in progress offers no way forward", () => {
-  // Otherwise one stray click on the header ends the paper and diagnoses from one answer,
-  // marking every unasked concept weak.
-  assert.equal(nextAction(canvasIn("test", { questions: [QUESTION, { ...QUESTION, id: "q2" }], answers: [] })), null);
-  assert.equal(
-    nextAction(canvasIn("test", { questions: [QUESTION, { ...QUESTION, id: "q2" }], answers: [{ questionId: "q1", picked: 0, correct: true }] })),
-    null,
-  );
-});
 
-test("a recall deck still in progress offers no way forward", () => {
-  assert.equal(nextAction(canvasIn("recall", { recall: [CARD, { ...CARD, id: "r2" }], recallResults: [] })), null);
-});
 
-test("🔴 a finished retest offers nothing — a fresh diagnosis is an evidence stage too", () => {
-  // Encoded "a retest ends in a verdict, never straight to done". Both halves of that branch land
-  // in the retired arm, so the canvas offers neither.
-  assert.equal(
-    nextAction(canvasIn("retest", { questions: [QUESTION], answers: [{ questionId: "q1", picked: 0, correct: true }] })),
-    null,
-  );
-  assert.equal(nextAction(canvasIn("retest", { questions: [QUESTION], answers: [] })), null);
-});
 
-test("🔴 relearning survives the retirement; 'complete' does not — the sharpest entrance/exit case", () => {
-  // 🔴 THE ONE PLACE IT WOULD HAVE BEEN EASY TO OVER-CLOSE. Both moves out of `diagnose` look
-  // alike in the legacy table, and they are not alike at all: `targeted_relearn` is READING
-  // material, so it stays offered, while `complete` is an evidence stage and goes.
-  //
-  // Closing relearning too would have been a half-second's carelessness that stranded any canvas in
-  // a diagnosis with nowhere to go but back — retirement turning into demolition.
-  assert.equal(nextAction(canvasIn("diagnose", { weakConceptIds: ["k1"] }))?.to, "targeted_relearn");
-  assert.equal(nextAction(canvasIn("diagnose", { weakConceptIds: [] })), null, "'Finish' led into an evidence stage");
-});
 
-test("a lesson with no blocks yet offers no way forward", () => {
-  assert.equal(nextAction(canvasIn("learn", { blocks: [] })), null);
-});
 
 // ── the level picker is gone ────────────────────────────────────────────────
 

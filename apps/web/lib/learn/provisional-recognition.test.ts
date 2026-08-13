@@ -14,13 +14,15 @@
 // and §22 would inherit the inflated confidence anyway.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import type { KnowledgeObject } from "./knowledge-types";
 import { projectLearnerState, type LearnerEvidence } from "./learner-evidence";
 import { objectivesForKnowledge } from "./learning-objective";
 import type { CanvasState } from "./canvas-model";
-import { canTransition, nextAction } from "./canvas-state";
+import { canTransition } from "./canvas-state";
 import { RETRIEVAL_ELIGIBLE_AFTER_MS } from "./retrieval-eligibility";
 import type { ScaffoldRung } from "./scaffold-rung";
 import { ACT_AGAIN_AFTER_MS, chooseNextTeachingAction } from "./teaching-policy";
@@ -68,16 +70,6 @@ const ALL_STATES: readonly CanvasState[] = [
   "complete",
 ];
 
-/** Enough of a canvas for `nextAction`, with every stage's content genuinely finished — so a
- *  refusal here is the retirement refusing, never a stage merely looking incomplete. */
-const BLANK_CANVAS = {
-  answers: [{ questionId: "q1", value: "a" }],
-  blocks: [],
-  questions: [{ conceptId: null, id: "q1", prompt: "?" }],
-  recall: [{ back: "b", conceptId: null, front: "f", id: "c1" }],
-  recallResults: [{ cardId: "c1", correct: true }],
-  weakConceptIds: [],
-} as unknown as Parameters<typeof nextAction>[0];
 
 function decide(evidence: readonly LearnerEvidence[], now = NOW) {
   return chooseNextTeachingAction({
@@ -213,17 +205,22 @@ test("🔴 §31.3 — no state can transition into `diagnose`, from anywhere", (
   }
 });
 
-test("🔴 and the UI is never offered the move either — the direct-assignment path is unreachable", () => {
-  // `finishTest` sets `state: "diagnose"` by direct assignment, bypassing `canTransition`
-  // entirely — so the guard above is NOT on its own sufficient, and checking it alone would be
-  // exactly the "semantically correct and never executed" trap this repo has hit before.
+test("🔴 STRONGER NOW: the direct-assignment path does not exist at all", () => {
+  // 🔴 THE OLD ASSERTION WAS WEAKER AND IS RECORDED. It read: *"the UI is never offered the move
+  // either"*, and checked that `nextAction` never returned `{ to: "diagnose" }` — because
+  // `finishTest` set `state: "diagnose"` by DIRECT ASSIGNMENT, bypassing `canTransition`, so the
+  // guard above was not sufficient on its own.
   //
-  // Its one caller fires only when `nextAction(canvas).to === "diagnose"`, so that is the condition
-  // actually worth pinning. Asserted over every state a stored canvas could arrive in.
-  for (const state of ALL_STATES) {
-    const move = nextAction({ ...BLANK_CANVAS, state });
-    assert.notEqual(move?.to, "diagnose", `nextAction must never offer diagnose from ${state}`);
-  }
+  // `finishTest` is now deleted (owner, §38 — the control that called it was "See where I stand",
+  // and the only button is Continue). So the bypass has no caller AND no body: the property is
+  // guaranteed by absence rather than by a predicate returning null, which is the strongest form
+  // available. Asserted on the source, because "the function is gone" is what changed.
+  const session = readFileSync(
+    join(import.meta.dirname, "..", "..", "components", "workspace", "learn", "use-canvas-session.ts"),
+    "utf8",
+  );
+  assert.ok(!/const finishTest = useCallback/.test(session), "finishTest must stay deleted");
+  assert.ok(!/state: "diagnose"/.test(session), "and nothing may assign the retired stage directly");
 });
 
 // ── nothing about this reaches the learner ──────────────────────────────────

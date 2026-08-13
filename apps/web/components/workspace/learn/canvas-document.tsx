@@ -12,9 +12,9 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { isRewritten } from "@/lib/learn/canvas-ops";
-import { isRead, offersContinue } from "@/lib/learn/canvas-reading";
+import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
+import { isRead } from "@/lib/learn/canvas-reading";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
-import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
 
 import { markedTerms, splitByTerms, type MarkedTerm } from "@/lib/learn/canvas-vocabulary";
@@ -39,10 +39,11 @@ interface CanvasDocumentProps {
   busyBlockIds: string[];
   /** §11 — restore one passage to the wording it had before the learner rewrote it. */
   onRestore: (blockId: string) => void;
-  /** §12 — the learner says they have finished the chunk on screen. */
+  /** §38 — the learner says they have finished the chunk on screen. */
   onFinishReading: () => void;
-  /** A retrieval prompt is up and unanswered, so §12's control must not offer a way past it. */
-  awaitingDemonstration: boolean;
+  /** §38 — this region is the one carrying a reading requirement right now. Decided by
+   *  `continueOwner` for the whole surface; a correction on screen owns it instead. */
+  showContinue: boolean;
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
@@ -52,8 +53,8 @@ interface CanvasDocumentProps {
   onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
   /** Reading is the one state whose content has no natural end control, so the move forward is
    *  printed after the last block rather than floating in the chrome. */
-  next: NextAction | null;
-  onAdvance: () => void;
+
+
   busy: boolean;
 }
 
@@ -64,13 +65,11 @@ export function CanvasDocument({
   busyBlockIds,
   onRestore,
   onFinishReading,
-  awaitingDemonstration,
+  showContinue,
   aside,
   onDismissAside,
   onToggleCollapsed,
   onTerm,
-  next,
-  onAdvance,
   busy,
 }: CanvasDocumentProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -155,53 +154,32 @@ export function CanvasDocument({
           blocks; a per-block Continue would be 197 presses with 196 paragraphs still visible
           underneath. §12's "bottom of the paragraph chunk" is the chunk Nemesis presented.
 
-          🔴 AND IT CANNOT APPEAR WHILE AN ANSWER IS OWED. §17 forbids a Continue after an answer,
-          but the reason it is IMPOSSIBLE rather than merely absent is N3: a control that moves the
-          learner on while a demonstration is owed is a way to press past the question. The
-          predicate lives in canvas-reading.ts beside the composer's equivalent, so the two doors
-          cannot disagree.
+          🔴 AND WHETHER IT APPEARS IS NOT DECIDED HERE. §38's trigger is a READING REQUIREMENT —
+          a property of a region, not a fact about this component — so `continueOwner` answers it
+          once for the whole surface and hands down the result. That is what keeps a correction and
+          an unread passage from each offering their own, and it is what makes N3 hold: a required
+          demonstration suppresses the owner outright, so no branch here can reintroduce a way past
+          the question.
 
-          Restrained per §19 and §12: an inline control ending a passage, not a call to action. It
-          keeps the outline the previous control earned — "the move forward exists here" without
+          Restrained per §19: an inline control ending a passage, not a call to action. It keeps
+          the outline the previous control earned — "the move forward exists here" without
           competing with the content above it. */}
-      {offersContinue({
-        awaitingDemonstration,
-        busy,
-        hasUnreadMaterial: visible.some((block) => !isRead(block)),
-      }) && (
+      {showContinue && (
         <button
           className="mt-10 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={onFinishReading}
           type="button"
         >
-          Continue
+          {CONTINUE_LABEL}
         </button>
       )}
 
-      {/* 🔴 CORRECTION — THIS IS DEAD IN EVERY CASE, AND #584 SAID OTHERWISE.
-          That comment claimed `targeted_relearn` "is reading material rather than an evidence
-          stage and still offers a move". The first half is true and the second is false: its only
-          move goes to `retest`, which IS retired, so `nextAction` refuses it exactly as it refuses
-          `learn`. The mistake came from reading a true statement about the STATE in
-          canvas-state.ts as a statement about the CONTROL.
-
-          Measured across every state a canvas can be observed in — evidence stages excluded,
-          because `normaliseCanvas` coerces those to `learn` on read — `nextAction` returns null
-          for ALL of them. See canvas-dead-controls.test.ts, which pins it.
-
-          🔴 LEFT IN PLACE ANYWAY, DELIBERATELY. Removing it is a separate decision: it would take
-          six session methods with it, and whether any of that machinery should come back is the
-          owner's call, not a cleanup. The audit reports; it does not delete. */}
-      {next && (
-        <button
-          className="mt-10 ml-3 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
-          disabled={busy}
-          onClick={onAdvance}
-          type="button"
-        >
-          {next.label}
-        </button>
-      )}
+      {/* 🔴 THE LEGACY ADVANCE CONTROL IS DELETED — "Retest me" and "Fix my weak spots", owner
+          2026-08-13: *"The only button should be 'continue' below reading passages, thats it."*
+          Both were already unreachable (see #585), and both are things the learner should never
+          have to ask for: §18 makes re-testing the system's job and weak-spot targeting is what
+          objective ordering already does. A button for either is the learner managing the learning
+          system, which §26 forbids. `nextAction` and its handler went with them. */}
 
       {openSource && sourceBlock && (
         <CanvasSourcePreview block={sourceBlock} canvas={canvas} onClose={() => setOpenSource(null)} rect={openSource.rect} />

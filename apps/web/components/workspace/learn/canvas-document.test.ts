@@ -124,15 +124,27 @@ test("no 'Open source' link -- there is no source-viewer route to point it at", 
   assert.doesNotMatch(source, />\s*Open source\s*</);
 });
 
-test("🔴 the exposure-acknowledgment button is quieter, but it still renders and still advances", async () => {
+test("🔴 REVERSED: the exposure-acknowledgment button is DELETED, and Continue is the one control", async () => {
   const source = await SOURCE;
-  // J1b, confirmed by Brain as staying: this is a real signal (it rotates the recall queue), not
-  // a mastery claim -- it must not disappear, only stop reading as the page's one loud CTA.
-  assert.match(source, /\{next && \(/, "the control must still be conditional on there being somewhere to go");
-  assert.match(source, /onClick=\{onAdvance\}/);
+  // 🔴 THE OLD ASSERTION IS RECORDED RATHER THAN DELETED. It read: *"the exposure-acknowledgment
+  // button is quieter, but it STILL RENDERS and still advances"*, on the reasoning that it was a
+  // real signal (it rotated the recall queue) rather than a mastery claim.
+  //
+  // Two things falsified it. #585 proved the control had not rendered in any observable state
+  // since the six-stage retirement — so "it still renders" was already false when written. And the
+  // owner has now ruled it out by description: *"The only button should be 'continue' below
+  // reading passages, thats it."* Re-testing and weak-spot targeting are owed automatically (§18,
+  // objective ordering); a button for either is the learner managing the system, which §26 forbids.
+  assert.doesNotMatch(source, /\{next && \(/, "the legacy advance control must be gone");
+  assert.doesNotMatch(source, /onClick=\{onAdvance\}/, "and so must its handler");
+  assert.doesNotMatch(source, /NextAction/, "and the type it depended on");
+
+  // What replaces it is one control, from the shared label, gated by the shared owner.
+  assert.match(source, /\{showContinue && \(/, "Continue renders from the derived property");
+  assert.match(source, /\{CONTINUE_LABEL\}/, "and never from a literal — three equal literals is how ACCEPTED_MATERIAL drifted");
   assert.doesNotMatch(
     source,
     /bg-\(--ui-text-primary\)[^"]*text-\(--ui-bg-editor\)/,
-    "must no longer use the solid-fill treatment that read as the page's primary purchase button",
+    "🔴 restrained, per the owner: 'not a giant black CTA… it is the learner saying I have read this'",
   );
 });

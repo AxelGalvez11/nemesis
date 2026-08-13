@@ -60,79 +60,66 @@ test("feedback outranks the action underneath it, exactly as the renderer does",
 //   exposition   empty composer  ->  ✓            response begins  ->  send
 //   production   empty composer  ->  NO CONTROL   response exists   ->  send
 
-test("🔴 §I: the four states, and the control each one shows", () => {
-  const exposition = { advanceAvailable: true };
-  const production = { advanceAvailable: false };
-
-  assert.equal(composerControl({ ...exposition, hasResponse: false }), "advance");
-  assert.equal(composerControl({ ...exposition, hasResponse: true }), "send");
+test("🔴 §I NARROWED TO TWO STATES: the composer sends, or offers nothing", () => {
+  // 🔴 THIS USED TO BE FOUR STATES, ACROSS AN `advanceAvailable` INPUT THAT NO LONGER EXISTS. Its
+  // exposition rows asserted `"advance"` — the `✓` — which §38/§39 moved out of the composer and
+  // below the material it acknowledges. The two rows that survive are the two that were never
+  // about the tick, and one of them is N3.
+  assert.equal(composerControl({ hasResponse: true }), "send");
   assert.equal(
-    composerControl({ ...production, hasResponse: false }),
+    composerControl({ hasResponse: false }),
     "none",
     "a required demonstration must offer NO control — absent, not disabled",
   );
-  assert.equal(composerControl({ ...production, hasResponse: true }), "send");
 });
 
-test("🔴 there is never both a ✓ and a send, and the type is what guarantees it", () => {
-  // Exhaustive over both inputs: every combination yields exactly ONE control, because the
-  // return type cannot hold two. Written as a pair of booleans this property would be a
-  // convention; here it is not expressible otherwise.
+test("🔴 REVERSED: the composer no longer offers a ✓ at all — §38/§39", () => {
+  // 🔴 THE OLD ASSERTION IS RECORDED RATHER THAN DELETED, because deleting it is the wrong fix and
+  // the reasoning is what changed, not the property. It read:
+  //
+  //     "there is never both a ✓ and a send, and the TYPE is what guarantees it"
+  //     "a response outranks ✓ in exposition — typing turns the same control into send"
+  //
+  // Both were true, and the guarantee held BECAUSE both controls lived in this one slot. §38 says
+  // there is one button in Nemesis and it says Continue; §39 says it appears when the policy
+  // declares a DELIBERATE cognitive mode. So the acknowledgment left the composer and now renders
+  // below the material it acknowledges.
+  //
+  // 🔴 WHICH MEANS THIS UNION NO LONGER GUARANTEES "NEVER BOTH". A send button and a Continue can
+  // now be on screen together with the type perfectly satisfied — they are different components.
+  // The guarantee MOVED to `continueOwner`, which returns at most one region for the whole surface
+  // and is suppressed outright while a demonstration is owed. Asserting the old promise here would
+  // be asserting something this function has stopped controlling.
   for (const hasResponse of [true, false]) {
-    for (const advanceAvailable of [true, false]) {
-      const control = composerControl({ advanceAvailable, hasResponse });
-      assert.ok(["send", "advance", "none"].includes(control), `unexpected control: ${control}`);
+    for (const hasAttachment of [true, false]) {
+      const control = composerControl({ hasAttachment, hasResponse });
+      assert.ok(["send", "none"].includes(control), `the composer must only ever send or offer nothing: ${control}`);
     }
   }
-});
-
-test("a response outranks ✓ in exposition — typing turns the same control into send", () => {
-  // §I: "Clearing the composer while still in an exposition state may return it to ✓."
-  assert.equal(composerControl({ advanceAvailable: true, hasResponse: true }), "send");
-  assert.equal(composerControl({ advanceAvailable: true, hasResponse: false }), "advance");
 });
 
 // ── sending material with nothing typed (UX brief §3) ───────────────────────
 
 test("🔴 attached material makes the empty composer sendable — §3", () => {
   // §3: "Attach + send with no text means 'learn this material with me.' Infer it." §26 lists it
-  // as its own criterion: "a file may be sent with no accompanying text". Before this, the send
-  // control was absent with a file staged and nothing typed, so the only way to start was the
-  // dedicated "Help me learn this" screen §1 deletes.
-  assert.equal(
-    composerControl({ advanceAvailable: false, hasResponse: false, hasAttachment: true }),
-    "send",
-  );
+  // as its own criterion: "a file may be sent with no accompanying text".
+  assert.equal(composerControl({ hasAttachment: true, hasResponse: false }), "send");
   // And it is still absent with nothing at all — an empty canvas offers no control to press.
-  assert.equal(
-    composerControl({ advanceAvailable: false, hasResponse: false, hasAttachment: false }),
-    "none",
-  );
+  assert.equal(composerControl({ hasAttachment: false, hasResponse: false }), "none");
 });
 
-test("🔴 N3 SURVIVES §3: a production state with nothing typed still offers NO control", () => {
+test("🔴 N3 SURVIVES BOTH §3 AND THE ✓ REMOVAL: a production state with nothing typed offers NO control", () => {
   // The regression this exists to catch, and it is the dangerous direction: widening "what counts
   // as sendable" is exactly how a required demonstration silently becomes skippable, while every
   // screen still looks correct.
   //
-  // The guarantee is structural rather than a promise — attachments are only ever pending on a
-  // canvas that has not begun, where there is no prompt, no objective and no evidence to bypass,
-  // so `hasAttachment` and a live retrieval cannot be true together. This pins the default anyway,
-  // because "cannot happen" is a claim about the caller and this is the function.
+  // 🔴 AND REMOVING THE `✓` DID NOT SOFTEN IT. Narrowing the union took away a control; it did not
+  // touch the rule that an empty composer in a production state renders nothing at all — absent,
+  // never present-and-disabled, because a greyed control still advertises that pressing on is an
+  // option.
   assert.equal(
-    composerControl({ advanceAvailable: false, hasResponse: false }),
+    composerControl({ hasResponse: false }),
     "none",
     "omitting hasAttachment must mean false — a defaulted-true flag would remove N3 everywhere at once",
   );
-});
-
-test("🔴 still never both, now across three inputs", () => {
-  for (const hasResponse of [true, false]) {
-    for (const advanceAvailable of [true, false]) {
-      for (const hasAttachment of [true, false]) {
-        const control = composerControl({ advanceAvailable, hasAttachment, hasResponse });
-        assert.ok(["send", "advance", "none"].includes(control), `unexpected control: ${control}`);
-      }
-    }
-  }
 });
