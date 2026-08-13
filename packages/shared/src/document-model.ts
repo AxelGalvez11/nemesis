@@ -465,6 +465,18 @@ export function buildDocument(input: {
  */
 export function withVisionText(doc: DocumentModel, byUnit: ReadonlyMap<number, string>): DocumentModel {
   if (byUnit.size === 0) return doc;
+  // 🔴 A BLOCK ON A PAGE THAT DOES NOT EXIST IS WORSE THAN NO BLOCK. A caller
+  // that miscounts pages used to get one silently: `unit: -1` satisfied every
+  // branch below, inflated `blocks.length`, and was then skipped by every
+  // consumer that walks `units` — so the document reported holding text it could
+  // not show anyone. Refusing the key makes the next such mistake a visible
+  // absence rather than an invisible presence. Callers are correct today; this
+  // is here so a future one cannot fail quietly.
+  for (const unit of byUnit.keys()) {
+    if (!Number.isInteger(unit) || unit < 0 || unit >= doc.units.length) {
+      throw new RangeError(`withVisionText: unit ${unit} is outside this document's ${doc.units.length} units`);
+    }
+  }
   const added: Omit<DocBlock, "id">[] = [];
   const out: Omit<DocBlock, "id">[] = [];
   let previousUnit: number | null = null;

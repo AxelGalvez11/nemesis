@@ -545,9 +545,18 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       // vision text leaves a document whose text says one thing and whose
       // citations point into another — which reads downstream as a
       // hallucination and is much harder to trace than a missing paragraph.
-      // `seen` is keyed by 1-based page; units are 0-based.
+      // 🔴 `seen` IS ALREADY KEYED THE WAY UNITS ARE — 0-BASED — AND CONVERTING IT
+      // COST US THE TEXT. This line used to subtract one, under a comment
+      // asserting the keys were 1-based. They are not: they are the indices
+      // handed to `readPdfPagesWithVision` above, which come from `thinPages`,
+      // which builds them with `.map((text, index) => …)`. So every transcript
+      // was filed on the page BEFORE the one it was read from — and when the
+      // thin page was the first page the key became -1, a page that does not
+      // exist, and the text vanished from the layout output, the page markdown
+      // and the document markdown alike. Nothing logged; coverage still counted
+      // the page as read. We paid for the answer and threw it away.
       if (model) {
-        model = withVisionText(model, new Map([...seen].map(([page, value]) => [page - 1, value])));
+        model = withVisionText(model, seen);
         text = capText(documentToText(model), TEXT_CAP).text;
       } else {
         text = read.text;

@@ -32,8 +32,16 @@ test("🔴 the real recitation: 7 text pages + 5 scans, and vision is off", () =
 });
 
 test("…and with vision on, the same file reads complete", () => {
+  // 🔴 THE SET IS 0-BASED — THE SAME BASIS AS `pageTexts`, AND THESE NUMBERS USED
+  // TO BE ONE HIGHER. `readByVision` is `readPdfPagesWithVision`'s own key set
+  // and those keys are the indices it was handed, which come from `thinPages`.
+  // This file described them as 1-based, `pdfCoverage` dutifully added one, and
+  // every page vision actually read was counted UNREAD and filed as lost. These
+  // tests passed throughout, because they were written from the same misreading
+  // and hand-build a set production never produces. Blanks here are indices
+  // 2, 3, 4, 5 and 11.
   const pages = [full, full, blank, blank, blank, blank, full, full, full, full, full, blank];
-  const coverage = pdfCoverage({ pageTexts: pages, readByVision: new Set([3, 4, 5, 6, 12]) });
+  const coverage = pdfCoverage({ pageTexts: pages, readByVision: new Set([2, 3, 4, 5, 11]) });
   assert.equal(coverage.unitsNative, 7);
   assert.equal(coverage.unitsVision, 5);
   assert.equal(coverage.unitsUnread, 0);
@@ -44,12 +52,13 @@ test("🔴 a THIN page that vision read counts as BOTH, not as one or the other"
   // Page 36 of the pregnancy recitation: 49 characters of heading over a
   // screenshot that carries the examinable content. It has real text AND needed
   // the pixels. Forcing it into one lane loses a true fact either way.
-  const coverage = pdfCoverage({ pageTexts: [full, thin], readByVision: new Set([2]) });
+  // The thin page is index 1, and the set is 0-based.
+  const coverage = pdfCoverage({ pageTexts: [full, thin], readByVision: new Set([1]) });
   assert.equal(coverage.unitsBoth, 0, "a thin page has no usable text of its own");
   assert.equal(coverage.unitsVision, 1);
 
   const heading = `${full}`;
-  const both = pdfCoverage({ pageTexts: [heading], readByVision: new Set([1]) });
+  const both = pdfCoverage({ pageTexts: [heading], readByVision: new Set([0]) });
   assert.equal(both.unitsBoth, 1, "a page with real text that was ALSO read as pixels is both");
   assert.equal(both.state, "complete");
 });
@@ -58,7 +67,9 @@ test("the page cap is visible: 40 read, the rest unread", () => {
   // MAX_VISION_PAGES caps a single document at 40 pages. A 300-page scan
   // therefore comes back 40/300 — the exact case that used to present as whole.
   const pages = Array.from({ length: 300 }, () => blank);
-  const read = new Set(Array.from({ length: 40 }, (_, index) => index + 1));
+  // 0-based: pages 0..39. This said `index + 1` and still counted 40, because
+  // 40 of 300 pages match either way — a test that passed for the wrong reason.
+  const read = new Set(Array.from({ length: 40 }, (_, index) => index));
   const coverage = pdfCoverage({ pageTexts: pages, readByVision: read });
   assert.equal(coverage.unitsVision, 40);
   assert.equal(coverage.unitsUnread, 260);
