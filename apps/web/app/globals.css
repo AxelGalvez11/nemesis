@@ -96,10 +96,16 @@
   --bg: #fafafa; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
   --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
   --text: #000000; --text-2: #5a5e68; --text-3: #8b8f99;
-  /* 🔴 MOVED WITH `--bg-2`, WHICH IT WAS EQUAL TO. The rail was deliberately the second surface,
-     and neutralising the ladder while leaving this behind made it the ONE tinted surface in the
-     light theme, sitting directly against a neutral ground — MORE visible than the tint that was
-     removed, not less. A partial neutralisation is worse than none. */
+  /* 🔴 NEUTRALISED — AND THIS RESTORES THE VALUE `shell.css` ALREADY DOCUMENTS. Its comment at
+     `.rail` reads "light #f0f0f0, dark #1f1f1f"; the light token had drifted to the blue `#eef0f6`
+     and no longer matched its own description.
+     🔴 A DEDICATED TOKEN ON PURPOSE, NOT AN ALIAS OF `--bg-2`. shell.css records the reason —
+     "neither --surface-2 nor --bg-2 lands on the sidebar colour in BOTH themes" — so landing on the
+     same light value as `--bg-2` is a coincidence of this ladder, not a rule, and the dark value
+     stays independent. Do not collapse the two.
+     🔴 WHY IT HAD TO MOVE AT ALL: neutralising the ladder and leaving this behind made the rail the
+     ONE tinted surface in the light theme, sitting against a neutral ground — MORE visible than the
+     tint that was removed, not less. A partial neutralisation is worse than none. */
   --rail-bg: #f0f0f0;
   /* hover/active fills — accent-tinted at desktop accentMixes strengths (rowHover 4 / rowActive 8). */
   --fill-hover: color-mix(in srgb, var(--theme-primary) 5%, transparent); --fill-active: color-mix(in srgb, var(--theme-primary) 8%, transparent);
