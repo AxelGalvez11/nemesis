@@ -20,14 +20,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { forgetManifest, storedManifests } from "@/lib/workspace/recording-durable-capture";
 import { approximateSeconds, recoverable, retirable, type RecordingManifest } from "@/lib/workspace/recording-manifest";
-import { sessionsStore } from "@/lib/workspace/sessions-store";
+import { transcribeStoredRecordingToCanvas } from "@/lib/workspace/canvas-recording";
 import { recoveryOffer, recoveryRequest, type RecoveryOffer } from "@/lib/workspace/recording-recovery";
 
-/** What a recovered recording is filed under, so it reads as itself in the Library rather than
- *  as an ordinary session that happens to be missing its beginning. */
-const RECOVERED_TITLE = "Recovered recording";
-
-/** The ceiling /api/recordings/jobs enforces, mirrored so a long lecture is clamped rather than
+/** The ceiling the transcription lane enforces, mirrored so a long lecture is clamped rather than
  *  refused at the last step. */
 const MAX_JOB_SECONDS = 3 * 60 * 60;
 
@@ -35,11 +31,22 @@ type Phase = "offering" | "saving" | "saved" | "failed" | "quota";
 
 interface Props {
   accessToken: string | null;
-  /** Where a recovered recording is filed. Same hand-off a normal finish uses. */
-  onRecovered?: (storagePath: string) => void;
+  uid?: string | null;
+  /**
+   * Where a recovered recording goes — the SAME destination a recording finished normally on this
+   * surface goes to.
+   *
+   * 🔴 THIS USED TO FILE INTO SESSIONS, FROM A COMPONENT THAT ONLY EVER RENDERS ON THE CANVAS. It
+   * called `sessionsStore.create("Recovered recording")` and posted the job with
+   * `surface: "sessions"`, so a learner who recovered a lecture from the Canvas home sent it to a
+   * chat surface the sidebar does not list. The recording was safe and, from where they were
+   * standing, gone — which is the exact failure this whole notice exists to prevent, reintroduced
+   * one step further along.
+   */
+  onRecovered?: (file: File) => void;
 }
 
-export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
+export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }: Props) {
   const [manifest, setManifest] = useState<RecordingManifest | null>(null);
   const [offer, setOffer] = useState<RecoveryOffer | null>(null);
   const [phase, setPhase] = useState<Phase>("offering");
@@ -71,7 +78,7 @@ export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
   }, [manifest]);
 
   const save = useCallback(async () => {
-    if (!manifest || !accessToken) return;
+    if (!manifest || !accessToken || !uid) return;
     setPhase("saving");
     try {
       const response = await fetch("/api/recordings/recover", {
@@ -82,45 +89,53 @@ export function RecordingRecoveryNotice({ accessToken, onRecovered }: Props) {
       const body = await response.json().catch(() => null) as { storagePath?: string } | null;
       if (!response.ok || !body?.storagePath) throw new Error("rebuild failed");
 
-      // 🔴 REBUILDING THE FILE IS NOT SAVING THE RECORDING. Without this second call the audio
-      // sits in storage, correct and complete, and is never transcribed or written up — which
-      // to the student is still a lost lecture, just a more expensive one. The recovered file
-      // goes through the SAME route a normal finish uses, so it gets the same job, the same
-      // artifact and the same Library note.
-      const created = await fetch("/api/recordings/jobs", {
-        body: JSON.stringify({
-          contextId: sessionsStore.create(RECOVERED_TITLE).id,
-          // Clamped to the pipeline's own ceiling. This estimate is derived from the part
-          // cadence, so a lecture that ran a little past three hours would otherwise be refused
-          // with a 400 — losing the recording to a rounding artefact at the very last step.
-          durationSeconds: Math.min(MAX_JOB_SECONDS, Math.max(1, approximateSeconds(manifest))),
-          messageId: crypto.randomUUID(),
-          storagePath: body.storagePath,
-          surface: "sessions",
-        }),
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        method: "POST",
-      });
-      // 🔴 Over the monthly allowance is NOT a failure to rebuild, and saying so would send
-      // someone looking for a network problem that does not exist. The audio IS rebuilt and
-      // safe at this point; what is missing is the entitlement to transcribe it. The manifest
-      // is deliberately still kept, so they can accept it after their allowance resets.
-      if (created.status === 429) {
-        setPhase("quota");
+      // 🔴 REBUILDING THE FILE IS NOT SAVING THE RECORDING. Without this second step the audio sits
+      // in storage, correct and complete, and is never transcribed or written up — which to the
+      // student is still a lost lecture, just a more expensive one.
+      //
+      // 🔴 AND IT GOES WHERE THEY ARE STANDING. This used to create a Sessions conversation and
+      // post to the durable job route with `surface: "sessions"`. This component only ever renders
+      // on the Canvas home, so that filed the lecture on a surface the sidebar does not even list.
+      // It now takes the identical door a recording finished on this surface takes — see
+      // `canvas-recording.ts`.
+      const result = await transcribeStoredRecordingToCanvas(
+        body.storagePath,
+        // Clamped to the pipeline's own ceiling. This estimate is derived from the part cadence, so
+        // a lecture that ran a little past three hours would otherwise be refused at the very last
+        // step, losing the recording to a rounding artefact.
+        Math.min(MAX_JOB_SECONDS, Math.max(1, approximateSeconds(manifest))),
+        {
+          accessToken,
+          attach: async (file) => { onRecovered?.(file); },
+          post: async (url, payload, token) => {
+            const res = await fetch(url, {
+              body: JSON.stringify(payload),
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              method: "POST",
+            });
+            return { body: await res.json().catch(() => null), ok: res.ok, status: res.status };
+          },
+          uid,
+        },
+      );
+
+      // The local record is dropped only AFTER the transcript landed. Dropping it earlier would
+      // retire the recovery record for a recording whose transcription then failed — the one moment
+      // those parts are worth the most.
+      if (!result.attached) {
+        setPhase("failed");
         return;
       }
-      if (!created.ok) throw new Error("queue failed");
-
-      // The local record is dropped only AFTER both calls succeeded. Dropping it earlier would
-      // retire the recovery record for a recording whose rebuild then failed — the one moment
-      // those parts are worth the most.
       forgetManifest(manifest.sessionId);
       setPhase("saved");
-      onRecovered?.(body.storagePath);
-    } catch {
-      setPhase("failed");
+    } catch (caught) {
+      // 🔴 Over the monthly allowance is NOT a failure to rebuild, and saying so would send someone
+      // looking for a network problem that does not exist. The audio IS rebuilt and safe at this
+      // point; what is missing is the entitlement to transcribe it. The manifest is deliberately
+      // kept, so they can accept it after their allowance resets.
+      setPhase(/limit|plan/i.test((caught as Error)?.message ?? "") ? "quota" : "failed");
     }
-  }, [accessToken, manifest, onRecovered]);
+  }, [accessToken, manifest, onRecovered, uid]);
 
   const discard = useCallback(async () => {
     if (!manifest) return;

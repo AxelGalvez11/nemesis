@@ -32,6 +32,7 @@ import {
   type Folder,
 } from "@/lib/learn/canvas-store";
 import { cn } from "@/lib/utils";
+import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { putPending } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
@@ -57,6 +58,27 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  mid-sentence throws away neither half. Same contract as the session composer. */
   const typedBefore = useRef("");
   const listening = dictation.listening;
+  /** Record mode on the front door. A lecture recorded here has no canvas yet, so it starts one —
+   *  the same thing dropping a file here does. */
+  const [recording, setRecording] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const addMenu = useRef<HTMLDivElement>(null);
+
+  // Closes on a press elsewhere and on Escape — without the second it is a trap for a keyboard.
+  useEffect(() => {
+    if (!addOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!addMenu.current?.contains(event.target as Node)) setAddOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAddOpen(false); };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [addOpen]);
 
   const refresh = useCallback(async () => {
     const [rows, dirs] = await Promise.all([listCanvases(userId), listFolders(userId)]);
@@ -289,7 +311,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           renders nothing at all when there is no crashed session, which is almost always. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 pt-4">
         <div className="pointer-events-auto">
-          <RecordingRecoveryNotice accessToken={accessToken} />
+          {/* 🔴 A RECOVERED LECTURE NOW LANDS ON A CANVAS, NOT IN A SESSIONS CHAT. This notice only
+              ever renders here, and it used to file what it recovered as a new Sessions
+              conversation — a surface the sidebar does not list. Starting a canvas from the
+              transcript is the same thing dropping a file on this page does. */}
+          <RecordingRecoveryNotice
+            accessToken={accessToken}
+            onRecovered={(file) => startWithFiles([file])}
+            uid={userId}
+          />
         </div>
       </div>
 
@@ -308,28 +338,79 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           docked ? "bottom-6 top-auto" : "bottom-auto top-1/2 -translate-y-[calc(50%-1.25rem)]",
         )}
       >
+        {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is
+            being captured there is exactly one thing to do; leaving the text box live underneath
+            offers a second. Same position, same width. */}
+        {recording ? (
+          <div className="pointer-events-auto w-full max-w-[770px]">
+            <CanvasRecorder
+              // No canvas exists yet on the front door, so a finished recording STARTS one — the
+              // identical thing dropping a file here does, through the identical door.
+              attach={async (files) => { startWithFiles(files); }}
+              onClose={() => setRecording(false)}
+            />
+          </div>
+        ) : (
         <div className="pointer-events-auto flex w-full max-w-[770px] min-h-[54px] items-center gap-0 rounded-[27px] bg-(--ui-bg-elevated) px-[14px] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
           {/* 🔴 A REAL FILE INPUT, NOT A BUTTON THAT ROUTES. `sr-only`, never `hidden`: a hidden
               input leaves the tab order and the accessibility tree, which makes the label wrapping
               it unreachable by keyboard — the same rule the session composer's attach control
               carries, for the same reason. */}
-          <label
-            aria-label="Add material"
-            className="flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-action)"
-            title="Add material"
-          >
-            <Codicon name="add" size="0.875rem" />
-            <input
-              accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
-              className="sr-only"
-              multiple
-              onChange={(event) => {
-                if (event.target.files?.length) startWithFiles(event.target.files);
-                event.target.value = "";
-              }}
-              type="file"
-            />
-          </label>
+          <input
+            accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
+            className="sr-only"
+            multiple
+            onChange={(event) => {
+              if (event.target.files?.length) startWithFiles(event.target.files);
+              event.target.value = "";
+            }}
+            ref={filePicker}
+            tabIndex={-1}
+            type="file"
+          />
+          {/* 🔴 UPLOAD AND RECORD SIT TOGETHER, BECAUSE A RECORDING IS MATERIAL. §L lists the front
+              door's five behaviours as "type a topic · ask a question · upload material · dictate ·
+              record", and the mic to the right of this box is DICTATION — speaking instead of
+              typing. Putting record beside it would give the learner two microphones and no way to
+              tell which one keeps their lecture. */}
+          <div className="relative shrink-0" ref={addMenu}>
+            <button
+              aria-expanded={addOpen}
+              aria-haspopup="menu"
+              aria-label="Add material"
+              className="flex h-[28px] w-[28px] items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
+              onClick={() => setAddOpen((open) => !open)}
+              title="Add material"
+              type="button"
+            >
+              <Codicon name="add" size="0.875rem" />
+            </button>
+            {addOpen && (
+              <div
+                className="absolute bottom-[40px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                role="menu"
+              >
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
+                  Upload material
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); setRecording(true); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
+                  Record a lecture
+                </button>
+              </div>
+            )}
+          </div>
           {listening ? (
             <>
               <div className="ml-[12px] flex min-w-0 flex-1 items-center">
@@ -398,6 +479,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             </>
           )}
         </div>
+        )}
         {/* 🔴 A DENIED MICROPHONE HAS TO SAY SO. Without this the mic button is pressed, nothing
             starts, and nothing appears — indistinguishable from a broken control. Observed exactly
             that while verifying: `SpeechRecognition` exists, so the button renders, but the capture

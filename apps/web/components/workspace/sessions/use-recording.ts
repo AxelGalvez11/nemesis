@@ -91,6 +91,25 @@ interface UseRecordingOptions {
   /** Called after a discard, so the caller can close the panel. Nothing was
    *  saved, so there is nothing to hand back. */
   onDiscarded?: () => void;
+  /**
+   * Where a finished recording goes, when it is NOT the durable /sessions job pipeline.
+   *
+   * 🔴 ADDITIVE AND OPT-IN. Absent — which is both existing callers — nothing about this hook
+   * changes: `resolveTarget` is asked, `/api/recordings/jobs` is posted, `onComplete` fires.
+   * Present, it REPLACES that hand-off entirely, and `resolveTarget`/`onComplete` are not used,
+   * because there is no conversation and no job to hand back.
+   *
+   * It exists because `surface` is a closed set — a TS union AND a Postgres CHECK on two tables —
+   * and the job route silently coerces anything unrecognised to "sessions". A surface that cannot
+   * name itself there must not pretend to; it brings its own destination instead. The Canvas uses
+   * this to turn a lecture into a source on the canvas the learner recorded it from. See
+   * `lib/workspace/canvas-recording.ts`.
+   *
+   * The capture side above is untouched by this, deliberately: the microphone, the silence gate,
+   * pause/resume and the durable part uploads are the hard-won part and every surface should get
+   * them. Only the last step differs.
+   */
+  deliver?: (blob: Blob, seconds: number, silenceSkipped: string | null) => Promise<void>;
 }
 
 interface CaptureNodes {
@@ -167,6 +186,8 @@ export function useRecordingSession(options: UseRecordingOptions) {
   emptyRef.current = options.onEmpty;
   const targetRef = useRef(options.resolveTarget);
   targetRef.current = options.resolveTarget;
+  const deliverRef = useRef(options.deliver);
+  deliverRef.current = options.deliver;
   // Read at stop time rather than passed to a callback: `active` and `discard`
   // change in the same render, and a callback captured earlier would still be
   // holding the old answer.
@@ -426,6 +447,22 @@ export function useRecordingSession(options: UseRecordingOptions) {
     }
 
     try {
+      // A caller that brings its own destination takes the whole hand-off. No conversation is
+      // resolved and no job is created, because neither exists on that route — see `deliver`.
+      const deliver = deliverRef.current;
+      if (deliver) {
+        setStatus("uploading");
+        await deliver(blob, capturedSeconds, skipped ?? null);
+        finishingRef.current = false;
+        // Same rule as the job path: retire the recovery parts only AFTER delivery succeeded.
+        // Doing it earlier would drop the parts for a recording whose delivery then failed, which
+        // is the one moment those parts are worth the most.
+        durableRef.current?.discard();
+        durableRef.current = null;
+        if (mountedRef.current) setStatus("idle");
+        return;
+      }
+
       // The caller decides WHICH conversation this belongs to, and creates one
       // if there is not one yet. Asked for here rather than passed in at mount:
       // a session must not be created merely because the recorder was opened
