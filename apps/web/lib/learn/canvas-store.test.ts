@@ -18,6 +18,41 @@ function sample(): LearningCanvas {
   };
 }
 
+test("🔴 a canvas captured mid-run RESOLVES to reading, and the stored row is not touched", () => {
+  // 🔴 THE MIGRATION THAT IS DELIBERATELY NOT A MIGRATION. Two of the owner's six canvases sit in a
+  // legacy evidence stage (`test`, `recall`). With the six-stage machine retired they would be
+  // stranded in a state nothing routes to and nothing paints.
+  //
+  // The obvious fix is an UPDATE setting `state`. That is a data change made to correct a
+  // projection, on the owner's own rows, and it is not reversible — there is no backup to restore
+  // from if the judgement is wrong. Resolving on READ leaves the document exactly as written, so
+  // being wrong costs one function instead of the rows.
+  const row = {
+    id: "c9",
+    title: "Captured mid-test",
+    state: "test",
+    level: null,
+    document: { blocks: [{ id: "b1", type: "paragraph", content: "Charge moves." }], questions: [], answers: [] },
+    active_ms: 0,
+    created_at: NOW,
+    updated_at: NOW,
+  };
+
+  const canvas = canvasFromRow(row);
+  assert.equal(canvas.state, "learn", "a captured canvas opens on its reading material");
+  assert.equal(row.state, "test", "🔴 the stored row is untouched — this is a read-path resolution");
+  assert.equal(canvas.blocks.length, 1, "and the document it already had is still there");
+
+  // Every legacy evidence stage resolves, not just the one in the screenshot.
+  for (const state of ["recall", "test", "retest", "diagnose", "complete"]) {
+    assert.equal(canvasFromRow({ ...row, state }).state, "learn", `${state} must resolve to reading`);
+  }
+  // States that were never part of the retired machine are left exactly alone.
+  for (const state of ["empty", "sources_attached", "orient", "learn", "targeted_relearn"]) {
+    assert.equal(canvasFromRow({ ...row, state }).state, state, `${state} must be untouched`);
+  }
+});
+
 test("a canvas survives a round trip through the row shape unchanged", () => {
   const before = sample();
   // `updated_at` is stamped by the table's trigger, not sent by the client, so the read side

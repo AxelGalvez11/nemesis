@@ -1,8 +1,39 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { LEVEL_INSTRUCTIONS } from "./canvas-model";
 import { documentText, lessonMessages } from "./canvas-prompts";
+
+test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shared one", () => {
+  // Owner rule. It binds what NEMESIS WRITES, which is almost everything on the Canvas below the
+  // interface chrome, so it has to be an instruction the model actually receives.
+  //
+  // 🔴 COUNTED RATHER THAN SPOT-CHECKED, BECAUSE THE ONE THAT WOULD LEAK IS THE ONE NOBODY THINKS
+  // OF. Ten of the eleven system prompts here are the shared `CANVAS_SYSTEM`; the eleventh is the
+  // judge's own, and the judge writes the FEEDBACK a learner reads — the exact surface the owner
+  // was looking at when they made the rule. Asserting "the shared prompt has it" would have passed
+  // while that one leaked. A twelfth builder added later fails this until it opts in.
+  const source = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  const systemPrompts = (source.match(/role: "system"/g) ?? []).length;
+  const viaShared = (source.match(/content: CANVAS_SYSTEM/g) ?? []).length;
+  const viaExplicit = (source.match(/NO_EM_DASH,/g) ?? []).length;
+
+  assert.ok(systemPrompts > 0, "there must be system prompts to check");
+  assert.equal(
+    viaShared + viaExplicit,
+    systemPrompts,
+    `${systemPrompts} system prompts but only ${viaShared + viaExplicit} carry the no-em-dash rule — ` +
+      "a new prompt must either use CANVAS_SYSTEM or append NO_EM_DASH",
+  );
+
+  // And the rule genuinely reaches the wire, rather than merely existing in the module.
+  const system = lessonMessages({ level: null, sources: [], topic: "x" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.ok(system.includes("Never use an em dash"), "the instruction must reach the model");
+});
 
 const userText = (level: Parameters<typeof lessonMessages>[0]["level"]) =>
   lessonMessages({ level, sources: [], topic: "Cardiac action potentials" })
