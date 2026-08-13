@@ -59,7 +59,7 @@ export function CanvasEmpty({
           </span>
           <span className="text-[0.75rem] text-(--ui-text-quaternary)">PDF, Word, PowerPoint, text, or an image of a page</span>
           <input
-            accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+            accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
             className="hidden"
             multiple
             onChange={(event) => event.target.files && onFiles(event.target.files)}

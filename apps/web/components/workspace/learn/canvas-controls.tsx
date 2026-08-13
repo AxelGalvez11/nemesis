@@ -170,7 +170,7 @@ export function SourcesControl({
                 Add source
                 {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
                 <input
-                  accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+                  accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
                   className="sr-only"
                   multiple
                   onChange={(event) => {
