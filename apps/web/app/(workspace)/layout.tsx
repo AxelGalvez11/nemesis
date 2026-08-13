@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { CourseworkImportGate } from "@/components/workspace/onboarding/coursework-import-gate";
 import { OnboardingGate } from "@/components/workspace/onboarding/onboarding-gate";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
+import { signInRedirect } from "@/lib/auth-redirect";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth();
@@ -19,7 +20,12 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!loading && !session) {
-      router.replace(`/sign-in?next=${encodeURIComponent(pathname)}`);
+      // 🔴 `usePathname()` DOES NOT INCLUDE THE QUERY, and this gate used to send it alone — so
+      // `/learn?canvas=<uuid>` came back from sign-in as a bare `/learn`. The search is read off
+      // `window` rather than `useSearchParams()` on purpose: that hook forces every route under
+      // this layout into a Suspense boundary, and inside an effect `window.location.search` is
+      // both always available and always current. See `signInRedirect`.
+      router.replace(signInRedirect(pathname, window.location.search));
     }
   }, [loading, pathname, router, session]);
 

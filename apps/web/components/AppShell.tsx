@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { deleteConversation, fetchConversations, fetchEntitlements, fetchProjects, fetchUsage, pinConversation, renameConversation, setItemProject, type ConversationSummary, type Project } from "@/lib/api";
+import { signInRedirect } from "@/lib/auth-redirect";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
@@ -306,7 +307,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [evidenceFullscreen, evidenceWidth, railCollapsed]);
 
   useEffect(() => {
-    if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
+    if (!loading && !session) {
+      // The query is part of the destination — see `signInRedirect`. `usePathname()` drops it.
+      router.replace(signInRedirect(path, window.location.search));
+    }
   }, [loading, session, router, path]);
 
   useEffect(() => {
