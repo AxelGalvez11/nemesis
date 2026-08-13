@@ -58,6 +58,42 @@ test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their
   assert.match(source, /"Here's the one to fix\."/);
 });
 
+// Compact-UI pass (owner rule, 2026-08-12): "there should only be buttons for passages to be
+// read, not for recall — that makes retrieval not feel quick." A passed retrieval has nothing
+// left to acknowledge — the learner already produced it — so it moves on by itself; a correction
+// is still a passage the learner needs time with, so its button stays.
+test("🔴 a passed retrieval gets no button and advances itself", async () => {
+  const source = await SOURCE;
+  assert.match(source, /const passed = verdictIsPass\(feedback\.evaluation\.verdict\)/);
+  assert.match(source, /if \(!passed\) return;/, "the auto-advance must be skipped on anything but a pass");
+  assert.match(
+    source,
+    /window\.setTimeout\(\(\) => latestAcknowledge\.current\(\), PASS_ADVANCE_MS\)/,
+    "must still call the real acknowledge() -- same feedback-clear, round bump and actedOn entry a click would have produced",
+  );
+  assert.match(source, /\{!passed && \(/, "the Continue button must be conditional on NOT having passed");
+});
+
+test("🔴 the timer calls the CURRENT acknowledge, not a stale one, and never resets on evidence refresh", async () => {
+  const source = await SOURCE;
+  // `runtime.acknowledge` is keyed on `decision`, which can change while this screen is up (the
+  // answer's evidence re-read happens moments after the verdict lands, before the timer fires). A
+  // bare callback dependency would either close over a stale `decision` or restart the countdown
+  // every time evidence refreshed; the ref does neither.
+  assert.match(source, /const latestAcknowledge = useRef\(onAcknowledge\)/);
+  assert.match(source, /latestAcknowledge\.current = onAcknowledge/);
+  assert.match(source, /\}, \[passed\]\);/, "the effect must key on the verdict only, not on the callback identity");
+});
+
+test("🔴 a correction still waits for a click -- both other acknowledge sites keep their button", async () => {
+  const source = await SOURCE;
+  // show_correction and contrast: no evidence was written, so actedOn is the only thing stopping
+  // the identical card from being served again -- unlike a pass, skipping the button here would
+  // silently drop something real. Both keep an unconditional "Got it" wired to runtime.acknowledge.
+  const gotItButtons = [...source.matchAll(/onClick=\{runtime\.acknowledge\}[\s\S]{0,40}?>\s*Got it/g)];
+  assert.equal(gotItButtons.length, 2, "show_correction and contrast must each still have their own Got it button");
+});
+
 function escapeRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -11,9 +11,19 @@
 // canvas; a retrieval prompt that grew its own textarea would put two of them on screen, which is
 // the exact thing the composer's own header says it exists to prevent.
 
-import { VERDICT_HEADLINE } from "@/lib/learn/canvas-judge";
+import { useEffect, useRef } from "react";
+
+import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 
 import type { PolicyRuntime } from "./use-policy-runtime";
+
+/** How long a passed retrieval holds its verdict before moving on by itself.
+ *
+ *  🔴 LONG ENOUGH TO READ A SHORT SENTENCE, SHORT ENOUGH TO STILL FEEL LIKE RETRIEVAL. The owner's
+ *  rule (compact-UI pass): "there should only be buttons for passages to be read, not for recall —
+ *  that makes retrieval not feel quick." A correct answer has nothing left to acknowledge — the
+ *  learner already produced it — so the verdict is read, not acted on. */
+const PASS_ADVANCE_MS = 2000;
 
 /**
  * What is on screen right now, as one value.
@@ -98,24 +108,7 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
   if (feedback) {
-    return (
-      <Frame sharing={sharing}>
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">You said “{feedback.answer}”</p>
-        <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
-          {VERDICT_HEADLINE[feedback.evaluation.verdict]}
-        </h2>
-        <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">
-          {feedback.evaluation.feedback}
-        </p>
-        <button
-          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
-          onClick={runtime.acknowledge}
-          type="button"
-        >
-          Continue
-        </button>
-      </Frame>
-    );
+    return <FeedbackScreen feedback={feedback} onAcknowledge={runtime.acknowledge} sharing={sharing} />;
   }
 
   if (!decision) {
@@ -249,6 +242,81 @@ function PolicyScreen({ runtime, sharing }: { runtime: PolicyRuntime; sharing: b
         You've just worked through everything here. Asking again this soon wouldn't tell either of us
         anything new.
       </p>
+    </Frame>
+  );
+}
+
+/** The verdict on the last answer.
+ *
+ *  🔴 A PASS DOES NOT WAIT FOR A CLICK (owner spec, compact-UI pass, 2026-08-12). The button stays
+ *  for a correction the learner still needs to sit with — see `show_correction` and `contrast`
+ *  above, both of which keep it — but a pass is something the learner already produced; there is
+ *  nothing left to acknowledge, and stopping the fastest part of the loop on a click was the exact
+ *  complaint. It still ends by calling the identical `runtime.acknowledge()` a click would have —
+ *  same feedback-clear, same round bump, same (harmless once evidence has already moved the
+ *  objective) actedOn entry. Only the trigger changes, from a click to a timer; nothing that
+ *  depends on acknowledge()'s effects loses them.
+ *
+ *  🔴 THE REF, NOT THE CALLBACK, IN THE EFFECT'S DEPENDENCIES. `runtime.acknowledge` is a
+ *  `useCallback` keyed on `decision`, and `decision` can legitimately change while this screen is
+ *  up (`record()` re-reads evidence and moves `decidedAt` moments after the answer lands, well
+ *  before the timer fires). Depending on the callback directly would either use a stale `decision`
+ *  closure or restart the timer every time evidence refreshed; the ref always calls the current
+ *  function without resetting how long the verdict has been on screen.
+ *
+ *  🔴 A KNOWN, NARROW RACE — REPORTED TO BRAIN, NOT WORKED AROUND, BECAUSE THE FIX ISN'T MINE TO
+ *  MAKE. `use-policy-runtime.ts`'s `submit()` calls `setFeedback(...)` — which mounts this screen
+ *  and starts the timer — BEFORE `await record(...)` finishes writing evidence and refreshing it.
+ *  If the write is slower than `PASS_ADVANCE_MS`, `acknowledge()` can fire while `record()` is
+ *  still in flight, so `decideNext` recomputes from evidence that does not yet include this
+ *  answer. Traced against `decideNext` itself (policy-runtime.ts): `actedOn` only REORDERS
+ *  objectives, it never filters them out, so this only matters when the objective just answered
+ *  is the sole one left with anything owed — every other case picks a different, correctly-
+ *  evaluated objective first. In that one case the learner could see a fresh prompt for the thing
+ *  they just answered correctly, which self-corrects a moment later once `refresh()` lands and
+ *  `decision` recomputes. No evidence is ever written wrong — `record()` still completes and
+ *  writes the real row regardless of what this screen shows in the meantime — the risk is a
+ *  transient display flicker, not a data-correctness one. There is no signal exposed on
+ *  `PolicyRuntime` this effect could gate on instead (`judging` is already false by the time
+ *  `record()` starts); the clean fix is Runtime exposing something like a `recording` flag so this
+ *  effect can wait for `!recording` rather than a blind timer. */
+function FeedbackScreen({
+  feedback,
+  sharing,
+  onAcknowledge,
+}: {
+  feedback: NonNullable<PolicyRuntime["feedback"]>;
+  sharing: boolean;
+  onAcknowledge: () => void;
+}) {
+  const passed = verdictIsPass(feedback.evaluation.verdict);
+  const latestAcknowledge = useRef(onAcknowledge);
+  latestAcknowledge.current = onAcknowledge;
+
+  useEffect(() => {
+    if (!passed) return;
+    const timer = window.setTimeout(() => latestAcknowledge.current(), PASS_ADVANCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [passed]);
+
+  return (
+    <Frame sharing={sharing}>
+      <p className="text-[0.8125rem] text-(--ui-text-quaternary)">You said “{feedback.answer}”</p>
+      <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
+        {VERDICT_HEADLINE[feedback.evaluation.verdict]}
+      </h2>
+      <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
+      {/* 🔴 NO BUTTON HERE ON A PASS. See the note above the component -- this is the one branch
+          of the three `runtime.acknowledge()` call sites on this page that loses its button. */}
+      {!passed && (
+        <button
+          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
+          onClick={onAcknowledge}
+          type="button"
+        >
+          Continue
+        </button>
+      )}
     </Frame>
   );
 }
