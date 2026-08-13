@@ -46,10 +46,24 @@ test("🔴 no answer-collecting stage renders on the canvas at all", async () =>
     "the evidence-stage region is back — there is nothing left that legitimately needs it",
   );
 
-  // 🔴 The pre-content renderer is NOT an answer surface and must survive all of this. It was filed
-  // inside the deleted `canvas-stages.tsx` and came within one commit of going with it, which would
-  // have painted nothing for every user who has added no material yet.
-  assert.ok(source.includes("<CanvasEmpty"), "CanvasEmpty stopped rendering — an empty canvas now paints nothing");
+  // 🔴 RE-POINTED, NOT DELETED — AND THE PROPERTY IT PROTECTS IS UNCHANGED. This used to assert
+  // `<CanvasEmpty` still rendered, because that component was the only thing painted for a learner
+  // who had added no material yet, and deleting it would have shown them nothing at all.
+  //
+  // `CanvasEmpty` is now deliberately gone (UX brief §1 — the large "What do you want to learn?"
+  // screen and its upload box). What must never come back is a canvas that has not begun with NO
+  // WAY TO BEGIN IT, which is the same failure the old assertion guarded, so the check follows the
+  // property to whatever now satisfies it: the persistent composer.
+  //
+  // 🔴 THE FAILURE MESSAGE MATTERS AS MUCH AS THE ASSERTION. The version this replaces read
+  // "CanvasEmpty stopped rendering — an empty canvas now paints nothing", which after an
+  // intentional deletion reads as a product defect and invites someone to make it green by
+  // reverting the deletion or by weakening the check. It now names the invariant instead.
+  assert.equal(
+    /const showComposer = regions\.policy \|\| canvas\.state !== "complete";/.test(source),
+    true,
+    'the composer is gated again — a canvas that has not begun would have no way to begin. §1 deleted the screens that used to carry their own inputs, so suppressing the composer here leaves the learner with a blank page and no control. If "complete" is no longer the only exclusion, re-point this; do not widen it.',
+  );
 });
 
 test("🔴 the region rule is DERIVED, never re-decided in the component", async () => {

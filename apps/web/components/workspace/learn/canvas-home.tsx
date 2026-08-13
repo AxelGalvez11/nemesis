@@ -31,6 +31,7 @@ import {
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
+import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
@@ -357,7 +358,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               it unreachable by keyboard — the same rule the session composer's attach control
               carries, for the same reason. */}
           <input
-            accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
+            accept={ACCEPTED_MATERIAL}
             className="sr-only"
             multiple
             onChange={(event) => {

@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
+import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 
 /** Close on outside click and Escape. Shared so the three panels cannot drift apart in how they
@@ -170,7 +171,7 @@ export function SourcesControl({
                 Add source
                 {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
                 <input
-                  accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
+                  accept={ACCEPTED_MATERIAL}
                   className="sr-only"
                   multiple
                   onChange={(event) => {

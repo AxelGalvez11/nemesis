@@ -32,7 +32,7 @@ import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { useCanvasSelection } from "./use-canvas-selection";
-import { CanvasEmpty } from "./canvas-empty";
+import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 
@@ -310,8 +310,20 @@ export function LearningCanvas({
     stageTask: session.activeTask,
   });
 
-  // The empty and orientation states have their own inputs and would be muddled by a second
-  // one. Everywhere else the composer is present and FULL STRENGTH.
+  /** This canvas has not begun: no lesson, no task, no evidence — only whatever material is
+   *  waiting. The one state in which a submission MEANS "start", which is why it is named once
+   *  here and read in three places rather than re-tested inline in each. */
+  const preContent = canvas.state === "empty" || canvas.state === "sources_attached";
+
+  // 🔴 THE COMPOSER IS NOW PRESENT BEFORE THE CANVAS HAS BEGUN, AND THAT IS THE WHOLE OF §15.
+  //
+  // This line used to read `!["empty", "complete"].includes(canvas.state)`, and the comment above
+  // it explained that the empty state "has its own input and would be muddled by a second one".
+  // That was true and it was backwards: suppressing the ONE persistent composer is precisely what
+  // forced two more to be built — `canvas-empty.tsx` grew a topic input and an upload box, and the
+  // front door grew a third pill. §15 asks for one component across "Canvas home, active Canvas,
+  // source upload, retrieval and freeform questions", so the fix is to stop hiding it rather than
+  // to keep styling its replacements to match.
   //
   // 🔴 It used to fade to 45% opacity during recall and the test, from a time when those states
   // had their own answer boxes and this bar was a distraction beneath them. Those boxes are
@@ -320,7 +332,7 @@ export function LearningCanvas({
   // picker a wall rather than a suggestion: a learner could not type a word until they had chosen
   // one of four labels. The state survives only for canvases stored before it was removed, and
   // those should be able to talk to Nemesis like any other.
-  const showComposer = regions.policy || !["empty", "complete"].includes(canvas.state);
+  const showComposer = regions.policy || canvas.state !== "complete";
 
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it.
@@ -388,15 +400,17 @@ export function LearningCanvas({
 
         {regions.document && (
           <>
-        {canvas.state === "empty" && (
-          <CanvasEmpty
-            busy={busy.kind === "source"}
-            onFiles={(files) => void session.attachFiles(files)}
-            onTopic={(topic) => session.begin(topic)}
-          />
-        )}
+        {/* 🔴 THE TWO PRE-CONTENT SCREENS ARE DELETED, NOT HIDDEN (UX brief §1). `CanvasEmpty`
+            painted "What do you want to learn?" over a large dashed upload box with its own topic
+            input; `SourcesAttached` painted "1 source attached" over a "Help me learn this"
+            button. §1 names all three by description and §26 turns them into acceptance criteria.
 
-        {canvas.state === "sources_attached" && <SourcesAttached session={session} />}
+            Nothing replaces them. A canvas that has not begun is the canvas, with the persistent
+            composer already docked — which is §4 exactly ("no further onboarding screen") and §19
+            ("the interface should almost disappear"). The composer carries the attached material
+            as chips and the send control; see `showComposer` below, which used to exclude these
+            two states and is the single line that forced a second and third composer to exist. */}
+        {preContent && busy.kind !== null && <CanvasThinkingPreview label={busy.label} />}
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
           <CanvasDocument
@@ -555,35 +569,24 @@ export function LearningCanvas({
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
           onRecord={() => setRecording(true)}
+          // 🔴 SEND STARTS THE CANVAS; ATTACHING DOES NOT (§2). `onFiles` above only ingests, and
+          // it deliberately does not begin — the learner may add a second file or type an
+          // instruction first. This is the commit, and it is the same control they would press to
+          // send anything else, which is what makes it "the composer is the entry point" rather
+          // than a differently-shaped "Help me learn this".
+          //
+          // 🔴 `null` ONCE THE CANVAS HAS CONTENT, so the composer goes back to asking and
+          // answering. Passing it unconditionally would route every mid-lesson question into
+          // `begin`, which re-titles the canvas and regenerates it.
+          //
+          // The empty string is a real argument here: `begin()` with no topic on a canvas that
+          // has sources is §3's "learn this material with me", inferred rather than asked for.
+          onStart={preContent ? (asked: string) => session.begin(asked || undefined) : null}
+          pendingSources={preContent ? canvas.sources.map((source) => ({ id: source.id, title: source.title })) : []}
           selected={selected}
           task={sink.kind === "none" ? null : sink.task}
         />
       )}
     </main>
-  );
-}
-
-/** The moment between "material is in" and "teach me" — one button, because the learner has
- *  already said what they want by dropping the file. */
-function SourcesAttached({ session }: { session: ReturnType<typeof useCanvasSession> }) {
-  return (
-    <div className="flex min-h-full items-center justify-center px-6">
-      <div className="w-full max-w-[30rem] text-center">
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
-          {session.canvas.sources.length} source{session.canvas.sources.length === 1 ? "" : "s"} attached
-        </p>
-        <h2 className="mt-2 text-[1.25rem] font-medium text-(--ui-text-primary)">{session.canvas.title}</h2>
-        <button
-          className="mt-8 rounded-lg bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-50"
-          disabled={session.busy.kind !== null}
-          // Wrapped, not passed by reference: `begin` now takes an optional topic, and handing
-          // it straight to onClick would pass the click event in as the title.
-          onClick={() => session.begin()}
-          type="button"
-        >
-          Help me learn this
-        </button>
-      </div>
-    </div>
   );
 }

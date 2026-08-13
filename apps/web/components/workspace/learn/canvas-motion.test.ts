@@ -6,6 +6,20 @@ import { THINKING_COPY, THINKING_VISIBLE_AFTER_MS, type ThinkingPhase } from "@/
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
+/** Source with comments removed.
+ *
+ *  🔴 EVERY FORBIDDEN-SUBSTRING GUARD IN THIS FILE NEEDS THIS, and the ones that predate it say so
+ *  individually. A file that documents why a spinner is wrong necessarily contains the word
+ *  "spinner"; scanning the raw text makes the explanation the violation, and the obvious way to go
+ *  green is to delete the explanation. Shared here so the next guard inherits the fix instead of
+ *  rediscovering it. */
+const code = (source: string) =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+
 // ── if animation implies information, the information must be real ──────────
 
 test("🔴 every thinking phase is EMITTED by something that actually runs", async () => {
@@ -97,10 +111,12 @@ test("🔴 every retained loading glyph spins", async () => {
   // through every wait, reading as decoration or as a rendering fault rather than as activity.
   for (const file of [
     "./canvas-composer.tsx",
-    // Was `canvas-stages.tsx`, deleted with the six-stage machine. Repointed at
-    // `canvas-empty.tsx`, which carries the loading glyph that file used to hold — the property
-    // outlives the component, so the check follows it rather than retiring.
-    "./canvas-empty.tsx",
+    // Was `canvas-stages.tsx`, deleted with the six-stage machine; then `canvas-empty.tsx`, which
+    // inherited its loading glyph; now `canvas-thinking-preview.tsx`, which replaces BOTH of that
+    // component's waits with forming lines. The property outlives the component every time, so the
+    // check follows it rather than retiring — and it still has teeth here, because the preview is
+    // exactly the file where someone would reach for a spinner next.
+    "./canvas-thinking-preview.tsx",
     "./canvas-selection-menu.tsx",
     "./canvas-policy-view.tsx",
     "./learning-canvas.tsx",
@@ -139,4 +155,74 @@ test("the composer's height transition is height-only and drops under reduced mo
     .filter((line) => !line.trim().startsWith("//"))
     .join("\n");
   assert.equal(code.includes("transition-all"), false, "the composer must not animate everything");
+});
+
+// ── processing is a thinking preview, not a wait (UX brief §5, §20, §21) ────
+
+test("🔴 the processing state contains NOTHING from §5's forbidden list", async () => {
+  // §5 rules these out by name — "no large grey upload box, no centred spinner on an empty
+  // screen, no progress bar without real progress, no fake percentage, no large loading
+  // headline". Each one is individually reasonable and that is the problem: they arrive one at a
+  // time, each looking like an improvement on a blank screen.
+  // 🔴 COMMENTS STRIPPED FIRST — the same fix the composer's transition guard below already
+  // carries, and it was needed here for the identical reason. This file's header explains what it
+  // replaced ("a large dashed upload box with a spinning glyph in it"), so the raw-source version
+  // of this check failed on its own documentation. A guard tripped by the prose explaining WHY the
+  // rule exists teaches the next person to delete the prose.
+  const view = code(await read("./canvas-thinking-preview.tsx"));
+  for (const forbidden of ["spinning", 'name="loading"', "progress", "animate-spin", "<h1", "<h2"]) {
+    assert.equal(view.includes(forbidden), false, `the thinking preview grew ${forbidden}`);
+  }
+});
+
+test("🔴 no clock walks the caption — the label is the step that is RUNNING", async () => {
+  // The same rule `CanvasThinking` carries, and it matters more here: this surface is shown for
+  // several seconds during ingestion, which is exactly long enough for a canned sequence of
+  // "Reading the material → Mapping the concepts → Preparing your first question" to look
+  // completely convincing while describing work that has already finished or never started.
+  const view = await read("./canvas-thinking-preview.tsx");
+  for (const forbidden of ["setInterval", "setTimeout", "requestAnimationFrame", "useState", "useEffect"]) {
+    assert.equal(view.includes(forbidden), false, `${forbidden} would make the caption a simulation`);
+  }
+});
+
+test("🔴 the sweep travels LEFT TO RIGHT and stops under reduced motion", async () => {
+  // §20 asks for one motion system across Nemesis — "information forming from left to right" —
+  // and §5 requires the preview to honour prefers-reduced-motion. Both live in CSS, so both are
+  // asserted there rather than in the component that names the class.
+  const css = await read("../../../app/globals.css");
+  assert.match(css, /@keyframes canvas-forming/, "the forming animation is gone");
+  const guards = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+  // 🔴 THE SELECTOR LIST OF THE `animation: none` RULE, NOT THE BLOCK. Calibrated by deleting
+  // `.canvas-forming,` from that list — and the first version of this check STAYED GREEN, because
+  // the class is still mentioned two lines further down in the `background-image: none` rule. A
+  // substring search over the whole media query cannot tell "the sweep is stopped" from "the class
+  // is named somewhere nearby", which is precisely the regression it exists to catch.
+  // Everything between the media query's own `{` and the `{` of the rule that switches animation
+  // off — i.e. exactly that rule's selector list, and nothing else in the block.
+  const stopsAnimation = guards.indexOf("animation: none");
+  assert.notEqual(stopsAnimation, -1, "the reduced-motion block no longer turns any animation off");
+  const selectors = guards.slice(guards.indexOf("{") + 1, guards.lastIndexOf("{", stopsAnimation));
+  assert.ok(selectors.includes(".canvas-forming"), ".canvas-forming still animates under reduced motion");
+  // 🔴 THE LINES MUST NOT DISAPPEAR, ONLY STOP. Someone who asked the system to stop moving still
+  // has to be able to see that the region is busy — the same rule `animate-pulse` follows two
+  // lines below it, where the opacity is held rather than the element hidden.
+  assert.match(guards, /\.canvas-forming \{ background-image: none; \}/);
+  assert.equal(guards.includes(".canvas-forming { display: none"), false);
+});
+
+test("🔴 neither deleted pre-content screen can come back (§1)", async () => {
+  // §1 deletes the large centred "What do you want to learn?" screen, the separate drop-zone, and
+  // the "1 source attached → Help me learn this" holding screen. They were one component and one
+  // local function; both are gone, and this is the check that keeps them gone — the realistic
+  // regression is someone reintroducing one because a single state "needs a screen".
+  const canvas = await read("./learning-canvas.tsx");
+  const code = canvas
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  for (const gone of ["Help me learn this", "What do you want to learn", "<CanvasEmpty", "function SourcesAttached"]) {
+    assert.equal(code.includes(gone), false, `${gone} is back — §1 deleted it, and the composer is the entry point now`);
+  }
 });

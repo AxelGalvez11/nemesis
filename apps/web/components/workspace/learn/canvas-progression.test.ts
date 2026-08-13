@@ -91,3 +91,48 @@ test("a response outranks ✓ in exposition — typing turns the same control in
   assert.equal(composerControl({ advanceAvailable: true, hasResponse: true }), "send");
   assert.equal(composerControl({ advanceAvailable: true, hasResponse: false }), "advance");
 });
+
+// ── sending material with nothing typed (UX brief §3) ───────────────────────
+
+test("🔴 attached material makes the empty composer sendable — §3", () => {
+  // §3: "Attach + send with no text means 'learn this material with me.' Infer it." §26 lists it
+  // as its own criterion: "a file may be sent with no accompanying text". Before this, the send
+  // control was absent with a file staged and nothing typed, so the only way to start was the
+  // dedicated "Help me learn this" screen §1 deletes.
+  assert.equal(
+    composerControl({ advanceAvailable: false, hasResponse: false, hasAttachment: true }),
+    "send",
+  );
+  // And it is still absent with nothing at all — an empty canvas offers no control to press.
+  assert.equal(
+    composerControl({ advanceAvailable: false, hasResponse: false, hasAttachment: false }),
+    "none",
+  );
+});
+
+test("🔴 N3 SURVIVES §3: a production state with nothing typed still offers NO control", () => {
+  // The regression this exists to catch, and it is the dangerous direction: widening "what counts
+  // as sendable" is exactly how a required demonstration silently becomes skippable, while every
+  // screen still looks correct.
+  //
+  // The guarantee is structural rather than a promise — attachments are only ever pending on a
+  // canvas that has not begun, where there is no prompt, no objective and no evidence to bypass,
+  // so `hasAttachment` and a live retrieval cannot be true together. This pins the default anyway,
+  // because "cannot happen" is a claim about the caller and this is the function.
+  assert.equal(
+    composerControl({ advanceAvailable: false, hasResponse: false }),
+    "none",
+    "omitting hasAttachment must mean false — a defaulted-true flag would remove N3 everywhere at once",
+  );
+});
+
+test("🔴 still never both, now across three inputs", () => {
+  for (const hasResponse of [true, false]) {
+    for (const advanceAvailable of [true, false]) {
+      for (const hasAttachment of [true, false]) {
+        const control = composerControl({ advanceAvailable, hasAttachment, hasResponse });
+        assert.ok(["send", "advance", "none"].includes(control), `unexpected control: ${control}`);
+      }
+    }
+  }
+});

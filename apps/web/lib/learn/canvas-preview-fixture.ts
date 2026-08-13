@@ -19,6 +19,8 @@ import {
 
 export type PreviewSeed =
   | "empty"
+  /** Material attached, nothing started. The state that used to be a whole screen. */
+  | "attached"
   | "lesson"
   | "recall"
   | "test"
@@ -343,6 +345,16 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
   // The blank canvas, for checking both documented ways in (§6): drop material, or type
   // a topic. The topic-first path used to read a ref React had not written yet.
   empty: () => emptyCanvas("preview-canvas-empty", NOW),
+  // 🔴 THE STATE THAT USED TO BE A WHOLE SCREEN. `sources_attached` painted "1 source attached"
+  // above a "Help me learn this" button; UX brief §1 deletes it, and what replaces it is an
+  // attachment chip above the persistent composer with no second control anywhere. Seeded so that
+  // replacement is actually LOOKED AT — it had no preview state of its own before, which is why
+  // the screen it replaced went unexamined for as long as it did.
+  attached: () => ({
+    ...emptyCanvas("preview-canvas-attached", NOW),
+    sources: [SOURCE],
+    state: "sources_attached",
+  }),
   // 🔴 A CANVAS STORED AT THE DELETED LEVEL PICKER. `orient` was only ever escapable by choosing
   // one of four labels, and that screen is gone — so this shape has no forward path of its own and
   // is the one that would strand on a blank page for ever if the resume path regressed. Seeded

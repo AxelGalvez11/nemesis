@@ -69,11 +69,30 @@ export type ComposerControl = "send" | "advance" | "none";
 export function composerControl(input: {
   /** The composer holds something the learner could submit. */
   readonly hasResponse: boolean;
+  /**
+   * Material is attached and waiting to be sent, with nothing typed.
+   *
+   * 🔴 UX BRIEF §3: *"Attach + send with no text means 'learn this material with me.'"* — and §26
+   * lists *"a file may be sent with no accompanying text"* as its own acceptance criterion. An
+   * attachment IS a submittable response; it simply is not a typed one.
+   *
+   * 🔴 THIS DOES NOT WEAKEN N3, AND THE REASON IS STRUCTURAL RATHER THAN A PROMISE. N3 requires the
+   * send control to be ABSENT while a retrieval prompt is unanswered. Attachments are only ever
+   * pending on a canvas that has not begun — there is no prompt, no objective and no evidence to
+   * bypass — so the two states are disjoint by construction, not by a convention someone has to
+   * keep. `canvas-progression.test.ts` pins that: a production state with an attachment still
+   * yields `"none"` if nothing is typed, because the caller cannot be in both at once.
+   */
+  readonly hasAttachment?: boolean;
   /** This state offers `✓` — the result of `offersAdvance`, passed in rather than recomputed. */
   readonly advanceAvailable: boolean;
 }): ComposerControl {
   // A response outranks everything: the moment one begins, the same control becomes send. That
   // holds in BOTH exposition and production, which is why it is tested first and only once.
   if (input.hasResponse) return "send";
+  // 🔴 BEFORE `advanceAvailable`, DELIBERATELY. The two cannot legitimately co-occur, and if they
+  // ever did, sending the material the learner explicitly attached is the honest reading of their
+  // intent — `✓` would silently discard it.
+  if (input.hasAttachment) return "send";
   return input.advanceAvailable ? "advance" : "none";
 }

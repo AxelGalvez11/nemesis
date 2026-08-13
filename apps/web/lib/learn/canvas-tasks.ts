@@ -29,3 +29,29 @@ export const RECALL_PLACEHOLDER = "Answer…";
 
 /** What the composer says when nothing is being asked. */
 export const ASK_PLACEHOLDER = "Ask Nemesis or change how you're learning…";
+
+/**
+ * Material is attached and the canvas has not begun.
+ *
+ * 🔴 IT NAMES THE OPTION, NOT THE OBLIGATION — UX brief §3, *"uploading without a prompt must
+ * work"*. "Add an instruction" would read as a required field on a screen whose entire point is
+ * that nothing more is needed; "or just send" is what makes the empty case obviously legitimate
+ * rather than something the learner has to work out is allowed.
+ */
+export const START_WITH_MATERIAL_PLACEHOLDER = "Tell Nemesis how to work through this, or just send…";
+
+/**
+ * What every Canvas upload door accepts.
+ *
+ * 🔴 ONE LIST, BECAUSE THREE COPIES HAD ALREADY DRIFTED. The Sources panel and the front door
+ * accepted `.xlsx` and `.csv`; the composer did not — so a learner was told by one control that
+ * their spreadsheet was unsupported and by another that it was fine, with nothing in the codebase
+ * recording which was right. UX brief §2 names a spreadsheet explicitly among what the composer
+ * must take, and §15's one-component rule makes a per-door capability list precisely the drift it
+ * exists to prevent.
+ *
+ * 🔴 THE LIST IS A CLAIM ABOUT THE EXTRACTOR, NOT A PREFERENCE. Adding an extension here promises
+ * that the ingestion path can read it; `canvas-shell.test.ts` pins the three doors equal so the
+ * promise cannot be made in one place and broken in another.
+ */
+export const ACCEPTED_MATERIAL = ".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic";

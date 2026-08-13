@@ -47,7 +47,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
-import { ASK_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
@@ -112,6 +112,43 @@ interface CanvasComposerProps {
    * the composer is the ONLY way forward, a dead press is the learner's whole path blocked.
    */
   advanceBusy?: boolean;
+  /**
+   * Material attached to a canvas that has not begun yet.
+   *
+   * 🔴 THE PREVIEW THE UX BRIEF DRAWS (§2), AND ITS OWN ACCEPTANCE CRITERION (§26, *"attachment
+   * preview visible before send"*). The brief's sketch puts the chip immediately above the input:
+   *
+   *     [ Diabetes lecture.pdf ]
+   *     Focus on the mechanisms and make sure I actually understand them.
+   *     +                                                          mic  ↑
+   *
+   * 🔴 IT IS ALSO THE PROOF THAT ATTACHING DID NOT LAUNCH ANYTHING. §2: *"Attaching a source must
+   * not auto-launch a workflow. Send is what creates and enters the Canvas session."* Before this,
+   * a canvas with material sat on a dedicated screen reading "1 source attached" above a *"Help me
+   * learn this"* button — a whole page to say what a chip says in a line, and a second control
+   * where §15 allows exactly one.
+   */
+  pendingSources?: readonly { readonly id: string; readonly title: string }[];
+  /**
+   * This canvas has not begun. Submitting starts it; `null` once it has.
+   *
+   * 🔴 SEND IS THE TRIGGER, NEVER ATTACH — that is the whole of §2, and it is why this is a
+   * separate route rather than something `attachFiles` does on arrival. The learner may add a
+   * second file, type an instruction, and only then commit.
+   *
+   * 🔴 THE CHIP CONFIRMS AN INGEST; IT DOES NOT STAGE ONE, and the difference is worth being
+   * exact about. `pendingSources` is `canvas.sources` — the file has already been read by
+   * `attachFiles` by the time a chip appears — so the chips carry no remove control, unlike the
+   * shared chat composer's, whose files really are staged in component state until submit. What
+   * has not happened yet is the canvas BEGINNING. Saying otherwise here would promise an undo
+   * this surface does not offer.
+   *
+   * 🔴 AND IT ACCEPTS AN EMPTY STRING (§3). Sending with material and nothing typed means *"learn
+   * this material with me"*; the caller infers it rather than making the learner say it. The
+   * refusal that used to sit in `submit()` — `if (!value) return;` — silently threw exactly that
+   * case away.
+   */
+  onStart?: ((text: string) => void) | null;
 }
 
 /** Grows to about six lines, then stops. Beyond that the box would eat the question. */
@@ -130,6 +167,8 @@ export function CanvasComposer({
   inSession = false,
   onAdvance = null,
   advanceBusy = false,
+  pendingSources = [],
+  onStart = null,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -218,13 +257,28 @@ export function CanvasComposer({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /** Material is waiting and the canvas has not begun — so an empty box is still submittable. */
+  const canStartFromAttachment = Boolean(onStart) && pendingSources.length > 0;
+
   const submit = () => {
     const value = text.trim();
-    if (!value || busy) return;
+    // 🔴 THE `!value` REFUSAL IS NOW CONDITIONAL, AND THAT ONE CHARACTER IS §3. It used to be
+    // unconditional, so "send a file with no accompanying text" delivered the file and then
+    // returned before anything began — the canvas sat on its holding screen and the learner's
+    // press did nothing they could see. An empty box is a real submission when material is
+    // attached and the canvas has not started; everywhere else it is still nothing to send.
+    if (busy) return;
+    if (!value && !canStartFromAttachment) return;
     setText("");
     // 🔴 The routing that replaces a second composer. Same box, same key, different meaning —
     // decided by whether the canvas is currently asking for something.
-    if (answering) onAnswer(value, spoke.current ? "spoken" : "typed", Date.now() - startedAt.current);
+    //
+    // 🔴 STARTING OUTRANKS BOTH OTHER ROUTES. On a canvas that has not begun there is nothing to
+    // answer and nothing to ask ABOUT — `onAsk` there would question a canvas with no content. The
+    // caller only passes `onStart` in exactly that state, so this branch cannot capture a genuine
+    // answer or a mid-lesson question.
+    if (onStart) onStart(value);
+    else if (answering) onAnswer(value, spoke.current ? "spoken" : "typed", Date.now() - startedAt.current);
     else onAsk(value);
     spoke.current = false;
     typedBefore.current = "";
@@ -271,6 +325,7 @@ export function CanvasComposer({
     // becomes skippable, which is silent — every screen still looks right.
     advanceAvailable: Boolean(onAdvance) && !answering,
     hasResponse: Boolean(text.trim()),
+    hasAttachment: canStartFromAttachment,
   });
   const showAdvance = control === "advance";
   const showSend = control === "send";
@@ -285,7 +340,30 @@ export function CanvasComposer({
         "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
       )}
     >
-      <div className="pointer-events-auto w-full max-w-[770px]">
+      <div className="pointer-events-auto w-full max-w-[768px]">
+        {/* 🔴 THE ATTACHMENT PREVIEW (§2, §26) — IMMEDIATELY ABOVE THE INPUT, WHICH IS WHERE THE
+            BRIEF DRAWS IT. This is the whole replacement for a dedicated "1 source attached →
+            Help me learn this" page: the material is visible, it is obviously not gone, and the
+            learner may still type an instruction before committing. Nothing has started.
+
+            🔴 NOT SHOWN WHILE DICTATING, like the selection chip below it — the composer becomes a
+            waveform in that state and a stack of chips over it is exactly the second card the
+            file header says dictation must never grow. */}
+        {pendingSources.length > 0 && !listening && (
+          <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
+            {pendingSources.map((source) => (
+              <span
+                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2.5 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
+                key={source.id}
+                title={source.title}
+              >
+                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">{source.title}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
             over the paragraph behind it and neither could be read. */}
@@ -324,8 +402,15 @@ export function CanvasComposer({
               out of the tab order and out of the accessibility tree. It sits outside the
               conditional below so that a menu closing mid-pick cannot unmount the element the
               browser is holding a file dialog open against. */}
+          {/* 🔴 `.xlsx,.csv` ADDED — THE COMPOSER WAS THE ONLY DOOR REFUSING SPREADSHEETS. The
+              Sources panel (`canvas-controls.tsx`) and the front door (`canvas-home.tsx`) both
+              accepted them; this list did not, so a learner was told by one control that their
+              spreadsheet was unsupported and by another that it was fine. §2 names a spreadsheet
+              explicitly among what the composer must take, and §15's one-component rule makes a
+              per-door capability list exactly the kind of drift it exists to prevent.
+              `canvas-shell.test.ts` now pins the three lists equal. */}
           <input
-            accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+            accept={ACCEPTED_MATERIAL}
             className="sr-only"
             multiple
             onChange={(event) => {
@@ -462,9 +547,13 @@ export function CanvasComposer({
                       `${(busyLabel ?? "Working").replace(/…$/, "")}…`
                     : selected.length > 0
                       ? "What should Nemesis do with this?"
-                      : answering
-                        ? (task?.placeholder ?? ASK_PLACEHOLDER)
-                        : ASK_PLACEHOLDER
+                      : // Material is staged and nothing has started — say that sending with
+                        // nothing typed is a real option, because §3 makes it one.
+                        canStartFromAttachment
+                        ? START_WITH_MATERIAL_PLACEHOLDER
+                        : answering
+                          ? (task?.placeholder ?? ASK_PLACEHOLDER)
+                          : ASK_PLACEHOLDER
                 }
                 ref={input}
                 rows={1}

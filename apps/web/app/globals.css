@@ -82,11 +82,31 @@
 :root {
   color-scheme: light;
 
-  /* surfaces & lines — the desktop light family (paper, not ChatGPT white) */
-  --bg: #f8faff; --bg-2: #eef0f6; --surface: #f1f3f8; --surface-2: #e9ecf2; --raised: #ffffff;
+  /* surfaces & lines — the desktop light family (paper, not ChatGPT white)
+     🔴 NEUTRAL, NOT BLUE (owner 2026-08-13, UX brief §27.3: "--bg #f8faff — blue-tinted white;
+     ChatGPT's ground is neutral"). Every value here carried more blue than red, and `--bg` is
+     painted on <body>, so the tint is what shows in the overscroll gutter and anywhere the
+     workspace's own neutral surface does not reach — measured `rgb(248,250,255)` on body against
+     `srgb(0.996 0.996 0.996)` on the workspace element sitting on top of it.
+     🔴 LIGHTNESS PRESERVED, HUE REMOVED. Each replacement is the grey of the same relative
+     luminance as the colour it replaces, so the surface LADDER — which several components depend
+     on for their sense of depth — steps by exactly the amounts it did before. This is a hue
+     change, deliberately not a contrast change; anything that reads differently afterwards was
+     relying on the tint rather than on the step. */
+  --bg: #fafafa; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
   --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
   --text: #000000; --text-2: #5a5e68; --text-3: #8b8f99;
-  --rail-bg: #eef0f6;
+  /* 🔴 NEUTRALISED — AND THIS RESTORES THE VALUE `shell.css` ALREADY DOCUMENTS. Its comment at
+     `.rail` reads "light #f0f0f0, dark #1f1f1f"; the light token had drifted to the blue `#eef0f6`
+     and no longer matched its own description.
+     🔴 A DEDICATED TOKEN ON PURPOSE, NOT AN ALIAS OF `--bg-2`. shell.css records the reason —
+     "neither --surface-2 nor --bg-2 lands on the sidebar colour in BOTH themes" — so landing on the
+     same light value as `--bg-2` is a coincidence of this ladder, not a rule, and the dark value
+     stays independent. Do not collapse the two.
+     🔴 WHY IT HAD TO MOVE AT ALL: neutralising the ladder and leaving this behind made the rail the
+     ONE tinted surface in the light theme, sitting against a neutral ground — MORE visible than the
+     tint that was removed, not less. A partial neutralisation is worse than none. */
+  --rail-bg: #f0f0f0;
   /* hover/active fills — accent-tinted at desktop accentMixes strengths (rowHover 4 / rowActive 8). */
   --fill-hover: color-mix(in srgb, var(--theme-primary) 5%, transparent); --fill-active: color-mix(in srgb, var(--theme-primary) 8%, transparent);
   --composer-border: rgba(22, 24, 29, 0.22); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.02);
@@ -137,7 +157,16 @@
   --primary: 353 76% 46%; --primary-foreground: 10 100% 98%;
   --secondary: 222 30% 95%; --secondary-foreground: 225 14% 10%;
   --muted-shadcn: 222 30% 95%; --muted-foreground: 225 7% 38%;
-  --accent-shadcn: 353 45% 95%; --accent-foreground: 353 65% 32%;
+  /* 🔴 NEUTRALISED — THE LAST TWO CRIMSON TOKENS FROM THE RETIRED PALETTE (owner 2026-08-13, UX
+     brief §27.3: "nothing should reference a hue the product no longer uses"). They were
+     `353 45% 95%` / `353 65% 32%`.
+     🔴 RE-POINTED, NEVER DELETED. `tailwind.config.ts:40` maps shadcn's `accent.DEFAULT` to
+     `hsl(var(--accent-shadcn))`, so these back every `bg-accent` / `text-accent-foreground`
+     utility — menu items, dropdown and command-palette hover. Removing the declarations would not
+     "clear the hue", it would make those hovers transparent.
+     🔴 SAME LIGHTNESS, SO NOTHING MOVES BUT THE HUE. 95% stays 95% and 32% stays 32%; the
+     contrast of hovered menu text against its hovered background is unchanged. */
+  --accent-shadcn: 0 0% 95%; --accent-foreground: 0 0% 32%;
   --destructive: 8 62% 47%; --destructive-foreground: 0 0% 100%;
   --border: 225 15% 90%; --input: 225 15% 86%; --ring: 353 78% 55%;
   --shadcn-radius: 10px;
@@ -184,7 +213,9 @@
   --primary: 353 100% 58%; --primary-foreground: 10 100% 98%;
   --secondary: 0 0% 15%; --secondary-foreground: 0 0% 78%;
   --muted-shadcn: 0 0% 12%; --muted-foreground: 0 0% 50%;
-  --accent-shadcn: 355 35% 12%; --accent-foreground: 355 100% 91%;
+  /* The dark half of the same pair — `355 35% 12%` / `355 100% 91%`. Neutralised together with
+     the light values: leaving one theme crimson is how a retired hue survives a cleanup. */
+  --accent-shadcn: 0 0% 12%; --accent-foreground: 0 0% 91%;
   --destructive: 353 100% 70%; --destructive-foreground: 0 0% 5%;
   --border: 0 0% 16%; --input: 0 0% 16%; --ring: 352 100% 67%;
 }
@@ -636,6 +667,33 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
 .canvas-phrase { animation: canvas-phrase-in 260ms ease-out both; }
 
+/* Material being read, concepts being mapped, a first question being chosen —
+   shown as content FORMING rather than as a wait (UX brief §5, §20, §21).
+   🔴 LEFT TO RIGHT, AND THAT DIRECTION IS THE PRODUCT'S ONE MOTION SYSTEM. §20:
+   "information forming from left to right". A spinner says WAIT; a line being
+   written says SOMETHING IS BEING MADE, which is the whole distinction the brief
+   draws.
+   🔴 THE HIGHLIGHT IS THE ONLY THING THAT MOVES. The bar does not slide, grow,
+   fade in and out, or change height — `background-position` travels across a
+   stationary element, so nothing reflows and the line keeps the exact geometry
+   the text that replaces it will occupy.
+   🔴 LOW CONTRAST BY CONSTRUCTION. The resting colour is the tertiary surface and
+   the travelling band is one step up it — not white, not the accent. §5 asks for
+   subtle and §19 for an interface that almost disappears; a bright sweep on a
+   quiet page becomes the most interesting thing on screen. */
+@keyframes canvas-forming { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.canvas-forming {
+  background-color: var(--ui-bg-tertiary);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ui-text-quaternary) 22%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: canvas-forming 1900ms linear infinite;
+}
+
 /* 🔴 REDUCED MOTION COVERS THE UTILITIES TOO, WHICH IS THE PART THAT GETS MISSED.
    Hand-written animations in this file were already guarded; `animate-pulse` is a
    Tailwind utility and was not, so a scoped paragraph kept breathing for someone
@@ -644,9 +702,15 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @media (prefers-reduced-motion: reduce) {
   .canvas-swap,
   .canvas-phrase,
+  .canvas-forming,
   [data-workspace] .animate-pulse {
     animation: none;
   }
+  /* 🔴 THE LINES STAY, THE SWEEP STOPS — they must not vanish. Someone who asked
+     the system to stop moving still has to be able to see that this region is
+     busy, so the placeholder holds its resting contrast and only the travelling
+     highlight is removed. Same principle as `animate-pulse` below. */
+  .canvas-forming { background-image: none; }
   /* Still has to read as "this region is busy" — it simply stops moving. */
   [data-workspace] .animate-pulse { opacity: 0.6; }
 }

@@ -65,9 +65,19 @@ test("the shell reserves clearance with padding rather than a header element", (
   // (12px inset + 28px control + 24px breathing room, was 16+32+24).
   assert.match(shell, /overflow-y-auto pt-\[64px\]/);
   // Two measurements of two different things, both taken off the references: the reading
-  // column is 680, the composer pill is 770. Neither is a rounding of the other.
+  // column is 680, the composer pill is 768. Neither is a rounding of the other.
+  //
+  // 🔴 768, WAS 770 — MEASURED, NOT TIDIED (UX brief §27.2). The owner measured ChatGPT's composer
+  // form at exactly 768px wide in their own browser at a 1440px viewport, against our 770. Two
+  // pixels is invisible; the reason to move is that 770 was a number nobody could point at, and a
+  // spec written from a measurement should hold the measured value so the next person comparing
+  // the two surfaces finds them equal rather than nearly equal.
+  //
+  // 🔴 AND IT IS WRITTEN IN PX, WHICH IS LOAD-BEARING HERE. `apps/web`'s root is 112.5%, so any
+  // rem-expressed width would render 12.5% larger than its number — 42rem, the shared chat
+  // composer's max width, is 756px and not 672. See canvas-composer.tsx's header.
   assert.match(shell, /"--canvas-column" as string\]: "680px"/);
-  assert.match(read("canvas-composer.tsx"), /max-w-\[770px\]/);
+  assert.match(read("canvas-composer.tsx"), /max-w-\[768px\]/);
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
   assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);
@@ -189,4 +199,29 @@ test("the task surface reserves room for the floating composer", () => {
   // space, not `\b`: a hyphen is a non-word character, so `\bh-full\b` happily matches the
   // `h-full` sitting inside `min-h-full` and the assertion inverts itself.
   assert.ok(!/(^|\s)h-full(\s|$)/.test(regions), `use min-h-full so the task can grow: ${regions}`);
+});
+
+test("🔴 every Canvas upload door accepts exactly the same material", () => {
+  // Integration found this live: the Sources panel took `.xlsx`/`.csv` and the composer's "Add
+  // material" refused them, so a learner was told their spreadsheet was unsupported by one control
+  // and supported by another. UX brief §2 names a spreadsheet explicitly among what the composer
+  // must take; §15's one-component rule makes a per-door capability list exactly the drift it
+  // exists to prevent.
+  //
+  // 🔴 THE CHECK IS "THEY REFERENCE ONE CONSTANT", NOT "THE STRINGS MATCH". Three equal literals
+  // are how this drifted in the first place — they were equal once too. A shared constant cannot
+  // be edited in one place.
+  for (const door of ["canvas-composer.tsx", "canvas-home.tsx", "canvas-controls.tsx"]) {
+    const source = read(door);
+    assert.match(
+      source,
+      /accept=\{ACCEPTED_MATERIAL\}/,
+      `${door} declares its own accept list — the three doors have to promise the same thing, because the list is a claim about what the extractor can read`,
+    );
+    assert.equal(
+      /accept="\./.test(source),
+      false,
+      `${door} still carries a literal accept list somewhere`,
+    );
+  }
 });
