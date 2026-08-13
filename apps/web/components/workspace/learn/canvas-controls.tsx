@@ -47,13 +47,16 @@ function useDismiss(open: boolean, close: () => void) {
   return holder;
 }
 
+// 🔴 28×28, DOWN FROM 32 -- compact-UI pass, design judgement (owner spec, 2026-08-12; not
+// measured against anything external, just quieted to match the smaller composer and header
+// alongside it). The icon inside stays legible at 0.8125rem; only the surrounding box shrank.
 const CONTROL =
-  "flex h-[32px] w-[32px] items-center justify-center rounded-lg text-(--ui-text-tertiary) " +
+  "flex h-[28px] w-[28px] items-center justify-center rounded-lg text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
 const PANEL =
-  "absolute right-0 top-full z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
-  "p-2 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
+  "absolute right-0 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
+  "p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
 
 // ---------------------------------------------------------------- sources + outputs
 
@@ -84,7 +87,7 @@ export function SourcesControl({
         title="Sources and outputs"
         type="button"
       >
-        <Codicon name="library" size="0.875rem" />
+        <Codicon name="library" size="0.8125rem" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
         {canvas.sources.length > 0 && (
@@ -153,7 +156,7 @@ export function SourcesControl({
             // Says what this is for rather than pretending to be broken. Nothing generates
             // outputs yet; the tab exists because the distinction is architectural (§4).
             <p className="px-2 py-3 text-[0.8125rem] leading-relaxed text-(--ui-text-quaternary)">
-              Things Nemesis makes for you — a summary, slides, a document — will be kept here.
+              Things Nemesis makes for you, like a summary, slides or a document, will be kept here.
             </p>
           ) : (
             outputs.map((output) => (
@@ -220,7 +223,7 @@ export function ObjectivesControl({
         title="Objectives"
         type="button"
       >
-        <Codicon name="list-tree" size="0.875rem" />
+        <Codicon name="list-tree" size="0.8125rem" />
       </button>
 
       {open && (
@@ -242,7 +245,13 @@ export function ObjectivesControl({
                 )}
               >
                 {objective.label}
-                {/* The state in words, for the one row where it matters most. */}
+                {/* The state in words, for the one row where it matters most.
+                    The em dash here is DELIBERATE and exempt from "no em dashes on the Canvas"
+                    (Brain 2026-08-13): `sr-only` is never rendered, so it is not on the Canvas —
+                    the rule governs what the learner SEES. It is a separator a screen reader
+                    reads as a pause. 🔴 If this line ever changes for another reason, make it a
+                    period: a period gets the same pause more reliably across screen readers than
+                    an em dash does. */}
                 <span className="sr-only"> — {MEANING[objective.state]}</span>
               </span>
             </div>
@@ -302,7 +311,7 @@ export function SessionControl({
         title="Session options"
         type="button"
       >
-        <Codicon name="kebab-vertical" size="0.875rem" />
+        <Codicon name="kebab-vertical" size="0.8125rem" />
       </button>
 
       {open && (

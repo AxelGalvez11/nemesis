@@ -52,15 +52,18 @@ export function CanvasHeader({
   minimal = false,
 }: CanvasHeaderProps) {
   return (
-    <header className="pointer-events-none absolute inset-x-[16px] top-[16px] z-30 flex h-[36px] items-center gap-2">
+    // 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
+    // owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;
+    // not measured against anything external, this row has no ChatGPT equivalent to match.
+    <header className="pointer-events-none absolute inset-x-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5">
       <button
         aria-label="Leave the canvas"
-        className="pointer-events-auto flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+        className="pointer-events-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
         onClick={onExit}
         title="Leave the canvas"
         type="button"
       >
-        <Codicon name="arrow-left" size="0.9375rem" />
+        <Codicon name="arrow-left" size="0.875rem" />
       </button>
 
       {/* Navigational context, not the page's heading — the lesson supplies its own hierarchy
@@ -69,7 +72,7 @@ export function CanvasHeader({
           turned a full-width strip of dead label into a click trap: the document scrolls
           underneath it, and selecting the top line of text hit the title instead. */}
       {!minimal && (
-        <span className="min-w-0 flex-1 truncate text-[0.875rem] text-(--ui-text-secondary)">
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-(--ui-text-secondary)">
           {canvas.title || "New canvas"}
         </span>
       )}

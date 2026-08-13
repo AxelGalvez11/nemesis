@@ -25,9 +25,15 @@ import {
 } from "@/lib/learn/canvas-selection";
 import { cn } from "@/lib/utils";
 
-/** Clearance for the title scrim at the top and the composer pill at the bottom. */
-const TOP_KEEPOUT = 96;
-const BOTTOM_KEEPOUT = 104;
+/** Clearance for the title scrim at the top and the composer pill at the bottom.
+ *
+ *  🔴 EXPORTED SO OTHER FLOATING SURFACES REUSE THIS BAND RATHER THAN RE-GUESSING IT. Every
+ *  popover on this page shares the same title scrim and the same composer pill, so there is
+ *  exactly one correct answer for how much clearance either edge needs — see
+ *  `canvas-document.tsx`'s citation popover, which clamps into this same band instead of
+ *  carrying its own copy of these two numbers. */
+export const TOP_KEEPOUT = 96;
+export const BOTTOM_KEEPOUT = 104;
 const MENU_WIDTH = 300;
 
 export interface SelectionAnswer {

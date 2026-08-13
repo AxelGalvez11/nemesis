@@ -54,21 +54,27 @@ test("the canvas title is a label, not a full-width click target", () => {
 test("the shell reserves clearance with padding rather than a header element", () => {
   const shell = read("learning-canvas.tsx");
   // Padding on the scroller, not a sized box above it.
-  assert.match(shell, /overflow-y-auto pt-\[72px\]/);
+  // 64px, down from 72 -- compact-UI pass, tightened alongside the header this padding clears
+  // (12px inset + 28px control + 24px breathing room, was 16+32+24).
+  assert.match(shell, /overflow-y-auto pt-\[64px\]/);
   // Two measurements of two different things, both taken off the references: the reading
   // column is 680, the composer pill is 770. Neither is a rounding of the other.
   assert.match(shell, /"--canvas-column" as string\]: "680px"/);
   assert.match(read("canvas-composer.tsx"), /max-w-\[770px\]/);
-  assert.match(read("canvas-composer.tsx"), /min-h-\[54px\][^"]*rounded-\[27px\]/);
+  // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
+  // already) -- see the sizing note at the top of canvas-composer.tsx.
+  assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);
 });
 
 test("there is exactly one answer surface on the canvas", () => {
-  const stages = read("canvas-stages.tsx");
-  // 🔴 The recall and test stages each used to grow their own textarea, microphone and submit
-  // button, which put two composers on one screen and made the learner work out which was for
-  // them. The persistent composer answers everything now.
-  assert.ok(!/<textarea/.test(stages), "no stage may contain a text input — the composer is the answer surface");
-  assert.ok(!/useCanvasDictation/.test(stages), "no stage may own a second microphone");
+  // 🔴 REPOINTED, NOT RETIRED. This used to read `canvas-stages.tsx`, where the recall and test
+  // stages each grew their own textarea, microphone and submit button — two composers on one
+  // screen, and the learner had to work out which was for them. Those stages are deleted, but the
+  // PROPERTY outlives them: whatever presents a task must not grow its own answer box. The policy
+  // view is what presents tasks now, so the check follows it there.
+  const policy = read("canvas-policy-view.tsx");
+  assert.ok(!/<textarea/.test(policy), "the task surface must not contain a text input — the composer is the answer surface");
+  assert.ok(!/useCanvasDictation/.test(policy), "the task surface must not own a second microphone");
 
   const composer = read("canvas-composer.tsx");
   assert.match(composer, /<textarea/, "the composer is where answering happens");
@@ -98,24 +104,38 @@ test("the selection marker sits on the element holding only the block's text", (
     "the section itself must not be the measured region");
 });
 
-test("question and feedback text are selectable but not rewritable", () => {
-  const stages = read("canvas-stages.tsx");
-  // §27: text interaction is a canvas primitive, not a reading-stage feature.
-  for (const region of ["recall:", "question:", "feedback:", "taught:"]) {
-    assert.ok(stages.includes(`selectableRegion(\`${region}`), `${region} text should be selectable`);
-  }
-  // None of them pass `rewritable` — "Simpler" would have nowhere to write.
-  assert.ok(!/selectableRegion\(`[^`]+`, \{[^}]*rewritable/.test(stages));
-});
+/* 🔴 RETIRED WITH `canvas-stages.tsx`, AND THE GAP IS DELIBERATE AND REPORTED, NOT HIDDEN.
+ *
+ * A test here asserted §27 — that question, feedback and taught text carry `selectableRegion(...)`
+ * so the learner can select and ask about them. Its four subjects (`recall:`, `question:`,
+ * `feedback:`, `taught:`) were all in the deleted stages.
+ *
+ * `canvas-policy-view.tsx` calls `selectableRegion` NOWHERE, so the property has no subject in the
+ * surviving arm. Repointing this test would have meant either asserting something false or quietly
+ * dropping the region list to make it pass — and a test kept alive by lowering its bar is worse
+ * than the deletion it survived.
+ *
+ * So it is retired, and the honest consequence is recorded instead: **task text on the policy arm
+ * is not currently marked selectable.** That is a real capability the legacy arm had and the
+ * surviving one does not. It is a product decision (does §27 apply to a task prompt, or only to
+ * reading material?), so it is Brain's to rule on, not something to smuggle back in as a test. */
 
 test("nothing offers a one-key reveal of the answer", () => {
-  const stages = read("canvas-stages.tsx");
+  // 🔴 HALF REPOINTED, HALF RETIRED, on purpose.
+  //
   // §22: a reveal shortcut makes the cheapest path through a retrieval prompt the one that
-  // produces no retrieval. "I don't know" replaces it — same lack of evidence, but stated by
-  // the learner rather than reached by pressing space.
-  assert.ok(!/Show me the answer/.test(stages), "the reveal control must not come back");
-  assert.ok(!/event\.code === "Space"|event\.key === " "/.test(stages), "no space-to-reveal binding");
-  assert.match(stages, /I don&rsquo;t know/);
+  // produces no retrieval. The ABSENCE half is a property of whatever presents a retrieval, so it
+  // follows to the policy view.
+  const policy = read("canvas-policy-view.tsx");
+  assert.ok(!/Show me the answer/.test(policy), "the reveal control must not come back");
+  assert.ok(!/event\.code === "Space"|event\.key === " "/.test(policy), "no space-to-reveal binding");
+
+  // The old positive assertion looked for the literal "I don't know" BUTTON. It is not repointed,
+  // because the control was deliberately replaced rather than moved: a learner who does not know
+  // says so in the composer, and `isAdmissionOfNotKnowing` routes it down the same
+  // no-demonstration path the button used. Asserting the literal here would demand the return of
+  // the control §22's own fix removed. The meaning survives in the runtime, which owns that test.
+  assert.ok(!/I don&rsquo;t know/.test(policy), "the admission is the composer's, not a button on the task");
 });
 
 test("the top scrim fades to nothing, so it draws no edge", () => {
@@ -127,38 +147,39 @@ test("the top scrim fades to nothing, so it draws no edge", () => {
   assert.match(scrim[1], /to-transparent/);
 });
 
-test("explanation is not boxed; the learner's own words are", () => {
-  const stages = read("canvas-stages.tsx");
+test("a correction is prose, not a card", () => {
+  // 🔴 REPOINTED. The subject was `{response.taught && ...}` in the deleted stages; the property —
+  // an explanation reads as writing rather than as a component the app produced — outlives it and
+  // now belongs to the policy view's feedback and correction screens.
+  const policy = read("canvas-policy-view.tsx");
+  const explanation = /\{feedback\.evaluation\.feedback\}|\{decision\.knowledge\.statement\}/.test(policy);
+  assert.ok(explanation, "expected the policy view to still render an explanation");
 
-  // What the canvas taught in response to an answer renders as prose.
-  const taught = /\{response\.taught && \(\s*<(\w+)([^>]*)>/.exec(stages);
-  assert.ok(taught?.[1] && taught[2] !== undefined, "expected the taught passage to still be rendered");
-  assert.equal(taught[1], "p", "the correction is prose, not a card");
-  assert.ok(
-    !/\bborder\b|\bring-1\b|bg-\(--ui-bg-elevated\)/.test(taught[2]),
-    `the correction must not be re-boxed: ${taught[2]}`,
-  );
-
-  // A message bubble IS a meaningful object, so it keeps its fill — but not an outline on top.
-  const bubbles = stages.match(/className="rounded-\[18px\][^"]*"/g) ?? [];
-  assert.equal(bubbles.length, 2, "expected the test and recall learner bubbles");
-  for (const bubble of bubbles) {
-    assert.ok(/bg-\(--ui-bg-tertiary\)\/40/.test(bubble), `bubble should keep the soft fill: ${bubble}`);
-    assert.ok(!/\bborder\b/.test(bubble), `bubble should not also be outlined: ${bubble}`);
+  // Every explanatory passage is a <p>, and none of them is boxed. A border, a ring or an elevated
+  // fill would demote the correction to a widget.
+  const paragraphs = policy.match(/<p className="[^"]*"/g) ?? [];
+  assert.ok(paragraphs.length >= 3, `expected the explanatory paragraphs: got ${paragraphs.length}`);
+  for (const paragraph of paragraphs) {
+    assert.ok(
+      !/\bborder\b|\bring-1\b|bg-\(--ui-bg-elevated\)/.test(paragraph),
+      `an explanation must not be re-boxed: ${paragraph}`,
+    );
   }
+
+  // The learner's own quoted words keep their quieter type but are likewise not a card.
+  assert.match(policy, /[“"]\{feedback\.answer\}[”"]/, "the learner's words are still shown");
 });
 
-test("stages reserve room for the floating composer", () => {
-  const stages = read("canvas-stages.tsx");
-  // 🔴 This has broken twice. A vertically centred stage grows downward as the teaching loop
-  // adds a correction, and its own primary action slides under the composer's gradient.
-  const centred = stages.match(/className="flex min-h-full flex-col items-center justify-center[^"]*"/g) ?? [];
-  assert.ok(centred.length >= 2, "expected the recall and test stages to be centred columns");
-  for (const stage of centred) {
-    assert.match(stage, /\bpb-40\b/, `a centred stage must reserve composer clearance: ${stage}`);
-    // `h-full` would clip a long correction instead of letting the page scroll to it.
-    // Anchored to a space, not `\b`: a hyphen is a non-word character, so `\bh-full\b` happily
-    // matches the `h-full` sitting inside `min-h-full` and the assertion inverts itself.
-    assert.ok(!/(^|\s)h-full(\s|$)/.test(stage), `use min-h-full so the stage can grow: ${stage}`);
-  }
+test("the task surface reserves room for the floating composer", () => {
+  // 🔴 REPOINTED. This has broken twice: a vertically centred task grows downward as feedback
+  // arrives, and its primary action slides under the composer's gradient. The stages are gone; the
+  // policy view now owns every centred, growable task region, so the check follows it.
+  const policy = read("canvas-policy-view.tsx");
+  const regions = policy.match(/regionHeight\(sharing: boolean\): string \{[\s\S]*?\}/)?.[0] ?? "";
+  assert.ok(regions, "expected regionHeight to still decide how the task region sizes itself");
+  assert.match(regions, /\bpb-40\b/, "a full-height task must reserve composer clearance");
+  // `h-full` would clip a long correction instead of letting the page scroll to it. Anchored to a
+  // space, not `\b`: a hyphen is a non-word character, so `\bh-full\b` happily matches the
+  // `h-full` sitting inside `min-h-full` and the assertion inverts itself.
+  assert.ok(!/(^|\s)h-full(\s|$)/.test(regions), `use min-h-full so the task can grow: ${regions}`);
 });

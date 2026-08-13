@@ -9,14 +9,25 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { conceptLabel, type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
+import { type CanvasBlock, type LearningCanvas } from "@/lib/learn/canvas-model";
 import { quotedExcerpt } from "@/lib/learn/canvas-grounding";
 import type { NextAction } from "@/lib/learn/canvas-state";
 import { cn } from "@/lib/utils";
 
 import { markedTerms, splitByTerms, type MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
+import { BOTTOM_KEEPOUT, TOP_KEEPOUT } from "./canvas-selection-menu";
 import { selectableRegion } from "./use-canvas-selection";
+
+/** The shape every floating popover on this page positions itself with. A plain object rather
+ *  than `DOMRect` so a captured `getBoundingClientRect()` snapshot can be stored in state without
+ *  the rest of the (mutable, live) `DOMRect` instance tagging along. */
+interface AnchorRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
 
 interface CanvasDocumentProps {
   canvas: LearningCanvas;
@@ -26,7 +37,6 @@ interface CanvasDocumentProps {
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
-  onAskSource: (block: CanvasBlock) => void;
   /** A marked vocabulary term was clicked. Handled above rather than here because the answer
    *  belongs in the same popover a highlighted word already uses — one definition surface, not
    *  two that happen to look alike. */
@@ -46,14 +56,13 @@ export function CanvasDocument({
   aside,
   onDismissAside,
   onToggleCollapsed,
-  onAskSource,
   onTerm,
   next,
   onAdvance,
   busy,
 }: CanvasDocumentProps) {
   const root = useRef<HTMLDivElement>(null);
-  const [openSource, setOpenSource] = useState<string | null>(null);
+  const [openSource, setOpenSource] = useState<{ blockId: string; rect: AnchorRect } | null>(null);
 
   // A browser selection spanning several blocks selects all of them. Read on selectionchange
   // rather than on click, so dragging across two paragraphs behaves the way it looks.
@@ -96,6 +105,7 @@ export function CanvasDocument({
   // say. (The underlying field, and what reads it elsewhere, is not this file's concern —
   // Runtime owns that boundary.)
   const visible = canvas.blocks;
+  const sourceBlock = openSource ? (visible.find((block) => block.id === openSource.blockId) ?? null) : null;
 
   return (
     <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40" ref={root}>
@@ -106,25 +116,34 @@ export function CanvasDocument({
           busy={busyBlockIds.includes(block.id)}
           canvas={canvas}
           key={block.id}
-          onAskSource={() => onAskSource(block)}
           onDismissAside={onDismissAside}
           onToggleCollapsed={() => onToggleCollapsed(block.id, !block.collapsed)}
           onTerm={onTerm}
-          onToggleSource={() => setOpenSource((current) => (current === block.id ? null : block.id))}
+          onToggleSource={(rect) =>
+            setOpenSource((current) => (current?.blockId === block.id ? null : { blockId: block.id, rect }))
+          }
           selected={selectedIds.includes(block.id)}
-          sourceOpen={openSource === block.id}
+          sourceOpen={openSource?.blockId === block.id}
         />
       ))}
 
+      {/* 🔴 QUIETER, NOT REMOVED (compact-UI pass, owner spec). The exposure acknowledgment is
+          still a real, legitimate signal -- it rotates the recall queue -- but a solid-filled
+          pill reading like the page's one purchase button overstated it. An outline reads as
+          "the move forward exists here" without competing with the content above it. */}
       {next && (
         <button
-          className="mt-14 rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor) disabled:opacity-40"
+          className="mt-10 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
           disabled={busy}
           onClick={onAdvance}
           type="button"
         >
           {next.label}
         </button>
+      )}
+
+      {openSource && sourceBlock && (
+        <CanvasSourcePreview block={sourceBlock} canvas={canvas} onClose={() => setOpenSource(null)} rect={openSource.rect} />
       )}
     </div>
   );
@@ -139,8 +158,7 @@ interface BlockViewProps {
   sourceOpen: boolean;
   onDismissAside: () => void;
   onToggleCollapsed: () => void;
-  onToggleSource: () => void;
-  onAskSource: () => void;
+  onToggleSource: (rect: AnchorRect) => void;
   onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
 }
 
@@ -154,11 +172,8 @@ function BlockView({
   onDismissAside,
   onToggleCollapsed,
   onToggleSource,
-  onAskSource,
   onTerm,
 }: BlockViewProps) {
-  const concepts = (block.conceptIds ?? []).map((id) => conceptLabel(canvas, id)).filter(Boolean);
-
   return (
     <section
       className={cn(
@@ -182,7 +197,7 @@ function BlockView({
           {block.content.slice(0, 90)}…
         </button>
       ) : (
-        <BlockBody block={block} canvas={canvas} onTerm={onTerm} />
+        <BlockBody block={block} canvas={canvas} onTerm={onTerm} onToggleSource={onToggleSource} sourceOpen={sourceOpen} />
       )}
 
       {block.note && !block.collapsed && (
@@ -191,38 +206,30 @@ function BlockView({
         </p>
       )}
 
-      {/* Concept labels are NOT printed under every block. They were, and consecutive blocks
-          on the same idea repeated the same line — clutter on a page whose whole argument is
-          that the content is the interface. Concepts are what the diagnosis speaks in; they
-          surface there, and on hover here. */}
+      {/* Concept labels are NOT printed here at all — not under every block, and no longer on
+          hover either (owner 2026-08-13). They were printed once, and consecutive blocks on the
+          same idea repeated the same line: clutter on a page whose whole argument is that the
+          content is the interface. The hover version was quieter but had the same problem and a
+          worse one — a concept id is Nemesis's internal name for an object, so putting it on the
+          primary Canvas is the lesson engine showing through the material.
+          Concepts are what the diagnosis speaks in. They surface THERE, and nowhere else. */}
 
-      {/* Controls stay hidden until the block is hovered or selected. The content is the
-          interface; the affordances are not.
-          🔴 ONLY PROVENANCE LIVES HERE NOW (J1/J2, owner 2026-08-13). "I already know this" and
-          the manual fold are gone: the learner should not manage which AI-generated paragraphs
-          are necessary — that is Brain's job, decided from evidence, not a document-reader
-          affordance. Provenance survives because it answers a real question ("where did this
-          come from?") rather than editing what is shown; the three-button toolbar shape does
-          not — see J3 for what replaces it. `onToggleCollapsed` stays wired below (the
-          click-to-reopen branch further down) because collapsing here can still be MODEL-driven
-          (`collapse_block` in canvas-ops.ts) — only the learner's manual trigger is gone. */}
-      {!block.collapsed && (
-        <div className="pointer-events-none absolute -top-1 right-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-          {concepts.length > 0 && (
-            <span className="mr-1 max-w-[16rem] truncate text-[0.6875rem] text-(--ui-text-quaternary)">
-              {concepts.join(" · ")}
-            </span>
-          )}
-          {(block.sourceRefs?.length ?? 0) > 0 && (
-            <BlockControl icon="link" label="Where this came from" onClick={onToggleSource} />
-          )}
-          {(block.sourceRefs?.length ?? 0) === 0 && canvas.sources.length > 0 && (
-            <BlockControl icon="question" label="Where did this come from?" onClick={onAskSource} />
-          )}
-        </div>
-      )}
-
-      {sourceOpen && <SourcePanel block={block} canvas={canvas} />}
+      {/* 🔴 NOTHING HOVERS OVER A BLOCK ANY MORE (J3, owner 2026-08-13). The floating hover
+          toolbar carried a "where this came from" button, a "where did this come from?" button
+          and a concept label. The two buttons went with J3; the label went when the owner ruled
+          on it the same day. There is no hover layer on a block left to add to — if something
+          ever needs one again, that is a new decision, not a slot standing open.
+          Provenance survives as two DIFFERENT, quieter things:
+          a citation marker inline with cited text (see `BlockBody`/`BlockText`'s `onToggleSource`
+          below — it reads as a footnote, not a control the learner operates on the block) and,
+          for uncited content, the existing capability to select text and ask — `learning-
+          canvas.tsx`'s `submit()` already routes a selection plus "where"/"which source"/"what
+          source" to `session.askAbout`, so nothing needed adding for that half; a dedicated
+          per-block button for it would have been the toolbar shape J3 asks to retire, not the
+          capability. */}
+      {/* The popover itself no longer renders here -- see `CanvasSourcePreview`, rendered once
+          at the `CanvasDocument` level so it can float free of this block's own stacking
+          context, the same way `CanvasSelectionMenu` already does for the term-lookup popover. */}
 
       {/* An answer about this block is ordinary explanation, so it is not boxed. A quiet rule
           and the indent say "this is about the paragraph above" — a card would say "this is a
@@ -243,20 +250,6 @@ function BlockView({
   );
 }
 
-function BlockControl({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button
-      aria-label={label}
-      className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 text-(--ui-text-tertiary) shadow-sm hover:text-(--ui-text-primary)"
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      <Codicon name={icon} size="0.6875rem" />
-    </button>
-  );
-}
-
 /** Deliberately plain typography. Headings are the only scale change; emphasis is weight, not
  *  colour. A study document that looks like a dashboard is harder to read, not easier.
  *
@@ -268,10 +261,14 @@ function BlockBody({
   block,
   canvas,
   onTerm,
+  onToggleSource,
+  sourceOpen,
 }: {
   block: CanvasBlock;
   canvas: LearningCanvas;
   onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
+  onToggleSource: (rect: AnchorRect) => void;
+  sourceOpen: boolean;
 }) {
   const mark = selectableRegion(block.id, {
     blockId: block.id,
@@ -279,13 +276,52 @@ function BlockBody({
     ...(block.conceptIds?.length ? { conceptIds: block.conceptIds } : {}),
   });
 
-  const body = <BlockText block={block} canvas={canvas} onTerm={onTerm} />;
+  // 🔴 THE CITATION MARKER (J3, owner 2026-08-13; reshaped for the compact-UI pass). A quiet
+  // mark beside the text it supports, always present rather than hover-revealed — evidence
+  // behind the Canvas, not a control floating over it. Only for blocks that actually cite an
+  // excerpt; a block with nothing to point at gets no mark, same rule `canvas-selection-menu.tsx`
+  // already uses for the term-lookup popover ("provenance where it exists, and silence where it
+  // does not — implying the learner's own material said something it never said is worse than no
+  // citation"). This exact gate is unchanged from the first pass; only the glyph and what opens
+  // changed.
+  const cited = (block.sourceRefs?.length ?? 0) > 0;
+  // 🔴 A NUMBER, KEYED TO THE SOURCE'S OWN POSITION, NOT THE BLOCK'S OR THE REF'S. `canvas.sources`
+  // is the attached-materials list; teaching rewrites blocks constantly ("Simpler" replaces one
+  // outright) but never silently reorders what was attached. Numbering off render order would
+  // renumber every citation above an edit; numbering off this list is numbering that survives one.
+  const indices = citationIndices(block, canvas);
+  const label = indices.length > 0 ? `[${indices.join(",")}]` : "•";
+  const body = (
+    <>
+      <BlockText block={block} canvas={canvas} onTerm={onTerm} />
+      {cited && (
+        <button
+          aria-label="Where this came from"
+          className={cn(
+            "ml-0.5 align-super text-[0.625rem] font-medium leading-none tabular-nums transition-colors",
+            sourceOpen ? "text-(--ui-text-primary)" : "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)",
+          )}
+          onClick={(event) => onToggleSource(event.currentTarget.getBoundingClientRect())}
+          title="Where this came from"
+          type="button"
+        >
+          {label}
+        </button>
+      )}
+    </>
+  );
 
+  // 🔴 EVERY SIZE BELOW IS SMALLER THAN THE PREVIOUS PASS -- compact-UI spec, point 1 ("reduce
+  // visual scale of body text/headings/labels in session mode"). Design judgement, not measured:
+  // this is the reading column, which has no ChatGPT equivalent to read a number off. Kept
+  // conservative -- one step down, not two -- because this is the thing being read for minutes
+  // at a stretch, not a label glanced at once; the composer's input text has its own, unrelated
+  // 16px floor (see canvas-composer.tsx) that this reduction does not touch or approach.
   switch (block.type) {
     case "heading":
       return (
         <h2
-          className="mt-10 text-[1.375rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
+          className="mt-8 text-[1.25rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
           {...mark}
         >
           {body}
@@ -293,8 +329,8 @@ function BlockBody({
       );
     case "concept":
       return (
-        <div className="my-3 border-l-2 border-(--ui-accent) py-1 pl-4">
-          <p className="text-[1.0625rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
+        <div className="my-2.5 border-l-2 border-(--ui-accent) py-1 pl-4">
+          <p className="text-[1rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
             {body}
           </p>
         </div>
@@ -303,27 +339,27 @@ function BlockBody({
       // Emphasis by rule and indent, not by filling a rectangle. A page of tinted panels reads
       // as a dashboard; the point of this surface is that it reads as something written.
       return (
-        <div className="my-3 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
-          <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+        <div className="my-2.5 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
+          <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
             {body}
           </p>
         </div>
       );
     case "example":
       return (
-        <p className="my-2.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+        <p className="my-2 pl-4 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
           {body}
         </p>
       );
     case "citation":
       return (
-        <p className="my-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
+        <p className="my-1.5 text-[0.75rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
           {body}
         </p>
       );
     default:
       return (
-        <p className="my-2.5 text-[1rem] leading-[1.7] text-(--ui-text-primary)" {...mark}>
+        <p className="my-2 text-[0.9375rem] leading-[1.65] text-(--ui-text-primary)" {...mark}>
           {body}
         </p>
       );
@@ -382,32 +418,117 @@ function BlockText({
   );
 }
 
-/** "Where did this come from?" — answered from the excerpt ids the block was generated with,
- *  never by asking the model, which would let it invent a source. */
-function SourcePanel({ block, canvas }: { block: CanvasBlock; canvas: LearningCanvas }) {
+/** Stable per-source numbering for the citation marker, keyed to the source's own position in
+ *  `canvas.sources` rather than to the block's position or the order refs were written — see the
+ *  comment at the call site in `BlockBody`. A block citing more than one source prints more than
+ *  one index in the same bracket; either way there is exactly one marker and one popover. */
+function citationIndices(block: CanvasBlock, canvas: LearningCanvas): number[] {
+  const cited = new Set((block.sourceRefs ?? []).map((ref) => ref.sourceId));
+  const indices: number[] = [];
+  canvas.sources.forEach((source, index) => {
+    if (cited.has(source.id)) indices.push(index + 1);
+  });
+  return indices;
+}
+
+/** "Where did this come from?" — a quiet, dismissible popover anchored to the citation marker
+ *  that opened it, replacing the old panel that printed inline and pushed the rest of the
+ *  document down. Answered from the excerpt ids the block was generated with, never by asking
+ *  the model, which would let it invent a source — SourcePanel's original guarantee, unchanged.
+ *
+ *  🔴 THE CLAMPING IS `canvas-selection-menu.tsx`'s, NOT REINVENTED. Both float over the same
+ *  page, with the same title scrim at the top and the same composer pill at the bottom, so the
+ *  safe band is identical — `TOP_KEEPOUT`/`BOTTOM_KEEPOUT` are imported rather than re-guessed,
+ *  and a second popover that drifted from the first the next time either clearance changed is
+ *  exactly the bug this avoids.
+ *
+ *  No "Open source" link: there is no source-viewer route today, and inventing a destination for
+ *  it would be a worse answer than not offering it (see the compact-UI deliverable notes). */
+function CanvasSourcePreview({
+  block,
+  canvas,
+  rect,
+  onClose,
+}: {
+  block: CanvasBlock;
+  canvas: LearningCanvas;
+  rect: AnchorRect;
+  onClose: () => void;
+}) {
+  const holder = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      if (!holder.current?.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
   const found = (block.sourceRefs ?? [])
     .map((ref) => quotedExcerpt(canvas.sources, ref))
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
+  // An estimate, not a measurement — the same convention `canvas-selection-menu.tsx` uses for its
+  // own open/closed heights. `max-h` plus `overflow-y-auto` on the rendered box means a wrong
+  // estimate costs an internal scrollbar, never a layout break.
+  const height = Math.min(280, 96 + found.length * 84);
+  const width = 320;
+
+  const bandTop = TOP_KEEPOUT;
+  const bandBottom = window.innerHeight - BOTTOM_KEEPOUT;
+  const fits = (candidate: number) => candidate >= bandTop && candidate + height <= bandBottom;
+  const preferBelow = rect.bottom + 8;
+  const preferAbove = rect.top - height - 8;
+  const top = fits(preferBelow)
+    ? preferBelow
+    : fits(preferAbove)
+      ? preferAbove
+      : Math.max(bandTop, Math.min(preferBelow, bandBottom - height));
+
+  const centred = (rect.left + rect.right) / 2 - width / 2;
+  const left = Math.max(12, Math.min(centred, window.innerWidth - width - 12));
+
   return (
-    <div className="mt-3 pl-1">
-      {found.length === 0 ? (
-        <p className="text-[0.8125rem] text-(--ui-text-tertiary)">
-          This part wasn&rsquo;t taken from your material — Nemesis wrote it from general knowledge.
-        </p>
-      ) : (
-        found.map(({ excerpt, source }) => (
-          <div className="mb-3 last:mb-0" key={excerpt.id}>
-            <p className="text-[0.6875rem] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
-              {source.title}
-              {excerpt.label ? ` · ${excerpt.label}` : ""}
-            </p>
-            <p className="mt-1 border-l-2 border-(--ui-stroke-primary) pl-3 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">
-              {excerpt.text.length > 600 ? `${excerpt.text.slice(0, 600)}…` : excerpt.text}
-            </p>
-          </div>
-        ))
-      )}
+    <div className="fixed z-40" ref={holder} style={{ top: `${top}px`, left: `${left}px`, width: `${width}px` }}>
+      <div className="max-h-[280px] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">Where this came from</p>
+          <button
+            aria-label="Dismiss"
+            className="-mr-1 -mt-0.5 shrink-0 text-(--ui-text-quaternary) hover:text-(--ui-text-primary)"
+            onClick={onClose}
+            type="button"
+          >
+            <Codicon name="close" size="0.6875rem" />
+          </button>
+        </div>
+
+        {found.length === 0 ? (
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">
+            This part wasn&rsquo;t taken from your material — Nemesis wrote it from general knowledge.
+          </p>
+        ) : (
+          found.map(({ excerpt, source }) => (
+            <div className="mt-2.5 first:mt-2" key={excerpt.id}>
+              <p className="text-[0.75rem] font-medium text-(--ui-text-primary)">
+                {source.title}
+                {excerpt.label ? ` · ${excerpt.label}` : ""}
+              </p>
+              <p className="mt-1 border-l-2 border-(--ui-stroke-primary) pl-2.5 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">
+                {excerpt.text.length > 400 ? `${excerpt.text.slice(0, 400)}…` : excerpt.text}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
