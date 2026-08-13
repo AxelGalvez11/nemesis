@@ -23,16 +23,26 @@
 import { blockToText, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
 /**
- * ParseBench's canonical layout vocabulary, as of the repo read on 2026-08-11
- * (`schemas/layout_ontology.py`). The default evaluation ontology is `basic`,
- * which merges Title and Section-header into one class and folds List-item,
- * Caption and Footnote into Text — so the only distinctions that actually score
- * are Table, Picture, Formula and everything-else.
+ * ParseBench's canonical layout vocabulary, re-read from source on 2026-08-13
+ * (`src/parse_bench/schemas/layout_ontology.py` — the path moved since the first
+ * read, which is why this note carries where it was found as well as when).
+ *
+ * The default evaluation ontology is `basic` (`DEFAULT_LAYOUT_EVALUATION_ONTOLOGY`),
+ * which merges Title and Section-header into `Section` and folds List-item,
+ * Caption and Footnote into Text.
+ *
+ * 🔴 AND IT KEEPS `Page-header` AND `Page-footer` AS DISTINCT SCORING CLASSES.
+ * The previous version of this comment said the only distinctions that score are
+ * "Table, Picture, Formula and everything-else", which omitted exactly those two —
+ * and that omission is the reason nobody noticed they were unrepresentable here.
+ * `BasicLabel` lists them explicitly beside Section, Table, Picture and Formula.
  */
 type CanonicalLabel =
   | "Caption"
   | "Formula"
   | "List-item"
+  | "Page-footer"
+  | "Page-header"
   | "Picture"
   | "Section-header"
   | "Table"
@@ -46,14 +56,41 @@ type CanonicalLabel =
  * heading — claiming it would be a guess dressed as a label. Under the `basic`
  * ontology the two collapse anyway, so the honest choice costs nothing.
  */
+/**
+ * 🔴 A TOTAL MAP, NOT A CHAIN OF `if`s ENDING IN `return "Text"`. That fallthrough is what
+ * made this a silent boundary: `pageHeader` and `pageFooter` were added to `DocBlockKind` in
+ * #485, no branch here ever mentioned them, and every running header the parser identified was
+ * handed to the benchmark as ordinary body text. Nothing failed. Nothing logged. Page-header
+ * and Page-footer simply scored 0.00 and read as a parser that could not see furniture.
+ *
+ * 🔴 THIRD DEATH AT THIS SAME BOUNDARY. The pipe-table serializer hid **179 tables the parser
+ * genuinely found**, in this file, whose header comment already says "A RENDERER IS A BOUNDARY".
+ * The lesson did not generalise because the fix was a better renderer rather than a shape that
+ * cannot forget the next kind.
+ *
+ * A `Record` keyed by the union is that shape: adding a member to `DocBlockKind` without adding
+ * it here is a COMPILE ERROR, not a downgrade to "Text". Mapping something to `"Text"` is still
+ * allowed — `paragraph` and `note` genuinely are text — but it now has to be *said*, and a
+ * deliberate "Text" is a different artefact from a forgotten one.
+ */
+const LABEL_OF: Record<DocBlock["kind"], CanonicalLabel> = {
+  caption: "Caption",
+  equation: "Formula",
+  figure: "Picture",
+  // 🔴 `heading` BECOMES `Section-header`, NOT `Title`. Title means the document's own title, and
+  // Nemesis does not distinguish that from any other level-1 heading — claiming it would be a
+  // guess dressed as a label. Under `basic` the two collapse into `Section` anyway.
+  heading: "Section-header",
+  listItem: "List-item",
+  note: "Text",
+  pageFooter: "Page-footer",
+  pageHeader: "Page-header",
+  paragraph: "Text",
+  table: "Table",
+};
+
 function labelOf(kind: DocBlock["kind"]): CanonicalLabel {
-  if (kind === "table") return "Table";
-  if (kind === "figure") return "Picture";
-  if (kind === "equation") return "Formula";
-  if (kind === "caption") return "Caption";
-  if (kind === "listItem") return "List-item";
-  if (kind === "heading") return "Section-header";
-  return "Text";
+  return LABEL_OF[kind];
 }
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
