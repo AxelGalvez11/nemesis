@@ -69,26 +69,77 @@ function everyReachableAction(): TeachingAction[] {
   ];
 }
 
+/**
+ * Every decision `decideNext` can actually hand the Canvas, built only from evidence.
+ *
+ * 🔴 NOTHING IS ASSEMBLED BY HAND. Each entry is a canvas state a learner can really be in, run
+ * through the one constructor. A fixture shaped like a decision would satisfy a reader without
+ * proving that the producer fills it.
+ */
+function decisionsFromTheRealPolicy(): [string, ReturnType<typeof decideNext>][] {
+  const wrong = ev(A!.identityKey, ago(60_000), "incorrect");
+  const confused = ev(A!.identityKey, ago(60_000), "misconception", { misconceptions: ["valsartan"] });
+  const decide = (evidence: LearnerEvidence[], actedOn: string[] = [], corrections: string[] = []) =>
+    decideNext({
+      actedOn,
+      correctionsShown: new Set(corrections),
+      evidence,
+      now: NOW,
+      objectives: RESOLVED,
+    });
+  return [
+    ["never asked → retrieve", decide([])],
+    ["answered wrongly → show_correction", decide([wrong])],
+    ["a competing model → contrast", decide([confused])],
+    [
+      "corrected, nothing has intervened → defer",
+      decide(
+        [wrong, ev(B!.identityKey, ago(60_000), "understood")],
+        [A!.identityKey],
+        [A!.identityKey],
+      ),
+    ],
+  ];
+}
+
 // ── the policy declares it, and it survives to the consumer ─────────────────
 
-test("🔴 every action the policy can produce carries an exposition the Canvas recognises", () => {
+test("🔴🔴 every decision the policy can REACH arrives with a mode the Canvas recognises", () => {
   // 🔴 THE CONSUMER'S `null` MEANS "THE POLICY SAID NOTHING", AND IT RESOLVES TO *REQUIRES READING*.
-  // So an action whose exposition the reader cannot parse is not a type error — it is a Continue
-  // silently appearing on a retrieval, or on a two-word answer exposure. The claim asserted here is
-  // that the un-emitted path is unreachable from a real decision, which is the whole point of
-  // landing the producer.
-  // 🔴 THROUGH `declaredCognitiveMode`, NOT PAST IT. Calibration caught this: handing
-  // `exposition.mode` straight to `readingRequirementOf` skips the structural reader, so deleting a
-  // member from the reader's own match list left this green while the Canvas silently stopped
-  // recognising it. The reader is the thing under test, so the reader has to be in the path.
+  // So a decision the reader cannot parse is not a type error — it is a Continue silently appearing
+  // on a retrieval, or on a two-word answer exposure. The claim is that the un-emitted path is
+  // unreachable from a real decision, which is the whole point of landing the producer.
+  //
+  // 🔴 DRIVEN THROUGH `decideNext` AND THROUGH `declaredCognitiveMode` — the real constructor and
+  // the real reader, end to end. Two earlier versions of this test were weaker and one of them was
+  // proven blind by calibration:
+  //
+  //     readingRequirementOf(expositionOf(action).mode)     skips the reader that is under test
+  //     declaredCognitiveMode({ exposition, cognitiveMode }) reads an object the test built itself
+  //
+  // The second still went red on the break it was aimed at, which is exactly how a synthesised
+  // fixture passes for a wiring claim it is not making. Nothing below is constructed here.
   const seen = new Set<string>();
-  for (const action of everyReachableAction()) {
-    seen.add(action.type);
-    const asTheCanvasSeesIt = declaredCognitiveMode({ exposition: expositionOf(action), cognitiveMode: expositionOf(action).mode });
-    assert.notEqual(asTheCanvasSeesIt, null, `${action.type} produced a mode the Canvas cannot read`);
-    assert.equal(readingRequirementOf(asTheCanvasSeesIt).unknown, false);
+  for (const [label, decision] of decisionsFromTheRealPolicy()) {
+    assert.ok(decision, `${label} produced no decision`);
+    seen.add(decision.action.type);
+    const asTheCanvasSeesIt = declaredCognitiveMode(decision);
+    assert.notEqual(asTheCanvasSeesIt, null, `${label}: the Canvas read no mode off the decision`);
+    assert.equal(readingRequirementOf(asTheCanvasSeesIt).unknown, false, `${label} reported as a defect`);
   }
-  assert.deepEqual([...seen].sort(), ["advance", "contrast", "defer", "retrieve", "show_correction"]);
+  // 🔴 `advance` IS ABSENT AND THAT IS CORRECT, NOT A GAP. `decideNext` filters it out before a
+  // decision reaches the surface, so it can never be read by the Canvas. `expositionOf` still
+  // covers it exhaustively at the type — see the test below.
+  assert.deepEqual([...seen].sort(), ["contrast", "defer", "retrieve", "show_correction"]);
+});
+
+test("🔴 `expositionOf` is total over the union, including the action decideNext filters out", () => {
+  // The type-level half of the claim above. `advance` is unreachable through `decideNext` but is a
+  // member of `TeachingAction`, so a sixth action added without an exposition must be a compile
+  // error rather than a screen that quietly acquires — or loses — the product's only button.
+  for (const action of everyReachableAction()) {
+    assert.equal(readingRequirementOf(expositionOf(action).mode).unknown, false);
+  }
 });
 
 test("🔴 a retrieval declares 'nothing to read' — not silence, and not a reading requirement", () => {
