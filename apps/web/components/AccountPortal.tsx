@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import type { EntitlementSnapshot } from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
+import { DEFAULT_LANDING_PATH } from "@/lib/auth-redirect";
 import { landingUrl } from "@/lib/env";
 import { planLabel } from "@/lib/billing-contract";
 
@@ -76,7 +77,8 @@ export function AccountPortal() {
             <p className="nemesis-account-nav-email" title={email}>{email}</p>
           </div>
           <nav aria-label="Account sections">
-            <Link href="/sessions">Open Nemesis</Link>
+            {/* The front door, not the retired chat surface — see DEFAULT_LANDING_PATH. */}
+            <Link href={DEFAULT_LANDING_PATH}>Open Nemesis</Link>
             <Link className="active" href="/account">Overview</Link>
             <Link href="/pricing">Subscription</Link>
           </nav>

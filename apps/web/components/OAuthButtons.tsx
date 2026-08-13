@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { DEFAULT_LANDING_PATH } from "@/lib/auth-redirect";
 import { enabledOAuthProviders, isPreviewMode, type OAuthProviderId } from "@/lib/env";
 
 interface OAuthButtonsProps {
@@ -65,7 +66,7 @@ export function OAuthButtons({ disabled, gate, onError, showTermsNote, next }: O
         return;
       }
       // Real OAuth navigates the whole tab to the provider; only preview mode stays on-page.
-      if (isPreviewMode) router.replace(next ?? "/sessions");
+      if (isPreviewMode) router.replace(next ?? DEFAULT_LANDING_PATH);
     } catch {
       onError("Nemesis could not reach the identity service. Check your connection and try again.");
       setPending(null);
