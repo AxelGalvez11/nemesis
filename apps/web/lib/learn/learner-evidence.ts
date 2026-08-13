@@ -11,6 +11,7 @@
 // `?? "basics_known"` one layer deeper: the moment "we have not asked" is stored as "they cannot",
 // every later decision is made against a claim about a person that nobody ever observed.
 
+import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
 import type { ObjectiveCapability } from "./learning-objective";
 
 /**
@@ -40,7 +41,31 @@ export interface LearnerEvidence {
   demonstrationObtained: boolean;
   /** What the demonstration showed. 🔴 NULL WHENEVER NONE WAS OBTAINED — never a stand-in verdict. */
   verdict: EvidenceVerdict | null;
-  /** 0-1, how much the response actually settled. A correct one-liner to a broad task is weak. */
+  /**
+   * 0-1, HOW SURE THE EVALUATOR WAS OF ITS OWN VERDICT. A fact about the judgement, never about
+   * the learner.
+   *
+   * 🔴 THIS COMMENT USED TO SAY "how much the response actually settled. A correct one-liner to a
+   * broad task is weak" — which describes DEMONSTRATION STRENGTH, and is not what the field holds.
+   * The value written here is the judge's certainty, and the two are close enough to be confused
+   * and opposite enough to matter. Measured, on identical objectives:
+   *
+   *     "valsartan"                                       0.95
+   *     "that would be valsartan, the ARB it is sold as"  0.50   <- the MORE informative answer
+   *
+   * Read as strength, that makes a learner who explains their reasoning accumulate systematically
+   * weaker evidence than one typing bare tokens — the exact opposite of what free-response
+   * retrieval exists to reward, and an inversion of §4's own worked example.
+   *
+   * 🔴 NOTHING WEIGHTS IT TODAY, AND THE CORRECTION IS THE POINT. `projectLearnerState` ignores it
+   * and a test asserts that it does; the teaching policy never reads it. So this was never a live
+   * misuse — it was a label that would have caused one the moment a consumer believed it. That is
+   * why the fix is a comment and not a migration.
+   *
+   * 🔴 WHAT IT IS FOR: deciding whether a verdict may update learner state AT ALL — see
+   * `TRUSTED_ENOUGH_TO_UPDATE_STATE`. Strength of demonstration comes from what the answer
+   * CONTAINED, and the raw observations for that are already on this row.
+   */
   confidence?: number;
   /** Named competing models, when the verdict is `misconception`. Kept so they can be taught against. */
   misconceptions?: readonly string[];
@@ -185,16 +210,55 @@ export type LearnerObjectiveStatus =
 export interface LearnerObjectiveState {
   objectiveIdentityKey: string;
   status: LearnerObjectiveStatus;
-  /** How many distinct pieces of evidence exist. 0 exactly when the status is `unknown`. */
+  /**
+   * How many distinct pieces of evidence exist — every row, however its verdict was read.
+   *
+   * 🔴 THIS USED TO SAY "0 exactly when the status is `unknown`", AND THAT STOPPED BEING TRUE. A
+   * learner can now hold evidence while the status is `unknown`: they answered, and the judge was
+   * not sure enough of its own reading for anything to be concluded from it. The opportunity
+   * happened — so it is counted — and nothing was established — so nothing is claimed. The two
+   * facts are genuinely independent, and the old sentence quietly asserted they could not be.
+   */
   evidenceCount: number;
-  /** How many of those obtained an actual demonstration. Lower than `evidenceCount` when the
-   *  learner revealed or gave up, and the gap is itself informative. */
+  /** How many of those obtained an actual demonstration Nemesis is willing to stand behind. Lower
+   *  than `evidenceCount` when the learner revealed or gave up, or when a reading was too uncertain
+   *  to conclude from — and the gap is itself informative. */
   demonstrationCount: number;
   /** ISO of the most recent evidence, or null when there is none. */
   lastEvidenceAt: string | null;
   /** The most recent judged verdict, or null if none was ever obtained. Kept because `strong` and
    *  `understood` both project to `correct`, and a policy may reasonably treat them differently. */
   latestVerdict: EvidenceVerdict | null;
+}
+
+/**
+ * May this observation's verdict change what Nemesis believes about the learner?
+ *
+ * 🔴 A JUDGE THAT REACHED BUT COULD NOT TELL IS MUCH CLOSER TO UNREACHABLE THAN TO A VERDICT. This
+ * is evidence invariant 9 one step further in: an unreachable judge writes nothing at all, because
+ * there is no account of the performance; here there IS an account — they answered, we saw it, we
+ * timed it — and only the conclusion is missing. So the observation stays and the claim does not.
+ * Measured: the same answer was read `partial 0.30` and `incorrect 0.90` six minutes apart, and both
+ * readings passed straight through to different teaching.
+ *
+ * 🔴 SYMMETRIC ACROSS ALL VERDICTS. An uncertain "correct" is exactly as unreliable as an uncertain
+ * "wrong"; gating only what would move a learner DOWN would mean believing the judge when it
+ * flatters and doubting it when it does not, which is a thumb on the scale rather than a gate.
+ *
+ * 🔴 APPLIED HERE, AT READ TIME, AND THAT IS THE WHOLE REASON NO COLUMN WAS ADDED. §5: no threshold,
+ * bucket or verdict about a signal may be computed at write time — store what was measured, decide
+ * what it means where the decision can be changed. A `trusted` boolean on the row would bake today's
+ * number into history, so every row written before someone retuned it would silently mean something
+ * different and no migration could recover what was actually observed. The measurement is already
+ * stored: `confidence`. Moving the threshold now reinterprets every row ever written, for free.
+ *
+ * 🔴 ABSENT CONFIDENCE IS NOT LOW CONFIDENCE. Admissions of not knowing carry none, and neither does
+ * any row written before the judge reported one. Treating absence as failure would silently convert
+ * every one of them — and every evaluation that merely omitted the field, which the parser turns
+ * into 0.5 for exactly this reason — into a learner who demonstrated nothing.
+ */
+function establishesBelief(evidence: LearnerEvidence): boolean {
+  return evidence.confidence === undefined || evidence.confidence >= TRUSTED_ENOUGH_TO_UPDATE_STATE;
 }
 
 function statusFor(verdict: EvidenceVerdict): LearnerObjectiveStatus {
@@ -247,7 +311,16 @@ export function projectLearnerState(
   }
 
   const latest = distinct[distinct.length - 1]!;
-  const demonstrations = distinct.filter((e) => e.demonstrationObtained && e.verdict);
+
+  // 🔴 THE LINE BETWEEN AN OBSERVATION AND A CONCLUSION, AND IT IS DRAWN ON PURPOSE. `evidenceCount`
+  // and `lastEvidenceAt` describe what HAPPENED — an opportunity was given, at this time — and every
+  // row counts toward them however the judge read it. A learner who answered and was read uncertainly
+  // has still just been asked, and the policy's churn guard must know that or it will ask again
+  // immediately. Everything below is a CONCLUSION drawn from a verdict, so it may only be drawn from
+  // verdicts we are willing to stand behind.
+  const believable = distinct.filter(establishesBelief);
+  const latestBelievable = believable[believable.length - 1] ?? null;
+  const demonstrations = believable.filter((e) => e.demonstrationObtained && e.verdict);
   const latestDemonstration = demonstrations[demonstrations.length - 1] ?? null;
 
   return {
@@ -260,7 +333,24 @@ export function projectLearnerState(
     // misconception is not still holding it, and the history remains in the log either way. When
     // that event obtained nothing, the honest status is `not_demonstrated` — an opportunity passed
     // and we still do not know, which is different from having been shown a wrong answer.
-    status: latest.demonstrationObtained && latest.verdict ? statusFor(latest.verdict) : "not_demonstrated",
+    //
+    // 🔴 THE MOST RECENT BELIEVABLE ONE, WHICH IS STILL A FUNCTION OF ONE VERDICT. This is NOT a
+    // multi-signal status and must not become one: averaging would treat someone who has just
+    // corrected a misconception as though they still held it, and recency is exactly what makes the
+    // projection right. An unbelievable reading is skipped rather than blended — the learner's state
+    // is left where their last real demonstration put it, which is the honest answer to "what do we
+    // know?" when the answer is "no more than before they answered".
+    //
+    // 🔴 AND WHEN NOTHING BELIEVABLE EXISTS AT ALL, THE STATUS IS `unknown`, NOT `not_demonstrated`.
+    // The difference decides the teaching: `not_demonstrated` states the answer, and stating an
+    // answer to someone whose response we merely could not read teaches them something they may
+    // already know. `unknown` asks — which is the only honest next move, and the one the state was
+    // built to express.
+    status: latestBelievable
+      ? latestBelievable.demonstrationObtained && latestBelievable.verdict
+        ? statusFor(latestBelievable.verdict)
+        : "not_demonstrated"
+      : "unknown",
   };
 }
 
