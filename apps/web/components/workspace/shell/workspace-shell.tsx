@@ -32,10 +32,19 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 //
 // `/learn` used to be immersive, and immersive means the rail is suppressed AND no reopen control
 // is offered — the surface is expected to carry its own way out. The Canvas's way out is a Back
-// arrow to the previous canvas, which is not navigation. Measured at 1280x800 on the canvas route:
-// `document.querySelectorAll('a[href]')` returned an empty list and `button[aria-label="Toggle
-// sidebar"]` did not exist. No Library, no Calendar, no Stats, from the front door or from any
-// active session — which made the four destinations shipped in #549 invisible where they mattered.
+// arrow to the previous canvas, which is not navigation. Measured at 1280x800 on the canvas route,
+// from a browser profile with nothing stored:
+//
+//   data-shell-focus   "true"     the rail is suppressed, not merely collapsed
+//   toggle element     ABSENT     `button[aria-label="Toggle sidebar"]` did not exist
+//
+// 🔴 THE TOGGLE'S ABSENCE IS THE PROOF, not a link count. Counting `a[href]` also returns zero
+// AFTER the fix, because the rail's destinations are buttons that call the router rather than
+// anchors — so that number cannot tell the two states apart and must not be cited as if it could.
+// What changes is whether any control exists that reaches navigation at all.
+//
+// No Library, no Calendar, no Stats, from the front door or from any active session — which made
+// the four destinations shipped in #549 invisible exactly where they mattered.
 //
 // §L asks for the opposite of suppression: "collapsed by default", "a small toggle stays
 // available", "must not reduce the usable learning surface unless the learner explicitly opens
