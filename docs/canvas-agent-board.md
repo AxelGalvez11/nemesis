@@ -45,8 +45,45 @@ rather than observed behaviour.
 
 ## Status at a glance
 
+**Recomputed 2026-08-12 ~19:40 CDT from `main` `64251365` and the production alias.** The team now
+runs as a native Claude Code Agent Team; live coordination is the shared task list, this file is the
+durable roadmap, issue #505 is the durable recovery log, and `docs/canvas-v1-acceptance.md` is the
+stop condition.
+
+### 🔴 The critical path — everything else is downstream
+
+| Task | Owner | Status |
+|---|---|---|
+| `RUNTIME-005` gate objective **production** on trust, not coverage | Runtime | 🔴 **P0 — the only thing that matters** |
+| *a real production deployment containing it* | — | ⛔ **BLOCKED: Vercel daily cap.** No production deployment attempted since 18:04 CDT |
+| `INTEGRATION-001` re-run, unchanged | Integration | **WAITING ON THE ALIAS** — not on the merge |
+
+### Everything else
+
 | Task | Owner | Status | Blocks |
 |---|---|---|---|
+| `RUNTIME-003` a task targeting a SET of objectives | Runtime | ✅ **ACCEPTED** (#508) — reconciling merge state only | — |
+| `RUNTIME-006` judged / not-judged must be different values | Runtime | **READY** — required before `BRAIN-003` | BRAIN-003 |
+| `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after 005 and 003 | — |
+| `UI-001` the three uncertainties stay distinct | UI | ✅ **FIX ACCEPTED** (#509) — reconciling merge state only | — |
+| `UI-002` Minimap surface | UI | **BLOCKED** — and parked by decision | — |
+| `PARSER-001` derived verdict crosses the boundary | Parser | ✅ **MERGED** (#504) — *not deployed* | — |
+| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — *not deployed* | — |
+| `PARSER-003` preserve unit locality at the producers | Parser | ✅ **MERGED** (#510) — *not deployed* | — |
+| `BRAIN-001` performance identity readable | Brain | ✅ **MERGED** (#498) | — |
+| `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
+| `BRAIN-003` causal objectives + task contract | Brain | 🅿️ **PARKED BY DECISION** — behind 005, a proven loop, and 006 | — |
+| `RUNTIME-001` compositional task hosting | Runtime | ✅ merged (#494) — 🔴 **but it MOVED the gate, it did not open it** | — |
+| `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** | — |
+
+🔴 **`RUNTIME-001`'s row said "the gate is open" for a full cycle and that was false.** Integration
+proved it by executing deployed code. Read the `INTEGRATION-001` section before trusting any "merged"
+in this table to mean the capability works.
+
+🔴 **Three PARSER tasks are merged and none is serving.** `merged ≠ deployed ≠ served`. The alias is
+`dpl_B1Lm6ttT…` = `60b1365e`, and `main` has moved four times since it last changed.
+
+---|---|---|---|
 | `BRAIN-001` performance identity readable | Brain | ✅ **MERGED** (#498) | — |
 | `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
 | `BRAIN-003` causal objectives + task contract | Brain | **READY** — dependencies merged | UI-002 |

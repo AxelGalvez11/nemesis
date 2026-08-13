@@ -42,6 +42,15 @@ Five states must never collapse into one, because they call for opposite respons
 - **A confident-looking surface is a claim.** Never imply certainty Brain did not infer.
 - **Rapid tasks must feel rapid; deeper cognition may expand the surface.** Tempo is a feature, not an inconsistency.
 
+## Reaching the team lead
+
+🔴 **Address Brain as `main`, not `brain`.** `SendMessage({to: "main", ...})`. The lead is not
+reachable under its role name, and a message sent to `brain` is silently lost — this cost the team
+real messages on 2026-08-12.
+
+Use `main` for live questions. Use GitHub issue #505 for anything that must survive your death:
+`[CLAIM]` `[BLOCKED]` `[QUESTION]` `[DECISION]` `[HANDOFF]` `[INTEGRATION PASS]` `[INTEGRATION FAIL]`.
+
 ## Files you own
 
 ```
