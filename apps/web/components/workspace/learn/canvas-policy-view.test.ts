@@ -105,6 +105,74 @@ test("🔴 §K: the surviving arm never narrates the learner's own turn back at 
   assert.ok(rendered.length < source.length, "stripComments removed nothing -- the guard is inert");
 });
 
+test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as behaviour, not vocabulary", async () => {
+  const rendered = stripComments(await SOURCE);
+
+  // 🔴 THE REASON THIS TEST IS SHAPED THIS WAY. The screen that failed K3 shipped a button
+  // labelled "Continue". §K's banned-literal list contains "Next" — so the control was renamed,
+  // the vocabulary check went green, and the behaviour K3 exists to prohibit survived untouched.
+  // Anyone auditing §K by grepping the word list would have reported that screen clean.
+  //
+  // So: assert that NO control is rendered on a pass, whatever it is called. A test that banned
+  // the string "Continue" would go green the day someone types "Onwards".
+  const feedback = rendered.slice(rendered.indexOf("function FeedbackScreen"));
+  assert.ok(feedback, "FeedbackScreen is gone");
+
+  // Every control in this component must sit inside the not-passed branch.
+  const gate = feedback.indexOf("{!passed && (");
+  assert.notEqual(gate, -1, "the pass/not-pass split is gone — a pass could regain a control");
+  for (const control of [...feedback.matchAll(/<button/g)]) {
+    assert.ok(
+      control.index! > gate,
+      "a control renders outside the !passed branch — a correct answer must advance with no click, whatever the control is labelled",
+    );
+  }
+
+  // And the advance must actually happen, gated on the write landing rather than a timer alone.
+  assert.match(feedback, /if \(!passed \|\| !minReadDone \|\| recording\) return;/,
+    "the auto-advance gate must wait for BOTH the readability floor and the real evidence write");
+  assert.match(feedback, /latestAcknowledge\.current\(\)/, "the advance must call the CURRENT acknowledge, not a stale closure");
+  assert.match(rendered, /recording=\{runtime\.recording\}/, "the runtime's own recording flag must be passed in, not guessed locally");
+});
+
+test("🔴 K4: only a CORRECT answer is silent — the other verdicts keep their words", async () => {
+  const rendered = stripComments(await SOURCE);
+  const feedback = rendered.slice(rendered.indexOf("function FeedbackScreen"));
+  const gate = feedback.indexOf("{!passed && (");
+
+  // "That's it." is a score rendered as a sentence: a correct answer carries no information the
+  // learner does not already have, and the colour says it. So the headline must be inside the
+  // not-passed branch.
+  const headline = feedback.indexOf("VERDICT_HEADLINE[verdict]");
+  assert.notEqual(headline, -1, "the headline stopped being rendered at all — partial/incorrect need their words");
+  assert.ok(headline > gate, "the verdict headline renders on a PASS — 'That's it.' is a score in a sentence");
+
+  const body = feedback.indexOf("feedback.evaluation.feedback");
+  assert.ok(body > gate, "the feedback body renders on a pass — nothing else may appear beside the green words");
+
+  // 🔴 And the learner's own words must STILL be rendered, or this passes by deleting the context
+  // rather than the announcement — the wrong fix, and the one the ruling explicitly warned about.
+  const quote = feedback.indexOf("{feedback.answer}");
+  assert.notEqual(quote, -1, "the learner's own words stopped being shown");
+  assert.ok(quote < gate, "the learner's words must show on a pass too — they are what turns green");
+});
+
+test("🔴 every verdict is given a colour deliberately, and success is not the accent", async () => {
+  const rendered = stripComments(await SOURCE);
+  // A pass is green, partial amber, and both failures red. `not_demonstrated` never reaches this
+  // screen — it has no evaluation — so it is absent by construction rather than by omission.
+  for (const [verdict, tone] of [
+    ["strong", "--ui-green"], ["understood", "--ui-green"],
+    ["partial", "--ui-yellow"], ["incorrect", "--ui-red"], ["misconception", "--ui-red"],
+  ]) {
+    assert.match(rendered, new RegExp(`${verdict}:\\s*"text-\\(${escapeRegExp(tone)}\\)"`), `${verdict} lost its colour`);
+  }
+  // 🔴 Success must never be painted with --ui-action. The accent is a MUTED green used for
+  // "press this"; success is a saturated green meaning "you were right". A learner should not
+  // have to work out which green they are looking at.
+  assert.doesNotMatch(rendered, /VERDICT_TONE[\s\S]*?--ui-action/, "success must not borrow the action accent");
+});
+
 function escapeRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
