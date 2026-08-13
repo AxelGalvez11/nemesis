@@ -64,8 +64,16 @@ function LearnSurface() {
   const policyOverride = policyOverrideFrom(params.get("policy"));
   const { session } = useAuth();
 
-  // No canvas named and nothing asked: this is the landing surface.
-  if (!canvasId && !ask) return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
+  // `?new=1` — a canvas the learner has already started by dropping material on the front door.
+  // It carries no id because there is nothing to carry yet: `useCanvasSession(null)` mints the
+  // canvas, and the files are claimed from the handoff once it exists. Without this the router
+  // would land back on the landing page and the files would sit unclaimed until something else
+  // took them.
+  const startingNew = params.get("new") === "1";
+
+  // No canvas named, nothing asked and nothing started: this is the landing surface.
+  if (!canvasId && !ask && !startingNew)
+    return <CanvasHome accessToken={session?.access_token ?? null} userId={session?.user.id ?? null} />;
   return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyOverride={policyOverride} />;
 }
 

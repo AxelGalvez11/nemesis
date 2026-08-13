@@ -32,7 +32,10 @@ import {
   type Folder,
 } from "@/lib/learn/canvas-store";
 import { cn } from "@/lib/utils";
+import { CanvasVoiceBars } from "./canvas-voice-bars";
+import { putPending } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
+import { useCanvasDictation } from "./use-canvas-dictation";
 
 /** How far down the page the composer finishes docking. Short, so the transition reads as one
  *  movement rather than something that tracks the scrollbar. */
@@ -46,6 +49,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   const [query, setQuery] = useState("");
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
+  /** The whole page is a drop target, not just the composer — the copy has always said "drop a
+   *  file in", and a learner dragging a PDF aims at the page, not at a 28px control. */
+  const [draggingOver, setDraggingOver] = useState(false);
+  const dictation = useCanvasDictation();
+  /** Text typed before dictation started, so switching between talking and the keyboard
+   *  mid-sentence throws away neither half. Same contract as the session composer. */
+  const typedBefore = useRef("");
+  const listening = dictation.listening;
 
   const refresh = useCallback(async () => {
     const [rows, dirs] = await Promise.all([listCanvases(userId), listFolders(userId)]);
@@ -56,6 +67,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Dictation writes into the same box typing does — the composer has one value, whatever produced
+  // it. Keyed on both flags so the final transcript still lands after recognition stops.
+  useEffect(() => {
+    if (!dictation.listening && !dictation.transcript) return;
+    setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
+  }, [dictation.listening, dictation.transcript]);
 
   // One element, two positions. The scroll position decides which, and CSS moves it.
   useEffect(() => {
@@ -73,6 +91,41 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // retype what they already said.
     router.push(topic ? `/learn?ask=${encodeURIComponent(topic)}` : "/learn");
   };
+
+  /**
+   * Material dropped or picked on the front door.
+   *
+   * 🔴 THIS REPLACES A CONTROL THAT DID NOTHING. The `+` here was labelled "Add material" and its
+   * handler was `router.push("/learn")` — the page it was already on. It rendered, it hovered, it
+   * accepted the click, and nothing happened. Upload was still reachable one step in (start a
+   * canvas, then attach), so nothing was lost; the front door simply lied about having it.
+   *
+   * `?new=1` is what makes the canvas surface mount instead of this page. It carries no id, so
+   * `useCanvasSession(null)` mints a fresh canvas, and the files are claimed once it exists.
+   */
+  const startWithFiles = (files: FileList | readonly File[]) => {
+    if (Array.from(files).length === 0) return;
+    putPending(files);
+    router.push("/learn?new=1");
+  };
+
+  const startDictation = () => {
+    typedBefore.current = text;
+    dictation.reset();
+    dictation.start();
+  };
+
+  /** × — throw the capture away and put the composer back as it was. */
+  const cancelDictation = () => {
+    dictation.stop();
+    dictation.reset();
+    setText(typedBefore.current);
+  };
+
+  /** ✓ — accept what was heard. It lands in the composer as editable text and does NOT start a
+   *  canvas: speech recognition mishears, and auto-submitting would open a canvas on a topic the
+   *  learner never said. */
+  const acceptDictation = () => dictation.stop();
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -95,7 +148,33 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   };
 
   return (
-    <main className="relative h-full min-h-0 bg-(--ui-bg-editor)" style={{ ["--canvas-column" as string]: "680px" }}>
+    <main
+      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      onDragLeave={(event) => {
+        // 🔴 GUARDED BY `currentTarget`. Dragging across a child fires dragleave on the parent, so
+        // an unguarded handler flickers the highlight off and on for the whole traversal.
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setDraggingOver(false);
+      }}
+      onDragOver={(event) => {
+        // Only a file drag. Dragging selected TEXT across the page must not offer to ingest it.
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        setDraggingOver(true);
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.files.length) return;
+        event.preventDefault();
+        setDraggingOver(false);
+        startWithFiles(event.dataTransfer.files);
+      }}
+      style={{ ["--canvas-column" as string]: "680px" }}
+    >
+      {/* A ring on the surface, not a modal over it: the page stays readable underneath, and
+          nothing has to be dismissed if the learner changes their mind mid-drag. */}
+      {draggingOver && (
+        <div className="pointer-events-none absolute inset-3 z-50 rounded-2xl ring-2 ring-(--ui-action)" />
+      )}
       <div className="h-full overflow-y-auto" ref={scroller}>
         {/* First screen: nothing but the question and the place to answer it. */}
         <section className="flex h-full min-h-[26rem] flex-col items-center justify-center px-6">
@@ -212,41 +291,111 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           pane, which is the box it actually belongs to. */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-4 transition-all duration-300 ease-out",
+          // 🔴 `flex-col items-center`, NOT `justify-center`. The dictation message below is a
+          // SIBLING of the pill; in the row this used to be, it was laid out BESIDE the composer
+          // and pushed it off centre instead of sitting under it.
+          "pointer-events-none absolute inset-x-0 z-30 flex flex-col items-center px-4 transition-all duration-300 ease-out",
           docked ? "bottom-6 top-auto" : "bottom-auto top-1/2 -translate-y-[calc(50%-1.25rem)]",
         )}
       >
         <div className="pointer-events-auto flex w-full max-w-[770px] min-h-[54px] items-center gap-0 rounded-[27px] bg-(--ui-bg-elevated) px-[14px] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
-          <button
+          {/* 🔴 A REAL FILE INPUT, NOT A BUTTON THAT ROUTES. `sr-only`, never `hidden`: a hidden
+              input leaves the tab order and the accessibility tree, which makes the label wrapping
+              it unreachable by keyboard — the same rule the session composer's attach control
+              carries, for the same reason. */}
+          <label
             aria-label="Add material"
-            className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-            onClick={() => router.push("/learn")}
-            type="button"
+            className="flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-action)"
+            title="Add material"
           >
             <Codicon name="add" size="0.875rem" />
-          </button>
-          <input
-            className="ml-[12px] min-w-0 flex-1 bg-transparent text-[1rem] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                start();
-              }
-            }}
-            placeholder="Ask Nemesis…"
-            value={text}
-          />
-          <button
-            aria-label="Start"
-            className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
-            disabled={!text.trim()}
-            onClick={start}
-            type="button"
-          >
-            <Codicon name="arrow-up" size="0.875rem" />
-          </button>
+            <input
+              accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+              className="sr-only"
+              multiple
+              onChange={(event) => {
+                if (event.target.files?.length) startWithFiles(event.target.files);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+          {listening ? (
+            <>
+              <div className="ml-[12px] flex min-w-0 flex-1 items-center">
+                <CanvasVoiceBars live />
+              </div>
+              <button
+                aria-label="Cancel dictation"
+                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                onClick={cancelDictation}
+                title="Cancel dictation"
+                type="button"
+              >
+                <Codicon name="close" size="0.875rem" />
+              </button>
+              <button
+                aria-label="Finish dictation"
+                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                onClick={acceptDictation}
+                title="Finish dictation"
+                type="button"
+              >
+                <Codicon name="check" size="0.875rem" />
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                // 🔴 16px, NOT `text-[1rem]`. This file's root is 112.5%, so `1rem` renders at 18px.
+                // The number that matters is 16: below it, iOS Safari zooms the whole viewport in on
+                // focus and there is no way back out that reads as intentional. The session composer
+                // carries the same literal for the same reason.
+                className="ml-[12px] min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                onChange={(event) => {
+                  setText(event.target.value);
+                  typedBefore.current = event.target.value;
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    start();
+                  }
+                }}
+                placeholder="Ask Nemesis…"
+                value={text}
+              />
+              {dictation.supported && (
+                <button
+                  aria-label="Dictate"
+                  className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  onClick={startDictation}
+                  title="Dictate"
+                  type="button"
+                >
+                  <Codicon name="mic" size="0.875rem" />
+                </button>
+              )}
+              <button
+                aria-label="Start"
+                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
+                disabled={!text.trim()}
+                onClick={start}
+                type="button"
+              >
+                <Codicon name="arrow-up" size="0.875rem" />
+              </button>
+            </>
+          )}
         </div>
+        {/* 🔴 A DENIED MICROPHONE HAS TO SAY SO. Without this the mic button is pressed, nothing
+            starts, and nothing appears — indistinguishable from a broken control. Observed exactly
+            that while verifying: `SpeechRecognition` exists, so the button renders, but the capture
+            never begins and the learner is told nothing. The session composer already prints this;
+            the front door was the surface missing it. */}
+        {dictation.error && !listening && (
+          <p className="mt-2 text-center text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>
+        )}
       </div>
     </main>
   );

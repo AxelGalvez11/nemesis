@@ -20,6 +20,7 @@ import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { CanvasComposer } from "./canvas-composer";
+import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
 import { CanvasPolicyView } from "./canvas-policy-view";
@@ -179,6 +180,26 @@ export function LearningCanvas({
     askedOnce.current = true;
     session.begin(openingAsk);
   }, [canvas.state, openingAsk, session]);
+
+  // Material chosen on the landing page, before this canvas existed. Same shape as the opening
+  // instruction above and latched the same way.
+  //
+  // 🔴 THE LATCH IS THE WHOLE SAFETY. `attachFiles` updates the canvas, which re-runs this effect;
+  // without it the same PDF would be ingested repeatedly — a real cost, since extraction is the
+  // expensive step. `takePending()` also clears as it reads, so the two guards are independent:
+  // even a mount ordering nobody predicted cannot attach the same files twice.
+  //
+  // 🔴 NOT GATED ON `canvas.state === "empty"`. A file dropped onto the front door arrives while
+  // the canvas is being minted, and the state it lands in is not something this effect gets to
+  // assume — attaching material is valid on any canvas, which is exactly what the composer's own
+  // attach control does mid-session.
+  const claimedFiles = useRef(false);
+  useEffect(() => {
+    if (claimedFiles.current || !session.ready) return;
+    const files = takePending();
+    claimedFiles.current = true;
+    if (files?.length) void session.attachFiles(files);
+  }, [session]);
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
   // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the
