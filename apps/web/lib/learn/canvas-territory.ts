@@ -115,6 +115,17 @@ export function territoryReuse(input: {
 }
 
 /**
+ * What a GROUNDED territory was built over — the material itself, named durably.
+ *
+ * 🔴 THE DURABLE IDS, SORTED, NEVER THE TITLE. A document canvas's subject is the document, and
+ * `librarySourceId` is the same string for every canvas that holds it. Sorting means the order the
+ * learner happened to attach two files in does not read as a different subject.
+ */
+export function materialSubject(librarySourceIds: readonly string[]): string {
+  return `sources:${[...librarySourceIds].sort().join(",")}`;
+}
+
+/**
  * A stored territory, or null when there is nothing usable to replay.
  *
  * 🔴 VALIDATED, NEVER TRUSTED. This comes out of a jsonb column, which can hold anything — including

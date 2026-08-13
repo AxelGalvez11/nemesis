@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import { KNOWLEDGE_DEADLINE_MS } from "@/lib/learn/thinking-phases";
+
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
@@ -86,4 +88,84 @@ test("🔴 `recording` is a DIFFERENT question from `judging`, and both are expo
     clearsJudging < callsRecord,
     "judging is already false by the time the write starts — which is exactly why it cannot serve as this gate",
   );
+});
+
+// ── §33: ninety seconds with no transition and no failure must not be REPRESENTABLE ──────────────
+//
+// 🔴 THE OWNER'S OWN CANVAS WAS IN THAT STATE WHEN THIS WAS WRITTEN. `8c49587e`: "Mapping what you
+// know", indefinitely, across two loads over ninety seconds — territory NULL, `updated_at` hours
+// old, zero rows, and NO CONSOLE ERROR. A silent永 stall with nothing to act on.
+//
+// There were two ways in and the effect had neither closed:
+//
+//   1. A THROW. The async IIFE had no `catch`, so anything rejecting inside
+//      `ensureKnowledgeForCanvas` skipped every `setPhase(null)` and `setStatus(...)` below it and
+//      left `loading` on screen for ever.
+//   2. A PROMISE THAT NEVER SETTLES. A construction is one `fetch` with no timeout of its own, so a
+//      connection accepted and never answered produces nothing to catch. No `catch` reaches that
+//      one. Only a deadline does.
+//
+// These are source assertions rather than a rendered hook, for the same reason the ordering guards
+// in `knowledge-coverage.test.ts` are: what matters is that the code cannot be written the old way
+// again, and both routes are structural.
+
+test("🔴 the resolve effect CATCHES, so a throw cannot leave the caption up for ever", async () => {
+  const source = await read("./use-policy-runtime.ts");
+  const effect = source.slice(source.indexOf("const knowledgeInputs = knowledgeSignature(canvas)"));
+  const body = effect.slice(0, effect.indexOf("// ---------------------------------------------------------------- submit"));
+
+  const call = body.indexOf("await ensureKnowledgeForCanvas(");
+  const caught = body.indexOf("} catch (cause) {");
+
+  assert.ok(call > 0, "the resolve must still happen");
+  assert.ok(caught > 0, "🔴 and it must be caught — an uncaught throw IS the infinite caption");
+  assert.ok(caught > call, "the catch must cover the resolve, not something before it");
+
+  // And the catch must actually LEAVE the loading state. A catch that logged and returned would
+  // satisfy the shape and reproduce the defect exactly.
+  const handler = body.slice(caught, body.indexOf("clearTimeout(expiry);\n      if (!live) return;"));
+  assert.match(handler, /setPhase\(null\)/, "the caption must come down");
+  assert.match(handler, /setStatus\("unavailable"\)/, "and the runtime must stop claiming to be loading");
+  assert.match(handler, /setError\(/, "and the learner must be told something they can act on");
+});
+
+test("🔴 the wait is BOUNDED, and the bound aborts the work rather than abandoning it", async () => {
+  // 🔴 A TIMEOUT THAT ONLY STOPPED WAITING WOULD BE WORSE THAN NONE. The request would still be
+  // running, still billable, and still able to resolve later and write knowledge for a canvas the
+  // learner has given up on. "We stopped waiting" and "it stopped" have to be one event.
+  const source = await read("./use-policy-runtime.ts");
+  const knowledge = await read("../../../lib/learn/canvas-knowledge.ts");
+  const api = await read("../../../lib/learn/canvas-api.ts");
+
+  assert.match(source, /new AbortController\(\)/, "there must be something to abort with");
+  assert.match(source, /setTimeout\(\(\) => deadline\.abort\(\), KNOWLEDGE_DEADLINE_MS\)/);
+  assert.match(source, /signal: deadline\.signal/, "🔴 and the signal must be HANDED DOWN, not merely created");
+
+  // The whole thread, end to end: nothing in the chain may drop it.
+  assert.match(knowledge, /signal\?: AbortSignal/, "the knowledge layer must accept it");
+  assert.match(knowledge, /constructTerritory\(userId, topic, TERRITORY_TARGET, \{ signal \}\)/, "topic lane");
+  assert.match(knowledge, /signal,\n {4}sources: canvas\.sources,/, "grounded lane");
+  assert.match(api, /ask\(uid, territoryMessages\(\{ count, sources, topic \}\), signal\)/, "and the model call");
+});
+
+test("🔴 the deadline is comfortably above a real build and comfortably inside the owner's ninety", () => {
+  // 🔴 BOTH DIRECTIONS ARE FAILURES. Too tight aborts work that was about to succeed and reports a
+  // failure the learner did not have; too loose reproduces the silent stall the rule exists to
+  // remove. Production measured a topic territory resolving in about 18 seconds.
+  assert.ok(KNOWLEDGE_DEADLINE_MS > 30_000, "a real build over 120,000 characters must not be cut off");
+  assert.ok(KNOWLEDGE_DEADLINE_MS < 90_000, "🔴 and nothing may sit silent for the owner's ninety seconds");
+});
+
+test("🔴 the timer is cleared on EVERY exit, including unmount", async () => {
+  // A timer that outlives its effect fires into a component nobody is looking at, and on a canvas
+  // the learner has already navigated away from.
+  const source = await read("./use-policy-runtime.ts");
+  const effect = source.slice(source.indexOf("const deadline = new AbortController()"));
+  const body = effect.slice(0, effect.indexOf("// ---------------------------------------------------------------- submit"));
+
+  assert.ok(
+    (body.match(/clearTimeout\(expiry\)/g) ?? []).length >= 3,
+    "cleared on the failure path, on the success path, and on unmount",
+  );
+  assert.match(body, /live = false;\n {6}\/\/[\s\S]*?clearTimeout\(expiry\);/, "the cleanup must clear it");
 });

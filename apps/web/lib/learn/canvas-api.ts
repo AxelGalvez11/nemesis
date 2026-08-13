@@ -139,6 +139,18 @@ export async function runCommand(
 
   const proposed = parseCanvasOps(text ?? "");
   const { ops, rejected } = validateOps(canvas, proposed, {
+    // 🔴 THE ONE CASE WHERE A WHOLE-CANVAS WRITE IS SAFE, AND §24 NEEDS IT. Opening a document no
+    // longer generates anything to read, so a canvas the learner has not asked to change has NO
+    // blocks — and every other operation names one. Without this, "Summarize this" would have
+    // nothing to insert before or after and would silently produce nothing, which is the one path
+    // §24 explicitly preserves.
+    //
+    // 🔴 IT REPLACES NOTHING, WHICH IS WHY IT IS NOT THE DEFECT `allowWholeCanvas` GUARDS AGAINST.
+    // That gate exists because a model given a free choice rewrites the whole page on every turn,
+    // undoing the behaviour this surface is judged on: fixing one paragraph fixes one paragraph.
+    // With zero blocks there is no paragraph to undo. The moment the canvas holds anything, the
+    // gate is closed again and the scoped operations are the only way in.
+    ...(canvas.blocks.length === 0 && selected.length === 0 ? { allowWholeCanvas: true } : {}),
     ...(selected.length ? { scopeBlockIds: selected.map((block) => block.id) } : {}),
   });
   if (ops.length === 0) {
@@ -218,19 +230,39 @@ export async function constructTerritory(
   uid: string,
   topic: string,
   count: number,
-  signal?: AbortSignal,
+  options: {
+    /**
+     * The learner's own material, when they attached any — §18's convergence, executed.
+     *
+     * 🔴 THE SAME CALL FOR BOTH WAYS IN. A typed topic and an uploaded lecture produce knowledge
+     * through ONE constructor; only the grounding differs, and the parser holds the grounded lane
+     * to a stricter rule (every surviving pair must point at an excerpt that resolves).
+     *
+     * 🔴 AND THE MATERIAL IS BOUNDED BY `groundingBlock`, WHICH SAYS SO IN THE PROMPT. A long
+     * document is truncated at 120,000 characters of excerpts and the model is told how many were
+     * left out, so it declines rather than claiming to have covered them. What that means for the
+     * learner is stated in the caller: knowledge is drawn from what fitted, and coverage is
+     * reported from the deterministic lane, which never counts these objects as representing
+     * anything. We under-claim what was covered; we never over-claim it.
+     */
+    sources?: readonly CanvasSource[];
+    signal?: AbortSignal;
+  } = {},
 ): Promise<CanvasCallResult<TerritoryResult>> {
-  const { text, error } = await ask(uid, territoryMessages({ count, topic }), signal);
+  const { signal, sources } = options;
+  const { text, error } = await ask(uid, territoryMessages({ count, sources, topic }), signal);
   if (error) return { value: null, error };
-  const territory = text ? parseTerritory({ text, topic }) : null;
+  const territory = text ? parseTerritory({ sources, text, topic }) : null;
   return territory && territory.objects.length
     ? { value: territory, error: null }
     : {
         value: null,
-        // 🔴 NAMES THE TOPIC AS THE THING THAT DID NOT WORK, NOT THE LEARNER. A topic Nemesis cannot
-        // turn into checkable facts is a real answer — the honest move is to say so and let them
-        // narrow it, never to invent pairs so the surface has something on it.
-        error: "Nemesis couldn't turn that topic into anything specific enough to ask about. Try naming it more narrowly.",
+        // 🔴 NAMES THE MATERIAL OR THE TOPIC AS THE THING THAT DID NOT WORK, NOT THE LEARNER. A
+        // subject Nemesis cannot turn into checkable facts is a real answer — the honest move is to
+        // say so, never to invent pairs so the surface has something on it.
+        error: sources?.length
+          ? "Nemesis couldn't find anything specific enough to ask you about in that material."
+          : "Nemesis couldn't turn that topic into anything specific enough to ask about. Try naming it more narrowly.",
       };
 }
 

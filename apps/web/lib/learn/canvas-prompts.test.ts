@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { LEVEL_INSTRUCTIONS } from "./canvas-model";
-import { documentText, lessonMessages } from "./canvas-prompts";
+import { commandMessages, documentText, lessonMessages, territoryMessages } from "./canvas-prompts";
 
 test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shared one", () => {
   // Owner rule. It binds what NEMESIS WRITES, which is almost everything on the Canvas below the
@@ -182,4 +182,98 @@ test("🔴 every block reaches generation, whatever flags it carries", () => {
   ];
   const text = documentText(blocks);
   for (const block of blocks) assert.ok(text.includes(block.content), `${block.id} was dropped`);
+});
+
+// ── §24: source ingestion is not source summarization ────────────────────────────────────────────
+
+const LECTURE = {
+  excerpts: [{ id: "s1:e4", label: "Insulin secretion", text: "Beta cells release insulin.", unitId: "u7" }],
+  id: "s1",
+  kind: "pdf",
+  librarySourceId: "lib-1",
+  title: "Physiology of Diabetes Mellitus",
+} as never;
+
+const askedOf = (messages: readonly { role: string; content: string }[]): string =>
+  messages.find((message) => message.role === "user")?.content ?? "";
+
+test("🔴 ACCEPTANCE: reading a document for knowledge NEVER asks for a document back", () => {
+  // 🔴 §24, AND IT IS THE WHOLE POINT. The failure being guarded against is specific and shipped:
+  // the owner uploaded a lecture and the Canvas opened on "What this document covers" followed by
+  // paragraphs summarising the material they had just handed over.
+  //
+  // The lesson prompt asks for BLOCKS. This one asks for PAIRS and forbids prose in the same
+  // sentence, so a summary is not something it can accidentally return.
+  const asked = askedOf(territoryMessages({ count: 24, sources: [LECTURE], topic: "Diabetes" }));
+
+  assert.match(asked, /name the specific, checkable facts IT teaches, as PAIRS/i);
+  assert.match(asked, /Do not write a lesson, an introduction, an explanation, or any prose/i);
+  assert.doesNotMatch(asked, /"blocks"/, "a block is a thing to read; this lane must not be able to request one");
+  assert.doesNotMatch(asked, /heading/i);
+
+  // And the material really is in there, with the ids a citation has to name.
+  assert.match(asked, /\[s1:e4\]/);
+});
+
+test("🔴 a grounded reading takes what the DOCUMENT states, not what the model knows", () => {
+  // Without this the lane launders the model's own knowledge of the subject into the learner's
+  // lecture, and they are then asked about something their document never said.
+  const asked = askedOf(territoryMessages({ count: 24, sources: [LECTURE], topic: "Diabetes" }));
+
+  assert.match(asked, /Take only what the material actually states/i);
+  assert.match(asked, /Do not add facts from your own knowledge/i);
+  assert.match(asked, /"excerptId" MUST be the id of the excerpt the pair was read from/i);
+  assert.match(asked, /If you cannot point at the excerpt a pair came from, leave the pair out/i);
+});
+
+test("🔴 the topic lane keeps its own wording, and asks for no excerpt it could not have", () => {
+  // §18 is one runtime, not one prompt that pretends a topic has material.
+  const asked = askedOf(territoryMessages({ count: 24, topic: "photosynthesis" }));
+
+  assert.match(asked, /Someone wants to learn: "photosynthesis"/);
+  assert.doesNotMatch(asked, /excerptId/, "there is nothing to cite, so asking for a citation invites an invented one");
+  assert.match(asked, /Do not restate the topic itself as a fact/i);
+});
+
+test("🔴 \"Summarize this\" still works on a canvas that was never given anything to read", () => {
+  // 🔴 §24 KEEPS THIS PATH EXPLICITLY, AND REMOVING THE OPENING LESSON IS WHAT PUT IT AT RISK. With
+  // no blocks on the canvas, every scoped operation names a block that does not exist — so without
+  // an empty-canvas case the learner's own request would silently produce nothing.
+  const empty = askedOf(
+    commandMessages({
+      blocks: [],
+      canvasTitle: "Physiology of Diabetes Mellitus",
+      command: "Summarize this",
+      concepts: [],
+      level: null,
+      selected: [],
+      sources: [LECTURE],
+    }),
+  );
+
+  assert.match(empty, /This canvas has no content yet/i);
+  assert.match(empty, /replace_canvas/);
+  assert.doesNotMatch(empty, /Document outline/, "there is no outline to show, and printing an empty one invites an edit to nothing");
+  assert.match(empty, /\[s1:e4\]/, "and the summary is still grounded in their material");
+});
+
+test("🔴 the moment the canvas holds anything, whole-page rewriting is closed again", () => {
+  // The scoping discipline is what keeps "fix this paragraph" from regenerating the page. The empty
+  // case is an exception justified by there being no paragraph to lose, and it must expire the
+  // instant there is one.
+  const withContent = askedOf(
+    commandMessages({
+      blocks: [{ content: "Beta cells release insulin.", id: "b1", type: "paragraph" }] as never,
+      canvasTitle: "Physiology of Diabetes Mellitus",
+      command: "Summarize this",
+      concepts: [],
+      level: null,
+      selected: [],
+      sources: [LECTURE],
+    }),
+  );
+
+  assert.doesNotMatch(withContent, /replace_canvas/);
+  assert.match(withContent, /Change as little as possible/i);
+  assert.match(withContent, /Document outline/);
 });

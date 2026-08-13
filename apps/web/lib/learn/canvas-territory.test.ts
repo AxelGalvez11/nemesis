@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { frozenTopic, readTerritory, territoryReuse, type CanvasTerritory } from "./canvas-territory";
+import { frozenTopic, materialSubject, readTerritory, territoryReuse, type CanvasTerritory } from "./canvas-territory";
 import type { KnowledgeObject } from "./knowledge-types";
 
 // The territory was rebuilt on every open, and it never converged.
@@ -164,4 +165,35 @@ test("🔴 the same rules serve a law student and a mechanical engineer", () => 
     assert.equal(territoryReuse({ identityVersion: VERSION, stored: null }).reuse, false);
     assert.equal(frozenTopic({ stored: built({ topic }), title: "renamed while tidying" }), topic);
   }
+});
+
+// ── the label a grounded territory is filed under ───────────────────────────────────────────────
+
+test("🔴 material names a subject the same way whatever order it was attached in", () => {
+  // The marker needs a non-empty string or `readTerritory` rejects the row, and for a document
+  // canvas the honest value is the material it was built from. Durable ids, never the title: every
+  // canvas calls its first attachment "s1", and a title is a label a learner may change.
+  assert.equal(materialSubject(["lib-b", "lib-a"]), materialSubject(["lib-a", "lib-b"]));
+  assert.match(materialSubject(["lib-a"]), /^sources:/);
+});
+
+test("🔴 build-once for a document canvas is enforced by the CALLER, not by a gate in the builder", () => {
+  // 🔴 THIS TEST REPLACES ONE THAT WAS GREEN ON A BRANCH NOTHING COULD REACH.
+  //
+  // There was a `groundedReuse` here that compared the stored subject against the current material
+  // and reported `material-changed`, and a test asserting that "attaching a SECOND lecture
+  // rebuilds". Both passed. Neither was reachable: `ensureKnowledgeForCanvas` replays any stored
+  // territory BEFORE calling the grounded builder and only calls it when that replay produced
+  // nothing, so a canvas with a stored territory never arrives there and the comparison never runs.
+  //
+  // A dead branch that reads like a freshness check is worse than no check, because it documents a
+  // behaviour the product does not have. It is deleted, and the real rule is asserted where it
+  // actually lives — see `canvas-knowledge.test.ts`, "the fallback does not run when the canvas
+  // already has a territory to carry".
+  const territory = readFileSync(new URL("./canvas-territory.ts", import.meta.url), "utf8");
+  const knowledge = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(territory, /groundedReuse/, "no unreachable second reuse rule may come back");
+  assert.doesNotMatch(territory, /material-changed/, "nor a miss reason nothing can report");
+  assert.match(knowledge, /carried\.length === 0/, "the real gate is the caller's carried territory");
 });
