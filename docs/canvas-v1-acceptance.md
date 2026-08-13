@@ -75,11 +75,33 @@ source → knowledge → objective → cognitive task → learner response
 |---|---|---|
 | C1 | `learner_evidence` gains a row through ordinary use | the row, and the session that produced it |
 | C2 | That row reads back with `operation`, `responseLatencyMs`, `responseId` | the readback |
-| C3 | 🔴 The **next** decision differs because of it | the `PolicyDecision` before and after, side by side |
+| C3 | 🔴 The next decision differs **because of the evidence** | a counterfactual, not a sequence — see below |
 
-**C3 is the one that proves the loop rather than the insert.** Capture the decision objects; do not
-judge by which question appears on screen. A system that writes evidence and then chooses the same
-next task regardless **is not yet adaptive** and does not pass.
+### 🔴 C3 IS A COUNTERFACTUAL, NOT A BEFORE/AFTER DIFF
+
+**A plain before/after comparison would pass a round-robin scheduler.** Integration found this
+before the re-run rather than after, and it changes what a PASS means.
+
+The decision is a function of more than evidence. `acknowledge()` — the learner reading a correction
+and continuing — bumps `round` **and** adds the objective to `actedOn`
+(`use-policy-runtime.ts:399-404`). Both feed the next decision. **Continue is explicitly not
+evidence**, so a learner who reads a correction and continues gets a *different next decision with
+no evidence written at all*. That is rotation, and a naive before/after diff reads it as adaptation.
+
+**What a PASS therefore requires:**
+
+1. **A negative control.** Capture the decision twice with **no submission in between**, exercising
+   the same non-evidence interactions the real run performs. If it moves on its own, the comparison
+   is void — and that instability is itself a P0 finding.
+2. **Compare the decision INPUTS, not only the output.** Report `state.evidenceCount`, the
+   session-local rotation state (`actedOn`, `round`) and the chosen objective for both captures.
+   The difference must be attributable to evidence with rotation state held equal.
+3. Only then does a post-submission difference count.
+
+§G says *"inputs identical apart from the new evidence"* — that is a counterfactual by construction.
+Do not judge by which question appears on screen. **A system that writes evidence and chooses the
+same next task regardless is not adaptive; a system that chooses a different task for reasons
+unrelated to evidence is not adaptive either, and is the easier of the two to mistake for success.**
 
 ## D. Rapid associative cognition — REQUIRED
 
