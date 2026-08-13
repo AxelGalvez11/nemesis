@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import type { LearnerEvidence, EvidenceVerdict } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
+import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 
 /** A table that does not exist yet is a deployment state, not a bug worth shouting about. */
@@ -350,6 +351,24 @@ export interface EvidenceToRecord {
   // 🔴 OPTIONAL BECAUSE ABSENT MEANS NOT OBSERVED — never defaulted, never backfilled.
   /** Which cognitive operation was demanded. */
   operation?: ObjectiveCapability | null;
+  /**
+   * At what rung of the scaffolding ladder this response was produced — §33.
+   *
+   * 🔴 AN OBSERVATION, WHICH IS WHY IT SITS HERE AND NOT BESIDE `verdict`. The runtime knows which
+   * kind of task it set before the learner answers, so nothing about this is inferred from the
+   * response. That is what keeps it on the right side of this block's rule: what was measured,
+   * never what it means. Whether a recognition tap is "enough" is a policy question, and policy
+   * questions must stay rewritable.
+   */
+  scaffoldRung?: ScaffoldRung | null;
+  /**
+   * What this response said about THIS objective specifically.
+   *
+   * 🔴 THE FOURTH VALUE IS THE POINT. One answer put to several objectives establishes some and
+   * says nothing about others, and `demonstrationObtained: false` cannot distinguish "they never
+   * mentioned it" from "they tried and produced nothing". See `ObjectiveEvidence`.
+   */
+  objectiveEvidence?: ObjectiveEvidence | null;
   /** Milliseconds from the prompt appearing to submission, as measured. Raw. */
   responseLatencyMs?: number | null;
   /** How much assistance the runtime offered during the attempt. 0 is the prompt alone. */
@@ -383,6 +402,7 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     demonstration_obtained: evidence.demonstrationObtained,
     evaluator_version: evidence.evaluatorVersion ?? null,
     misconceptions: evidence.misconceptions ?? [],
+    objective_evidence: evidence.objectiveEvidence ?? null,
     objective_id: evidence.objectiveRowId,
     occurred_at: evidence.occurredAt,
     // 🔴 `?? null` IS "NOT OBSERVED", AND THAT IS WHY IT IS NOT `?? 0`. A zero latency asserts an
@@ -396,6 +416,7 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     response_id: evidence.responseId,
     response_latency_ms: evidence.responseLatencyMs ?? null,
     response_text: evidence.responseText ?? null,
+    scaffold_rung: evidence.scaffoldRung ?? null,
     scaffolding_level: evidence.scaffoldingLevel ?? null,
     task_id: evidence.taskId ?? null,
     user_id: userId,
@@ -457,7 +478,7 @@ export const EVIDENCE_COLUMNS: readonly string[] = [
  * from the write shape, and this literal cannot drift from the derived list.
  */
 export const EVIDENCE_SELECT =
-  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,occurred_at,operation,response_id,response_latency_ms,response_text,scaffolding_level,task_id,verdict";
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_text,scaffold_rung,scaffolding_level,task_id,verdict";
 
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
@@ -538,6 +559,15 @@ export function evidenceFromRow(
     // as "not observed", and `?? 0` would turn every one of them into a claim that the learner
     // answered instantly with no help. Spread-when-present keeps absent absent.
     ...(row.operation == null ? {} : { operation: row.operation as ObjectiveCapability }),
+    // 🔴 VALIDATED, NOT CAST. A rung comes back out of a text column that a future migration, a
+    // manual fix or an older writer could put anything into, and `as ScaffoldRung` would let an
+    // unknown string flow into `rungRank`, which returns -1 for it — silently ranking it BELOW
+    // `taught` and making every entailment check pass. `readRung` returns null instead, which every
+    // consumer already has to handle because rows written before this column exist.
+    ...(readRung(row.scaffold_rung) === null ? {} : { scaffoldRung: readRung(row.scaffold_rung)! }),
+    ...(row.objective_evidence == null
+      ? {}
+      : { objectiveEvidence: row.objective_evidence as ObjectiveEvidence }),
     ...(row.response_latency_ms == null ? {} : { responseLatencyMs: row.response_latency_ms as number }),
     ...(row.scaffolding_level == null ? {} : { scaffoldingLevel: row.scaffolding_level as number }),
     ...(row.response_id == null ? {} : { responseId: row.response_id as string }),

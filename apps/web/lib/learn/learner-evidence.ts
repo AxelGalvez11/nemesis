@@ -13,6 +13,7 @@
 
 import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
 import type { ObjectiveCapability } from "./learning-objective";
+import { entails, higherRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 
 /**
  * Two INDEPENDENT facts, kept independent.
@@ -125,6 +126,11 @@ export interface LearnerEvidence {
   /** How much assistance the runtime offered during the attempt. 0 is the prompt alone.
    *  🔴 What was OFFERED, not whether the learner needed it. */
   scaffoldingLevel?: number;
+  /** At what rung of the scaffolding ladder this response was produced — §33. Absent on every row
+   *  written before the rung was recorded, which is why nothing may default it. */
+  scaffoldRung?: ScaffoldRung;
+  /** What this response said about THIS objective, including "nothing at all". */
+  objectiveEvidence?: ObjectiveEvidence;
   /**
    * What the learner actually wrote or said, verbatim.
    *
@@ -224,6 +230,20 @@ export interface LearnerObjectiveState {
    *  than `evidenceCount` when the learner revealed or gave up, or when a reading was too uncertain
    *  to conclude from — and the gap is itself informative. */
   demonstrationCount: number;
+  /**
+   * The most demanding rung at which this objective was ever actually demonstrated — §33.
+   *
+   * 🔴 THE HIGHEST, NOT THE LATEST, AND THE DIFFERENCE IS THE WHOLE CLAIM. Producing an answer
+   * unaided in January is not undone by picking it off a list in March; the learner has shown they
+   * can produce it. Taking the latest would let a cheap recognition check silently DEMOTE a real
+   * demonstration, which is the opposite of the failure §33 is guarding against but just as wrong.
+   *
+   * 🔴 NULL MEANS "NO DEMONSTRATION, OR NONE THAT RECORDED ITS RUNG" — never a rung of its own.
+   * Rows written before the column existed carry no rung, so a caller asking `satisfies` about them
+   * gets `false`: we cannot show they produced it unaided, and claiming they did is exactly the
+   * inflation this field exists to stop.
+   */
+  demonstratedAt: ScaffoldRung | null;
   /** ISO of the most recent evidence, or null when there is none. */
   lastEvidenceAt: string | null;
   /** The most recent judged verdict, or null if none was ever obtained. Kept because `strong` and
@@ -301,6 +321,7 @@ export function projectLearnerState(
   // 🔴 NO EVIDENCE IS `unknown`, FULL STOP. Not a default, not a floor, not "assume the worst".
   if (distinct.length === 0) {
     return {
+      demonstratedAt: null,
       demonstrationCount: 0,
       evidenceCount: 0,
       lastEvidenceAt: null,
@@ -319,11 +340,31 @@ export function projectLearnerState(
   // immediately. Everything below is a CONCLUSION drawn from a verdict, so it may only be drawn from
   // verdicts we are willing to stand behind.
   const believable = distinct.filter(establishesBelief);
-  const latestBelievable = believable[believable.length - 1] ?? null;
+  // 🔴 A RESPONSE THAT NEVER MENTIONED THIS OBJECTIVE IS NOT AN ATTEMPT AT IT, AND MUST NOT DECIDE
+  // ITS STATUS. This is the fan-out's whole point arriving at the read: one answer writes a row for
+  // every objective the question spanned, and the rows for the ones it said nothing about carry
+  // `demonstrationObtained: false` — structurally identical to "asked, produced nothing usable".
+  // Left in, the owner's own case goes wrong exactly as they described it: asked to explain phase 0,
+  // "Sodium enters the cell, causing rapid depolarization" would record *why Na⁺ moves inward* as a
+  // FAILED attempt, and the learner would be shown a correction for something they were never asked.
+  //
+  // 🔴 FILTERED FOR THE STATUS ONLY, NEVER FOR `evidenceCount` OR `lastEvidenceAt`. The row is real
+  // and the opportunity genuinely passed — the churn guard has to see it, or the policy will re-ask
+  // the same question immediately. What it may not do is claim something about the learner.
+  const attempts = believable.filter((e) => e.objectiveEvidence !== "not_addressed");
+  const latestBelievable = attempts[attempts.length - 1] ?? null;
   const demonstrations = believable.filter((e) => e.demonstrationObtained && e.verdict);
   const latestDemonstration = demonstrations[demonstrations.length - 1] ?? null;
 
+  // 🔴 THE HIGHEST RUNG EVER REACHED, FOLDED OVER EVERY DEMONSTRATION. Rows with no rung contribute
+  // nothing rather than a default — see `demonstratedAt`.
+  const demonstratedAt = demonstrations.reduce<ScaffoldRung | null>(
+    (best, e) => (e.scaffoldRung ? (best ? higherRung(best, e.scaffoldRung) : e.scaffoldRung) : best),
+    null,
+  );
+
   return {
+    demonstratedAt,
     demonstrationCount: demonstrations.length,
     evidenceCount: distinct.length,
     lastEvidenceAt: latest.occurredAt,
@@ -352,6 +393,29 @@ export function projectLearnerState(
         : "not_demonstrated"
       : "unknown",
   };
+}
+
+/**
+ * Has this objective been demonstrated at a demand of at least `required`? — §31.1, executed.
+ *
+ * 🔴 THIS IS THE ONLY SANCTIONED WAY TO ASK "DO THEY KNOW IT", AND THE REQUIRED RUNG IS NOT
+ * OPTIONAL. That is the enforcement: the ambiguous question is unaskable rather than merely
+ * discouraged. A caller cannot write `if (state.demonstrated)` and get a recognition tap counted as
+ * production, because there is no such field to read — they must say at what demand they mean, and
+ * saying it makes the answer honest.
+ *
+ * 🔴 PRODUCTION IMPLIES RECOGNITION; RECOGNITION IMPLIES NOTHING ABOVE IT. `entails` holds the
+ * direction, and it is a direction rather than a matter of degree — which is precisely why a single
+ * confidence number could never have expressed it.
+ *
+ * 🔴 AND A DEMONSTRATION WITH NO RECORDED RUNG SATISFIES NOTHING. Every row written before §33
+ * lands here, and crediting them with unaided production would be the inflation this exists to
+ * stop. The error is deliberately in the under-claiming direction: the cost is re-asking something
+ * the learner may already know, which is annoying and self-correcting, against silently skipping
+ * something they never showed, which is invisible and compounds under scheduling.
+ */
+export function satisfies(state: LearnerObjectiveState, required: ScaffoldRung): boolean {
+  return state.demonstratedAt !== null && entails(state.demonstratedAt, required);
 }
 
 /** Project every objective present in a log at once, for a canvas asking "what does this learner

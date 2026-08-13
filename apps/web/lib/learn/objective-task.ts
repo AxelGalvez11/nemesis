@@ -16,6 +16,7 @@ import type { EvaluationInput } from "./canvas-prompts";
 import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
+import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
 
 /** Which evaluator's judgement this is. Recorded on every row: evidence from a different judge is
  *  a different claim, and after the fact nothing else can tell them apart. */
@@ -174,6 +175,21 @@ export interface RetrievalPrompt {
    * the runtime offered, not whether anyone needed it.
    */
   scaffoldingLevel: number;
+  /**
+   * Which rung of §33's ladder this prompt sets.
+   *
+   * 🔴 A PROPERTY OF THE QUESTION, KNOWN BEFORE THE ANSWER, WHICH IS WHY IT LIVES HERE AND NOT ON
+   * THE OUTCOME. The runtime chose to ask for unaided production, or to show options, or to leave a
+   * blank — that decision is already made when the prompt is built. Deriving it afterwards from
+   * what came back would make it an interpretation of the response, and an interpretation cannot be
+   * stored as an observation.
+   *
+   * 🔴 REQUIRED, NOT OPTIONAL. An optional rung defaults to absent, and absent means "we do not
+   * know at what demand this was produced" — which would be a lie about a prompt this code built
+   * and therefore knows the answer to. Rows legitimately lacking a rung are the historical ones,
+   * written before the field existed; a new prompt has no excuse.
+   */
+  rung: ScaffoldRung;
 }
 
 /**
@@ -236,12 +252,24 @@ export function promptTargeting(input: {
   operation: ObjectiveCapability;
   task: RetrievalTask;
   scaffoldingLevel?: number;
+  /**
+   * 🔴 DEFAULTS TO `independent` BECAUSE THAT IS WHAT THIS RUNTIME ACTUALLY STAGES, AND THE DEFAULT
+   * IS SAFE IN THE DIRECTION THAT MATTERS. Every prompt built today is the question and nothing
+   * else — no options, no blank, no narrowing — so `independent` is the observation, not a guess.
+   *
+   * The risk of a wrong default runs one way: claiming a HIGHER rung than was offered would credit
+   * a learner with production they never did. That cannot happen here, because `independent` is the
+   * top of the ladder and any scaffolded prompt must therefore pass its own lower rung explicitly.
+   * A caller that forgets under-claims its own scaffolding, which costs a re-ask.
+   */
+  rung?: ScaffoldRung;
 }): RetrievalPrompt {
   return {
     expectedAnswer: input.expectedAnswer,
     id: input.id,
     operation: input.operation,
     prompt: input.prompt,
+    rung: input.rung ?? "independent",
     scaffoldingLevel: input.scaffoldingLevel ?? UNSUPPORTED_RETRIEVAL,
     targets: input.targets,
     task: input.task,
@@ -360,6 +388,35 @@ export function evidenceForSubmission(input: {
 }
 
 /**
+ * What one outcome says about the objective it was routed to.
+ *
+ * 🔴 `null` IS `not_addressed`, AND THAT MAPPING IS THE KEYSTONE. The fan-out is total over the
+ * TARGETS rather than over the judge's outcomes precisely so that an objective the judge stayed
+ * silent about still gets a row — and this is the value that makes such a row mean something other
+ * than failure. Without it the row exists and says nothing, which is worse than useless: it is
+ * indistinguishable from an attempt that produced nothing, and it teaches against a mistake the
+ * learner never made.
+ *
+ * 🔴 DERIVED FROM THE VERDICT, NOT A SECOND JUDGEMENT. `strong` and `understood` are demonstrations
+ * of the objective; `partial` is partly one; `incorrect` and `misconception` both contradict it,
+ * differing in whether a competing model was identified — a distinction `verdict` already carries
+ * and that this deliberately does not duplicate.
+ */
+function objectiveEvidenceFor(outcome: SubmissionOutcome | null): ObjectiveEvidence {
+  if (!outcome?.verdict) return "not_addressed";
+  switch (outcome.verdict) {
+    case "strong":
+    case "understood":
+      return "demonstrated";
+    case "partial":
+      return "partial";
+    case "incorrect":
+    case "misconception":
+      return "contradicted";
+  }
+}
+
+/**
  * One target's row.
  *
  * 🔴 THE ONE PLACE A ROW IS BUILT, SO THE FACTS THAT BELONG TO THE PERFORMANCE CANNOT DIVERGE
@@ -404,7 +461,16 @@ function rowForTarget(input: {
     // unrevisable for ever: rows recorded under it mean something different from rows recorded
     // after it changes, and nothing can recover what was actually measured. What it means is the
     // projection's job, and the projection can be rewritten.
+    // 🔴 WHAT THIS RESPONSE SAID ABOUT *THIS* OBJECTIVE, WHICH IS THE FAN-OUT'S WHOLE REASON FOR
+    // BEING TOTAL OVER THE TARGETS. A target the judge stayed silent about is `not_addressed` — the
+    // answer never mentioned it — and that is a different fact from `demonstration_obtained: false`
+    // meaning "they tried and produced nothing usable". Both write `false` there, so without this
+    // column the two are indistinguishable, and the projection reads the first as a failed attempt.
+    objectiveEvidence: objectiveEvidenceFor(outcome),
     operation: prompt.operation,
+    // The rung the TASK set, identical on every row this submission writes: the learner answered
+    // one question at one demand, whatever it turned out to establish.
+    scaffoldRung: prompt.rung,
     // 🔴 THE WHOLE MEASURED DURATION ON EVERY ROW, NEVER DIVIDED AMONG THEM. The learner spent that
     // long producing this answer; they did not spend a quarter of it on each link. Splitting it
     // would be an interpretation, and a wrong one — the observation is the performance's.
