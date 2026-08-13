@@ -26,7 +26,6 @@ interface CanvasDocumentProps {
   aside: { text: string; blockId: string | null } | null;
   onDismissAside: () => void;
   onToggleCollapsed: (blockId: string, collapsed: boolean) => void;
-  onAskSource: (block: CanvasBlock) => void;
   /** A marked vocabulary term was clicked. Handled above rather than here because the answer
    *  belongs in the same popover a highlighted word already uses — one definition surface, not
    *  two that happen to look alike. */
@@ -46,7 +45,6 @@ export function CanvasDocument({
   aside,
   onDismissAside,
   onToggleCollapsed,
-  onAskSource,
   onTerm,
   next,
   onAdvance,
@@ -106,7 +104,6 @@ export function CanvasDocument({
           busy={busyBlockIds.includes(block.id)}
           canvas={canvas}
           key={block.id}
-          onAskSource={() => onAskSource(block)}
           onDismissAside={onDismissAside}
           onToggleCollapsed={() => onToggleCollapsed(block.id, !block.collapsed)}
           onTerm={onTerm}
@@ -140,7 +137,6 @@ interface BlockViewProps {
   onDismissAside: () => void;
   onToggleCollapsed: () => void;
   onToggleSource: () => void;
-  onAskSource: () => void;
   onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
 }
 
@@ -154,7 +150,6 @@ function BlockView({
   onDismissAside,
   onToggleCollapsed,
   onToggleSource,
-  onAskSource,
   onTerm,
 }: BlockViewProps) {
   const concepts = (block.conceptIds ?? []).map((id) => conceptLabel(canvas, id)).filter(Boolean);
@@ -182,7 +177,7 @@ function BlockView({
           {block.content.slice(0, 90)}…
         </button>
       ) : (
-        <BlockBody block={block} canvas={canvas} onTerm={onTerm} />
+        <BlockBody block={block} canvas={canvas} onTerm={onTerm} onToggleSource={onToggleSource} />
       )}
 
       {block.note && !block.collapsed && (
@@ -196,29 +191,22 @@ function BlockView({
           that the content is the interface. Concepts are what the diagnosis speaks in; they
           surface there, and on hover here. */}
 
-      {/* Controls stay hidden until the block is hovered or selected. The content is the
-          interface; the affordances are not.
-          🔴 ONLY PROVENANCE LIVES HERE NOW (J1/J2, owner 2026-08-13). "I already know this" and
-          the manual fold are gone: the learner should not manage which AI-generated paragraphs
-          are necessary — that is Brain's job, decided from evidence, not a document-reader
-          affordance. Provenance survives because it answers a real question ("where did this
-          come from?") rather than editing what is shown; the three-button toolbar shape does
-          not — see J3 for what replaces it. `onToggleCollapsed` stays wired below (the
-          click-to-reopen branch further down) because collapsing here can still be MODEL-driven
-          (`collapse_block` in canvas-ops.ts) — only the learner's manual trigger is gone. */}
-      {!block.collapsed && (
-        <div className="pointer-events-none absolute -top-1 right-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-          {concepts.length > 0 && (
-            <span className="mr-1 max-w-[16rem] truncate text-[0.6875rem] text-(--ui-text-quaternary)">
-              {concepts.join(" · ")}
-            </span>
-          )}
-          {(block.sourceRefs?.length ?? 0) > 0 && (
-            <BlockControl icon="link" label="Where this came from" onClick={onToggleSource} />
-          )}
-          {(block.sourceRefs?.length ?? 0) === 0 && canvas.sources.length > 0 && (
-            <BlockControl icon="question" label="Where did this come from?" onClick={onAskSource} />
-          )}
+      {/* 🔴 NO PROVENANCE HERE ANY MORE (J3, owner 2026-08-13). The floating hover toolbar used
+          to carry a "where this came from" button and a "where did this come from?" button
+          alongside the concept label — both are gone; only the label stays, because it is
+          information, not editing chrome. Provenance survives as two DIFFERENT, quieter things:
+          a citation marker inline with cited text (see `BlockBody`/`BlockText`'s `onToggleSource`
+          below — it reads as a footnote, not a control the learner operates on the block) and,
+          for uncited content, the existing capability to select text and ask — `learning-
+          canvas.tsx`'s `submit()` already routes a selection plus "where"/"which source"/"what
+          source" to `session.askAbout`, so nothing needed adding for that half; a dedicated
+          per-block button for it would have been the toolbar shape J3 asks to retire, not the
+          capability. */}
+      {!block.collapsed && concepts.length > 0 && (
+        <div className="pointer-events-none absolute -top-1 right-2 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <span className="max-w-[16rem] truncate text-[0.6875rem] text-(--ui-text-quaternary)">
+            {concepts.join(" · ")}
+          </span>
         </div>
       )}
 
@@ -243,20 +231,6 @@ function BlockView({
   );
 }
 
-function BlockControl({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button
-      aria-label={label}
-      className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 text-(--ui-text-tertiary) shadow-sm hover:text-(--ui-text-primary)"
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      <Codicon name={icon} size="0.6875rem" />
-    </button>
-  );
-}
-
 /** Deliberately plain typography. Headings are the only scale change; emphasis is weight, not
  *  colour. A study document that looks like a dashboard is harder to read, not easier.
  *
@@ -268,10 +242,12 @@ function BlockBody({
   block,
   canvas,
   onTerm,
+  onToggleSource,
 }: {
   block: CanvasBlock;
   canvas: LearningCanvas;
   onTerm: (block: CanvasBlock, mark: MarkedTerm, rect: DOMRect) => void;
+  onToggleSource: () => void;
 }) {
   const mark = selectableRegion(block.id, {
     blockId: block.id,
@@ -279,7 +255,29 @@ function BlockBody({
     ...(block.conceptIds?.length ? { conceptIds: block.conceptIds } : {}),
   });
 
-  const body = <BlockText block={block} canvas={canvas} onTerm={onTerm} />;
+  // 🔴 THE CITATION MARKER (J3, owner 2026-08-13). A quiet superscript beside the text it
+  // supports, always present rather than hover-revealed — evidence behind the Canvas, not a
+  // control floating over it. Only for blocks that actually cite an excerpt; a block with
+  // nothing to point at gets no mark, same rule `canvas-selection-menu.tsx` already uses for the
+  // term-lookup popover ("provenance where it exists, and silence where it does not — implying
+  // the learner's own material said something it never said is worse than no citation").
+  const cited = (block.sourceRefs?.length ?? 0) > 0;
+  const body = (
+    <>
+      <BlockText block={block} canvas={canvas} onTerm={onTerm} />
+      {cited && (
+        <button
+          aria-label="Where this came from"
+          className="ml-0.5 align-super text-[0.5625rem] leading-none text-(--ui-text-quaternary) hover:text-(--ui-text-primary)"
+          onClick={onToggleSource}
+          title="Where this came from"
+          type="button"
+        >
+          ●
+        </button>
+      )}
+    </>
+  );
 
   switch (block.type) {
     case "heading":
