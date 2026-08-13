@@ -8,7 +8,7 @@ import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
-import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { DEFAULT_LANDING_PATH, sanitizeNextPath } from "@/lib/auth-redirect";
 import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
@@ -79,7 +79,7 @@ export default function SignInPage() {
         return;
       }
       const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext, "/sessions"));
+      router.replace(sanitizeNextPath(rawNext, DEFAULT_LANDING_PATH));
     } catch {
       setError("Nemesis could not check that code. Try again.");
     } finally {
@@ -117,7 +117,7 @@ export default function SignInPage() {
       }
       if (!alive) return;
       const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext, "/sessions"));
+      router.replace(sanitizeNextPath(rawNext, DEFAULT_LANDING_PATH));
     })();
     return () => { alive = false; };
     // beginStepUp is stable enough for this gate; re-running on mfa covers it.

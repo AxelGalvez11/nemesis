@@ -8,7 +8,7 @@ import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
-import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { DEFAULT_LANDING_PATH, sanitizeNextPath } from "@/lib/auth-redirect";
 import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 import { TOS_VERSION } from "@/lib/legal";
@@ -32,7 +32,7 @@ export default function SignUpPage() {
   // pricing funnel routes strangers through here and resumes Stripe checkout on return.
   function nextPath(): string {
     const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
-    return sanitizeNextPath(raw, "/sessions");
+    return sanitizeNextPath(raw, DEFAULT_LANDING_PATH);
   }
 
   // Already signed in? An account exists and is active — this page has nothing to create.
@@ -51,7 +51,14 @@ export default function SignUpPage() {
       // sessionStorage can be unavailable (private mode); the notice on /sign-in still explains.
     }
     const next = nextPath();
-    router.replace(next === "/sessions" ? "/sign-in?existing=1" : `/sign-in?existing=1&next=${encodeURIComponent(next)}`);
+    // 🔴 COMPARED AGAINST THE CONSTANT, NOT A REPEATED LITERAL. This read `next === "/sessions"`,
+    // which was the old default — the test is "did the learner actually ask for somewhere?", and
+    // written as a literal it silently stops answering that the moment the default moves. It would
+    // then forward `next=/learn` as though it had been requested, which is harmless here and
+    // exactly the kind of drift that is not harmless somewhere else.
+    router.replace(
+      next === DEFAULT_LANDING_PATH ? "/sign-in?existing=1" : `/sign-in?existing=1&next=${encodeURIComponent(next)}`,
+    );
   }
 
   async function onSubmit(e: FormEvent) {

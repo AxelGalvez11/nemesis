@@ -4,7 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, isPreviewMode, type OAuthProviderId } from "@/lib/env";
 import { isAlreadyRegisteredSignUp } from "@/lib/auth-signup";
-import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
+import { DEFAULT_LANDING_PATH, resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 
@@ -144,7 +144,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Fsessions"),
+        // 🔴 THE FIFTH LANDING PATH, AND IT WAS URL-ENCODED — `%2Fsessions`, which a search for
+        // "/sessions" cannot see. This is where someone lands when they click the link in their
+        // confirmation email: their genuine first screen. Built from the constant so it cannot drift
+        // away from the other four again.
+        emailRedirectTo: resolveAuthRedirectUrl(
+          `/auth/callback?next=${encodeURIComponent(DEFAULT_LANDING_PATH)}`,
+        ),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
@@ -164,7 +170,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null, needsEmailConfirmation: !data.session, alreadyRegistered: false };
   }, []);
 
-  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = "/sessions") => {
+  // 🔴 THE FOURTH AUTH LANDING PATH, AND THE EASIEST TO MISS. Signing in with Google lands a
+  // learner wherever this default says — it does not go through /sign-in's own redirect, so fixing
+  // that one and not this one would have left OAuth users on the retired chat surface while
+  // password users reached the front door. Same constant, one answer.
+  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = DEFAULT_LANDING_PATH) => {
     if (isPreviewMode) {
       setSession(previewSession);
       return null;
