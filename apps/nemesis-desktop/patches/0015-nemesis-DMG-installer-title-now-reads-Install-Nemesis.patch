@@ -1,8 +1,7 @@
 From d9da592290081adf9d31022ae7f9a6b8fea3d0ac Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 20:45:06 -0500
-Subject: [PATCH 15/20] nemesis: DMG installer title Install Hermes -> Install
- Nemesis
+Subject: [PATCH 15/20] nemesis: DMG installer title -> Install Nemesis
 
 ---
  apps/desktop/package.json | 2 +-

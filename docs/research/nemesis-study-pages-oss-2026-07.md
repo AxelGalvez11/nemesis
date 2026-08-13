@@ -2,16 +2,15 @@
 *Generated: 2026-07-09 · Sources: ~45 (GitHub repos/LICENSE files, official docs, Electron/Apple primary docs) · Confidence: High on licenses (raw LICENSE files read), Medium on star counts (live snapshots, drift expected)*
 
 Three parallel deep-research passes (notes/editors, lecture recording, flashcards+graph) for the four
-new pages the owner wants added to the Nemesis desktop app (Hermes chassis, Electron + React + TS,
-closed-source commercial subscription product). Companion to
-[nemesis-product-reskin-plan-2026-07.md](../design/nemesis-product-reskin-plan-2026-07.md).
+new pages the owner wants added to the Nemesis desktop app (the desktop chassis, Electron + React + TS,
+closed-source commercial subscription product).
 
 ## Executive summary
 1. **No popular open-source notes app can be legally embedded** — SiYuan (45k★), Logseq (43.8k★),
    AppFlowy (73.6k★), Trilium (36.8k★), Joplin (55.5k★) are all AGPL (viral: embedding forces Nemesis
    open-source); Outline (39.6k★) is BSL (forbids competing paid products). **Study their UX, copy zero code.**
 2. **The right notes build is our own page over the markdown vault we already have**, edited with
-   **CodeMirror 6 (MIT)** — the same engine Obsidian itself uses, *and already bundled in the Hermes
+   **CodeMirror 6 (MIT)** — the same engine Obsidian itself uses, *and already bundled in the
    chassis*. Wiki-links/backlinks via `@flowershow/remark-wiki-link` (MIT, active, Obsidian-syntax) +
    a ~100-line vault indexer that also feeds the graph.
 3. **Flashcards: keep `ts-fsrs` (MIT, 706★)** — FSRS is Anki's own default algorithm now, still SOTA on
@@ -44,7 +43,7 @@ closed-source commercial subscription product). Companion to
 
 **Build (all MIT):** our own React route over the existing Obsidian-compatible vault.
 - **Editor: CodeMirror 6** — markdown text *is* the buffer (zero round-trip loss); literally what
-  Obsidian's Live Preview runs on; **already in the Hermes chassis** (used for its config editors).
+  Obsidian's Live Preview runs on; **already in the chassis** (used for its config editors).
   Fallback if we want faster WYSIWYG polish: Milkdown (MIT, 11.7k★, remark-native).
 - **Wiki-links:** `@flowershow/remark-wiki-link` (MIT, v4 ~2 weeks old; `[[link|alias]]`,
   `[[link#heading]]`, `![[embeds]]`) + `unified`/`remark-parse`/`remark-frontmatter`.
@@ -74,7 +73,7 @@ periodically for a 3D mode). Graph data comes free from the notes-page vault ind
 **Capture (macOS, primary):** Electron **v39+** made Chromium's CoreAudio **process-tap** the default
 for `desktopCapturer` + `session.setDisplayMediaRequestHandler({ audio: 'loopback' })` →
 `getDisplayMedia`. Floor: **macOS 14.4+**. The OS forces a visible "Screen & System Audio Recording"
-permission — our consent posture builds *on top of* Apple's own gate. The Hermes chassis already
+permission — our consent posture builds *on top of* Apple's own gate. The chassis already
 declares `NSAudioCaptureUsageDescription`/`NSMicrophoneUsageDescription` in its electron-builder
 config (it ships voice features), so the entitlement plumbing exists. Skip BlackHole entirely
 (GPL-3.0 driver, obsolete for a 14.4+ floor). Windows phase 2: WASAPI loopback (distinct task).

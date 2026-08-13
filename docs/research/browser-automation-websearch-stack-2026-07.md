@@ -198,4 +198,4 @@ questions through a general SERP.
 - Exa vs Tavily — https://exa.ai/versus/tavily
 - Nemesis code: `apps/desktop/src/app/welcome/`, `apps/desktop/src/lib/school-portals.ts`,
   `apps/desktop/electron/school-browser.ts` + `school-view.ts`, `tools/browser_tool.py`,
-  `tools/browser_camofox.py`, `tools/web_tools.py` (in `~/.hermes/hermes-agent`).
+  `tools/browser_camofox.py`, `tools/web_tools.py` (in the local chassis checkout, since retired).

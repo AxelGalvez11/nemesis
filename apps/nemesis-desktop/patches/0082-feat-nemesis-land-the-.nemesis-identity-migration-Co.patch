@@ -26,7 +26,7 @@ Codex's work, landed as-is after audit:
 NEW in this commit (completing the WIP):
 - Consent-based data move: on first launch, when a legacy agent home exists
   and ~/.nemesis does not, a dialog offers 'Move it here' (rename) or 'Start
-  fresh'. Nothing moves silently — an independent Hermes install is
+  fresh'. Nothing moves silently — an independent prior agent install is
   indistinguishable on disk from our own earlier beta, so only the user can
   tell them apart. detectLegacyHomeMigration() in nemesis-identity.ts with
   node tests (marker-gated, never fires once ~/.nemesis exists). Study

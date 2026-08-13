@@ -40,9 +40,6 @@ supabase/.branches/
 .vscode/
 .vercel
 
-# Hermes design reference (local only)
-.hermes-ref/
-
 # graphify knowledge-graph output (generated cache, never source)
 graphify-out/
 .env*

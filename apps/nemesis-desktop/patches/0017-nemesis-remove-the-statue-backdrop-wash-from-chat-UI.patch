@@ -1,8 +1,8 @@
 From d275be68cb6f22d57e946176a75c30999845cf2b Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 21:22:17 -0500
-Subject: [PATCH 17/20] nemesis: remove the Hermes statue backdrop wash from
- the chat UI (student build)
+Subject: [PATCH 17/20] nemesis: remove the statue backdrop wash from the
+ chat UI (student build)
 
 ---
  apps/desktop/src/components/Backdrop.js  | 3 ++-

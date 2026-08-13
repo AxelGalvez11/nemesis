@@ -3,6 +3,12 @@
 Plain-English guide for running the agent against a real school account, and for
 wiring it up again later. Written 2026-07-10 (round 15).
 
+> **Historical note:** every `~/.hermes/...` path below refers to the local chassis
+> checkout this testing was originally run against. That checkout was retired
+> 2026-07-14 to reclaim disk (see `apps/nemesis-desktop/patches/README.md`), so these
+> paths no longer resolve on this machine. Kept as a record of the setup and test
+> steps, not as a live path to follow as-is.
+
 > **Round-16 update — the browser now lives INSIDE the app.** The chat right
 > rail has a **Browser** tab (button in the Sources rail header, and it pops
 > open automatically whenever the agent starts browsing): a live mirror of the
