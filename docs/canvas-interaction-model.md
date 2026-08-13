@@ -788,6 +788,141 @@ is evidence invariants 1–4 restated for a surface that did not exist when they
 
 ---
 
+## M. Topic-first — a topic creates a learning environment, not a textbook
+
+**Owner decision, 2026-08-13**, made after the six-stage retirement left a topic-first canvas showing
+64 generated paragraphs with nothing to ask.
+
+> **A topic by itself is sufficient to start a Canvas. Never require the learner to upload material
+> before Nemesis can teach them.**
+
+`canvas-v1-acceptance.md` §L already makes the bare composer the front door. **This is the primary
+way into Nemesis, not one of two shapes**, and the policy runtime must own it.
+
+🔴 **And equally: do not preserve the behaviour where a topic expands into a large model-written
+lesson that becomes the Canvas material.** Both failures are live today — the canvas cannot be
+taught, *and* what it shows is the mini-textbook [§J4](./canvas-v1-acceptance.md) forbids.
+
+### The canonical flow
+
+```
+topic entered
+   ↓  resolve scope
+   ↓  construct internal knowledge territory
+   ↓  acquire appropriate source context where useful
+   ↓  choose the initial cognitive probe, OR a minimal orientation
+   ↓  gather evidence
+   ↓  adapt
+   ↓  introduce explanation ONLY where needed
+```
+
+### 🔴 The topic map is planning substrate. It is not a document.
+
+Internally Nemesis may build territory and dependencies:
+
+```
+Top drugs
+├── Losartan
+│   ├── brand · class · indication · mechanism · adverse effects · counseling
+├── Lisinopril
+└── Amlodipine …
+
+ACE inhibitor → RAAS → aldosterone → potassium
+```
+
+**That gives Brain territory to work through. The learner does not see the hidden curriculum
+construction as a giant generated document.** What they may see immediately is:
+
+```
+LOSARTAN
+Brand name?
+```
+
+Answer easily → *Class?* → correct again → *Why can losartan increase potassium?* → **a miss.**
+**Only then** does Nemesis expand the relevant structure.
+
+### 🔴 The governing rule
+
+> **Exposition requires a cognitive reason. It is not the default consequence of entering a topic.**
+
+**This is not "never show exposition first."** Brain determines the initial operation:
+
+- **A meaningful probe is possible** → begin production immediately. *"Teach me the top 35 drugs"*
+  can be probed almost at once.
+- **Prerequisite structure must be introduced first** → a minimal orientation, then production.
+  Throwing an advanced question at *"teach me quantum field theory"* produces almost no information.
+
+🔴 **And prefer a real probe over asking what they know.** *"What do you already understand about
+quantum mechanics?"* is self-report, and self-report is not demonstration. A quick genuine probe
+tells you more and costs the same.
+
+### 🔴 Generated explanation is fine. Generated material must not masquerade as a source.
+
+Nemesis is expected to generate explanations · rewritten passages · questions · examples ·
+analogies · diagrams · scaffolds. **That is central to the product.** But:
+
+```
+"Nemesis generated this explanation"     ≠     "this is the source material"
+```
+
+The layering, which is what makes provenance answerable:
+
+```
+SOURCE LAYER      user uploads · trusted web sources · licensed and open
+                  educational sources · other retrieved references
+       ↓
+KNOWLEDGE MODEL
+       ↓
+NEMESIS-GENERATED REPRESENTATION        ← Canvas OUTPUT, not the canonical source
+```
+
+For a topic-first canvas Nemesis may **acquire source context in the background where appropriate**
+and synthesise from it. Then the quiet citation marker means something:
+
+> Potassium may increase because ARB therapy reduces aldosterone.<sup>1</sup>
+
+Tapping it shows the supporting excerpt. **No chain-link toolbar** — see acceptance §J3.
+
+🔴 **When Nemesis is operating from model knowledge with no external source, that provenance state
+must remain distinguishable, and it must never imply the claim came from the learner's own
+material.** This is the global invariant applied to generated content: *every claim the UI makes
+about the source must be traceable to source capability.* Model knowledge is a different capability,
+not an absent one — **the answer is to label it, not to hide it.**
+
+### How this resolves the rewrite architecture
+
+The internal map stays stable while the **representation** changes — which is
+[§J](#j-a-question-rewrites-the-canvas) with a durable substrate underneath it:
+
+```
+"Why does losartan raise potassium?"
+  → ARB → AT1 blockade → ↓ aldosterone → ↓ K secretion → ↑ serum K     radius 2
+
+"Wait, what does aldosterone actually do?"
+  → aldosterone → ↑ Na reabsorption → ↑ K secretion                    radius 1, SMALLER
+```
+
+**The map does not move. The rendered region does.**
+
+### 🔴 Durable versus temporary — the line topic-first depends on
+
+```
+DURABLE     sources · knowledge structure · learner evidence · learner state
+TEMPORARY   current explanation · current question · current diagram
+            current scaffold · current Canvas arrangement
+```
+
+> **A topic-first Canvas does not need a generated lesson as its durable object.**
+
+That single sentence is what makes the whole section buildable, and it is the same claim as
+Canvas-wide invariant 11 seen from the other side: the generated lesson is *screen state*, and
+screen state is replaceable.
+
+🔴 **Do not reintroduce the retired six-stage engine as a shortcut.** A fixed sequence would satisfy
+"the topic produces something to do" and violate everything above it.
+
+---
+
 ## Ownership — Runtime provides mechanism, Brain decides meaning
 
 🔴 **Runtime must not infer these semantics from UI events.**
