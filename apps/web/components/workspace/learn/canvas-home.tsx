@@ -320,7 +320,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           >
             <Codicon name="add" size="0.875rem" />
             <input
-              accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+              accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
               className="sr-only"
               multiple
               onChange={(event) => {

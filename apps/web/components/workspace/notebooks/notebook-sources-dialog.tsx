@@ -191,7 +191,7 @@ function UploadTab({ busy, onFile }: { busy: boolean; onFile: (file: File) => vo
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.docx,.pptx"
+        accept=".pdf,.docx,.pptx,.xlsx,.csv"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

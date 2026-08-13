@@ -240,6 +240,61 @@ test("🔴 every importable document type has the mime its bucket needs", () => 
   assert.equal(DOCUMENT_MIME[".txt"], "text/plain");
 });
 
+/**
+ * The `library-sources` bucket's own allowlist, read from PRODUCTION on 2026-08-13
+ * (`select allowed_mime_types from storage.buckets where id = 'library-sources'`).
+ *
+ * 🔴 THE COMMENT ON `DOCUMENT_MIME` SAYS THIS HALF "CAN ONLY BE CHECKED IN PRODUCTION".
+ * It was checked, so it can be pinned. Every value was additionally confirmed by POSTing a
+ * real file to the LIVE storage API: an allowed mime is refused with `403 new row violates
+ * row-level security policy` (the mime cleared, the session did not), an unlisted one with
+ * `415 mime type ... is not supported`. Two different errors, so the check is genuinely
+ * distinguishable rather than assumed. Nothing was written -- both requests were rejected and
+ * `storage.objects` was verified empty afterwards.
+ *
+ * 🔴 A COPY IS NOT THE BUCKET, WHICH IS WHY THIS ONE CARRIES A DATE. If the bucket is later
+ * narrowed, this test keeps passing while uploads start failing silently -- the exact shape it
+ * guards. It is a tripwire on OUR list drifting past a known-good allowlist, never a substitute
+ * for the bucket itself.
+ */
+const BUCKET_ALLOWLIST_2026_08_13 = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/webm", "audio/x-m4a",
+  "image/heic", "image/heif", "image/jpeg", "image/png", "image/webp",
+  "text/csv", "text/markdown", "text/plain",
+]);
+
+test("🔴 every mime we would upload under is one the bucket actually accepts", () => {
+  // The failure this catches is silent and it has happened: `.md` was importable, uploaded
+  // under a mime the bucket refused, and degraded to metadata-only with no row and no error a
+  // student could see. Adding a type to DOCUMENT_EXTENSIONS is not complete until the bucket
+  // takes its mime.
+  for (const extension of DOCUMENT_EXTENSIONS) {
+    const mime = DOCUMENT_MIME[extension]!;
+    assert.ok(
+      BUCKET_ALLOWLIST_2026_08_13.has(mime),
+      `${extension} would upload as ${mime}, which the bucket refuses -- the upload dies silently`,
+    );
+  }
+});
+
+test("the spreadsheet door is open at BOTH halves, not just the picker", () => {
+  // 🔴 A 700-LINE READER WITH NO ENTRY POINT WAS THE DEFECT. xlsx and csv parsed, the bucket
+  // accepted them, the database allowed the doc_kind -- and no upload control offered them and
+  // `isExtractable` refused them, so no user could hand one over. Both halves are asserted:
+  // fixing only the picker leaves the gate closed, and fixing only the gate leaves a file type
+  // nobody can find.
+  for (const extension of [".xlsx", ".csv"]) {
+    assert.ok(DOCUMENT_EXTENSIONS.includes(extension), `${extension} is not importable`);
+    assert.ok(BUCKET_ALLOWLIST_2026_08_13.has(DOCUMENT_MIME[extension]!), `${extension} mime is refused`);
+  }
+  assert.equal(DOCUMENT_MIME[".xlsx"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  assert.equal(DOCUMENT_MIME[".csv"], "text/csv");
+});
+
 // --- The model is told what was NOT read ---------------------------------------
 
 test("🔴 a partly-read lecture reaches the model with the gap stated", () => {

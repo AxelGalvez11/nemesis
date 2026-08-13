@@ -58,7 +58,7 @@ export const MAX_ATTACHMENT_CHARS = MAX_TOTAL_CHARS;
  *  pdf/docx/pptx/images/audio as of 2026-08-05; until that is widened the upload
  *  is rejected and persistChatAttachment falls back to metadata-only — the same
  *  no-row behaviour as before, so this degrades safely rather than lying. */
-export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".md", ".txt"];
+export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".md", ".txt", ".xlsx", ".csv"];
 /** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
  *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
  *  is still a HEIC. */
@@ -158,11 +158,13 @@ const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
  *  the two lists against each other; the bucket half can only be checked in
  *  production. */
 export const DOCUMENT_MIME: Record<string, string> = {
+  ".csv": "text/csv",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".md": "text/markdown",
   ".pdf": "application/pdf",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".txt": "text/plain",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
 /** Which storage bucket a persisted attachment lives in — images have their

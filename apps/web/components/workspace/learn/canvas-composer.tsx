@@ -303,7 +303,7 @@ export function CanvasComposer({
             {/* 🔴 `sr-only`, NOT `hidden`. A hidden input is out of the tab order and out of the
                 accessibility tree, so the label around it becomes unreachable by keyboard. */}
             <input
-              accept=".pdf,.docx,.pptx,.md,.txt,.png,.jpg,.jpeg,.webp,.heic"
+              accept=".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic"
               className="sr-only"
               multiple
               onChange={(event) => {
