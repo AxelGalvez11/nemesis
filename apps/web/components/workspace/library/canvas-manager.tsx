@@ -168,7 +168,15 @@ export function CanvasManager({
     if (!editing) return;
     const { id, kind, value } = editing;
     setEditing(null);
-    await act(kind === "canvas" ? renameCanvas(userId, id, value) : renameFolder(userId, id, value));
+    setFailure(null);
+    // 🔴 READ BACK, FOR THE SAME REASON MOVE AND PIN DO. Both rename functions return the stored
+    // name or `null` when the write was refused, and discarding that would put the learner in
+    // front of a list that silently still shows the old name with nothing saying why.
+    const stored = await (kind === "canvas" ? renameCanvas(userId, id, value) : renameFolder(userId, id, value));
+    await load();
+    if (stored === null && value.trim()) {
+      setFailure("That name did not save. Nothing was lost — the old name is still in place.");
+    }
   };
 
   return (
@@ -409,8 +417,11 @@ export function CanvasManager({
             row cap without this only moves it further out. */}
         {total > rows.length + page * PAGE_SIZE && (
           <div className="flex items-center justify-between px-2 py-4">
+            {/* 🔴 A RANGE, NOT A RUNNING TOTAL. "Show more" fetches the NEXT page rather than
+                appending to this one, so "Showing 120 of 340" would describe a list that is not
+                on screen — the exact genre of quiet inaccuracy this surface exists to remove. */}
             <span className="text-[13px] text-(--ui-text-quaternary)">
-              Showing {page * PAGE_SIZE + rows.length} of {total}
+              Showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + rows.length} of {total}
             </span>
             <button
               className="rounded-lg bg-(--ui-bg-tertiary) px-[10px] py-[6px] text-[13px] text-(--ui-text-secondary) hover:text-(--ui-text-primary)"
