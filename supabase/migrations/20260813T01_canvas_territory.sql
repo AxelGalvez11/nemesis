@@ -21,7 +21,10 @@
 -- of this column in production is.
 --
 -- Shape: { "topic": string, "identityVersion": number, "objects": KnowledgeObject[] }
---   topic            what it was built FOR, so a rename rebuilds and a reopen does not
+--   topic            what it was built FOR. FROZEN: once set, this stays the canvas's subject
+--                    however the canvas is later renamed. Renaming is a LIBRARY (filing)
+--                    action, and on a topic-first canvas the title IS the topic -- so reading
+--                    the title fresh would let tidying a shelf silently re-topic a learner.
 --   identityVersion  KNOWLEDGE_IDENTITY_VERSION at build time; a mismatch is a MISS, so a corpus
 --                    keyed under older rules is redone rather than replayed under the wrong key
 --   objects          replayed through saveKnowledge on a hit -- idempotent by identity, so it

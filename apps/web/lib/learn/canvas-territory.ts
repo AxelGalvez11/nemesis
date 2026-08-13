@@ -36,7 +36,8 @@ import type { KnowledgeObject } from "./knowledge-types";
  * "this canvas has nothing".
  */
 export interface CanvasTerritory {
-  /** What it was built FOR. A rename rebuilds; a reopen does not. */
+  /** What it was built FOR — and, once set, what this canvas stays about however it is renamed.
+   *  See `frozenTopic`: the title is a label after the first build, never a re-request. */
   topic: string;
   /**
    * `KNOWLEDGE_IDENTITY_VERSION` at build time.
@@ -52,14 +53,14 @@ export interface CanvasTerritory {
 }
 
 /**
- * Why a territory could not be reused. Stated rather than inferred from a null, because the three
- * cases have completely different meanings and only one of them is ordinary.
+ * Why a territory could not be reused. Stated rather than inferred from a null, because the two
+ * cases mean completely different things and only one of them is ordinary.
+ *
+ * 🔴 THERE IS NO `topic-renamed` HERE, AND ITS ABSENCE IS THE POINT — see `frozenTopic`.
  */
 export type TerritoryMiss =
   /** Nothing has been built for this canvas yet — the ordinary first open. */
   | "never-built"
-  /** Built for a different topic. The learner renamed the canvas and wants a different map. */
-  | "topic-renamed"
   /** Built under older identity rules, so replaying it would write keys that no longer converge. */
   | "identity-version-changed";
 
@@ -68,21 +69,36 @@ export type TerritoryReuse =
   | { reuse: false; miss: TerritoryMiss };
 
 /**
- * Two names for the same topic?
+ * What this canvas is ABOUT — frozen at the first build, after which the title is only a label.
  *
- * 🔴 CASE AND WHITESPACE, AND DELIBERATELY NOTHING MORE. No stemming, no stop-words, no semantic
- * comparison. The asymmetry is what decides where to stop: an unnecessary rebuild costs ONE model
- * call, while a MISSED rebuild leaves a learner being taught the topic they renamed away from —
- * Nemesis quietly answering a question they stopped asking. One is cheap; the other is the product
- * lying to them. So this errs toward rebuilding, and anything cleverer would err the other way.
+ * 🔴 RENAMING A CANVAS MUST NEVER CHANGE WHAT IT TEACHES, BECAUSE RENAMING IS A FILING ACTION.
+ * The Library lets a learner rename canvases to tidy their shelf. On a topic-first canvas the title
+ * IS the topic, so without this a learner reorganising their sessions would silently re-topic what
+ * Nemesis teaches them next — "filing is not evidence", violated through the title rather than
+ * through any import of the policy runtime. There is no code path to forbid; the channel is the
+ * name itself.
+ *
+ * 🔴 AND THE LEARNER'S INTENT ON A RENAME IS GENUINELY UNKNOWABLE. "Diesel engines" is tidying;
+ * "Diesel engine emissions" is a new request; nothing can tell them apart. So the system takes the
+ * reading that cannot silently mislead. A learner who wants different material starts a new canvas
+ * — one sentence, and it is the front door. A learner who renames and is quietly re-taught has no
+ * way to find out it happened.
+ *
+ * 🔴 THIS ALSO SETTLES WHICH TOPIC AN IDENTITY-VERSION REBUILD USES. It rebuilds the subject the
+ * canvas has always been about, under the new keys — not whatever the title happens to say now.
  */
-export function sameTopic(a: string, b: string): boolean {
-  const plain = (text: string) => text.trim().toLowerCase().replace(/\s+/gu, " ");
-  return plain(a) === plain(b);
+export function frozenTopic(input: { stored: CanvasTerritory | null; title: string }): string {
+  const built = input.stored?.topic.trim();
+  return built || input.title.trim();
 }
 
 /**
  * May this canvas reuse what it already has?
+ *
+ * 🔴 IT DOES NOT LOOK AT THE TOPIC AT ALL. Once a territory exists it is reused, whatever the canvas
+ * is now called — that is what `frozenTopic` means in practice. An earlier version compared the
+ * stored topic against the current title and rebuilt when they differed; that turned a Library
+ * rename into a new model call and a different subject, which is the defect this shape removes.
  *
  * 🔴 PURE, AND IT TAKES THE STORED TERRITORY RATHER THAN FETCHING IT. Every branch is decidable
  * without a network call, so each miss reason is separately assertable — the property that was
@@ -90,12 +106,10 @@ export function sameTopic(a: string, b: string): boolean {
  */
 export function territoryReuse(input: {
   stored: CanvasTerritory | null;
-  topic: string;
   identityVersion: number;
 }): TerritoryReuse {
-  const { identityVersion, stored, topic } = input;
+  const { identityVersion, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
-  if (!sameTopic(stored.topic, topic)) return { miss: "topic-renamed", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
   return { objects: stored.objects, reuse: true };
 }

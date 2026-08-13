@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { readTerritory, sameTopic, territoryReuse, type CanvasTerritory } from "./canvas-territory";
+import { frozenTopic, readTerritory, territoryReuse, type CanvasTerritory } from "./canvas-territory";
 import type { KnowledgeObject } from "./knowledge-types";
 
 // The territory was rebuilt on every open, and it never converged.
@@ -46,66 +46,59 @@ test("🔴 a canvas with nothing built asks for a territory — this is the fron
   // The failure mode this whole file is written against is the OPPOSITE of the bug it fixes: a
   // "build once" gate placed carelessly refuses the first build too, and the learner gets the blank
   // canvas that #563 just repaired.
-  assert.deepEqual(territoryReuse({ identityVersion: VERSION, stored: null, topic: "anything" }), {
+  assert.deepEqual(territoryReuse({ identityVersion: VERSION, stored: null }), {
     miss: "never-built",
     reuse: false,
   });
 });
 
 test("re-opening the same canvas reuses what is already there — no second model call", () => {
-  const decision = territoryReuse({ identityVersion: VERSION, stored: built(), topic: built().topic });
+  const decision = territoryReuse({ identityVersion: VERSION, stored: built() });
   assert.equal(decision.reuse, true);
   assert.equal(decision.reuse && decision.objects.length, 2);
 });
 
-// ── rename: the case where rebuilding is CORRECT ────────────────────────────
+// ── rename: FILING MUST NOT CHANGE WHAT IS TAUGHT ───────────────────────────
+//
+// 🔴 THIS INVERTS AN EARLIER RULING, DELIBERATELY. The first version of this file rebuilt on a
+// rename, on the reasoning that a learner who renames wants different material. That was decided
+// before rename became a LIBRARY operation. The Library lets a learner tidy their shelf — and on a
+// topic-first canvas the title IS the topic, so rebuilding would let reorganising sessions silently
+// re-topic what Nemesis teaches next. No import of the policy runtime is needed for that; the
+// channel is the name itself.
 
-test("🔴 a renamed canvas rebuilds — the alternative is teaching a topic they stopped asking about", () => {
-  // This is the asymmetry that sets how clever `sameTopic` may be. An unnecessary rebuild costs one
-  // model call. A MISSED rebuild leaves Nemesis quietly answering the old question for ever, and the
-  // learner has no way to tell.
-  assert.deepEqual(
-    territoryReuse({ identityVersion: VERSION, stored: built(), topic: "the doctrine of consideration" }),
-    { miss: "topic-renamed", reuse: false },
+test("🔴 RENAMING A CANVAS DOES NOT CHANGE WHAT IT TEACHES — the Library case", () => {
+  // A learner tidying "how a four-stroke diesel engine works" into "Diesel — week 3" is filing, not
+  // re-requesting. The territory is untouched and no model is called.
+  const decision = territoryReuse({ identityVersion: VERSION, stored: built() });
+  assert.equal(decision.reuse, true, "a rename must never reach the constructor");
+  assert.equal(frozenTopic({ stored: built(), title: "Diesel — week 3" }), built().topic);
+});
+
+test("🔴 the topic is frozen at the FIRST build, and the title is only a label afterwards", () => {
+  assert.equal(
+    frozenTopic({ stored: built({ topic: "the rule against perpetuities" }), title: "anything at all" }),
+    "the rule against perpetuities",
   );
 });
 
-test("🔴 a case-only edit is NOT a new topic — capitalisation must not cost a model call", () => {
-  const decision = territoryReuse({
-    identityVersion: VERSION,
-    stored: built({ topic: "How A Four-Stroke Diesel Engine Works" }),
-    topic: "how a four-stroke diesel engine works",
-  });
-  assert.equal(decision.reuse, true);
+test("🔴 before anything is built, the TITLE is the topic — otherwise nothing could ever be built", () => {
+  // The other half, and the one that keeps the front door open: with no stored territory the typed
+  // title is what gets constructed. A freeze that also froze the first build would be the blank
+  // canvas again.
+  assert.equal(frozenTopic({ stored: null, title: "  shear stress in a cantilever beam  " }), "shear stress in a cantilever beam");
 });
 
-test("🔴 whitespace is not a new topic either", () => {
-  const decision = territoryReuse({
-    identityVersion: VERSION,
-    stored: built({ topic: "  how a four-stroke   diesel engine works  " }),
-    topic: "how a four-stroke diesel engine works",
-  });
-  assert.equal(decision.reuse, true);
+test("a canvas with neither a stored topic nor a title has nothing to work from", () => {
+  assert.equal(frozenTopic({ stored: null, title: "   " }), "");
 });
 
-// ── calibration: prove the normaliser STOPS where it was told to ────────────
-
-test("🔴 NO STEMMING — a plural is a rebuild, and that is the intended direction of error", () => {
-  // If this ever starts passing as a reuse, someone has made `sameTopic` cleverer and it now errs
-  // toward NOT rebuilding — the expensive direction to be wrong in.
-  assert.equal(sameTopic("diesel engine", "diesel engines"), false);
-});
-
-test("🔴 NO STOP-WORD REMOVAL — dropping 'the' is a rebuild", () => {
-  assert.equal(sameTopic("the doctrine of consideration", "doctrine of consideration"), false);
-});
-
-test("🔴 NO SEMANTIC COMPARISON — two names for the same thing are still two topics", () => {
-  assert.equal(sameTopic("compression ignition engine", "diesel engine"), false);
-});
-
-test("case and whitespace, and those are genuinely handled", () => {
-  assert.equal(sameTopic("  Tort   Law ", "tort law"), true);
+test("🔴 an identity-version rebuild uses the FROZEN topic, not the current title", () => {
+  // The rebuild reproduces the subject this canvas has always been about, under the new keys.
+  // Reading the title here would let a rename smuggle a new subject in through a version bump.
+  const stored = built({ identityVersion: 1 });
+  assert.equal(territoryReuse({ identityVersion: 2, stored }).reuse, false);
+  assert.equal(frozenTopic({ stored, title: "a completely different subject" }), stored.topic);
 });
 
 // ── the distinction the whole fix rests on ──────────────────────────────────
@@ -116,12 +109,12 @@ test("🔴 REUSE IS DECIDED BY 'ALREADY BUILT', NEVER BY 'ALREADY HAVE THIS FACT
   // all: a stored territory whose objects have nothing in common with any other is still a reuse,
   // because the question asked is about the CANVAS, not about the facts.
   const nothingInCommon = built({ objects: [object("something else entirely", "zzz")] });
-  const decision = territoryReuse({ identityVersion: VERSION, stored: nothingInCommon, topic: built().topic });
+  const decision = territoryReuse({ identityVersion: VERSION, stored: nothingInCommon });
   assert.equal(decision.reuse, true, "the gate must not be a content comparison");
 });
 
 test("🔴 an identity-version bump rebuilds rather than replaying under keys that no longer converge", () => {
-  assert.deepEqual(territoryReuse({ identityVersion: 3, stored: built({ identityVersion: 2 }), topic: built().topic }), {
+  assert.deepEqual(territoryReuse({ identityVersion: 3, stored: built({ identityVersion: 2 }) }), {
     miss: "identity-version-changed",
     reuse: false,
   });
@@ -167,10 +160,8 @@ test("🔴 the same rules serve a law student and a mechanical engineer", () => 
   // Nothing here inspects the subject. Both reuse on a reopen and both rebuild on a rename, and no
   // branch anywhere looks at what the topic is ABOUT.
   for (const topic of ["the rule against perpetuities", "shear stress in a cantilever beam"]) {
-    assert.equal(territoryReuse({ identityVersion: VERSION, stored: built({ topic }), topic }).reuse, true);
-    assert.equal(
-      territoryReuse({ identityVersion: VERSION, stored: built({ topic }), topic: `${topic} in practice` }).reuse,
-      false,
-    );
+    assert.equal(territoryReuse({ identityVersion: VERSION, stored: built({ topic }) }).reuse, true);
+    assert.equal(territoryReuse({ identityVersion: VERSION, stored: null }).reuse, false);
+    assert.equal(frozenTopic({ stored: built({ topic }), title: "renamed while tidying" }), topic);
   }
 });
