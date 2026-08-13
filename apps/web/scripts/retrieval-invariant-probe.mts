@@ -172,3 +172,79 @@ console.log("\n  🔴 AND THAT IS EXACTLY WHY `correct` BEING TERMINAL IS THE RO
 console.log("     scheduled; it is a SIDE EFFECT of other objectives still being askable. Every correct");
 console.log("     answer permanently removes one of them, so the supply of intervening material only");
 console.log("     shrinks — and a learner doing well runs out of it fastest.");
+
+// ── The owner's four named behaviours, checked one at a time ─────────────────────────────────────
+rule("THE FOUR BEHAVIOURS. Each is a separate claim; each is checked against the real chain.");
+
+const A = RESOLVED[0]!;
+const aKey = A.objective.identityKey;
+const run = (objectives: ResolvedObjective[], evidence: LearnerEvidence[], turns: number, now = NOW) => {
+  let seen = new Set<string>();
+  const out: string[] = [];
+  for (let i = 0; i < turns; i += 1) {
+    const step = decideNext({ actedOn: seen, evidence, now, objectives });
+    if (!step) {
+      out.push("null");
+      break;
+    }
+    out.push(`${step.action.type}(${step.objective.identityKey === aKey ? "A" : "other"})`);
+    seen = new Set([...seen, step.objective.identityKey]);
+  }
+  return out.join("  →  ");
+};
+
+console.log("\n1. CORRECT RETRIEVAL — A answered correctly.");
+const aCorrect = [ev("a1", aKey, ago(MIN), "strong")];
+console.log(`   next selection (4 objectives) : ${run(RESOLVED, aCorrect, 3)}`);
+console.log(`     → A suppressed immediately? ${run(RESOLVED, aCorrect, 1).includes("(A)") ? "🔴 no" : "🟢 yes"}`);
+const aCorrectOld = [ev("a1", aKey, ago(3 * HOUR), "strong")];
+console.log(`   later the SAME session (3h)   : ${run(RESOLVED, aCorrectOld, 1)}   → A eligible again? ${run(RESOLVED, aCorrectOld, 4).includes("(A)") ? "🟢 yes" : "🔴 NO"}`);
+console.log(`   a FUTURE session (365 days)   : ${run(RESOLVED, [ev("a1", aKey, ago(365 * DAY), "strong")], 4)}`);
+console.log(`     → still scheduled?            ${run(RESOLVED, [ev("a1", aKey, ago(365 * DAY), "strong")], 6).includes("(A)") ? "🟢 yes" : "🔴 NO — retired for ever"}`);
+
+console.log("\n2. INCORRECT RETRIEVAL — A answered wrong, correction shown.");
+const aWrong = [ev("a1", aKey, ago(30 * 1000), "incorrect")];
+const wrongSeq = run(RESOLVED, aWrong, 4);
+console.log(`   sequence                      : ${wrongSeq}`);
+// 🔴 MEASURE THE RIGHT THING. `show_correction(A)` FIRST is DESIRED — the learner must see the
+// answer. The invariant is about the RE-ASK: is `retrieve(A)` separated from the correction by
+// other material? Counting "is the next item A" would flag the correct behaviour as a defect.
+const afterCorrection = wrongSeq.split("  →  ").slice(1);
+const reAskGap = afterCorrection.findIndex((s) => s.includes("(A)"));
+console.log(`     → correction shown first?    ${wrongSeq.startsWith("show_correction(A)") ? "🟢 yes — as it should be" : "🔴 no"}`);
+console.log(`     → items between correction and re-ask: ${reAskGap === -1 ? `${afterCorrection.length}+ (A did not return within the window)` : String(reAskGap)}`);
+
+console.log("\n3. 🔴 ONLY A EXISTS — the case reordering cannot touch, because there is no back.");
+console.log(`   A correct 1 minute ago        : ${run([A], aCorrect, 3)}`);
+console.log(`   A correct 365 days ago        : ${run([A], [ev("a1", aKey, ago(365 * DAY), "strong")], 3)}`);
+console.log(`   A wrong 30 seconds ago        : ${run([A], aWrong, 3)}`);
+console.log(`     → the corrected item returns as the immediate next prompt, every turn.`);
+
+console.log("\n4. REPEATED SUCCESS — A correct, three times over three days.");
+const thrice = [
+  ev("a1", aKey, ago(3 * DAY), "strong"),
+  ev("a2", aKey, ago(2 * DAY), "strong"),
+  ev("a3", aKey, ago(1 * DAY), "strong"),
+];
+const st = projectLearnerState(aKey, thrice);
+console.log(`   demonstrationCount=${st.demonstrationCount}  status=${st.status}  →  action ${actionFor(A, thrice).type}`);
+console.log(`     → progressively LESS FREQUENT, or GONE? ${run([A], thrice, 2) === "null" ? "🔴 GONE — frequency is not a representable concept" : "less frequent"}`);
+
+rule("IS THE SELECTION A PRIORITY, OR A FILTER?");
+console.log(`
+  The owner asks whether the code is
+      priority = learning_value × memory_risk × importance × uncertainty × session_eligibility
+  or  hasEvidence ? lowPriority : highPriority
+
+  🔴 It is NEITHER — and the truth is worse than the second one.
+
+  decideNext computes no score of any kind. It sorts positionally (identity order, with
+  session-acted items moved behind unacted ones), then takes the FIRST decision whose action
+  is not "advance" and not "defer".
+
+  So a demonstrated objective is not given a low priority. It yields "advance", and "advance"
+  is UNSELECTABLE — the objective is EXCLUDED from consideration entirely, at any elapsed time,
+  regardless of what else is or is not available.
+
+  "Prefer what's unestablished" is not implemented as a preference. It is implemented as a
+  one-shot lifecycle: unknown → asked → correct → gone.`);
