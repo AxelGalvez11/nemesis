@@ -284,6 +284,90 @@ Library returns as a **canvas** manager, which is a different object.
 **`Stats` is a new destination** and it is where aggregate progress lives — the surface §K sends
 learner-facing progress to, for learners who deliberately ask.
 
+### 🔴 THE APP SHELL — owner specification, 2026-08-13
+
+**Settled product decisions. This is the shell AROUND the Canvas runtime and is not a reason to
+reopen the learning architecture.**
+
+> **Navigation lives at the edge. Learning owns the centre.**
+
+```
+landing page  invites action immediately
+Library       handles organisation
+Canvas        handles cognition
+Calendar      handles time
+Stats         explains learner state WITHOUT gamifying it
+```
+
+#### Sidebar behaviour
+
+**Collapsed by default on the landing page** — the first impression is the composer, not navigation.
+A small toggle stays available. Expanded shows the four destination labels; collapsed consumes very
+little horizontal space. **Persist the preference where it can be done cleanly, but a new user starts
+collapsed.**
+
+🔴 **Lightweight and secondary to the main content. Not a dense productivity navigation tree.**
+
+#### Landing page
+
+```
+[collapsed sidebar]        What do you want to learn?
+                           [ compact composer ]
+```
+
+The composer is the main call to action and supports every New Canvas behaviour: **type a topic ·
+ask a question · upload material · dictate · record where supported.** **Do not make it oversized** —
+branding, typography, buttons and top controls stay restrained so the prompt draws the attention.
+
+Below the initial viewport a small amount of useful content is acceptable — **recent canvases ·
+upcoming calendar items · one or two learning recommendations.** 🔴 **Keep them secondary. Home is
+not a dashboard.**
+
+#### Library — the canvas manager
+
+A lightweight file manager over **canvases**. Users can **create and rename folders · rename
+canvases · move canvases between folders · delete canvases · search · sort where useful.**
+
+🔴 **Avoid a full desktop file explorer unless usage proves the complexity is necessary.**
+
+🔴 **Library organisation is separate from the cognitive model.** Folders do **not** change learner
+state or Brain behaviour unless a folder is later used explicitly as context. **Filing is not
+evidence** — the same rule that makes acknowledgement not a demonstration.
+
+#### Calendar
+
+A dedicated full calendar surface, visually consistent with the rest of Nemesis. **No unnecessary
+dashboard chrome.**
+
+#### Stats — and this one has an invariant attached
+
+A simple page showing useful cognitive information **inferred from actual learner evidence**. This is
+where §K sends learner-facing progress, for learners who deliberately ask.
+
+**Forbidden:** streaks · XP · badges · arbitrary scores · vanity study-time metrics presented as
+learning.
+
+**Preferred:** areas that appear strong · areas still developing · fragile knowledge · concepts
+needing re-demonstration · transfer or application strength where evidence supports it · patterns in
+response quality · useful metacognitive observations.
+
+> 🔴 **Every learner-state claim shown here must trace back to real evidence. Do not present
+> inference as certainty.**
+
+That is the global invariant applied to a surface built entirely out of inference — and it means
+Stats must keep north star §5's three layers visible in its language. *"You have demonstrated this
+twice"* is an observation. *"This looks fragile"* is an inference and must read like one. **A
+confident sentence about a shaky inference is the exact failure this page is most likely to ship.**
+
+#### Active Canvas
+
+The sidebar may remain available in session mode but **stays collapsed by default and visually
+quiet.** Canvas content remains dominant. **It must not reduce the usable learning surface unless the
+learner explicitly opens it.**
+
+Top-right contextual controls stay small and limited — **Minimap · Sources · minimal overflow.**
+🔴 **Do not duplicate Library, Calendar or Stats as large session controls.**
+
 ### 🔴 CROSS-SURFACE HAZARD — check before shipping
 
 `/library/classic` and `/library/source/[sourceId]` still exist as routes, and **the shipped browser
