@@ -100,6 +100,21 @@ export interface PdfStructureResult {
    */
   tableRegionsUnread: number;
   /**
+   * The same fact, per page — 0-based unit index, only for pages that lost one.
+   *
+   * 🔴 THE TOTAL ABOVE IS A SUM, AND A SUM CANNOT BE JOINED. `tableRegionsUnread`
+   * has always been produced by reducing this across pages, which leaves a parse
+   * verdict able only to refuse the whole file — the difference between refusing
+   * a chart and refusing the chapter it sits in. The locality is present at the
+   * point of measurement and destroyed at the point of summing, so the fix is to
+   * stop destroying it; it cannot be reconstructed afterwards.
+   *
+   * Both are returned, and the total stays authoritative. See
+   * `ExtractionCoverage.lostUnits`: this accounts for as much of the total as
+   * the pages could place and never redefines it.
+   */
+  tableRegionsUnreadByUnit: readonly { unit: number; count: number }[];
+  /**
    * Grids the deterministic lane built and then refused to trust, by reason.
    *
    * 🔴 A REFUSED TABLE IS NOT THE SAME AS NO TABLE, and collapsing the two is how
@@ -275,7 +290,14 @@ export async function readPdfStructure(
         page.cleanup();
       }
     }
-    const tableRegionsUnread = pages.reduce((sum, page) => sum + page.tablesUnread, 0);
+    // 🔴 THE PER-PAGE FORM IS BUILT FIRST AND THE TOTAL IS DERIVED FROM IT, not
+    // the other way round. `pages` is indexed by the same 0-based unit the model
+    // uses, so this is the one place where the join is free; anywhere later it
+    // is impossible.
+    const tableRegionsUnreadByUnit = pages
+      .map((page, unit) => ({ unit, count: page.tablesUnread }))
+      .filter((entry) => entry.count > 0);
+    const tableRegionsUnread = tableRegionsUnreadByUnit.reduce((sum, entry) => sum + entry.count, 0);
 
     const figureImages = new Map<string, CapturedFigure>();
     pages.forEach((page, unit) => {
@@ -293,7 +315,7 @@ export async function readPdfStructure(
     for (const page of pages) {
       for (const reason of page.tablesRejected) tablesRejected[reason] = (tablesRejected[reason] ?? 0) + 1;
     }
-    return { declaredUnits, figureImages, model: assemble(pages), tableRegionsUnread, tablesRejected };
+    return { declaredUnits, figureImages, model: assemble(pages), tableRegionsUnread, tableRegionsUnreadByUnit, tablesRejected };
   } finally {
     // 🔴 THE LOADING TASK OWNS THE WORKER, NOT THE DOCUMENT. pdf.js 6 removed
     // `PDFDocumentProxy.destroy`; destroying the task is what actually releases

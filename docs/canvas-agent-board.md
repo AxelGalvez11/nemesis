@@ -289,6 +289,21 @@ learning anything from it"* is real, and it is two things coverage was a poor pr
 3. A canvas with `outcome: "degraded"` still produces nothing.
 4. The canvas still shows its unsupported source material, and `unrepresented` is still reported.
 
+**🔴 `degraded` IS PER-CANVAS, NOT PER-SOURCE, AND THAT OVER-REFUSAL IS ACCEPTED.** `outcome` is
+the **worst** result across all of a canvas's sources — one unreadable source sets `failed`, one
+degraded extraction sets `degraded` — so a four-source canvas with three clean sources and one
+degraded one refuses entirely. That is deliberate and it is not a regression: the old gate already
+refused it via `unrepresented`. It is the same coarseness `PARSER-003` (#510, merged locality)
+exists to remove, and it stays until a per-unit verdict is computable. **Named here so it is
+accepted up front rather than discovered mid-implementation and quietly softened.**
+
+**🔴 GATE ON `outcome` AND NOTHING ELSE. Do NOT consume `contentIntegrity` (#504).** The tempting
+inference — *"`PARSER-001` gives Brain the trust signal, `RUNTIME-005` gates on trust, therefore it
+needs `PARSER-001`"* — is wrong. `outcome` already exists, is already computed per canvas in this
+file, and is **already live in the serving deployment**. `contentIntegrity` is a finer signal that
+will later make `degraded` mean *refuse the chart* rather than *refuse the chapter*. Wiring them
+together now would make the P0 depend on two unmerged, undeployed PRs behind a 24-hour cap.
+
 **🔴 SCOPE — `canvas-knowledge.ts:111` IS NOT PART OF THIS AND MUST NOT BE TOUCHED.** A separate,
 earlier clause returns `nothingToRead()` when `sourceIds.length !== canvas.sources.length`, and
 **five of the six production canvases die there, not at `:160`.** That refusal is correct — an
@@ -771,7 +786,39 @@ row `created_at` plus a named marker, never `updated_at`.
 2. That row carries `operation`, `responseLatencyMs`, `responseId` and reads back with all three.
 3. The *next* decision differs from what it would have been without that evidence.
 
-**RE-RUN CONDITION** — re-run this the moment `RUNTIME-005` is deployed, unchanged.
+### 🔴 RE-RUN TRIGGER — the exact check, because this task is now TIME-gated, not work-gated
+
+Re-run this **unchanged** the moment `RUNTIME-005` reaches the **production alias**. Not the merge,
+not a green check — the alias. As of 2026-08-12 19:04 CDT the alias is frozen at `60b1365e` and
+Vercel has accepted **no production deployment since 18:04** (no failed builds — no deployment
+records at all; the rate limiter refuses before a build starts). That is ~24h unless the cap is
+lifted.
+
+**This is written out because the sessions that know it will not outlive the wait.** Whoever picks
+this up next runs exactly this:
+
+```bash
+# 1. what is actually serving?
+vercel inspect https://app.enternemesis.com          # → dpl_XXXX, and its aliases
+
+# 2. which commit is that deployment?  Match dpl_XXXX against the target_url on each candidate:
+gh api repos/AxelGalvez11/nemesis/commits/<sha>/status   --jq '[.statuses[]|select(.context=="Vercel – nemesis-web")][0]|"\(.state) \(.target_url)"'
+
+# 3. does the serving commit CONTAIN the fix?
+git merge-base --is-ancestor <runtime-005-merge-sha> <serving-sha> && echo LIVE || echo NOT LIVE
+```
+
+Step 3 is not optional. A commit can carry a **green** Vercel status on a deployment that was
+`CANCELED` and never served — `997a5886` and `99d1bdfe` both do. Containment in the *serving* commit
+is the only proof.
+
+**Re-run the ORIGINAL trace.** Do not replace the failed test with one that matches whatever the
+implementation turned out to be — the point is to prove the learner path works, not that the code
+does what it says.
+
+**Four invariants that must hold alongside the pass**, or it is not a pass:
+one response carries one `responseId` · *"I don't know"* stays no-demonstration, never `incorrect` ·
+evaluator failure writes no learner claim · Continue/correction creates no mastery evidence.
 
 **ORDERING CONSTRAINT** — #498 must be live **before** evidence accumulates. Once the gate opens,
 rows written while `response_id` is unreadable have unrecoverable performance grouping, permanently.

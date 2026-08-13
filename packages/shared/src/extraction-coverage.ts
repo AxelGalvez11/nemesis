@@ -151,6 +151,35 @@ export interface UnreadableKind {
   count: number;
 }
 
+/**
+ * WHERE a loss happened, for the losses whose unit the parser knew.
+ *
+ * 🔴 THIS IS A PARTIAL EXPLANATION OF THE TOTALS, NEVER A REDEFINITION OF THEM.
+ * `unitsUnread` and `unreadableRegions` stay authoritative; these entries
+ * account for as much of them as the producer could place, and the remainder is
+ * loss that happened somewhere nobody can name. `buildCoverage` enforces the
+ * `<=` in both directions and deliberately does NOT derive either total from
+ * this field — which is the opposite of how `unreadableKinds` works, and the
+ * difference is the whole point.
+ *
+ * Deriving the totals here would make unplaceable loss VANISH: a document with
+ * three unreadable regions the parser could not attribute would report an empty
+ * `lostUnits`, every unit would look clean, and a per-unit verdict computed from
+ * that would call the document intact. That is parser incapacity masquerading as
+ * absence of loss — the one failure this whole contract exists to prevent,
+ * arriving through the refinement meant to improve it. So the totals are a
+ * floor, this is a breakdown, and `unlocatedRegions`/`unlocatedUnreadUnits` are
+ * how a consumer asks what is still unaccounted for.
+ */
+export interface UnitLoss {
+  /** 0-based index into the document's units — the same space `units` counts. */
+  unit: number;
+  /** This whole unit came back with nothing. */
+  unread?: boolean;
+  /** Regions ON THIS UNIT the parser saw and could not turn into content. */
+  unreadableRegions?: number;
+}
+
 export interface ExtractionCoverage {
   version: number;
   parserVersion: string;
@@ -211,6 +240,29 @@ export interface ExtractionCoverage {
    * that must agree eventually disagree.
    */
   unreadableKinds?: UnreadableKind[];
+  /**
+   * WHERE the losses above happened, for the ones whose unit is knowable.
+   *
+   * 🔴 THIS EXISTS BECAUSE LOCALITY WAS BEING MEASURED AND THEN SUMMED AWAY, the
+   * same way `unreadableKinds`' reasons were. Both producers already know: the
+   * PDF lane computes `tablesUnread` per page and reduces it to one integer
+   * (`pdf/structure.ts`), and the Docling adapter walks a `formula` node that
+   * carries a page and a bounding box, increments a counter, and discards the
+   * page. Once summed, no later function can recover where — the information is
+   * gone at the point of summing, not merely unexposed.
+   *
+   * Without it a parse verdict can only ever refuse a whole file. That is the
+   * difference between refusing a chart and refusing the chapter it sits in: a
+   * lecture PDF with clean prose and one unreadable figure is fully usable for
+   * everything but that figure, and a document-level verdict must either
+   * over-refuse the prose or under-refuse the figure.
+   *
+   * Additive and optional, same convention as the two fields above: absent means
+   * **not observed**, never "nothing was lost", and existing rows are not
+   * backfilled with a guessed unit. See `UnitLoss` for why the totals are not
+   * derived from this.
+   */
+  lostUnits?: UnitLoss[];
   state: ExtractionState;
 }
 
@@ -242,6 +294,13 @@ export function buildCoverage(input: {
   unreadableRegions?: number;
   /** The breakdown behind `unreadableRegions`. See `ExtractionCoverage.unreadableKinds`. */
   unreadableKinds?: readonly UnreadableKind[];
+  /**
+   * Where the losses happened, for the ones the producer could place. See
+   * `ExtractionCoverage.lostUnits`. NOT mutually exclusive with the counts
+   * above — unlike `unreadableKinds`, this never derives a total, it only ever
+   * accounts for part of one.
+   */
+  lostUnits?: readonly UnitLoss[];
   parserVersion?: string;
 }): ExtractionCoverage | string {
   const unitsVision = input.unitsVision ?? 0;
@@ -275,6 +334,37 @@ export function buildCoverage(input: {
     return "unreadableRegions must be a non-negative integer";
   }
 
+  // 🔴 VALIDATED AGAINST THE TOTALS, NEVER USED TO SET THEM. See `UnitLoss`: a
+  // breakdown that could raise a total would let a producer make unplaceable
+  // loss disappear by simply not placing it.
+  const lostUnits = [...(input.lostUnits ?? [])];
+  const seenUnits = new Set<number>();
+  let locatedUnread = 0;
+  let locatedRegions = 0;
+  for (const loss of lostUnits) {
+    if (!Number.isInteger(loss.unit) || loss.unit < 0 || loss.unit >= input.units) {
+      return `lostUnits: unit ${loss.unit} is not an index into this document's ${input.units} units`;
+    }
+    if (seenUnits.has(loss.unit)) return `lostUnits: unit ${loss.unit} appears twice`;
+    seenUnits.add(loss.unit);
+    const regions = loss.unreadableRegions ?? 0;
+    if (regions !== 0 && (!Number.isInteger(regions) || regions <= 0)) {
+      return `lostUnits: unreadableRegions for unit ${loss.unit} must be a positive integer`;
+    }
+    // An entry claiming neither kind of loss says nothing, and a record full of
+    // those would read as "we looked and these units are fine" — a claim this
+    // field is not entitled to make. Omission is how a clean unit is expressed.
+    if (!loss.unread && regions === 0) return `lostUnits: unit ${loss.unit} records no loss`;
+    if (loss.unread) locatedUnread += 1;
+    locatedRegions += regions;
+  }
+  if (locatedUnread > unitsUnread) {
+    return `lostUnits: ${locatedUnread} units marked unread, but unitsUnread is ${unitsUnread}`;
+  }
+  if (locatedRegions > unreadableRegions) {
+    return `lostUnits: ${locatedRegions} regions located, but unreadableRegions is ${unreadableRegions}`;
+  }
+
   const coverage: ExtractionCoverage = {
     version: EXTRACTION_COVERAGE_VERSION,
     parserVersion: input.parserVersion ?? PARSER_VERSION,
@@ -290,6 +380,7 @@ export function buildCoverage(input: {
     // same on the wire and in jsonb.
     ...(unreadableRegions > 0 ? { unreadableRegions } : {}),
     ...(unreadableKinds.length > 0 ? { unreadableKinds } : {}),
+    ...(lostUnits.length > 0 ? { lostUnits } : {}),
     state: "complete",
   };
   return { ...coverage, state: deriveState(coverage) };
@@ -353,6 +444,38 @@ export function lostFigures(figures: FigureCoverage): number {
 /** Pages/slides read by any means. */
 export function unitsRead(coverage: ExtractionCoverage): number {
   return coverage.unitsNative + coverage.unitsVision + coverage.unitsBoth;
+}
+
+/**
+ * Unreadable regions the parser could NOT attribute to a unit.
+ *
+ * 🔴 THE NUMBER A PER-UNIT VERDICT MUST NOT LOSE. Attributing loss to units is
+ * only honest while this is 0. Above 0, some content is missing from somewhere
+ * nobody can name, and every unit reading "clean" would be a claim the record
+ * does not support — so a per-unit verdict must degrade all of them, or refuse
+ * to be per-unit for this document at all. Which of those it does is the
+ * verdict's decision; that it cannot ignore this number is not.
+ */
+export function unlocatedRegions(coverage: ExtractionCoverage): number {
+  const located = (coverage.lostUnits ?? []).reduce((total, loss) => total + (loss.unreadableRegions ?? 0), 0);
+  return Math.max(0, (coverage.unreadableRegions ?? 0) - located);
+}
+
+/** Whole units that came back empty and could not be named. Same rule as above. */
+export function unlocatedUnreadUnits(coverage: ExtractionCoverage): number {
+  const located = (coverage.lostUnits ?? []).filter((loss) => loss.unread).length;
+  return Math.max(0, coverage.unitsUnread - located);
+}
+
+/**
+ * What was lost on one unit, or null when nothing was recorded against it.
+ *
+ * 🔴 NULL MEANS "NOTHING RECORDED HERE", NOT "THIS UNIT IS FINE", and the two
+ * are only the same document when `unlocatedRegions` and `unlocatedUnreadUnits`
+ * are both 0. Ask those first; this answers a narrower question.
+ */
+export function lossOnUnit(coverage: ExtractionCoverage, unit: number): UnitLoss | null {
+  return (coverage.lostUnits ?? []).find((loss) => loss.unit === unit) ?? null;
 }
 
 const UNIT_WORDS: Record<CoverageUnitKind, [one: string, many: string]> = {
@@ -525,6 +648,31 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
   const explainedRegions = unreadableKinds.reduce((total, entry) => total + entry.count, 0);
   const unreadableRegions = Math.max(storedRegions, explainedRegions);
 
+  // 🔴 FILTERED, AND FILTERING IS SAFE HERE PRECISELY BECAUSE NO TOTAL DEPENDS
+  // ON IT — the opposite of `unreadableKinds` two blocks up, which had to
+  // re-derive its total because dropping an entry would have left a stale one
+  // beside it. Dropping a malformed entry here only ever REDUCES what is
+  // located, which raises `unlocatedRegions`, which is the cautious direction:
+  // a record whose locality did not survive storage reports less confidence
+  // about where the loss was, never more.
+  const lostUnits: UnitLoss[] = [];
+  const seenUnits = new Set<number>();
+  if (Array.isArray(raw["lostUnits"])) {
+    for (const entry of raw["lostUnits"] as unknown[]) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const item = entry as Record<string, unknown>;
+      const unit = item["unit"];
+      if (typeof unit !== "number" || !Number.isInteger(unit) || unit < 0 || unit >= units) continue;
+      if (seenUnits.has(unit)) continue;
+      const rawRegions = item["unreadableRegions"];
+      const regions = typeof rawRegions === "number" && Number.isInteger(rawRegions) && rawRegions > 0 ? rawRegions : 0;
+      const unread = item["unread"] === true;
+      if (!unread && regions === 0) continue;
+      seenUnits.add(unit);
+      lostUnits.push({ unit, ...(unread ? { unread } : {}), ...(regions > 0 ? { unreadableRegions: regions } : {}) });
+    }
+  }
+
   return {
     version: typeof raw["version"] === "number" ? raw["version"] : EXTRACTION_COVERAGE_VERSION,
     parserVersion: typeof raw["parserVersion"] === "string" ? raw["parserVersion"] : "unknown",
@@ -538,6 +686,7 @@ export function readCoverage(value: unknown): ExtractionCoverage | null {
     truncation,
     ...(unreadableRegions > 0 ? { unreadableRegions } : {}),
     ...(unreadableKinds.length > 0 ? { unreadableKinds } : {}),
+    ...(lostUnits.length > 0 ? { lostUnits } : {}),
     state,
   };
 }

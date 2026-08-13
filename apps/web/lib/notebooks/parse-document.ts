@@ -388,6 +388,10 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
   // Content located and not delivered, smaller than a page: today, table regions
   // with no recoverable grid. Any non-zero value makes the document `partial`.
   let unreadableRegions = 0;
+  // WHICH pages those regions were on. Empty when the structural read did not
+  // happen at all (the catch below), which reads as "we do not know where",
+  // never as "there was nowhere" — see `ExtractionCoverage.lostUnits`.
+  let unreadableRegionsByUnit: readonly { unit: number; count: number }[] = [];
   try {
     // 🔴 CAPTURE THE FIGURES ON THE WAY PAST, BECAUSE THERE IS NO WAY BACK.
     // `page.cleanup()` releases the decoded image data, so a later pass would
@@ -407,6 +411,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
     // reconstruct. Carried to coverage so a text-full page holding an
     // unreadable table cannot report itself complete.
     unreadableRegions = structural.tableRegionsUnread;
+    unreadableRegionsByUnit = structural.tableRegionsUnreadByUnit;
 
     // 🔴 THE VISUAL HALF. Production decides what to look at from text sparsity
     // alone, which guarantees that 326 of 952 real pages — holding 1,807
@@ -517,6 +522,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       unreadBeyondCap,
       ...(figures ? { figures } : {}),
       ...(unreadableRegions ? { unreadableRegions } : {}),
+      unreadableRegionsByUnit,
     });
   }
   if (plan.kind === "text") {
@@ -527,6 +533,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
       unreadBeyondCap,
       ...(figures ? { figures } : {}),
       ...(unreadableRegions ? { unreadableRegions } : {}),
+      unreadableRegionsByUnit,
     });
   }
 
@@ -554,6 +561,7 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
         unreadBeyondCap,
         ...(figures ? { figures } : {}),
         ...(unreadableRegions ? { unreadableRegions } : {}),
+        unreadableRegionsByUnit,
       }),
     model,
     readBy,
