@@ -56,3 +56,40 @@ nothing for a normalizer to normalize — but the flag must be stated, not assum
 with no text layer. With no key configured that cannot run, so a scanned page
 yields nothing. Every result carries `visionConfigured` so this is visible in the
 output rather than discovered later. This is the NATIVE lane baseline.
+
+## 🔴 KEEP THE PER-DOCUMENT OUTPUT. TWO RUNS THREW IT AWAY.
+
+The harness writes a record for **every ground-truth element** — which prediction
+matched it, how much of it was covered, what it was called — into
+`_evaluation_report.json`, at
+`per_example_results[].metrics[].metadata.rule_results`.
+
+Both previous Nemesis runs produced that file and preserved only the summary. The
+question *"is the naming gap a wrong label, or a block too coarse to have any
+correct label?"* was therefore unanswerable for two days without re-parsing 500
+documents — not because the harness lacked the answer, but because we deleted it.
+
+After any run:
+
+```bash
+python3 bench/parsebench/split_classification.py \
+  <parsebench-checkout>/output/nemesis_parse \
+  --jsonl bench/results/parsebench-layout-elements.jsonl
+gzip -9 bench/results/parsebench-layout-elements.jsonl   # ~350 KB, safe to commit
+```
+
+The 53 MB `_evaluation_report.json` itself is NOT committed; the derived per-element
+table is, and it is enough to re-ask the question at a different threshold without
+re-parsing anything. Findings: `docs/parsebench-classification-split.md`.
+
+## Running one dimension
+
+`--group layout` scores only the layout dimension, and passing `--input_dir`
+explicitly suppresses the auto-download of the other four (592 MB against 145 MB).
+Classification and localization exist in no other dimension.
+
+```bash
+export LLAMACLOUD_BENCH_LLM_NORMALIZATION=off   # set it; the default is `judge`
+uv sync                                          # NOT --extra runners: no vendor SDK
+uv run parse-bench run nemesis_parse --group layout --input_dir data-layout
+```

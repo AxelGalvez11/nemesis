@@ -89,5 +89,12 @@ vision lane, which was off for this run.
 - **Block granularity.** When a ground-truth element goes unmatched, mean IoU is
   0.001 against mean IoA 0.840 — our blocks cover the element and are far
   coarser than it. That is the dominant remaining classification limit.
+
+  🔴 **NOW MEASURED — see `parsebench-classification-split.md` (2026-08-13).** Of
+  the classification deficit, **72.0% is a block too coarse to have any correct
+  label** and only **11.6% is a wrong name on a correctly bounded block**. The
+  median unmatched element is **entirely** inside one of our blocks. A classifier
+  cannot close this, and describing the whole gap as a naming problem — which this
+  lane did, and which reached the owner — was wrong for about 88% of it.
 - **Frozen and untouched:** borderless tables, charts, OCR, inline formatting,
   XLSX/CSV.
