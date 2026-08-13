@@ -438,6 +438,87 @@ export async function deleteCanvas(userId: string | null, id: string): Promise<v
   }
 }
 
+// ------------------------------------------------------- naming and unfiling (Library)
+//
+// 🔴 THREE FUNCTIONS ADDED UNDER A SCOPED CROSS-LANE AUTHORISATION (Canvas UI, 2026-08-13).
+// `lib/learn/**` is Runtime's. Library needs to rename canvases, rename folders and delete
+// folders, and none of those existed anywhere; the authorisation was for exactly these three and
+// nothing else, which is why the Library's paged/searched query lives in `lib/library/` instead
+// of being added here as a fourth.
+//
+// 🔴 NONE OF THEM MAY TOUCH LEARNER STATE. Filing is not evidence: moving, naming or unfiling a
+// canvas must not change what Nemesis asks next. Each is a single `update`/`delete` against
+// `learning_canvases.title` or `folders`, and Library never imports the policy runtime.
+
+/** The longest title the column will accept — `check (char_length(title) <= 300)`. Enforced here
+ *  so an over-long name is quietly trimmed rather than rejected by the database after the
+ *  learner has already seen the new name appear. */
+const TITLE_MAX = 300;
+const FOLDER_NAME_MAX = 120;
+
+/** Rename a canvas. Returns the name that was actually stored, so the caller renders the trimmed
+ *  value rather than the raw input it optimistically painted. */
+export async function renameCanvas(userId: string | null, id: string, title: string): Promise<string | null> {
+  const next = title.trim().slice(0, TITLE_MAX);
+  // An empty name is a cancelled rename, not a request for an untitled canvas — the list would
+  // then show a nameless row the learner cannot tell apart from any other.
+  if (!next) return null;
+
+  // The local copy is updated whether or not the cloud write lands, for the same reason
+  // `saveCanvas` always writes locally: a rename that vanishes on refresh reads as data loss.
+  const local = localRead(id);
+  if (local) localWrite({ ...local, title: next });
+
+  if (!userId) return next;
+  const { error } = await supabase.from(TABLE).update({ title: next }).eq("id", id);
+  if (error && !isMissingTableError(error)) {
+    console.warn("[learn] canvas rename failed", error.message);
+    return null;
+  }
+  return next;
+}
+
+export async function renameFolder(userId: string | null, id: string, name: string): Promise<string | null> {
+  const next = name.trim().slice(0, FOLDER_NAME_MAX);
+  if (!next) return null;
+  if (!userId) return null;
+  const { error } = await supabase.from("folders").update({ name: next }).eq("id", id);
+  if (error) {
+    console.warn("[learn] folder rename failed", error.message);
+    return null;
+  }
+  return next;
+}
+
+/**
+ * Delete a folder. **Never the canvases inside it.**
+ *
+ * 🔴 THE CANVASES RETURN TO `Unfiled` BY SCHEMA, NOT BY THIS FUNCTION REMEMBERING TO MOVE THEM:
+ *
+ * ```sql
+ * learning_canvases.folder_id uuid references public.folders(id) on delete set null
+ * ```
+ *
+ * That is the strong version of the guarantee. Nulling the column here as well would work today
+ * and would hide it if the constraint were ever changed — the same reason evidence survives a
+ * canvas delete by `on delete set null` rather than by application care. Verified against the
+ * live database on 2026-08-13.
+ *
+ * 🔴 `folders.parent_id` IS `on delete cascade`, SO SUBFOLDERS GO WITH IT. Their canvases also
+ * return to Unfiled, because the cascade fires each child's own `set null`. No canvas is lost at
+ * any depth — but the learner has to be TOLD that subfolders are being deleted, and no constraint
+ * will ever enforce that. The caller owns the confirmation copy.
+ */
+export async function deleteFolder(userId: string | null, id: string): Promise<boolean> {
+  if (!userId) return false;
+  const { error } = await supabase.from("folders").delete().eq("id", id);
+  if (error) {
+    console.warn("[learn] folder delete failed", error.message);
+    return false;
+  }
+  return true;
+}
+
 export function newCanvas(): LearningCanvas {
   const now = new Date().toISOString();
   const id =
