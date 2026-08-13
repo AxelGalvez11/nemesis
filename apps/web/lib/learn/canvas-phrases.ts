@@ -56,21 +56,51 @@ export type ComposerRouting =
  * thing in a statute, a proof and a weld procedure — the standing rule against keyword lists is
  * about heuristics that only generalise within one field, and this generalises across all of them.
  *
- * Deliberately narrow. A false positive silently rewrites material the learner wanted explained,
- * which destroys wording they may have been relying on; a false negative merely gives them an
- * ordinary answer, which is what they get today. So the bar is an explicit request to change the
- * TEXT, not any expression of confusion — "I don't get this" is a report, and Nemesis answering it
- * is more useful than Nemesis silently editing the page.
+ * 🔴 IT FIRES ON "I DON'T UNDERSTAND THIS" TOO, AND I ARGUED THE OPPOSITE FIRST. My reasoning was
+ * an asymmetry: a false positive silently rewrites material the learner may have been relying on,
+ * a false negative merely gives them an ordinary answer. Two things defeat it, and the second is
+ * the one I missed:
+ *
+ *   1. THE WORDING IS NOT DESTROYED. §11 keeps `previousContent` and offers restore, so the cost
+ *      of a false positive is "the passage changed and I can put it back" — not "my wording is
+ *      gone". Much smaller than the harm I was protecting against, and already built.
+ *
+ *   2. 🔴 THE "SAFE" FALLBACK IS THE PROHIBITED BEHAVIOUR. §11's core sentence is *"do not append
+ *      another explanation underneath"*. Checked rather than assumed: the ordinary path's prompt
+ *      permits `insert_before`, `insert_after` and `annotate_block`, so a confused learner falling
+ *      through gets an explanation STACKED BELOW the passage — precisely the shape §11 exists to
+ *      forbid. The conservative-looking option was the one the section was written to stop.
+ *
+ * So the owner's list is honoured as written. What still does NOT fire is a question with a
+ * subject — "what does osmolarity mean" is a request for information about a term, not a request
+ * to change the passage, and answering it in a popover disturbs nothing.
  */
 export function asksForRewrite(text: string): boolean {
   const trimmed = text.trim().toLowerCase();
   if (trimmed.length === 0 || trimmed.length > 120) return false;
-  return (
+  // An EXPLICIT instruction to change the text wins regardless of how politely it is phrased.
+  // 🔴 THIS IS CHECKED FIRST BECAUSE THE QUESTION GUARD BELOW BROKE IT. "Can you rephrase that" is
+  // an instruction wearing a question's clothes, and an opener-based guard read it as a question
+  // and refused — a false negative on the least ambiguous phrasing in the whole set.
+  const explicitlyAsksToChangeTheText =
     /\b(simpler|simplify|simplest)\b/.test(trimmed) ||
     /\b(rephrase|reword|rewrite)\b/.test(trimmed) ||
     /\bexplain (?:this|that|it) differently\b/.test(trimmed) ||
     /\b(?:in|use) (?:plain|simple) (?:english|language|terms|words)\b/.test(trimmed) ||
-    /\bbreak (?:this|that|it) down\b/.test(trimmed)
+    /\bbreak (?:this|that|it) down\b/.test(trimmed);
+  if (explicitlyAsksToChangeTheText) return true;
+
+  // 🔴 A QUESTION WITH A SUBJECT IS NOT A REWRITE REQUEST, and this guard exists only to protect
+  // the CONFUSION patterns below from swallowing one. "What does osmolarity mean" asks about a
+  // term and is answered beside the passage, disturbing nothing; "I don't understand this" reports
+  // that the material failed, which is §11's case. Without this, "how do I understand this" would
+  // rewrite the page.
+  if (/^(?:what|why|how|when|where|which|who|does|do|is|are)\b/.test(trimmed)) return false;
+
+  // The owner's own phrasings, honoured as written (§11).
+  return (
+    /\b(?:do ?n[o']?t|don't|dont|can'?t|cannot|not) (?:really |quite |fully )?(?:understand|get|follow)\b/.test(trimmed) ||
+    /\b(?:still |i'm |im |i am )?(?:lost|confused)\b/.test(trimmed)
   );
 }
 

@@ -326,6 +326,39 @@ function materialise(proposed: ProposedBlock): CanvasBlock {
 
 /** Apply validated ops. Immutable: returns a new canvas and never touches the one given.
  *  Assumes `validateOps` already ran — an op naming a missing block is a no-op here. */
+/**
+ * 🔴 §39 — ANY OPERATION THAT REPLACES WHAT THE LEARNER WOULD READ INVALIDATES `readAt`.
+ *
+ * `readAt` is a claim about CONTENT the learner has seen. It is NOT a claim about the block's
+ * identity, and modelling it as the latter shipped a real defect: press Continue, ask for the
+ * passage simpler, and the new wording arrived with no Continue under it — the learner's pacing
+ * control lost as a cost of asking for help.
+ *
+ * 🔴 AND IT IS ENFORCED BY OBSERVATION, NOT BY A LIST OF OPERATIONS. The obvious fix is to clear
+ * `readAt` in the `replace_block` branch and the `annotate_block` branch. That passes today and
+ * strands a Continue the first time somebody adds a tenth operation — the guard would enumerate
+ * the nine that existed when it was written and stay green forever. So this compares what the
+ * block SAID before against what it says after, and clears the stamp wherever they differ. A new
+ * operation is covered the moment it is written, without anyone remembering.
+ *
+ * Same reasoning as `continueOwner`: one owner beats several call sites agreeing.
+ */
+function invalidateReadWhereContentChanged(
+  before: readonly CanvasBlock[],
+  after: readonly CanvasBlock[],
+): CanvasBlock[] {
+  const previous = new Map(before.map((block) => [block.id, block]));
+  return after.map((block) => {
+    const was = previous.get(block.id);
+    // A block that did not exist before carries no stamp to invalidate.
+    if (!was || block.readAt === undefined) return block;
+    // 🔴 `note` COUNTS. An annotation is material added to the block that the learner has not read,
+    // even though the paragraph itself is untouched — so the region owes reading again.
+    if (was.content === block.content && was.note === block.note) return block;
+    return { ...block, readAt: undefined };
+  });
+}
+
 export function applyOps(canvas: LearningCanvas, ops: readonly CanvasOp[]): LearningCanvas {
   let blocks = canvas.blocks;
   let state = canvas.state;
@@ -390,7 +423,12 @@ export function applyOps(canvas: LearningCanvas, ops: readonly CanvasOp[]): Lear
   }
 
   if (blocks === canvas.blocks && state === canvas.state) return canvas;
-  return { ...canvas, blocks, state, updatedAt: new Date().toISOString() };
+  return {
+    ...canvas,
+    blocks: invalidateReadWhereContentChanged(canvas.blocks, blocks),
+    state,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 // ── §11: rewrite in place, reversibly ────────────────────────────────────────────────────────
@@ -434,8 +472,12 @@ export function applyRewrite(
       // Nothing actually changed: recording a "previous" version identical to the current one would
       // offer a restore that visibly does nothing, which reads as a broken control.
       if (block.content === rewrite.before) return block;
-      if (block.previousContent !== undefined) return { ...block, readAt: undefined };
-      return { ...block, previousContent: rewrite.before, readAt: undefined };
+      // 🔴 NO `readAt` CLEARING HERE ANY MORE — `applyOps` above owns it, structurally, for every
+      // operation rather than for this one. Doing it in both places would look like belt and
+      // braces and actually hide a regression: if the structural rule broke, this would keep the
+      // rewrite path working and only the paths nobody tests would strand a Continue.
+      if (block.previousContent !== undefined) return block;
+      return { ...block, previousContent: rewrite.before };
     }),
   };
 }
