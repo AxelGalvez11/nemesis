@@ -64,6 +64,97 @@ export function knowledgePayload(knowledge: KnowledgeObject): Record<string, unk
 }
 
 /**
+ * A stable identity for one way of knowing, so merging two provenance sets cannot store the same
+ * anchor twice.
+ *
+ * 🔴 SUBTRACTIVE, LIKE `knowledgePayload`, AND FOR THE SAME REASON. Enumerating the fields that
+ * identify an anchor — `sourceId`, `unitId`, `page`, `quote` — would make any field added to
+ * `CanonicalSourceAnchor` later invisible to this key, so two anchors differing ONLY in that new
+ * field would collapse into one and the second would be dropped on the way to the database. That is
+ * the exact failure `COLUMN_FIELDS` exists to prevent, one layer along. So the whole anchor is the
+ * key, with object keys sorted so that two anchors built in a different field order still match.
+ */
+function anchorKey(anchor: unknown): string {
+  return JSON.stringify(anchor, (_field, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : value,
+  );
+}
+
+/**
+ * The payload a stored row should hold once this object's ways of knowing are added to it.
+ * `null` when the row already accounts for every one of them and nothing needs writing.
+ *
+ * 🔴 THIS EXISTS BECAUSE ENRICHMENT WAS A SILENT NO-OP. `saveKnowledge` upserts with
+ * `ignoreDuplicates`, so a fact Nemesis first knew from model knowledge and LATER found in the
+ * learner's own lecture kept `provenance: model` and no anchor for ever — and the write reported
+ * success. The citation marker stayed dark on a claim that had a real excerpt behind it, and no
+ * error was ever raised, because doing nothing is what `ignoreDuplicates` is for.
+ *
+ * 🔴 ACCUMULATING, NEVER EXCLUSIVE — the rule `waysOfKnowing()` already states. Grounding a model
+ * claim ADDS a source; it does not delete the fact that Nemesis also knew it independently. A
+ * learner asking "how do you know this?" is entitled to both answers, and the tidier half alone is
+ * a false answer to a question about trust.
+ *
+ * 🔴 THE STORED PAYLOAD IS SPREAD FIRST AND ONLY THE TWO PROVENANCE COLLECTIONS ARE OVERRIDDEN.
+ * Rebuilding the payload from the incoming object would delete every field the stored row carries
+ * that this object happens not to have — which is the write-only-payload defect that already cost
+ * this codebase six structural fields. A merge is not a rewrite.
+ *
+ * 🔴 IDENTITY IS UNTOUCHED, AND THAT IS THE INVARIANT THIS WHOLE FUNCTION SERVES. `identityBasis`
+ * accepts only `type`, `statement`, `pair`, `relation` and `relationKind`, and
+ * `objectiveIdentityKey` only a capability and parameters — neither can read provenance, so no
+ * change here can move a key. If grounding minted a second object instead, the learner's
+ * demonstrations would stay attached to the abandoned one and someone who proved they knew a fact
+ * would be asked it again as though for the first time, their history orphaned by an improvement.
+ *
+ * 🔴 KNOWN LIMIT, STATED RATHER THAN HIDDEN: two concurrent saves that both read the old payload
+ * lose one set of anchors. Fixing that durably needs a jsonb merge in SQL — a migration, and a
+ * wider change than this boundary. The loss is a missed enrichment, recoverable the next time the
+ * same fact is met, and never a wrong claim about a learner.
+ */
+export function mergedKnowledgePayload(
+  storedPayload: Record<string, unknown> | null | undefined,
+  incoming: Pick<KnowledgeObject, "sourceAnchors" | "unanchoredProvenance">,
+): Record<string, unknown> | null {
+  const stored = storedPayload ?? {};
+  const storedAnchors = Array.isArray(stored.anchors) ? (stored.anchors as unknown[]) : [];
+  const storedUnanchored = Array.isArray(stored.unanchoredProvenance)
+    ? (stored.unanchoredProvenance as string[])
+    : [];
+
+  const anchors = [...storedAnchors];
+  const seenAnchors = new Set(storedAnchors.map(anchorKey));
+  for (const anchor of incoming.sourceAnchors ?? []) {
+    const key = anchorKey(anchor);
+    if (seenAnchors.has(key)) continue;
+    seenAnchors.add(key);
+    anchors.push(anchor);
+  }
+
+  const unanchored = [...storedUnanchored];
+  const seenKinds = new Set<string>(storedUnanchored);
+  for (const kind of incoming.unanchoredProvenance ?? []) {
+    if (seenKinds.has(kind)) continue;
+    seenKinds.add(kind);
+    unanchored.push(kind);
+  }
+
+  // 🔴 NOTHING NEW MEANS NO WRITE AT ALL, WHICH IS NOT MERELY AN OPTIMISATION. `updated_at` is the
+  // only timestamp a later audit can read, and touching a row that did not change would make every
+  // ordinary re-encounter look like an edit — the "cleanup needs positive provenance" trap, where
+  // rows appear to have been authored by whatever last ran.
+  if (anchors.length === storedAnchors.length && unanchored.length === storedUnanchored.length) {
+    return null;
+  }
+
+  return { ...stored, anchors, unanchoredProvenance: unanchored };
+}
+
+/**
  * A stored row, back as the object it was.
  *
  * 🔴 THE MISSING HALF OF THE BOUNDARY. Until this existed, knowledge was written and never read, so
@@ -145,7 +236,7 @@ export async function saveKnowledge(
   // whole cross-canvas proof rests on: get it wrong and evidence attaches to nothing.
   const { data: knowledgeRow, error: readError } = await supabase
     .from("knowledge_objects")
-    .select("id")
+    .select("id,payload")
     .eq("user_id", userId)
     .eq("identity_key", identityKey)
     .maybeSingle();
@@ -154,6 +245,34 @@ export async function saveKnowledge(
     return [];
   }
   const knowledgeRowId = (knowledgeRow as { id: string }).id;
+
+  // 🔴 THE UPSERT ABOVE CANNOT ENRICH, SO THE ENRICHMENT IS A SECOND WRITE. `ignoreDuplicates` makes
+  // a conflicting upsert do NOTHING — which is exactly right for identity and exactly wrong for
+  // provenance, because the second time Nemesis meets a fact is precisely when it may have learned a
+  // new way of knowing it. Without this, a model-known claim that later turns up in the learner's own
+  // lecture keeps `provenance: model` and no anchor for ever, and the write reports success.
+  //
+  // 🔴 SCOPED BY `user_id` AND `identity_key`, THE SAME PAIR THE UPSERT CONFLICTS ON. Updating by
+  // `id` would work too; using the identity pair keeps the row this touches provably the row that
+  // was just read, and keeps two learners holding the same fact strictly apart.
+  //
+  // 🔴 A FAILED ENRICHMENT IS NOT A FAILED SAVE. The knowledge object and its objectives exist and
+  // the learner can be taught; what is lost is a citation marker. Returning `[]` here would throw
+  // away a usable canvas over a missing footnote.
+  const enriched = mergedKnowledgePayload(
+    (knowledgeRow as { payload?: Record<string, unknown> | null }).payload,
+    knowledge,
+  );
+  if (enriched) {
+    const { error: enrichError } = await supabase
+      .from("knowledge_objects")
+      .update({ payload: enriched })
+      .eq("user_id", userId)
+      .eq("identity_key", identityKey);
+    if (enrichError && !isMissingTable(enrichError)) {
+      console.warn("[learn] knowledge enrichment failed", enrichError.message);
+    }
+  }
 
   const objectives = objectivesForKnowledge(knowledge);
   if (objectives.length === 0) return [];
