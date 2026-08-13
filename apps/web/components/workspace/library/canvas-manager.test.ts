@@ -33,6 +33,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 const source = readFileSync(join(import.meta.dirname, "canvas-manager.tsx"), "utf8");
+/** 🔴 THE SAME LIST OF THE SAME OBJECTS LIVES ON THE FRONT DOOR, one surface earlier, and it had
+ *  the identical defect. Fixing only the Library would have left the owner looking at the unfixed
+ *  one first, so the guard covers both files rather than the one that was measured. */
+const home = readFileSync(
+  join(import.meta.dirname, "..", "learn", "canvas-home.tsx"),
+  "utf8",
+);
 
 /** 🔴 THE CODE, NOT THE PROSE. This file's own header explains why there is no source count by
  *  naming `canvas_sources`, so a guard reading the whole file would fail on the sentence that
@@ -120,4 +127,35 @@ test("decoration stayed inside §19 — no cards, no badges, no colour", () => {
   // Rows are rows. A card would be a rounded, elevated, shadowed container per item.
   assert.ok(!/rounded-2xl[^"]*shadow[^"]*"\s*key=\{(?:canvas|folder)/.test(source), "a list row must not become a card");
   assert.ok(!/\bgradient\b/.test(code), "no gradients (§28)");
+});
+
+test("🔴 the front door's session list carries the same fix, not just the Library's", () => {
+  // The row control: drawn at rest on both surfaces.
+  const button = /<button\s+aria-label=\{`Actions for[\s\S]{0,700}?<\/button>/.exec(home);
+  assert.ok(button, "expected a per-row action button on the front door too");
+  assert.ok(!/\bopacity-0\b/.test(button[0]), "the front door's row control must not start invisible");
+  assert.ok(!/group-hover:opacity/.test(button[0]), "hover cannot be the only thing that draws it");
+  assert.ok(!/aria-label="Session options"/.test(home), "one label for every row names none of them");
+
+  // The menu: every action drawn, and `icon` required so none can be added undecorated.
+  assert.match(home, /icon: LucideIcon;/);
+  assert.ok(!/icon\?: LucideIcon/.test(home), "an optional icon is an action that can go undecorated");
+  assert.match(home, /<Icon className="shrink-0 opacity-70"/);
+  const actions = home.match(/<RowAction\b/g) ?? [];
+  assert.ok(actions.length >= 4, `expected the session actions: got ${actions.length}`);
+
+  // And the row says what it is, the same way the Library's does.
+  assert.match(home, /<PanelsTopLeft className="shrink-0/);
+});
+
+test("going back up out of a folder is a control, not a word", () => {
+  // 🔴 THE LEAST VISIBLE FUNCTION ON THE SURFACE, and the one the top-level screenshots could not
+  // show: it only renders inside a NESTED folder. It was a bare word in the breadcrumb's own grey
+  // that changed colour on hover — nothing at all on a touch screen. Measured live at
+  // All canvases / Fall 2026 / PHCY 2105: `aria-label="Back to Fall 2026"`, 92x28, opacity 1.
+  const crumb = source.slice(source.indexOf("where am I"), source.indexOf("A REFUSED WRITE IS STATED"));
+  const parent = /<button\s+aria-label=\{`Back to[\s\S]{0,900}?<\/button>/.exec(crumb);
+  assert.ok(parent, "the go-up control must name the folder it returns to");
+  assert.match(parent[0], /<FolderIcon/, "and draw a glyph rather than relying on a hover colour");
+  assert.match(parent[0], /hover:bg-\(--ui-bg-tertiary\)/, "it uses the same hover fill as every other control here");
 });

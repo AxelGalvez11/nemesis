@@ -290,31 +290,46 @@ export function CanvasManager({
                 text colour alone. A glyph plus a quiet selected fill is a segmented control, which
                 is chrome; it is not a card or a badge (§19). */}
             <ScopeTab active={scope === undefined} icon={Layers} label="All canvases" onClick={() => open(undefined)} />
+            {/* 🔴 GOING BACK UP IS A LIBRARY FUNCTION TOO (§38.3), and it was the least visible one
+                on the surface: a bare word in the breadcrumb's own grey, changing colour only on
+                hover, which is nothing at all on a touch screen. It reads as a control now — a
+                folder glyph and the same hover fill every other control here uses. It only renders
+                inside a nested folder, which is why the top-level screenshots never showed it. */}
             {current?.parentId && (
               <>
-                <span>/</span>
+                <span aria-hidden="true">/</span>
                 <button
-                  className="rounded px-1 hover:text-(--ui-text-secondary)"
+                  aria-label={`Back to ${folders.find((entry) => entry.id === current.parentId)?.name ?? "the parent folder"}`}
+                  className="flex items-center gap-1.5 rounded-lg px-[8px] py-[4px] transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
                   onClick={() => {
                     const parent = folders.find((entry) => entry.id === current.parentId);
                     if (parent) open(parent);
                   }}
                   type="button"
                 >
+                  <FolderIcon size={13} strokeWidth={1.7} />
                   {folders.find((entry) => entry.id === current.parentId)?.name ?? "…"}
                 </button>
               </>
             )}
+            {/* Where you are, which is a statement rather than a control — so it is marked with the
+                same glyph but deliberately gets no hover, no fill and no button. */}
             {current && (
               <>
-                <span>/</span>
-                <span className="px-1 text-(--ui-text-primary)">{current.name}</span>
+                <span aria-hidden="true">/</span>
+                <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
+                  <FolderIcon size={13} strokeWidth={1.7} />
+                  {current.name}
+                </span>
               </>
             )}
             {scope === null && (
               <>
-                <span>/</span>
-                <span className="px-1 text-(--ui-text-primary)">Unfiled</span>
+                <span aria-hidden="true">/</span>
+                <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
+                  <Inbox size={13} strokeWidth={1.7} />
+                  Unfiled
+                </span>
               </>
             )}
             {scope === undefined && (
