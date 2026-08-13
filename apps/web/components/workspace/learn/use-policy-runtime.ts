@@ -31,6 +31,7 @@ import {
 } from "@/lib/learn/canvas-focus";
 import { tempoFor, type HostedTask } from "@/lib/learn/canvas-hosting";
 import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
+import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
@@ -89,6 +90,16 @@ export interface PolicyRuntime {
   setFocus: (scope: FocusScope) => void;
   /** What the learner could focus on, built from knowledge this canvas actually holds. */
   territories: readonly { label: string; identityKeys: readonly string[] }[];
+  /**
+   * Every claim this canvas holds, so the Sources panel can say where each one came from.
+   *
+   * 🔴 THE WHOLE SET, NOT `supported`. `supportedObjectives` filters to association + recall — the
+   * subset the policy can currently ASK about — and a disclosure built on that would go quiet about
+   * model-written claims of every other kind. What may be taught and where something came from are
+   * different questions, and answering the second with the first's filter is how a provenance
+   * statement silently narrows to whatever the runtime happens to support this month.
+   */
+  claims: readonly KnowledgeObject[];
   decision: PolicyDecision | null;
   /** The question on screen, when the policy asked for one. */
   prompt: RetrievalPrompt | null;
@@ -700,10 +711,12 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   }, [decision, feedback, prompt, status]);
 
   const territories = useMemo(() => availableTerritories(supported), [supported]);
+  const claims = useMemo(() => knowledge.objectives.map((entry) => entry.knowledge), [knowledge]);
 
   return {
     acknowledge,
     admitUnknown,
+    claims,
     coverage: knowledge.coverage,
     decision,
     error,

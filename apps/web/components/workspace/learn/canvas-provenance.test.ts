@@ -18,40 +18,63 @@ import { modelKnowledgeDisclosed } from "./canvas-provenance";
 
 const read = (file: string) => readFileSync(join(import.meta.dirname, file), "utf8");
 
-const durable = { librarySourceId: "lib-1" };
-const ephemeral = { librarySourceId: null };
+const ANCHOR = { quote: { exact: "losartan (Cozaar)" }, sourceId: "lib-1", unitId: "b12" };
+
+/** Known from model knowledge and from nothing else. */
+const modelOnly = { sourceAnchors: [], unanchoredProvenance: ["model"] as const };
+/** The same claim after a real source was found to state it — both ways of knowing. */
+const grounded = { sourceAnchors: [ANCHOR], unanchoredProvenance: ["model"] as const };
+/** Extracted from the learner's document and never model-known. */
+const fromDocument = { sourceAnchors: [ANCHOR], unanchoredProvenance: [] as const };
 
 // ------------------------------------------------------------------ the predicate
 
 test("a typed topic with knowledge behind it discloses its model origin", () => {
   // N10 exactly: canvas 213c2d47, zero sources, 26 knowledge objects in the database.
-  assert.equal(modelKnowledgeDisclosed([], 26), true);
+  assert.equal(modelKnowledgeDisclosed([modelOnly, modelOnly]), true);
 });
 
 test("a canvas with no knowledge at all discloses nothing — 'Nothing attached yet' is correct there", () => {
   // 🔴 THE LINE APPEARS BECAUSE MODEL KNOWLEDGE EXISTS, NOT BECAUSE THE CANVAS IS SOURCELESS.
   // A brand-new empty canvas genuinely has nothing behind it, and claiming otherwise would be
   // the same defect pointing the other way — decoration presented as provenance.
-  assert.equal(modelKnowledgeDisclosed([], 0), false);
+  assert.equal(modelKnowledgeDisclosed([]), false);
 });
 
 test("knowledge built on a durable source is NOT claimed as model knowledge", () => {
   // That knowledge was extracted from the attached document; saying it came from the model
   // would misattribute the learner's own material.
-  assert.equal(modelKnowledgeDisclosed([durable], 40), false);
+  assert.equal(modelKnowledgeDisclosed([fromDocument, fromDocument]), false);
 });
 
-test("an EPHEMERAL attachment does not suppress the disclosure", () => {
-  // 🔴 THE CONDITION MIRRORS THE RUNTIME'S OWN BRANCH, which is `sourceIds.length === 0` over
-  // sources carrying a `librarySourceId` — NOT `sources.length === 0`. A canvas holding an
-  // attachment with no library row still takes the topic path, so its knowledge genuinely came
-  // from the model. Keying this on `sources.length` would go silent on exactly that canvas while
-  // the panel listed a file that contributed nothing to what is being taught.
-  assert.equal(modelKnowledgeDisclosed([ephemeral], 12), true);
+// ── the laundering, which is what this predicate was rewritten for ──────────
+
+test("🔴 A SOURCE ARRIVING DOES NOT SILENCE THE DISCLOSURE WHILE MODEL-WRITTEN CLAIMS REMAIN", () => {
+  // The exact shipped defect, in the exact shape Integration measured on 2026-08-13: a canvas
+  // holding twenty-four model-written facts was given a spreadsheet stating five of them. The old
+  // predicate asked `sources.every(s => !s.librarySourceId)`, so it went false on the attachment
+  // alone and the panel presented the spreadsheet as the origin of all twenty-four.
+  //
+  // 🔴 THIS ASSERTION IS WHY THE INPUT HAD TO CHANGE, NOT MERELY THE CONDITION. The old signature
+  // received the ATTACHMENTS and a COUNT; the mixed canvas is indistinguishable from the fully
+  // grounded one under that input, so no rewrite of the old body could have made this pass.
+  const mixed = [grounded, grounded, modelOnly, modelOnly];
+  assert.equal(modelKnowledgeDisclosed(mixed), true, "claims nothing grounded are still model-written");
 });
 
-test("one durable source among ephemeral ones is enough to suppress it", () => {
-  assert.equal(modelKnowledgeDisclosed([ephemeral, durable], 12), false);
+test("once every claim is genuinely grounded, the disclosure stops — it is not a permanent banner", () => {
+  // The other direction, and it has to hold or the line becomes decoration that says nothing.
+  // A claim known BOTH ways is grounded: `hasGroundableAnchor` is about anchors, never about
+  // whether model knowledge was also involved, so a real excerpt exists to show.
+  assert.equal(modelKnowledgeDisclosed([grounded, grounded]), false);
+});
+
+test("🔴 a claim with NO way of knowing at all is not announced as model knowledge", () => {
+  // Unanchored is not the same as unsourced. An object carrying neither an anchor nor a stated
+  // provenance is one nobody can say anything true about, and calling it model knowledge would be
+  // inventing an origin rather than reporting one — the same failure the disclosure exists to fix,
+  // pointed the other way.
+  assert.equal(modelKnowledgeDisclosed([{ sourceAnchors: [], unanchoredProvenance: [] }]), false);
 });
 
 // ------------------------------------------------------------------ the surface

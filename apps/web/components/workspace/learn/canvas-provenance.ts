@@ -7,34 +7,45 @@
 //
 // The global invariant: every claim the UI makes about the source must trace back to source
 // capability. Silence about a known origin is a claim.
+//
+// 🔴 AND THE QUESTION IS PER CLAIM, NOT PER SESSION — THE OWNER'S WORD FOR THE FAILURE IS
+// *LAUNDERING*. "This canvas has at least one source" does not mean every claim on it became
+// source-grounded. A canvas legitimately holds both at once:
+//
+//     Block A  →  grounded in Source 1
+//     Block B  →  model-derived, unsupported by anything attached
+//     Block C  →  grounded in Source 1 and Source 2
+//
+// The earlier version of this file asked `sources.every(source => !source.librarySourceId)`, so the
+// disclosure vanished the instant ANY durable source arrived — while the model-written material
+// stayed on screen underneath it. A learner who attached a spreadsheet to a canvas holding
+// twenty-four model-written facts was shown their spreadsheet, and only their spreadsheet, as the
+// origin of all of it.
+
+import { hasGroundableAnchor } from "@/lib/learn/knowledge-provenance";
+import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
+
+/** Just enough of a claim to say where it came from. */
+type Claim = Pick<KnowledgeObject, "sourceAnchors" | "unanchoredProvenance">;
 
 /**
- * Does this canvas hold knowledge that PROVABLY came from the model rather than from attached
- * material?
+ * Does this canvas hold any claim that came from the model and from nothing else?
  *
- * 🔴 THE DURABILITY TEST IS THE RUNTIME'S OWN, NOT AN APPROXIMATION OF IT. `canvas-knowledge.ts`
- * branches to the topic path on `sourceIds.length === 0`, where `sourceIds` are the sources
- * carrying a `librarySourceId` — a source with no library row is ephemeral, contributes nothing to
- * extraction, and does not stop the model path from running. Keying this on `sources.length`
- * instead would go quiet on a canvas that has an ephemeral attachment listed beside knowledge the
- * model produced, which is precisely the canvas most likely to mislead.
+ * 🔴 IT READS THE CLAIMS, NOT THE ATTACHMENTS, AND THAT IS THE WHOLE CHANGE. The previous version
+ * documented its own blind spot honestly — *"deliberately conservative about the mixed case …
+ * nothing available on the client can tell those apart"* — and at the time that was true: every
+ * claim a topic canvas held was model-written, and attaching a lecture never altered one, so the
+ * client had nothing per-claim to read. It is no longer true. `groundClaims` writes a real anchor
+ * onto the claims a source actually states, so `hasGroundableAnchor` now answers the mixed case
+ * exactly, one claim at a time, and the conservative reading has become the misleading one.
  *
- * 🔴 IT IS DELIBERATELY CONSERVATIVE ABOUT THE MIXED CASE. When a durable source is present this
- * returns `false` even though some knowledge may still be model-minted — identity does not depend
- * on provenance, so a topic canvas that later receives the matching lecture merges into one object.
- * Nothing available on the client can tell those apart, and inventing the distinction would be the
- * same failure in the opposite direction. We disclose what we can prove and stay silent otherwise.
- *
- * @param sources        the canvas's attached sources
- * @param knowledgeCount how many supported knowledge items the policy resolved for this canvas
+ * 🔴 UNANCHORED IS NOT THE SAME AS UNSOURCED, WHICH IS WHY BOTH HALVES ARE TESTED. A claim needs a
+ * stated way of knowing before its origin can be disclosed at all; an object carrying neither an
+ * anchor nor a provenance is one nobody can say anything true about, and announcing it as model
+ * knowledge would be inventing an origin rather than reporting one.
  */
-export function modelKnowledgeDisclosed(
-  sources: readonly { librarySourceId?: string | null }[],
-  knowledgeCount: number,
-): boolean {
-  // 🔴 KNOWLEDGE FIRST, AND THAT ORDER IS THE POINT. The line appears because model-sourced
-  // knowledge EXISTS — not because the canvas happens to be sourceless. A brand-new empty canvas
-  // has nothing behind it, and "Nothing attached yet" is the honest sentence there.
-  if (knowledgeCount <= 0) return false;
-  return sources.every((source) => !source.librarySourceId);
+export function modelKnowledgeDisclosed(claims: readonly Claim[]): boolean {
+  return claims.some(
+    (claim) => (claim.unanchoredProvenance ?? []).length > 0 && !hasGroundableAnchor(claim),
+  );
 }

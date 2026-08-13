@@ -27,7 +27,10 @@ import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
 import { frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
+import type { SourceContext } from "@/lib/sources/source-context";
+
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
+import { groundClaims } from "./knowledge-grounding";
 import {
   coverageOfSource,
   emptyCoverage,
@@ -207,6 +210,10 @@ export async function ensureKnowledgeForCanvas(
   if (sourceIds.length !== canvas.sources.length && !bypassOwnership) return nothingToRead();
 
   const extracted: KnowledgeObject[] = [];
+  // Every source this lane could actually read, kept so the claims the canvas already holds can be
+  // checked against them without a second round trip. A source that failed to load is absent rather
+  // than empty — "we could not read this" must never look like "this says nothing".
+  const contexts: SourceContext[] = [];
   let coverage = emptyCoverage(canvas.sources.length);
   let outcome: ExtractionOutcome = "complete";
 
@@ -229,6 +236,7 @@ export async function ensureKnowledgeForCanvas(
       outcome = "failed";
       continue;
     }
+    contexts.push(canonical.context);
     const extraction = extractKnowledgeObjects(canonical.context);
     // The worst outcome across the canvas's sources wins: one source read completely does not make
     // the canvas complete when another was flattened.
@@ -327,7 +335,7 @@ export async function ensureKnowledgeForCanvas(
   // Replayed through `storeTerritory` exactly as the topic lane replays it, so this converges on
   // the rows that already exist and picks up any enrichment they have gained rather than being a
   // second implementation of the step the cross-canvas claim rests on.
-  const carried = await carriedTerritory(userId, canvas);
+  const carried = await carriedTerritory(userId, canvas, contexts);
 
   // 🔴 THE GRID LANE FOUND NOTHING, AND THAT IS THE ORDINARY CASE FOR A LECTURE — §24's real
   // blocker, measured rather than assumed.
@@ -552,10 +560,34 @@ export function mergeObjectives(
  * Returns an empty list on any miss, and a miss is never an error — a canvas that never had a
  * territory is the ordinary first upload.
  */
-async function carriedTerritory(userId: string, canvas: LearningCanvas): Promise<ResolvedObjective[]> {
+async function carriedTerritory(
+  userId: string,
+  canvas: LearningCanvas,
+  contexts: readonly SourceContext[],
+): Promise<ResolvedObjective[]> {
   const stored = await loadCanvasTerritory(userId, canvas.id);
   if (!stored || stored.identityVersion !== KNOWLEDGE_IDENTITY_VERSION) return [];
-  return storeTerritory(userId, stored.objects);
+
+  // 🔴 GROUNDED ON THE WAY THROUGH, WHICH IS WHY THE ACCRUAL COSTS NOTHING — N11.
+  //
+  // These objects are about to go through `saveKnowledge` anyway, and `saveKnowledge` already
+  // enriches a stored row's provenance via `mergedKnowledgePayload`. That machinery was correct and
+  // simply never had anything to enrich WITH: the claims replayed here were the model-written ones,
+  // carrying the same empty `sourceAnchors` they were minted with, so the merge always found nothing
+  // new and correctly wrote nothing. Attaching a spreadsheet that stated five of them verbatim left
+  // all five byte-identical.
+  //
+  // `groundClaims` is deterministic, model-free and reads the contexts the caller has ALREADY
+  // loaded, so this adds no round trip and no model call — it changes what the existing writes carry
+  // rather than adding writes. A claim no source mentions comes back untouched and stays `["model"]`.
+  //
+  // 🔴 AND IT CANNOT RE-TOPIC THE CANVAS, WHICH IS WHY IT BELONGS HERE RATHER THAN IN
+  // `groundedTerritory`. That lane's marker is the canvas's one territory column, so building there
+  // for newly attached material would overwrite the subject the canvas was started from — the reason
+  // it stands down. Adding provenance touches no marker, mints no object and moves no identity, so
+  // the frozen topic, the objectives and the learner's evidence history are all untouched by
+  // construction.
+  return storeTerritory(userId, groundClaims(stored.objects, contexts));
 }
 
 // -------------------------------------------------------------- grounded territory
