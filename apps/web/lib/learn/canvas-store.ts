@@ -391,12 +391,72 @@ export function newCanvas(): LearningCanvas {
 
 // ----------------------------------------------------------- attaching source
 
+/**
+ * Is this arriving source the one already sitting in the canvas?
+ *
+ * 🔴 THE OLD TEST — `candidate.id === source.id` — COULD NEVER FIRE. The only caller mints
+ * `` `s${sources.length + 1}` `` immediately before calling, so the arriving id is new by
+ * construction and the guard compared it against ids that were all older. It read like a
+ * duplicate check and was one line of dead code; production canvas `186d0749` holds a single
+ * document three times, as `s2`/`s3`/`s4`.
+ *
+ * 🔴 AND THE COST IS NOT A REPEATED CARD. `emptyCoverage(canvas.sources.length)` sizes the
+ * coverage denominator from this array, and coverage is shown to the learner — so a document
+ * attached twice reports that we understood a smaller share of their material than we did. A
+ * source-accounting slip becomes a claim about the person.
+ *
+ * The `librarySourceId` is the only thing here that identifies a DOCUMENT rather than a slot:
+ * it is the same `library_sources` row every canvas, the indexer and retrieval see. The id test
+ * is kept because it is still correct and callers may legitimately re-offer the same slot.
+ *
+ * 🔴 ABSENT IS UNKNOWN, NEVER "THE SAME THING". Two ephemeral sources both lack a library row;
+ * matching on shared absence would silently delete a file the learner attached. Both sides must
+ * NAME the same row.
+ */
+function isSameDocument(existing: CanvasSource, arriving: CanvasSource): boolean {
+  if (existing.id === arriving.id) return true;
+  return Boolean(existing.librarySourceId) && existing.librarySourceId === arriving.librarySourceId;
+}
+
+/**
+ * Fold a re-offered document onto the entry already there, keeping the identity anchors use.
+ *
+ * 🔴 THE ID IS LOAD-BEARING AND IT BELONGS TO THE ENTRY THAT WAS ALREADY HERE. `quotedExcerpt`
+ * resolves a citation by matching `ref.sourceId` against this id and `ref.excerptId` against an
+ * excerpt's. Taking the arriving entry wholesale would dedupe perfectly and orphan every
+ * citation already written against the survivor — a fix that passes the obvious test and costs
+ * a learner their provenance.
+ *
+ * 🔴 AND THE EXCERPTS ARE KEPT, NOT RE-KEYED BY POSITION, WHICH IS THE SUBTLER HALF. Re-keying
+ * `arriving.excerpts[1]` to `s1:e2` is only sound while the two lists agree; if the stored parse
+ * changed between attaches, an existing citation to `s1:e2` would silently resolve to DIFFERENT
+ * TEXT. A dangling citation is visible and recoverable; one that quietly points at other words
+ * is a false claim about what the source says, which is the worst failure available in this
+ * direction. So the cited text wins and only the metadata is refreshed.
+ *
+ * The one exception is an entry that has no excerpts at all — nothing can be cited against it,
+ * so there is nothing to protect and the arriving text is strictly better.
+ */
+function adoptIntoExisting(existing: CanvasSource, arriving: CanvasSource): CanvasSource {
+  if (existing.id === arriving.id) return arriving;
+  return {
+    ...arriving,
+    id: existing.id,
+    excerpts:
+      existing.excerpts.length > 0
+        ? existing.excerpts
+        : arriving.excerpts.map((excerpt, index) => ({ ...excerpt, id: `${existing.id}:e${index + 1}` })),
+  };
+}
+
 /** Fold a freshly extracted source into a canvas. Immutable. */
 export function mergeSourceIntoCanvas(canvas: LearningCanvas, source: CanvasSource): LearningCanvas {
-  const existing = canvas.sources.findIndex((candidate) => candidate.id === source.id);
+  const existing = canvas.sources.findIndex((candidate) => isSameDocument(candidate, source));
   const sources =
     existing >= 0
-      ? canvas.sources.map((candidate, index) => (index === existing ? source : candidate))
+      ? canvas.sources.map((candidate, index) =>
+          index === existing ? adoptIntoExisting(candidate, source) : candidate,
+        )
       : [...canvas.sources, source];
 
   return {
