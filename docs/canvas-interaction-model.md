@@ -12,6 +12,11 @@ canvas-interaction-model.md   how that reaches and returns from a learner  INTER
 canvas-v1-acceptance.md       what must be independently proven            EVIDENCE
 ```
 
+🔴 **Section letters in this document are its own.** `canvas-v1-acceptance.md` also has a §J, §K, §L
+and §M, and they are **different sections about different things**. Always name the document when
+citing a letter — *"interaction-model §J"*, not *"§J"*. Two lanes have already lost time to a
+mis-cited location in this area.
+
 ---
 
 ## The organising claim
@@ -454,6 +459,62 @@ Errors, partial answers and misconceptions are where the information is, and the
 that a wrong *answer* needs a correction while a wrong *model* will keep generating wrong answers
 until it is named and replaced.
 
+### 🔴 The verdict is carried by the learner's own words — owner, 2026-08-13
+
+**Supersedes the separate `✓` as the correctness signal.** Rather than painting an acknowledgement
+*beside* the answer, **the learner's submitted text itself takes the verdict's colour.**
+
+The feedback stops being an object on the page and becomes a property of the thing already holding
+the learner's attention. It is the smallest possible signal, it sits exactly where they are looking,
+and it makes a partial answer **locatable** rather than merely labelled.
+
+| The answer turns | When | And |
+|---|---|---|
+| **green** | correct | nothing else appears — the colour **is** the punctuation |
+| **amber** | 🔴 **partial** — they demonstrated some of it | name the specific gap; this is where the information is |
+| **red** | incorrect, or a misconception | smallest correction that reorients, then require reconstruction |
+| **no colour** | *"I don't know"* — **no demonstration** | nothing was asserted, so nothing is judged |
+| **no colour** | 🔴 **the judge did not return a usable judgement** | say so; claim nothing |
+
+### 🔴 Amber means PARTLY RIGHT. It never means WE ARE NOT SURE.
+
+A traffic light invites one colour to absorb both, and that would undo a distinction the
+architecture is built to protect:
+
+```
+the answer was partial        a fact about the LEARNER    → amber
+we could not evaluate it      a fact about US             → no colour
+```
+
+**Our uncertainty is not their cognitive state and must not be painted onto their sentence.**
+Acceptance F5 exists precisely to keep *"the judge established nothing"* and *"the judge never
+returned"* apart, and evidence invariant 9 says an evaluator outage writes nothing. **A shared
+colour would reintroduce at the surface exactly what the schema separates underneath.**
+
+Likewise *"I don't know"* is **not** red. Evidence invariant 5: it is absence of demonstration, not
+a wrong belief. The learner asserted nothing, so there is nothing to mark wrong.
+
+### 🔴 Colour may never be the only channel
+
+Red/green is the most common colour-vision deficiency; roughly one man in twelve would see three
+identical states, and a colour-only verdict fails WCAG 1.4.1. **A second channel must carry the same
+meaning** — weight, an underline treatment, whatever reads cleanly.
+
+**Not an icon parked beside the text**, which reintroduces the separate object this replaces.
+
+### Why this fits [§G's](#g-feedback-intensity-scales-with-information-value) intensity rule exactly
+
+The colour **selects** the intensity, with no extra machinery:
+
+```
+green   →  no accompanying words at all
+amber   →  name the missing piece
+red     →  smallest correction, then require reconstruction
+```
+
+Feedback earns screen space only when it changes what the learner knows or needs to do, and here the
+signal that costs nothing is the one carrying no new information.
+
 ### Explicitly forbidden
 
 *"Great job!"* · *"Excellent!"* · *"You nailed it!"* · celebratory animation · confetti · large
@@ -544,6 +605,563 @@ tempo governs cognition; the speed invariant governs everything that is not cogn
 
 ---
 
+## I. The composer is the only progression control
+
+**Owner specification, 2026-08-13.** Canvas introduces **no** separate `Next`, `Continue`,
+`Done reading` or equivalent. The persistent composer is the primary interaction surface, and the
+same control means different things in different states.
+
+### Exposition state — an empty composer offers `✓`
+
+When Canvas is showing material the learner needs to inspect before another cognitive operation:
+
+```
+[ Ask something…                                    ✓ ]
+```
+
+🔴 **`✓` means exactly one thing:**
+
+> *I am finished inspecting this state and am ready for Canvas to continue.*
+
+It does **not** mean *I understand this* · *I know this* · *I mastered this* · *mark this complete*.
+
+**Therefore `✓` writes no learner evidence and creates no mastery inference. It is progression
+telemetry only.** This is evidence invariant 3 (*clicking Continue is not evidence*) applied to a
+control that looks more like agreement than Continue did — which is exactly why it needs saying.
+
+### The moment a response begins, the same control becomes send
+
+```
+[ Why does aldosterone increase potassium?          ↑ ]
+```
+
+🔴 **There is never both a `✓` and a send button.** One location, one primary action, determined by
+state. Clearing the composer while still in an exposition state may return it to `✓`.
+
+**Voice follows the same semantics.** Dictation creates a response, so it moves the composer into
+submission behaviour exactly as typing does.
+
+### Production state — there is no escape hatch
+
+When Canvas is explicitly requiring a demonstration:
+
+```
+Why does AT1 blockade increase serum potassium?
+[ Type or speak your answer…                          ]
+```
+
+**No `✓`.** Send becomes available only when there is a response to submit.
+
+> 🔴 **A learner must not be able to bypass retrieval, explanation, reconstruction, calculation,
+> drawing, application, or any other required cognitive operation by pressing Continue.**
+
+The whole rule in four lines:
+
+```
+exposition   empty composer  →  ✓            response begins  →  send
+production   empty composer  →  NO control   response exists  →  send
+```
+
+**The compact composer requirement stands.** It remains visually subordinate to the Canvas content
+and must not become a large ChatGPT-style hero element inside an active session.
+
+---
+
+## J. A question rewrites the Canvas
+
+**Owner specification, 2026-08-13, and it is the most architecturally demanding item in this
+document.**
+
+When a learner asks about material currently on screen, **do not default to appending a chatbot
+answer underneath the passage.**
+
+> **The question is evidence about what representation is currently insufficient.**
+
+Brain decides whether the right response is to clarify inline, rewrite a local block, reconstruct a
+connected conceptual region, or reconstruct most of the page. The governing principle:
+
+> **Rewrite the smallest semantic region sufficient to repair the learner's mental model.**
+
+🔴 **Rewrite scope follows knowledge dependency, not visual boundaries.** A paragraph and a page are
+layout facts. What must change is decided by what depends on the missing model.
+
+### Rewrite radius
+
+| Radius | Use when | Example |
+|---|---|---|
+| **0 — inline clarification** | a word, phrase, acronym, or tiny factual uncertainty | *"What does depolarization mean here?"* |
+| **1 — local concept rewrite** | one concept is represented poorly **for this learner** — change language, analogy, diagram, or level of detail | *"Why does sodium enter the cell?"* |
+| **2 — connected-region reconstruction** | the gap spans a causal chain, mechanism, sequence or comparison | *"I don't understand how blocking AT1 increases potassium."* |
+| **3 — page-level reconstruction** | the learner lacks the **organizing schema** needed to interpret most of the screen. **Rare.** | a nephron page of segment detail, and the learner asks *"what is the kidney actually trying to accomplish?"* |
+
+At radius 2, rather than adding another explanatory paragraph beneath several disconnected ones,
+Canvas replaces the region with a representation that makes the dependency structure legible:
+
+```
+AT1 blockade  →  aldosterone ↓  →  potassium secretion ↓  →  serum potassium ↑
+```
+
+At radius 3, Canvas may temporarily reconstruct the page around a simpler organizing model, then
+progressively restore detail. **Fixing one paragraph is insufficient when the learner lacks the model
+that gives the whole page meaning.**
+
+### The decision test
+
+> **If I repair only this local representation, will the surrounding material now make sense?**
+
+**Yes** → stay local. **No** → identify which connected concepts depend on the missing model, and
+widen the radius to cover them.
+
+Whole-page reconstruction happens only when the missing model **materially changes the usefulness or
+interpretation of most of the current surface.**
+
+### A question may interrupt the planned trajectory
+
+The learner may ask at essentially any appropriate point, and **a question in the composer is not a
+separate chat thread** — it is an input to the current Canvas state. Brain may answer directly,
+rewrite the representation, expose a prerequisite, narrow or broaden scope, change modality, or
+scaffold, and then resume or adapt the cognitive trajectory.
+
+🔴 **Do not preserve an artificial distinction between "lesson content" and "chat answer"** when
+restructuring the Canvas is the better response.
+
+### How this composes with [§A](#a-the-canvas-is-a-surface-not-a-transcript)
+
+A question and its response need not persist as `USER → question → NEMESIS → answer`. The durable
+record retains the interaction; the rendered Canvas holds whatever is still useful.
+
+```
+original passage
+   ↓  the question reveals a missing mechanism
+passage TRANSFORMS into a causal representation
+   ↓
+the question itself may leave the screen
+   ↓
+the repaired representation remains only as long as it is useful
+   ↓
+retrieval follows
+```
+
+🔴 **Do not turn Canvas into chat history with disappearing CSS. The workspace itself changes
+representation.** Fading a transcript is still a transcript.
+
+---
+
+## K. Preserve spatial stability unless cognition requires change
+
+> **Preserve unaffected Canvas content whenever possible. Adapt aggressively where learner cognition
+> requires it, while minimizing unnecessary spatial instability.**
+
+**Adaptation is not gratuitous regeneration.** If one mechanism is misunderstood, do not regenerate
+unrelated material merely because generation is cheap. The learner needs enough stable spatial
+context to stay oriented.
+
+This is the counterweight to [§J](#j-a-question-rewrites-the-canvas), and the two are load-bearing
+together: §J says rewrite as widely as the dependency requires; §K says **not one block wider.**
+
+---
+
+## L. A rewritten explanation is scaffolding, not evidence
+
+🔴 **This is the one in this batch most likely to be violated by accident, because a good rewrite
+feels like progress.**
+
+If a learner asks a question and Canvas rewrites the passage far better, **reading that new
+representation proves nothing about whether they now understand it.**
+
+```
+learner question
+   → infer the representation or model gap
+   → rewrite the appropriate semantic region
+   → learner inspects the scaffold
+   → the scaffold eventually compresses or leaves
+   → LATER INDEPENDENT PRODUCTION
+   → evaluate the demonstration
+   → update learner state
+```
+
+**No mastery evidence may be written from:** opening an explanation · reading rewritten content ·
+pressing `✓` · asking a clarifying question.
+
+Those are **observations that may influence policy.** They are not demonstrations of knowledge. This
+is evidence invariants 1–4 restated for a surface that did not exist when they were written.
+
+---
+
+## M. Topic-first — a topic creates a learning environment, not a textbook
+
+**Owner decision, 2026-08-13**, made after the six-stage retirement left a topic-first canvas showing
+64 generated paragraphs with nothing to ask.
+
+> **A topic by itself is sufficient to start a Canvas. Never require the learner to upload material
+> before Nemesis can teach them.**
+
+`canvas-v1-acceptance.md` §L already makes the bare composer the front door. **This is the primary
+way into Nemesis, not one of two shapes**, and the policy runtime must own it.
+
+🔴 **And equally: do not preserve the behaviour where a topic expands into a large model-written
+lesson that becomes the Canvas material.** Both failures are live today — the canvas cannot be
+taught, *and* what it shows is the mini-textbook [§J4](./canvas-v1-acceptance.md) forbids.
+
+### The canonical flow
+
+```
+topic entered
+   ↓  resolve scope
+   ↓  construct internal knowledge territory
+   ↓  acquire appropriate source context where useful
+   ↓  choose the initial cognitive probe, OR a minimal orientation
+   ↓  gather evidence
+   ↓  adapt
+   ↓  introduce explanation ONLY where needed
+```
+
+### 🔴 The topic map is planning substrate. It is not a document.
+
+Internally Nemesis may build territory and dependencies:
+
+```
+Top drugs
+├── Losartan
+│   ├── brand · class · indication · mechanism · adverse effects · counseling
+├── Lisinopril
+└── Amlodipine …
+
+ACE inhibitor → RAAS → aldosterone → potassium
+```
+
+**That gives Brain territory to work through. The learner does not see the hidden curriculum
+construction as a giant generated document.** What they may see immediately is:
+
+```
+LOSARTAN
+Brand name?
+```
+
+Answer easily → *Class?* → correct again → *Why can losartan increase potassium?* → **a miss.**
+**Only then** does Nemesis expand the relevant structure.
+
+### 🔴 The governing rule
+
+> **Exposition requires a cognitive reason. It is not the default consequence of entering a topic.**
+
+**This is not "never show exposition first."** Brain determines the initial operation:
+
+- **A meaningful probe is possible** → begin production immediately. *"Teach me the top 35 drugs"*
+  can be probed almost at once.
+- **Prerequisite structure must be introduced first** → a minimal orientation, then production.
+  Throwing an advanced question at *"teach me quantum field theory"* produces almost no information.
+
+🔴 **And prefer a real probe over asking what they know.** *"What do you already understand about
+quantum mechanics?"* is self-report, and self-report is not demonstration. A quick genuine probe
+tells you more and costs the same.
+
+### 🔴 Generated explanation is fine. Generated material must not masquerade as a source.
+
+Nemesis is expected to generate explanations · rewritten passages · questions · examples ·
+analogies · diagrams · scaffolds. **That is central to the product.** But:
+
+```
+"Nemesis generated this explanation"     ≠     "this is the source material"
+```
+
+The layering, which is what makes provenance answerable:
+
+```
+SOURCE LAYER      user uploads · trusted web sources · licensed and open
+                  educational sources · other retrieved references
+       ↓
+KNOWLEDGE MODEL
+       ↓
+NEMESIS-GENERATED REPRESENTATION        ← Canvas OUTPUT, not the canonical source
+```
+
+For a topic-first canvas Nemesis may **acquire source context in the background where appropriate**
+and synthesise from it. Then the quiet citation marker means something:
+
+> Potassium may increase because ARB therapy reduces aldosterone.<sup>1</sup>
+
+Tapping it shows the supporting excerpt. **No chain-link toolbar** — see acceptance §J3.
+
+🔴 **When Nemesis is operating from model knowledge with no external source, that provenance state
+must remain distinguishable, and it must never imply the claim came from the learner's own
+material.** This is the global invariant applied to generated content: *every claim the UI makes
+about the source must be traceable to source capability.* Model knowledge is a different capability,
+not an absent one — **the answer is to label it, not to hide it.**
+
+### How this resolves the rewrite architecture
+
+The internal map stays stable while the **representation** changes — which is
+[§J](#j-a-question-rewrites-the-canvas) with a durable substrate underneath it:
+
+```
+"Why does losartan raise potassium?"
+  → ARB → AT1 blockade → ↓ aldosterone → ↓ K secretion → ↑ serum K     radius 2
+
+"Wait, what does aldosterone actually do?"
+  → aldosterone → ↑ Na reabsorption → ↑ K secretion                    radius 1, SMALLER
+```
+
+**The map does not move. The rendered region does.**
+
+### 🔴 Durable versus temporary — the line topic-first depends on
+
+```
+DURABLE     sources · knowledge structure · learner evidence · learner state
+TEMPORARY   current explanation · current question · current diagram
+            current scaffold · current Canvas arrangement
+```
+
+> **A topic-first Canvas does not need a generated lesson as its durable object.**
+
+That single sentence is what makes the whole section buildable, and it is the same claim as
+Canvas-wide invariant 11 seen from the other side: the generated lesson is *screen state*, and
+screen state is replaceable.
+
+🔴 **Do not reintroduce the retired six-stage engine as a shortcut.** A fixed sequence would satisfy
+"the topic produces something to do" and violate everything above it.
+
+### 🔴 THE PROVENANCE CONTRACT — the thing that actually blocks the front door
+
+**Brain contract, 2026-08-13.** `canvas-knowledge.ts` refuses any canvas with no durable source:
+
+```ts
+if (!userId || sourceIds.length === 0) return nothingToRead();
+```
+
+The stated reason is sound and is **not** being weakened: *an ephemeral source has no library row, so
+anchors minted from it point at something no later canvas can resolve. Knowledge that cannot outlive
+its session is exactly what this layer exists to stop producing.*
+
+**The clause conflates two things, and separating them is the whole fix.**
+
+| | Question | Where it lives today |
+|---|---|---|
+| **Identity** | *what is this knowledge ABOUT?* | `objectiveIdentityKey`, keyed per **user** — **already source-independent** |
+| **Provenance** | *where did this claim COME FROM?* | the source id — **absent for topic-first** |
+
+🔴 **Identity does not depend on provenance, and the code already proves it.** Objectives are keyed
+`user × identityKey`, not `canvas × source`. `losartan → Cozaar` is the same objective whichever
+document taught it, and `decideNext` filters on `objectiveIdentityKey` **and takes no canvas
+parameter at all** — the same construction proof that made acceptance C4 pass.
+
+**So knowledge from a topic-first canvas is perfectly resolvable by a later canvas.** What it lacks
+is not an identity. It lacks a *source*, and the clause refuses it as though those were the same
+thing.
+
+### The contract
+
+> **Provenance is a VALUE, not a precondition.** Knowledge requires an identity that outlives the
+> session — which it already has — and a provenance that is **honestly stated**, which may be
+> *"model knowledge"*.
+
+Minimum two states, and they must be distinguishable at every consumer:
+
+```
+sourced   traces to a durable library source; anchors resolve into it; citation markers work
+model     generated from model knowledge; NO source anchor; must never be presented as
+          the learner's own material
+```
+
+**Consequences, each of which is a rule rather than a suggestion:**
+
+1. **The refusal moves from "no source" to "no honest provenance".** A topic-first canvas has a
+   provenance — `model` — so it is no longer refused.
+2. 🔴 **`model` provenance may never render as a citation into the learner's material.** The quiet
+   `¹` marker means *"here is the excerpt this came from."* Model knowledge has no excerpt. Showing
+   one would be a fabricated source, which is worse than showing none.
+3. 🔴 **Where source context IS acquired in the background** (§M), the resulting knowledge is
+   `sourced` and the marker works normally. **Topic-first is not permanently `model`** — it is
+   `model` until Nemesis has grounded a claim.
+4. **A `model`-provenance claim must be distinguishable by the learner**, not merely in the
+   database. The global invariant governs: *every claim the UI makes about the source must be
+   traceable to source capability.* Model knowledge **is** a capability, just a different one — so
+   **the answer is to label it, never to hide it.**
+
+### 🔴 THE INVARIANT THAT MAKES GROUNDING SAFE — owner, 2026-08-13
+
+> **Changing provenance must not change knowledge identity, learner evidence history, or objective
+> continuity.**
+
+**Without this, a later grounding pass looks like discovering brand-new facts.** Nemesis would mint
+duplicate knowledge objects, the learner's demonstrations would attach to the abandoned ones, and
+somebody who had proven they knew `losartan → Cozaar` would be asked it again as though for the
+first time — **their history silently orphaned by an improvement.**
+
+**Enrich the existing object. Never create a second one.**
+
+```
+model-sourced claim  →  later grounded in an uploaded lecture
+                     →  SAME knowledge object, now carrying a source anchor
+                     →  same identity · same evidence · same objective · same learner state
+```
+
+### The five consequences, all binding
+
+1. **Knowledge identity survives provenance changes.** Grounding is enrichment, not creation.
+2. 🔴 **Citation UI requires an actual anchor.** No page, excerpt, URL or source span → **no `¹`.**
+   The marker is a promise that something can be shown.
+3. **Model provenance is visible but QUIET.** *"Generated from model knowledge"* in the
+   source/details surface — **not a warning beside every sentence.** The learner should be able to
+   find it, not be nagged by it.
+4. 🔴 **Topic-first creates structured knowledge DIRECTLY.** It does not generate prose in order to
+   manufacture something that looks like a source.
+5. **Grounding can happen later.** When support is found, the source preview becomes available and
+   the citation affordance appears naturally.
+
+### 🔴 The pipeline this forbids, named so nobody rebuilds it
+
+```
+✅  topic → construct knowledge territory → knowledge objects (provenance = model)
+        → Brain chooses a probe → Canvas interaction
+        → optional grounding → THE SAME objects gain source anchors
+
+❌  topic → generate a fake textbook → treat the textbook as a source
+        → extract knowledge back out of it → ask questions
+```
+
+The second is **wasteful and conceptually backwards** — it round-trips through a document that
+exists only to satisfy a clause, and then mistakes its own output for evidence. It is also,
+precisely, what production does today.
+
+### The learner-facing surface stays minimal
+
+```
+Sources
+  Nemesis knowledge        Generated from model knowledge
+  Lecture 4.pdf            12 claims grounded
+```
+
+A claim with a real source gets the small `¹` pill. A claim without one simply has no marker. **No
+badge, no banner, no per-sentence disclaimer.**
+
+### 🔴 PROVENANCE IS AN ACCUMULATING SET, NOT A MUTABLE FIELD — owner, 2026-08-13
+
+> *"I would not replace model provenance with source provenance either. Nemesis might know the same
+> fact from model knowledge, Lecture 4, and an OpenStax chapter."*
+
+**Enrichment ADDS a provenance record. It never overwrites one.** Model provenance is not erased when
+a source is found; the object accumulates a second record, and later a third.
+
+```
+losartan → Cozaar
+  ├─ model knowledge
+  ├─ Lecture 4.pdf          p.12
+  └─ OpenStax Pharmacology   §8.3
+```
+
+Two questions derive from the set, and **neither is a single field**:
+
+| Question | Answers |
+|---|---|
+| does this claim have **any** groundable anchor? | whether the `¹` marker may render |
+| what is the **full set** of ways Nemesis knows this? | the Sources surface |
+
+**It also makes the enrichment upsert well-defined.** Merging into a set has one obvious meaning;
+merging two scalars needs a precedence rule nobody wants to own.
+
+### 🔴 THE ABSTAIN BOUNDARY IS VALIDATION, NOT MODEL CONFIDENCE
+
+**Owner correction to Brain's own wording, 2026-08-13.** An earlier draft said *"if the model cannot
+produce structure it is confident in, produce fewer objects."* **That is wrong:**
+
+> **Self-reported model confidence should not be the safety boundary. Models are not reliably
+> calibrated enough for that.**
+
+The correct rule:
+
+> **If the system cannot establish a knowledge object under the constructor's VALIDATION RULES,
+> omit it.**
+
+Rules, not a score: **allowed knowledge types · relation structure · canonical identity ·
+contradiction checks · specificity limits · later external grounding.**
+
+The difference is not academic. *"The model was confident"* is a claim the model makes about itself
+and **cannot be audited.** *"It satisfied these named rules"* is a claim the system makes and **can
+be tested, calibrated, and made to go red.** A guard nothing can falsify is not a guard.
+
+```
+Missing territory is acceptable.  Fabricated specificity is not.
+```
+
+For *"the top 35 drugs"*, **prefer a smaller clean territory over filling every drug attribute
+because the schema expects one.** It must be valid for the constructor to return **partial
+territory**, or *"insufficient confidence to instantiate this relation"*, rather than filling every
+expected slot.
+
+### 🔴 THE CONVERGENCE — there is no "topic system" and "document system"
+
+```
+UPLOAD FIRST     document  →  Parser               →  knowledge objects  ─┐
+TOPIC FIRST      topic     →  Territory Constructor →  knowledge objects  ─┤
+                                                                          ↓
+                                                                   the SAME Canvas
+                                                                          ↓
+                                                                  learner evidence
+                                                                          ↓
+                                                                   adaptive policy
+```
+
+**Two producers, one everything else.** The Territory Constructor is a **peer of the Parser**, not a
+parallel product. Same `KnowledgeObject` shape, same Canvas, same evidence, same policy — differing
+only in provenance, which is the whole point of separating identity from provenance.
+
+🔴 **If a change would be true of one path and not the other, it is in the wrong layer.**
+
+### 🔴 DO NOT INTERROGATE THE LEARNER ABOUT THEIR LEVEL WHEN A TASK CAN REVEAL IT
+
+Promoted to an invariant by the owner, 2026-08-13. It survived as a code comment where
+`CanvasOrient` used to be, and Canvas UI rescued it from an 886-line deletion.
+
+**Forbidden as an opening:**
+
+```
+What's your experience level?     What do you already know?     What kind of learner are you?
+```
+
+`teach me the top 35 drugs` produces **a task with diagnostic value**, then observes what happens and
+moves difficulty rapidly — [§B](#b-frontier-finding-not-levels).
+
+This is more relevant now than when it was written, because topic-first is being built and a
+self-report opener is the obvious shortcut: it feels like personalisation and it is
+[north star §4's](./canvas-cognitive-runtime.md) *"no manual level"* rebuilt as a question.
+**Self-report is not demonstration.**
+
+### 🔴 What this contract does NOT authorise
+
+- **Not** weakening the durable-source rule for canvases that *do* have sources. A source that
+  failed to persist is still a defect (see `186d0749`: 4 attached, 0 durable — a separate,
+  Parser-side question).
+- **Not** minting anchors that point at nothing. `model` provenance means **no anchor**, not a
+  dangling one.
+- **Not** presenting generated material as source material — which is the owner's own line and the
+  reason this contract exists rather than a simple removal of the clause.
+
+**Sequencing note:** the partial-durability branch has **never been exercised in production** — no
+canvas has *some* durable sources. Anyone reasoning about this fix through that branch is designing
+against a case that has never occurred.
+
+---
+
+## Ownership — Runtime provides mechanism, Brain decides meaning
+
+🔴 **Runtime must not infer these semantics from UI events.**
+
+| Runtime provides the mechanism for | Brain owns the decision |
+|---|---|
+| semantic-region replacement | the **rewrite radius** |
+| preserving unaffected blocks | whether a rewrite is needed **at all** |
+| retiring rendered state without losing durable state | which knowledge dependencies are implicated |
+| composer progression events that create **no evidence** | what representation is cognitively appropriate |
+| learner-message interruption | what subsequent demonstration should verify the repair |
+| transition back into adaptive cognition | |
+
+The failure this partition prevents: a runtime that watches a click and concludes *"they must have
+understood, so compress"* has invented a learner-state inference from a UI event, which is
+`response → 1-4 → that IS learner state` wearing different clothes.
+
+---
+
 ## The intended feeling
 
 Nemesis should not feel like:
@@ -579,6 +1197,11 @@ Derived from the 🟢 and 🟡 rows only. **Not sequenced here** — sequencing 
 | Recognition formats permitted on alignment | Runtime | [§F](#f-the-interaction-must-measure-the-operation). Widens what the policy may choose |
 | `misconception` as a tier distinct from `incorrect` | Runtime | [§G](#g-feedback-intensity-scales-with-information-value). 🔴 Touches the evidence schema — north star non-goal 10 applies: **do not add the field before something can observe it** |
 | §K1 read with the reconciliation attached | Canvas UI | [§G](#g-feedback-intensity-scales-with-information-value) |
+| Composer `✓` in exposition, send on input, neither in production | Canvas UI | [§I](#i-the-composer-is-the-only-progression-control). 🔴 `✓` writes no evidence — the control must not be wired to anything that does |
+| Semantic-region replacement | Runtime | [§J](#j-a-question-rewrites-the-canvas). Mechanism only — **radius is Brain's** |
+| Preserve unaffected blocks across a rewrite | Runtime | [§K](#k-preserve-spatial-stability-unless-cognition-requires-change) |
+| Rewrite-radius decision | **Brain** | [§J](#j-a-question-rewrites-the-canvas). Not delegable to a lane that sees only UI events |
+| A question is an input to Canvas state, not a chat turn | Runtime + Canvas UI | [§J](#a-question-may-interrupt-the-planned-trajectory) |
 
 ### 🔴 One item that is a schema decision, not a UI one
 

@@ -284,6 +284,90 @@ Library returns as a **canvas** manager, which is a different object.
 **`Stats` is a new destination** and it is where aggregate progress lives — the surface §K sends
 learner-facing progress to, for learners who deliberately ask.
 
+### 🔴 THE APP SHELL — owner specification, 2026-08-13
+
+**Settled product decisions. This is the shell AROUND the Canvas runtime and is not a reason to
+reopen the learning architecture.**
+
+> **Navigation lives at the edge. Learning owns the centre.**
+
+```
+landing page  invites action immediately
+Library       handles organisation
+Canvas        handles cognition
+Calendar      handles time
+Stats         explains learner state WITHOUT gamifying it
+```
+
+#### Sidebar behaviour
+
+**Collapsed by default on the landing page** — the first impression is the composer, not navigation.
+A small toggle stays available. Expanded shows the four destination labels; collapsed consumes very
+little horizontal space. **Persist the preference where it can be done cleanly, but a new user starts
+collapsed.**
+
+🔴 **Lightweight and secondary to the main content. Not a dense productivity navigation tree.**
+
+#### Landing page
+
+```
+[collapsed sidebar]        What do you want to learn?
+                           [ compact composer ]
+```
+
+The composer is the main call to action and supports every New Canvas behaviour: **type a topic ·
+ask a question · upload material · dictate · record where supported.** **Do not make it oversized** —
+branding, typography, buttons and top controls stay restrained so the prompt draws the attention.
+
+Below the initial viewport a small amount of useful content is acceptable — **recent canvases ·
+upcoming calendar items · one or two learning recommendations.** 🔴 **Keep them secondary. Home is
+not a dashboard.**
+
+#### Library — the canvas manager
+
+A lightweight file manager over **canvases**. Users can **create and rename folders · rename
+canvases · move canvases between folders · delete canvases · search · sort where useful.**
+
+🔴 **Avoid a full desktop file explorer unless usage proves the complexity is necessary.**
+
+🔴 **Library organisation is separate from the cognitive model.** Folders do **not** change learner
+state or Brain behaviour unless a folder is later used explicitly as context. **Filing is not
+evidence** — the same rule that makes acknowledgement not a demonstration.
+
+#### Calendar
+
+A dedicated full calendar surface, visually consistent with the rest of Nemesis. **No unnecessary
+dashboard chrome.**
+
+#### Stats — and this one has an invariant attached
+
+A simple page showing useful cognitive information **inferred from actual learner evidence**. This is
+where §K sends learner-facing progress, for learners who deliberately ask.
+
+**Forbidden:** streaks · XP · badges · arbitrary scores · vanity study-time metrics presented as
+learning.
+
+**Preferred:** areas that appear strong · areas still developing · fragile knowledge · concepts
+needing re-demonstration · transfer or application strength where evidence supports it · patterns in
+response quality · useful metacognitive observations.
+
+> 🔴 **Every learner-state claim shown here must trace back to real evidence. Do not present
+> inference as certainty.**
+
+That is the global invariant applied to a surface built entirely out of inference — and it means
+Stats must keep north star §5's three layers visible in its language. *"You have demonstrated this
+twice"* is an observation. *"This looks fragile"* is an inference and must read like one. **A
+confident sentence about a shaky inference is the exact failure this page is most likely to ship.**
+
+#### Active Canvas
+
+The sidebar may remain available in session mode but **stays collapsed by default and visually
+quiet.** Canvas content remains dominant. **It must not reduce the usable learning surface unless the
+learner explicitly opens it.**
+
+Top-right contextual controls stay small and limited — **Minimap · Sources · minimal overflow.**
+🔴 **Do not duplicate Library, Calendar or Stats as large session controls.**
+
 ### 🔴 CROSS-SURFACE HAZARD — check before shipping
 
 `/library/classic` and `/library/source/[sourceId]` still exist as routes, and **the shipped browser
@@ -649,6 +733,67 @@ identical apart from the new evidence.
 | I2 | Deeper cognition can expand the surface |
 | I3 | 🔴 Source uncertainty · learner unknown · no-demonstration · incorrect · actual completion never collapse into one state |
 | I4 | 🔴 No UI claim of mastery may be derived from missing parser coverage |
+
+---
+
+## 🔴 N. COMPOSER PROGRESSION AND CANVAS REWRITE — REQUIRED
+
+**Owner specification, 2026-08-13.** Contracts in
+[`canvas-interaction-model.md` §I–§L](./canvas-interaction-model.md#i-the-composer-is-the-only-progression-control).
+🔴 Those are *interaction-model* letters and are **not** this file's §I–§L.
+
+| # | Criterion | The proof |
+|---|---|---|
+| N1 | **Reading progression.** An empty exposition composer shows `✓`. Pressing it advances **and writes no learner evidence.** | the advance, and `learner_evidence` unchanged across it |
+| N2 | **Question interruption.** Typing during exposition turns `✓` into send. The submitted question is handled **without requiring a separate `Next`.** | one control, two states, observed |
+| N3 | 🔴 **Production protection.** During a required demonstration **no `✓` exists**, so retrieval cannot be bypassed. | the absence, in a production state |
+| N4 | **Local rewrite.** A question about one term or mechanism changes **only the necessary semantic region**; unrelated material stays spatially stable. | before/after of the same surface |
+| N5 | **Broader reconstruction.** A question revealing a missing organizing model produces a **reconstruction**, not an appended chatbot explanation. | the reconstructed region |
+| N6 | 🔴 **Scaffold is not mastery.** A learner reads a rewritten explanation and advances. **No positive evidence exists** until later independent production. | zero rows across the read; a row only after production |
+| N7 | **Durable state.** A question, response or explanation leaves the visible Canvas while the recorded interaction **still affects a later Brain decision.** | C4's method — counterfactual, not sequence |
+
+### 🔴 N8–N11 — TOPIC-FIRST AND PROVENANCE
+
+Owner cases, 2026-08-13. Contract:
+[`canvas-interaction-model.md` §M](./canvas-interaction-model.md#-the-provenance-contract--the-thing-that-actually-blocks-the-front-door).
+
+| # | Criterion | The proof |
+|---|---|---|
+| N8 | **A topic-only canvas produces knowledge and questions with no upload.** | a task on a canvas with zero sources, reached the ordinary way |
+| N9 | **Model-sourced claims show NO citation marker.** | the absence, on a claim with no anchor |
+| N10 | **The UI exposes that the material is model-generated, somewhere accessible.** | the Sources surface — 🔴 and **not** a per-sentence disclaimer, which fails this criterion by over-satisfying it |
+| N11 | 🔴 **Later grounding attaches a real source to the EXISTING knowledge object** — no duplicate, no reset of learner state. | same `identityKey` before and after · evidence rows still attached · objective continuity unbroken |
+
+**N11 is the one that can destroy data, and it is the reason the contract exists.** If grounding
+mints a second knowledge object, the learner's demonstrations stay attached to the abandoned one and
+someone who proved they knew a fact is asked it again as though for the first time — **their history
+silently orphaned by an improvement.** Prove identity continuity across the provenance change, not
+merely that a source got attached.
+
+**N9 and N10 pull in opposite directions on purpose.** N9 forbids a marker where there is no anchor;
+N10 requires the model origin be discoverable. **A per-sentence "generated" badge would satisfy
+neither** — it is not a citation and it is not quiet. The passing shape is: nothing beside the
+sentence, and one line in the Sources surface.
+
+### 🔴 The two that can pass while being wrong
+
+**N1 and N6 are the same failure in two places, and both look like success.** A `✓` wired to
+anything that touches learner state, or a rewrite that records "explanation delivered" as progress,
+would produce a Canvas that *appears* to adapt while writing claims about a learner who has
+demonstrated nothing.
+
+**Prove them by absence measured across the action, not by reading the handler.** The handler is
+where the intention lives; the table is where the truth is.
+
+**N7 is C4 generalised** — the same counterfactual discipline applies, and a page reload remains the
+degenerate pass.
+
+### What N does NOT require
+
+**N does not require the rewrite radius to be correct.** Whether Brain chose radius 1 over radius 2
+is a judgement about cognition, not a criterion Integration can settle. N4 and N5 ask only whether
+the mechanism can express a *local* and a *wider* rewrite, and whether unaffected material survives.
+🔴 **Do not fail N on a disagreement about how wide a rewrite should have been.**
 
 ---
 
