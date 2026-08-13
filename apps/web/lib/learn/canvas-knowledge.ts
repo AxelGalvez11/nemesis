@@ -12,9 +12,14 @@
 // are opposite facts for the learner, and the second is the one that loses their work.
 //
 // 🔴 READ, THEN DECIDE, THEN WRITE — IN THAT ORDER. Reading a canvas's sources and extracting from
-// them is pure and cheap; persisting knowledge is neither. Ownership is therefore decided from the
-// extraction alone, and rows are written only for a canvas the policy will actually teach. A canvas
-// that stays on the legacy runtime costs a read and leaves nothing behind.
+// them is pure and cheap; persisting knowledge is neither. What may be written is therefore decided
+// from the extraction alone, and rows are written only for a canvas this lane could actually read.
+// A canvas whose parse cannot be trusted costs a read and leaves nothing behind.
+//
+// 🔴 AND THE DECIDING SIGNAL IS TRUST, NOT COVERAGE — see the gate below. "Did we read this
+// reliably?" gates; "did we account for all of it?" discloses. Fusing them is what refused every
+// real document, and the two have separate homes now: `knowledge-production.ts` and
+// `knowledge-coverage.ts`. Neither can see the other's input.
 
 import { loadCanonicalSource } from "./canvas-sources";
 import type { LearningCanvas } from "./canvas-model";
@@ -27,6 +32,7 @@ import {
   type CanvasCoverage,
   type OwnershipDecision,
 } from "./knowledge-coverage";
+import { knowledgeProductionFor } from "./knowledge-production";
 import type { KnowledgeObject } from "./knowledge-types";
 import { saveKnowledge, type StoredObjective } from "./learner-store";
 import type { ThinkingPhase } from "./thinking-phases";
@@ -38,8 +44,14 @@ export interface ResolvedObjective {
 }
 
 export interface CanvasKnowledge {
-  /** 🔴 EMPTY UNLESS THE POLICY OWNS THIS CANVAS. Nothing is stored for a canvas the runtime will
-   *  not teach from, so there are no objectives to resolve. `ownership` says which case this is. */
+  /** 🔴 EMPTY UNLESS THE EXTRACTION COULD BE TRUSTED — NOT UNLESS THE DOCUMENT WAS COVERED.
+   *  Nothing is stored for a canvas whose sources this lane could not read reliably, so there are
+   *  no objectives to resolve. `outcome` says which case that is.
+   *
+   *  🔴 A NON-EMPTY LIST IS NOT A CLAIM THAT THE DOCUMENT IS COVERED. These are objectives over the
+   *  knowledge that was actually extracted; `coverage.unrepresented` says how much was not, and it
+   *  stays true and reported beside them. Reading this array as "the canvas is accounted for" is the
+   *  exact conflation that made a whole-document question decide a per-knowledge action. */
   objectives: ResolvedObjective[];
   /**
    * 🔴 STATED, NEVER INFERRED FROM `objectives.length`. Zero objectives is several different facts:
@@ -153,11 +165,34 @@ export async function ensureKnowledgeForCanvas(
     extracted.push(...extraction.objects);
   }
 
+  // 🔴 STILL DECIDED, STILL REPORTED — IT JUST NO LONGER DECIDES WHETHER KNOWLEDGE IS MINTED.
+  // Ownership is a whole-document question and it is the honest answer to "could this runtime
+  // account for all of this?" It is carried out on the return value, the surface discloses it, and
+  // a forced session is still told apart from an ordinary one by it. What changed is its JOB.
   const ownership = policyOwnsCanvas({ coverage, outcome });
-  // 🔴 NOTHING IS WRITTEN FOR A CANVAS THE POLICY WILL NOT TEACH. The knowledge would be correct
-  // and completely unused, and it would make the learner's own tables fill up with rows produced by
-  // opening a document rather than by learning anything from it.
-  if (!ownership.owns && !bypassOwnership) return { coverage, objectives: [], outcome, ownership };
+
+  // 🔴 PRODUCTION IS GATED ON TRUST, NEVER ON COVERAGE — RUNTIME-005.
+  //
+  // The gate that used to stand here asked `!ownership.owns`, and that was right while the policy
+  // REPLACED the page: taking a canvas it could only partly teach deleted the rest of the document
+  // from the learner's reach. Under composition the task sits BESIDE the unsupported material, so
+  // the whole-document question became a category error — it answered "no" for every real document
+  // and refused 6 of 6 production canvases. `RUNTIME-001` removed the identical gate where a task
+  // is CONSUMED; this one zeroed its input, so deleting that one alone changed nothing observable.
+  //
+  // The two facts the old gate fused are separate signals and always were:
+  //   outcome                → did we read this reliably?      → GATE  (here)
+  //   coverage.unrepresented → did we account for all of it?   → DISCLOSE (on the return value)
+  //
+  // 🔴 THE CONCERN IN THE OLD COMMENT SURVIVES AND IS SPLIT IN TWO. "Rows produced by opening a
+  // document rather than by learning anything from it" was two worries wearing one gate. The first
+  // — do not mint knowledge we cannot trust — is exactly what `outcome` answers, and better than
+  // coverage did. The second — do not mint knowledge nobody will be asked about — is a COST
+  // concern, not a correctness one, and its honest fix is writing when a canvas is STUDIED rather
+  // than when it is OPENED. That distinction does not exist yet; it is filed rather than proxied,
+  // because a coverage gate standing in for it is what this change exists to remove.
+  const production = knowledgeProductionFor({ outcome });
+  if (!production.produce && !bypassOwnership) return { coverage, objectives: [], outcome, ownership };
 
   const resolved: ResolvedObjective[] = [];
   for (const knowledge of extracted) {

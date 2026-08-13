@@ -273,25 +273,67 @@ test("two sources both fully covered are owned; one uncovered unit anywhere is n
 
 // ── read, then decide, then write ───────────────────────────────────────────
 
-test("🔴 nothing is written before ownership is decided", () => {
-  // 🔴 THIS GATE IS CLOSED FOR EVERY CANVAS IN PRODUCTION TODAY, so no run exercises it and every
-  // test above would stay green if the write moved back above the decision. The previous step lost
-  // a week to exactly this shape: an insert path that passed its proof because the proof tested the
-  // index instead of the write. Ordering is therefore asserted directly.
+test("🔴 nothing is written before the extraction has been judged trustworthy", () => {
+  // 🔴 THE ORDERING IS THE PROTECTION AND IT SURVIVES RUNTIME-005 UNCHANGED — only the identity of
+  // the gate moved, from `!ownership.owns` to `!production.produce`. The previous step lost a week
+  // to exactly this shape: an insert path that passed its proof because the proof tested the index
+  // instead of the write. Ordering is therefore asserted directly, against the source.
   const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   const read = code.indexOf("await Promise.all(");
-  const decide = code.indexOf("policyOwnsCanvas({ coverage, outcome })");
-  const gate = code.indexOf("if (!ownership.owns");
+  const disclose = code.indexOf("policyOwnsCanvas({ coverage, outcome })");
+  const decide = code.indexOf("knowledgeProductionFor({ outcome })");
+  const gate = code.indexOf("if (!production.produce");
   const write = code.indexOf("await saveKnowledge(");
 
   assert.notEqual(read, -1);
-  assert.notEqual(decide, -1, "ownership must be decided in canvas-knowledge, not by the caller");
+  assert.notEqual(decide, -1, "trust must be decided in canvas-knowledge, not by the caller");
   assert.notEqual(gate, -1);
   assert.notEqual(write, -1);
-  assert.ok(read < decide, "sources are read before ownership can be decided");
-  assert.ok(decide < gate && gate < write, "a canvas the policy will not teach must leave no rows behind");
+  assert.ok(read < decide, "sources are read before trust can be decided");
+  assert.ok(decide < gate && gate < write, "a canvas this lane could not read must leave no rows behind");
+
+  // 🔴 AND OWNERSHIP IS STILL COMPUTED, BECAUSE DISCLOSURE DEPENDS ON IT. RUNTIME-005 moved the
+  // unrepresented fact from GATE to DISCLOSURE; deleting the computation rather than the gate would
+  // have thrown away the number the surface reports and the one that tells a forced session from an
+  // ordinary one.
+  assert.notEqual(disclose, -1, "ownership must still be computed — it discloses, it no longer gates");
+  assert.ok(read < disclose, "ownership is decided from the extraction, not before it");
+});
+
+test("🔴 the PRODUCTION gate cannot read coverage — that is what RUNTIME-005 undid", () => {
+  // 🔴 THE REGRESSION THIS EXISTS TO CATCH IS A RE-FUSION, NOT A DELETION. `policyOwnsCanvas` asks a
+  // whole-document question ("did we account for ALL of it?") and it answered "no" for every real
+  // document — 6 of 6 production canvases refused, which is why `learner_evidence` could not become
+  // non-zero through ordinary use. Trust ("did we read this reliably?") is a different question and
+  // must stay a different one. `knowledgeProductionFor` takes `outcome` and nothing else, so a
+  // coverage veto cannot be expressed through it without changing that signature — but a caller
+  // could still AND one onto the gate line, and that is what is checked here.
+  const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  // 🔴 THE CONDITION ONLY, NOT THE WHOLE LINE. The gate's RETURN payload carries `coverage` and
+  // `ownership` on purpose — that is the disclosure half of RUNTIME-005, and a check blunt enough to
+  // forbid them there would be demanding the opposite of what the task requires. So the slice stops
+  // at `) return`.
+  const gateLine = code.slice(code.indexOf("if (!production.produce")).split("\n")[0]!;
+  const condition = gateLine.slice(0, gateLine.indexOf(") return"));
+  assert.ok(condition.startsWith("if (!production.produce"), "the gate must be the trust decision");
+  for (const forbidden of ["coverage", "unrepresented", "represented", "ownership", "owns"]) {
+    assert.equal(
+      condition.includes(forbidden),
+      false,
+      `production must not be gated on "${forbidden}" — that is the whole-document question RUNTIME-005 removed`,
+    );
+  }
+
+  // The rule module itself must not know coverage exists, for the same reason `knowledge-coverage.ts`
+  // must not know a bypass exists: a boundary that can see the other side of itself stops being one.
+  const rule = readFileSync(new URL("./knowledge-production.ts", import.meta.url), "utf8");
+  const ruleCode = rule.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(ruleCode.includes("coverage"), false, "the trust rule must not mention coverage");
+  assert.equal(ruleCode.includes("unrepresented"), false, "nor what it failed to represent");
 });
 
 test("🔴 the bypass changes what is WRITTEN, never what is DECIDED", () => {
