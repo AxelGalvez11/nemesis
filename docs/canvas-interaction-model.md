@@ -1035,6 +1035,98 @@ Sources
 A claim with a real source gets the small `¹` pill. A claim without one simply has no marker. **No
 badge, no banner, no per-sentence disclaimer.**
 
+### 🔴 PROVENANCE IS AN ACCUMULATING SET, NOT A MUTABLE FIELD — owner, 2026-08-13
+
+> *"I would not replace model provenance with source provenance either. Nemesis might know the same
+> fact from model knowledge, Lecture 4, and an OpenStax chapter."*
+
+**Enrichment ADDS a provenance record. It never overwrites one.** Model provenance is not erased when
+a source is found; the object accumulates a second record, and later a third.
+
+```
+losartan → Cozaar
+  ├─ model knowledge
+  ├─ Lecture 4.pdf          p.12
+  └─ OpenStax Pharmacology   §8.3
+```
+
+Two questions derive from the set, and **neither is a single field**:
+
+| Question | Answers |
+|---|---|
+| does this claim have **any** groundable anchor? | whether the `¹` marker may render |
+| what is the **full set** of ways Nemesis knows this? | the Sources surface |
+
+**It also makes the enrichment upsert well-defined.** Merging into a set has one obvious meaning;
+merging two scalars needs a precedence rule nobody wants to own.
+
+### 🔴 THE ABSTAIN BOUNDARY IS VALIDATION, NOT MODEL CONFIDENCE
+
+**Owner correction to Brain's own wording, 2026-08-13.** An earlier draft said *"if the model cannot
+produce structure it is confident in, produce fewer objects."* **That is wrong:**
+
+> **Self-reported model confidence should not be the safety boundary. Models are not reliably
+> calibrated enough for that.**
+
+The correct rule:
+
+> **If the system cannot establish a knowledge object under the constructor's VALIDATION RULES,
+> omit it.**
+
+Rules, not a score: **allowed knowledge types · relation structure · canonical identity ·
+contradiction checks · specificity limits · later external grounding.**
+
+The difference is not academic. *"The model was confident"* is a claim the model makes about itself
+and **cannot be audited.** *"It satisfied these named rules"* is a claim the system makes and **can
+be tested, calibrated, and made to go red.** A guard nothing can falsify is not a guard.
+
+```
+Missing territory is acceptable.  Fabricated specificity is not.
+```
+
+For *"the top 35 drugs"*, **prefer a smaller clean territory over filling every drug attribute
+because the schema expects one.** It must be valid for the constructor to return **partial
+territory**, or *"insufficient confidence to instantiate this relation"*, rather than filling every
+expected slot.
+
+### 🔴 THE CONVERGENCE — there is no "topic system" and "document system"
+
+```
+UPLOAD FIRST     document  →  Parser               →  knowledge objects  ─┐
+TOPIC FIRST      topic     →  Territory Constructor →  knowledge objects  ─┤
+                                                                          ↓
+                                                                   the SAME Canvas
+                                                                          ↓
+                                                                  learner evidence
+                                                                          ↓
+                                                                   adaptive policy
+```
+
+**Two producers, one everything else.** The Territory Constructor is a **peer of the Parser**, not a
+parallel product. Same `KnowledgeObject` shape, same Canvas, same evidence, same policy — differing
+only in provenance, which is the whole point of separating identity from provenance.
+
+🔴 **If a change would be true of one path and not the other, it is in the wrong layer.**
+
+### 🔴 DO NOT INTERROGATE THE LEARNER ABOUT THEIR LEVEL WHEN A TASK CAN REVEAL IT
+
+Promoted to an invariant by the owner, 2026-08-13. It survived as a code comment where
+`CanvasOrient` used to be, and Canvas UI rescued it from an 886-line deletion.
+
+**Forbidden as an opening:**
+
+```
+What's your experience level?     What do you already know?     What kind of learner are you?
+```
+
+`teach me the top 35 drugs` produces **a task with diagnostic value**, then observes what happens and
+moves difficulty rapidly — [§B](#b-frontier-finding-not-levels).
+
+This is more relevant now than when it was written, because topic-first is being built and a
+self-report opener is the obvious shortcut: it feels like personalisation and it is
+[north star §4's](./canvas-cognitive-runtime.md) *"no manual level"* rebuilt as a question.
+**Self-report is not demonstration.**
+
 ### 🔴 What this contract does NOT authorise
 
 - **Not** weakening the durable-source rule for canvases that *do* have sources. A source that
