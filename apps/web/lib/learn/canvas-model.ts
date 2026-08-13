@@ -580,11 +580,6 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
   };
 }
 
-/** Blocks a learner should actually read right now: not folded away, not already known. */
-export function readableBlocks(canvas: Pick<LearningCanvas, "blocks">): CanvasBlock[] {
-  return canvas.blocks.filter((block) => !block.collapsed && !block.known);
-}
-
 export function conceptLabel(canvas: Pick<LearningCanvas, "concepts">, id: string | null): string {
   if (!id) return "";
   return canvas.concepts.find((concept) => concept.id === id)?.label ?? "";

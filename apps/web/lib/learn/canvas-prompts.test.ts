@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { LEVEL_INSTRUCTIONS } from "./canvas-model";
-import { lessonMessages } from "./canvas-prompts";
+import { documentText, lessonMessages } from "./canvas-prompts";
 
 const userText = (level: Parameters<typeof lessonMessages>[0]["level"]) =>
   lessonMessages({ level, sources: [], topic: "Cardiac action potentials" })
@@ -105,4 +105,50 @@ test("🔴 no level is a global property of the learner", async () => {
   for (const forbidden of ["user.level", "userLevel", "learnerLevel", "sessionMode"]) {
     assert.equal(model.includes(forbidden), false, `${forbidden} makes the level a property of the person`);
   }
+});
+
+// ── J2: neither `collapsed` nor `known` may decide what gets taught ──────────────────────────────
+
+test("🔴 a collapsed block still reaches generation — a model may have collapsed it", () => {
+  // `collapse_block` is an operation the MODEL may use on any chat command, so this boolean has two
+  // possible authors and they are indistinguishable downstream. Filtering on it let a model's layout
+  // decision silently remove material from recall and test generation, under a comment asserting the
+  // learner had said so.
+  const text = documentText([
+    { content: "Losartan is an angiotensin receptor blocker.", id: "b1", type: "paragraph" },
+    { collapsed: true, content: "Its brand name is Cozaar.", id: "b2", type: "paragraph" },
+  ]);
+
+  assert.ok(text.includes("angiotensin receptor blocker"));
+  assert.ok(
+    text.includes("Cozaar"),
+    "a folded block is hidden from the reading flow, not withdrawn from what may be taught",
+  );
+});
+
+test("🔴 a block marked 'I already know this' still reaches generation — self-report is not evidence", () => {
+  // This text feeds recall and both test-generation branches, and those cards are written through to
+  // study_decks/study_cards. Filtering here meant one click, with no demonstration behind it,
+  // permanently removed material from spaced repetition.
+  const text = documentText([
+    { content: "The kidney regulates blood volume.", id: "b1", type: "paragraph" },
+    { content: "Aldosterone increases sodium reabsorption.", id: "b2", known: true, type: "paragraph" },
+  ]);
+
+  assert.ok(text.includes("blood volume"));
+  assert.ok(
+    text.includes("Aldosterone"),
+    "saying you know something is not demonstrating it, and must not suppress curriculum",
+  );
+});
+
+test("🔴 every block reaches generation, whatever flags it carries", () => {
+  const blocks = [
+    { content: "One.", id: "b1", type: "paragraph" as const },
+    { collapsed: true, content: "Two.", id: "b2", type: "paragraph" as const },
+    { content: "Three.", id: "b3", known: true, type: "paragraph" as const },
+    { collapsed: true, content: "Four.", id: "b4", known: true, type: "paragraph" as const },
+  ];
+  const text = documentText(blocks);
+  for (const block of blocks) assert.ok(text.includes(block.content), `${block.id} was dropped`);
 });
