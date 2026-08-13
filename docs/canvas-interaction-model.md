@@ -93,16 +93,54 @@ The rule:
 Once an interaction has served its purpose it may **collapse, fade, or leave the primary surface
 entirely.** The current surface matters more than the historical transcript.
 
-### 🔴 The invariant this depends on, and it already exists
+### 🔴 The invariant this depends on
 
-This is only safe because **the durable record and the visible surface are already separate
-systems.** Evidence lives in `learner_evidence` and is written once, immutably, at the moment of
-demonstration. The surface is a projection. Removing something from view therefore destroys nothing:
-the learner's demonstration survives in the only place that was ever authoritative.
+Promoted out of this document: it is **Canvas-wide invariant 11**, in
+[`canvas-cognitive-runtime.md` §5](./canvas-cognitive-runtime.md#-11-screen-state-is-replaceable-evidence-state-is-durable),
+because it binds Runtime and Brain as much as UI.
 
-**If those two ever merge, this rule becomes data loss.** A Canvas that stores state by keeping it on
-screen cannot fade anything. Any implementation of this section must be checked against that: *what
-would be lost if this element were removed from the DOM right now?* The answer must be **nothing**.
+> **Removing an element from the rendered Canvas must never destroy durable learner or source state,
+> and Canvas should retain only the information still necessary for the current cognitive operation
+> or immediate continuity.**
+
+This is safe because the durable record and the visible surface are already separate systems.
+Evidence lives in `learner_evidence`, written once at the moment of demonstration. The surface is a
+projection.
+
+**If those two ever merge, this rule becomes data loss.** A Canvas that stores state by keeping it
+on screen cannot fade anything.
+
+#### 🔴 `minimal ≠ contextless` — the correction that matters
+
+An earlier draft of this section proposed the test *"what would be lost if this element were removed
+from the DOM right now? The answer must be nothing."* **That is too strong and it is corrected here**
+(owner, 2026-08-13), because it would license removing things the learner is actively reasoning
+inside.
+
+Some information is temporarily necessary for the operation in progress **even though it is durably
+stored elsewhere.** Mid-way through a causal reconstruction:
+
+```
+ACE inhibition
+   ↓
+angiotensin II ↓
+   ↓
+   ?
+```
+
+Removing the visible chain here destroys the working context. That the chain is saved in the
+database does not make it redundant *right now* — the learner is holding a partially built model and
+the screen is where they are holding it.
+
+**The test is therefore two questions, not one:**
+
+```
+1. would removing this destroy durable state?          must be NO
+2. is this still doing work for the CURRENT operation?  if YES, it stays
+```
+
+A Canvas that passes only the first test is minimal and unusable. Fading is a **cognitive** decision
+about working context, not a storage argument.
 
 ### What follows
 
@@ -163,6 +201,29 @@ the verdict alone.
 
 **Escalating on a bare `correct` boolean is this section implemented wrongly.**
 
+### 🔴 Vary the evidence form across a large jump
+
+**Owner constraint, 2026-08-13.** Where practical, a large jump should be justified by a **different
+form of evidence** than the one before it, not another instance of the same form.
+
+> **One lucky factual retrieval must not promote someone through an entire conceptual hierarchy.**
+
+The worked example above already does this without saying so, and it is why three steps were enough:
+
+```
+1  recall / distinguish   → what distinguishes innate from adaptive immunity?
+2  explain / justify      → why is clonal selection NECESSARY?
+3  predict / apply        → MHC II cannot be expressed — predict the consequence
+```
+
+Three different cognitive operations, each a **harder kind** of demonstration rather than a harder
+instance of the same one. Two consecutive recalls would have been two samples of one ability; the
+sequence above triangulates.
+
+This is the practical form of north star §4's *no single signal determines mastery*, applied to
+escalation specifically. **A ladder of same-form questions is a level ladder with the labels
+removed.**
+
 ---
 
 ## C. Reading is the default output modality
@@ -173,6 +234,30 @@ generated speech.**
 ```
 Nemesis displays concise information → learner reads → learner responds
 ```
+
+### 🔴 Reading is the default ENCODING SURFACE, not the default ACTIVITY
+
+**Owner clarification, 2026-08-13, and it prevents a specific failure.**
+
+Reading is the default surface **when genuinely new structure must be introduced.** It is not what
+Canvas does by default. Read the other way, this section quietly recreates **the AI-textbook
+problem** — Nemesis generating prose to be consumed, which is exactly what acceptance §J4 already
+forbids.
+
+Once enough structure exists for production to be useful, **Canvas moves into production quickly.**
+
+```
+new model required            →  minimal reading / representation  →  production
+existing model likely enough  →  production immediately
+```
+
+The second row is the common case and it should feel like it. Introducing material the learner can
+already produce is not preparation; it is the cost the product exists to remove — see
+[§B](#b-frontier-finding-not-levels).
+
+**"Minimal" is doing real work in that first row.** Enough representation to make production
+possible, and no more. The measure of an explanation is not whether it was complete; it is whether
+the learner could then produce.
 
 Voice output exists as an **optional synchronised layer** for learners who prefer listening or need
 accessibility support.
@@ -284,6 +369,25 @@ sketch because that is how they think.
 Those are different capabilities and both are required. One is Canvas choosing a surface; the other
 is the learner choosing a modality.
 
+### 🔴 The general rule this establishes, which is bigger than drawing
+
+**Owner, 2026-08-13:**
+
+> **Response modality is independent of presentation modality.**
+
+```
+Canvas shows prose      →  the learner may answer by DRAWING
+Canvas shows a diagram  →  the learner may answer VERBALLY
+Canvas shows an equation→  the learner may answer with HANDWRITING
+```
+
+**Canvas chooses the cognitive demand. The interface accepts the most natural way of demonstrating
+the mental model.** Those are separate decisions and coupling them costs evidence: a learner who
+thinks spatially, forced to type, produces a worse demonstration of a model they actually hold — and
+Nemesis records the friction as weakness.
+
+Drawing is the first instance of this rule, not the extent of it.
+
 ---
 
 ## F. The interaction must measure the operation
@@ -374,6 +478,20 @@ There is an apparent conflict and it must not be resolved by guessing.
 
 > A label must carry **information the learner needs**. It must never **narrate the machine.**
 
+Stated as the general rule (owner, 2026-08-13):
+
+> **Feedback earns screen space only when it changes what the learner knows or needs to do.**
+
+```
+✓                                                        punctuation
+"Correct! Great job!"                                    machine narration
+"You're treating resistance and current as increasing
+ together."                                              diagnostic information
+```
+
+The third earns its space because it names a **wrong model** — nothing else conveys it, and the
+learner cannot repair what has not been named.
+
 A *"Correct"* banner after every right answer is machine narration: it tells the learner something
 they already knew, in ceremony proportional to nothing. A `✓` that is the smallest possible
 acknowledgement before the next thing is not a banner — it is punctuation, and its whole purpose is
@@ -449,8 +567,11 @@ Derived from the 🟢 and 🟡 rows only. **Not sequenced here** — sequencing 
 
 | Item | Lane | Note |
 |---|---|---|
-| Surface can remove, not only append | Canvas UI | [§A](#a-the-canvas-is-a-surface-not-a-transcript). Check the DOM-removal question first — it is a precondition, not a detail |
+| Surface can remove, not only append | Canvas UI + **Runtime** | [§A](#a-the-canvas-is-a-surface-not-a-transcript). Runtime must be free to **retire** an interaction; UI must not build a transcript. Proven by acceptance **C4** |
 | Escalate on demonstration, not on a `correct` boolean | Runtime | [§B](#b-frontier-finding-not-levels). The trap is the whole task |
+| Vary the evidence **form** across a large jump | Runtime | [§B](#-vary-the-evidence-form-across-a-large-jump). A ladder of same-form questions is a level ladder with the labels removed |
+| Production-first; reading only to introduce new structure | Runtime | [§C](#-reading-is-the-default-encoding-surface-not-the-default-activity). Guards against the AI-textbook failure |
+| Response modality independent of presentation modality | Canvas UI | [§E](#-the-general-rule-this-establishes-which-is-bigger-than-drawing). Drawing is the first instance, not the extent |
 | Read-aloud as a setting independent of dictation | Canvas UI | [§C](#c-reading-is-the-default-output-modality) |
 | Narration never gates the composer | Canvas UI | [§C](#c-reading-is-the-default-output-modality) |
 | Auto-listen on a retrieval prompt | Canvas UI + Runtime | [§D](#d-dictation-should-make-retrieval-nearly-frictionless). Consent design is part of the task. **Not verifiable in the browser pane** |
@@ -468,6 +589,68 @@ backfill will invent history.
 
 **So the order is: prove the judge can make the distinction, then store it, then present it.** Not
 the reverse.
+
+---
+
+---
+
+## 🔴 What these rules DELETE — the part that is not a document
+
+**Owner, 2026-08-13:** *"make sure those rules actually delete legacy assumptions from the runtime
+instead of merely making the docs describe a better Canvas."*
+
+A specification that only adds is a specification that will be satisfied on paper. Every rule above
+contradicts something **currently running in production**, and those contradictions are named here so
+the work is a deletion list rather than a reading list.
+
+### The legacy six-stage machine is the largest one
+
+```
+lesson → recall → test → diagnose → complete
+```
+
+That is **a transcript with a fixed shape**, and it is not a metaphor — it is a literal ordered
+sequence of stages, in production, drawing the screen today. Measured against this document it
+violates:
+
+| Rule | How |
+|---|---|
+| [§A](#a-the-canvas-is-a-surface-not-a-transcript) | its stages **are** the transcript; the sequence is the model |
+| [§B](#b-frontier-finding-not-levels) | a fixed order is a level ladder — it cannot jump and cannot narrow |
+| [§G](#g-feedback-intensity-scales-with-information-value) / acceptance §K1 | **all four §K literals live in it** — `canvas-stages.tsx` draws *Recall · N of M*, *Test · N of M*, *You wrote* |
+| [§H](#h-the-interaction-speed-invariant) | stage transitions are machinery the learner waits on |
+| north star invariant 8 | **it has never written a `learner_evidence` row** — `recordEvidence` has exactly one caller and it is not this arm |
+
+And the structural fact that makes it urgent rather than merely wrong:
+
+🔴 **`canvas-hosting.ts:164` — `policy = policyPresenting && !evidenceStage`.** Every evidence stage
+hands the surface to the legacy machine, and **there is no ordinary path back**: `reset` builds a
+*new* canvas and is reachable only from `complete`, itself an evidence stage. **The legacy arm
+permanently displaces the compositional runtime on any canvas it captures.**
+
+So a learner who answers one question is, from that moment, in a fixed-sequence quiz that records
+nothing — while every document in this repository describes an adaptive runtime. **That gap is the
+real state of the product, and no amount of specification closes it.**
+
+### The honest register
+
+| | |
+|---|---|
+| **Written down and true** | the compositional runtime, evidence loop, trust gate, eligibility |
+| **Written down and contradicted by running code** | §A, §B, §G, §H, acceptance §K — all blocked behind the legacy arm |
+| **Not yet written and not yet built** | §D auto-listen · §E drawing · `misconception` as a stored verdict |
+
+Only the middle row is a **deletion**. It is also the row that makes the other two matter: shipping
+§E into a surface the legacy machine can capture means building a modality a learner loses the
+moment they answer a question.
+
+### The one measurement that should gate self-congratulation
+
+> **On a canvas a learner has actually answered a question in — which machine is drawing the
+> screen?**
+
+Until that answer is *the compositional runtime*, every rule in this document is describing a Canvas
+that a learner reaches only before they start working.
 
 ---
 

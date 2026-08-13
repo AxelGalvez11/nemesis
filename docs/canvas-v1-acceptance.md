@@ -347,6 +347,49 @@ source → knowledge → objective → cognitive task → learner response
 | C1 | `learner_evidence` gains a row through ordinary use | the row, and the session that produced it |
 | C2 | That row reads back with `operation`, `responseLatencyMs`, `responseId` | the readback |
 | C3 | 🔴 The next decision differs **because of the evidence** | a counterfactual, not a sequence — see below |
+| C4 | 🔴 **A response can leave the Canvas while its evidence still governs a later decision** | the trace below |
+
+### 🔴 C4 — THE TEST THAT PROVES THE ARCHITECTURE, NOT THE FEATURE
+
+**Owner criterion, 2026-08-13.** C1–C3 prove evidence is written, readable, and causal. C4 proves
+the thing that makes Canvas *a state rather than a transcript* — that the durable record and the
+visible surface are genuinely separate systems, and not merely described as separate.
+
+```
+learner answers
+        ↓
+the answer eventually LEAVES THE SCREEN
+        ↓
+twenty minutes later
+        ↓
+Brain still knows exactly what was demonstrated
+        ↓
+the next interaction reflects it
+```
+
+**This is the observable form of Canvas-wide invariant 11** — *screen state is replaceable; evidence
+state is durable*
+([`canvas-cognitive-runtime.md` §5](./canvas-cognitive-runtime.md#-11-screen-state-is-replaceable-evidence-state-is-durable)).
+
+**Why it is worth its own criterion:** every other route to "the Canvas is not a transcript" is a
+claim about rendering, and rendering claims are cheap. This one cannot pass by accident. A Canvas
+that secretly depends on visible history as its memory will fail it, and will fail it *only* here —
+every other criterion in this document would stay green.
+
+**What makes it a real pass:**
+
+- The disappearance must be **ordinary behaviour**, not a reload, a navigation, or a devtools
+  deletion. If the element is removed by the harness rather than by the Canvas, the test proves
+  nothing about the Canvas.
+- The later decision must be **demonstrably caused by** that evidence — the same counterfactual
+  discipline as [C3](#-c3-is-a-counterfactual-not-a-beforeafter-diff), not a plausible sequence.
+- 🔴 **A page reload is the degenerate pass.** Re-fetching from the database after a reload proves
+  the database works, which nobody doubts. The point is that the *live* surface let go of it and the
+  *live* policy still knew.
+
+**What it must NOT be read as licensing:** removing anything still doing work for the operation in
+progress. See `minimal ≠ contextless` in invariant 11 — a half-built causal chain stays on screen
+even though every part of it is durably stored.
 
 ### 🔴 C3 IS A COUNTERFACTUAL, NOT A BEFORE/AFTER DIFF
 
