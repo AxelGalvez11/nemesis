@@ -22,6 +22,7 @@ import {
   type LearningCanvas,
 } from "./canvas-model";
 import { validateEvaluation } from "./canvas-judge";
+import { isEvidenceStage } from "./canvas-hosting";
 import { stateAfterSourceAttached } from "./canvas-state";
 
 const TABLE = "learning_canvases";
@@ -64,6 +65,24 @@ export function normaliseCanvas(raw: LearningCanvas | Record<string, unknown>): 
 
   return {
     ...canvas,
+    // 🔴 A CANVAS STORED MID-RUN RESOLVES TO READING — ON THE WAY IN, AND THE ROW IS NEVER TOUCHED.
+    //
+    // Two of the owner's six canvases are captured in a legacy evidence stage (`test`, `recall`).
+    // With the six-stage machine retired they would otherwise sit in a state nothing routes to and
+    // nothing paints. The obvious fix — an UPDATE setting `state` — is the wrong one: that is a
+    // data change made to correct a projection, on the owner's own rows, and it is not reversible.
+    // Resolving on read leaves the stored document exactly as written, so if this judgement is
+    // wrong we change one function instead of restoring rows from a backup we do not have.
+    //
+    // 🔴 IT MUST SIT AFTER THE SPREAD. `...canvas` carries the raw `state`; placed above, the raw
+    // value would win and this would silently do nothing — the failure mode being fixed, reproduced
+    // one line higher.
+    //
+    // `learn` and not `orient`: both captured canvases hold real blocks (64 and 9), so reading is
+    // something they can actually do, and it is already the fallback `canvasFromRow` uses for an
+    // unrecognised state. A canvas is left with its document and whatever the policy can ask about
+    // it — strictly better than a fixed quiz that recorded nothing.
+    state: isEvidenceStage(canvas.state) ? "learn" : canvas.state,
     questions: list<Record<string, unknown>>((canvas as { questions?: unknown }).questions).map(normaliseQuestion),
     answers: list((canvas as { answers?: unknown }).answers),
     responses: list<CanvasResponse>((canvas as { responses?: unknown }).responses).map((response) => {

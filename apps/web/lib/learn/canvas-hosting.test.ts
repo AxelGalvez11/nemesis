@@ -99,12 +99,32 @@ test("🔴 something always paints — no combination produces a blank canvas", 
   }
 });
 
-test("a run already under way is not interrupted by a task", () => {
-  // The learner is partway through the six-stage machine and has given it answers. Painting a
-  // policy question over it would strand those.
+test("🔴 a legacy run does NOT keep the surface — the policy takes it", () => {
+  // 🔴 THIS TEST ASSERTED THE EXACT OPPOSITE UNTIL THE SIX-STAGE MACHINE WAS RETIRED, AND WHAT IT
+  // ENCODED IS KEPT HERE BECAUSE IT IS THE REASON THE DEFECT SURVIVED SO LONG:
+  //
+  //     "The learner is partway through the six-stage machine and has given it answers. Painting a
+  //      policy question over it would strand those."
+  //
+  // The premise is false. **The legacy arm has never written a `learner_evidence` row.** Verified
+  // in production rather than argued: that table holds ZERO rows, while `knowledge_objects` and
+  // `learning_objectives` — written by the policy path — hold rows. Answers given to a legacy run
+  // accumulate in `canvas.document` and produce nothing durable about the learner.
+  //
+  // So the precedence handed the surface to the arm that cannot learn anything, and kept it there.
+  // That is how the owner met a fixed six-question quiz on their own canvas.
   const regions = composeSurface({ canvasState: "test", policyPresenting: true });
-  assert.equal(regions.stages, true, "the run in progress keeps the surface");
-  assert.equal(regions.policy, false, "the task waits — decideNext is stateless, so nothing is lost");
+  assert.equal(regions.policy, true, "the policy takes the surface");
+  assert.equal(regions.stages, false, "the legacy arm stands down");
+});
+
+test("🔴 …but the legacy arm still paints when the policy has NOTHING to say", () => {
+  // The inversion must not become a deletion. Until Canvas UI removes the stage components, a
+  // canvas in an evidence stage with no policy question must still paint SOMETHING — "neither arm"
+  // is the blank-canvas failure the old comment correctly feared, just arrived from the other side.
+  const regions = composeSurface({ canvasState: "test", policyPresenting: false });
+  assert.equal(regions.stages, true, "the fallback still paints");
+  assert.equal(regions.policy, false);
 });
 
 // ── one answer sink ─────────────────────────────────────────────────────────

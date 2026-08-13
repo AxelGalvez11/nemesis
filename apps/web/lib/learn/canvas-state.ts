@@ -8,6 +8,7 @@
 // it lets the model move the page anywhere.
 
 import type { CanvasState, LearningCanvas } from "./canvas-model";
+import { isEvidenceStage } from "./canvas-hosting";
 
 /** Forward edges. Everything else is refused unless it is a return to `learn`. */
 const FORWARD: Record<CanvasState, readonly CanvasState[]> = {
@@ -42,7 +43,18 @@ const ALWAYS_BACK_TO_LEARN: ReadonlySet<CanvasState> = new Set<CanvasState>([
 
 export function canTransition(from: CanvasState, to: CanvasState): boolean {
   if (from === to) return false;
+  // Re-reading stays available from anywhere it ever was, and this is checked BEFORE retirement so
+  // a canvas stored mid-run keeps its way out. Retirement closes entrances, never exits.
   if (to === "learn" && ALWAYS_BACK_TO_LEARN.has(from)) return true;
+
+  // 🔴 THE SIX-STAGE MACHINE IS RETIRED: NOTHING MAY MOVE INTO AN EVIDENCE STAGE.
+  //
+  // `FORWARD` above is deliberately left intact as the record of how that machine worked. This one
+  // line is the retirement, and deriving it from `isEvidenceStage` rather than deleting edges by
+  // hand means it can never drift from the list that decides what paints — two hand-maintained
+  // lists disagreeing is how a learner gets offered a move into a surface that no longer exists.
+  if (isEvidenceStage(to)) return false;
+
   return FORWARD[from].includes(to);
 }
 
@@ -73,12 +85,39 @@ export interface NextAction {
  *  learner was still on question one, so a single stray click ended the test and produced a
  *  diagnosis from one answer — which would then name weak concepts for everything that had
  *  simply not been asked yet. A move forward has to mean the stage is actually done. */
-export function nextAction(
-  canvas: Pick<
-    LearningCanvas,
-    "state" | "blocks" | "weakConceptIds" | "recall" | "recallResults" | "questions" | "answers"
-  >,
-): NextAction | null {
+export function nextAction(canvas: NextActionInput): NextAction | null {
+  const move = offeredMove(canvas);
+
+  // 🔴 NO CANVAS MAY NEWLY ENTER AN EVIDENCE STAGE. This is the retirement of the six-stage machine,
+  // expressed as one rule in one place rather than as six deletions.
+  //
+  // The owner met a fixed run of six questions on their own canvas — counter, revealed answer, an
+  // explanation of what they had just demonstrated — and it wrote no evidence at all. The multiple
+  // choice in that screenshot was stale stored data, but that was the smaller half: a canvas started
+  // today gets the identical machine with a different input widget. So the entrance is closed, not
+  // the widget.
+  //
+  // 🔴 DERIVED FROM `isEvidenceStage`, NEVER A HAND-WRITTEN LIST. A list here would drift from the
+  // one in `canvas-hosting.ts` that decides what paints, and the two disagreeing is precisely how a
+  // learner ends up offered a move into a surface that no longer exists.
+  //
+  // Note what is NOT closed: `targeted_relearn` is reading material, not an evidence stage, so it
+  // is still reachable. Retirement is of the fixed assessment run, not of everything the legacy
+  // states could express.
+  if (move && isEvidenceStage(move.to)) return null;
+  return move;
+}
+
+type NextActionInput = Pick<
+  LearningCanvas,
+  "state" | "blocks" | "weakConceptIds" | "recall" | "recallResults" | "questions" | "answers"
+>;
+
+/** The move the legacy state machine would offer, before retirement is applied.
+ *
+ *  Kept whole rather than edited branch-by-branch: what each legacy state considered "done" is the
+ *  record of how that machine worked, and `nextAction` above is the single place that now refuses. */
+function offeredMove(canvas: NextActionInput): NextAction | null {
   switch (canvas.state) {
     case "learn":
       // Nothing to have read yet means nothing to move on from.

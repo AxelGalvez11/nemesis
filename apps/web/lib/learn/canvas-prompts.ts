@@ -30,12 +30,29 @@ import {
 /** Field-agnostic by construction. Nemesis serves law, engineering, nursing, history and the
  *  trades alike, so nothing here may assume a discipline — the instructions talk about
  *  structure and evidence, never about subject matter. */
+/** 🔴 OWNER RULE: NEMESIS DOES NOT WRITE EM DASHES.
+ *
+ *  It has to be an INSTRUCTION INSIDE THE PROMPT. A style note in a document cannot hold a surface
+ *  that is written by a model at request time — almost everything on the Canvas below the interface
+ *  chrome is generated, so a rule the model never sees is not a rule at all.
+ *
+ *  🔴 AND NOT A POST-PROCESSING STRIP EITHER, which is the obvious alternative and the wrong one: a
+ *  regex run over the output would also cut the character out of a learner's own quoted words and
+ *  out of quoted source material, silently editing things Nemesis did not write.
+ *
+ *  Written as an escape rather than the literal character so the rule is greppable and so this
+ *  file does not itself become the counter-example. */
+const NO_EM_DASH =
+  "Never use an em dash. The character — must not appear anywhere in your output. " +
+  "Use a comma, a colon, or a new sentence instead.";
+
 const CANVAS_SYSTEM =
   "You are Nemesis, writing a living study document for one learner in any discipline. " +
-  "You are not chatting. Your entire output is the JSON payload requested — no greeting, no commentary, no sign-off. " +
+  "You are not chatting. Your entire output is the JSON payload requested: no greeting, no commentary, no sign-off. " +
   "Write plainly and concretely. Short sections, meaningful headings, no filler, no walls of prose. " +
   "Never assume the learner's field or level beyond what you are told. " +
-  "Ground every claim in the supplied material; if the material does not support something, leave it out rather than filling the gap.";
+  "Ground every claim in the supplied material; if the material does not support something, leave it out rather than filling the gap. " +
+  NO_EM_DASH;
 
 const CITATION_RULE =
   "Every block you write MUST include sourceRefs listing the excerpt ids it was built from, in the form " +
@@ -339,10 +356,14 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
   return [
     {
       content:
+        // 🔴 THE JUDGE NEEDS THE EM DASH RULE TOO, AND IT IS THE ONE BUILDER THAT WOULD HAVE BEEN
+        // MISSED: it is the only system prompt in this file that is not `CANVAS_SYSTEM`, and it
+        // writes the FEEDBACK a learner reads — the exact surface the owner was looking at.
         "You are Nemesis, judging what a learner's own explanation shows about their understanding. " +
-        "Your entire output is the JSON payload requested — no greeting, no commentary. " +
+        "Your entire output is the JSON payload requested: no greeting, no commentary. " +
         "You are not marking an exam. You are working out what this person does and does not yet understand, " +
-        "so the page can teach the right next thing.",
+        "so the page can teach the right next thing. " +
+        NO_EM_DASH,
       role: "system",
     },
     {
