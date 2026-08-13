@@ -1,0 +1,38 @@
+-- The territory a topic-first canvas has ALREADY been built.
+--
+-- Without it, opening a topic canvas constructs a fresh one every time: measured in production at
+-- +24 knowledge objects and +48 objectives per open, none of them duplicates, with no ceiling. The
+-- source path never had this problem because `extractKnowledgeObjects` is deterministic and
+-- model-free, so re-reading the same document lands on the same identity keys and both upserts
+-- ignore duplicates. A model asked the same question twice answers it differently, which is why
+-- this is topic-only rather than a general cache.
+--
+-- A CACHE OF AN EXPENSIVE CONSTRUCTION, NOT A SECOND SOURCE OF TRUTH. `knowledge_objects` and
+-- `learning_objectives` remain the only record of what a learner is being taught, and identity
+-- still converges on `(user_id, identity_key)`. This column answers ONE question -- "has this
+-- canvas already been given a territory, and for which topic?" -- so that a model is not asked
+-- twice for a map it already drew. Nothing downstream may read it as authoritative about the
+-- learner.
+--
+-- NULLABLE AND ADDITIVE. Every existing canvas reads null and rebuilds exactly as it does today,
+-- so the column changes no behaviour until a build writes one. That also means the fix ships
+-- INERT AND GREEN if this migration has not been applied -- the gate never fires, every open
+-- rebuilds, and typecheck, tests and Vercel all pass. "Merged" is not "working" here; only a read
+-- of this column in production is.
+--
+-- Shape: { "topic": string, "identityVersion": number, "objects": KnowledgeObject[] }
+--   topic            what it was built FOR, so a rename rebuilds and a reopen does not
+--   identityVersion  KNOWLEDGE_IDENTITY_VERSION at build time; a mismatch is a MISS, so a corpus
+--                    keyed under older rules is redone rather than replayed under the wrong key
+--   objects          replayed through saveKnowledge on a hit -- idempotent by identity, so it
+--                    converges on the existing rows and picks up enrichment
+--
+-- No index: it is read only by primary key, on a row already being fetched.
+--
+-- 🔴 IT IS DELIBERATELY NOT IN `canvasToRow`. `saveCanvas` upserts the whole row from the
+-- in-memory canvas, which never carries the territory -- listing this column there would write a
+-- stale null over a freshly built one on the learner's next edit. That unlisted columns SURVIVE a
+-- partial PostgREST upsert was measured against this project on 2026-08-13, with a positive
+-- control confirming the same upsert DOES null a column when it is listed.
+alter table public.learning_canvases
+  add column if not exists territory jsonb;

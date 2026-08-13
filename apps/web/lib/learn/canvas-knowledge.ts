@@ -23,7 +23,10 @@
 
 import { constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
+import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
+import { territoryReuse } from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
+import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
 import {
   coverageOfSource,
@@ -304,6 +307,36 @@ async function topicTerritory(
   // No material and no topic is genuinely nothing to work from — an empty canvas, not a refusal.
   if (!topic) return answer("no-durable-source");
 
+  // 🔴 BUILD ONCE. THIS IS THE GATE, AND IT IS ON THE CONSTRUCTOR RATHER THAN ON THE EFFECT.
+  //
+  // Without it, every open of a topic canvas built a WHOLE NEW TERRITORY: production measured
+  // 2 → 26 → 50 knowledge objects and 4 → 51 → 99 objectives over two opens, all 48 identity keys
+  // distinct, zero duplicate statements. Not duplication — the model genuinely samples a topic
+  // differently each time, so a deduplicate would have slowed the growth rather than stopped it.
+  // The question is "have we already built one", never "have we already got this fact".
+  //
+  // 🔴 AND IT CANNOT RECREATE THE BUG IT SITS NEXT TO. The front door was shut by an effect that
+  // ran ONCE, too early, and could never run again. Nothing here remembers having run: the effect's
+  // dependency key is unchanged and still fires on every mount, and "already built" is read from a
+  // durable column, not from a ref or a mount-local flag. *Has a territory been built for this
+  // canvas* and *has this effect already run* are different questions, and only the first is asked.
+  //
+  // 🔴 IT LIVES HERE BECAUSE THIS IS THE ONLY PLACE IT CANNOT BE WALKED AROUND. `constructTerritory`
+  // has exactly one caller — the line below. `ensureKnowledgeForCanvas` has two (open, and attaching
+  // a source), so a gate up there is bypassed by the next caller anyone adds.
+  const stored = await loadCanvasTerritory(userId, canvas.id);
+  const reuse = territoryReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored, topic });
+  if (reuse.reuse) {
+    const replayed = await storeTerritory(userId, reuse.objects);
+    if (replayed.length > 0) return answer("complete", replayed);
+    // 🔴 A CACHE MUST NEVER BE ABLE TO TRAP A LEARNER. A replay that resolves nothing means the
+    // write path failed, not that the topic is empty — and returning here would leave the marker in
+    // place and the canvas blank on EVERY open, for ever. That is precisely the shape of the
+    // front-door bug this file just recovered from, so an empty replay falls through and rebuilds.
+    // It costs a model call in a session where the learner's own data layer is already failing;
+    // the alternative costs them the canvas.
+  }
+
   onPhase?.("mapping_knowledge");
   const { value } = await constructTerritory(userId, topic, TERRITORY_TARGET);
 
@@ -318,14 +351,42 @@ async function topicTerritory(
   // knowing about — the surface can say "name it more narrowly" only if it can tell them apart.
   if (!value || value.objects.length === 0) return answer("failed");
 
+  const resolved = await storeTerritory(userId, value.objects);
+
+  // 🔴 NOTHING RESOLVED MEANS NOTHING TO ASK, AND NOTHING IS MARKED. The topic produced facts and
+  // the write path lost them, so this is `failed` — the honest "we could not turn this into
+  // something to answer" — and because no marker was written the next open retries it.
+  if (resolved.length === 0) return answer("failed");
+
+  // 🔴 WRITTEN LAST, AND ONLY ON A COMPLETE BUILD. This is what makes an interrupted build safe: a
+  // tab closed mid-construction marks nothing, so the next open rebuilds rather than locking the
+  // learner at half a map — and the rows the interrupted run did manage to write converge with the
+  // rebuild by identity instead of doubling.
+  await saveCanvasTerritory(userId, canvas, {
+    identityVersion: KNOWLEDGE_IDENTITY_VERSION,
+    objects: value.objects,
+    topic,
+  });
+  return answer("complete", resolved);
+}
+
+/**
+ * Persist a territory's objects and resolve their objectives.
+ *
+ * 🔴 THE SAME CALL ON BOTH PATHS, WHICH IS WHAT MAKES A REPLAY EQUIVALENT TO A BUILD. A cached
+ * territory goes through `saveKnowledge` exactly as a freshly constructed one does, so it converges
+ * on the rows that already exist, picks up enrichment they have gained, and produces objective row
+ * ids the evidence layer can attach to. A replay that took a shortcut here would be a second
+ * implementation of the step the cross-canvas claim rests on.
+ */
+async function storeTerritory(userId: string, objects: readonly KnowledgeObject[]): Promise<ResolvedObjective[]> {
   const resolved: ResolvedObjective[] = [];
-  for (const knowledge of value.objects) {
+  for (const knowledge of objects) {
     const stored = await saveKnowledge(userId, knowledge);
     for (const objective of stored) resolved.push({ knowledge, objective });
   }
-
   // Ordered by identity for the same reason the source path is: which question is asked first must
   // not depend on the order rows came back in.
   resolved.sort((a, b) => a.objective.identityKey.localeCompare(b.objective.identityKey));
-  return answer("complete", resolved);
+  return resolved;
 }

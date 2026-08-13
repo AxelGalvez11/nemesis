@@ -24,6 +24,7 @@ import {
 import { validateEvaluation } from "./canvas-judge";
 import { isEvidenceStage } from "./canvas-hosting";
 import { stateAfterSourceAttached } from "./canvas-state";
+import { readTerritory, type CanvasTerritory } from "./canvas-territory";
 
 const TABLE = "learning_canvases";
 const LOCAL_PREFIX = "nemesis.learn.canvas.v1.";
@@ -179,6 +180,14 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       correctedConceptIds: canvas.correctedConceptIds,
       ...(canvas.studyDeckId ? { studyDeckId: canvas.studyDeckId } : {}),
     },
+    // 🔴 `territory` IS ABSENT ON PURPOSE — DO NOT ADD IT HERE, AND DO NOT PUT IT ON THE CANVAS.
+    //
+    // It is written by `saveCanvasTerritory` and read by `loadCanvasTerritory`, and it is the one
+    // column on this table that the in-memory canvas never carries. Listing it here would write
+    // `undefined` over a territory that was built minutes ago, on the learner's very next edit, and
+    // the only symptom would be that topic canvases quietly started costing a model call per open
+    // again. Unlisted columns survive a partial upsert — measured, with a control — which is what
+    // makes leaving it out the correct and safe thing rather than an oversight.
   };
 }
 
@@ -352,6 +361,55 @@ export async function saveCanvas(userId: string | null, canvas: LearningCanvas):
     // Local copy already succeeded; a cloud failure is worth knowing about but not worth
     // interrupting the learner for.
     console.warn("[learn] canvas save failed", error.message);
+  }
+}
+
+// ------------------------------------------------------------ topic territory
+
+/** What this canvas's territory was built from, if one has been. */
+export async function loadCanvasTerritory(userId: string | null, canvasId: string): Promise<CanvasTerritory | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase.from(TABLE).select("territory").eq("id", canvasId).maybeSingle();
+  if (error || !data) {
+    // 🔴 A FAILED READ IS A MISS, NOT AN ERROR THE LEARNER SEES. The cost of missing is one model
+    // call; the cost of treating this as fatal is a canvas that will not open.
+    if (error && !isMissingTableError(error)) console.warn("[learn] territory read failed", error.message);
+    return null;
+  }
+  return readTerritory((data as { territory?: unknown }).territory);
+}
+
+/**
+ * Record that this canvas's territory has been built.
+ *
+ * 🔴 AN UPSERT, NOT AN UPDATE — DEFENSIVE RATHER THAN LOAD-BEARING. `saveCanvas` is on a 600 ms
+ * debounce, so a canvas created moments ago could in principle still be memory-only, and a bare
+ * `.update()` would then match zero rows and report success — every open would rebuild with no
+ * error anywhere. Measured on the production canvas that exposed this bug, the row was written 23
+ * minutes before either build ran, so in practice it exists; this costs nothing and the failure it
+ * guards against is silent, which is the combination worth paying for.
+ *
+ * 🔴 `document` IS DELIBERATELY NOT LISTED, AND THAT IS SAFE BY MEASUREMENT. A partial PostgREST
+ * upsert leaves unlisted columns alone — proved against this project on 2026-08-13 with a positive
+ * control showing the same upsert DOES null a column once it is listed. So this cannot overwrite
+ * the learner's own canvas, and symmetrically `canvasToRow` must never list `territory`, or the
+ * next edit would write a stale null over a freshly built one.
+ */
+export async function saveCanvasTerritory(
+  userId: string | null,
+  canvas: LearningCanvas,
+  territory: CanvasTerritory,
+): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase
+    .from(TABLE)
+    .upsert({ id: canvas.id, territory, title: canvas.title.slice(0, 300), user_id: userId }, { onConflict: "id" });
+  if (error && !isMissingTableError(error)) {
+    // 🔴 NOT FATAL, AND THE DEGRADATION IS EXACTLY TODAY'S BEHAVIOUR. The learner has their
+    // territory and their objectives; what was lost is the record that it exists, so the next open
+    // rebuilds. Failing the whole resolve over a bookkeeping write would turn a spend problem into
+    // a blank canvas.
+    console.warn("[learn] territory marker save failed", error.message);
   }
 }
 
