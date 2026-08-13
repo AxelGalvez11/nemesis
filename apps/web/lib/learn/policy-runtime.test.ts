@@ -218,7 +218,7 @@ test("🔴 an acknowledged correction does not serve the identical card again", 
   assert.equal(before?.action.type, "show_correction");
   assert.equal(before?.objective.identityKey, held);
 
-  const after = decideNext({ actedOn: new Set([held]), evidence, now: NOW, objectives: RESOLVED });
+  const after = decideNext({ actedOn: [held], evidence, now: NOW, objectives: RESOLVED });
   assert.notEqual(after?.objective.identityKey, held, "the same card came back immediately");
   assert.equal(after?.action.type, "retrieve");
 });
@@ -226,7 +226,7 @@ test("🔴 an acknowledged correction does not serve the identical card again", 
 test("acting on everything comes back round rather than ending in a blank page", () => {
   // 🔴 A REORDERING, NOT A FILTER. Being shown something twice is a far smaller failure than a
   // surface with nothing on it and no way forward.
-  const all = new Set(RESOLVED.map(({ objective }) => objective.identityKey));
+  const all = RESOLVED.map(({ objective }) => objective.identityKey);
   const decision = decideNext({ actedOn: all, evidence: [], now: NOW, objectives: RESOLVED });
   assert.equal(decision?.action.type, "retrieve");
 });

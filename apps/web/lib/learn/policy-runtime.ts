@@ -11,11 +11,14 @@
 // same evidence and it returns the same decision; run it after evidence lands and it returns
 // whatever that new state deserves. The loop lives outside: decide → ask → evidence → decide.
 
+import type { DeclaredMode } from "./canvas-continue";
+import { type Exposition } from "./cognitive-mode";
 import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
-import { chooseNextTeachingAction, type TeachingAction } from "./teaching-policy";
+import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { ResolvedObjective } from "./canvas-knowledge";
+import { interveningActs } from "./working-memory";
 
 export interface PolicyDecision {
   objective: StoredObjective;
@@ -24,6 +27,24 @@ export interface PolicyDecision {
   action: TeachingAction;
   /** This objective's own evidence, newest last — what the decision was made from. */
   evidence: LearnerEvidence[];
+  /**
+   * What the learner is being asked to take in, and for how long — §39.
+   *
+   * 🔴 CARRIED UP FROM THE ACTION, NEVER RE-DERIVED. The policy decided it, at the point where it
+   * decided what to emit; this is a projection of that decision so the surface can read it without
+   * pattern-matching on the action type. A second derivation here would be a second opinion about
+   * the same emission, and the two would drift.
+   */
+  exposition: Exposition;
+  /**
+   * The same mode, flat, because that is the shape the Canvas reads structurally.
+   *
+   * 🔴 DERIVED FROM `exposition` IN THE ONE PLACE BOTH ARE SET, so they cannot disagree. It exists
+   * because `declaredCognitiveMode` in canvas-continue.ts reads `decision.cognitiveMode` — it was
+   * written against this property before it existed, deliberately, so that landing the producer
+   * changes nothing on the consumer side. Two fields, one assignment, one source.
+   */
+  cognitiveMode: DeclaredMode;
 }
 
 /**
@@ -53,8 +74,15 @@ export function decideNext(input: {
    * 🔴 AND IT IS A REORDERING, NOT A FILTER. If every objective has been acted on, the last one
    * still comes back rather than the session ending in a blank page — being shown something twice
    * is a much smaller failure than a surface with nothing on it.
+   *
+   * 🔴 ORDERED, OLDEST FIRST, ONE ENTRY PER ACT — IT USED TO BE A `Set` AND THAT LOST THE ONE FACT
+   * §39 NEEDS. Membership answers "has this been seen?"; working memory asks "what has happened
+   * SINCE this was seen?", and a Set cannot answer it. The reordering set below is derived from
+   * this list rather than passed alongside it, so ordering and membership cannot disagree — two
+   * inputs that must agree is exactly the construction that let the failed-objective defect sit
+   * unnoticed under a comment promising the opposite.
    */
-  actedOn?: ReadonlySet<string>;
+  actedOn?: readonly string[];
   /**
    * Objectives whose CORRECTION has already been displayed in this session.
    *
@@ -70,7 +98,9 @@ export function decideNext(input: {
    */
   correctionsShown?: ReadonlySet<string>;
 }): PolicyDecision | null {
-  const acted = input.actedOn ?? new Set<string>();
+  const actedInOrder = input.actedOn ?? [];
+  // Derived, never passed in beside the list — see `actedOn`.
+  const acted = new Set(actedInOrder);
   const corrected = input.correctionsShown ?? new Set<string>();
   // Stable: identity order is preserved inside each group, so this only moves already-seen
   // objectives behind unseen ones and never shuffles the rest.
@@ -85,16 +115,23 @@ export function decideNext(input: {
     // the durable learner model back into a session transcript, and every test would still pass.
     const mine = input.evidence.filter((entry) => entry.objectiveIdentityKey === objective.identityKey);
     const state = projectLearnerState(objective.identityKey, mine);
+    const action = chooseNextTeachingAction({
+      correctionAlreadyShown: corrected.has(objective.identityKey),
+      interveningActs: interveningActs(objective.identityKey, actedInOrder),
+      knowledgeObject: knowledge,
+      learnerState: state,
+      now: input.now,
+      objective,
+      recentEvidence: mine,
+    });
+    // 🔴 ONE READ OF THE ACTION, TWO SHAPES OF THE SAME ANSWER. `cognitiveMode` is not a second
+    // decision — it is `exposition.mode`, assigned here so the two cannot be set independently.
+    const exposition = expositionOf(action);
     return {
-      action: chooseNextTeachingAction({
-        correctionAlreadyShown: corrected.has(objective.identityKey),
-        knowledgeObject: knowledge,
-        learnerState: state,
-        now: input.now,
-        objective,
-        recentEvidence: mine,
-      }),
+      action,
+      cognitiveMode: exposition.mode,
       evidence: mine,
+      exposition,
       knowledge,
       objective,
       state,
