@@ -218,7 +218,34 @@ export function knowledgeSignature(canvas: LearningCanvas): string {
     .filter(Boolean)
     .sort()
     .join(",");
-  return durable ? `sources:${durable}` : `topic:${canvas.title.trim()}`;
+  const inputs = durable ? `sources:${durable}` : `topic:${canvas.title.trim()}`;
+  // 🔴🔴 AND WHETHER THE LEARNER HAS COMMITTED, WHICH IS THE ONLY REASON THIS IS NOT PURELY THE
+  // INPUTS TO KNOWLEDGE. Pressing send does not change a source or a title, so before this line the
+  // key was IDENTICAL either side of it — and the effect it keys is the only thing that ever asks
+  // the policy to look. Measured across the real upload flow:
+  //
+  //     file attached, durable id back   sources:lib-abc   CHANGED   -> resolves
+  //     PRESS SEND                       sources:lib-abc   unchanged -> CANNOT look again
+  //
+  // 🔴 WHAT MAKES THAT FATAL RATHER THAN MERELY REDUNDANT IS THAT THE FIRST LOOK CAN LEGITIMATELY
+  // COME BACK EMPTY. Knowledge resolves the moment the durable id arrives, which is not the moment
+  // the document is READABLE: `ensureKnowledgeForCanvas` returns `nothingToRead()` for a source
+  // whose canonical row has not landed, the hook sets `status: "unavailable"` for zero supported
+  // objectives, and with the key unchanged that verdict is permanent for the life of the mount.
+  // Reopening the canvas works because a remount resolves again, later, when the parse is readable
+  // — which is exactly what QA observed on production and why it looked like a canvas-specific bug.
+  //
+  // 🔴 A TWO-VALUED COMMITMENT BIT, NOT `canvas.state` ITSELF, AND THE DIFFERENCE IS THE POINT. Raw
+  // state would re-resolve on every transition — including ones that say nothing about knowledge —
+  // and each of those is a fresh round trip on every stored canvas. This says one thing only: the
+  // learner has committed, so it is worth looking again. `targeted_relearn` and the retired
+  // evidence stages all read as committed and never re-key against each other.
+  //
+  // 🔴 IT DOES NOT CLOSE THE RACE, AND MUST NOT BE READ AS IF IT DOES. It buys ONE more attempt, at
+  // the moment the learner commits. A parse still unreadable at that point strands them exactly as
+  // before. Closing it properly means a resolution that produced nothing stops being final — which
+  // is a retry with a bound, and a bigger change than this.
+  return `${canvas.state === "empty" || canvas.state === "sources_attached" ? "pre" : "begun"}|${inputs}`;
 }
 
 /**
