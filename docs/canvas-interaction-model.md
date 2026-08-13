@@ -459,6 +459,62 @@ Errors, partial answers and misconceptions are where the information is, and the
 that a wrong *answer* needs a correction while a wrong *model* will keep generating wrong answers
 until it is named and replaced.
 
+### 🔴 The verdict is carried by the learner's own words — owner, 2026-08-13
+
+**Supersedes the separate `✓` as the correctness signal.** Rather than painting an acknowledgement
+*beside* the answer, **the learner's submitted text itself takes the verdict's colour.**
+
+The feedback stops being an object on the page and becomes a property of the thing already holding
+the learner's attention. It is the smallest possible signal, it sits exactly where they are looking,
+and it makes a partial answer **locatable** rather than merely labelled.
+
+| The answer turns | When | And |
+|---|---|---|
+| **green** | correct | nothing else appears — the colour **is** the punctuation |
+| **amber** | 🔴 **partial** — they demonstrated some of it | name the specific gap; this is where the information is |
+| **red** | incorrect, or a misconception | smallest correction that reorients, then require reconstruction |
+| **no colour** | *"I don't know"* — **no demonstration** | nothing was asserted, so nothing is judged |
+| **no colour** | 🔴 **the judge did not return a usable judgement** | say so; claim nothing |
+
+### 🔴 Amber means PARTLY RIGHT. It never means WE ARE NOT SURE.
+
+A traffic light invites one colour to absorb both, and that would undo a distinction the
+architecture is built to protect:
+
+```
+the answer was partial        a fact about the LEARNER    → amber
+we could not evaluate it      a fact about US             → no colour
+```
+
+**Our uncertainty is not their cognitive state and must not be painted onto their sentence.**
+Acceptance F5 exists precisely to keep *"the judge established nothing"* and *"the judge never
+returned"* apart, and evidence invariant 9 says an evaluator outage writes nothing. **A shared
+colour would reintroduce at the surface exactly what the schema separates underneath.**
+
+Likewise *"I don't know"* is **not** red. Evidence invariant 5: it is absence of demonstration, not
+a wrong belief. The learner asserted nothing, so there is nothing to mark wrong.
+
+### 🔴 Colour may never be the only channel
+
+Red/green is the most common colour-vision deficiency; roughly one man in twelve would see three
+identical states, and a colour-only verdict fails WCAG 1.4.1. **A second channel must carry the same
+meaning** — weight, an underline treatment, whatever reads cleanly.
+
+**Not an icon parked beside the text**, which reintroduces the separate object this replaces.
+
+### Why this fits [§G's](#g-feedback-intensity-scales-with-information-value) intensity rule exactly
+
+The colour **selects** the intensity, with no extra machinery:
+
+```
+green   →  no accompanying words at all
+amber   →  name the missing piece
+red     →  smallest correction, then require reconstruction
+```
+
+Feedback earns screen space only when it changes what the learner knows or needs to do, and here the
+signal that costs nothing is the one carrying no new information.
+
 ### Explicitly forbidden
 
 *"Great job!"* · *"Excellent!"* · *"You nailed it!"* · celebratory animation · confetti · large
