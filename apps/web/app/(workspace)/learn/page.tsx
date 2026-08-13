@@ -6,10 +6,26 @@
 //   /learn            the home: one composer, and the learner's sessions below it
 //   /learn?c=<id>     that session
 //
-// 🔴 THE HOME IS ALSO THE LIBRARY. There is no /library navigation item any more: the durable
-// collection is Canvas sessions, not a pile of documents, and scrolling down from the composer
-// is the whole organisational experience. A second page showing the same information a
-// different way is exactly what was retired.
+// 🔴 THIS IS THE FRONT DOOR, AND IT IS NO LONGER ALSO THE LIBRARY (§L, owner 2026-08-13).
+//
+// It used to say: "THE HOME IS ALSO THE LIBRARY. There is no /library navigation item any more."
+// That is stale. `/library` is a destination in the sidebar again, and the distinction is an
+// object model rather than a change of mind:
+//
+//   this page  →  LEARN. The minimal composer, "What do you want to learn?", with upload,
+//                 record and dictate. The canvas is created automatically once the learner
+//                 starts, and lands in `Unfiled` for them to file later.
+//   /library   →  FIND AND ORGANISE what you have already learned. Its primary objects are
+//                 CANVASES, and a folder organises canvases — not the pile of raw documents
+//                 the old Library managed, which is the thing that was actually retired.
+//
+// So "a second page showing the same information a different way" is still the rule; Library
+// now shows a different object, which is why it comes back rather than being reinstated.
+//
+// What has NOT changed: the learner's canvases still appear below the composer here. Scrolling
+// down from the front door still works; it is no longer the ONLY way to find things, because a
+// rail that grows with history optimises for recovering a conversation rather than for managing
+// bodies of knowledge.
 //
 // Inside the (workspace) group on purpose: sign-in, the two-factor guard and the upgrade
 // dialog all come from the shell, and — decisively — the whole `--ui-*` token layer is scoped
