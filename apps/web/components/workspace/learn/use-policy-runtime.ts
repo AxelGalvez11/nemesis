@@ -36,6 +36,7 @@ import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
   evidenceForSubmission,
+  judgementOf,
   objectiveAsTask,
   outcomeFor,
   retrievalPromptFor,
@@ -397,6 +398,13 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
         // here would charge someone for our outage — the same absence-as-evidence defect the whole
         // design exists to avoid — so nothing is recorded and the prompt stays put for another go.
         // The cost is honest and bounded: a flaky judge means no progress, never wrong progress.
+        //
+        // 🔴 THIS BRANCH IS `noJudgement()` — AND IT IS NO LONGER THE ONLY THING HOLDING THE LINE.
+        // Until RUNTIME-006 the invariant lived entirely in this early return: pass `[]` further
+        // down and every target would have been written as "asked, showed nothing". `Judgement` now
+        // carries the distinction, so a future caller that deletes this guard cannot silently get
+        // the wrong behaviour — it has to say which case it is in. The return stays because the
+        // UI differs too: `record()` reports a save failure, which is not what happened here.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
         // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
         // ends "Your response was saved" — true on the six-stage path, where the answer is written
@@ -424,7 +432,11 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
           // a multi-objective judge exists it returns one of these per objective it actually
           // assessed, and the fan-out routes them unchanged — nothing here has to spread a verdict
           // across a set, which is the one thing that would record demonstrations nobody made.
-          outcomes: [outcomeFor(decision.objective, evaluation)],
+          //
+          // 🔴 `judged(...)` RATHER THAN A BARE ARRAY — RUNTIME-006. Reaching this line is itself
+          // the claim that we have an account of the performance. The unreachable-judge case is
+          // `noJudgement()` and writes nothing; it is handled above, before anything is built.
+          judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
           prompt: active,
           responseText: said,
           ...(tookMs !== undefined ? { tookMs } : {}),

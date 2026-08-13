@@ -8,7 +8,7 @@ import { buildSourceContext } from "@/lib/sources/source-context";
 
 import { extractKnowledgeObjects } from "./knowledge-extraction";
 import { objectivesForKnowledge } from "./learning-objective";
-import { evidenceForSubmission, outcomeFor, retrievalPromptFor } from "./objective-task";
+import { evidenceForSubmission, judgementOf, outcomeFor, retrievalPromptFor } from "./objective-task";
 
 // 🔴 A DESIGN DOCUMENT NOBODY CHECKS BECOMES FICTION, AND FICTION ABOUT WHAT IS BUILT IS WORSE
 // THAN NO DOCUMENT. `docs/canvas-cognitive-runtime.md` describes a target architecture, and its §12
@@ -100,7 +100,7 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
   const built = evidenceForSubmission({
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
-    outcomes: [
+    judgement: judgementOf([
       outcomeFor(objective, {
         confidence: 0.9,
         demonstrated: ["the brand for losartan"],
@@ -109,7 +109,7 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
         missing: [],
         verdict: "strong",
       }),
-    ],
+    ]),
     prompt: retrievalPromptFor(objective, "prompt-1"),
     responseText: "Cozaar",
     tookMs: 14_200,
