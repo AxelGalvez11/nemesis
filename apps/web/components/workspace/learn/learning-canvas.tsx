@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
-import { answerSink, composeSurface } from "@/lib/learn/canvas-hosting";
+import { answerSink } from "@/lib/learn/canvas-hosting";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
@@ -20,6 +20,8 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
 import { CanvasComposer } from "./canvas-composer";
+import { canvasPresentation } from "./canvas-presence";
+import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
@@ -368,7 +370,42 @@ export function LearningCanvas({
   // occupy the surface exactly as a prompt does, and must not sit beside a recall card either.
   const policyPresenting =
     policy.status === "ready" && (policy.feedback !== null || policy.decision !== null);
-  const regions = composeSurface({ canvasState: canvas.state, policyPresenting });
+
+  // 🔴 A STEP IS RUNNING, ANSWERED HONESTLY AND IN ONE PLACE. `thinking-phases.ts` is explicit that
+  // a caption on a timer "would look exactly like a system thinking and would be theatre", so this
+  // reports work that is genuinely in flight and nothing else. It is what separates "Nemesis is
+  // busy" from "Nemesis has nothing for you", which are opposite things to say to a learner.
+  //
+  // 🔴 `policy.status === "loading"` IS DELIBERATELY ABSENT, AND THE COMPILER IS WHY. Writing it
+  // here is a type error: the branch above returns on `loading`, so by this point the status is
+  // provably `ready | unavailable`. That is worth recording rather than working around, because it
+  // narrows the defect — a canvas reaching this render with nothing to show is NEVER a canvas that
+  // is still thinking. It has finished, and it has nothing. `canvasPresence` still accepts the
+  // input so the value stays correct if that early return is ever removed.
+  const working = busy.kind !== null;
+
+  // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
+  //
+  // This line used to call `composeSurface` directly, and it did so WITHOUT `hasReadingMaterial`,
+  // which that module's own documentation names as a defect ("absent means assume there is", and a
+  // task then makes room for a document that is not there). Worse, the question composeSurface
+  // cannot answer — is there anything on this surface at all? — was left to inline conditions
+  // further down, and they said no in a state that had no way back. A canvas that had begun with
+  // nothing generated into it painted an empty page for ever.
+  const { presence, regions } = canvasPresentation({
+    blocks: canvas.blocks.length,
+    canvasState: canvas.state,
+    policyPresenting,
+    working,
+  });
+
+  // 🔴 THE NAME OF THE STEP THAT IS RUNNING, OR NONE — never a guess. `CanvasThinkingPreview`
+  // accepts `null` and says so in its own header ("when the caller has no honest label it passes
+  // none and the lines carry the state alone"), so there is nothing to invent here. The session's
+  // own label wins because it is the more specific of the two: "Reading" names the file being
+  // ingested, where the policy phase names the canvas-wide step behind it.
+  const preparingLabel =
+    busy.kind !== null ? busy.label : policy.phase ? THINKING_COPY[policy.phase] : null;
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -508,8 +545,6 @@ export function LearningCanvas({
             neither is in a panel, a modal or a column of its own. */}
         {regions.policy && <CanvasPolicyView onContinue={continueBelongsTo(continueRegion, "policy") ? policy.acknowledge : null} runtime={policy} sharing={regions.sharing} />}
 
-        {regions.document && (
-          <>
         {/* 🔴 THE TWO PRE-CONTENT SCREENS ARE DELETED, NOT HIDDEN (UX brief §1). `CanvasEmpty`
             painted "What do you want to learn?" over a large dashed upload box with its own topic
             input; `SourcesAttached` painted "1 source attached" over a "Help me learn this"
@@ -519,8 +554,36 @@ export function LearningCanvas({
             composer already docked — which is §4 exactly ("no further onboarding screen") and §19
             ("the interface should almost disappear"). The composer carries the attached material
             as chips and the send control; see `showComposer` below, which used to exclude these
-            two states and is the single line that forced a second and third composer to exist. */}
-        {preContent && busy.kind !== null && <CanvasThinkingPreview label={busy.label} />}
+            two states and is the single line that forced a second and third composer to exist.
+
+            🔴 AND THIS USED TO READ `preContent && busy.kind !== null`, WHICH IS THE DEFECT.
+            Gating the processing state on the canvas NOT having begun meant that pressing send —
+            the one action that ends the pre-content states — removed the only thing on the surface
+            that was speaking. §24 had already made "a `learn` canvas with no blocks" the ordinary
+            case, so what followed was an empty page with nothing running to explain it, on the
+            first thing a student ever does. The trigger is now "there is no content to show",
+            which is the question that was actually being asked. */}
+        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} />}
+
+        {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
+            of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a
+            phase name is only ever emitted by a step that is genuinely executing, so showing
+            "Mapping what you know" over an idle runtime would be theatre — and indistinguishable
+            from the blank page it replaced, only slower to give up on.
+
+            🔴 IT IS ALSO NOT A CLAIM ABOUT THE LEARNER. Nemesis failing to find something to ask
+            is a fact about the material and about Nemesis; a surface that let it read as "you have
+            nothing left to learn" would be the exact laundering the presentation invariant exists
+            to prevent. The wording says what happened and offers the two moves that exist.
+
+            Reloading is named because it genuinely recovers: knowledge is resolved when a canvas
+            mounts, so a canvas whose material became readable after this one resolved will find it
+            on the next open. That is the same recovery a learner stumbled into by leaving and
+            reopening from the Library — made a control instead of a discovery. */}
+        {presence === "quiet" && <CanvasQuiet onReload={() => window.location.reload()} />}
+
+        {regions.document && (
+          <>
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
           <CanvasDocument
