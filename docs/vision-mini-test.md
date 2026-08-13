@@ -31,6 +31,12 @@ a block that is too coarse, cannot move one, and cannot rename one. It also
 cannot *hurt* the score: an item with no rectangle produces no prediction rather
 than a wrong one.
 
+**Observed, not just read off the source.** A control PDF whose first page is
+real text and whose second page is the same page rasterised routes to the
+page-by-page vision lane. Vision runs, the document gains a block — 28 → 29 —
+and the new block is the **one item in the whole output with no rectangle**. The
+count of items carrying a rectangle does not move at all.
+
 **Neither reason depends on which 18 documents were chosen.** They are properties
 of the code path. The documents are a demonstration, not an estimate.
 
@@ -56,12 +62,23 @@ test:
 | no-vision vs **forced** description on every figure | 5 | **0 of 18** | 5 of 18 |
 
 The third row is the one that carries the capability claim. On the live run the
-model looked at the figures it was sent and answered `none` to all of them —
-correctly, they are logos and decorative photography, and the prompt says to
-answer exactly that. So the live run alone could be dismissed as "it never really
-tried". The third row removes that objection: a real description is **forced**
-onto every routed figure, the text of five documents changes as a result, and
-**not one rectangle and not one label moves.**
+model looked at the figures it was sent and answered `none` to every one of them
+— correctly, they are logos and decorative photography, and the prompt instructs
+exactly that answer for those. Verified verbatim on **all five** documents that
+called, not inferred from one:
+
+```
+20240402_072920_TS0U_5JAN8NIL1XY3DOFS.1_p26   2 images   "1. none\n2. none"
+20240924_000946_P40U_HOWLKAL1IL81NTE2.1_p37   1 image    "1. none"
+OTC_TATLY_2023_p9                             3 images   "1. none\n2. none\n3. none"
+Starhill-Annual-Report-2024_p37               1 image    "1. none"
+pdf_f270146f8ca7_p17                          1 image    "1. none"
+```
+
+So the live run alone could be dismissed as "it never really tried". The third
+row removes that objection: a real description is **forced** onto every routed
+figure, the text of five documents changes as a result, and **not one rectangle
+and not one label moves.**
 
 ### Why this is a diff and not a score
 
@@ -84,7 +101,9 @@ to move. On an image-only PDF (a page rasterised so it has no text layer):
 The counter moves, so its zeros mean something. And the shape of that one item is
 the finding again from the other side: where vision is the *only* reader, our
 layout prediction is a **single page-sized rectangle** — the most coarse
-prediction possible.
+prediction available. That is the most useful forward-looking fact in this
+document: it says the roadmap question is real and still open, without answering
+it.
 
 ## The deficit on these 18 documents, per document
 
@@ -130,25 +149,69 @@ are identical objects.
 - **This is not a competitor run.** No vendor SDK is installed. It is
   Nemesis-with-vision against Nemesis-without-vision, nothing else.
 - **The LLM judge is off.** Geometry and label scoring only.
-- **18 documents, not 20** — the local benchmark data holds 90 of the 500 PDFs and
-  18 of those have a scored per-element record. The conclusion does not rest on
-  the sample size, for the reason given at the top: it is a property of the code
-  path, and 18 documents demonstrate it rather than estimate it.
+- **18 documents, not 20, and the 20-document cap was never the binding
+  constraint.** Ground-truth overlap was: the local benchmark data holds 90 of the
+  500 PDFs, and exactly 18 of those 90 also have a scored per-element record from
+  #573 to compare against. Downloading more PDFs would not change the conclusion,
+  for the reason given at the top — it is a property of the code path, and these
+  documents demonstrate it rather than estimate it.
 
 ## Spend
 
 | | |
 |---|--:|
 | projected before the first paid call | **~$0.05** (worst case < $0.50) |
-| Gemini calls actually made | **6** |
-| tokens billed (`usageMetadata`, the provider's own count) | 12,586 in · 3,835 out |
-| estimated actual cost | **~$0.018** |
+| Gemini calls actually made | **10** |
+| tokens billed (`usageMetadata`, the provider's own count) | **18,426 in · 5,391 out** |
 
 Owner's stop threshold was $2.00. The projection came from the dry run's own
-counts rather than from a per-page price, which is why it was 40× under.
+counts rather than from a per-page price, which is why it landed far under.
+
+**The tokens are the measurement; the dollars are an inference.** At any current
+Flash-class rate this run is comfortably under one cent — but no published price
+for `gemini-3.5-flash` is quoted here because none was verified, and a made-up
+rate repeated as fact is worse than a token count.
+
+Half the calls are a second pass: `--capture` was added *after* the first live
+run, so the five replies were re-fetched to get them on the record verbatim
+rather than generalising from one.
 
 Most of those output tokens are the model's internal reasoning, not its answer:
 the reply that cost 929 output tokens was, in full, `1. none\n2. none\n3. none`.
+
+## 🔴 A separate defect the control found: vision text is filed on the wrong page
+
+Building the control above turned up a real bug in the page-by-page vision lane,
+unrelated to the question asked but squarely in this lane and worse than the
+thing being measured.
+
+**Text a vision model reads off page N is attached to page N−1.** The page list
+handed to the reader is 0-based — `thinPages` returns array indices — and the
+map it returns is keyed by those same indices. `parse-document.ts:550` then
+subtracts one from every key, under a comment asserting the map is keyed 1-based.
+The two comments contradict each other and the subtraction is the wrong one.
+
+Two consequences, both observed on control documents:
+
+| the thin page is… | what happens |
+|---|---|
+| any page after the first | its transcript is attached to the **previous** page — a citation that points at the wrong page |
+| the **first** page | the key becomes −1, a page that does not exist |
+
+The second case is silent content loss. Measured: the parse reports **29 blocks**
+and only **28** are reachable — the transcript appears in the layout output, in
+the page markdown and in the whole-document markdown **not at all**. The model
+was asked, the answer was paid for and returned, and it vanished. Nothing logs,
+nothing fails, and the coverage record still counts the page as read by vision.
+
+This is the shape the round-trip rule exists to catch, and it is the shape the
+standing contract names: a source gap that becomes invisible is how the system
+eventually blames a student for material it failed to file correctly.
+
+**Not fixed here.** A one-line change to production parsing does not belong on a
+benchmark branch, where it would confound what this branch is for. Filed for
+sequencing; the reproduction is `scripts/vision-arm.mts stub` against either
+control PDF, and it costs nothing.
 
 ## What this does and does not settle
 
