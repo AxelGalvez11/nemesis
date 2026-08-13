@@ -19,11 +19,13 @@
 // 🔴 ASSOCIATION RECALL ONLY. This is the first executable piece of the eventual policy, not the
 // learning algorithm. It is deliberately small enough to be obviously correct.
 
+import { expositionFor, NO_EXPOSITION, type Exposition } from "./cognitive-mode";
 import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence";
 import type { LearningObjective } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
 import { eligibleForRetrieval } from "./retrieval-eligibility";
 import { entails } from "./scaffold-rung";
+import { answerStillHeld } from "./working-memory";
 
 /**
  * A single thing to do. An ACTION, never a STAGE.
@@ -37,13 +39,49 @@ export type TeachingAction =
   /** Ask them to produce it. The only action that generates new evidence. */
   | { type: "retrieve"; objectiveId: string; because: string }
   /** State the answer plainly. For a wrong attempt, or an opportunity that produced nothing. */
-  | { type: "show_correction"; objectiveId: string; because: string }
+  | { type: "show_correction"; objectiveId: string; exposition: Exposition; because: string }
   /** Put the confusable items side by side, then ask for both. Only for a named competing model. */
-  | { type: "contrast"; objectiveIds: string[]; competingWith: readonly string[]; because: string }
+  | {
+      type: "contrast";
+      objectiveIds: string[];
+      competingWith: readonly string[];
+      exposition: Exposition;
+      because: string;
+    }
   /** Hold this one for now — acting again this soon would teach nothing. Come back after other work. */
   | { type: "defer"; objectiveId: string; because: string }
   /** Nothing is owed here. Move to whatever is next. */
   | { type: "advance"; because: string };
+
+/**
+ * What the learner is being asked to take in, for any action — §39.
+ *
+ * 🔴 THE EXPOSITION LIVES ON THE ACTIONS THAT HAVE ONE, AND THIS IS THE TOTAL FUNCTION OVER ALL
+ * FIVE. Putting `exposition` on every variant would have meant writing `{ mode: "none" }` on
+ * `retrieve`, `defer` and `advance` — a field that is always the same value is a field the next
+ * editor sets wrongly. Putting it only where it exists makes "does this present something?" a
+ * question the type answers, and this function is the one place the answer is read.
+ *
+ * 🔴 A NEW ACTION CANNOT SILENTLY INHERIT AN ANSWER. The switch is exhaustive over the union, so
+ * adding a sixth action is a compile error here rather than a screen that quietly acquires — or
+ * quietly loses — the product's only button.
+ */
+export function expositionOf(action: TeachingAction): Exposition {
+  switch (action.type) {
+    case "show_correction":
+    case "contrast":
+      return action.exposition;
+    // 🔴 NOT AN ABSENCE OF INFORMATION — A RETRIEVAL ASKS FOR PRODUCTION AND A HOLD SHOWS A STATUS.
+    // Neither puts material in front of the learner to process, and saying so is different from
+    // saying nothing. See `DeclaredMode`'s `"none"` in canvas-continue.ts: the consumer treats an
+    // un-emitted mode as a defect, and a retrieval reporting one would be reporting a defect that
+    // is not there.
+    case "retrieve":
+    case "defer":
+    case "advance":
+      return NO_EXPOSITION;
+  }
+}
 
 export interface TeachingPolicyInput {
   objective: LearningObjective;
@@ -88,6 +126,23 @@ export interface TeachingPolicyInput {
    * Absent means not shown, which is the honest reading for a caller that does not track it.
    */
   correctionAlreadyShown?: boolean;
+  /**
+   * How many OTHER objectives have been worked since this one was last acted on.
+   *
+   * 🔴 THE HALF OF THE OWNER'S OWN TEMPO BRIEF THAT WAS NEVER BUILT. They asked for material that
+   * *"comes back within the same sitting, after OTHER MATERIAL HAS INTERVENED"*; only the clock half
+   * existed. §39's consequence 2 asks for the same instrument from the other direction — a window
+   * that continues after the answer leaves the screen — and a count of intervening work is what
+   * measures it. See `working-memory.ts`.
+   *
+   * 🔴 SESSION STATE, PASSED IN, NEVER ACCUMULATED HERE, exactly like `correctionAlreadyShown` and
+   * `now`. It is a fact about what the RUNTIME has staged, never a claim about the learner, and
+   * nothing durable is written from it.
+   *
+   * Absent means zero — nothing has intervened — which is the honest reading for a caller that does
+   * not track it, and the conservative one: it can only hold an objective back, never release it.
+   */
+  interveningActs?: number;
 }
 
 /**
@@ -111,6 +166,23 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
   const id = objective.identityKey;
   const sinceMs = msSince(state, input.now);
   const actedJustNow = sinceMs < ACT_AGAIN_AFTER_MS;
+  // 🔴 THE §39 WINDOW: could the answer still be in working memory? It reuses `ACT_AGAIN_AFTER_MS`
+  // as its decay term rather than minting a second interval, and clears as soon as other material
+  // has intervened — so it is never longer than the churn guard it replaces on that branch, only
+  // shorter. See `working-memory.ts` for why displacement rather than a clock.
+  const stillHeld = answerStillHeld({
+    decayAfterMs: ACT_AGAIN_AFTER_MS,
+    interveningActs: input.interveningActs ?? 0,
+    sinceMs,
+  });
+  // What kind of cognitive object this objective's exposition would be, if one is emitted below.
+  // Derived from the knowledge type and the capability — never from the verdict (§39).
+  const exposition = (kind: "correction" | "contrast"): Exposition =>
+    expositionFor({
+      capability: objective.capability,
+      kind,
+      knowledgeType: input.knowledgeObject.type,
+    });
 
   switch (state.status) {
     // 🔴 UNKNOWN ASKS RATHER THAN TELLS, AND THAT IS THE WHOLE POINT OF THE STATE. Unknown means
@@ -169,6 +241,10 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
       return {
         because: `a specific competing answer keeps surfacing, so the pair needs separating before another retrieval is worth asking for`,
         competingWith: competing,
+        // 🔴 ALWAYS DELIBERATE, WHATEVER THE KNOWLEDGE TYPE — §39's misconception row is the one
+        // unconditional **Yes** in the table. `expositionFor` refuses to consult the type for a
+        // contrast, so this cannot become transient by someone adding an association shortcut.
+        exposition: exposition("contrast"),
         // Only this objective is named. Resolving the COMPETING objective is a lookup over the
         // learner's other knowledge, which belongs to the caller that holds it — not to a decision
         // function that is supposed to stay pure.
@@ -204,11 +280,33 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
       // interval, no second knob, nothing to tune. `ACT_AGAIN_AFTER_MS` already asks exactly the
       // right question here — "have we just touched this?" — and its answer simply had no bearing
       // on the outcome before.
-      if (!actedJustNow) {
+      //
+      // 🔴🔴 AND THE WINDOW IS NOW WORKING MEMORY, NOT AN HOUR — §39 CONSEQUENCE 1. This read
+      // `!actedJustNow`, which is `ACT_AGAIN_AFTER_MS`, which is SIXTY MINUTES. Measured across the
+      // real decision rather than reasoned from the constant:
+      //
+      //     answered CORRECTLY   ->  askable again after 10 minutes  (the owner's ruled tempo)
+      //     answered WRONGLY     ->  correction shown once, then `defer` for the rest of the hour
+      //
+      // and `decideNext` filters `defer` out of `owed` entirely, so between ten and sixty minutes
+      // the canvas offered the objective the learner had ALREADY DEMONSTRATED and withheld the one
+      // they had just failed. **Getting something wrong made Nemesis less likely to ask you about
+      // it.** In a twenty-minute sitting a failed objective never came back at all.
+      //
+      // That is §39's consequence 1 — *"exposure must not reduce priority; Nemesis schedules
+      // another retrieval later"* — inverted, and it was live. It is a defect, not a design.
+      //
+      // 🔴 THE FIX INTRODUCES NO NEW NUMBER. `answerStillHeld` clears as soon as ONE other objective
+      // has been worked, and falls back to this same `ACT_AGAIN_AFTER_MS` only where nothing can
+      // intervene. It is a disjunction, so it is never longer than the guard it replaces — the
+      // objective can only come back sooner, never later. A failed objective now returns after the
+      // next item, which is sooner than a passed one's ten minutes, which is the order every
+      // spaced-repetition system uses and the order §39 requires.
+      if (!stillHeld) {
         return {
           because: state.latestVerdict
-            ? `this fell short a while ago and the answer has already been stated — asking is what is owed now, not stating it again`
-            : `an opportunity passed a while ago with nothing demonstrated, so the next thing owed here is a real attempt`,
+            ? `this fell short and the answer has already been stated, and other material has come between — asking is what is owed now, not stating it again`
+            : `an opportunity passed with nothing demonstrated and other material has come between, so the next thing owed here is a real attempt`,
           objectiveId: id,
           type: "retrieve",
         };
@@ -227,6 +325,13 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
       }
 
       return {
+        // 🔴 §39 — THE MODE OF WHAT IS ABOUT TO BE SHOWN, DECIDED HERE, WHERE THE POLICY KNOWS WHAT
+        // KIND OF OBJECT IT IS EMITTING. An association's correction is one line and moves on by
+        // itself; a causal or procedural one is material to be read and waits for the learner. The
+        // three statuses below share this renderer and therefore share this mode — which is the
+        // point: `incorrect`, `partial` and `not_demonstrated` are three verdicts, and §39 says a
+        // verdict must not decide advancement.
+        exposition: exposition("correction"),
         because: state.status === "partial"
           ? `part of this was demonstrated and part was missing — the answer is worth stating plainly before asking again`
           : state.status === "incorrect"
@@ -274,12 +379,22 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
       // is owed only where the rung is KNOWN and known to be below production.
       const provisional = state.demonstratedAt !== null && !entails(state.demonstratedAt, "independent");
       if (provisional) {
-        // Invariant 3 — never ask a question whose answer is still visible. The churn guard is the
-        // right one here rather than the eligibility window: confirming a recognition is not a
-        // scheduling decision about forgetting, so it must not wait for a spacing interval.
-        if (actedJustNow) {
+        // Invariant 3 — never ask a question whose answer the learner is still holding. Not the
+        // eligibility window: confirming a recognition is not a scheduling decision about
+        // forgetting, so it must not wait for a spacing interval.
+        //
+        // 🔴 THE SAME `stillHeld`, DELIBERATELY, SO THE FILE HOLDS ONE DEFINITION OF THE WINDOW
+        // RATHER THAN TWO. This branch's own comment used to say *"the answer is still on screen"*,
+        // which is §34 invariant 3's ORIGINAL wording — the exact sentence §39 strengthened to
+        // "still in working memory". Leaving the old guard here would have kept the superseded
+        // reading alive next to the new one.
+        //
+        // 🔴 UNREACHABLE ON TODAY'S DATA, AND SAID SO RATHER THAN COUNTED AS COVERAGE. Nothing yet
+        // stages a task below `independent`, so no evidence carries a rung this branch can read. It
+        // is consistency with the reachable branch, not a verified behaviour change.
+        if (stillHeld) {
           return {
-            because: `this was recognised a moment ago and the answer is still on screen — the confirming attempt should follow some intervening work`,
+            because: `this was recognised a moment ago and the answer is still being held — the confirming attempt should follow some intervening work`,
             objectiveId: id,
             type: "defer",
           };

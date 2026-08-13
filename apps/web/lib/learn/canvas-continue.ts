@@ -62,6 +62,20 @@
 export type CognitiveMode = "transient" | "deliberate";
 
 /**
+ * What the policy declared, including the honest answer for a screen that asks for production.
+ *
+ * 🔴 `"none"` IS NOT A THIRD COGNITIVE MODE — IT IS THE ABSENCE OF AN EXPOSITION, AND IT HAD TO BE
+ * SAYABLE. This module was written before the producer existed, so it had two answers and `null`,
+ * and `null` means *"we were not told"*. A retrieval and a hold are neither: nothing has been put
+ * in front of the learner to take in, and that is a FACT the policy knows rather than a gap in what
+ * it reported. Without this value the producer would have had to pick a lie for every
+ * non-exposition — `deliberate` puts a Continue on a hold screen, `transient` auto-advances a
+ * question — and `null` would have gone on meaning two different things at once, which is precisely
+ * what the `unknown` flag below exists to prevent.
+ */
+export type DeclaredMode = CognitiveMode | "none";
+
+/**
  * What a declared mode means for the control.
  *
  * 🔴 `null` IS A DEFECT, NOT A DEFAULT, AND THE DISTINCTION IS THE POINT. The property does not
@@ -77,11 +91,14 @@ export type CognitiveMode = "transient" | "deliberate";
  * told" as "we were told transient", and so the guard can assert that this is a stopgap with a
  * named owner rather than the design.
  */
-export function readingRequirementOf(mode: CognitiveMode | null): {
+export function readingRequirementOf(mode: DeclaredMode | null): {
   readonly requiresReading: boolean;
   readonly unknown: boolean;
 } {
   if (mode === null) return { requiresReading: true, unknown: true };
+  // 🔴 `"none"` IS `unknown: false`. The policy answered; the answer is that nothing is being read.
+  // Folding it in with `null` would put the stopgap's Continue back on a retrieval and a hold, and
+  // would make the flag report a defect on the one path that reported correctly.
   return { requiresReading: mode === "deliberate", unknown: false };
 }
 
@@ -158,8 +175,8 @@ export function continueBelongsTo(owner: CanvasRegion | null, placement: RegionP
  * Returns `null` when the policy has said nothing, which `readingRequirementOf` treats as a defect
  * with a safe resolution rather than as "transient".
  */
-export function declaredCognitiveMode(decision: unknown): CognitiveMode | null {
+export function declaredCognitiveMode(decision: unknown): DeclaredMode | null {
   if (typeof decision !== "object" || decision === null) return null;
   const mode = (decision as { cognitiveMode?: unknown }).cognitiveMode;
-  return mode === "transient" || mode === "deliberate" ? mode : null;
+  return mode === "transient" || mode === "deliberate" || mode === "none" ? mode : null;
 }

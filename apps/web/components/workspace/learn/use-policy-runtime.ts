@@ -30,6 +30,7 @@ import {
   type FocusScope,
 } from "@/lib/learn/canvas-focus";
 import { tempoFor, type HostedTask } from "@/lib/learn/canvas-hosting";
+import { expositionFor, NO_EXPOSITION, type Exposition } from "@/lib/learn/cognitive-mode";
 import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
 import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
@@ -114,8 +115,28 @@ export interface PolicyRuntime {
   decision: PolicyDecision | null;
   /** The question on screen, when the policy asked for one. */
   prompt: RetrievalPrompt | null;
-  /** What the judge said about the last answer, held until the learner moves on. */
-  feedback: { evaluation: ResponseEvaluation; answer: string } | null;
+  /**
+   * What the judge said about the last answer, held until the learner moves on.
+   *
+   * 🔴 IT CARRIES ITS OWN EXPOSITION — §39. The verdict is a cognitive object in its own right, and
+   * it is minted here rather than looked up later because the objective it belongs to is
+   * unambiguous only at the moment of submission: by the time this renders, `decision` has already
+   * moved on to whatever is owed next.
+   */
+  feedback: { evaluation: ResponseEvaluation; answer: string; exposition: Exposition } | null;
+  /**
+   * What the policy has put on screen for the learner to take in, and how — contract §39.
+   *
+   * 🔴 THE POLICY DECLARES IT; THE CANVAS RENDERS THE CONSEQUENCE. `transient` advances by itself
+   * after `exposureMs`; `deliberate` waits for the learner's Continue; `none` means nothing is being
+   * read — a retrieval asking for production, or a hold. The Canvas must not infer any of this from
+   * the verdict, the component type, or the length of the text.
+   *
+   * 🔴 AND THE DURATION IS IN THE TYPE ON PURPOSE. A renderer told "transient" and left to pick its
+   * own window would apply a number nobody chose to material nobody sized. `Exposition` is a union
+   * in which the duration exists exactly where the auto-advance does.
+   */
+  exposition: Exposition;
   judging: boolean;
   /**
    * This answer's evidence is written but not yet read back — do not decide the next prompt yet.
@@ -249,8 +270,18 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   const [round, setRound] = useState(0);
   /** 🔴 SESSION-LOCAL, NEVER PERSISTED. Reading a correction says nothing about what the learner
    *  can now do, so it is not evidence and must not be stored as any. It exists only to stop the
-   *  same card being served twice in a row — see `decideNext`'s `actedOn`. */
-  const [actedOn, setActedOn] = useState<ReadonlySet<string>>(() => new Set());
+   *  same card being served twice in a row — see `decideNext`'s `actedOn`.
+   *
+   *  🔴 AN ORDERED LOG NOW, NOT A SET, AND IT STAYS SESSION-LOCAL. §39's working-memory window is
+   *  measured in intervening MATERIAL, so "what has happened since this one?" has to be answerable
+   *  — and a Set cannot answer it. Appended once per acknowledgement, including repeats of the same
+   *  objective: coming back to something three times is three positions in the log, and only the
+   *  work after the most recent one has displaced anything.
+   *
+   *  🔴 IT MUST NEVER BE PERSISTED. Written to a row it would become a durable record of what a
+   *  learner worked and in what order — learner state, sitting outside the evidence log, claiming
+   *  something no judge ever said. It exists for the length of one canvas session and dies with it. */
+  const [actedOn, setActedOn] = useState<readonly string[]>(() => []);
   /**
    * Objectives whose CORRECTION has actually been put on the screen this session.
    *
@@ -387,13 +418,49 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   // any further in would be a curriculum wearing a Minimap's clothes (§14.7).
   const inFocus = useMemo(() => applyFocus(supported, focus), [focus, supported]);
 
-  const decision = useMemo(
+  const next = useMemo(
     () =>
       status === "ready"
         ? decideNext({ actedOn, correctionsShown, evidence, now: decidedAt, objectives: inFocus })
         : null,
     [actedOn, correctionsShown, decidedAt, evidence, inFocus, status],
   );
+
+  /**
+   * The decision, with the exposition corrected to describe WHAT IS ON SCREEN.
+   *
+   * 🔴 FEEDBACK OUTRANKS THE ACTION UNDERNEATH IT, AND THE DECLARED MODE HAS TO FOLLOW THE SAME
+   * PRECEDENCE THE RENDERER ALREADY USES. `PolicyScreen` shows the verdict while `decision` has
+   * already moved on to the next objective — so a mode read straight off `decision` would describe
+   * a screen the learner is not looking at. On a pass that is the difference between advancing by
+   * itself and waiting for a press that §39 says must not be there.
+   *
+   * The verdict's own exposition is minted at submit time, when the objective that was answered is
+   * unambiguous, rather than looked up here from a decision that may have moved.
+   */
+  const decision = useMemo(
+    () =>
+      next && feedback
+        ? { ...next, cognitiveMode: feedback.exposition.mode, exposition: feedback.exposition }
+        : next,
+    [feedback, next],
+  );
+
+  /**
+   * What is on screen for the learner to take in, right now — the authoritative §39 value.
+   *
+   * 🔴 SEPARATE FROM `decision` BECAUSE A VERDICT CAN OUTLIVE ONE. Answer the last objective on a
+   * canvas correctly and `decideNext` returns null while the verdict is still up: read through the
+   * decision, that is "the policy said nothing", which resolves to *requires reading* and puts a
+   * Continue on a passed association. Read here, it is the verdict's own transient exposition.
+   *
+   * 🔴 AND IT IS THE ONE A RENDERER SHOULD USE. `declaredCognitiveMode(decision)` still works and
+   * still agrees with this wherever a decision exists — it is kept so the consumer written before
+   * this property landed did not need editing — but it cannot see the case above.
+   */
+  const exposition: Exposition = feedback
+    ? feedback.exposition
+    : (decision?.exposition ?? NO_EXPOSITION);
 
   // ── One prompt per decision ────────────────────────────────────────────────
   //
@@ -617,7 +684,20 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       }
 
       const evaluation = result.value;
-      setFeedback({ answer: said, evaluation });
+      // 🔴 THE VERDICT'S MODE IS MINTED FROM THE OBJECTIVE THAT WAS ANSWERED, AND FROM NOTHING
+      // ABOUT THE ANSWER — §39. `evaluation` is right here and is deliberately not consulted:
+      // "correctness does not determine advancement; cognitive mode does". Passing the verdict in
+      // would rebuild `feedbackPassed`, which is the inference Canvas UI came one commit from
+      // shipping — a Continue that appears exactly when the learner was wrong.
+      setFeedback({
+        answer: said,
+        evaluation,
+        exposition: expositionFor({
+          capability: decision.objective.capability,
+          kind: "verdict",
+          knowledgeType: decision.knowledge.type,
+        }),
+      });
       canvasCapture("canvas_response_judged", canvas, {
         confidence: evaluation.confidence,
         objective: decision.objective.identityKey,
@@ -672,7 +752,10 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     const seen = decision?.objective.identityKey;
     setFeedback(null);
     setRound((current) => current + 1);
-    if (seen) setActedOn((current) => new Set(current).add(seen));
+    // 🔴 APPENDED, NOT ADDED TO A SET. A repeat is a new position in the log, which is what makes
+    // "since the LAST time this was acted on" answerable. Deduplicating here would silently freeze
+    // the working-memory window at whatever the first visit's position was.
+    if (seen) setActedOn((current) => [...current, seen]);
     // 🔴 ONLY WHEN WHAT WAS ACKNOWLEDGED WAS THE CORRECTION ITSELF. This runs for the feedback
     // screen too, and recording that as "the answer has been shown" would make the policy defer at
     // the exact moment the correction is owed — a learner who got something wrong would never be
@@ -731,6 +814,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     coverage: knowledge.coverage,
     decision,
     error,
+    exposition,
     feedback,
     focus,
     // 🔴 FORCED MEANS "RUNNING WITHOUT OWNERSHIP", NOT "SOMEONE TYPED force". On a canvas the
