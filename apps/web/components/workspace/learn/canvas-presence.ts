@@ -92,6 +92,30 @@ export type CanvasPresence =
  */
 export const STANDIN_PRESENCES = ["preparing", "invitation", "quiet"] as const;
 
+/**
+ * The presences that put something in the BODY of the canvas.
+ *
+ * 🔴 `invitation` IS NOT ONE OF THEM, AND THAT DISTINCTION WAS FOUND BY CALIBRATION RATHER THAN BY
+ * REVIEW. A guard asserting only "the presence is a stand-in" stayed GREEN against a deliberate
+ * break that special-cased the fix to `learn` — because the break made `orient` and
+ * `targeted_relearn` report `invitation`, which IS a stand-in, and which renders nothing. The
+ * blank page came straight back with the guard still passing.
+ *
+ * So the property has to name the narrower thing: once a canvas has begun, whatever it reports has
+ * to be something the learner can actually see.
+ */
+export const PAINTING_PRESENCES = ["task", "reading", "stage", "preparing", "quiet"] as const;
+
+/**
+ * Whether this canvas has not begun — the one condition under which an empty body is correct.
+ *
+ * Exported so the guard asks the same question the derivation does, rather than keeping its own
+ * copy of the state list. Two copies of a state list is how one of them ends up stale.
+ */
+export function hasNotBegun(canvasState: CanvasState): boolean {
+  return PRE_CONTENT_STATES.includes(canvasState);
+}
+
 /** Every value `canvasPresentation` can return, for exhaustive sweeps. */
 export const CANVAS_PRESENCES: readonly CanvasPresence[] = [
   "task",
@@ -159,7 +183,7 @@ export function canvasPresentation(input: {
         ? "reading"
         : working
           ? "preparing"
-          : PRE_CONTENT_STATES.includes(canvasState)
+          : hasNotBegun(canvasState)
             ? "invitation"
             : "quiet";
 

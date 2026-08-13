@@ -5,6 +5,8 @@ import { test } from "node:test";
 import {
   CANVAS_PRESENCES,
   canvasPresentation,
+  hasNotBegun,
+  PAINTING_PRESENCES,
   STANDIN_PRESENCES,
   type CanvasPresence,
 } from "./canvas-presence";
@@ -68,6 +70,30 @@ test("🔴 the surface always presents something — there is no state that pain
       (CANVAS_PRESENCES as readonly string[]).includes(presence),
       `${describe(input)} produced ${presence}, which nothing renders`,
     );
+
+    // 🔴 THE SHARP HALF, AND CALIBRATION IS WHY IT EXISTS. Asserting only "the presence is a
+    // stand-in" is not enough: `invitation` is a stand-in that deliberately paints NOTHING, so a
+    // break that special-cased the fix to `learn` — leaving `orient` and `targeted_relearn` blank
+    // by routing them to `invitation` — stayed GREEN against the looser form. Once a canvas has
+    // begun, the answer has to be something the learner can actually see.
+    if (hasNotBegun(input.canvasState)) continue;
+    assert.ok(
+      (PAINTING_PRESENCES as readonly string[]).includes(presence),
+      `${describe(input)} produced "${presence}", which paints nothing — a canvas that has begun must never leave the learner looking at an empty page`,
+    );
+  }
+});
+
+test("🔴 `invitation` is confined to canvases that have not begun", () => {
+  // The converse, so the property cannot be satisfied by making every state an invitation. §1
+  // deleted the pre-content screens on purpose; an `invitation` reported for a canvas that HAS
+  // begun is a blank page wearing a legitimate name.
+  for (const input of sweep()) {
+    if (canvasPresentation(input).presence !== "invitation") continue;
+    assert.ok(
+      hasNotBegun(input.canvasState),
+      `${describe(input)} reported "invitation", but that canvas has begun — the composer is only the whole interface before it does`,
+    );
   }
 });
 
@@ -85,8 +111,8 @@ test("🔴 THE DEFECT: send with material attached must not land on a page with 
       });
 
       assert.ok(
-        (STANDIN_PRESENCES as readonly string[]).includes(presence),
-        `pressing send with a file attached produced "${presence}" — a canvas in "learn" with no blocks and no task must paint a stand-in, not an empty page (working=${working})`,
+        (PAINTING_PRESENCES as readonly string[]).includes(presence),
+        `pressing send with a file attached produced "${presence}" — a canvas in "learn" with no blocks and no task must paint something, not an empty page (working=${working})`,
       );
     }
   }
@@ -117,8 +143,8 @@ test("🔴 it is not special-cased to `learn` — every reading state that has b
         working,
       });
       assert.ok(
-        (STANDIN_PRESENCES as readonly string[]).includes(presence),
-        `${canvasState} with no blocks produced "${presence}"`,
+        (PAINTING_PRESENCES as readonly string[]).includes(presence),
+        `${canvasState} with no blocks produced "${presence}", which paints nothing`,
       );
     }
   }
@@ -194,13 +220,29 @@ test("🔴 `hasReadingMaterial` is answered from the blocks, not defaulted", () 
 
 const SOURCE = readFile(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
 
+/**
+ * The component with its comments removed.
+ *
+ * 🔴 THE CODE, NEVER THE PROSE. `canvas-runtime-branch.test.ts` records getting this exactly wrong
+ * in this same file: `learning-canvas.tsx` explains its own design by quoting the elements it
+ * renders, so a guard reading the raw source matches the EXPLANATION of a branch as readily as the
+ * branch. Here that would be a false pass — the comment above each stand-in names it, so deleting
+ * the branch and leaving the paragraph would keep this green while the page went blank again.
+ */
+const code = SOURCE.then((source) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1"),
+);
+
 test("🔴 every stand-in presence has a branch in the canvas that renders it", async () => {
-  const source = await SOURCE;
+  const source = await code;
 
   for (const presence of STANDIN_PRESENCES) {
-    if (presence === "invitation") continue; // deliberately paints nothing; asserted above.
-    assert.ok(
-      source.includes(`"${presence}"`),
+    // `invitation` deliberately paints nothing — the composer is the interface there (§1, §4), and
+    // that is asserted as a property above rather than as an absence here.
+    if (presence === "invitation") continue;
+    assert.match(
+      source,
+      new RegExp(`presence === "${presence}"`),
       `nothing in learning-canvas.tsx handles the "${presence}" presence — a canvas in that state paints an empty page, which is the defect this file exists to prevent`,
     );
   }
