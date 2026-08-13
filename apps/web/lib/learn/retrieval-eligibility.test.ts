@@ -98,50 +98,68 @@ test("🔴 ACCEPTANCE: `projectLearnerState` is byte-identical either way", () =
   assert.deepEqual({ ...recent, lastEvidenceAt: null }, { ...ancient, lastEvidenceAt: null });
 });
 
-// ── layer 1 must hold whatever tempo the owner later chooses ─────────────────────────────────────
+// ── layer 1: never re-ask the thing just answered ────────────────────────────────────────────────
 
-test("🔴 suppression is guarded SEPARATELY from eligibility, so tempo cannot delete it", () => {
-  // 🔴 THIS IS A SOURCE ASSERTION AND IT HAS TO BE, WHICH IS WORTH STATING RATHER THAN HIDING.
+test("🔴 LAYER 1: a demonstration minutes old is NOT asked again", () => {
+  // 🔴 THIS TEST COULD NOT HONESTLY EXIST BEFORE THE OWNER RULED, AND THE HISTORY IS THE POINT.
   //
-  // A first version of this test drove `decideNext` with one-second-old evidence and asserted null,
-  // claiming to prove the suppression guard was load-bearing. It passed with the guard DELETED —
-  // because `RETRIEVAL_ELIGIBLE_AFTER_MS` currently equals `ACT_AGAIN_AFTER_MS`, so "eligible" and
-  // "not just acted" are the same instant and no evidence age can separate them. The test was
-  // passing for the wrong reason, which is worse than not existing.
+  // Version one drove `decideNext` with one-second-old evidence, asserted `null`, and claimed to
+  // prove the suppression guard load-bearing. It passed with the guard DELETED: tempo equalled
+  // `ACT_AGAIN_AFTER_MS`, so "eligible" and "not just acted" were the same instant and no evidence
+  // age could separate them. It was passing for a degenerate reason, which is worse than absent.
   //
-  // 🔴 UPDATE, 2026-08-13 — THE OWNER RULED TEN MINUTES, AND THIS TEST STAYS STRUCTURAL ANYWAY.
-  // THAT IS A DELIBERATE REFUSAL, NOT AN OMISSION. Read this before "finishing the job".
+  // Version two was refused outright. Once tempo was set to ten minutes while the policy still
+  // conjoined `!actedJustNow`, a case at 30 min asserting `null` would have passed AND calibrated
+  // red — while asserting, as a protected invariant, that the owner's ruling did not take effect
+  // for another fifty minutes. A test that pins the defect is worse than no test.
   //
-  // The note above predicted the guard would become load-bearing below one hour. It became
-  // something worse: DOMINANT. `actedJustNow` is measured against `ACT_AGAIN_AFTER_MS` (1 h), so
-  // the conjunction makes a learner wait `max(1 h, tempo)` and the owner's ten minutes never takes
-  // effect. The two windows were never collapsed — they are INVERTED, and the wrong one wins.
+  // This is version three, and it asserts the truth: with one interval governing tempo, layer 1 is
+  // simply what that interval says below its own threshold. There is no second window to agree
+  // with, so there is nothing left to pass degenerately.
+  for (const seconds of [1, 30, 90, 300, 599]) {
+    const decision = decideNext({ evidence: correctAt(ago(seconds * 1000)), now: NOW, objectives: ONLY });
+    assert.equal(
+      decision,
+      null,
+      `answered ${seconds}s ago and asked again — that measures working memory and records the echo as a demonstration`,
+    );
+  }
+
+  // 🔴 CALIBRATION, RECORDED SO THE NEXT READER DOES NOT HAVE TO REDO IT. Delete the
+  // `eligibleForRetrieval(...)` condition in `teaching-policy.ts` (making the branch always
+  // retrieve) and every case above turns red. Layer 1 is carried by that one call and nothing else.
+});
+
+test("🔴 LAYER 1's LOCK IS ON THE CONFIGURATION, NOT IN THE DECISION", () => {
+  // The policy used to defend the immediate repeat with a second condition, `!actedJustNow`. That
+  // condition is what made the owner's tempo inert, because it was measured against a different and
+  // longer constant. Removing it did not remove the guarantee — it moved it to where it cannot
+  // compete with the number the owner set.
   //
-  // The behavioural version of this test is now writable: ages 10–59 min separate the windows
-  // (eligible, yet "just acted"), so a case at 30 min asserting `null` would pass, and deleting
-  // `!actedJustNow` would turn it red. It would calibrate perfectly — and it would assert, as a
-  // protected invariant, that the owner's ruling does not take effect for another fifty minutes.
-  // A test that pins the defect is worse than no test, so it is not written. The invariant stays
-  // pinned structurally: `actedJustNow` must be checked before eligibility, so layer 1 composes
-  // with tempo rather than competing with it.
-  //
-  // Layer 1 itself is not at risk in the meantime. At a ten-minute tempo, `eligibleForRetrieval`
-  // alone already refuses anything answered ninety seconds ago.
-  const code = readFileSync(new URL("./teaching-policy.ts", import.meta.url), "utf8")
+  // 🔴 WHY THIS HALF IS A SOURCE ASSERTION AND CANNOT BE ANYTHING ELSE. The floor is enforced by a
+  // module-scope throw, so demonstrating it behaviourally would mean importing a module that
+  // refuses to load. A test cannot both import it and survive. What IS behavioural is the
+  // consequence, asserted directly above: at the shipped tempo the immediate repeat does not happen.
+  const source = readFileSync(new URL("./retrieval-eligibility.ts", import.meta.url), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  assert.ok(
+    /if \(RETRIEVAL_ELIGIBLE_AFTER_MS < MINIMUM_TEMPO_MS\)[\s\S]*throw new Error/.test(code),
+    "a tempo below the floor must be unimportable, not merely discouraged",
+  );
+  assert.equal(code.includes("export const MINIMUM_TEMPO_MS"), false, "the floor is a bound, not an interface");
+
+  // 🔴 AND THE FLOOR BINDS THE CONSTANT, NOT THE PREDICATE — worth pinning, because it is the one
+  // way back to the old defect. An injected interval bypasses the floor entirely, which is correct
+  // for a test seam and would be a hole if production ever used it. Nothing does: the policy calls
+  // `eligibleForRetrieval` with no `eligibleAfterMs`, and the sweep test above would catch any
+  // caller that started supplying one, because the waited interval would stop matching the constant.
+  assert.equal(eligibleForRetrieval({ eligibleAfterMs: 0, lastEvidenceAt: ago(1), now: NOW }), true);
+
+  const policy = readFileSync(new URL("./teaching-policy.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
-
-  const gate = code.indexOf("eligibleForRetrieval(");
-  assert.notEqual(gate, -1, "the policy must consult eligibility");
-  const condition = code.slice(code.lastIndexOf("if (", gate), gate);
-  assert.ok(
-    condition.includes("!actedJustNow &&"),
-    "suppression must be checked BEFORE eligibility — otherwise a short interval reopens the immediate repeat",
-  );
-
-  // And the predicate itself genuinely honours an injected interval, which is what makes the
-  // structural guard meaningful rather than decorative.
-  assert.equal(eligibleForRetrieval({ eligibleAfterMs: 0, lastEvidenceAt: ago(1), now: NOW }), true);
+  assert.equal(policy.includes("eligibleAfterMs"), false, "the policy must not inject its own tempo");
 });
 
 // ── the predicate itself ─────────────────────────────────────────────────────────────────────────

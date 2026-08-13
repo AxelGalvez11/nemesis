@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { KnowledgeObject } from "./knowledge-types";
 import { projectLearnerState, type LearnerEvidence } from "./learner-evidence";
 import { objectivesForKnowledge } from "./learning-objective";
+import { RETRIEVAL_ELIGIBLE_AFTER_MS } from "./retrieval-eligibility";
 import { ACT_AGAIN_AFTER_MS, chooseNextTeachingAction, type TeachingAction } from "./teaching-policy";
 
 // The real objects, not hand-written ids: a knowledge object through the real minting function, so
@@ -19,6 +20,15 @@ const KNOWLEDGE: KnowledgeObject = {
 const [GENERIC_TO_BRAND, BRAND_TO_GENERIC] = objectivesForKnowledge(KNOWLEDGE);
 const NOW = new Date("2026-08-11T12:00:00Z");
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+
+/**
+ * 🔴 A FRACTION OF THE TEMPO, NEVER A LITERAL. A fixture that writes "ten minutes" to mean "recent"
+ * is asserting a relationship to `RETRIEVAL_ELIGIBLE_AFTER_MS` without saying so, and it stops being
+ * true the moment that constant moves. That is not hypothetical: these ages were literals, the owner
+ * ruled the tempo to exactly the literal, and tests that meant "still suppressed" landed on the
+ * inclusive boundary and started meaning "due".
+ */
+const RECENT_MS = RETRIEVAL_ELIGIBLE_AFTER_MS / 2;
 
 function ev(id: string, occurredAt: string, verdict: LearnerEvidence["verdict"], extra: Partial<LearnerEvidence> = {}): LearnerEvidence {
   return {
@@ -64,7 +74,7 @@ test("the retrieval names the objective it is evidence for", () => {
 test("🔴 a demonstrated objective advances rather than being re-tested", () => {
   // The fixed sequence would ask again because the session template says there are more Recall
   // steps left. Nothing here requires a separate stage to re-verify what was just shown to work.
-  const action = decide([ev("e1", ago(5 * 60_000), "understood")]);
+  const action = decide([ev("e1", ago(RECENT_MS), "understood")]);
   assert.equal(action.type, "advance");
 });
 
@@ -182,7 +192,12 @@ test("🔴 demonstrating one direction leaves the other UNKNOWN", () => {
   // never asked — and this test would pass while having lost the very thing it exists to detect. A
   // collapsed "knows losartan/Cozaar" model must still be distinguishable here, so the demonstration
   // is recent enough that the two directions give DIFFERENT answers.
-  const evidence = [ev("e1", ago(10 * 60_000), "understood")];
+  //
+  // 🔴 WHICH IS EXACTLY WHY THE AGE IS DERIVED. Written as a literal ten minutes, this test went red
+  // the day the owner ruled ten minutes — the demonstrated direction became due, both answered
+  // `retrieve`, and the strongest acceptance case in the file lost its discriminating power to a
+  // number chosen elsewhere. A fixture that means "inside the window" must be defined by the window.
+  const evidence = [ev("e1", ago(RECENT_MS), "understood")];
   const forward = decide(evidence);
   const reverse = chooseNextTeachingAction({
     knowledgeObject: KNOWLEDGE,

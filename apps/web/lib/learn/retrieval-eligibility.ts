@@ -52,6 +52,38 @@
 export const RETRIEVAL_ELIGIBLE_AFTER_MS = 10 * 60 * 1000;
 
 /**
+ * The shortest tempo that may ever be configured.
+ *
+ * 🔴 A BOUND ON THE CONFIGURATION, NOT A SECOND KNOB — and one question settles which it is: can it
+ * change what the policy decides for any VALID tempo? It cannot. It can only refuse an invalid one.
+ * `ACT_AGAIN_AFTER_MS` was a genuine second knob precisely because it could out-vote the number the
+ * owner set: it competed inside the decision. A floor never competes. For every tempo anyone could
+ * legitimately choose it is not consulted at all, and it can never make a learner wait longer.
+ *
+ * 🔴 THIS IS WHERE LAYER 1 LIVES NOW. "Never re-ask the thing just answered" used to be a second
+ * condition inside `chooseNextTeachingAction`, and that is exactly what made the owner's ruling
+ * inert — a learner waited the longer of two intervals. The guarantee is unchanged; the mechanism
+ * is not. A tempo short enough to reopen the immediate repeat cannot be configured, so the policy
+ * needs no branch to defend against one.
+ *
+ * Not exported, because it is not part of this module's interface and nothing may read it to make a
+ * decision. Not a tempo and not tunable: it is the point below which a re-ask stops measuring
+ * memory and starts measuring whether someone can still hear their own voice.
+ */
+const MINIMUM_TEMPO_MS = 60 * 1000;
+
+// 🔴 ASSERTED AT MODULE SCOPE ON PURPOSE, SO AN INVALID TEMPO CANNOT BE IMPORTED AT ALL — rather
+// than being caught by a test somebody might not run, in a suite that might be red for other
+// reasons. This is "make the defect unrepresentable rather than merely unlikely", applied to a
+// configuration value instead of a type.
+if (RETRIEVAL_ELIGIBLE_AFTER_MS < MINIMUM_TEMPO_MS) {
+  throw new Error(
+    `RETRIEVAL_ELIGIBLE_AFTER_MS is ${RETRIEVAL_ELIGIBLE_AFTER_MS} ms, below the floor of ${MINIMUM_TEMPO_MS} ms. ` +
+      "A tempo this short re-asks an objective moments after it was answered and records that echo as a demonstration.",
+  );
+}
+
+/**
  * Is a demonstrated objective askable again?
  *
  * 🔴 IT ANSWERS ONLY "MAY IT BE ASKED", NEVER "SHOULD IT BE". What to do about an objective is
