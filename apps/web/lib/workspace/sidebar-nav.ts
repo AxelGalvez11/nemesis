@@ -1,0 +1,47 @@
+// The workspace destinations, in one place, because two components now draw them.
+//
+// 🔴 EXTRACTED THE DAY A SECOND RENDERER APPEARED. `SIDEBAR_NAV` lived inside `chat-sidebar.tsx`
+// and was correct there while that file was the only thing that drew it. The collapsed rail draws
+// the same four destinations as icons, and a copied array is a guarantee that one day the rail and
+// the expanded sidebar disagree about where the product can go — silently, because each looks
+// right on its own. One array, two renderers.
+//
+// It lives under lib/ rather than next to the sidebar so the rail does not have to import a large
+// client component (and everything that component imports) to learn four strings.
+//
+// The reasoning for WHICH destinations these are, and the several models that were tried and
+// discarded, stays in `chat-sidebar.tsx` where the rows are laid out. In short (owner 2026-08-13,
+// §L): the sidebar represents DESTINATIONS, never content, so it is almost static by design —
+// "eventually the sidebar becomes a giant chronological dump. Nemesis users aren't primarily
+// trying to recover a conversation from three weeks ago. They're managing BODIES OF KNOWLEDGE."
+
+export interface NavItem {
+  readonly id: string;
+  readonly label: string;
+  /** Name of the @vscode/codicons glyph, without the `codicon-` prefix. */
+  readonly codicon: string;
+  readonly route?: string;
+  readonly action?: "new-session";
+}
+
+export const SIDEBAR_NAV: readonly NavItem[] = [
+  // The front door. `/learn` IS the minimal composer — "What do you want to learn?" with upload,
+  // record and dictate — and the canvas is created automatically once the learner starts, landing
+  // in `Unfiled` for them to file later. It is deliberately not a "new session" action: nothing is
+  // created by pressing this, only by beginning.
+  { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
+  { id: "library", label: "Library", codicon: "library", route: "/library" },
+  { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
+  { id: "stats", label: "Stats", codicon: "graph", route: "/stats" },
+];
+
+/** Dev-preview mounts the whole workspace under a prefix; a rail row must not navigate out of it. */
+export function navigationRootFor(pathname: string): string {
+  return pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+}
+
+/** Whether a destination is the surface currently on screen. */
+export function navItemActive(pathname: string, destination: string | null): boolean {
+  if (!destination) return false;
+  return pathname === destination || pathname.startsWith(`${destination}/`);
+}

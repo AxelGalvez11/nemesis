@@ -50,14 +50,8 @@ import {
   SidebarSectionHeader,
 } from "./sidebar-primitives";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { navigationRootFor, navItemActive, SIDEBAR_NAV } from "@/lib/workspace/sidebar-nav";
 
-interface NavItem {
-  id: string;
-  label: string;
-  codicon: string;
-  route?: string;
-  action?: "new-session";
-}
 
 // 🔴 THE SIDEBAR REPRESENTS DESTINATIONS, NOT CONTENT (owner 2026-08-13, §L). It is almost
 // static, and that is the design rather than an unfinished state.
@@ -102,16 +96,9 @@ interface NavItem {
 //
 // Notebooks was retired the same way on 2026-07-23 and is still serving
 // /api/notebooks/extract/* today, which is the precedent this follows.
-const SIDEBAR_NAV: NavItem[] = [
-  // The front door. `/learn` IS the minimal composer — "What do you want to learn?" with upload,
-  // record and dictate — and the canvas is created automatically once the learner starts, landing
-  // in `Unfiled` for them to file later. It is deliberately not a "new session" action: nothing is
-  // created by pressing this, only by beginning.
-  { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
-  { id: "library", label: "Library", codicon: "library", route: "/library" },
-  { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
-  { id: "stats", label: "Stats", codicon: "graph", route: "/stats" },
-];
+// 🔴 THE ARRAY ITSELF NOW LIVES IN lib/workspace/sidebar-nav.ts, because the collapsed rail draws
+// the same four destinations as icons and a second copy would eventually disagree with this one.
+// The reasoning above is why these four; the module is only where they are written down.
 
 interface ChatSidebarProps {
   sidebarOpen: boolean;
@@ -125,7 +112,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
-  const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+  const navigationRoot = navigationRootFor(pathname);
   const { pinned, recents, sessions, selectedId, working, select, rename, remove, togglePin } = useSessions();
 
   const [query, setQuery] = useState("");
@@ -219,7 +206,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
             <SidebarMenu className="gap-px">
               {SIDEBAR_NAV.map((item) => {
                 const destination = item.route ? `${navigationRoot}${item.route}` : null;
-                const active = destination ? pathname === destination || pathname.startsWith(`${destination}/`) : false;
+                const active = navItemActive(pathname, destination);
                 const isNewSession = item.action === "new-session";
 
                 return (

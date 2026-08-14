@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
 import { ImmersiveSurfaceProvider, useImmersiveClaimed } from "./immersive-surface";
+import { NAV_RAIL_WIDTH_PX, NavRail } from "./nav-rail";
 import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
@@ -128,7 +129,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // claim comes from `CanvasSurface`, which is also what guarantees the `×` that replaces it; see
   // immersive-surface.tsx for why this is a declaration rather than a route or a query read.
   const immersiveClaimed = useImmersiveClaimed();
-  const { focusMode, navToggleShowing, sidebarVisible } = shellNavigation({
+  const { focusMode, navToggleShowing, railVisible, sidebarVisible } = shellNavigation({
     immersiveClaimed,
     libraryFullScreen,
     narrowViewport,
@@ -162,7 +163,15 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
       data-workspace=""
       style={{
         ...SHELL_VARS,
-        ["--pane-chat-sidebar-width" as string]: sidebarVisible ? (narrowViewport ? "min(84vw, 18rem)" : "256px") : "0px",
+        // 🔴 COLLAPSED IS `NAV_RAIL_WIDTH_PX`, NOT `0px`. The column keeps real width and draws an
+        // icon rail; only a canvas (focus mode) and a phone still go to zero. See nav-rail.tsx.
+        ["--pane-chat-sidebar-width" as string]: sidebarVisible
+          ? narrowViewport
+            ? "min(84vw, 18rem)"
+            : "256px"
+          : railVisible
+            ? `${NAV_RAIL_WIDTH_PX}px`
+            : "0px",
         // 🔴 SPACE THE FLOATING TOGGLE CLAIMS, PUBLISHED SO SURFACES CAN AVOID IT. `TitlebarControls`
         // is `fixed` at the viewport's top-left; the Canvas header is `absolute` at its own top-left.
         // With the rail collapsed the two occupy the same corner and the toggle prints straight over
@@ -193,12 +202,20 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
             data-pane-open={sidebarVisible ? "true" : "false"}
             data-pane-side="left"
           >
-            <ChatSidebar
-              accountEmail={accountEmail}
-              onCollapse={() => setSidebarOpen(false)}
-              onNavigate={() => narrowViewport && setSidebarOpen(false)}
-              sidebarOpen={sidebarVisible}
-            />
+            {/* 🔴 THE RAIL REPLACES THE SIDEBAR IN THE SAME COLUMN, rather than floating beside
+                it. `ChatSidebar` stays mounted-but-inert when closed (it fades via opacity and
+                keeps its own DOM), so rendering both would stack two elements in one grid cell.
+                One or the other. */}
+            {railVisible ? (
+              <NavRail accountEmail={accountEmail} onExpand={() => setSidebarOpen(true)} />
+            ) : (
+              <ChatSidebar
+                accountEmail={accountEmail}
+                onCollapse={() => setSidebarOpen(false)}
+                onNavigate={() => narrowViewport && setSidebarOpen(false)}
+                sidebarOpen={sidebarVisible}
+              />
+            )}
           </div>
           <div className="relative min-h-0 min-w-0 overflow-hidden">{children}</div>
         </div>
