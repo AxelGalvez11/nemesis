@@ -198,6 +198,22 @@ test("the request asks for the structure the model needs, by data URI", () => {
   // before it ever reaches Nemesis, and no later pass can recover it.
   assert.equal(body.table_format, "html");
   assert.equal(body.include_blocks, true);
+
+  // 🔴🔴 THE PARAMETER THAT DECIDES WHETHER DIAGRAMS EXIST. Both of these read as "we do not want
+  // the pixels" and they do completely different things: measured on one 36-page diagram-heavy
+  // lecture, `include_image_base64: false` returns 13 figures with coordinates while
+  // `image_limit: 0` returns none — and drops their labelled blocks too, so nothing downstream can
+  // tell that a page ever had a picture on it. Coverage then computes `complete` for a page nobody
+  // looked at, which is a false claim of completeness that reconciles perfectly.
+  //
+  // 🔴 THIS IS ASSERTED HERE, ON THE REQUEST, BECAUSE IT CANNOT BE ASSERTED DOWNSTREAM. Three
+  // separate paths in the mapper turn an image into a figure block — the labelled `image` branch,
+  // the markdown reader's `imageRefOf`, and `locatedFigures` for pictures the prose never names —
+  // so breaking any one of them leaves the other two producing figures and a model-level guard
+  // stays green. Verified by trying exactly that. The request is the one place the defect is
+  // representable.
+  assert.equal(body.include_image_base64, false, "figures must be located, only their pixels declined");
+  assert.equal(body.image_limit, undefined, "image_limit: 0 suppresses the figures themselves");
 });
 
 test("a reply that is not the OCR shape is refused rather than half-read", () => {

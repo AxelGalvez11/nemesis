@@ -28,7 +28,19 @@ export type MistralEnv = Readonly<Record<string, string | undefined>>;
 
 const MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr";
 
-/** The published default. Overridable so a model change does not need a deploy. */
+/**
+ * The moving alias, deliberately, never a pinned version (owner, 2026-08-13).
+ *
+ * 🔴 IT AUTO-UPGRADES, WHICH IS THE POINT: `mistral-ocr-latest` resolves to whatever the vendor's
+ * current OCR model is — 4.1 at the time of writing — so Nemesis gets a better read without a
+ * deploy, and pinning would freeze us on whatever was current the day this shipped. Parsing is
+ * infrastructure; we do not want to be in the business of tracking its version numbers.
+ *
+ * 🔴 AND THE PRICE IS THAT NOTHING CAN TELL US WHICH VERSION READ A GIVEN ROW. Measured across
+ * four real calls: the response's `model` field echoes the alias back verbatim, so it reports what
+ * we ASKED for and never what actually ran. `MISTRAL_OCR_MODEL` exists so a concrete version can be
+ * pinned from the environment if a regression ever needs bisecting against a specific one.
+ */
 export const MISTRAL_DEFAULT_MODEL = "mistral-ocr-latest";
 
 /**
@@ -111,8 +123,14 @@ export interface MistralPage {
 
 export interface MistralOcrResponse {
   pages: MistralPage[];
-  /** What the vendor says it actually ran — NOT what we asked for. Recorded as telemetry so a
-   *  silent model change on their side is visible on ours. */
+  /**
+   * What the vendor reports for this call.
+   *
+   * 🔴 THIS ECHOES THE ALIAS, IT DOES NOT RESOLVE IT. Asking for `mistral-ocr-latest` gets
+   * `mistral-ocr-latest` back — verified on four real calls — so this records which model we
+   * REQUESTED and cannot tell you which concrete version served it. Stored as provenance on that
+   * honest basis: it distinguishes a vendor-read row from a locally-read one, and no more.
+   */
   model: string;
   usage_info?: { pages_processed?: number | null; doc_size_bytes?: number | null } | null;
 }
@@ -238,15 +256,27 @@ export function buildMistralRequest(input: {
     confidence_scores_granularity: "block",
     extract_header: true,
     extract_footer: true,
-    // 🔴 `image_limit: 0`, NOT `include_image_base64: false`, AND THE DIFFERENCE IS A 400 ON EVERY
-    // OFFICE FILE. Measured: Mistral rejects the latter for .docx and .pptx outright — "extracted
-    // images can only be returned in base64 ... try setting image_limit=0 instead" — so the flag
-    // that reads as the obvious way to decline pixels silently turned every Word and PowerPoint
-    // upload into a fall-back to the local parser, while PDFs went on working perfectly.
+    // 🔴🔴 `include_image_base64: false` DECLINES THE PIXELS. `image_limit: 0` DECLINES THE
+    // FIGURES THEMSELVES, AND THE TWO READ IDENTICALLY IN A DIFF. Measured on one 36-page
+    // diagram-heavy lecture, same request in every other respect:
     //
-    // Images are still LOCATED; their rectangles are what a locator needs, and the pixels would
-    // multiply the response size for something the reader renders from the original file anyway.
-    image_limit: 0,
+    //     image_limit: 0              ->  0 figures
+    //     include_image_base64: false -> 13 figures, all with coordinates, no pixels, +6 KB
+    //
+    // With the wrong one, a lecture built out of diagrams reports NO figures, coverage computes
+    // `complete` because nothing was found to be missing, and the product tells a student it read
+    // everything on a page it never looked at. A false claim of completeness is worse than a
+    // truthful `partial`, and it is invisible: every count still reconciles.
+    //
+    // 🔴 `image_limit: 0` IS WHAT MISTRAL ITSELF RECOMMENDS FOR OFFICE FILES — it rejects this flag
+    // for .docx and .pptx with "extracted images can only be returned in base64 ... try setting
+    // image_limit=0 instead". That is real, and it is why this line was briefly the other way
+    // round. It stopped mattering when the vendor's scope narrowed to PDF, where this flag works;
+    // if Office ever comes back, they need different parameters, not a shared compromise.
+    //
+    // The rectangles are what a locator needs. The pixels would multiply the response size for
+    // something the reader renders from the original file anyway.
+    include_image_base64: false,
   });
 }
 

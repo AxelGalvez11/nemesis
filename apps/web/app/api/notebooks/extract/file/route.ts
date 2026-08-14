@@ -272,6 +272,7 @@ export async function POST(req: Request): Promise<Response> {
         sourceId,
         text,
         title: result.title,
+        ...(readBy ? { readBy } : {}),
         userId: check.userId,
         // 🔴 THE STRUCTURE HAS TO SURVIVE THE REQUEST. Everything downstream —
         // chat, retrieval, study generation, the reader — loads from

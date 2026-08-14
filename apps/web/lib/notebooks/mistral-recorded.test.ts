@@ -37,7 +37,7 @@ const RECORDED = JSON.parse(
 
 /** A recording, read through the same validator production uses — so a fixture that would be
  *  rejected in production cannot quietly pass here. */
-function recorded(name: "instructions" | "drug_charts"): MistralOcrResponse {
+function recorded(name: "instructions" | "drug_charts" | "diagram"): MistralOcrResponse {
   const parsed = parseMistralResponse(RECORDED[name]);
   assert.ok(parsed, `the recorded ${name} response must satisfy the production reader`);
   return parsed;
@@ -101,6 +101,33 @@ test("the recorded instruction sheet keeps its nested bullets as list items", ()
     items.some((item) => /convert lbs to kg/i.test(item.text)),
     "including a nested item that uses the vendor's own bullet glyph",
   );
+});
+
+test("🔴 a recorded diagram page locates its figure — the parameter that silently suppressed them", () => {
+  const model = modelFromMistral(recorded("diagram"), "pdf", null);
+  assert.ok(model);
+  const figures = model.blocks.filter((block) => block.kind === "figure");
+
+  // 🔴 A PROPERTY GUARD, AND DELIBERATELY NOT A MECHANISM ONE. Three paths in the mapper can turn
+  // an image into a figure — the labelled `image` branch, the markdown reader's `imageRefOf`, and
+  // `locatedFigures` for pictures the prose never names — so disabling any single one leaves this
+  // green. That was tried, twice, before this comment was written. What it does assert is the thing
+  // a learner would notice: a recorded page with a diagram on it yields a located figure. The
+  // parameter that decides whether figures arrive AT ALL is guarded on the request instead, in
+  // `mistral-model.test.ts`, which is the one place that defect is representable.
+  assert.ok(figures.length > 0, "a recorded page with a diagram on it must produce a figure block");
+
+  const placed = figures.filter((block) => block.rect);
+  assert.equal(placed.length, figures.length, "and every figure must carry where it is");
+  for (const block of placed) {
+    const { height, width, x, y } = block.rect!;
+    for (const value of [x, y, width, height]) {
+      assert.ok(value >= 0 && value <= 1, `figure rect out of 0..1: ${JSON.stringify(block.rect)}`);
+    }
+  }
+  // Located, and honestly unexamined — absent description is what lets a later vision pass enrich
+  // this document instead of believing someone already looked.
+  assert.equal(figures[0]?.figure?.description, undefined);
 });
 
 test("🔴 recorded response → model → stored → read back → KNOWLEDGE OBJECTS", () => {

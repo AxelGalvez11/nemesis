@@ -234,7 +234,7 @@ async function runOne(
       p_doc_kind: parsed.kind,
       p_parse_ms: Math.round(ms),
       p_parse_peak_rss_mb: peakRssMb,
-      p_parser_version: PARSER_VERSION,
+      p_parser_version: parsed.readBy ?? PARSER_VERSION,
       p_source_id: job.id,
       p_structure: structureEnvelope({
         model: parsed.model,

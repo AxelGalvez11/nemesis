@@ -136,6 +136,16 @@ export interface PersistParseInput {
   title: string | null;
   text: string;
   /**
+   * Who actually read this file, when it was not our own extractor.
+   *
+   * 🔴 THIS IS THE PROVENANCE COLUMN, AND WITHOUT IT NOTHING RECORDS WHICH PARSER PRODUCED A ROW.
+   * `parser_version` is stamped `extract-YYYY-MM-DD` for every local parse, which answers "which
+   * build of ours" — a useful question while we own the extractor and a useless one once a vendor
+   * does. A row read by Mistral says so, with the model the vendor reported rather than the one we
+   * asked for, so a silent model change on their side is visible on ours. Absent means we read it.
+   */
+  readBy?: string;
+  /**
    * The structural read, when one was produced.
    *
    * 🔴 THIS IS THE COLUMN THAT DECIDES WHETHER PHASE 2 SURVIVES THE REQUEST.
@@ -184,7 +194,7 @@ export async function persistParse(input: PersistParseInput): Promise<PersistPar
       p_coverage: input.coverage as unknown as Record<string, unknown>,
       p_doc_kind: input.docKind,
       p_error: null,
-      p_parser_version: PARSER_VERSION,
+      p_parser_version: input.readBy ?? PARSER_VERSION,
       p_structure: structureEnvelope({
         text: input.text,
         title: input.title,

@@ -388,5 +388,86 @@
    "pages_processed": 24,
    "doc_size_bytes": 1630190
   }
+ },
+ "_recorded": "2026-08-13, POST /v1/ocr with the exact body buildMistralRequest emits",
+ "diagram": {
+  "model": "mistral-ocr-latest",
+  "usage_info": {
+   "pages_processed": 36,
+   "doc_size_bytes": 1123668
+  },
+  "pages": [
+   {
+    "index": 2,
+    "markdown": "# The Nephron\n\n![img-0.jpeg](img-0.jpeg)",
+    "images": [
+     {
+      "id": "img-0.jpeg",
+      "top_left_x": 79,
+      "top_left_y": 125,
+      "bottom_right_x": 940,
+      "bottom_right_y": 686,
+      "image_base64": null,
+      "image_annotation": null
+     }
+    ],
+    "tables": [],
+    "hyperlinks": [],
+    "header": null,
+    "footer": "Copyright \u00a9 2004 Pearson Education, Inc., publishing as Benjamin Cummings.",
+    "dimensions": {
+     "dpi": 100,
+     "height": 727,
+     "width": 1018
+    },
+    "confidence_scores": {
+     "word_confidence_scores": [],
+     "average_page_confidence_score": 0.9573876069283943,
+     "minimum_page_confidence_score": 0.405588673491909
+    },
+    "blocks": [
+     {
+      "top_left_x": 61,
+      "top_left_y": 34,
+      "bottom_right_x": 328,
+      "bottom_right_y": 82,
+      "content": "# The Nephron",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.999817117002857,
+       "minimum_content_confidence_score": 0.9996199860349345,
+       "block_type_confidence_score": 0.9982913175912028
+      },
+      "type": "title"
+     },
+     {
+      "top_left_x": 79,
+      "top_left_y": 125,
+      "bottom_right_x": 940,
+      "bottom_right_y": 686,
+      "content": "![img-0.jpeg](img-0.jpeg)",
+      "confidence_scores": {
+       "average_content_confidence_score": null,
+       "minimum_content_confidence_score": null,
+       "block_type_confidence_score": 0.9999678145263777
+      },
+      "type": "image",
+      "image_id": "img-0.jpeg"
+     },
+     {
+      "top_left_x": 82,
+      "top_left_y": 689,
+      "bottom_right_x": 427,
+      "bottom_right_y": 704,
+      "content": "Copyright \u00a9 2004 Pearson Education, Inc., publishing as Benjamin Cummings.",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999566631719887,
+       "minimum_content_confidence_score": 0.9997185069241106,
+       "block_type_confidence_score": 0.9959693772505468
+      },
+      "type": "footer"
+     }
+    ]
+   }
+  ]
  }
 }
