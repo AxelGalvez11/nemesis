@@ -137,6 +137,51 @@ export function isEvidenceStage(state: CanvasState): boolean {
 }
 
 /**
+ * A name for the cognitive action in flight, stable while that action is what the learner is doing.
+ *
+ * 🔴 THE OBJECTIVE *AND* THE ACTION TYPE, BECAUSE EITHER ALONE IS THE WRONG GRAIN. The objective
+ * alone would hold attention across "ask → they miss → here is the answer", which is two actions and
+ * the second is precisely where general material must stop competing. The action type alone would
+ * treat two different objectives' retrievals as one act, so material requested during the first
+ * would still be painting under the second.
+ */
+export const NO_ACTION = "none";
+
+export function actionKey(
+  action: { type: string; objectiveId?: string; objectiveIds?: readonly string[] } | null,
+): string {
+  if (!action) return NO_ACTION;
+  const subject = action.objectiveId ?? action.objectiveIds?.join(",") ?? "";
+  return `${action.type}|${subject}`;
+}
+
+/**
+ * Is the reading material on this canvas the cognitive action itself, right now?
+ *
+ * 🔴🔴 DERIVED, WHICH IS THE WHOLE FIX — THERE IS NOTHING TO CLEAR, SO IT CANNOT GO STALE. The
+ * version this replaces was a session boolean set by the command path and never unset, so a single
+ * *"explain this"* re-admitted general material beneath every question for the rest of the session:
+ * the owner's overview came back one interaction later, and the fix that removed it read as a copy
+ * change. A flag that must be cleared in N places is cleared in N−1 of them by the next editor.
+ *
+ * 🔴 IT ANSWERS THE OWNER'S TEST DIRECTLY — *"Could the learner meaningfully perform the current
+ * cognitive action without this text?"* If the text IS the action, the question answers itself and
+ * the material owns the Canvas. When the policy moves to a different action, the same material has
+ * become background under a live task, and the answer flips with no state change anywhere.
+ *
+ * PURE, and both arguments are session facts about what the RUNTIME staged — never claims about the
+ * learner, never durable.
+ */
+export function materialOwnsAttention(input: {
+  /** The action that was in flight when the learner asked for material. Null: they never asked. */
+  requestedDuring: string | null;
+  /** The action in flight now. `NO_ACTION` when the policy has nothing to say. */
+  actionInFlight: string;
+}): boolean {
+  return input.requestedDuring !== null && input.requestedDuring === input.actionInFlight;
+}
+
+/**
  * What paints, given what the canvas holds and whether the policy has something to ask.
  *
  * 🔴 THE ONE RULE, AND IT IS ASYMMETRIC ON PURPOSE:
@@ -177,27 +222,38 @@ export function composeSurface(input: {
    */
   hasReadingMaterial?: boolean;
   /**
-   * The learner has asked for something to read, in this session.
+   * The reading material IS the cognitive action in flight — not "material exists and someone once
+   * asked for some".
    *
-   * 🔴🔴 THE ONE THING THAT LETS THE DOCUMENT PAINT WHILE A TASK IS UP, AND IT HAS TO BE ASKED FOR.
-   * *"Never explain the material merely because it exists. Explain what the learner needs because of
-   * what they just demonstrated."* — owner, 2026-08-14, after meeting his own canvas: it asked a
-   * real question and then printed **"What Acceptance B1 Covers"** beneath it, several paragraphs
-   * telling him what the document he had just uploaded contained.
+   * 🔴🔴 THE ONE THING THAT LETS THE DOCUMENT PAINT WHILE A TASK IS UP, AND THE FIRST VERSION OF IT
+   * WAS STICKY. *"Never explain the material merely because it exists. Explain what the learner
+   * needs because of what they just demonstrated."* — owner, 2026-08-14, after meeting his own
+   * canvas: it asked a real question and then printed **"What Acceptance B1 Covers"** beneath it.
+   * I shipped `learnerAskedForContent`, a session flag set by the command path and **never
+   * cleared**, so one *"explain this"* re-admitted general material underneath every question for
+   * the rest of the session. The overview came back, one interaction later, and the fix read as a
+   * copy change again.
    *
-   * 🔴 SESSION STATE, PASSED IN, NEVER DURABLE — the same shape as `correctionsShown`. It is a fact
-   * about what the RUNTIME has been asked for, never a claim about the learner, and it resets when
-   * the session does. Deriving it from the blocks themselves is impossible: a summary the learner
-   * requested and a summary nobody asked for are the same rows.
+   * 🔴 THE INVARIANT IS NOT "READING IS HIDDEN WHENEVER A TASK EXISTS" — owner, correcting me:
    *
-   * Absent means "they have not asked", which is the suppressing direction and the honest default.
+   *     "The invariant is that the current cognitive action owns attention. If teaching, targeted
+   *      reading, a worked correction, or an explicitly requested explanation is itself the next
+   *      cognitive action, that content should own the Canvas. What I don't want is stale/general
+   *      document material competing with the active task."
+   *
+   * So the question this answers is about the material's RELATIONSHIP TO THE ACTION, not about the
+   * learner's history: material the learner asked for is the action while that action is in flight,
+   * and becomes background the moment the policy moves on. See `materialOwnsAttention`, which
+   * derives it and cannot go stale, because there is nothing to clear.
+   *
+   * Absent means "it is background", which is the suppressing direction and the honest default.
    */
-  learnerAskedForContent?: boolean;
+  materialIsTheAction?: boolean;
 }): CanvasRegions {
   const {
     canvasState,
     hasReadingMaterial = true,
-    learnerAskedForContent = false,
+    materialIsTheAction = false,
     policyPresenting,
   } = input;
   const evidenceStage = isEvidenceStage(canvasState);
@@ -228,14 +284,14 @@ export function composeSurface(input: {
     // product; a document rendered in full because it exists is the thing being replaced.
     //
     // 🔴 AND IT IS NOT AN UNCONDITIONAL SUPPRESSION, because "Summarize this" writes into the same
-    // blocks. Content the learner ASKED for still paints — see `learnerAskedForContent`. Suppressing
+    // blocks. Material that IS the action still paints — see `materialIsTheAction`. Suppressing
     // that too would answer a request with a blank page, which is a different defect wearing this
     // fix's clothes.
     // 🔴 THE READING BODY IS GATED; THE PRE-CONTENT SURFACE IS NOT. A canvas that has not begun is
     // not "material competing with a task" — it is the canvas itself, with its composer. Gating it
     // too was my first version and it took three guards red, which is exactly what they are for.
     document:
-      PRE_CONTENT_STATES.includes(canvasState) || (reading && (!policy || learnerAskedForContent)),
+      PRE_CONTENT_STATES.includes(canvasState) || (reading && (!policy || materialIsTheAction)),
     // 🔴 THE LEGACY ARM IS NOW A FALLBACK: it paints only where the policy has nothing to say.
     //
     // The exclusion is still one-directional and still expressed in exactly one place — the
