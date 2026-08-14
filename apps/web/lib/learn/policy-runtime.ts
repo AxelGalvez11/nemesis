@@ -17,7 +17,8 @@ import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState }
 import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
 import { mostValuable, value, type ActionValue } from "./next-action-value";
-import { dependentsOf, prerequisiteMap } from "./objective-prerequisites";
+import { terminologyFriction, type TermLookup } from "./learner-friction";
+import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { ResolvedObjective } from "./canvas-knowledge";
@@ -123,6 +124,20 @@ export function decideNext(input: {
    * policy cannot recover this from the log and has to be told.
    */
   correctionsShown?: ReadonlySet<string>;
+  /**
+   * Every term this learner has stopped to look up, across every session.
+   *
+   * 🔴 DURABLE, UNLIKE `actedOn` AND `correctionsShown` — and that difference is deliberate rather
+   * than an inconsistency. Those two are facts about what this RUNTIME has displayed, which is why
+   * they reset with the session. Needing a word explained is a fact about the LEARNER that survives
+   * the tab closing, and a learner who looked "codon" up on Tuesday should not meet Friday as though
+   * they never had.
+   *
+   * 🔴 AND IT IS STILL NOT EVIDENCE. It arrives on its own input, from its own table, and never
+   * reaches `projectLearnerState` — see `learner-friction.ts`. The moment it is folded into the
+   * evidence log, ordinary curiosity starts moving a learner's status toward "does not know this".
+   */
+  lookups?: readonly TermLookup[];
 }): PolicyDecision | null {
   const actedInOrder = input.actedOn ?? [];
   // Derived, never passed in beside the list — see `actedOn`.
@@ -214,11 +229,22 @@ export function decideNext(input: {
   const blockedBehind = (identityKey: string): number =>
     (dependents.get(identityKey) ?? []).filter((dependent) => stuck.has(dependent)).length;
 
+  // 🔴 THE OBJECTIVE'S OWN VOCABULARY, TAKEN FROM THE SAME ROLE FIELDS THE PREREQUISITE GRAPH USES.
+  // Asking "which words is this built from?" a second way — by scanning the prompt text, say — would
+  // give a second answer, and the two would disagree silently.
+  const lookups = input.lookups ?? [];
+  const wordsInTheWay = (knowledge: KnowledgeObject): boolean => {
+    if (lookups.length === 0) return false;
+    const { establishes, requires } = termsOf(knowledge);
+    return terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present;
+  };
+
   const scored = owed.map((decision) => ({
     decision,
     value: value({
       action: decision.action,
       blockedDependents: blockedBehind(decision.objective.identityKey),
+      terminologyFriction: wordsInTheWay(decision.knowledge),
       evidence: decision.evidence,
       interveningActs: interveningActs(decision.objective.identityKey, actedInOrder),
       knowledge: decision.knowledge,
