@@ -204,7 +204,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
           {/* Same panel-left glyph as the reopen toggle (UX brief §27.1): one icon means "the
               sidebar", and the direction is carried by where the control is, not by the drawing. */}
           <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
-            <PanelLeft size={16} strokeWidth={1.7} />
+            <PanelLeft size={16} strokeWidth={2} />
           </Button>
         </div>
         {searchOpen && showSessionSections && (

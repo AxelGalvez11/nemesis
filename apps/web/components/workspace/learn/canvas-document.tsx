@@ -273,7 +273,7 @@ function BlockView({
             onClick={onRestore}
             type="button"
           >
-            <Undo2 size={12} strokeWidth={1.7} />
+            <Undo2 size={12} strokeWidth={2} />
             Show how this was written
           </button>
         )}

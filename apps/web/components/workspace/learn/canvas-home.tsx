@@ -193,7 +193,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         setDraggingOver(false);
         startWithFiles(event.dataTransfer.files);
       }}
-      style={{ ["--canvas-column" as string]: "680px" }}
+      style={{ ["--canvas-column" as string]: "680px", ["--first-screen-lift" as string]: "56px" }}
     >
       {/* A ring on the surface, not a modal over it: the page stays readable underneath, and
           nothing has to be dismissed if the learner changes their mind mid-drag. */}
@@ -201,8 +201,20 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         <div className="pointer-events-none absolute inset-3 z-50 rounded-2xl ring-2 ring-(--ui-action)" />
       )}
       <div className="h-full overflow-y-auto" ref={scroller}>
-        {/* First screen: nothing but the question and the place to answer it. */}
-        <section className="flex h-full min-h-[26rem] flex-col items-center justify-center px-6">
+        {/* First screen: nothing but the question and the place to answer it.
+            🔴 SHORT OF A FULL SCREEN BY `--first-screen-lift`, AND THAT GAP IS THE ONLY THING
+            THAT TELLS A LEARNER THERE ARE MORE CANVASES BELOW (§46.5). The rule bans instructional
+            scroll hints, so the edge of the next section has to do that job: "Your canvases" sits
+            just above the fold, which is a structure a reader already knows how to read. A
+            full-height first screen looks like the whole page and needs a sentence to correct it,
+            which is exactly the sentence §46.5 forbids.
+            🔴 THE COMPOSER'S RESTING OFFSET IS DERIVED FROM THE SAME VARIABLE, further down. The
+            spacer below sits where the composer floats; if only one of the two moved, the pill
+            would land on top of the line under it. One number, two consumers, no drift. */}
+        <section
+          className="flex min-h-[26rem] flex-col items-center justify-center px-6"
+          style={{ height: "calc(100% - var(--first-screen-lift))" }}
+        >
           <h1 className="text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
             What are you working on?
           </h1>
@@ -236,10 +248,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             )}
           </div>
 
+          {/* 🔴 NO LONGER "Whatever you start above will appear here." (§46.5). That sentence
+              pointed at an element the learner is already looking at and explained where its
+              output would land — onboarding narration for a page with one composer on it. What
+              remains states the condition and nothing else; the heading above it already says
+              what is empty. */}
           {sessions.length === 0 && (
-            <p className="mt-6 text-[0.9375rem] text-(--ui-text-tertiary)">
-              Nothing yet. Whatever you start above will appear here.
-            </p>
+            <p className="mt-6 text-[0.9375rem] text-(--ui-text-tertiary)">Nothing yet.</p>
           )}
 
           {pinned.length > 0 && (
@@ -338,8 +353,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           // SIBLING of the pill; in the row this used to be, it was laid out BESIDE the composer
           // and pushed it off centre instead of sitting under it.
           "pointer-events-none absolute inset-x-0 z-30 flex flex-col items-center px-4 transition-all duration-300 ease-out",
-          docked ? "bottom-6 top-auto" : "bottom-auto top-1/2 -translate-y-[calc(50%-1.25rem)]",
+          docked ? "bottom-6 top-auto" : "bottom-auto top-1/2",
         )}
+        // 🔴 THE UNDOCKED OFFSET IS DERIVED FROM `--first-screen-lift`, NOT HARD-CODED. The first
+        // screen is short by that amount so the canvases below peek into view (§46.5), which moves
+        // the centred h1/spacer group up by half of it — the composer has to travel the same half
+        // or it stops covering the spacer reserved for it and prints over the line underneath.
+        // Written as an inline transform rather than a Tailwind arbitrary value because the calc
+        // reads a custom property, and the escaping needed to express that in a class name is the
+        // kind of thing that breaks silently.
+        style={docked ? undefined : { transform: "translateY(calc(-50% + 1.25rem - var(--first-screen-lift) / 2))" }}
       >
         {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is
             being captured there is exactly one thing to do; leaving the text box live underneath
@@ -532,12 +555,12 @@ function SessionRow({
       <button className="flex min-w-0 flex-1 items-center gap-2.5 text-left" onClick={onOpen} type="button">
         {/* Same pairing as the Library's list (§38.3): a row says what kind of thing it is, and
             nothing that would have to be derived from data this app does not reliably hold. */}
-        <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={1.7} />
+        <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
         <span className="min-w-0 flex-1">
           <p className="truncate text-[0.9375rem] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
           <p className="text-[0.75rem] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
         </span>
-        {pinned && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={1.8} />}
+        {pinned && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
       </button>
 
       {/* 🔴 THE SAME DEFECT THE LIBRARY HAD, ON THE SURFACE THE LEARNER ACTUALLY LANDS ON (§38.3).
@@ -552,7 +575,7 @@ function SessionRow({
         onClick={() => setMenu((current) => !current)}
         type="button"
       >
-        <Ellipsis size={14} strokeWidth={1.8} />
+        <Ellipsis size={14} strokeWidth={2} />
       </button>
 
       {menu && (
@@ -626,7 +649,7 @@ function RowAction({
       onClick={onClick}
       type="button"
     >
-      <Icon className="shrink-0 opacity-70" size={13} strokeWidth={1.7} />
+      <Icon className="shrink-0 opacity-70" size={13} strokeWidth={2} />
       <span className="truncate">{label}</span>
     </button>
   );

@@ -255,3 +255,64 @@ test("🔴 §39: the Continue owner reads the RUNTIME's exposition, not the deci
     "declaredCognitiveMode is back in the Continue owner; it cannot see a verdict that outlived its decision",
   );
 });
+
+test("🔴 §46.5: the landing surface never tells the learner which way to scroll", () => {
+  // 🔴 THE OWNER QUOTED A STRING THAT IS NOT IN THIS REPO. §46.5 names "Scroll down to see the
+  // other canvases"; it appears in no file and in no commit. What it describes is a RULE, and the
+  // rule is what this guards: the front door may not explain its own navigation. The one line that
+  // actually matched was the empty state, "Nothing yet. Whatever you start above will appear
+  // here." — a sentence pointing at the composer the learner is already looking at.
+  //
+  // 🔴 THE PATTERNS ARE DIRECTIONAL WORDS NEXT TO INTERFACE WORDS, NOT A BANNED-PHRASE LIST. A list
+  // of exact sentences only ever catches the sentence someone already removed; the next one is
+  // phrased differently and passes. What cannot be rephrased away is pointing at a direction.
+  const source = read("canvas-home.tsx");
+  // Comments explain the rule and legitimately quote the copy being banned, so they are stripped
+  // before matching. Without this the guard fails on its own explanation, and the obvious way to
+  // make it green is to delete the reasoning — which is the wrong repair.
+  const copy = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const directional = [
+    /scroll (down|up|below|further)/i,
+    /\bswipe\b/i,
+    /(start|type|create|add|put)[^.<>{}]{0,40}\babove\b/i,
+    /\bbelow\b[^.<>{}]{0,40}(canvas|session|list|see|find)/i,
+    /see (the )?(other|more|your) (canvas|session)/i,
+    /(will )?appear (here|below)/i,
+  ];
+  for (const pattern of directional) {
+    assert.equal(
+      pattern.test(copy),
+      false,
+      `the front door carries navigation instructions again (matched ${pattern}). §46.5: canvases are discoverable through layout, never through prose telling the learner where to look.`,
+    );
+  }
+});
+
+test("🔴 §46.5: the first screen is short by exactly the offset the composer also reads", () => {
+  // The replacement for that sentence is STRUCTURE: the first screen stops short of the fold, so
+  // the "Your canvases" heading beneath it is already visible and needs no caption. Measured in
+  // the browser at 720px of pane — first screen 664, gap 56; with the variable forced to 0 the gap
+  // is 0 and the heading is off-screen, which is the behaviour the banned sentence existed to
+  // apologise for.
+  //
+  // 🔴 BOTH CONSUMERS MUST READ THE SAME VARIABLE. The centred h1/spacer group moves up by half the
+  // lift; the floating composer is positioned independently against the pane and does NOT. If one
+  // is a literal and the other a variable they drift on the next edit, and the pill lands on top of
+  // the line under it. This asserts they are one number, not two that happen to agree today.
+  const source = read("canvas-home.tsx");
+  assert.match(
+    source,
+    /--first-screen-lift/,
+    "the first screen no longer declares a lift; without it the landing page is exactly one viewport tall and nothing below the fold is discoverable",
+  );
+  assert.match(
+    source,
+    /height:\s*"calc\(100% - var\(--first-screen-lift\)\)"/,
+    "the first screen is back to a full viewport, so the canvases below it are invisible until someone scrolls for no stated reason",
+  );
+  assert.match(
+    source,
+    /translateY\(calc\([^)]*var\(--first-screen-lift\)\s*\/\s*2\)\)/,
+    "the composer's resting offset stopped deriving from --first-screen-lift; it will drift from the spacer reserved for it and print over the line beneath",
+  );
+});
