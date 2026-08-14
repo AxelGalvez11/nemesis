@@ -158,6 +158,34 @@ test("🔴 the fallback does not run when the canvas already has a territory to 
   assert.match(condition, /extracted\.length === 0/, "and so must anything the grid lane read");
 });
 
+test("🔴🔴 reading MECHANISMS is not gated on what the grid lane found", () => {
+  // 🔴 MEASURED LIVE, ON THE OWNER'S OWN CANVAS, THE HOUR THE CAUSAL LANE SHIPPED. The document
+  // asserts *"Increasing resistance decreases current when voltage is held constant"* AND carries a
+  // two-column glossary. The glossary made `extracted.length` non-zero, the causal read sat inside
+  // `if (extracted.length === 0 && ...)`, and so the sentence was never read at all — the Canvas
+  // asked "What is the generic for Diovan?". **One glossary table anywhere in a lecture hid every
+  // mechanism in it.**
+  //
+  // A grid of terms and a paragraph asserting a cause are different content. The pair lane is
+  // correctly a fallback; reading mechanisms is not, and must never be moved back inside that gate.
+  const source = readFileSync(new URL("./canvas-knowledge.ts", import.meta.url), "utf8");
+  const code = source.slice(source.indexOf("export async function ensureKnowledgeForCanvas"));
+  const fnEnd = code.indexOf("\n}\n");
+  const body = code.slice(0, fnEnd);
+
+  const call = body.indexOf("await mechanismsFor(");
+  const fallback = body.indexOf("await groundedTerritory(");
+  assert.ok(call > 0, "the mechanism lane must be called from the document path");
+  assert.ok(fallback > 0, "and the pair fallback must still exist");
+  assert.ok(call > fallback, "the mechanism read runs after the fallback, not inside it");
+
+  // 🔴 THE ASSERTION THAT ACTUALLY CATCHES THE REGRESSION: no `extracted.length` test may stand
+  // between the fallback branch closing and the mechanism read. Anyone re-nesting it has to delete
+  // this line to do so.
+  const between = body.slice(fallback, call);
+  assert.doesNotMatch(between, /extracted\.length === 0/, "the mechanism read must not be re-gated on the grid lane");
+});
+
 test("🔴 carrying a territory checks the identity VERSION, and nothing else", () => {
   // 🔴 NOT `groundedReuse`, AND THE DISTINCTION IS THE WHOLE BUG. That function answers "may I skip
   // building?" — a spend question about MATERIAL, which refuses a topic-built territory as

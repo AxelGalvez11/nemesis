@@ -25,7 +25,7 @@ import { canvasCapture } from "./canvas-analytics";
 import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { buildRules, frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
+import { buildRules, frozenTopic, materialSubject, territoryReuse, type CanvasTerritory } from "./canvas-territory";
 import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
 import { TERRITORY_VERSION } from "./knowledge-territory";
 import type { LearningCanvas } from "./canvas-model";
@@ -338,7 +338,11 @@ export async function ensureKnowledgeForCanvas(
   // Replayed through `storeTerritory` exactly as the topic lane replays it, so this converges on
   // the rows that already exist and picks up any enrichment they have gained rather than being a
   // second implementation of the step the cross-canvas claim rests on.
-  const carried = await carriedTerritory(userId, canvas, contexts);
+  // 🔴 LOADED ONCE AND SHARED. Two readers of the same row is two round trips and, worse, two
+  // chances to disagree about whether this canvas has a territory — and the mechanism lane's
+  // build-once marker LIVES in that row.
+  const storedTerritory = await loadCanvasTerritory(userId, canvas.id);
+  const carried = await carriedTerritory(userId, storedTerritory, contexts);
 
   // 🔴 THE GRID LANE FOUND NOTHING, AND THAT IS THE ORDINARY CASE FOR A LECTURE — §24's real
   // blocker, measured rather than assumed.
@@ -380,8 +384,21 @@ export async function ensureKnowledgeForCanvas(
     if (grounded) return grounded;
   }
 
+  // 🔴🔴 THE MECHANISMS ARE READ WHATEVER THE GRID LANE FOUND, AND GATING THEM BEHIND IT WAS WRONG.
+  // Measured live on the owner's own canvas the hour this shipped: a document asserting *"Increasing
+  // resistance decreases current when voltage is held constant"* also carried a two-column glossary,
+  // so `extracted.length` was non-zero, so the branch above never ran, so the causal read never
+  // happened — and the Canvas asked *"What is the generic for Diovan?"*. **One glossary table
+  // anywhere in a lecture hid every mechanism in it.**
+  //
+  // The gate above is right for what it guards: the PAIR lane is a fallback for a document the grid
+  // lane could not read, and it owns the canvas's topic. Reading mechanisms is neither of those
+  // things. A grid of terms and a paragraph asserting a cause are different content, and finding one
+  // says nothing about the other.
+  const mechanisms = await mechanismsFor({ canvas, contexts, signal, sourceIds, stored: storedTerritory, userId });
+
   const fromDocument: ResolvedObjective[] = [];
-  for (const knowledge of extracted) {
+  for (const knowledge of [...extracted, ...mechanisms]) {
     const stored = await saveKnowledge(userId, knowledge);
     for (const objective of stored) fromDocument.push({ knowledge, objective });
   }
@@ -394,6 +411,75 @@ export async function ensureKnowledgeForCanvas(
   // not encode what should be learned first. A real ordering is a later, separate decision.
   resolved.sort((a, b) => a.objective.identityKey.localeCompare(b.objective.identityKey));
   return { coverage, objectives: resolved, outcome, ownership };
+}
+
+// ------------------------------------------------------------------ mechanisms
+
+/**
+ * The mechanisms this canvas's material asserts — read once per material, per ruleset.
+ *
+ * 🔴🔴 IT IS NOT GATED ON WHAT THE GRID LANE FOUND, AND THAT GATE IS THE BUG IT EXISTS TO FIX.
+ * Measured live on the owner's own canvas: a document asserting *"Increasing resistance decreases
+ * current when voltage is held constant"* ALSO carried a two-column glossary. The pair lane found
+ * the glossary, so the fallback branch never ran, so nothing ever read the sentence — and the
+ * Canvas asked *"What is the generic for Diovan?"*. One glossary table anywhere in a lecture hid
+ * every mechanism in it. A grid of terms and a paragraph asserting a cause are different content,
+ * and finding one says nothing whatever about the other.
+ *
+ * 🔴 BUILD-ONCE, BECAUSE IT IS A MODEL CALL ON THE COMMONEST PATH THERE IS. Every open of every
+ * document canvas comes through here. The marker is the same territory row the pair lane uses, under
+ * its own key, so "have the mechanisms been read?" is answerable without a second table — and it
+ * carries the RULES, so shipping a better extractor gives every document one more read.
+ *
+ * 🔴 AND IT NEVER WRITES A TOPIC IT DOES NOT OWN. A canvas started from a topic and later given a
+ * document has a territory whose `topic` is the learner's subject; overwriting it would re-topic
+ * what Nemesis teaches to a filename, which is the clobber the pair lane stands down to avoid. So
+ * the existing row is spread through untouched and only the marker is added.
+ */
+async function mechanismsFor(input: {
+  canvas: LearningCanvas;
+  contexts: readonly SourceContext[];
+  signal?: AbortSignal;
+  sourceIds: readonly string[];
+  stored: CanvasTerritory | null;
+  userId: string;
+}): Promise<KnowledgeObject[]> {
+  const { canvas, signal, sourceIds, stored, userId } = input;
+  if (canvas.sources.length === 0) return [];
+  // Already read under exactly these rules. Nothing to pay for, and nothing new to learn.
+  if (stored?.mechanismsUnder === GROUNDED_BUILD_RULES) return [];
+
+  const subject = materialSubject(sourceIds);
+  return onlyOnceAtATime(`mechanisms:${userId}:${canvas.id}:${subject}`, async () => {
+    const causal = await constructCausalKnowledge(userId, canvas.title, canvas.sources, signal);
+    // 🔴 A FAILED READ MARKS NOTHING. We do not know what this material asserts, and recording "read"
+    // from our own outage would silence the document until the rules next moved.
+    if (!causal) return [];
+
+    // 🔴 THE REFUSALS ARE REPORTED, BECAUSE OTHERWISE TWO OPPOSITE FACTS ARE THE SAME EMPTY ARRAY.
+    // "This document asserts no mechanisms" is ordinary. "Every edge failed to name its excerpt"
+    // means the lane is broken. Counts and reason names only — never the refused text, which is the
+    // learner's own material.
+    if (causal.refusals.length > 0) {
+      const byReason: Record<string, number> = {};
+      for (const refusal of causal.refusals) byReason[refusal.reason] = (byReason[refusal.reason] ?? 0) + 1;
+      canvasCapture("canvas_causal_refused", canvas, {
+        kept: causal.objects.length,
+        reasons: byReason,
+        refused: causal.refusals.length,
+      });
+    }
+
+    // 🔴 THE MARKER GOES DOWN EVEN WHEN NOTHING WAS FOUND — that IS the answer, and it is the whole
+    // saving. What must not happen is writing it from a read that never completed, which is why the
+    // early return above sits before this and not in a `finally`.
+    await saveCanvasTerritory(userId, canvas, {
+      ...(stored ?? { objects: [], topic: subject }),
+      identityVersion: KNOWLEDGE_IDENTITY_VERSION,
+      mechanismsUnder: GROUNDED_BUILD_RULES,
+    });
+    return causal.objects;
+  });
 }
 
 // ----------------------------------------------------------------- topic-first
@@ -579,10 +665,9 @@ export function mergeObjectives(
  */
 async function carriedTerritory(
   userId: string,
-  canvas: LearningCanvas,
+  stored: CanvasTerritory | null,
   contexts: readonly SourceContext[],
 ): Promise<ResolvedObjective[]> {
-  const stored = await loadCanvasTerritory(userId, canvas.id);
   if (!stored || stored.identityVersion !== KNOWLEDGE_IDENTITY_VERSION) return [];
 
   // 🔴 GROUNDED ON THE WAY THROUGH, WHICH IS WHY THE ACCRUAL COSTS NOTHING — N11.
