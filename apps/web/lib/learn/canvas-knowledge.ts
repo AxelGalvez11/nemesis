@@ -21,6 +21,7 @@
 // real document, and the two have separate homes now: `knowledge-production.ts` and
 // `knowledge-coverage.ts`. Neither can see the other's input.
 
+import { canvasCapture } from "./canvas-analytics";
 import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
@@ -663,6 +664,22 @@ async function groundedTerritory(input: {
     // canvas whose pairs built fine is never held back by a causal read that did not.
     constructCausalKnowledge(userId, canvas.title, canvas.sources, signal),
   ]);
+
+  // 🔴 THE REFUSALS ARE REPORTED, BECAUSE OTHERWISE TWO OPPOSITE FACTS ARE THE SAME EMPTY ARRAY.
+  // "This document asserts no mechanisms" is the ordinary answer for most material. "Every edge the
+  // model returned failed to name its excerpt" means the lane is broken — the prompt is not being
+  // followed, or the excerpts are chunked so the quote check can never pass. Both reach the caller
+  // as `objects: []`, and only the reason tally separates them. This is the same rule
+  // `knowledge-extraction.ts` states for its own refusals: they are the output too.
+  if (causal && causal.refusals.length > 0) {
+    const byReason: Record<string, number> = {};
+    for (const refusal of causal.refusals) byReason[refusal.reason] = (byReason[refusal.reason] ?? 0) + 1;
+    canvasCapture("canvas_causal_refused", canvas, {
+      kept: causal.objects.length,
+      reasons: byReason,
+      refused: causal.refusals.length,
+    });
+  }
 
   // 🔴 THE UNION, AND THE EMPTINESS TEST IS OVER BOTH. Keying the early return on the pair lane
   // alone would throw away a perfectly good set of mechanisms because the document happened to
