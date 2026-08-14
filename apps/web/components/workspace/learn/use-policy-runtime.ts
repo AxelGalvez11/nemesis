@@ -560,15 +560,29 @@ export function usePolicyRuntime(
     // place the experiment cannot tolerate it.
     const abort = new AbortController();
     void (async () => {
-      const outcome = await strategyFor(strategy).decide({
-        actedOn,
-        correctionsShown,
-        evidence,
-        now: decidedAt,
-        objectives: inFocus,
-        signal: abort.signal,
-        uid,
-      });
+      let outcome: StrategyOutcome;
+      try {
+        outcome = await strategyFor(strategy).decide({
+          actedOn,
+          correctionsShown,
+          evidence,
+          now: decidedAt,
+          objectives: inFocus,
+          signal: abort.signal,
+          uid,
+        });
+      } catch {
+        // 🔴 A CONTROLLER THAT THREW IS A TURN THE LEARNER DID NOT GET, AND IT IS RECORDED AS ONE
+        // RATHER THAN VANISHING. This is reachable on the ordinary path: the cleanup below aborts an
+        // in-flight model call every time evidence moves underneath it, and an aborted fetch
+        // rejects. Left uncaught it would be an unhandled rejection AND — the part that matters —
+        // would skip the refusal accounting, so the instrument that tells a working baseline from a
+        // broken one would fall silent in exactly the conditions that break it.
+        if (!live) return;
+        canvasCapture("canvas_strategy_refused", canvas, { reason: "model-unreachable", strategy });
+        setDecided({ inputs: decisionInputs, outcome: { decision: null, refusal: "model-unreachable", strategy } });
+        return;
+      }
       if (!live) return;
       if (outcome.refusal) {
         // 🔴 COUNTED, NEVER RECOVERED FROM. There is deliberately no "if the baseline refused, ask

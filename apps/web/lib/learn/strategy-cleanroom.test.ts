@@ -333,6 +333,21 @@ test("🔴 an unreachable model is OUR failure and is counted as one", async () 
   assert.equal(outcome.decision, null);
 });
 
+test("🔴 a transport that THROWS is a counted refusal, not an escaping exception", async () => {
+  // 🔴 REACHABLE ON THE ORDINARY PATH, WHICH IS WHY IT IS A TEST AND NOT A PRECAUTION. The runtime
+  // aborts an in-flight decision every time the learner's evidence moves underneath it — answering
+  // a question while the next one is being chosen does exactly that — and an aborted fetch REJECTS
+  // rather than resolving. An exception escaping here would skip the refusal accounting, so the one
+  // instrument that separates a working baseline from a broken one would go quiet in precisely the
+  // conditions that break it.
+  const throws: TeacherTransport = async () => {
+    throw new DOMException("The user aborted a request.", "AbortError");
+  };
+  const outcome = await createLlmTeacherStrategy(throws).decide(context());
+  assert.equal(outcome.refusal, "model-unreachable");
+  assert.equal(outcome.decision, null);
+});
+
 test("🔴 a reply that is not the requested shape refuses rather than guessing at it", async () => {
   const prose: TeacherTransport = async () => ({
     errorText: null,

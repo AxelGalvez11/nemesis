@@ -287,9 +287,21 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
     // to the model that the budget does not see.
     if (!context.uid) return refused("model-unreachable");
 
-    const reply = await ask(context.uid, teacherMessages(context, sessionNoteFor(context)), {
-      ...(context.signal ? { signal: context.signal } : {}),
-    });
+    // 🔴 A THROW IS A REFUSAL, NOT AN EXCEPTION, AND THIS `catch` IS LOAD-BEARING RATHER THAN
+    // DEFENSIVE. `postChatCompletion` REJECTS on an aborted fetch, and the runtime aborts this call
+    // every time the learner's evidence moves underneath it — so the ordinary path of answering a
+    // question while a decision is in flight would otherwise produce an unhandled rejection. Worse
+    // than the noise: an exception escaping here skips the refusal accounting entirely, so the one
+    // instrument that tells a working baseline from a broken one would go quiet in exactly the
+    // conditions that break it.
+    let reply: Awaited<ReturnType<TeacherTransport>>;
+    try {
+      reply = await ask(context.uid, teacherMessages(context, sessionNoteFor(context)), {
+        ...(context.signal ? { signal: context.signal } : {}),
+      });
+    } catch {
+      return refused("model-unreachable");
+    }
     if (reply.errorText || !reply.text) return refused("model-unreachable");
 
     const parsed = extractJson(reply.text);
