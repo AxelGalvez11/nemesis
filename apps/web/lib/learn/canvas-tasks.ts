@@ -38,7 +38,7 @@ export const ASK_PLACEHOLDER = "Ask Nemesis or change how you're learning…";
  * that nothing more is needed; "or just send" is what makes the empty case obviously legitimate
  * rather than something the learner has to work out is allowed.
  */
-export const START_WITH_MATERIAL_PLACEHOLDER = "Tell Nemesis how to work through this, or just send…";
+export const START_WITH_MATERIAL_PLACEHOLDER = "Say how to approach this, or just send…";
 
 /**
  * What every Canvas upload door accepts.
