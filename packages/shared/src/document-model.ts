@@ -349,11 +349,42 @@ export interface DocTable {
  * still reports those pages complete. A figure with no description must be
  * countable, which is why absence is a value here rather than an empty string.
  */
+/**
+ * Where the picture itself is kept, once ingestion has stored it.
+ *
+ * 🔴 THE DIFFERENCE BETWEEN A FIGURE DESCRIBED AND A FIGURE THAT CAN BE SHOWN.
+ * A `description` is the model's sentence ABOUT a diagram; this is the diagram.
+ * Without it every visual interaction — occlusion, "point at the structure the
+ * arrow labels", showing the learner what they just got wrong — has nothing to
+ * render, and the only way back to the pixels is re-downloading and re-parsing
+ * the original file. For a 124 MB lecture deck that is the whole working-set
+ * problem in one step, which is why the path is stored beside the description
+ * rather than recomputed from the source.
+ *
+ * The path is content-addressed: the same diagram met in two decks is stored
+ * once per learner.
+ */
+export interface DocFigureAsset {
+  /** Object path inside the visual-assets bucket. Owner-scoped, so the first
+   *  segment is the learner's id and RLS can decide on the path alone. */
+  path: string;
+  /** Identity of the STORED bytes — the hash the path is built from. */
+  contentKey: string;
+  mime: string;
+  bytes: number;
+  /** Pixel size of the stored copy, when the encoder reported it. */
+  width?: number;
+  height?: number;
+}
+
 export interface DocFigure {
   /** The format's own name for it — a relationship id, an XObject name. */
   ref?: string;
   /** What vision saw. ABSENT means nobody looked, not "nothing there". */
   description?: string;
+  /** Where the picture is stored. ABSENT means the pixels were not kept — the
+   *  figure can be read about but not shown. */
+  asset?: DocFigureAsset;
   /**
    * Named parts of a labelled diagram and where they sit, 0–1 of width and height (§46.6).
    *

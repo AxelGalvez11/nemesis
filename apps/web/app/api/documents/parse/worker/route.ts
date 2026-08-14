@@ -28,6 +28,12 @@ import { NextRequest } from "next/server";
 import { serviceRoleKey } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
+import {
+  attachFigureAssets,
+  FIGURE_ASSET_BUCKET,
+  readNormalizedFigures,
+  storeFigureAssets,
+} from "@/lib/notebooks/figure-assets";
 import { runParseOnThread } from "@/lib/notebooks/parse-run";
 import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
 import {
@@ -226,6 +232,53 @@ async function runOne(
    * how the two lanes would drift into recording different things about the same
    * document, which is the failure this whole integration is shaped to avoid.
    */
+  /**
+   * Put the parse's pictures where the learner can be shown them, and give the model
+   * their addresses.
+   *
+   * 🔴 THIS IS THE ONLY MOMENT THE PIXELS EXIST OUTSIDE THE ORIGINAL FILE. They came
+   * across the thread boundary already unwrapped and downscaled; after this function
+   * returns they are garbage. Skipping it does not lose a nice-to-have — it means the
+   * only route back to a diagram is downloading and re-parsing the source, which for
+   * a 124 MB deck is the entire working-set problem.
+   *
+   * Storage failure is NOT parse failure. A deck whose text, tables and structure read
+   * perfectly is still a good parse if an image upload was refused; the model simply
+   * records fewer showable figures, which is the truth. Failing the whole job here
+   * would throw away a correct read of the document over a picture.
+   */
+  const withStoredFigures = async (parsed: ParsedDocument, figures: unknown): Promise<ParsedDocument> => {
+    const normalized = readNormalizedFigures(figures);
+    if (!parsed.model || normalized.length === 0) return parsed;
+    const stored = await storeFigureAssets(
+      {
+        put: async (path, bytes, mime) => {
+          const { error } = await admin.storage
+            .from(FIGURE_ASSET_BUCKET)
+            .upload(path, bytes, { contentType: mime, upsert: false });
+          if (!error) return true;
+          // The path IS the content hash, so an object already there is the same
+          // picture — from an earlier attempt at this deck, or from another deck
+          // that used it. That is the dedupe working, not a failure.
+          const status = (error as { statusCode?: string | number }).statusCode;
+          return String(status) === "409" || /exists|duplicate/i.test(error.message ?? "");
+        },
+      },
+      job.user_id,
+      normalized,
+    );
+    console.info(
+      JSON.stringify({
+        event: "figure_assets_stored",
+        bytes: stored.bytes,
+        failed: stored.failed,
+        sourceId: job.id,
+        stored: stored.stored,
+      }),
+    );
+    return { ...parsed, model: attachFigureAssets(parsed.model, stored.byEntry) };
+  };
+
   const finish = async (parsed: ParsedDocument, ms: number, peakRssMb: number) => {
     const counts = countsFor(parsed);
     const { data: finished, error: finishError } = await admin.rpc("finish_document_parse", {
@@ -335,7 +388,12 @@ async function runOne(
       // its coverage says zero pages were read and that is true. The difference
       // is that the file's shape survives, so a later vision pass enriches a
       // known document instead of deciding again what it is.
-      if (run.parsed) return await finish(run.parsed as ParsedDocument, run.ms, run.peakRssMb);
+      if (run.parsed)
+        return await finish(
+          await withStoredFigures(run.parsed as ParsedDocument, run.figures),
+          run.ms,
+          run.peakRssMb,
+        );
       // The parser read the file and declined it. That verdict will not change
       // on a fourth attempt.
       return await fail(new Error(`unsupported: ${run.reason}`), false);
@@ -355,7 +413,11 @@ async function runOne(
       return await fail(new Error((run as { error: string }).error));
   }
 
-  return await finish(run.parsed as ParsedDocument, run.ms, run.peakRssMb);
+  return await finish(
+    await withStoredFigures(run.parsed as ParsedDocument, run.figures),
+    run.ms,
+    run.peakRssMb,
+  );
 }
 
 /**
