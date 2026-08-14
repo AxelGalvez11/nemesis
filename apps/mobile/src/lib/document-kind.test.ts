@@ -32,8 +32,16 @@ Deno.test("an unreadable kind is named by its own extension", () => {
 });
 
 Deno.test("oversize is refused BEFORE the upload, with the real size named", () => {
-  assertMatch(documentRefusal("huge.pdf", 80 * 1024 * 1024) ?? "", /80\.0 MB/);
-  assertMatch(documentRefusal("huge.pdf", 80 * 1024 * 1024) ?? "", /limit is 50 MB/);
+  // 🔴 THE NUMBER IS DERIVED, NEVER TYPED. This test asserted "limit is 50 MB"
+  // against a file of a fixed 80 MB, so raising the ceiling to 200 broke it in
+  // two ways at once: 80 MB stopped being oversize at all, and the sentence it
+  // expected no longer existed. A test that hard-codes the limit it is checking
+  // is the same drift the constant exists to prevent, just wearing a test's
+  // clothes. Both halves now come from DOCUMENT_MAX_BYTES.
+  const over = DOCUMENT_MAX_BYTES + 30 * 1024 * 1024;
+  const cap = `${Math.round(DOCUMENT_MAX_BYTES / 1024 / 1024)} MB`;
+  assertMatch(documentRefusal("huge.pdf", over) ?? "", new RegExp(`${(over / 1024 / 1024).toFixed(1)} MB`));
+  assertMatch(documentRefusal("huge.pdf", over) ?? "", new RegExp(`limit is ${cap}`));
 });
 
 Deno.test("a normal lecture deck is no longer refused on this phone", () => {
@@ -41,16 +49,20 @@ Deno.test("a normal lecture deck is no longer refused on this phone", () => {
   // deck passed this check, uploaded for a minute, and failed with a message
   // that named no cause. Files now go to storage by reference, so the ceiling is
   // the bucket's and a normal deck simply works.
-  for (const mb of [6, 12, 24, 40, 49]) {
+  //
+  // 118 MiB is here because it is a REAL measured file: a 37-slide immunology
+  // lecture whose 57 uncompressed TIFFs are 99.9% of the package. It was refused
+  // at the old ceiling, which is the entire reason the ceiling moved.
+  for (const mb of [6, 12, 24, 40, 49, 118]) {
     assertEquals(documentRefusal("Lecture 4.pptx", mb * 1024 * 1024), null);
   }
 });
 
 Deno.test("a file barely over the cap does not contradict itself", () => {
-  // Rounding made the refusal read "that file is 50.0 MB, the limit is 50 MB",
+  // Rounding made the refusal read "that file is 200.0 MB, the limit is 200 MB",
   // which reads as a bug to a student rather than as a limit.
   const refusal = documentRefusal("huge.pdf", DOCUMENT_MAX_BYTES + 1) ?? "";
-  assertEquals(refusal, "That file is just over the 50 MB limit.");
+  assertEquals(refusal, `That file is just over the ${Math.round(DOCUMENT_MAX_BYTES / 1024 / 1024)} MB limit.`);
 });
 
 Deno.test("a readable file at or under the ceiling is not refused", () => {

@@ -44,7 +44,7 @@ import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { kindFor, parseDocument, sniffKind } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
-import { MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
+import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
 export const runtime = "nodejs";
@@ -54,11 +54,6 @@ export const runtime = "nodejs";
  *  enough to state by omission. */
 export const maxDuration = 300;
 
-/** What a multipart body may weigh. Deliberately BELOW the platform's own
- *  ~4.5 MB edge limit, so a file that would have died as an unparseable
- *  plain-text 413 instead gets our own JSON error naming the real problem and
- *  the real fix. Anything larger must come in by reference. */
-const MAX_INLINE_BYTES = 4 * 1024 * 1024;
 
 /** The one place the ceiling is put into words, so the number a student reads
  *  can never drift from the number the code enforces — which is exactly how
@@ -164,7 +159,7 @@ export async function POST(req: Request): Promise<Response> {
     // This branch can only ever see a small file — the platform rejects the rest
     // before we run — so the message says what to do rather than restating a
     // limit the caller already blew past.
-    if (file.size > MAX_INLINE_BYTES) {
+    if (file.size > MAX_INLINE_UPLOAD_BYTES) {
       return NextResponse.json(
         { error: "That file is too large to send directly. Upload it to your Library first." },
         { status: 413 },

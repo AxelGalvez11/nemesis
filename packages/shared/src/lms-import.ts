@@ -47,6 +47,7 @@
  */
 
 import { stripFence } from "./untrusted-content.ts";
+import { MAX_SOURCE_BYTES } from "./upload-limits.ts";
 
 /** The portals we can read. "unknown" is a real answer — a page we do not
  *  recognise scans to nothing rather than guessing. */
@@ -431,8 +432,16 @@ export function sanitiseScan(raw: unknown): LmsScan {
 // something that cannot escape the folder it is filed into.
 
 /** Matches the extractor's own ceiling, so a file that would be refused server
- *  side is refused before it is carried across the wire. */
-export const MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024;
+ *  side is refused before it is carried across the wire.
+ *
+ *  🔴 IT SAID THAT AND IT WAS NOT TRUE. This was `25 * 1024 * 1024` written out
+ *  here, under a comment claiming it matched the server — while the server's
+ *  ceiling was 50 MiB and is now 200. So a 30 MB lecture pulled from a course
+ *  portal was refused BEFORE the transfer, by a gate that would have sailed
+ *  through the server it claimed to be mirroring, and the student was told their
+ *  own courseware was too big. A comment asserting two numbers agree is not a
+ *  mechanism; importing the number is. */
+export const MAX_IMPORT_FILE_BYTES = MAX_SOURCE_BYTES;
 export const MAX_FILE_NAME_CHARS = 200;
 export const MAX_MIME_CHARS = 120;
 

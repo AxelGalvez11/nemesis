@@ -1,3 +1,4 @@
+import { MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -426,7 +427,11 @@ test("a file with no slide markers falls back to characters and says not to gues
 // ── which lane an upload takes ──────────────────────────────────────────────
 
 const SMALL = 1024;
-const HUGE = 200 * 1024 * 1024;
+// 🔴 DERIVED FROM THE CEILING, NOT RESTATED. Written out as `200 * 1024 * 1024` this was a fifth
+// private copy of the limit — and it happened to equal the NEW ceiling exactly, so the day the
+// ceiling moved this test would have started asserting "at the limit" while claiming to test
+// "over" it. `upload-ceiling-drift.test.ts` is what caught it.
+const HUGE = MAX_SOURCE_BYTES + 1;
 
 test("an unfiled small file is posted inline, as it always was", () => {
   assert.equal(uploadLane({ filedSourceId: null, size: SMALL, sourceId: null }), "inline");

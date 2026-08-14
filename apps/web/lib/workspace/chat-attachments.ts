@@ -14,7 +14,7 @@ import {
   type ExtractionCoverage,
 } from "@nemesis/shared";
 
-import { ingestObjectKey, MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
+import { ingestObjectKey, MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, maxSourceLabel } from "@/lib/notebooks/ingest-ref";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { loadKnownCourses } from "@/lib/workspace/agent-tools";
@@ -143,8 +143,15 @@ function attachmentRecord(file: File): SessionAttachment {
 }
 
 /** Bucket ceiling for a stored chat document — the library-sources bucket
- *  refuses anything larger, so don't burn an upload round-trip finding out. */
-const MAX_STORED_DOCUMENT_BYTES = 50 * 1024 * 1024;
+ *  refuses anything larger, so don't burn an upload round-trip finding out.
+ *
+ *  🔴 IT IS THE SHARED CONSTANT, NOT A COPY OF IT. This was `50 * 1024 * 1024`
+ *  written out here, a fifth private restatement of a number that already has
+ *  one home — and it survived the move to 200 MiB silently, because a hard-coded
+ *  limit never fails a test, it just quietly refuses files it should have kept.
+ *  A 118 MiB lecture would have uploaded to the bucket and then been dropped
+ *  from chat storage by this line alone. Import the ceiling; never retype it. */
+const MAX_STORED_DOCUMENT_BYTES = MAX_SOURCE_BYTES;
 
 /** The mime the bucket allowlist expects per document kind. The browser's own
  *  file.type is usually right but arrives empty from some drag sources.
@@ -168,7 +175,7 @@ export const DOCUMENT_MIME: Record<string, string> = {
 };
 
 /** Which storage bucket a persisted attachment lives in — images have their
- *  own bucket; documents share the Library's sources bucket (same 50 MB cap,
+ *  own bucket; documents share the Library's sources bucket (same cap,
  *  same owner-only policies). The preview dialog re-signs through this. */
 export function attachmentBucket(attachment: Pick<SessionAttachment, "mime">): string {
   return attachment.mime?.startsWith("image/") ? "library-images" : "library-sources";
@@ -185,7 +192,7 @@ function attachmentId(): string {
  * device or in a preview popup; that requires one private durable object plus
  * its metadata in chat_messages.meta.attachments. Images always stored; PDF /
  * Word / PowerPoint originals stored since 2026-08-04 (owner: "does the webapp
- * save documents and are they readable?") up to the bucket's 50 MB ceiling —
+ * save documents and are they readable?") up to the bucket's ceiling —
  * an oversized original is skipped, its text still reaches the model. */
 async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
   const base = attachmentRecord(file);
@@ -347,18 +354,6 @@ export interface ExtractedFile {
 }
 
 /**
- * Most a file may weigh and still be POSTed as a form.
- *
- * 🔴 THIS IS A PLATFORM LIMIT, NOT A PRODUCT ONE. Vercel refuses a request body
- * over ~4.5 MB at the edge, before any of our code runs — measured against
- * production 2026-08-05: 4.4 MB reached the handler, 4.6 MB got a plain-text
- * FUNCTION_PAYLOAD_TOO_LARGE. Anything above this goes to storage first and is
- * read by reference, which has no such ceiling. Set below the real edge so our
- * own JSON error wins the race and the student is told something true.
- */
-const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
-
-/**
  * Put the bytes in storage and file the row that names them, both under this
  * user's own RLS session. Returns the row id — the ONLY handle the server will
  * accept — or null when either half failed.
@@ -510,9 +505,12 @@ export async function extractFile(
   const payload = file;
   if (payload.size > MAX_SOURCE_BYTES) {
     throw new Error(
-      isSlimmableOfficeName(file.name)
-        ? `${file.name} is too large to read (${Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB max). Nemesis won't strip its pictures out to fit — you'd get an answer built on a lecture it only half read.`
-        : extractErrorFor(413, file.name),
+      // 🔴 THIS SENTENCE USED TO EXPLAIN A DESIGN DECISION INSTEAD OF NAMING A LIMIT. It read
+      // "Nemesis won't strip its pictures out to fit — you'd get an answer built on a lecture it
+      // only half read", which tells a learner holding a lecture they need to study about our
+      // internal trade-off and gives them nothing to do about it. What they need is the number,
+      // their number, and the one move that works. The reasoning belongs in this comment.
+      `${file.name} is ${Math.round(payload.size / 1024 / 1024)} MB — over the ${maxSourceLabel()} limit. Splitting the deck in half usually gets both parts through.`,
     );
   }
 

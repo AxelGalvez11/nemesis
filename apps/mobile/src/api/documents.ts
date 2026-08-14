@@ -26,6 +26,8 @@ import { supabase } from "./supabase";
 // and already what the photo upload names its objects with. Deliberately reused
 // rather than reaching for `crypto.getRandomValues`, which React Native does not
 // guarantee and which would throw at the moment a student picks a file.
+import { MAX_INLINE_UPLOAD_BYTES } from "@nemesis/shared";
+
 import { generateUuidV4 } from "@/lib/chat-threads";
 import {
   DOCUMENT_PICKER_TYPES,
@@ -33,11 +35,6 @@ import {
   documentMime,
   documentRefusal,
 } from "@/lib/document-kind";
-
-/** Most a file may weigh and still be POSTed as a form. A PLATFORM limit, not a
- *  product one: Vercel refuses a larger request body at the edge before any of
- *  our code runs. Above this the file must go by reference. */
-const MAX_INLINE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /** A message already written for the student — surfaced as-is, never wrapped. */
 export class DocumentError extends Error {}
