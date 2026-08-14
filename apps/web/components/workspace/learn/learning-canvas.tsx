@@ -686,7 +686,7 @@ export function LearningCanvas({
           (busy.kind === "lesson" || busy.kind === "recall" || busy.kind === "test" || busy.kind === "relearn") &&
           canvas.state !== "orient" && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--ui-bg-editor)/70">
-              <p className="flex items-center gap-2 text-[0.875rem] text-(--ui-text-secondary)">
+              <p className="flex items-center gap-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
                 <Codicon name="loading" size="0.875rem" spinning />
                 {busy.label}…
               </p>
@@ -700,7 +700,7 @@ export function LearningCanvas({
       {(regions.policy ? policy.error ?? error : error) && (
         <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
           <div className="flex max-w-[38rem] items-start gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3 shadow-lg">
-            <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
               {regions.policy ? policy.error ?? error : error}
             </p>
             <button

@@ -124,11 +124,11 @@ export function CanvasRecorder({ attach, onClose }: Props) {
           <>
             {/* The sentence itself is inside the panel, printed by RecordWorkspace's error branch —
                 repeating it here would say the same thing twice in two type sizes. */}
-            <p className="min-w-0 flex-1 text-[0.75rem] text-(--ui-text-quaternary)">
+            <p className="min-w-0 flex-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
               Your recording is still here — you can try again.
             </p>
             <button
-              className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3.5 py-1.5 text-[0.8125rem] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary)"
+              className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3.5 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary)"
               onClick={onClose}
               type="button"
             >
@@ -136,23 +136,23 @@ export function CanvasRecorder({ attach, onClose }: Props) {
             </button>
           </>
         ) : working ? (
-          <p className="flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem] text-(--ui-text-secondary)">
+          <p className="flex min-w-0 flex-1 items-center gap-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
             <Codicon name="loading" size="14px" spinning />
             {canvasRecordingCopy(phase.step)}
           </p>
         ) : (
           <>
-            <p className="min-w-0 flex-1 text-[0.75rem] leading-relaxed text-(--ui-text-quaternary)">{limitLine}</p>
+            <p className="min-w-0 flex-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">{limitLine}</p>
             <button
               aria-label="Cancel recording"
-              className="shrink-0 px-2 py-1.5 text-[0.8125rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              className="shrink-0 px-2 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
               onClick={cancel}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="shrink-0 rounded-full bg-(--ui-action) px-4 py-1.5 text-[0.8125rem] font-medium text-(--ui-bg-editor) hover:opacity-90"
+              className="shrink-0 rounded-full bg-(--ui-action) px-4 py-1.5 text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor) hover:opacity-90"
               // Stop, not "save": clearing `active` without `discard` is what runs the finish path.
               onClick={() => setActive(false)}
               type="button"

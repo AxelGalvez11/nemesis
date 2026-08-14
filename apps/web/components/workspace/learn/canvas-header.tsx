@@ -61,7 +61,7 @@ export function CanvasHeader({
           turned a full-width strip of dead label into a click trap: the document scrolls
           underneath it, and selecting the top line of text hit the title instead. */}
       {!minimal && (
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-(--ui-text-secondary)">
+        <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
           {canvas.title || "New canvas"}
         </span>
       )}

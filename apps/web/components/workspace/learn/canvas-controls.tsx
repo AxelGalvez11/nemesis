@@ -108,7 +108,7 @@ export function SourcesControl({
             {(["sources", "outputs"] as const).map((name) => (
               <button
                 className={cn(
-                  "rounded-md px-2 py-1 text-[0.75rem] capitalize transition-colors",
+                  "rounded-md px-2 py-1 text-[length:var(--canvas-text-meta)] capitalize transition-colors",
                   tab === name
                     ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
                     : "text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)",
@@ -138,8 +138,8 @@ export function SourcesControl({
                   one that is sometimes wrong. */}
               {modelKnowledge && (
                 <div className="px-2 py-1.5">
-                  <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">Nemesis knowledge</p>
-                  <p className="text-[0.6875rem] text-(--ui-text-quaternary)">Generated from model knowledge</p>
+                  <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">Nemesis knowledge</p>
+                  <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Generated from model knowledge</p>
                 </div>
               )}
 
@@ -147,18 +147,18 @@ export function SourcesControl({
                 // Guarded by `modelKnowledge`, and that guard is the whole fix: this sentence is
                 // only honest when there is genuinely nothing behind the canvas at all.
                 !modelKnowledge && (
-                  <p className="px-2 py-3 text-[0.8125rem] text-(--ui-text-quaternary)">Nothing attached yet.</p>
+                  <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Nothing attached yet.</p>
                 )
               ) : (
                 canvas.sources.map((source) => (
                   <div className="px-2 py-1.5" key={source.id}>
-                    <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">{source.title}</p>
-                    <p className="text-[0.6875rem] text-(--ui-text-quaternary)">
+                    <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</p>
+                    <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
                       {source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
                     </p>
                     {/* A source Nemesis could only half read says so here, not silently. */}
                     {source.coverageNote && (
-                      <p className="mt-1 text-[0.6875rem] leading-relaxed text-amber-500">
+                      <p className="mt-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
                         {source.coverageNote.replace(/^\[|\]$/g, "")}
                       </p>
                     )}
@@ -166,7 +166,7 @@ export function SourcesControl({
                 ))
               )}
 
-              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[0.8125rem] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
+              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
                 <Codicon name="add" size="0.75rem" />
                 Add source
                 {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
@@ -185,14 +185,14 @@ export function SourcesControl({
           ) : outputs.length === 0 ? (
             // Says what this is for rather than pretending to be broken. Nothing generates
             // outputs yet; the tab exists because the distinction is architectural (§4).
-            <p className="px-2 py-3 text-[0.8125rem] leading-relaxed text-(--ui-text-quaternary)">
+            <p className="px-2 py-3 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">
               Things Nemesis makes for you, like a summary, slides or a document, will be kept here.
             </p>
           ) : (
             outputs.map((output) => (
               <div className="px-2 py-1.5" key={output.id}>
-                <p className="truncate text-[0.8125rem] text-(--ui-text-primary)">{output.title}</p>
-                <p className="text-[0.6875rem] text-(--ui-text-quaternary)">{output.kind}</p>
+                <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
+                <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{output.kind}</p>
               </div>
             ))
           )}
@@ -258,7 +258,7 @@ export function ObjectivesControl({
 
       {open && (
         <div className={cn(PANEL, "w-[20rem]")}>
-          <p className="px-2 pb-1 pt-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
             Objectives
           </p>
           {objectives.map((objective) => (
@@ -269,7 +269,7 @@ export function ObjectivesControl({
               />
               <span
                 className={cn(
-                  "text-[0.8125rem] leading-snug",
+                  "text-[length:var(--canvas-text-small)] leading-snug",
                   objective.state === "untouched" ? "text-(--ui-text-quaternary)" : "text-(--ui-text-secondary)",
                   objective.state === "current" && "text-(--ui-text-primary)",
                 )}
@@ -289,7 +289,7 @@ export function ObjectivesControl({
 
           {/* 🔴 No percentage, here or anywhere (§9). */}
           {focus && (
-            <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[0.75rem] leading-relaxed text-(--ui-text-tertiary)">
+            <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
               Nemesis is currently working on <span className="text-(--ui-text-secondary)">{focus}</span>.
             </p>
           )}
@@ -349,7 +349,7 @@ export function SessionControl({
           {renaming ? (
             <input
               autoFocus
-              className="w-full rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-2 text-[0.8125rem] text-(--ui-text-primary) outline-none"
+              className="w-full rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none"
               onBlur={commit}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -397,7 +397,7 @@ function MenuItem({
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] transition-colors hover:bg-(--ui-bg-tertiary)",
+        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-small)] transition-colors hover:bg-(--ui-bg-tertiary)",
         danger ? "text-(--ui-text-tertiary) hover:text-red-500" : "text-(--ui-text-secondary)",
       )}
       onClick={onClick}

@@ -215,12 +215,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           className="flex min-h-[26rem] flex-col items-center justify-center px-6"
           style={{ height: "calc(100% - var(--first-screen-lift))" }}
         >
-          <h1 className="text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
+          <h1 className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
             What are you working on?
           </h1>
           {/* Space the morphing composer occupies while it is centred. */}
           <div className="h-[54px] w-full max-w-[770px]" />
-          <p className="mt-6 text-[0.8125rem] text-(--ui-text-quaternary)">
+          <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
             {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
                 used to read "Type it, drop a file in, or record a lecture." Recording is started by
                 `RecordWorkspace`, which is hosted only on /sessions and /notebooks — the Canvas has
@@ -237,10 +237,10 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
         <section className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-[0.75rem] uppercase tracking-wide text-(--ui-text-quaternary)">Your canvases</h2>
+            <h2 className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">Your canvases</h2>
             {sessions.length > 6 && (
               <input
-                className="w-[12rem] rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-1.5 text-[0.8125rem] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                className="w-[12rem] rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search"
                 value={query}
@@ -254,7 +254,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               remains states the condition and nothing else; the heading above it already says
               what is empty. */}
           {sessions.length === 0 && (
-            <p className="mt-6 text-[0.9375rem] text-(--ui-text-tertiary)">Nothing yet.</p>
+            <p className="mt-6 text-[length:var(--canvas-text-body)] text-(--ui-text-tertiary)">Nothing yet.</p>
           )}
 
           {pinned.length > 0 && (
@@ -310,7 +310,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
           {sessions.length > 0 && (
             <button
-              className="mt-8 flex items-center gap-1.5 text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              className="mt-8 flex items-center gap-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
               onClick={() => {
                 const name = window.prompt("Folder name");
                 if (name?.trim()) void act(createFolder(userId, name.trim()));
@@ -417,7 +417,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 role="menu"
               >
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
                   onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
                   role="menuitem"
                   type="button"
@@ -426,7 +426,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   Upload material
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
                   onClick={() => { setAddOpen(false); setRecording(true); }}
                   role="menuitem"
                   type="button"
@@ -464,10 +464,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           ) : (
             <>
               <input
-                // 🔴 16px, NOT `text-[1rem]`. This file's root is 112.5%, so `1rem` renders at 18px.
-                // The number that matters is 16: below it, iOS Safari zooms the whole viewport in on
-                // focus and there is no way back out that reads as intentional. The session composer
-                // carries the same literal for the same reason.
+                // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
+                // 🔴 A LITERAL, NOT `--canvas-text-body`, EVEN THOUGH THAT TOKEN IS ALSO 16px TODAY.
+                // The two agree by coincidence, not by contract: the token is a typographic choice
+                // and may be retuned, while 16 here is a hard platform threshold — below it iOS
+                // Safari zooms the whole viewport in on focus and there is no way back out that
+                // reads as intentional. Binding this to the scale would make a future type tweak
+                // silently break input focus on every iPhone. The session composer carries the same
+                // literal for the same reason.
                 className="ml-[12px] min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
                 onChange={(event) => {
                   setText(event.target.value);
@@ -512,7 +516,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             never begins and the learner is told nothing. The session composer already prints this;
             the front door was the surface missing it. */}
         {dictation.error && !listening && (
-          <p className="mt-2 text-center text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>
+          <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
       </div>
     </main>
@@ -522,7 +526,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 function Group({ label, children }: { label: string | null; children: React.ReactNode }) {
   return (
     <div className="mt-7">
-      {label && <p className="mb-1.5 text-[0.75rem] text-(--ui-text-quaternary)">{label}</p>}
+      {label && <p className="mb-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{label}</p>}
       <div>{children}</div>
     </div>
   );
@@ -557,8 +561,8 @@ function SessionRow({
             nothing that would have to be derived from data this app does not reliably hold. */}
         <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
         <span className="min-w-0 flex-1">
-          <p className="truncate text-[0.9375rem] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
-          <p className="text-[0.75rem] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
+          <p className="truncate text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
+          <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
         </span>
         {pinned && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
       </button>
@@ -643,7 +647,7 @@ function RowAction({
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] transition-colors hover:bg-(--ui-bg-tertiary)",
+        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--canvas-text-small)] transition-colors hover:bg-(--ui-bg-tertiary)",
         danger ? "text-(--ui-text-tertiary) hover:text-red-500" : "text-(--ui-text-secondary)",
       )}
       onClick={onClick}

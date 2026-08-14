@@ -17,6 +17,7 @@ import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
 
+import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
 /** `Verdict` is declared but not exported by canvas-judge, and that file is Runtime's — so the
@@ -24,26 +25,6 @@ import type { PolicyRuntime } from "./use-policy-runtime";
  *  export. It also means a new verdict cannot be added there without this map failing to compile,
  *  which is the behaviour I want: every verdict must be given a colour deliberately. */
 type Verdict = keyof typeof VERDICT_HEADLINE;
-
-/**
- * 🔴 THE LEARNER'S OWN WORDS ARE BLUE, IN EVERY CASE — contract §35.1.
- *
- * > "Blue means: this came from you. It does NOT mean correct. Keep that semantic stable."
- *
- * This replaces a `VERDICT_TONE` map that coloured the learner's answer by verdict — green when
- * right, amber when partial, red when wrong — under a comment that said, in as many words,
- * *"THE COLOUR IS THE FEEDBACK"*. That is the exact trap §35.1 exists to close: a grade painted
- * onto the learner's own sentence, so their words and Nemesis's judgement of them could not be
- * told apart.
- *
- * 🔴 AND IT IS BLUE ON WRONG ANSWERS TOO, WHICH IS THE HALF THAT MUST NOT SOFTEN. If a miss kept
- * red while a pass went blue, blue would mean "correct" by contrast and the grade would be back
- * through the side door. Ownership is not a spectrum: either the learner wrote it or they did not.
- *
- * The verdict now lives entirely in Nemesis's own annotation — the headline and, on a miss, the
- * prose beneath it. §35.1: preserve the learner's work, *then annotate it*.
- */
-const LEARNER_VOICE = "text-(--ui-learner)";
 
 /**
  * What is on screen right now, as one value.
@@ -119,7 +100,7 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
   const { unrepresented } = runtime.coverage;
   return (
     <div className="pointer-events-none sticky top-0 z-30 flex justify-center pt-1">
-      <p className="rounded-full bg-(--ui-bg-warning,#3a2f14) px-3 py-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+      <p className="rounded-full bg-(--ui-bg-warning,#3a2f14) px-3 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
         Ownership bypassed:{" "}
         {unrepresented === 1 ? "1 part of this canvas is" : `${unrepresented} parts of this canvas are`} hidden
       </p>
@@ -175,14 +156,14 @@ function PolicyScreen({
     const partlyReadable = runtime.outcome === "degraded";
     return (
       <Frame onContinue={onContinue} sharing={sharing}>
-        <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">
+        <h2 className="text-[length:var(--canvas-text-lead)] font-medium text-(--ui-text-primary)">
           {nothingReadable
             ? "Nemesis couldn't read this material"
             : partlyReadable
               ? "Nemesis could only partly read this material"
               : "Nothing to practise here right now"}
         </h2>
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
+        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {nothingReadable
             ? "The file is attached and safe. This is about our reading of it, not about your material."
             : partlyReadable
@@ -218,7 +199,7 @@ function PolicyScreen({
           // Optically centred rather than mathematically: the composer occupies the bottom of the
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
           // expects the subject of the page to be.
-          className="w-full max-w-(--canvas-column) text-center text-[1.75rem] font-medium leading-snug text-balance text-(--ui-text-primary)"
+          className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-title)] font-medium leading-snug text-balance text-(--ui-text-primary)"
         >
           {prompt.prompt}
         </h2>
@@ -234,17 +215,17 @@ function PolicyScreen({
     const said = decision.state.status;
     return (
       <Frame onContinue={onContinue} sharing={sharing}>
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">
+        <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
           {said === "partial"
             ? "You had part of this."
             : said === "not_demonstrated"
               ? "No attempt came back on this one. Here it is."
               : "Here's the one to fix."}
         </p>
-        <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
+        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
         </h2>
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
+        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {decision.knowledge.statement}
         </p>
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
@@ -259,8 +240,8 @@ function PolicyScreen({
   if (decision.action.type === "contrast") {
     return (
       <Frame onContinue={onContinue} sharing={sharing}>
-        <p className="text-[0.8125rem] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
-        <h2 className="mt-3 text-[1.375rem] font-medium leading-snug text-(--ui-text-primary)">
+        <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
+        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
         </h2>
         {/* The list has a real marker now. Each row used to open with an em dash, which was the
@@ -270,7 +251,7 @@ function PolicyScreen({
             owner's rule is no em dashes on the Canvas. */}
         <ul className="mt-4 list-disc space-y-2 pl-5">
           {decision.action.competingWith.map((competing) => (
-            <li className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" key={competing}>
+            <li className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)" key={competing}>
               not {competing}
             </li>
           ))}
@@ -284,8 +265,8 @@ function PolicyScreen({
   // memory rather than learning.
   return (
     <Frame onContinue={onContinue} sharing={sharing}>
-      <h2 className="text-[1.25rem] font-medium text-(--ui-text-primary)">Come back to this shortly</h2>
-      <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
+      <h2 className="text-[length:var(--canvas-text-lead)] font-medium text-(--ui-text-primary)">Come back to this shortly</h2>
+      <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
         You've just worked through everything here. Asking again this soon wouldn't tell either of us
         anything new.
       </p>
@@ -412,14 +393,18 @@ function FeedbackScreen({
 
   return (
     <Frame onContinue={onContinue} sharing={sharing}>
-      {/* The learner's own words, in the verdict's colour. The quote stays — the verdict is ABOUT
-          these words — but the attribution in front of it does not (§K): it tells the learner
-          something they already know, in a voice that exists only to stage the exchange.
+      {/* The learner's own words. They stay on screen — the verdict below is ABOUT them — but the
+          attribution in front of them does not (§K): it tells the learner something they already
+          know, in a voice that exists only to stage the exchange.
+          🔴 THE QUOTE MARKS AND THE 24.75px ARE GONE, REPLACED BY THE BUBBLE (§46.2/§46.3).
+          Quotation marks are punctuation, not ownership — they read as "someone said this", which
+          is true of every line on the screen — and size was doing the rest of the work, which
+          §46.3 forbids. `LearnerUtterance` says authorship structurally instead, at body size.
           🔴 A §K guard in canvas-policy-view.test.ts strips comments before checking, so prose
           like this cannot trip it; an earlier version grepped raw source and failed on this file's
           own header. A guard that cannot tell rendered copy from a comment about it gets "fixed"
           by deleting the explanation. */}
-      <p className={`text-[1.375rem] font-medium leading-snug ${LEARNER_VOICE}`}>“{feedback.answer}”</p>
+      <LearnerUtterance via={feedback.via}>{feedback.answer}</LearnerUtterance>
 
       {/* 🔴 NEMESIS'S VERDICT, AS A SENTENCE, ON EVERY OUTCOME INCLUDING A PASS.
           It used to render only on a miss, because the colour on the quote above carried the
@@ -444,8 +429,8 @@ function FeedbackScreen({
               // feedback intensity scales with information value. A pass carries little — three
               // words — so it is set at the secondary weight and does not compete with the answer
               // it is confirming. A miss carries the most and keeps its full weight and prose.
-              "mt-4 text-[0.9375rem] font-normal leading-snug text-(--ui-text-tertiary)"
-            : "mt-4 text-[1.125rem] font-medium leading-snug text-(--ui-text-primary)"
+              "mt-4 text-[length:var(--canvas-text-body)] font-normal leading-snug text-(--ui-text-tertiary)"
+            : "mt-4 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
         }
       >
         {VERDICT_HEADLINE[verdict]}
@@ -453,7 +438,7 @@ function FeedbackScreen({
 
       {!passed && (
         <>
-          <p className="mt-3 text-[1rem] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
+          <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">{feedback.evaluation.feedback}</p>
           {/* 🔴 THE "Continue" BUTTON IS GONE — §I. It is worth naming what it was: renaming `Next`
               to `Continue` once satisfied §K's banned-word list while leaving the prohibited
               behaviour — a control the learner must press to proceed — completely intact. Deleting
@@ -488,7 +473,7 @@ function Frame({
             than a tick in one place and a word in another. */}
         {onContinue && (
           <button
-            className="mt-8 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            className="mt-8 rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
             onClick={onContinue}
             type="button"
           >

@@ -11,7 +11,7 @@
 //   - `flex-1` + pointer events on the title turned the strip into a click trap
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -189,8 +189,16 @@ test("a correction is prose, not a card", () => {
     );
   }
 
-  // The learner's own quoted words keep their quieter type but are likewise not a card.
-  assert.match(policy, /[“"]\{feedback\.answer\}[”"]/, "the learner's words are still shown");
+  // The learner's own words are likewise not a card. 🔴 THE QUOTE MARKS THIS USED TO REQUIRE ARE
+  // GONE (§46.2): `LearnerUtterance` carries authorship on a tinted ground instead, because
+  // punctuation reads as "someone said this" — true of every line on the screen — and the old
+  // treatment leaned on 24.75px to do the rest, which §46.3 forbids. The property is unchanged:
+  // the learner's own words are still rendered.
+  assert.match(
+    policy,
+    /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/,
+    "the learner's words are still shown",
+  );
 });
 
 test("the task surface reserves room for the floating composer", () => {
@@ -315,4 +323,83 @@ test("🔴 §46.5: the first screen is short by exactly the offset the composer 
     /translateY\(calc\([^)]*var\(--first-screen-lift\)\s*\/\s*2\)\)/,
     "the composer's resting offset stopped deriving from --first-screen-lift; it will drift from the spacer reserved for it and print over the line beneath",
   );
+});
+
+test("🔴 §46.3: the Canvas has ONE type scale, and it has five steps", () => {
+  // 🔴 THIRTEEN SIZES IS NOT A SCALE. The surface was drawn with thirteen distinct font sizes
+  // between 11.25px and 31.5px — every one a local decision, which is exactly what §46.3 bans:
+  // "Do not create dramatic text-size jumps to manufacture importance. Large fonts are not a
+  // semantic tool in Nemesis." They are now five tokens declared in desktop-ui.css.
+  //
+  // 🔴 THE REM FORM IS BANNED OUTRIGHT, NOT JUST DISCOURAGED. `html { font-size: 112.5% }` is set
+  // deliberately in this repo, so `text-[0.8125rem]` reads as 13px and paints as 14.6px. Sizes that
+  // read as one number and paint as another are how thirteen of them accumulated without anyone
+  // choosing thirteen. A literal px value is banned too: it would be a sixth step nobody declared.
+  // 🔴 THERE IS AN ESCAPE HATCH, AND IT COSTS A WRITTEN REASON. Two inputs genuinely must be
+  // `text-[16px]`: below 16px iOS Safari zooms the whole viewport in on focus, and that is a
+  // platform threshold rather than a typographic choice — binding it to the scale would let a
+  // future type tweak silently break focus on every iPhone. A blanket exception for "px in an
+  // input" would have been invisible; a marker on the line names the cost each time it is paid.
+  const EXEMPT = /§46\.3-exempt:\s*\S/;
+  const files = readdirSync(import.meta.dirname).filter(
+    (name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx"),
+  );
+  const offenders: string[] = [];
+  for (const file of files) {
+    const lines = read(file).split("\n");
+    for (const [index, line] of lines.entries()) {
+      const stripped = line.replace(/\/\/.*$/, "");
+      // `text-[…]` carrying a bare length. The scale tokens carry a `length:` hint and a token
+      // name, which this does not match, and neither do colour utilities.
+      // 🔴 NO WILDCARD CLASS NAME IN THIS COMMENT. Tailwind scans .ts files too, and a literal
+      // utility written with a `*` in prose was emitted as a real rule and broke the CSS build.
+      const bad = /text-\[(\d|\.)[^\]]*(rem|px|em)\]/.exec(stripped);
+      if (bad) {
+        // The marker may sit on this line or in the comment block immediately above it.
+        const window = lines.slice(Math.max(0, index - 12), index + 1).join("\n");
+        if (!EXEMPT.test(window)) offenders.push(`${file}:${index + 1} ${bad[0]}`);
+      }
+
+      // 🔴 AND THE `length:` HINT IS NOT OPTIONAL — THIS SHIPPED BROKEN ONCE AND LOOKED FINE.
+      // In Tailwind, `text-[var(--x)]` is a COLOR utility: the whole scale was emitted as
+      // `color: var(--canvas-text-body)` and not one font size changed. The failure is silent in
+      // source review (the class names read correctly) and only showed up because the CSS build
+      // choked on an unrelated line. `text-[length:var(--x)]` is what makes it a font size.
+      const unhinted = /text-\[var\(--canvas-text-/.exec(stripped);
+      if (unhinted) {
+        offenders.push(
+          `${file}:${index + 1} ${unhinted[0]}…] is missing the \`length:\` hint — Tailwind reads this as a COLOR, so the size silently does not apply`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `a font size outside the scale is back on the Canvas (§46.3). Use one of the five canvas text tokens with a length hint:\n  ${offenders.join("\n  ")}`,
+  );
+});
+
+test("🔴 §46.1: the Canvas swap is opacity only, and it is keyed so it cannot strobe", () => {
+  // §46.1 asks for calm, continuous, cognitively smooth updates: "Use subtle fades ... Avoid abrupt
+  // replacement of large regions; strong slides; bounce; scale animations; flashy transitions."
+  // Someone drilling fifty facts crosses this boundary fifty times, so anything that moves becomes
+  // the dominant impression of the surface.
+  const view = read("canvas-policy-view.tsx");
+  assert.match(
+    view,
+    /key=\{screenKey\(runtime\)\}/,
+    "the swap stopped being keyed on the screen's identity — an unkeyed fade re-runs on every render and strobes the question while the learner is reading it",
+  );
+  const css = readFileSync(join(import.meta.dirname, "../../../app/globals.css"), "utf8");
+  const rule = /@keyframes canvas-swap-in \{([^}]*\}[^}]*)\}/.exec(css);
+  const frames = rule?.[1];
+  assert.ok(frames, "the canvas swap animation is gone");
+  assert.equal(
+    /transform|scale|translate|rotate/.test(frames),
+    false,
+    `the swap animates geometry, not just opacity (§46.1 bans slides, scale and bounce): ${frames}`,
+  );
+  assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]{0,400}\.canvas-swap/,
+    "the swap is no longer disabled under prefers-reduced-motion");
 });

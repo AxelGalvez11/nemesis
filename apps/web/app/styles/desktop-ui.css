@@ -354,6 +354,33 @@
       var(--ui-accent) var(--theme-control-active-accent-mix),
       color-mix(in srgb, var(--ui-base) 5%, transparent)
     );
+    /* ── THE CANVAS TYPE SCALE (§46.3) ────────────────────────────────────────────────────
+       🔴 FIVE SIZES, AND THE POINT IS THAT THERE ARE ONLY FIVE. The Canvas surface was drawn
+       with THIRTEEN distinct sizes between 11.25px and 31.5px, which is not a scale — it is a
+       series of local decisions, and it is exactly what §46.3 forbids: *"Do not create dramatic
+       text-size jumps to manufacture importance. Large fonts are not a semantic tool in Nemesis."*
+
+       🔴 WRITTEN IN PX, DELIBERATELY. `html { font-size: 112.5% }` is set in this repo on
+       purpose, so 1rem is 18px and every `text-[0.8125rem]` in the Canvas was really 14.625px.
+       Sizes expressed in rem therefore read as one number and paint as another, which is how
+       thirteen of them accumulated without anyone choosing thirteen. These are the painted px.
+
+       Calibrated against the reference on 2026-08-14 (chatgpt.com, 1440x783), which resolves to
+       12 / 14 / 16 / 18 / 24 with 14px carrying 44 of 58 leaf text nodes. The instructive number
+       is the largest: the line that owns that whole screen is 24px at weight 400 — not bold, not
+       28px+. It owns attention by sitting alone in space, which is precisely the mechanism §46.3
+       asks for ("spacing, grouping, indentation, hierarchy through position").
+
+       🔴 `--canvas-text-title` IS THE CEILING FOR EVERYTHING, INCLUDING A QUESTION. §46.3 allows a
+       question "enough prominence to own attention" but requires it stay "within the restrained
+       system scale". The retrieval question was 31.5px semibold; it is now this, and the empty
+       screen around it is what makes it the subject. */
+    --canvas-text-meta: 12px;
+    --canvas-text-small: 14px;
+    --canvas-text-body: 16px;
+    --canvas-text-lead: 18px;
+    --canvas-text-title: 24px;
+
     --ui-text-primary: color-mix(in srgb, var(--ui-base) 100%, transparent);
     --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
     --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);

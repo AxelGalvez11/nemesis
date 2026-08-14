@@ -51,7 +51,7 @@ export function AssociationDrillView({
         {lastResult && step.kind !== "encode" && (
           <p
             className={cn(
-              "mt-6 text-[0.8125rem]",
+              "mt-6 text-[length:var(--canvas-text-small)]",
               lastResult.correct ? "text-(--ui-text-quaternary)" : "text-(--ui-text-secondary)",
             )}
             data-selectable-text="true"
@@ -76,23 +76,23 @@ function Encode({ step, onEncoded }: { step: DrillStep; onEncoded: () => void })
   return (
     <div>
       {step.grouped && step.pairs[0]?.groupLabel && (
-        <p className="text-[0.75rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+        <p className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
           {step.pairs[0].groupLabel}
         </p>
       )}
-      <p className="mt-3 text-[0.9375rem] text-(--ui-text-tertiary)">Read these, then they disappear.</p>
+      <p className="mt-3 text-[length:var(--canvas-text-body)] text-(--ui-text-tertiary)">Read these, then they disappear.</p>
 
       <dl className="mt-5 space-y-2.5" data-selectable-text="true">
         {step.pairs.map((pair) => (
           <div className="flex items-baseline gap-3" key={pair.id}>
-            <dt className="min-w-[9rem] text-[1.0625rem] text-(--ui-text-primary)">{pair.left}</dt>
-            <dd className="text-[1.0625rem] text-(--ui-text-secondary)">{pair.right}</dd>
+            <dt className="min-w-[9rem] text-[length:var(--canvas-text-lead)] text-(--ui-text-primary)">{pair.left}</dt>
+            <dd className="text-[length:var(--canvas-text-lead)] text-(--ui-text-secondary)">{pair.right}</dd>
           </div>
         ))}
       </dl>
 
       <button
-        className="mt-8 rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[0.875rem] font-medium text-(--ui-bg-editor)"
+        className="mt-8 rounded-full bg-(--ui-text-primary) px-5 py-2.5 text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor)"
         onClick={onEncoded}
         type="button"
       >
@@ -109,20 +109,20 @@ function Encode({ step, onEncoded }: { step: DrillStep; onEncoded: () => void })
 function Contrast({ step }: { step: DrillStep }) {
   return (
     <div>
-      <p className="text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)" data-selectable-text="true">
+      <p className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)" data-selectable-text="true">
         These two are getting mixed up. They are not interchangeable:
       </p>
 
       <div className="mt-5 space-y-3" data-selectable-text="true">
         {step.pairs.map((pair) => (
           <div className="flex items-baseline gap-3" key={pair.id}>
-            <span className="min-w-[9rem] text-[1.125rem] font-medium text-(--ui-text-primary)">{pair.left}</span>
-            <span className="text-[1.125rem] text-(--ui-text-primary)">{pair.right}</span>
+            <span className="min-w-[9rem] text-[length:var(--canvas-text-lead)] font-medium text-(--ui-text-primary)">{pair.left}</span>
+            <span className="text-[length:var(--canvas-text-lead)] text-(--ui-text-primary)">{pair.right}</span>
           </div>
         ))}
       </div>
 
-      <p className="mt-6 text-[0.8125rem] text-(--ui-text-quaternary)">
+      <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
         Both come back straight away.
       </p>
     </div>
@@ -148,23 +148,23 @@ function Retrieve({
           it is withdrawn, because "which ARB is Diovan?" answers itself when everything on
           screen is an ARB. */}
       {step.grouped && pair.groupLabel && (
-        <p className="text-[0.75rem] uppercase tracking-wide text-(--ui-text-quaternary)">{pair.groupLabel}</p>
+        <p className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">{pair.groupLabel}</p>
       )}
 
       <p
-        className="mt-3 text-[1.75rem] font-medium leading-tight text-(--ui-text-primary)"
+        className="mt-3 text-[length:var(--canvas-text-title)] font-medium leading-tight text-(--ui-text-primary)"
         data-selectable-text="true"
       >
         {cueFor(pair, step.direction)}
       </p>
 
       <div className="mt-8 flex items-center gap-5">
-        <span className="text-[0.75rem] text-(--ui-text-quaternary)">{remaining} to go</span>
+        <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{remaining} to go</span>
         {/* 🔴 Quiet, and deliberately not the obvious control. "I don't know" is genuinely
             better evidence than a reveal, but it must not become the fast path through the
             drill. */}
         <button
-          className="text-[0.75rem] text-(--ui-text-quaternary) underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
+          className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
           onClick={onAdmit}
           type="button"
         >

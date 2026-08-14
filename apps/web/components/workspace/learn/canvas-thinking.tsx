@@ -33,7 +33,7 @@ export function CanvasThinking({ phase }: { phase: ThinkingPhase }) {
         {/* 🔴 KEYED ON THE PHASE so React remounts it and the entry fade runs. Without the key the
             text would swap in place mid-word, which reads as a glitch rather than as a step
             finishing and another beginning. */}
-        <span className="canvas-phrase text-[0.8125rem] text-(--ui-text-tertiary)" key={phase}>
+        <span className="canvas-phrase text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)" key={phase}>
           {THINKING_COPY[phase]}
         </span>
       </div>

@@ -166,7 +166,7 @@ export function CanvasDocument({
           competing with the content above it. */}
       {showContinue && (
         <button
-          className="mt-10 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          className="mt-10 rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={onFinishReading}
           type="button"
         >
@@ -246,7 +246,7 @@ function BlockView({
     >
       {block.collapsed ? (
         <button
-          className="flex w-full items-center gap-2 py-1 text-left text-[0.8125rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+          className="flex w-full items-center gap-2 py-1 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
           onClick={onToggleCollapsed}
           type="button"
         >
@@ -269,7 +269,7 @@ function BlockView({
             // were `opacity-0` until the pointer crossed them and had no affordance at all on a
             // touch screen. The argument does not stop applying because this surface is quieter.
             // Restraint is the COLOUR and the SIZE here, not the visibility.
-            className="mt-1 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[0.75rem] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
+            className="mt-1 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
             onClick={onRestore}
             type="button"
           >
@@ -281,7 +281,7 @@ function BlockView({
       )}
 
       {block.note && !block.collapsed && (
-        <p className="mt-2 border-l-2 border-(--ui-accent)/40 py-0.5 pl-3 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">
+        <p className="mt-2 border-l-2 border-(--ui-accent)/40 py-0.5 pl-3 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
           {block.note}
         </p>
       )}
@@ -315,10 +315,10 @@ function BlockView({
           and the indent say "this is about the paragraph above" — a card would say "this is a
           component", which is the thing the surface is trying not to look like. */}
       {aside && (
-        <div className="mt-3 border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
+        <div className="mt-3 border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {aside}
           <button
-            className="mt-2 block text-[0.6875rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+            className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
             onClick={onDismissAside}
             type="button"
           >
@@ -378,7 +378,7 @@ function BlockBody({
         <button
           aria-label="Where this came from"
           className={cn(
-            "ml-0.5 align-super text-[0.625rem] font-medium leading-none tabular-nums transition-colors",
+            "ml-0.5 align-super text-[length:var(--canvas-text-meta)] font-medium leading-none tabular-nums transition-colors",
             sourceOpen ? "text-(--ui-text-primary)" : "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)",
           )}
           onClick={(event) => onToggleSource(event.currentTarget.getBoundingClientRect())}
@@ -401,7 +401,7 @@ function BlockBody({
     case "heading":
       return (
         <h2
-          className="mt-8 text-[1.25rem] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
+          className="mt-8 text-[length:var(--canvas-text-lead)] font-semibold leading-snug tracking-[-0.01em] text-(--ui-text-primary) first:mt-0"
           {...mark}
         >
           {body}
@@ -410,7 +410,7 @@ function BlockBody({
     case "concept":
       return (
         <div className="my-2.5 border-l-2 border-(--ui-accent) py-1 pl-4">
-          <p className="text-[1rem] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
+          <p className="text-[length:var(--canvas-text-body)] font-medium leading-relaxed text-(--ui-text-primary)" {...mark}>
             {body}
           </p>
         </div>
@@ -420,26 +420,26 @@ function BlockBody({
       // as a dashboard; the point of this surface is that it reads as something written.
       return (
         <div className="my-2.5 border-l-2 border-(--ui-stroke-primary) py-0.5 pl-4">
-          <p className="text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+          <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" {...mark}>
             {body}
           </p>
         </div>
       );
     case "example":
       return (
-        <p className="my-2 pl-4 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)" {...mark}>
+        <p className="my-2 pl-4 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" {...mark}>
           {body}
         </p>
       );
     case "citation":
       return (
-        <p className="my-1.5 text-[0.75rem] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
+        <p className="my-1.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)" {...mark}>
           {body}
         </p>
       );
     default:
       return (
-        <p className="my-2 text-[0.9375rem] leading-[1.65] text-(--ui-text-primary)" {...mark}>
+        <p className="my-2 text-[length:var(--canvas-text-body)] leading-[1.65] text-(--ui-text-primary)" {...mark}>
           {body}
         </p>
       );
@@ -580,7 +580,7 @@ function CanvasSourcePreview({
     <div className="fixed z-40" ref={holder} style={{ top: `${top}px`, left: `${left}px`, width: `${width}px` }}>
       <div className="max-h-[280px] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">Where this came from</p>
+          <p className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">Where this came from</p>
           <button
             aria-label="Dismiss"
             className="-mr-1 -mt-0.5 shrink-0 text-(--ui-text-quaternary) hover:text-(--ui-text-primary)"
@@ -592,17 +592,17 @@ function CanvasSourcePreview({
         </div>
 
         {found.length === 0 ? (
-          <p className="mt-2 text-[0.8125rem] leading-relaxed text-(--ui-text-tertiary)">
+          <p className="mt-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-tertiary)">
             This part wasn&rsquo;t taken from your material — Nemesis wrote it from general knowledge.
           </p>
         ) : (
           found.map(({ excerpt, source }) => (
             <div className="mt-2.5 first:mt-2" key={excerpt.id}>
-              <p className="text-[0.75rem] font-medium text-(--ui-text-primary)">
+              <p className="text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-primary)">
                 {source.title}
                 {excerpt.label ? ` · ${excerpt.label}` : ""}
               </p>
-              <p className="mt-1 border-l-2 border-(--ui-stroke-primary) pl-2.5 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">
+              <p className="mt-1 border-l-2 border-(--ui-stroke-primary) pl-2.5 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
                 {excerpt.text.length > 400 ? `${excerpt.text.slice(0, 400)}…` : excerpt.text}
               </p>
             </div>

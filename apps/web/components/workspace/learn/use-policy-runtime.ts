@@ -124,7 +124,19 @@ export interface PolicyRuntime {
    * unambiguous only at the moment of submission: by the time this renders, `decision` has already
    * moved on to whatever is owed next.
    */
-  feedback: { evaluation: ResponseEvaluation; answer: string; exposition: Exposition } | null;
+  /**
+   * 🔴 `via` IS CARRIED SO THE SCREEN CAN LABEL THE WORDS, NOT SO IT CAN JUDGE THEM. §46.2 requires
+   * spoken transcripts to appear as the same learner-owned element typed answers do, and the
+   * element records how the words arrived. It must never select a different STYLE: a spoken and a
+   * typed causal explanation demonstrate the same capability (§26), and drawing them apart would
+   * invent a distinction the cognition layer deliberately refuses to make.
+   */
+  feedback: {
+    evaluation: ResponseEvaluation;
+    answer: string;
+    exposition: Exposition;
+    via: "typed" | "spoken";
+  } | null;
   /**
    * What the policy has put on screen for the learner to take in, and how — contract §39.
    *
@@ -755,6 +767,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
       setFeedback({
         answer: said,
         evaluation,
+        via,
         exposition: expositionFor({
           capability: decision.objective.capability,
           kind: "verdict",

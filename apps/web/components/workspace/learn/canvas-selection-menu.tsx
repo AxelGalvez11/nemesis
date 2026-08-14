@@ -110,7 +110,7 @@ export function CanvasSelectionMenu({
       {open ? (
         <div className="rounded-2xl bg-(--ui-bg-elevated) p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-[0.8125rem] font-medium text-(--ui-text-primary)">
+            <p className="text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary)">
               {answer?.term ?? selection.selectedText}
             </p>
             <button
@@ -124,23 +124,23 @@ export function CanvasSelectionMenu({
           </div>
 
           {busy && (
-            <p className="mt-2 flex items-center gap-1.5 text-[0.8125rem] text-(--ui-text-tertiary)">
+            <p className="mt-2 flex items-center gap-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
               <Codicon name="loading" size="0.75rem" spinning />
               Looking at this…
             </p>
           )}
 
-          {error && !busy && <p className="mt-2 text-[0.8125rem] text-(--ui-text-tertiary)">{error}</p>}
+          {error && !busy && <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">{error}</p>}
 
           {answer && !busy && (
             <>
-              <p className="mt-2 text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{answer.text}</p>
+              <p className="mt-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">{answer.text}</p>
               {/* Provenance where it exists, and silence where it does not — implying the
                   learner's own material said something it never said is worse than no citation. */}
               {answer.sourceLabel && (
-                <p className="mt-2 text-[0.6875rem] text-(--ui-text-quaternary)">From {answer.sourceLabel}</p>
+                <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">From {answer.sourceLabel}</p>
               )}
-              <div className="mt-3 flex items-center gap-3 text-[0.75rem]">
+              <div className="mt-3 flex items-center gap-3 text-[length:var(--canvas-text-meta)]">
                 <button
                   className="text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
                   onClick={() => onAct("example")}
@@ -164,7 +164,7 @@ export function CanvasSelectionMenu({
           {actions.map((option, index) => (
             <button
               className={cn(
-                "rounded-full px-3 py-1.5 text-[0.8125rem] transition-colors hover:bg-(--ui-bg-tertiary)",
+                "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors hover:bg-(--ui-bg-tertiary)",
                 index === 0 ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
               )}
               key={option.action}

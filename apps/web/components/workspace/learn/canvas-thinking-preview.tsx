@@ -59,7 +59,7 @@ export function CanvasThinkingPreview({ label = null }: { label?: string | null 
       {/* Understated and ephemeral, and there is no second line and no counter. §23 bans "Step 1
           of 4"; §22 bans explaining the machinery at all. */}
       {label && (
-        <span className="canvas-phrase mt-[10px] text-[13px] text-(--ui-text-quaternary)">
+        <span className="canvas-phrase mt-[10px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
           {label.replace(/…$/, "")}…
         </span>
       )}

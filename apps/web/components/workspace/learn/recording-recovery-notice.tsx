@@ -166,21 +166,21 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
       <div className="min-w-0 flex-1">
         <span className="text-(--ui-text-primary)">Recording interrupted</span>
         <span className="text-(--ui-text-tertiary)"> · about {offer.duration} recovered</span>
-        {offer.caveat && <p className="mt-0.5 text-[0.75rem] text-(--ui-text-tertiary)">{offer.caveat}</p>}
+        {offer.caveat && <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{offer.caveat}</p>}
         {phase === "failed" && (
-          <p className="mt-0.5 text-[0.75rem] text-(--ui-text-tertiary)">
+          <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
             That did not rebuild. Your audio is still saved — try again in a moment.
           </p>
         )}
         {phase === "quota" && (
-          <p className="mt-0.5 text-[0.75rem] text-(--ui-text-tertiary)">
+          <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
             Your audio is saved, but this month&rsquo;s transcription limit is used up. It will be
             waiting here when the limit resets.
           </p>
         )}
       </div>
       <button
-        className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3 py-1 text-[0.75rem] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary) disabled:opacity-50"
+        className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary) disabled:opacity-50"
         disabled={phase === "saving" || !accessToken}
         onClick={() => void save()}
         type="button"
@@ -188,7 +188,7 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
         {phase === "saving" ? "Saving…" : "Save what was captured"}
       </button>
       <button
-        className="shrink-0 px-2 py-1 text-[0.75rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+        className="shrink-0 px-2 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
         onClick={() => void discard()}
         type="button"
       >
@@ -200,7 +200,7 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
 
 function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto mb-4 flex w-full max-w-[770px] items-center gap-2.5 rounded-xl bg-(--ui-bg-elevated) px-3.5 py-2.5 text-[0.8125rem] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)">
+    <div className="mx-auto mb-4 flex w-full max-w-[770px] items-center gap-2.5 rounded-xl bg-(--ui-bg-elevated) px-3.5 py-2.5 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)">
       {children}
     </div>
   );
