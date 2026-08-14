@@ -30,7 +30,7 @@ export function SidebarBlankState({ onNewSession }: { onNewSession: () => void }
     <div className="grid min-h-0 flex-1 place-items-center px-4 text-center">
       <div className="flex flex-col items-center gap-2">
         <Codicon name="root-folder" size="1.25rem" className="text-(--ui-text-quaternary)" />
-        <p className="text-xs text-(--ui-text-tertiary)">No chats yet</p>
+        <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">No chats yet</p>
         <Button size="sm" variant="ghost" className="mt-0.5 text-(--ui-text-secondary)" onClick={onNewSession}>
           <Codicon name="add" size="0.75rem" /> New chat
         </Button>
@@ -41,7 +41,7 @@ export function SidebarBlankState({ onNewSession }: { onNewSession: () => void }
 
 export function SidebarPinnedEmptyState() {
   return (
-    <div className="flex min-h-7 items-center gap-1.5 rounded-lg pl-2 text-[0.75rem] text-(--ui-text-tertiary)">
+    <div className="flex min-h-7 items-center gap-1.5 rounded-lg pl-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
       <span className="grid w-3.5 shrink-0 place-items-center text-(--ui-text-quaternary)">
         <Codicon name="pin" size="0.75rem" />
       </span>
@@ -52,7 +52,7 @@ export function SidebarPinnedEmptyState() {
 
 export function SidebarNoMatchState({ query }: { query: string }) {
   return (
-    <div className="wrap-anywhere grid min-h-24 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
+    <div className="wrap-anywhere grid min-h-24 place-items-center rounded-lg px-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
       {`No chats match “${query}”.`}
     </div>
   );
@@ -60,7 +60,7 @@ export function SidebarNoMatchState({ query }: { query: string }) {
 
 export function SidebarSessionsEmptyState({ allPinned }: { allPinned: boolean }) {
   return (
-    <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
+    <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
       {allPinned ? "Everything here is pinned. Unpin a chat to show it in recents." : "No chats yet"}
     </div>
   );

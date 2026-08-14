@@ -28,7 +28,7 @@ import {
   knowledgeIdentityKey,
   normalizeForIdentity,
 } from "./knowledge-identity";
-import type { CausalRelation, KnowledgeObject } from "./knowledge-types";
+import type { CausalRelation, FigureKnowledge, KnowledgeObject } from "./knowledge-types";
 
 /**
  * What the learner is being asked to DO.
@@ -52,7 +52,7 @@ import type { CausalRelation, KnowledgeObject } from "./knowledge-types";
  * question is real, is genuinely a separate capability, and is deliberately not minted yet; keeping
  * `explain` unminted is what leaves room for it.
  */
-export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict";
+export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict" | "locate";
 
 /**
  * A positional fallback, used ONLY when the source named no columns.
@@ -83,6 +83,19 @@ export interface ObjectiveParameters {
   outputRole?: string;
   /** Only when no roles are known. Never set alongside them. */
   direction?: ObjectiveDirection;
+  /**
+   * WHICH PART of a diagram this objective is about (§46.6).
+   *
+   * 🔴 ONE OBJECTIVE PER LABEL, NOT ONE PER DIAGRAM, AND THIS FIELD IS WHAT SEPARATES THEM. A
+   * cylinder diagram naming piston, glow plug and intake valve teaches three different things: a
+   * learner can place the piston and still have no idea where the glow plug sits. Keying every
+   * label to one objective would credit all three the moment any one was answered, which is the
+   * same defect `inputRole`/`outputRole` exist to prevent one dimension over.
+   *
+   * Normalised, because it is identity: the same label spelled with different case in two decks is
+   * the same part of the same picture.
+   */
+  labelKey?: string;
 }
 
 export interface LearningObjective {
@@ -140,9 +153,23 @@ export function objectiveIdentityBasis(input: {
 }): string {
   // Serialised in a fixed order rather than by iterating the object, so a key can never depend on
   // the order the fields happened to be written in at the call site.
-  const { direction, inputRole, outputRole } = input.parameters;
+  const { direction, inputRole, outputRole, labelKey } = input.parameters;
   const role = inputRole && outputRole ? `in=${inputRole},out=${outputRole}` : "in=-,out=-";
-  return `objective|${input.knowledgeIdentityKey}|${input.capability}|${role}|dir=${direction ?? "-"}`;
+  // 🔴 `labelKey` IS PART OF IDENTITY, AND THE CHAIN TEST IS WHY IT IS HERE. A diagram mints one
+  // objective per named part; without this the three parts of a cylinder hashed to ONE key, so
+  // answering "piston" would have credited the learner with the glow plug and the intake valve too.
+  // That is the same laundering `inputRole`/`outputRole` prevent one dimension over — evidence for
+  // one capability silently attributed to another — and it is invisible until someone counts the
+  // distinct keys, which is exactly what `figure-chain.test.ts` does.
+  //
+  // 🔴 APPENDED ONLY WHEN SET, AND THAT CONDITIONAL IS LOAD-BEARING. My first version always
+  // appended `|label=-`, which changes the basis STRING for every association and causal objective
+  // ever minted — and therefore its hash, and therefore the key every existing learner's evidence
+  // is filed under. Every row in `learner_evidence` would have pointed at an objective that no
+  // longer exists: not a crash, just every learner silently starting again. An identity function is
+  // the one place where "harmless extra field" is never harmless.
+  const base = `objective|${input.knowledgeIdentityKey}|${input.capability}|${role}|dir=${direction ?? "-"}`;
+  return labelKey ? `${base}|label=${labelKey}` : base;
 }
 
 /** A 64-bit FNV-1a, as 16 hex characters. Synchronous and dependency-free for the same reason the
@@ -243,8 +270,46 @@ function causalObjectives(object: KnowledgeObject, relation: CausalRelation): Le
  * was measured HERE. Adding a type to the extractor without adding it to this function widens the
  * spec and changes nothing a learner experiences.
  */
+/**
+ * A labelled diagram, as one objective per named part (§46.6).
+ *
+ * 🔴 THE CUE IS THE PICTURE WITH SOMETHING COVERED, NOT A SENTENCE. `cue` here is the prompt text
+ * the surface shows ALONGSIDE the occluded figure; the figure itself is carried on the knowledge
+ * object, because a cue string cannot hold an image. That is why this is `locate` and not `recall`:
+ * the learner is not producing a fact from a word, they are reading a position and naming what
+ * belongs there, which is a different capability and must not share an identity with recall.
+ *
+ * 🔴 ONE OBJECTIVE PER LABEL. A learner who can place the piston may have no idea where the glow
+ * plug is. Minting one objective for the whole diagram would credit every part the moment any one
+ * was answered — the same laundering `inputRole`/`outputRole` prevent for associations.
+ *
+ * 🔴 AND THE ANSWER IS THE LABEL VERBATIM, NOT NORMALISED. Normalisation exists to make identities
+ * converge; it is not how a word should be shown back to a learner, and it is what a judge receives
+ * as the reference answer. `Glow Plug` printed as `glow plug` is the same lesson learned in
+ * `objectivesForKnowledge` below.
+ */
+function spatialObjectives(object: KnowledgeObject, figure: FigureKnowledge): LearningObjective[] {
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  return figure.labels.map((label) => {
+    const parameters: ObjectiveParameters = { labelKey: normalizeForIdentity(label.text) };
+    return {
+      answer: label.text,
+      capability: "locate" as const,
+      // The surface renders the figure; this is the words beside it. Deliberately does not name the
+      // part — naming it would print the answer.
+      cue: figure.caption ? `In this diagram (${figure.caption}), what is the covered part?` : "What is the covered part of this diagram?",
+      identityKey: objectiveIdentityKey({ capability: "locate", knowledgeIdentityKey: knowledge, parameters }),
+      identityVersion: OBJECTIVE_IDENTITY_VERSION,
+      knowledgeIdentityKey: knowledge,
+      label: `Name the covered part of ${figure.caption || "the diagram"}`,
+      parameters,
+    };
+  });
+}
+
 export function objectivesForKnowledge(object: KnowledgeObject): LearningObjective[] {
   if (object.type === "causal" && object.relation) return causalObjectives(object, object.relation);
+  if (object.type === "spatial" && object.figure) return spatialObjectives(object, object.figure);
   if (object.type !== "association" || !object.pair) return [];
 
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);

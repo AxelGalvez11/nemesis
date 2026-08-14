@@ -57,7 +57,7 @@ export function SidebarGroup({ className, ...props }: React.ComponentProps<"div"
 export function SidebarGroupContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("w-full text-sm", className)}
+      className={cn("w-full text-[length:var(--canvas-text-small)]", className)}
       data-sidebar="group-content"
       data-slot="sidebar-group-content"
       {...props}
@@ -91,8 +91,8 @@ export function SidebarMenuItem({ className, ...props }: React.ComponentProps<"l
 // className merges over this exactly like the desktop (twMerge semantics), so
 // surviving base classes (items-center, overflow-hidden, py-2, active:*) match.
 const SIDEBAR_MENU_BUTTON_BASE = cn(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
-  "h-8 text-sm",
+  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-[length:var(--canvas-text-small)] ring-sidebar-ring outline-hidden transition-[width,height,padding] hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  "h-8 text-[length:var(--canvas-text-small)]",
 );
 
 /** Nav-row button — the desktop base merged under the caller's className. */
@@ -116,7 +116,7 @@ export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
     // reference). UPPERCASE at 0.16em tracking is louder than the chat titles
     // underneath it, which inverts the hierarchy: the label is scaffolding,
     // the titles are the content.
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
+    <span className="flex min-w-0 items-center gap-2 pl-2 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-tertiary)">
       <span className="min-w-0 truncate leading-none">{children}</span>
     </span>
   );
@@ -130,7 +130,7 @@ export const countLabel = (loaded: number, total: number): string =>
 
 /** The muted count chip next to a section/workspace label. */
 export function SidebarCount({ children }: { children: React.ReactNode }) {
-  return <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{children}</span>;
+  return <span className="text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-tertiary)">{children}</span>;
 }
 
 // Row geometry (session row is canonical — everything composes these).
@@ -142,7 +142,7 @@ const rowInset = cn(rowPadX, rowGap, "flex h-full min-w-0 items-center self-stre
 /* Session titles read at full text color (owner 2026-08-05: "the text on
    sidebar is gray") — hierarchy comes from the quiet section labels, not
    from dimming every row. */
-const rowLabel = "min-w-0 truncate text-[0.8125rem] leading-none text-foreground";
+const rowLabel = "min-w-0 truncate text-[length:var(--canvas-text-small)] leading-none text-foreground";
 
 /** Codicon size in sidebar row leads. */
 export const SIDEBAR_LEAD_ICON_SIZE = "0.875rem" as const;

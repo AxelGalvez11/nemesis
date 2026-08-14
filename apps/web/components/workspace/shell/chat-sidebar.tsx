@@ -176,7 +176,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
         <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
+          <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
           <Button
             aria-label={searchOpen ? "Close chat search" : "Search chats"}
             onClick={() => {
@@ -213,7 +213,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                   <SidebarMenuItem className="flex items-center gap-0.5" key={item.id}>
                     <SidebarMenuButton
                       className={cn(
-                        "flex h-8 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
+                        "flex h-8 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[length:var(--canvas-text-small)] font-medium text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
                         active &&
                           "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!",
                       )}
@@ -348,9 +348,9 @@ function StudentSidebarFooter({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label="Account menu" className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left text-foreground transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) active:scale-[0.99] motion-reduce:active:scale-100" size="sm" variant="ghost">
-              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[0.65rem] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">{accountInitial}</span>
-              <span className="min-w-0 flex-1 truncate text-xs font-medium">{accountEmail || "Sign in"}</span>
-              <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">Student</span>
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[length:var(--canvas-text-meta)] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">{accountInitial}</span>
+              <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-meta)] font-medium">{accountEmail || "Sign in"}</span>
+              <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">Student</span>
               <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-up" size="0.8rem" />
             </Button>
           </DropdownMenuTrigger>
